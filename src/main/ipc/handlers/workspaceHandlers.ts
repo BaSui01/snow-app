@@ -206,9 +206,42 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle(
     "project-collections:create",
-    async (_event, name: unknown) => {
+    async (_event, name: unknown, memberDirectoryIds: unknown) => {
       await native.createProjectCollection(
         requireText(name, "Collection name"),
+        memberDirectoryIds === undefined
+          ? []
+          : requireDirectoryIdList(memberDirectoryIds),
+      );
+      const collections = await native.listProjectCollections();
+      broadcastDirectoryListChanged();
+      return collections;
+    },
+  );
+  ipcMain.handle(
+    "project-collections:update-color",
+    async (_event, collectionId: unknown, color: unknown) => {
+      await native.updateProjectCollectionColor(
+        requireText(collectionId, "Collection ID"),
+        requireText(color, "Collection color"),
+      );
+      const collections = await native.listProjectCollections();
+      broadcastDirectoryListChanged();
+      return collections;
+    },
+  );
+  ipcMain.handle(
+    "project-collections:set-member-linked",
+    async (
+      _event,
+      collectionId: unknown,
+      directoryId: unknown,
+      linked: unknown,
+    ) => {
+      await native.setProjectCollectionMemberLinked(
+        requireText(collectionId, "Collection ID"),
+        requireText(directoryId, "Workspace directory ID"),
+        linked === true,
       );
       const collections = await native.listProjectCollections();
       broadcastDirectoryListChanged();

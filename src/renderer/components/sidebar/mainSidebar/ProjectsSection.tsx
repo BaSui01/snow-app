@@ -17,6 +17,7 @@ import { AddLocalDirectoryDialog } from "./projects/dialogs/AddLocalDirectoryDia
 import { CloneRepositoryDialog } from "./projects/dialogs/CloneRepositoryDialog";
 import { CreateCollectionDialog } from "./projects/dialogs/CreateCollectionDialog";
 import { CreateProjectDialog } from "./projects/dialogs/CreateProjectDialog";
+import { LinkProjectsDialog } from "./projects/dialogs/LinkProjectsDialog";
 import { ProjectGridDialog } from "./projects/dialogs/ProjectGridDialog";
 import { RenameCollectionDialog } from "./projects/dialogs/RenameCollectionDialog";
 import { useDirectoryDragDrop } from "./projects/useDirectoryDragDrop";
@@ -105,6 +106,8 @@ export function ProjectsSection({
     setDeleteCollectionTarget,
     loadProjectCollections,
     createCollection,
+    updateCollectionColor,
+    setMemberLinked,
     renameCollection,
     confirmDeleteCollection,
     removeProjectFromCollection,
@@ -115,6 +118,7 @@ export function ProjectsSection({
     setWorkspaceDirectories,
     persistWorkspaceDirectory,
     createCollection,
+    updateCollectionColor,
     renameCollection,
     setIsSavingDirectory,
     setDirectoryError,
@@ -176,6 +180,16 @@ export function ProjectsSection({
     return counts;
   }, [notificationGroups]);
 
+  // 「关联项目」弹窗候选：除锚点目录本身外的全部项目。
+  const linkProjectsCandidates = useMemo(
+    () =>
+      workspaceDirectories.filter(
+        (directory) =>
+          directory.directoryId !== addFlow.linkProjectsSource?.directoryId,
+      ),
+    [addFlow.linkProjectsSource?.directoryId, workspaceDirectories],
+  );
+
   const handleRelinked = (): void => {
     setRelinkTarget(null);
     setDirectoryError(null);
@@ -186,6 +200,19 @@ export function ProjectsSection({
   const handleRelinkUndone = (): void => {
     void loadWorkspaceDirectories();
     void loadProjectCollections();
+  };
+
+  /** 打开「关联项目…」弹窗：把该项目与其它目录关联成一个统一项目。 */
+  const handleLinkProjectsOpen = (directoryId: string): void => {
+    const directory = workspaceDirectories.find(
+      (d) => d.directoryId === directoryId,
+    );
+
+    if (!directory) {
+      return;
+    }
+
+    addFlow.handleLinkProjectsOpen(directory);
   };
 
   const handleShowDetails = (directoryId: string): void => {
@@ -205,7 +232,8 @@ export function ProjectsSection({
     addFlow.isAddLocalDialogOpen ||
     addFlow.isCloneRepoOpen ||
     addFlow.isCreateCollectionOpen ||
-    addFlow.isRenameCollectionOpen;
+    addFlow.isRenameCollectionOpen ||
+    addFlow.isLinkProjectsOpen;
 
   return (
     <div
@@ -299,13 +327,29 @@ export function ProjectsSection({
       />
 
       <RenameCollectionDialog
+        color={addFlow.renameCollectionColor}
         error={directoryError}
         isSubmitting={isSavingDirectory}
         name={addFlow.renameCollectionName}
         onCancel={addFlow.handleRenameCollectionCancel}
+        onColorChange={addFlow.setRenameCollectionColor}
         onConfirm={() => void addFlow.handleRenameCollectionConfirm()}
         onNameChange={addFlow.setRenameCollectionName}
         open={addFlow.isRenameCollectionOpen}
+      />
+
+      <LinkProjectsDialog
+        directories={linkProjectsCandidates}
+        error={directoryError}
+        isSubmitting={isSavingDirectory}
+        name={addFlow.linkProjectsName}
+        onCancel={addFlow.handleLinkProjectsCancel}
+        onConfirm={() => void addFlow.handleLinkProjectsConfirm()}
+        onNameChange={addFlow.setLinkProjectsName}
+        onToggleDirectory={addFlow.handleLinkProjectsToggle}
+        open={addFlow.isLinkProjectsOpen}
+        selectedDirectoryIds={addFlow.linkProjectsSelection}
+        sourceDirectory={addFlow.linkProjectsSource}
       />
 
       <ConfirmDialog
@@ -426,6 +470,10 @@ export function ProjectsSection({
             onDragStart={dragAndDrop.handleDirectoryDragStart}
             onDrop={dragAndDrop.handleDirectoryDrop}
             onDropOutside={dragAndDrop.handleDropOutside}
+            onLinkProjects={handleLinkProjectsOpen}
+            onToggleMemberLinked={(collectionId, directoryId, linked) =>
+              void setMemberLinked(collectionId, directoryId, linked)
+            }
             onRemoveFromCollection={(collectionId, directoryId) =>
               void removeProjectFromCollection(collectionId, directoryId)
             }

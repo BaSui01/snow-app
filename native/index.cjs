@@ -24,6 +24,10 @@ const requiredExports = [
   "deleteCustomHeaderScheme",
   "reorderWorkspaceDirectories",
   "deleteWorkspaceDirectory",
+  // 关联项目组颜色（合集统一圆点标识）
+  "updateProjectCollectionColor",
+  // 关联项目组成员开关（断连后仍留在合集里）
+  "setProjectCollectionMemberLinked",
   "listCheckpointDiffs",
   "restoreCheckpoints",
   "listCheckpointChangesBatch",

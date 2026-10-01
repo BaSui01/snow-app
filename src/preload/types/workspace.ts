@@ -76,14 +76,18 @@ export type WorkspaceRelinkResult = {
   directories: WorkspaceDirectoryRecord[];
 };
 
-/** 项目合集：收纳项目的纯元数据容器（不对应磁盘目录）。 */
+/** 项目合集 / 关联项目组：收纳项目的纯元数据容器（不对应磁盘目录）。 */
 export type ProjectCollectionRecord = {
   id: string;
   collectionId: string;
   name: string;
+  /** 合集统一识别色（#rrggbb）：关联项目组的圆点标识色 */
+  color: string;
   sortOrder: number;
   /** 收纳的项目 directory_id 列表（按加入顺序） */
   memberDirectoryIds: string[];
+  /** 参与关联项目组的成员子集：断连的成员只留在合集里 */
+  linkedDirectoryIds: string[];
   createdAt: string;
   updatedAt: string;
 };

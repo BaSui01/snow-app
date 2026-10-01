@@ -46,6 +46,14 @@ type WorkspaceDirectoryListProps = {
   onDrop: (directoryId: string, dataTransfer: DataTransfer) => void;
   /** 拖到顶层列表空白区域（非行、非合集）：合集成员移出合集回到顶层 */
   onDropOutside: (directoryId: string) => void;
+  /** 打开「关联项目…」弹窗：把该目录与其它目录关联成一个统一项目 */
+  onLinkProjects: (directoryId: string) => void;
+  /** 切换成员是否参与关联：断连后该目录仍留在合集里 */
+  onToggleMemberLinked: (
+    collectionId: string,
+    directoryId: string,
+    linked: boolean,
+  ) => void;
   onRemoveFromCollection: (collectionId: string, directoryId: string) => void;
   /** 重命名目录显示名；返回 Promise 时提交期间保持编辑态直到完成 */
   onRename?: (directoryId: string, newName: string) => void | Promise<void>;
@@ -84,6 +92,8 @@ export function WorkspaceDirectoryList({
   onDragStart,
   onDrop,
   onDropOutside,
+  onLinkProjects,
+  onToggleMemberLinked,
   onRemoveFromCollection,
   onRename,
   onRenameCollection,
@@ -300,6 +310,11 @@ export function WorkspaceDirectoryList({
         {memberDirectories.map((directory) => (
           <WorkspaceDirectoryRow
             activeDirectoryId={activeDirectoryId}
+            collectionColor={collection.color}
+            collectionName={collection.name}
+            memberLinked={collection.linkedDirectoryIds.includes(
+              directory.directoryId,
+            )}
             directory={directory}
             displayName={displayNames.get(directory.directoryId)}
             draggedDirectoryId={draggedDirectoryId}
@@ -332,6 +347,13 @@ export function WorkspaceDirectoryList({
               )
             }
             onEditingValueChange={setEditingValue}
+            onToggleMemberLinked={() =>
+              onToggleMemberLinked(
+                collection.collectionId,
+                directory.directoryId,
+                !collection.linkedDirectoryIds.includes(directory.directoryId),
+              )
+            }
             onRemoveFromCollection={() =>
               onRemoveFromCollection(
                 collection.collectionId,
@@ -403,12 +425,18 @@ export function WorkspaceDirectoryList({
                         className="list-icon list-icon--collection"
                         size={15}
                       />
+                      <span
+                        aria-hidden="true"
+                        className="project-collection-dot"
+                        style={{ background: collection.color }}
+                      />
                       <span className="list-label">{collection.name}</span>
                       <span
                         className="project-collection-badge"
                         title={t("sidebar.collectionMemberCount", {
                           values: {
                             count: collection.memberDirectoryIds.length,
+                            linked: collection.linkedDirectoryIds.length,
                           },
                           defaultValue: "{{count}} project(s)",
                         })}
@@ -495,6 +523,7 @@ export function WorkspaceDirectoryList({
                 onDragStart={onDragStart}
                 onDrop={onDrop}
                 onEditingValueChange={setEditingValue}
+                onLinkProjects={() => onLinkProjects(directory.directoryId)}
                 onRenameCancel={handleRenameCancel}
                 onRenameStart={handleRenameStart}
                 onRenameSubmit={handleRenameSubmit}

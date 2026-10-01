@@ -73,9 +73,48 @@ pub fn list_project_collections() -> Result<Vec<ProjectCollectionRecord>> {
     services::project_collections::list_project_collections(&database_path)
 }
 
-pub fn create_project_collection(name: String) -> Result<()> {
+pub fn create_project_collection(name: String, member_directory_ids: Vec<String>) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::project_collections::create_project_collection(&database_path, &name)
+    services::project_collections::create_project_collection(
+        &database_path,
+        &name,
+        &member_directory_ids,
+    )
+}
+
+pub fn update_project_collection_color(collection_id: String, color: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_collections::update_project_collection_color(
+        &database_path,
+        &collection_id,
+        &color,
+    )
+}
+
+/// 按项目根目录路径解析关联项目组（合集）的成员根目录。
+/// 文件搜索 agent 用它把搜索范围扩展到组内全部项目；未关联时为空列表。
+pub fn resolve_linked_project_roots_for_path(path: String) -> Result<Vec<LinkedProjectRoot>> {
+    let database_path = ensure_database_file()?;
+    let group = services::project_collections::resolve_linked_project_roots_by_path(
+        &database_path,
+        &path,
+    )?;
+    Ok(group.map(|group| group.roots).unwrap_or_default())
+}
+
+/// 切换合集成员的「参与关联」开关（断连后仍留在合集里）。
+pub fn set_project_collection_member_linked(
+    collection_id: String,
+    directory_id: String,
+    linked: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_collections::set_project_collection_member_linked(
+        &database_path,
+        &collection_id,
+        &directory_id,
+        linked,
+    )
 }
 
 pub fn rename_project_collection(collection_id: String, name: String) -> Result<()> {
@@ -187,11 +226,20 @@ pub fn delete_workspace_entries(
     services::fs_explorer::delete_workspace_entries(&root_path, entry_paths)
 }
 
+/// 文件名 / 内容搜索。项目属于关联项目组时，搜索覆盖组内所有根目录：
+/// 兄弟根的相对路径带上「目录名/」前缀，主根结果保持相对路径不变。
 pub fn search_files(
     root_dir: String,
     query: String,
 ) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
-    services::fs_explorer::search_files(&root_dir, &query)
+    // 关联信息缺失（数据库异常等）时静默退化为单根搜索，不影响搜索结果本身。
+    let linked_roots =
+        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default();
+
+    if linked_roots.is_empty() {
+        return services::fs_explorer::search_files(&root_dir, &query);
+    }
+    services::fs_explorer::search_files_linked(&root_dir, &query, &linked_roots)
 }
 
 pub fn read_file_content(file_path: String) -> Result<services::fs_explorer::FileContentResult> {

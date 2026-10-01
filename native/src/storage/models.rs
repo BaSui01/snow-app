@@ -290,11 +290,33 @@ pub struct ProjectCollectionRecord {
     pub id: String,
     pub collection_id: String,
     pub name: String,
-    pub sort_order: i32,
+    /// 合集统一识别色（`#rrggbb`）：关联项目组内所有项目显示同一颜色圆点。
+    pub color: String,
+pub sort_order: i32,
     /// 收纳的项目 directory_id 列表（按加入顺序）。
     pub member_directory_ids: Vec<String>,
+    /// 参与关联项目组的成员子集：未关联的成员只留在合集里，不参与
+    /// grep / 文件搜索 / 系统提示词的统一项目解析。
+    pub linked_directory_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// 关联项目组中的单个成员根目录（本地项目）。
+#[napi(object)]
+pub struct LinkedProjectRoot {
+    pub directory_id: String,
+    pub name: String,
+    pub path: String,
+}
+
+/// 关联项目组：由合集表达的一组本地项目根目录，工具（grep / 文件搜索 /
+/// 系统提示词）把它们当成同一个「统一项目」处理。
+#[napi(object)]
+pub struct LinkedProjectGroup {
+    pub name: String,
+    /// 成员根目录（按合集内顺序；至少 2 个，否则不构成关联）。
+    pub roots: Vec<LinkedProjectRoot>,
 }
 
 // ===== 用户脚本（油猴兼容）=====

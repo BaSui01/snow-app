@@ -448,6 +448,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to create project collections",
           ),
         ),
+      updateProjectCollectionColor: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to update project collection colors",
+          ),
+        ),
+      setProjectCollectionMemberLinked: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to toggle linked collection members",
+          ),
+        ),
       renameProjectCollection: () =>
         Promise.reject(
           new Error(

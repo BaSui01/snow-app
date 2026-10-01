@@ -6,9 +6,11 @@ import {
   FileSearch,
   FolderMinus,
   History,
+  Link2,
   Loader2,
   Pencil,
   Trash2,
+  Unlink,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -32,7 +34,13 @@ type WorkspaceDirectoryMenuProps = {
   kind?: WorkspaceDirectoryKind;
   onDelete: () => void;
   onOpenChange?: (isOpen: boolean) => void;
-  /** 从所属合集移除（合集成员行菜单项，非成员行不传） */
+  /** 与其它目录关联成一个统一项目（非关联成员行入口） */
+  onLinkProjects?: () => void;
+  /** 关联成员行是否参与关联（true 显示「断连」，false 显示「加入关联」） */
+  memberLinked?: boolean;
+  /** 切换该成员是否参与关联：断连后仍留在合集里 */
+  onToggleMemberLinked?: () => void;
+  /** 从合集移出（关联成员行菜单项，非成员行不传） */
   onRemoveFromCollection?: () => void;
   onRename?: () => void;
   onShowDetails?: () => void;
@@ -56,6 +64,9 @@ export function WorkspaceDirectoryMenu({
   onActivate,
   kind,
   onDelete,
+  onLinkProjects,
+  memberLinked = false,
+  onToggleMemberLinked,
   onOpenChange,
   onRemoveFromCollection,
   onRename,
@@ -133,6 +144,8 @@ export function WorkspaceDirectoryMenu({
   }, [isOpen]);
 
   const canOpenWith = kind !== "ssh" && Boolean(directoryPath);
+  // SSH 目录不参与关联项目组：关联解析只聚合本地根目录。
+  const canLinkProjects = kind !== "ssh" && Boolean(onLinkProjects);
 
   useEffect(() => {
     if (!isOpen || !canOpenWith || idesLoadedRef.current) {
@@ -546,6 +559,52 @@ export function WorkspaceDirectoryMenu({
                       {t("sidebar.directoryActionRename", {
                         defaultValue: "Rename",
                       })}
+                    </span>
+                  </button>
+                ) : null}
+                {canLinkProjects ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={() => {
+                      setIsButtonOpen(false);
+                      onContextMenuCloseRef.current?.();
+                      setShowConfirm(false);
+                      setIsOpenWithOpen(false);
+                      onLinkProjects?.();
+                    }}
+                    role="menuitem"
+                  >
+                    <Link2 size={13} />
+                    <span>
+                      {t("sidebar.linkProjects", {
+                        defaultValue: "Link projects…",
+                      })}
+                    </span>
+                  </button>
+                ) : null}
+                {onToggleMemberLinked ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={() => {
+                      setIsButtonOpen(false);
+                      onContextMenuCloseRef.current?.();
+                      setShowConfirm(false);
+                      setIsOpenWithOpen(false);
+                      onToggleMemberLinked();
+                    }}
+                    role="menuitem"
+                  >
+                    {memberLinked ? <Unlink size={13} /> : <Link2 size={13} />}
+                    <span>
+                      {memberLinked
+                        ? t("sidebar.memberUnlink", {
+                            defaultValue: "Unlink (keep in collection)",
+                          })
+                        : t("sidebar.memberLink", {
+                            defaultValue: "Link to the project group",
+                          })}
                     </span>
                   </button>
                 ) : null}

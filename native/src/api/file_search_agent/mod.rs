@@ -35,6 +35,7 @@ pub(crate) use crate::mcp::tools::{
     tools_as_openai_responses_json, McpTool,
 };
 pub(crate) use crate::storage::services::fs_explorer::{FileSearchLineMatch, FileSearchResult};
+pub(crate) use crate::storage::LinkedProjectRoot;
 
 mod providers;
 
@@ -50,6 +51,58 @@ const MAX_RESULTS: usize = 100;
 const MAX_TOOL_OUTPUT_CHARS: usize = 8000;
 /// 消息历史最大条数（超出后丢弃最早的中间消息，保留首条用户消息）。
 const MAX_MESSAGES: usize = 40;
+
+/// agent 可访问的搜索根目录。第一项是主工作区，其余来自关联项目组（合集）
+/// 的兄弟根目录——它们在工具调用与结果解析中等价可访问。兄弟根带显示名，
+/// 用于把其相对路径标注为「目录名/…」，让界面能区分同名文件。
+#[derive(Clone)]
+pub(crate) struct FileSearchRoot {
+    pub(crate) path: String,
+    pub(crate) name: Option<String>,
+}
+
+/// 组装搜索根集合：主工作区 + 关联项目组兄弟根（去重、忽略空路径）。
+fn build_search_roots(primary: &str, linked_roots: &[LinkedProjectRoot]) -> Vec<FileSearchRoot> {
+    let mut roots = vec![FileSearchRoot {
+        path: primary.to_string(),
+        name: None,
+    }];
+    for root in linked_roots {
+        let path = root.path.trim();
+        if path.is_empty()
+            || roots
+                .iter()
+                .any(|existing| existing.path.eq_ignore_ascii_case(path))
+        {
+            continue;
+        }
+        roots.push(FileSearchRoot {
+            path: path.to_string(),
+            name: Some(root.name.trim().to_string()),
+        });
+    }
+    roots
+}
+
+/// 关联项目组的兄弟根目录：仅在搜索主工作区根时注入，让一次 grep 覆盖全部根。
+fn sibling_roots_for(roots: &[FileSearchRoot], target: &str) -> Option<Vec<String>> {
+    let primary = roots.first()?;
+    if !primary.path.trim_end_matches(['/', '\\']).eq_ignore_ascii_case(
+        target.trim_end_matches(['/', '\\']),
+    ) {
+        return None;
+    }
+    let siblings: Vec<String> = roots
+        .iter()
+        .skip(1)
+        .map(|root| root.path.clone())
+        .collect();
+    if siblings.is_empty() {
+        None
+    } else {
+        Some(siblings)
+    }
+}
 
 /// 单轮 agent 运行的结果：要么拿到最终答案文本，要么需要追加消息继续循环。
 pub(crate) enum AgentRound {
@@ -96,6 +149,7 @@ const NO_TOOL_FOLLOW_UP_PROMPT: &str = "Your previous answer was produced withou
 pub async fn run_file_search_agent(
     query: String,
     workspace_path: String,
+    linked_roots: Vec<LinkedProjectRoot>,
     cancel_token: CancellationToken,
     on_progress: Option<FileSearchAgentProgressCallback>,
 ) -> Result<Vec<FileSearchResult>> {
@@ -103,6 +157,9 @@ pub async fn run_file_search_agent(
     if trimmed_query.is_empty() || workspace_path.trim().is_empty() {
         return Ok(Vec::new());
     }
+    // 关联项目组（合集）的兄弟根与主工作区等价：grep 与 filesystem-read 都能
+    // 直接命中它们，最终结果也允许来自任意一根。
+    let roots = build_search_roots(workspace_path.trim(), &linked_roots);
 
     let context = get_active_api_request_context()?;
     let api_config = context.api_config;
@@ -127,7 +184,7 @@ pub async fn run_file_search_agent(
         api_config.partial_retry_max_chars,
     );
     let tools = build_agent_tools();
-    let system_prompt = build_system_prompt(workspace_path.trim());
+    let system_prompt = build_system_prompt(&roots);
     let user_prompt = format!("Find files matching this description: {trimmed_query}");
 
     // 各协议的初始用户消息。协议内部的消息形状不同，后续轮次追加的消息
@@ -145,8 +202,6 @@ pub async fn run_file_search_agent(
         _ => vec![json!({"role": "user", "content": user_prompt})],
     };
 
-    let workspace_root = workspace_path.trim().to_string();
-
     for round in 0..MAX_AGENT_ROUNDS {
         let outcome = tokio::select! {
             _ = cancel_token.cancelled() => return Ok(Vec::new()),
@@ -154,22 +209,22 @@ pub async fn run_file_search_agent(
                 match api_config.request_method.as_str() {
                     "responses" => run_responses_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompt,
-                        &messages, &tools, &retry_options, &workspace_root,
+                        &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     "anthropic" => run_anthropic_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompt,
-                        &messages, &tools, &retry_options, &workspace_root,
+                        &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     "gemini" | "interactions" => run_gemini_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompt,
-                        &messages, &tools, &retry_options, &workspace_root,
+                        &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     _ => run_chat_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompt,
-                        &messages, &tools, &retry_options, &workspace_root,
+                        &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                 }
@@ -182,7 +237,7 @@ pub async fn run_file_search_agent(
             AgentRound::Done(text) if round == 0 => {
                 push_no_tool_follow_up(&mut messages, api_config.request_method.as_str(), &text);
             }
-            AgentRound::Done(text) => return parse_final_results(&text, &workspace_root),
+            AgentRound::Done(text) => return parse_final_results(&text, &roots),
             AgentRound::Continue(append) => {
                 messages.extend(append);
                 trim_messages(&mut messages);
@@ -235,7 +290,7 @@ fn push_no_tool_follow_up(messages: &mut Vec<Value>, request_method: &str, text:
 pub(crate) async fn execute_agent_tool(
     name: &str,
     arguments_json: &str,
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     round: usize,
     on_progress: Option<&FileSearchAgentProgressCallback>,
 ) -> Result<String> {
@@ -248,19 +303,26 @@ pub(crate) async fn execute_agent_tool(
         }
     };
 
+    let primary_root = roots.first().map(|root| root.path.as_str()).unwrap_or_default();
+
     let (output, preview) = match name {
         "grep-search" => {
-            // 未指定搜索路径时默认搜索整个工作区；限定路径必须位于工作区内。
+            // 未指定搜索路径时默认搜索整个工作区（含关联项目组的全部根）；
+            // 限定路径必须位于某个搜索根内。
             let requested = args
                 .get("path")
                 .and_then(Value::as_str)
-                .unwrap_or(workspace_root);
-            let target = match resolve_workspace_path(workspace_root, requested) {
+                .unwrap_or(primary_root);
+            let target = match resolve_workspace_path(roots, requested) {
                 Ok(path) => path,
                 Err(message) => return Ok(format!("Error: {message}")),
             };
             let mut args = args;
-            args["path"] = Value::String(target);
+            args["path"] = Value::String(target.clone());
+            // 搜索主工作区根时把关联项目组的兄弟根一并交给 GrepService。
+            if let Some(siblings) = sibling_roots_for(roots, &target) {
+                args["linkedRoots"] = json!(siblings);
+            }
             match GrepService::new().execute_search_local(&args).await {
                 Ok(output) => {
                     let preview = build_grep_preview(&args, &output);
@@ -280,7 +342,7 @@ pub(crate) async fn execute_agent_tool(
                 emit_progress(on_progress, round, name, arguments_json, &preview);
                 return Ok(preview);
             };
-            let target = match resolve_workspace_path(workspace_root, raw_path) {
+            let target = match resolve_workspace_path(roots, raw_path) {
                 Ok(path) => path,
                 Err(message) => return Ok(format!("Error: {message}")),
             };
@@ -405,7 +467,25 @@ fn build_agent_tools() -> Vec<McpTool> {
         .collect()
 }
 
-fn build_system_prompt(workspace_path: &str) -> String {
+fn build_system_prompt(roots: &[FileSearchRoot]) -> String {
+    let workspace_path = roots.first().map(|root| root.path.as_str()).unwrap_or_default();
+    // 关联项目组：把兄弟根目录写进提示词，让模型知道一次 grep 即可覆盖全部根。
+    let linked_section = if roots.len() > 1 {
+        let mut section = String::from(
+            "\nLINKED PROJECT GROUP — the workspace is linked with sibling project roots and they are treated as ONE project:\n",
+        );
+        for root in roots.iter().skip(1) {
+            let name = root.name.as_deref().unwrap_or("");
+            section.push_str(&format!("- {name} — {}\n", root.path));
+        }
+        section.push_str(
+            "Calling grep-search without `path` (or on the workspace root) searches ALL roots at once; absolute paths inside any root above are valid for filesystem-read.\n",
+        );
+        section
+    } else {
+        String::new()
+    };
+
     format!(
         "You are a file search agent working inside the workspace: {workspace_path}\n\
          Your ONLY task is to find files that match the user's natural language description.\n\n\
@@ -420,7 +500,8 @@ fn build_system_prompt(workspace_path: &str) -> String {
          - When you have found the matching files (or are confident none match), stop calling tools and reply with ONLY a JSON array. No markdown code fences, no commentary, no explanations.\n\
          - Each element must be: {{\"path\": \"<absolute path>\", \"name\": \"<base name>\", \"isDirectory\": <true|false>, \"lineMatches\": [{{\"line\": <number>, \"text\": \"<matched line>\"}}]}}\n\
          - lineMatches is optional; include the matched lines that justify each result. name must be the file or directory base name.\n\
-         - Prefer a few high-confidence results over many guesses. If nothing matches, reply with an empty JSON array: []"
+         - Prefer a few high-confidence results over many guesses. If nothing matches, reply with an empty JSON array: []\n\
+         {linked_section}"
     )
 }
 
@@ -437,13 +518,16 @@ fn is_absolute_path(path: &str) -> bool {
         || (path.len() >= 3 && path.as_bytes()[1] == b':' && path.as_bytes()[2] == b'/')
 }
 
-/// 将模型返回的路径解析为工作区内的绝对路径；相对路径基于工作区根拼接，
-/// 绝对路径必须位于工作区内部，否则返回错误。
+/// 将模型返回的路径解析为搜索根内的绝对路径；相对路径基于主工作区根拼接，
+/// 绝对路径必须位于任一搜索根内部（关联项目组的兄弟根同样合法）。
 fn resolve_workspace_path(
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     requested: &str,
 ) -> std::result::Result<String, String> {
-    let root = workspace_root.trim_end_matches('/');
+    let primary = roots
+        .first()
+        .map(|root| root.path.trim_end_matches('/'))
+        .unwrap_or_default();
     let requested = requested.trim();
     if requested.is_empty() {
         return Err("path is required".to_string());
@@ -454,20 +538,22 @@ fn resolve_workspace_path(
     } else {
         let relative = normalize_slashes(requested);
         let relative = relative.trim_start_matches("./");
-        format!("{}/{}", root, relative)
+        format!("{primary}/{relative}")
     };
 
     // 大小写不敏感的前缀校验（Windows 路径大小写不敏感，POSIX 下宽松匹配
     // 也不会带来越界风险——不存在的路径只会得到读取失败）。
-    let root_lower = root.to_lowercase();
     let normalized_lower = normalized.to_lowercase();
-    if normalized == root || normalized_lower.starts_with(&format!("{}/", root_lower)) {
-        Ok(normalized)
-    } else {
-        Err(format!(
-            "path \"{requested}\" is outside the workspace \"{root}\""
-        ))
+    for root in roots {
+        let root = root.path.trim_end_matches('/');
+        let root_lower = root.to_lowercase();
+        if normalized_lower == root_lower || normalized_lower.starts_with(&format!("{root_lower}/")) {
+            return Ok(normalized);
+        }
     }
+    Err(format!(
+        "path \"{requested}\" is outside the workspace \"{primary}\""
+    ))
 }
 
 /// 丢弃最早的中间消息，保留首条用户消息，控制上下文长度。
@@ -485,7 +571,7 @@ fn trim_messages(messages: &mut Vec<Value>) {
 /// 解析模型最终答案中的 JSON 数组，归一化为 FileSearchResult 列表。
 /// 兼容多种模型输出形态：纯数组、{"files"|"results"|"matches": [...]} 包裹、
 /// 附带解释文字的数组片段、以及不带数组括号的逐行 JSON 对象。
-fn parse_final_results(text: &str, workspace_root: &str) -> Result<Vec<FileSearchResult>> {
+fn parse_final_results(text: &str, roots: &[FileSearchRoot]) -> Result<Vec<FileSearchResult>> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
@@ -518,11 +604,11 @@ fn parse_final_results(text: &str, workspace_root: &str) -> Result<Vec<FileSearc
     let mut results: Vec<FileSearchResult> = match array {
         Some(array) => array
             .iter()
-            .filter_map(|item| parse_result_entry(item, workspace_root))
+            .filter_map(|item| parse_result_entry(item, roots))
             .collect(),
         None => {
             // 最后兜底：逐行解析 JSON 对象（模型可能输出不带数组括号的多个对象）。
-            parse_object_lines(code_stripped, workspace_root)
+            parse_object_lines(code_stripped, roots)
         }
     };
     results.truncate(MAX_RESULTS);
@@ -531,13 +617,13 @@ fn parse_final_results(text: &str, workspace_root: &str) -> Result<Vec<FileSearc
 }
 
 /// 解析单个 JSON 结果对象为 FileSearchResult。
-fn parse_result_entry(item: &Value, workspace_root: &str) -> Option<FileSearchResult> {
+fn parse_result_entry(item: &Value, roots: &[FileSearchRoot]) -> Option<FileSearchResult> {
     let raw_path = item
         .get("path")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|path| !path.is_empty())?;
-    let path = resolve_workspace_path(workspace_root, raw_path).ok()?;
+    let path = resolve_workspace_path(roots, raw_path).ok()?;
 
     let name = item
         .get("name")
@@ -547,7 +633,7 @@ fn parse_result_entry(item: &Value, workspace_root: &str) -> Option<FileSearchRe
         .map(str::to_string)
         .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(&path).to_string());
 
-    let relative_path = relative_to_workspace(workspace_root, &path, raw_path);
+    let relative_path = relative_to_roots(roots, &path, raw_path);
     let is_directory = item
         .get("isDirectory")
         .and_then(Value::as_bool)
@@ -569,7 +655,7 @@ fn parse_result_entry(item: &Value, workspace_root: &str) -> Option<FileSearchRe
 }
 
 /// 逐行解析 JSON 对象（模型未使用数组括号时的兜底）。
-fn parse_object_lines(text: &str, workspace_root: &str) -> Vec<FileSearchResult> {
+fn parse_object_lines(text: &str, roots: &[FileSearchRoot]) -> Vec<FileSearchResult> {
     let mut results = Vec::new();
     for line in text.lines() {
         if results.len() >= MAX_RESULTS {
@@ -580,7 +666,7 @@ fn parse_object_lines(text: &str, workspace_root: &str) -> Vec<FileSearchResult>
             continue;
         }
         if let Ok(value) = serde_json::from_str::<Value>(line) {
-            if let Some(entry) = parse_result_entry(&value, workspace_root) {
+            if let Some(entry) = parse_result_entry(&value, roots) {
                 results.push(entry);
             }
         }
@@ -588,13 +674,20 @@ fn parse_object_lines(text: &str, workspace_root: &str) -> Vec<FileSearchResult>
     results
 }
 
-fn relative_to_workspace(workspace_root: &str, absolute: &str, raw: &str) -> String {
-    let root = workspace_root.trim_end_matches('/');
-    if let Some(rest) = absolute.strip_prefix(&format!("{}/", root)) {
-        return rest.to_string();
-    }
-    if absolute == root {
-        return String::new();
+/// 相对路径：结果落在主工作区时去掉主根前缀；落在关联项目组的兄弟根时
+/// 带上「目录名/」前缀，让界面能区分同名文件。
+fn relative_to_roots(roots: &[FileSearchRoot], absolute: &str, raw: &str) -> String {
+    for root in roots {
+        let root_path = root.path.trim_end_matches('/');
+        if let Some(rest) = absolute.strip_prefix(&format!("{root_path}/")) {
+            return match &root.name {
+                Some(name) if !name.is_empty() => format!("{name}/{rest}"),
+                _ => rest.to_string(),
+            };
+        }
+        if absolute == root_path {
+            return root.name.clone().unwrap_or_default();
+        }
     }
     raw.to_string()
 }

@@ -2,13 +2,16 @@ import { useRef } from "react";
 
 import { useI18n } from "../../../../../i18n";
 import { FormDialog } from "../../../../common/FormDialog";
+import { PROJECT_COLLECTION_COLORS } from "../collectionColors";
 
 type RenameCollectionDialogProps = {
   open: boolean;
   name: string;
+  color: string;
   isSubmitting: boolean;
   error: string | null;
   onNameChange: (name: string) => void;
+  onColorChange: (color: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -16,9 +19,11 @@ type RenameCollectionDialogProps = {
 export function RenameCollectionDialog({
   open,
   name,
+  color,
   isSubmitting,
   error,
   onNameChange,
+  onColorChange,
   onCancel,
   onConfirm,
 }: RenameCollectionDialogProps): React.JSX.Element {
@@ -66,6 +71,30 @@ export function RenameCollectionDialog({
           value={name}
         />
       </label>
+      <div className="form-dialog-field">
+        <span className="form-dialog-label">
+          {t("sidebar.collectionColorLabel", {
+            defaultValue: "Color",
+          })}
+        </span>
+        <div className="collection-color-picker">
+          {PROJECT_COLLECTION_COLORS.map((option) => (
+            <button
+              aria-label={option}
+              aria-pressed={option === color}
+              className={`collection-color-swatch${
+                option === color ? " selected" : ""
+              }`}
+              disabled={isSubmitting}
+              key={option}
+              onClick={() => onColorChange(option)}
+              style={{ background: option }}
+              title={option}
+              type="button"
+            />
+          ))}
+        </div>
+      </div>
       {error ? <span className="form-dialog-error">{error}</span> : null}
     </FormDialog>
   );

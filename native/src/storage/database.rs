@@ -17,6 +17,8 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 53: collection_members.linked column (per-member opt-out from the linked project group).
+/// 52: project_collections.color column (linked project groups share a unified color dot).
 /// 51: app_logs adds exact conversation_id correlation for AI-readable session diagnostics.
 /// 50: combines userscripts.icon and persistent Git worktree bindings.
 /// 49: userscripts.icon column (@icon / @iconURL metadata for the script list icon).
@@ -39,7 +41,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 51;
+const CURRENT_SCHEMA_VERSION: i64 = 53;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -645,15 +647,17 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            id TEXT PRIMARY KEY NOT NULL,
            collection_id TEXT NOT NULL UNIQUE,
            name TEXT NOT NULL DEFAULT '',
+           color TEXT NOT NULL DEFAULT '',
            sort_order INTEGER NOT NULL DEFAULT 0,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
-         CREATE TABLE IF NOT EXISTS collection_members (
+CREATE TABLE IF NOT EXISTS collection_members (
            id TEXT PRIMARY KEY NOT NULL,
            collection_id TEXT NOT NULL,
            directory_id TEXT NOT NULL,
            sort_order INTEGER NOT NULL DEFAULT 0,
+           linked INTEGER NOT NULL DEFAULT 1,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            UNIQUE(collection_id, directory_id)
          );

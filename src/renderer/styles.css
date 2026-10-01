@@ -2999,6 +2999,21 @@ body.is-panel-resizing * {
   font-size: 11px;
 }
 
+.project-collection-dot,
+.workspace-directory-collection-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--text-primary) 14%, transparent);
+}
+
+.workspace-directory-collection-dot {
+  width: 7px;
+  height: 7px;
+}
+
 /* 项目条目通知徽标：该项目的跨项目通知会话数 */
 .workspace-directory-notification-badge {
   flex-shrink: 0;
@@ -3167,6 +3182,87 @@ body.is-panel-resizing * {
 
 .form-dialog-error {
   color: var(--danger-color, #ef4444);
+  font-size: 11.5px;
+}
+
+.collection-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.collection-color-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.collection-color-swatch:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+
+.collection-color-swatch.selected {
+  border-color: var(--text-primary);
+}
+
+.link-projects-list {
+  display: flex;
+  max-height: 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.link-projects-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+
+.link-projects-item:hover {
+  background: var(--bg-hover);
+}
+
+.link-projects-item input {
+  flex-shrink: 0;
+  accent-color: var(--accent-color);
+}
+
+.link-projects-item-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.link-projects-item-name {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.link-projects-item-path {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link-projects-empty {
+  color: var(--text-tertiary);
   font-size: 11.5px;
 }
 

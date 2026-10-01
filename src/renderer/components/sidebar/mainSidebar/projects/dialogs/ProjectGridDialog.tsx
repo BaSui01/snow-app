@@ -387,6 +387,11 @@ export function ProjectGridDialog({
                         className="list-icon list-icon--collection"
                         size={13}
                       />
+                      <span
+                        aria-hidden="true"
+                        className="project-collection-dot"
+                        style={{ background: group.collection.color }}
+                      />
                       <span className="project-grid-group-name">
                         {group.collection.name}
                       </span>

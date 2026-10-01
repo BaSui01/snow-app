@@ -33,6 +33,16 @@ type WorkspaceDirectoryRowProps = {
   draggable?: boolean;
   /** 合集成员行不显示序号 */
   showIndex?: boolean;
+  /** 关联项目组统一颜色：参与关联的成员行渲染同色圆点标识 */
+  collectionColor?: string;
+  /** 关联项目组名称（圆点悬停提示） */
+  collectionName?: string;
+  /** 该成员是否参与关联（断连成员仍在合集里，但不显示圆点） */
+  memberLinked?: boolean;
+  /** 与其它目录关联成一个统一项目（非成员行入口） */
+  onLinkProjects?: () => void;
+  /** 切换该成员是否参与关联 */
+  onToggleMemberLinked?: () => void;
   /** 从所属合集移除（合集成员行专用，非成员行不传） */
   onRemoveFromCollection?: () => void;
   editingValue: string;
@@ -93,6 +103,11 @@ export function WorkspaceDirectoryRow({
   notificationCount,
   draggable = true,
   showIndex = true,
+  collectionColor,
+  collectionName,
+  memberLinked = false,
+  onLinkProjects,
+  onToggleMemberLinked,
   onRemoveFromCollection,
   editingValue,
   onEditingValueChange,
@@ -273,6 +288,17 @@ export function WorkspaceDirectoryRow({
           >
             <GripVertical size={13} />
           </span>
+          {collectionColor && memberLinked ? (
+            <span
+              aria-hidden="true"
+              className="workspace-directory-collection-dot"
+              style={{ background: collectionColor }}
+              title={t("sidebar.collectionDotTitle", {
+                values: { name: collectionName ?? "" },
+                defaultValue: "Linked project group: {{name}}",
+              })}
+            />
+          ) : null}
           {getDirectoryIcon(directory)}
           <span className="list-label">{displayName ?? directory.name}</span>
           <span className="list-meta">
@@ -322,6 +348,11 @@ export function WorkspaceDirectoryRow({
         onActivate={() => onActivate(directory.directoryId)}
         onContextMenuClose={() => setContextMenuAnchor(null)}
         onDelete={() => onDelete(directory.directoryId)}
+        memberLinked={memberLinked}
+        onLinkProjects={onLinkProjects ? () => onLinkProjects() : undefined}
+        onToggleMemberLinked={
+          onToggleMemberLinked ? () => onToggleMemberLinked() : undefined
+        }
         onOpenChange={setIsMenuOpen}
         onRemoveFromCollection={
           onRemoveFromCollection ? onRemoveFromCollection : undefined

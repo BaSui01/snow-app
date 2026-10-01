@@ -22,7 +22,14 @@ type UseProjectAddFlowOptions = {
   persistWorkspaceDirectory: (
     item: WorkspaceDirectoryInput,
   ) => Promise<boolean>;
-  createCollection: (name: string) => Promise<boolean>;
+  createCollection: (
+    name: string,
+    memberDirectoryIds?: string[],
+  ) => Promise<boolean>;
+  updateCollectionColor: (
+    collectionId: string,
+    color: string,
+  ) => Promise<boolean>;
   renameCollection: (collectionId: string, name: string) => Promise<boolean>;
   setIsSavingDirectory: (saving: boolean) => void;
   setDirectoryError: (message: string | null) => void;
@@ -34,6 +41,7 @@ export function useProjectAddFlow({
   setWorkspaceDirectories,
   persistWorkspaceDirectory,
   createCollection,
+  updateCollectionColor,
   renameCollection,
   setIsSavingDirectory,
   setDirectoryError,
@@ -69,8 +77,17 @@ export function useProjectAddFlow({
   const [createCollectionName, setCreateCollectionName] = useState("");
   const [isRenameCollectionOpen, setIsRenameCollectionOpen] = useState(false);
   const [renameCollectionName, setRenameCollectionName] = useState("");
+  const [renameCollectionColor, setRenameCollectionColor] = useState("");
   const [editingCollection, setEditingCollection] =
     useState<ProjectCollectionRecord | null>(null);
+  // 关联项目：以某个目录为锚点，勾选其它目录组成关联项目组（创建即关联）。
+  const [isLinkProjectsOpen, setIsLinkProjectsOpen] = useState(false);
+  const [linkProjectsSource, setLinkProjectsSource] =
+    useState<WorkspaceDirectoryRecord | null>(null);
+  const [linkProjectsSelection, setLinkProjectsSelection] = useState<
+    Set<string>
+  >(() => new Set());
+  const [linkProjectsName, setLinkProjectsName] = useState("");
 
   // 克隆的最终目录预览：所选保存位置 + 从仓库地址推导出的项目名。
   const cloneTargetPreview = useMemo(() => {
@@ -491,6 +508,7 @@ export function useProjectAddFlow({
     setDirectoryError(null);
     setEditingCollection(collection);
     setRenameCollectionName(collection.name);
+    setRenameCollectionColor(collection.color);
     setIsRenameCollectionOpen(true);
   };
 
@@ -498,6 +516,7 @@ export function useProjectAddFlow({
     setIsRenameCollectionOpen(false);
     setEditingCollection(null);
     setRenameCollectionName("");
+    setRenameCollectionColor("");
     setDirectoryError(null);
   };
 
@@ -510,10 +529,75 @@ export function useProjectAddFlow({
       editingCollection.collectionId,
       renameCollectionName,
     );
-    if (didRename) {
-      setIsRenameCollectionOpen(false);
-      setEditingCollection(null);
-      setRenameCollectionName("");
+    if (!didRename) {
+      return;
+    }
+
+    // 颜色与名称一起编辑：只有颜色变化时才写一次颜色。
+    if (renameCollectionColor !== editingCollection.color) {
+      const didUpdateColor = await updateCollectionColor(
+        editingCollection.collectionId,
+        renameCollectionColor,
+      );
+      if (!didUpdateColor) {
+        return;
+      }
+    }
+
+    setIsRenameCollectionOpen(false);
+    setEditingCollection(null);
+    setRenameCollectionName("");
+    setRenameCollectionColor("");
+  };
+
+  // ===== Link projects（关联项目组） =====
+
+  /** 打开「关联项目…」弹窗：源目录固定参与，勾选其它目录一起组成关联组。 */
+  const handleLinkProjectsOpen = (
+    directory: WorkspaceDirectoryRecord,
+  ): void => {
+    setDirectoryError(null);
+    setLinkProjectsSource(directory);
+    setLinkProjectsSelection(new Set());
+    setLinkProjectsName(directory.name);
+    setIsLinkProjectsOpen(true);
+  };
+
+  const handleLinkProjectsCancel = (): void => {
+    setIsLinkProjectsOpen(false);
+    setLinkProjectsSource(null);
+    setLinkProjectsSelection(new Set());
+    setLinkProjectsName("");
+    setDirectoryError(null);
+  };
+
+  const handleLinkProjectsToggle = (directoryId: string): void => {
+    setLinkProjectsSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(directoryId)) {
+        next.delete(directoryId);
+      } else {
+        next.add(directoryId);
+      }
+      return next;
+    });
+  };
+
+  const handleLinkProjectsConfirm = async (): Promise<void> => {
+    const source = linkProjectsSource;
+    if (!source || linkProjectsSelection.size === 0) {
+      return;
+    }
+    const memberDirectoryIds = [source.directoryId, ...linkProjectsSelection];
+    const didCreate = await createCollection(
+      linkProjectsName,
+      memberDirectoryIds,
+    );
+    if (didCreate) {
+      setIsLinkProjectsOpen(false);
+      setLinkProjectsSource(null);
+      setLinkProjectsSelection(new Set());
+      setLinkProjectsName("");
     }
   };
 
@@ -562,8 +646,19 @@ export function useProjectAddFlow({
     isRenameCollectionOpen,
     renameCollectionName,
     setRenameCollectionName,
+    renameCollectionColor,
+    setRenameCollectionColor,
     handleRenameCollectionOpen,
     handleRenameCollectionCancel,
     handleRenameCollectionConfirm,
+    isLinkProjectsOpen,
+    linkProjectsSource,
+    linkProjectsSelection,
+    linkProjectsName,
+    setLinkProjectsName,
+    handleLinkProjectsOpen,
+    handleLinkProjectsCancel,
+    handleLinkProjectsToggle,
+    handleLinkProjectsConfirm,
   };
 }

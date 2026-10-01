@@ -172,7 +172,7 @@ impl McpService for GrepService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: "search".to_string(),
-            description: "Search file contents using ripgrep (preferred) or native Rust file walker (fallback). Supports regex patterns and file glob filtering. Returns matching lines with file paths and line numbers. Automatically skips node_modules, .git, target, dist, out and other heavy directories.".to_string(),
+            description: "Search file contents using ripgrep (preferred) or native Rust file walker (fallback). Supports regex patterns and file glob filtering. Returns matching lines with file paths and line numbers. Automatically skips node_modules, .git, target, dist, out and other heavy directories. When the current project is linked with sibling projects (a linked project group), searching the project root (or omitting `path`) searches ALL linked roots and merges the matches; the result lists the searched roots under `linkedRoots`.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -186,7 +186,7 @@ impl McpService for GrepService {
                     },
                     "path": {
                         "type": "string",
-                        "description": "The directory or file to search in. Defaults to the current working directory."
+                        "description": "The directory or file to search in. Defaults to the current working directory (the project root; a linked project group is searched in full when this points at the project root)."
                     },
                     "fileGlob": {
                         "type": "string",
@@ -261,6 +261,10 @@ impl GrepService {
     /// 本地路径的 grep 搜索执行体（不含 SSH 远程派发逻辑）。
     /// 文件搜索 agent 等内部调用方复用此入口执行本地搜索。
     /// 释义（description）只用于 UI 展示、不参与检索逻辑，缺失时不影响搜索。
+    ///
+    /// `linkedRoots` 为关联项目组（合集）的兄弟根目录：调用方（工具参数解析层）
+    /// 在「针对项目根的整体搜索」时注入，这里逐个搜索并把匹配合并进同一结果，
+    /// 让一次 grep 覆盖关联起来的全部项目。
     pub async fn execute_search_local(&self, args: &Value) -> napi::Result<Value> {
         let pattern = args.get("pattern").and_then(Value::as_str).ok_or_else(|| {
             Error::new(
@@ -270,93 +274,161 @@ impl GrepService {
         })?;
 
         let search_path = expand_home_dir(args.get("path").and_then(Value::as_str).unwrap_or("."));
-        let metadata = tokio::fs::metadata(&search_path).await.map_err(|error| {
-            Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Search path does not exist or is inaccessible: {search_path} ({error})"
-                ),
-            )
-        })?;
-        if !metadata.is_file() && !metadata.is_dir() {
-            return Err(Error::new(
-                Status::InvalidArg,
-                format!("Search path is not a file or directory: {search_path}"),
-            ));
-        }
+
+        let linked_roots: Vec<String> = args
+            .get("linkedRoots")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|path| !path.is_empty())
+                    .map(expand_home_dir)
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let file_glob = args
             .get("fileGlob")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
 
-        let is_regex = args.get("isRegex").and_then(Value::as_bool).unwrap_or(true);
-
-        let case_sensitive = args
-            .get("caseSensitive")
-            .and_then(Value::as_bool)
-            .unwrap_or(true);
-
-        let max_results = args
-            .get("maxResults")
-            .and_then(Value::as_u64)
-            .map(|v| v as usize)
-            .unwrap_or(DEFAULT_MAX_RESULTS);
-
-        // Try ripgrep first, fall back to native Rust walker.
-        let rg_available = is_ripgrep_available().await;
-
-        let (backend, output) = if rg_available {
-            let result = run_ripgrep(
-                pattern,
-                &search_path,
-                file_glob,
-                is_regex,
-                case_sensitive,
-                max_results,
-            )
-            .await;
-            match result {
-                Ok(out) => ("ripgrep", out),
-                Err(e) => {
-                    // If rg fails, fall back to native walker.
-                    let native_result = run_native_search(
-                        pattern,
-                        &search_path,
-                        is_regex,
-                        case_sensitive,
-                        max_results,
-                    )
-                    .await;
-                    match native_result {
-                        Ok(out) => ("native", out),
-                        Err(_) => return Err(e),
-                    }
-                }
-            }
-        } else {
-            let out =
-                run_native_search(pattern, &search_path, is_regex, case_sensitive, max_results)
-                    .await?;
-            ("native", out)
+        let options = GrepSearchOptions {
+            pattern: pattern.to_string(),
+            file_glob: file_glob.map(str::to_string),
+            is_regex: args.get("isRegex").and_then(Value::as_bool).unwrap_or(true),
+            case_sensitive: args
+                .get("caseSensitive")
+                .and_then(Value::as_bool)
+                .unwrap_or(true),
+            max_results: args
+                .get("maxResults")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize)
+                .unwrap_or(DEFAULT_MAX_RESULTS),
         };
 
-        let matches = parse_grep_output(&output);
-        let total_matches = matches.len();
-        let truncated = total_matches > max_results;
-        let limited_matches = &matches[..total_matches.min(max_results)];
-
-        Ok(json!({
-            "backend": backend,
-            "pattern": pattern,
+        let (backend, output) = run_search_on_path(&options, &search_path).await?;
+        let mut matches = parse_grep_output(&output);
+        let mut raw_output = output;
+        let mut roots_report = vec![json!({
             "path": search_path,
-            "fileGlob": file_glob,
-            "matches": limited_matches,
+            "backend": backend,
+            "totalMatches": matches.len(),
+        })];
+
+        for root in linked_roots {
+            if root == search_path {
+                continue;
+            }
+            match run_search_on_path(&options, &root).await {
+                Ok((root_backend, root_output)) => {
+                    let root_matches = parse_grep_output(&root_output);
+                    roots_report.push(json!({
+                        "path": root,
+                        "backend": root_backend,
+                        "totalMatches": root_matches.len(),
+                    }));
+                    if raw_output.len() < MAX_OUTPUT_LENGTH {
+                        raw_output.push_str(&root_output);
+                    }
+                    matches.extend(root_matches);
+                }
+                // 兄弟根不可读（被移除 / 权限变化）时记录并跳过，不影响主根结果。
+                Err(error) => {
+                    roots_report.push(json!({ "path": root, "error": error.reason }));
+                }
+            }
+        }
+
+        let total_matches = matches.len();
+        let truncated = total_matches > options.max_results;
+        matches.truncate(options.max_results);
+
+        let mut result = json!({
+            "backend": backend,
+            "pattern": options.pattern,
+            "path": search_path,
+            "fileGlob": options.file_glob,
+            "matches": matches,
             "totalMatches": total_matches,
             "truncated": truncated,
-            "rawOutput": output.chars().take(MAX_OUTPUT_LENGTH).collect::<String>(),
-        }))
+            "rawOutput": raw_output.chars().take(MAX_OUTPUT_LENGTH).collect::<String>(),
+        });
+        if roots_report.len() > 1 {
+            result["linkedRoots"] = json!(roots_report);
+        }
+        Ok(result)
     }
+}
+
+/// 一次本地搜索的参数（跨根复用时保持完全一致的检索条件）。
+struct GrepSearchOptions {
+    pattern: String,
+    file_glob: Option<String>,
+    is_regex: bool,
+    case_sensitive: bool,
+    max_results: usize,
+}
+
+/// 在单个根路径上执行搜索：优先 ripgrep，失败时回退到原生遍历器。
+async fn run_search_on_path(
+    options: &GrepSearchOptions,
+    search_path: &str,
+) -> napi::Result<(&'static str, String)> {
+    let metadata = tokio::fs::metadata(search_path).await.map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("Search path does not exist or is inaccessible: {search_path} ({error})"),
+        )
+    })?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("Search path is not a file or directory: {search_path}"),
+        ));
+    }
+
+    if is_ripgrep_available().await {
+        let ripgrep_result = run_ripgrep(
+            &options.pattern,
+            search_path,
+            options.file_glob.as_deref(),
+            options.is_regex,
+            options.case_sensitive,
+            options.max_results,
+        )
+        .await;
+        return match ripgrep_result {
+            Ok(output) => Ok(("ripgrep", output)),
+            Err(ripgrep_error) => {
+                // ripgrep 失败时回退到原生遍历器，两者都失败则报告原始错误。
+                match run_native_search(
+                    &options.pattern,
+                    search_path,
+                    options.is_regex,
+                    options.case_sensitive,
+                    options.max_results,
+                )
+                .await
+                {
+                    Ok(output) => Ok(("native", output)),
+                    Err(_) => Err(ripgrep_error),
+                }
+            }
+        };
+    }
+
+    let output = run_native_search(
+        &options.pattern,
+        search_path,
+        options.is_regex,
+        options.case_sensitive,
+        options.max_results,
+    )
+    .await?;
+    Ok(("native", output))
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,15 @@
-//! config 服务 `workspace` 作用域：工作区（项目）清单与分组管理。
+//! config 服务 `workspace` 作用域：工作区（项目）清单与关联项目组管理。
 //!
 //! - `key=directories`（**只读**）：工作区清单（directoryId、名称、路径、类型、
 //!   激活状态、排序、路径健康状态）。项目的新增/删除/重新定位涉及目录校验与数据
 //!   迁移，仍由 UI 与 `app-control-createProject` 负责，本域不开放。
-//! - `key=collections`（读写）：项目分组（合集）。`config-set` 用 action 分发：
-//!   `{action:"create", name}` / `{action:"rename", collectionId, name}` /
-//!   `{action:"move", collectionId, directoryId, orderedMemberIds?}` /
-//!   `{action:"reorder", collectionId, orderedMemberIds}` /
-//!   `{action:"removeMember", collectionId, directoryId}`。
+//! - `key=collections`（读写）：项目分组（合集 = 关联项目组）。`config-set` 用
+//!   action 分发：`{action:"create", name}` / `{action:"rename", collectionId, name}`
+//!   / `{action:"setColor", collectionId, color}` / `{action:"setMemberLinked",
+//!   collectionId, directoryId, linked}` / `{action:"move", collectionId,
+//!   directoryId, orderedMemberIds?}` / `{action:"reorder", collectionId,
+//!   orderedMemberIds}` / `{action:"removeMember", collectionId, directoryId}`。
+//!   成员带 `linked` 开关：断连的成员仍留在合集里，只是不参与关联。
 //! - `key=collection:<collectionId>`（读 + delete）：读取单个分组；`config-delete`
 //!   删除分组（需 confirmed）。
 //!
@@ -21,8 +23,9 @@ use serde_json::{json, Value};
 
 use crate::storage::services::project_collections::{
     create_project_collection, delete_project_collection, list_project_collections,
-    move_project_to_collection, remove_project_from_collection,
-    reorder_project_collection_members, rename_project_collection,
+    move_project_to_collection, remove_project_from_collection, rename_project_collection,
+    reorder_project_collection_members, set_project_collection_member_linked,
+    update_project_collection_color,
 };
 use crate::storage::services::workspace_directories::list_workspace_directories;
 
@@ -62,10 +65,12 @@ fn collections_view(db_path: &Path) -> Result<Value> {
         .iter()
         .map(|collection| {
             json!({
-                "collectionId": collection.collection_id,
+"collectionId": collection.collection_id,
                 "name": collection.name,
+                "color": collection.color,
                 "sortOrder": collection.sort_order,
                 "memberDirectoryIds": collection.member_directory_ids,
+                "linkedDirectoryIds": collection.linked_directory_ids,
                 "updatedAt": collection.updated_at,
             })
         })
@@ -151,7 +156,7 @@ fn apply_collection_action(db_path: &Path, value: &Value) -> Result<Value> {
     let summary = match action {
         "create" => {
             let name = required_string("name")?;
-            create_project_collection(db_path, &name)?;
+            create_project_collection(db_path, &name, &[])?;
             json!({ "action": action, "name": name })
         }
         "rename" => {
@@ -159,6 +164,37 @@ fn apply_collection_action(db_path: &Path, value: &Value) -> Result<Value> {
             let name = required_string("name")?;
             rename_project_collection(db_path, &collection_id, &name)?;
             json!({ "action": action, "collectionId": collection_id, "name": name })
+        }
+"setColor" => {
+            let collection_id = required_string("collectionId")?;
+            let color = required_string("color")?;
+            update_project_collection_color(db_path, &collection_id, &color)?;
+            json!({ "action": action, "collectionId": collection_id, "color": color })
+        }
+        "setMemberLinked" => {
+            let collection_id = required_string("collectionId")?;
+            let directory_id = required_string("directoryId")?;
+            let linked = patch
+                .get("linked")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "linked (boolean) is required for action \"setMemberLinked\"".to_string(),
+                    )
+                })?;
+            set_project_collection_member_linked(
+                db_path,
+                &collection_id,
+                &directory_id,
+                linked,
+            )?;
+            json!({
+                "action": action,
+                "collectionId": collection_id,
+                "directoryId": directory_id,
+                "linked": linked,
+            })
         }
         "move" => {
             let collection_id = required_string("collectionId")?;
@@ -227,7 +263,7 @@ fn apply_collection_action(db_path: &Path, value: &Value) -> Result<Value> {
             return Err(Error::new(
                 Status::InvalidArg,
                 format!(
-                    "Unknown collections action \"{other}\"; available actions: create, rename, move, reorder, removeMember"
+"Unknown collections action: {other}. Available actions: create, rename, setColor, setMemberLinked, move, reorder, removeMember"
                 ),
             ))
         }

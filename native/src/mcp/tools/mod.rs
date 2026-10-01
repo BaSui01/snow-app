@@ -858,6 +858,9 @@ async fn default_bash_working_directory(
 /// Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。grep 未提供 path
 /// 时也应默认搜索项目根目录，而不是 Electron 进程目录。
 /// 绝对路径、SSH 路径或无法解析出项目根目录时保持原样。
+///
+/// grep 在项目根上整体搜索时额外注入关联项目组（合集）的兄弟根目录
+/// （`linkedRoots`），让一次搜索覆盖组内全部项目；限定子目录时保持单根。
 async fn resolve_local_workspace_args(
     tool_full_name: &str,
     mut args: Value,
@@ -875,11 +878,33 @@ async fn resolve_local_workspace_args(
         .get(path_field)
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|path| !path.is_empty());
-    let Some(requested_path) = requested_path.or(default_to_workspace.then_some(".")) else {
+        .filter(|path| !path.is_empty())
+        .map(str::to_string);
+    let Some(requested_path) =
+        requested_path.or_else(|| default_to_workspace.then(|| ".".to_string()))
+    else {
         return Ok(args);
     };
-    if is_ssh_path(requested_path) || Path::new(requested_path).is_absolute() {
+    if is_ssh_path(&requested_path) {
+        return Ok(args);
+    }
+
+    // 绝对路径本身无需重写，但 grep 直接指向项目根时仍要覆盖关联项目组；
+    // 其余绝对路径调用（filesystem-read 等）保持原样、省掉一次项目根解析。
+    if Path::new(&requested_path).is_absolute() {
+        let is_grep = tool_full_name == "grep-search";
+        let project_root = if is_grep {
+            resolve_local_project_root(project_id).await?
+        } else {
+            None
+        };
+        if is_grep
+            && project_root
+                .as_deref()
+                .is_some_and(|root| paths_equal_ignore_case(&requested_path, root))
+        {
+            inject_linked_project_roots(&mut args, project_id, &requested_path).await?;
+        }
         return Ok(args);
     }
 
@@ -887,15 +912,74 @@ async fn resolve_local_workspace_args(
         return Ok(args);
     };
     let resolved = if requested_path == "." {
-        project_root
+        project_root.clone()
     } else {
         Path::new(&project_root)
-            .join(requested_path)
+            .join(&requested_path)
             .to_string_lossy()
             .to_string()
     };
+    let searches_whole_project =
+        tool_full_name == "grep-search" && paths_equal_ignore_case(&resolved, &project_root);
     args[path_field] = Value::String(resolved);
+    if searches_whole_project {
+        inject_linked_project_roots(&mut args, project_id, &project_root).await?;
+    }
     Ok(args)
+}
+
+/// 路径比较：Windows 下大小写不敏感（磁盘路径），尾部分隔符不影响相等判定。
+fn paths_equal_ignore_case(left: &str, right: &str) -> bool {
+    let trim = |value: &str| value.trim_end_matches(['/', '\\']).to_string();
+    trim(left).eq_ignore_ascii_case(&trim(right))
+}
+
+/// grep 针对项目根的整体搜索：把关联项目组（合集）中的兄弟根目录写入
+/// `linkedRoots`，由 GrepService 一次覆盖全部根。未关联项目保持原样。
+async fn inject_linked_project_roots(
+    args: &mut Value,
+    project_id: Option<&str>,
+    current_root: &str,
+) -> napi::Result<()> {
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let project_id = project_id.to_string();
+
+    let group = tokio::task::spawn_blocking(move || {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        crate::storage::services::project_collections::resolve_linked_project_roots(
+            &database_path,
+            &project_id,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to resolve linked project roots: {error}"),
+        )
+    })??;
+
+    let Some(group) = group else {
+        return Ok(());
+    };
+
+    let sibling_roots: Vec<String> = group
+        .roots
+        .iter()
+        .filter(|root| {
+            !is_ssh_path(&root.path) && !paths_equal_ignore_case(&root.path, current_root)
+        })
+        .map(|root| root.path.clone())
+        .collect();
+
+    if sibling_roots.is_empty() {
+        return Ok(());
+    }
+    args["linkedRoots"] = serde_json::json!(sibling_roots);
+    Ok(())
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

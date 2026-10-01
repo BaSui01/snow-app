@@ -105,7 +105,10 @@ export function useProjectCollections({
     });
   };
 
-  const createCollection = async (name: string): Promise<boolean> => {
+  const createCollection = async (
+    name: string,
+    memberDirectoryIds: string[] = [],
+  ): Promise<boolean> => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       return false;
@@ -115,8 +118,10 @@ export function useProjectCollections({
     setDirectoryError(null);
 
     try {
-      const nextCollections =
-        await window.snow.createProjectCollection(trimmedName);
+      const nextCollections = await window.snow.createProjectCollection(
+        trimmedName,
+        memberDirectoryIds,
+      );
       setCollections(nextCollections);
       return true;
     } catch (error) {
@@ -128,6 +133,65 @@ export function useProjectCollections({
             }),
       );
       return false;
+    } finally {
+      setIsSavingDirectory(false);
+    }
+  };
+
+  /** 修改项目组统一颜色（关联项目组的圆点标识色）。 */
+  const updateCollectionColor = async (
+    collectionId: string,
+    color: string,
+  ): Promise<boolean> => {
+    setIsSavingDirectory(true);
+    setDirectoryError(null);
+
+    try {
+      const nextCollections = await window.snow.updateProjectCollectionColor(
+        collectionId,
+        color,
+      );
+      setCollections(nextCollections);
+      return true;
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.updateCollectionColorError", {
+              defaultValue: "Failed to update the collection color",
+            }),
+      );
+      return false;
+    } finally {
+      setIsSavingDirectory(false);
+    }
+  };
+
+  /** 切换成员的「参与关联」：断连后该目录仍留在合集里，只是不参与关联。 */
+  const setMemberLinked = async (
+    collectionId: string,
+    directoryId: string,
+    linked: boolean,
+  ): Promise<void> => {
+    setIsSavingDirectory(true);
+    setDirectoryError(null);
+
+    try {
+      const nextCollections =
+        await window.snow.setProjectCollectionMemberLinked(
+          collectionId,
+          directoryId,
+          linked,
+        );
+      setCollections(nextCollections);
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.setMemberLinkedError", {
+              defaultValue: "Failed to update the linked member",
+            }),
+      );
     } finally {
       setIsSavingDirectory(false);
     }
@@ -253,6 +317,8 @@ export function useProjectCollections({
     setDeleteCollectionTarget,
     loadProjectCollections,
     createCollection,
+    updateCollectionColor,
+    setMemberLinked,
     renameCollection,
     confirmDeleteCollection,
     removeProjectFromCollection,

@@ -28,6 +28,8 @@
 use rusqlite::{params, Connection};
 use serde_json::{json, Map, Value};
 
+use super::services::project_collections::collection_color_for_index;
+
 /// Tables whose legacy schema used `INTEGER PRIMARY KEY`. When detected, the
 /// table is dropped so `CREATE TABLE` can recreate it with a `TEXT PRIMARY KEY`
 /// (snowflake ID) column.
@@ -1166,33 +1168,81 @@ fn purge_assistant_raw_json_blobs(connection: &Connection) -> rusqlite::Result<(
 }
 
 /// Creates the project collection tables (`project_collections` +
-/// `collection_members`) on databases created by older app versions.
+/// `collection_members`) on databases created by older app versions, and adds
+/// the `color` column (unified dot color of a linked project group) plus the
+/// `linked` member flag (per-member opt-out from the linked group while the
+/// project stays inside the collection).
 ///
 /// Collections are pure metadata (name + member `directory_id`s) and do not
 /// exist on disk, so a fresh install gets them from `create_schema` and this
 /// migration only matters for existing databases. Idempotent: `CREATE TABLE
-/// IF NOT EXISTS` makes re-runs a safe no-op.
+/// IF NOT EXISTS` plus a `PRAGMA table_info` guard make re-runs a safe no-op.
+/// Pre-existing collections (created before colors existed) are backfilled
+/// from the shared palette so their dots stay stable across restarts.
 fn migrate_project_collections(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS project_collections (
            id TEXT PRIMARY KEY NOT NULL,
            collection_id TEXT NOT NULL UNIQUE,
            name TEXT NOT NULL DEFAULT '',
+           color TEXT NOT NULL DEFAULT '',
            sort_order INTEGER NOT NULL DEFAULT 0,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
-         CREATE TABLE IF NOT EXISTS collection_members (
+CREATE TABLE IF NOT EXISTS collection_members (
            id TEXT PRIMARY KEY NOT NULL,
            collection_id TEXT NOT NULL,
            directory_id TEXT NOT NULL,
            sort_order INTEGER NOT NULL DEFAULT 0,
+           linked INTEGER NOT NULL DEFAULT 1,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            UNIQUE(collection_id, directory_id)
          );
           CREATE INDEX IF NOT EXISTS idx_collection_members_collection
             ON collection_members(collection_id, sort_order);",
-    )
+    )?;
+
+    let mut statement = connection.prepare("PRAGMA table_info(collection_members)")?;
+    let member_columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if !member_columns.iter().any(|column| column == "linked") {
+        connection.execute(
+            "ALTER TABLE collection_members ADD COLUMN linked INTEGER NOT NULL DEFAULT 1",
+            [],
+        )?;
+    }
+
+    let mut statement = connection.prepare("PRAGMA table_info(project_collections)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if !columns.iter().any(|column| column == "color") {
+        connection.execute(
+            "ALTER TABLE project_collections ADD COLUMN color TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
+    let colorless: Vec<String> = {
+        let mut statement = connection
+            .prepare("SELECT collection_id FROM project_collections WHERE color = '' ORDER BY sort_order ASC, id ASC")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (index, collection_id) in colorless.iter().enumerate() {
+        connection.execute(
+            "UPDATE project_collections SET color = ?1 WHERE collection_id = ?2",
+            params![collection_color_for_index(index), collection_id],
+        )?;
+    }
+
+    Ok(())
 }
 
 /// Adds the `response_id` column to `project_memories` for databases created

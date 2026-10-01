@@ -215,8 +215,28 @@ pub async fn search_files_by_agent(
     workspace_path: String,
     on_progress: Option<FileSearchAgentProgressCallback>,
 ) -> napi::Result<Vec<FileSearchResult>> {
+    let linked_roots = resolve_linked_roots_for_file_search(&workspace_path).await;
     let token = CancellationToken::new();
-    run_agent(query, workspace_path, token, on_progress).await
+    run_agent(query, workspace_path, linked_roots, token, on_progress).await
+}
+
+/// 解析工作区路径所属关联项目组（合集）的成员根目录：文件搜索 agent 把这些
+/// 兄弟根与主工作区同等对待，一次搜索覆盖关联起来的全部项目。
+/// 远端（SSH）路径与未关联项目返回空列表；查询失败静默退化为单根搜索。
+async fn resolve_linked_roots_for_file_search(
+    workspace_path: &str,
+) -> Vec<crate::storage::LinkedProjectRoot> {
+    let path = workspace_path.trim().to_string();
+    if path.is_empty() || crate::mcp::servers::remote_workspace::is_ssh_path(&path) {
+        return Vec::new();
+    }
+    tokio::task::spawn_blocking(move || {
+        crate::storage::resolve_linked_project_roots_for_path(path)
+    })
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .unwrap_or_default()
 }
 
 #[napi]

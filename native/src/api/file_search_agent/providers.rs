@@ -15,7 +15,7 @@ pub(crate) async fn run_chat_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     round: usize,
     on_progress: Option<&FileSearchAgentProgressCallback>,
 ) -> Result<AgentRound> {
@@ -136,7 +136,7 @@ pub(crate) async fn run_chat_round(
         let output = execute_agent_tool(
             &call.name,
             &call.arguments_json,
-            workspace_root,
+            roots,
             round,
             on_progress,
         )
@@ -264,7 +264,7 @@ pub(crate) async fn run_responses_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     round: usize,
     on_progress: Option<&FileSearchAgentProgressCallback>,
 ) -> Result<AgentRound> {
@@ -402,7 +402,7 @@ pub(crate) async fn run_responses_round(
         let output = execute_agent_tool(
             &call.name,
             &call.arguments_json,
-            workspace_root,
+            roots,
             round,
             on_progress,
         )
@@ -470,7 +470,7 @@ pub(crate) async fn run_anthropic_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     round: usize,
     on_progress: Option<&FileSearchAgentProgressCallback>,
 ) -> Result<AgentRound> {
@@ -606,7 +606,7 @@ pub(crate) async fn run_anthropic_round(
         let output = execute_agent_tool(
             &call.name,
             &call.arguments_json,
-            workspace_root,
+            roots,
             round,
             on_progress,
         )
@@ -704,7 +704,7 @@ pub(crate) async fn run_gemini_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    workspace_root: &str,
+    roots: &[FileSearchRoot],
     round: usize,
     on_progress: Option<&FileSearchAgentProgressCallback>,
 ) -> Result<AgentRound> {
@@ -821,7 +821,7 @@ pub(crate) async fn run_gemini_round(
         let output = execute_agent_tool(
             &call.name,
             &call.arguments_json,
-            workspace_root,
+            roots,
             round,
             on_progress,
         )

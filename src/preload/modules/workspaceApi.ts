@@ -120,8 +120,29 @@ export const workspaceApi = {
     ),
   listProjectCollections: (): Promise<ProjectCollectionRecord[]> =>
     ipcRenderer.invoke("project-collections:list"),
-  createProjectCollection: (name: string): Promise<ProjectCollectionRecord[]> =>
-    ipcRenderer.invoke("project-collections:create", name),
+  /** 创建合集 / 关联项目组；memberDirectoryIds 非空时创建即完成关联。 */
+  createProjectCollection: (
+    name: string,
+    memberDirectoryIds: string[] = [],
+  ): Promise<ProjectCollectionRecord[]> =>
+    ipcRenderer.invoke("project-collections:create", name, memberDirectoryIds),
+  updateProjectCollectionColor: (
+    collectionId: string,
+    color: string,
+  ): Promise<ProjectCollectionRecord[]> =>
+    ipcRenderer.invoke("project-collections:update-color", collectionId, color),
+  /** 切换成员的「参与关联」：断连后该目录仍留在合集里，只是不参与关联。 */
+  setProjectCollectionMemberLinked: (
+    collectionId: string,
+    directoryId: string,
+    linked: boolean,
+  ): Promise<ProjectCollectionRecord[]> =>
+    ipcRenderer.invoke(
+      "project-collections:set-member-linked",
+      collectionId,
+      directoryId,
+      linked,
+    ),
   renameProjectCollection: (
     collectionId: string,
     name: string,

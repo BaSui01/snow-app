@@ -317,6 +317,24 @@ pub async fn prepare_context_request(
             &sub_agents_section,
         )
     };
+    // 关联项目组章节（2026-10-02，仿 imagegen / Project Memory 方案 B）：
+    // 项目属于「关联项目组」（合集收纳的 ≥ 2 个本地目录）时，注入组名与全部
+    // 根目录，声明 grep / 文件搜索把组内目录当成同一个统一项目。WorkTree 模式
+    // 运行在单一工作树上，不注入。查询失败静默降级为空串。
+    let linked_projects_section = if request.worktree_mode {
+        String::new()
+    } else {
+        crate::prompt::linked_projects::build_linked_projects_section(
+            request.database_path,
+            request.directory_id,
+        )
+        .await
+    };
+    let system_prompt = if linked_projects_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{linked_projects_section}")
+    };
     // Pure rendering of the exact tools serialized by this provider request.
     let lsp_section = tool_snapshot.system_prompt_section();
     let system_prompt = if lsp_section.is_empty() {

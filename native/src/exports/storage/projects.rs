@@ -173,10 +173,40 @@ pub async fn list_project_collections() -> napi::Result<Vec<ProjectCollectionRec
 }
 
 #[napi]
-pub async fn create_project_collection(name: String) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || crate::storage::create_project_collection(name))
-        .await
-        .map_err(map_spawn_error)?
+pub async fn create_project_collection(
+    name: String,
+    member_directory_ids: Option<Vec<String>>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::create_project_collection(name, member_directory_ids.unwrap_or_default())
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn update_project_collection_color(
+    collection_id: String,
+    color: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::update_project_collection_color(collection_id, color)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_project_collection_member_linked(
+    collection_id: String,
+    directory_id: String,
+    linked: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_project_collection_member_linked(collection_id, directory_id, linked)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

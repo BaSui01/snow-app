@@ -472,6 +472,44 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
     Ok(final_results)
 }
 
+/// 关联项目组的多根搜索：主根结果保持原有相对路径，兄弟根的相对路径带上
+/// 「目录名/」前缀，让界面能区分同名文件来自哪个根。
+pub fn search_files_linked(
+    root_dir: &str,
+    query: &str,
+    roots: &[crate::storage::LinkedProjectRoot],
+) -> Result<Vec<FileSearchResult>> {
+    let primary = Path::new(root_dir);
+    let mut merged = search_files(root_dir, query)?;
+
+    for root in roots {
+        if root.path.trim().is_empty() || Path::new(&root.path) == primary {
+            continue;
+        }
+        let mut items = match search_files(&root.path, query) {
+            Ok(items) => items,
+            // 兄弟根不可读（被移除 / 权限变化）时跳过，不影响主根结果。
+            Err(_) => continue,
+        };
+        for item in &mut items {
+            let relative = item.relative_path.replace('\\', "/");
+            item.relative_path = if relative.is_empty() {
+                root.name.clone()
+            } else {
+                format!("{}/{}", root.name, relative)
+            };
+        }
+        merged.extend(items);
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    merged.retain(|item| seen.insert(item.path.clone()));
+    sort_search_results(&mut merged);
+    merged.truncate(MAX_RESULTS);
+
+    Ok(merged)
+}
+
 /// Sort search results: directories first, then entries whose name matched,
 /// then alphabetical by name. This keeps the most relevant results on top.
 fn sort_search_results(results: &mut [FileSearchResult]) {

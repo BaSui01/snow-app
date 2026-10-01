@@ -51,6 +51,7 @@ import {
   saveBrowserStorageState,
 } from "./browserStorageState";
 import { runBrowserTrace } from "./browserTrace";
+import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
 import { createDetachedBrowserWindow } from "../../browser/browserWindow";
 
 const browserDevToolsWindows = new Map<number, BrowserWindow>();
@@ -249,6 +250,7 @@ export const openBrowserDevTools = (contents: WebContents): void => {
 };
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
+  registerBrowserFrameHandlers();
   // 注入主窗口关闭请求处理器（close 拦截后按设置自动执行：询问/退出/最小化）。
   bindCloseRequestHandler();
 

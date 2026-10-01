@@ -1,3 +1,7 @@
+import {
+  buildElementLocatorScript,
+  DESCRIBE_ELEMENT_SCRIPT,
+} from "../../../../shared/browserElementLocator";
 import { captureWebviewPage } from "./captureWebviewPage";
 import {
   resolveAxRef,
@@ -12,15 +16,6 @@ const MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024;
 // 公共元素描述函数片段（normalize + describe）。定位脚本、fill 脚本与
 // CDP callFunctionOn 复用。注意：const 在同一作用域重复声明会抛
 // SyntaxError，因此每个脚本作用域只能注入一次。
-const DESCRIBE_ELEMENT_SCRIPT = `
-  const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
-  const describe = (element) => normalize(
-    element.innerText ||
-    element.textContent ||
-    element.value ||
-    element.getAttribute('aria-label') ||
-    element.getAttribute('title')
-  );`;
 
 // 路由 mock 规则(渲染进程侧累积,route 追加/覆盖,routeClear 清空;提交给主进程 Fetch 拦截)。
 // 按实例隔离:每个浏览器实例维护自己的规则,实例卸载时由
@@ -99,119 +94,6 @@ const CONSOLE_LEVEL_MIN: Record<string, number> = {
   warning: 2,
   error: 3,
 };
-
-// executeJavaScript 的结果可能含循环引用/函数等无法 JSON 序列化的值，
-// MCP 返回链路要求 JSON 安全，这里做兜底转换。
-const toJsonSafe = (value: unknown): unknown => {
-  if (value === undefined) {
-    return null;
-  }
-  try {
-    JSON.stringify(value);
-    return value;
-  } catch {
-    try {
-      return JSON.parse(
-        JSON.stringify(value, (_key, item) =>
-          typeof item === "function" ? undefined : item,
-        ),
-      );
-    } catch {
-      return String(value);
-    }
-  }
-};
-
-// 公共元素定位脚本：selector/text + shadowRoot 遍历 + 可见性/禁用检查 +
-// scrollIntoView 居中。actionBody 在元素就绪后执行（可返回任意结果）。
-// 被 click / type 复用，避免定位逻辑重复。
-const buildElementLocatorScript = (
-  selector: string | null,
-  text: string | null,
-  exact: boolean,
-  actionBody: string,
-): string => `(async () => {
-  const selector = ${JSON.stringify(selector)};
-  const text = ${JSON.stringify(text)};
-  const exact = ${JSON.stringify(exact)};
-  const interactiveSelector = [
-    'a[href]',
-    'button',
-    'input:not([type="hidden"])',
-    'select',
-    'textarea',
-    'summary',
-    '[role="button"]',
-    '[role="link"]',
-    '[role="menuitem"]',
-    '[role="option"]',
-    '[tabindex]:not([tabindex="-1"])',
-    '[onclick]'
-  ].join(',');
-  ${DESCRIBE_ELEMENT_SCRIPT}
-  const isVisible = (element) => {
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return style.visibility !== 'hidden' &&
-      style.display !== 'none' &&
-      Number(style.opacity) !== 0 &&
-      rect.width > 0 &&
-      rect.height > 0;
-  };
-  const collectRoots = (root, roots) => {
-    roots.push(root);
-    for (const element of root.querySelectorAll('*')) {
-      if (element.shadowRoot) {
-        collectRoots(element.shadowRoot, roots);
-      }
-    }
-  };
-  const roots = [];
-  collectRoots(document, roots);
-  let element = null;
-  if (selector) {
-    try {
-      for (const root of roots) {
-        const match = root.querySelector(selector);
-        if (match) {
-          element = match.closest(interactiveSelector) || match;
-          break;
-        }
-      }
-    } catch (error) {
-      throw new Error('Invalid CSS selector: ' + selector);
-    }
-  }
-  if (!element && text) {
-    const expected = normalize(text);
-    const candidates = roots.flatMap((root) =>
-      Array.from(root.querySelectorAll(interactiveSelector))
-    );
-    const matches = candidates.filter((candidate) => {
-      if (!isVisible(candidate) || candidate.matches(':disabled,[aria-disabled="true"]')) {
-        return false;
-      }
-      const actual = describe(candidate);
-      return exact ? actual === expected : actual.includes(expected);
-    });
-    element = matches.sort((left, right) => {
-      const leftText = describe(left);
-      const rightText = describe(right);
-      const leftExact = leftText === expected ? 0 : 1;
-      const rightExact = rightText === expected ? 0 : 1;
-      return leftExact - rightExact || leftText.length - rightText.length;
-    })[0] || null;
-  }
-  if (!element || !isVisible(element)) {
-    throw new Error('Target element was not found or is not visible');
-  }
-  if (element.matches(':disabled,[aria-disabled="true"]')) {
-    throw new Error('Target element is disabled');
-  }
-  element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  ${actionBody}
-})()`;
 
 const requiredString = (args: BrowserMcpCommandArgs, field: string): string => {
   const value = args[field];
@@ -545,20 +427,11 @@ const evaluate = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const expression = requiredString(args, "expression");
-  let result: unknown;
-  let error: string | undefined;
-  try {
-    result = await webview.executeJavaScript(expression);
-  } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
-  }
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    ...(error !== undefined ? { error } : { result: toJsonSafe(result) }),
-  };
-};
+): Promise<unknown> =>
+  window.snow.browserFrameOperation(webview.getWebContentsId(), "evaluate", {
+    ...args,
+    instanceId,
+  });
 
 /** 一次性设值逻辑（作用域内元素为 element）：原生 setter + input/change 事件
  * （React 受控组件兼容，与 Playwright fill 同原理）。定位脚本与 ref 回指共用。
@@ -918,96 +791,11 @@ const wait = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const metadata = await currentPageMetadata(webview, instanceId);
-
-  // 固定时长等待
-  if (typeof args.time === "number") {
-    const waitTime = Math.min(Math.max(args.time, 100), 30_000);
-    await new Promise((resolve) => setTimeout(resolve, waitTime));
-    return {
-      ...metadata,
-      condition: "time",
-      waitedMs: waitTime,
-      success: true,
-    };
-  }
-
-  // 文本出现/消失、元素出现/消失等待：轮询页面，100ms 间隔
-  const text = optionalString(args, "text");
-  const textGone = optionalString(args, "textGone");
-  const selector = optionalString(args, "selector");
-  const selectorGone = optionalString(args, "selectorGone");
-  const condition = text
-    ? "text"
-    : textGone
-      ? "textGone"
-      : selector
-        ? "selector"
-        : "selectorGone";
-  const expected = text ?? textGone ?? selector ?? selectorGone;
-  if (!expected) {
-    throw new Error(
-      "One of time, text, textGone, selector, or selectorGone is required for browser-wait",
-    );
-  }
-  const timeoutMs =
-    typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
-  const pollInterval = 100;
-  const startedAt = Date.now();
-  // selector 条件直接复用定位脚本的校验逻辑：无效 CSS 选择器视为不满足，
-  // 最终以超时失败返回（并携带提示），不会抛出未包装的异常。
-  const selectorQuery = (sel: string): string => `(() => {
-    try {
-      const element = document.querySelector(${JSON.stringify(sel)});
-      return element !== null;
-    } catch {
-      return false;
-    }
-  })()`;
-  const isSelectorCondition =
-    condition === "selector" || condition === "selectorGone";
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    let satisfied: boolean;
-    if (isSelectorCondition) {
-      const found = (await webview.executeJavaScript(
-        selectorQuery(expected),
-      )) as boolean;
-      satisfied = condition === "selector" ? found : !found;
-    } else {
-      const pageText = await webview.executeJavaScript(
-        "String(document.body?.innerText || '')",
-      );
-      const found = pageText.includes(expected);
-      satisfied = condition === "text" ? found : !found;
-    }
-    if (satisfied) {
-      return {
-        ...metadata,
-        condition,
-        value: expected,
-        waitedMs: Date.now() - startedAt,
-        success: true,
-      };
-    }
-    if (Date.now() - startedAt >= timeoutMs) {
-      return {
-        ...metadata,
-        condition,
-        value: expected,
-        waitedMs: Date.now() - startedAt,
-        success: false,
-        error: `Timed out waiting for ${condition}: "${expected}"${
-          isSelectorCondition && condition === "selector"
-            ? " (element not found or selector is invalid)"
-            : ""
-        }`,
-      };
-    }
-    await new Promise((resolve) => setTimeout(resolve, pollInterval));
-  }
-};
+): Promise<unknown> =>
+  window.snow.browserFrameOperation(webview.getWebContentsId(), "wait", {
+    ...args,
+    instanceId,
+  });
 
 const pressKey = async (
   webview: Electron.WebviewTag,
@@ -1483,6 +1271,16 @@ export const executeBrowserMcpOperation = async (
   args: BrowserMcpCommandArgs,
   consoleMessages: readonly unknown[],
 ): Promise<unknown> => {
+  if (
+    operation === "frames" ||
+    (args.frameId !== undefined && args.frameId !== null)
+  ) {
+    return window.snow.browserFrameOperation(
+      webview.getWebContentsId(),
+      operation,
+      args,
+    );
+  }
   switch (operation) {
     case "navigate":
       return navigate(webview, instanceId, args);

@@ -6,6 +6,10 @@ import type {
   BrowserCommandResponse,
 } from "../native/types";
 import { safeSend } from "../utils/safeSend";
+import {
+  redactBrowserResult,
+  redactBrowserText,
+} from "../../shared/browserRedaction";
 
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
@@ -22,6 +26,7 @@ const pendingCommands = new Map<
     resolve: (resultJson: string) => void;
     reject: (error: Error) => void;
     timer: NodeJS.Timeout;
+    operation: string;
   }
 >();
 
@@ -67,7 +72,7 @@ export const unregisterBrowserRenderer = (webContents: WebContents): void => {
  */
 export const registerBrowserInstanceRenderer = (
   instanceId: string,
-  webContents: WebContents
+  webContents: WebContents,
 ): void => {
   browserInstanceRenderers.set(instanceId, webContents);
 };
@@ -75,7 +80,7 @@ export const registerBrowserInstanceRenderer = (
 /** 移除实例路由（仅当实例仍归属该渲染进程时删除，避免覆盖迁移后的新归属）。 */
 export const unregisterBrowserInstanceRenderer = (
   instanceId: string,
-  webContents: WebContents
+  webContents: WebContents,
 ): void => {
   if (browserInstanceRenderers.get(instanceId) === webContents) {
     browserInstanceRenderers.delete(instanceId);
@@ -88,7 +93,7 @@ export const unregisterBrowserInstanceRenderer = (
  */
 const resolveCommandRenderer = (
   source: WebContents,
-  command: BrowserCommand
+  command: BrowserCommand,
 ): WebContents | undefined => {
   let renderer = browserRenderers.get(source.id);
   try {
@@ -109,14 +114,14 @@ const resolveCommandRenderer = (
 
 export const dispatchBrowserCommand = async (
   source: WebContents,
-  command: BrowserCommand
+  command: BrowserCommand,
 ): Promise<string> => {
   const renderer = resolveCommandRenderer(source, command);
   if (!renderer || renderer.isDestroyed()) {
     throw new Error("Browser renderer is not available");
   }
 
-  const commandId = `${source.id}:${randomUUID()}`;
+  const commandId = `${renderer.id}:${randomUUID()}`;
   const request: BrowserCommandRequest = {
     commandId,
     operation: command.operation,
@@ -129,14 +134,19 @@ export const dispatchBrowserCommand = async (
       reject(new Error(`Browser command timed out: ${command.operation}`));
     }, BROWSER_COMMAND_TIMEOUT_MS);
 
-    pendingCommands.set(commandId, { resolve, reject, timer });
+    pendingCommands.set(commandId, {
+      resolve,
+      reject,
+      timer,
+      operation: command.operation,
+    });
     safeSend(renderer, BROWSER_COMMAND_CHANNEL, request);
   });
 };
 
 export const resolveBrowserCommand = (
   source: WebContents,
-  response: BrowserCommandResponse
+  response: BrowserCommandResponse,
 ): void => {
   const expectedPrefix = `${source.id}:`;
   if (!response.commandId.startsWith(expectedPrefix)) {
@@ -151,16 +161,27 @@ export const resolveBrowserCommand = (
   clearTimeout(pending.timer);
   pendingCommands.delete(response.commandId);
   if (response.error) {
-    pending.reject(new Error(response.error));
+    pending.reject(new Error(redactBrowserText(response.error)));
     return;
   }
   if (typeof response.resultJson !== "string") {
     pending.reject(
-      new Error("Browser command response is missing result JSON")
+      new Error("Browser command response is missing result JSON"),
     );
     return;
   }
-  pending.resolve(response.resultJson);
+  try {
+    pending.resolve(
+      JSON.stringify(
+        redactBrowserResult(
+          JSON.parse(response.resultJson),
+          pending.operation === "screenshot",
+        ),
+      ),
+    );
+  } catch {
+    pending.reject(new Error("Browser command response contains invalid JSON"));
+  }
 };
 
 export { BROWSER_COMMAND_CHANNEL, BROWSER_COMMAND_RESPONSE_CHANNEL };

@@ -670,16 +670,11 @@ export const BrowserPanelContent = ({
           throw new Error("浏览器当前没有可操作的页面");
         }
         if (operation === "get_tab_content") {
-          const maxLength =
-            typeof args.maxLength === "number" ? args.maxLength : 20000;
-          const content = (await webview.executeJavaScript(
-            "document.body ? document.body.innerText : ''",
-          )) as string;
-          return {
-            url: webview.getURL(),
-            title: webview.getTitle(),
-            content: String(content ?? "").slice(0, maxLength),
-          };
+          return window.snow.browserFrameOperation(
+            webview.getWebContentsId(),
+            operation,
+            args,
+          );
         }
         return executeBrowserMcpOperation(
           webview,

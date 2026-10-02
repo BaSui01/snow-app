@@ -11,6 +11,18 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         )
     })?;
     let mut normalized = object.clone();
+    if let Some(frame_id) = optional_non_empty_string(args, "frameId")? {
+        if !matches!(tool_name, "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "hover" | "select_option" | "upload-file" | "devtools") {
+            return Err(Error::new(Status::InvalidArg, "frameId is not supported for this browser tool".to_string()));
+        }
+        if !regex::Regex::new(r"^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").unwrap().is_match(frame_id) {
+            return Err(Error::new(Status::InvalidArg, "Invalid frameId; use browser-frames first".to_string()));
+        }
+        if tool_name == "devtools" && !matches!(args.get("action").and_then(Value::as_str).unwrap_or("snapshot"), "snapshot" | "ax") {
+            return Err(Error::new(Status::InvalidArg, "frameId supports only devtools snapshot/ax".to_string()));
+        }
+        normalized.insert("frameId".to_string(), json!(frame_id));
+    }
 
     match tool_name {
         "create" => {
@@ -352,10 +364,11 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             optional_non_empty_string(args, "instanceId")?;
             let selector = optional_non_empty_string(args, "selector")?;
             let text = optional_non_empty_string(args, "text")?;
-            if selector.is_none() && text.is_none() {
+            let frame_ref = optional_non_empty_string(args, "ref")?;
+            if selector.is_none() && text.is_none() && !(args.get("frameId").is_some_and(Value::is_string) && frame_ref.is_some()) {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "Either selector or text is required for browser-select_option".to_string(),
+                    "Either selector, text, or a frame-scoped ref is required for browser-select_option".to_string(),
                 ));
             }
             optional_boolean(args, "exact")?;
@@ -392,6 +405,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         "focus" => {
             required_non_empty_string(args, "instanceId", tool_name)?;
         }
+        "frames" => { optional_non_empty_string(args, "instanceId")?; }
         "list" => {}
         "get_tab_content" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -510,7 +524,7 @@ pub(crate) fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames]"
         ),
     )
 }

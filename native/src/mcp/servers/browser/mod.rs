@@ -81,7 +81,7 @@ impl McpService for BrowserService {
     }
 
     fn tools(&self) -> Vec<McpTool> {
-        vec![
+        let mut tools = vec![
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "create".to_string(),
@@ -641,7 +641,28 @@ impl McpService for BrowserService {
                     }
                 }),
             },
-        ]
+        ];
+        tools.push(McpTool {
+            server_id: SERVER_ID.to_string(),
+            name: "frames".to_string(),
+            description: "Enumerate attached frames of an embedded browser, including cross-origin frames. Returns opaque document-scoped frameId and parentFrameId, main-frame flag and redacted URL/name. Re-enumerate after navigation or detachment; stale IDs never fall back to the main frame. Does not read cookies or authentication storage.".to_string(),
+            input_schema: json!({"type": "object", "properties": {"instanceId": {"type": "string", "description": "Optional browser tab ID; omit or use current for the focused tab."}}}),
+        });
+        for tool in &mut tools {
+            if matches!(tool.name.as_str(), "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "hover" | "select_option" | "upload-file" | "devtools") {
+                tool.input_schema["properties"]["frameId"] = json!({
+                    "type": "string",
+                    "pattern": "^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                    "description": "Optional opaque frameId from browser-frames. Omit for the main frame. IDs are bound to this tab/document; stale IDs fail without fallback. For devtools only snapshot/ax support frameId. Frame AX never returns input values."
+                });
+                if matches!(tool.name.as_str(), "hover" | "select_option") {
+                    tool.input_schema["properties"]["ref"] = json!({"type": "string", "description": "Optional frame AX ref; requires frameId from the same snapshot."});
+                    tool.input_schema["anyOf"] = json!([{ "required": ["selector"] }, { "required": ["text"] }, { "required": ["frameId", "ref"] }]);
+                }
+                tool.description.push_str(" Optional frameId selects a document-scoped frame from browser-frames; stale IDs fail without fallback. Frame results and URLs are redacted.");
+            }
+        }
+        tools
     }
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
@@ -649,7 +670,7 @@ impl McpService for BrowserService {
             "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
             | "list" | "evaluate" | "type" | "wait" | "press_key"
             | "select_option" | "hover" | "upload-file" | "back"
-            | "forward" | "get_tab_content" => Err(Error::new(
+| "forward" | "get_tab_content" | "frames" => Err(Error::new(
                 Status::GenericFailure,
                 "Browser tools must be executed through the asynchronous Electron command bridge"
                     .to_string(),

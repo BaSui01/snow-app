@@ -9,6 +9,7 @@ import type {
   BashStreamChunk,
   BrowserCommandRequest,
   BrowserCommandResponse,
+  BrowserFrameOperationArgs,
   BrowserRestorePayload,
   CheckpointFileChange,
   CheckpointFileDiff,
@@ -1593,6 +1594,18 @@ export const windowApi = {
   /** 清空全部历史记录，返回删除数量。 */
   browserHistoryClear: (): Promise<number> =>
     ipcRenderer.invoke("browser-history:clear"),
+  /** Frame operations execute in the main process; frame IDs never select another guest. */
+  browserFrameOperation: (
+    webContentsId: number,
+    operation: string,
+    args: BrowserFrameOperationArgs,
+  ): Promise<unknown> =>
+    ipcRenderer.invoke(
+      "browser:frame-operation",
+      webContentsId,
+      operation,
+      args,
+    ),
   /** 执行白名单内的 CDP 命令（Accessibility.getFullAXTree / DOM.resolveNode / Runtime.callFunctionOn）。 */
   browserCdpCommand: (
     webContentsId: number,

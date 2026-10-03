@@ -1,4 +1,4 @@
-import type { SshConnectParams } from "../../../../preload";
+import type { SshConnectParams, SshJumpHost } from "../../../../preload";
 
 export type ProjectDirectoryInfo = {
   path: string;
@@ -10,13 +10,13 @@ const SETTINGS_FILE_PATH = ".snow/settings.json";
 
 /** 构建 SSH 连接参数（复用 RoleEditorPanel 的凭证解析链路）。 */
 export const buildSshConnectParams = async (
-  sshUrl: string
+  sshUrl: string,
 ): Promise<SshConnectParams | null> => {
   const parsed = await window.snow.sshParseUrl(sshUrl);
   const credential = await window.snow.sshGetCredential(
     parsed.host,
     parsed.port,
-    parsed.username
+    parsed.username,
   );
 
   const connectParams: SshConnectParams = {
@@ -34,7 +34,7 @@ export const buildSshConnectParams = async (
     ? await window.snow.sshGetDecryptedSecret(
         parsed.host,
         parsed.port,
-        parsed.username
+        parsed.username,
       )
     : null;
 
@@ -44,6 +44,29 @@ export const buildSshConnectParams = async (
     } else {
       connectParams.passphrase = secret;
     }
+  }
+
+  if (credential?.jump) {
+    const jump: SshJumpHost = {
+      host: credential.jump.host,
+      port: credential.jump.port,
+      username: credential.jump.username,
+      authMethod: credential.jump.authMethod,
+    };
+    if (credential.jump.privateKeyPath) {
+      jump.privateKeyPath = credential.jump.privateKeyPath;
+    }
+    if (credential.jump.encryptedSecret) {
+      const jumpSecret = await window.snow.sshGetDecryptedJumpSecret(
+        parsed.host,
+        parsed.port,
+        parsed.username,
+      );
+      if (jumpSecret) {
+        jump.secret = jumpSecret;
+      }
+    }
+    connectParams.jump = jump;
   }
 
   return connectParams;
@@ -76,7 +99,7 @@ export const readIncludeGlobalRules = (content: string): boolean => {
 
 export const writeIncludeGlobalRules = (
   content: string,
-  includeGlobalRules: boolean
+  includeGlobalRules: boolean,
 ): string => {
   const settings = content.trim()
     ? (JSON.parse(content) as Record<string, unknown>)
@@ -94,6 +117,6 @@ export const writeIncludeGlobalRules = (
       role: { ...existingRole, includeGlobalRules },
     },
     null,
-    2
+    2,
   )}\n`;
 };

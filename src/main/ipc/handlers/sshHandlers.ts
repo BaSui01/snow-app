@@ -17,8 +17,10 @@ import {
   renameSshFile,
   deleteSshDirectory,
   statSshEntry,
+  type SshAuthMethod,
   type SshConnectParams,
   type SshFileVersion,
+  type SshJumpHost,
 } from "../../ssh/sshManager";
 import { sshConnectionManager } from "../../ssh/sshConnectionManager";
 import { processFileContent } from "../../utils/fileReader";
@@ -26,10 +28,15 @@ import {
   saveSshCredentialWithPlainSecret,
   getSshCredential,
   getDecryptedSecret,
+  getDecryptedJumpSecret,
   listSshCredentials,
   deleteSshCredential,
 } from "../../ssh/sshCredentials";
-import { listSshConfigHosts } from "../../ssh/sshConfig";
+import {
+  listSshConfigHosts,
+  resolveSshConfigJumpHost,
+} from "../../ssh/sshConfig";
+import { buildSshConnectParams } from "../../ssh/remoteWorkspaceCommand";
 import { classifySshConnectError } from "../../ssh/sshErrors";
 
 const REMOTE_SEARCH_MAX_DEPTH = 15;
@@ -63,7 +70,7 @@ const getRemoteRelativePath = (path: string, rootPath: string): string => {
 const buildRemoteWorkspaceUri = (
   workspacePath: string,
   remotePath: string,
-  remoteRootPath: string
+  remoteRootPath: string,
 ): string => {
   const relativePath = getRemoteRelativePath(remotePath, remoteRootPath);
   const normalizedWorkspacePath = workspacePath.replace(/\/+$/, "");
@@ -83,7 +90,7 @@ const toRemoteWorkspaceSearchResult = (
   workspacePath: string,
   remotePath: string,
   remoteRootPath: string,
-  isDirectory: boolean
+  isDirectory: boolean,
 ): {
   path: string;
   relativePath: string;
@@ -102,7 +109,7 @@ const toRemoteWorkspaceSearchResult = (
 
 const buildRemoteWorkspaceSearchCommand = (
   rootPath: string,
-  query: string
+  query: string,
 ): string => {
   // Path-aware search: a query containing "/" (e.g. "prompt/" or
   // "prompt/utils") resolves the part before the last "/" as a directory
@@ -141,7 +148,7 @@ const buildRemoteWorkspaceSearchCommand = (
 // the directory does not exist.
 const buildRemoteWorkspacePathSearchCommand = (
   rootPath: string,
-  query: string
+  query: string,
 ): string => {
   const parts = query.split("/");
   const nameQuery = parts[parts.length - 1] ?? "";
@@ -228,7 +235,7 @@ const buildRemoteWorkspacePathSearchCommand = (
 const parseRemoteWorkspaceSearchResults = (
   output: string,
   workspacePath: string,
-  remoteRootPath: string
+  remoteRootPath: string,
 ): Array<{
   path: string;
   relativePath: string;
@@ -250,7 +257,7 @@ const parseRemoteWorkspaceSearchResults = (
           workspacePath,
           remotePath,
           remoteRootPath,
-          kind === "d"
+          kind === "d",
         ),
       ];
     })
@@ -263,6 +270,45 @@ const parseRemoteWorkspaceSearchResults = (
     .slice(0, REMOTE_SEARCH_MAX_RESULTS);
 };
 
+const normalizeSshAuthMethod = (
+  value: unknown,
+  fallback: SshAuthMethod = "password",
+): SshAuthMethod =>
+  value === "password" || value === "privateKey" || value === "agent"
+    ? value
+    : fallback;
+
+/** 渲染层传来的跳板机参数：缺主机 / 用户名时视为未配置跳板机。 */
+const normalizeSshJumpHost = (value: unknown): SshJumpHost | undefined => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const input = value as Record<string, unknown>;
+  const host = typeof input.host === "string" ? input.host.trim() : "";
+  const username =
+    typeof input.username === "string" ? input.username.trim() : "";
+  if (!host || !username) {
+    return undefined;
+  }
+  const port =
+    typeof input.port === "number" && input.port > 0 && input.port <= 65535
+      ? input.port
+      : 22;
+  const jump: SshJumpHost = {
+    host,
+    port,
+    username,
+    authMethod: normalizeSshAuthMethod(input.authMethod, "agent"),
+  };
+  if (typeof input.privateKeyPath === "string" && input.privateKeyPath) {
+    jump.privateKeyPath = input.privateKeyPath;
+  }
+  if (typeof input.secret === "string" && input.secret) {
+    jump.secret = input.secret;
+  }
+  return jump;
+};
+
 export const registerSshHandlers = (_native: NativeBridge): void => {
   const normalizeSshConnectParams = (value: unknown): SshConnectParams => {
     if (typeof value !== "object" || value === null) {
@@ -273,12 +319,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     const port = typeof obj.port === "number" ? obj.port : 22;
     const username =
       typeof obj.username === "string" ? obj.username.trim() : "";
-    const authMethod =
-      obj.authMethod === "password" ||
-      obj.authMethod === "privateKey" ||
-      obj.authMethod === "agent"
-        ? (obj.authMethod as SshConnectParams["authMethod"])
-        : "password";
+    const authMethod = normalizeSshAuthMethod(obj.authMethod);
 
     if (!host) {
       throw new Error("SSH host is required");
@@ -296,6 +337,10 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     }
     if (typeof obj.passphrase === "string" && obj.passphrase) {
       result.passphrase = obj.passphrase;
+    }
+    const jump = normalizeSshJumpHost(obj.jump);
+    if (jump) {
+      result.jump = jump;
     }
     if (obj.hostKeyPolicy === "replace") {
       result.hostKeyPolicy = "replace";
@@ -385,10 +430,10 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   });
 
   ipcMain.handle("ssh:profiles:connect", async (_event, params: unknown) =>
-    sshConnectionManager.acquire(normalizeSshConnectParams(params))
+    sshConnectionManager.acquire(normalizeSshConnectParams(params)),
   );
   ipcMain.handle("ssh:profiles:get", (_event, profileId: unknown) =>
-    sshConnectionManager.get(normalizeProfileId(profileId))
+    sshConnectionManager.get(normalizeProfileId(profileId)),
   );
   ipcMain.handle("ssh:profiles:release", (_event, profileId: unknown) => {
     sshConnectionManager.release(normalizeProfileId(profileId));
@@ -403,12 +448,12 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         workspaceId.trim(),
         profileId === undefined || profileId === null
           ? undefined
-          : normalizeProfileId(profileId)
+          : normalizeProfileId(profileId),
       );
-    }
+    },
   );
   ipcMain.handle("ssh:drafts:upsert", (_event, draft: unknown) =>
-    _native.upsertRemoteDraft(normalizeRemoteDraftInput(draft))
+    _native.upsertRemoteDraft(normalizeRemoteDraftInput(draft)),
   );
   ipcMain.handle(
     "ssh:drafts:delete",
@@ -422,14 +467,14 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       return _native.deleteRemoteDraft(
         normalizeProfileId(profileId),
         workspaceId.trim(),
-        remotePath.trim()
+        remotePath.trim(),
       );
-    }
+    },
   );
 
   const normalizeSshFileWriteOptions = async (
     sessionId: string,
-    value: unknown
+    value: unknown,
   ): Promise<{ expectedVersion: SshFileVersion; workspaceRoot: string }> => {
     if (typeof value !== "object" || value === null) {
       throw new Error("Atomic remote file save requires write options");
@@ -443,17 +488,17 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     }
     if (input.expectedVersion === undefined) {
       throw new Error(
-        "Atomic remote file save requires an expected file version"
+        "Atomic remote file save requires an expected file version",
       );
     }
     const workspaceId = input.workspaceId.trim();
     const workspaces = await _native.listWorkspaceDirectories();
     const workspace = workspaces.find(
-      (directory) => directory.directoryId === workspaceId
+      (directory) => directory.directoryId === workspaceId,
     );
     if (!workspace || workspace.kind !== "ssh") {
       throw new Error(
-        "Atomic remote file save workspace is not an SSH workspace"
+        "Atomic remote file save workspace is not an SSH workspace",
       );
     }
     return {
@@ -491,7 +536,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         throw new Error("Remote directory path is required");
       }
       return listSshDirectory(sessionId.trim(), remotePath.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -504,7 +549,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         throw new Error("Remote command is required");
       }
       return executeSshCommand(sessionId.trim(), command);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -514,7 +559,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         throw new Error("SSH session ID is required");
       }
       return probeSshCapabilities(sessionId.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -542,32 +587,9 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
 
       const parsed = parseSshUrl(workspacePath.trim());
-      const credential = getSshCredential(
-        parsed.host,
-        parsed.port,
-        parsed.username
+      const sessionId = await connectSsh(
+        buildSshConnectParams(workspacePath.trim()),
       );
-      const connectParams: SshConnectParams = {
-        host: parsed.host,
-        port: parsed.port,
-        username: parsed.username,
-        authMethod: credential?.authMethod ?? "password",
-      };
-      if (credential?.privateKeyPath) {
-        connectParams.privateKeyPath = credential.privateKeyPath;
-      }
-      const secret = credential?.encryptedSecret
-        ? getDecryptedSecret(parsed.host, parsed.port, parsed.username)
-        : null;
-      if (secret) {
-        if (connectParams.authMethod === "password") {
-          connectParams.password = secret;
-        } else {
-          connectParams.passphrase = secret;
-        }
-      }
-
-      const sessionId = await connectSsh(connectParams);
       try {
         if (listChildren) {
           return (await listSshDirectory(sessionId, parsed.remotePath)).map(
@@ -576,24 +598,24 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
                 workspacePath.trim(),
                 entry.path,
                 parsed.remotePath,
-                entry.isDirectory
-              )
+                entry.isDirectory,
+              ),
           );
         }
 
         const output = await executeSshCommand(
           sessionId,
-          buildRemoteWorkspaceSearchCommand(parsed.remotePath, query.trim())
+          buildRemoteWorkspaceSearchCommand(parsed.remotePath, query.trim()),
         );
         return parseRemoteWorkspaceSearchResults(
           output,
           workspacePath.trim(),
-          parsed.remotePath
+          parsed.remotePath,
         );
       } finally {
         disconnectSsh(sessionId);
       }
-    }
+    },
   );
 
   ipcMain.handle(
@@ -607,13 +629,13 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       const file = await readSshFileWithVersion(
         sessionId.trim(),
-        remotePath.trim()
+        remotePath.trim(),
       );
       return {
         ...processFileContent(remotePath.trim(), file.content),
         remoteVersion: file.version,
       };
-    }
+    },
   );
 
   ipcMain.handle(
@@ -623,7 +645,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       sessionId: unknown,
       remotePath: unknown,
       content: unknown,
-      options: unknown
+      options: unknown,
     ) => {
       if (typeof sessionId !== "string" || !sessionId.trim()) {
         throw new Error("SSH session ID is required");
@@ -638,9 +660,9 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         sessionId.trim(),
         remotePath.trim(),
         content,
-        await normalizeSshFileWriteOptions(sessionId.trim(), options)
+        await normalizeSshFileWriteOptions(sessionId.trim(), options),
       );
-    }
+    },
   );
 
   ipcMain.handle(
@@ -667,7 +689,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         return deleteSshDirectory(trimmedSessionId, trimmedPath);
       }
       return deleteSshFile(trimmedSessionId, trimmedPath);
-    }
+    },
   );
 
   // 批量删除远程条目：单次 IPC，主进程内部逐个执行（SSH 协议无批量删除），
@@ -681,24 +703,19 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       if (
         !Array.isArray(remotePaths) ||
         remotePaths.length === 0 ||
-        !remotePaths.every(
-          (p) => typeof p === "string" && p.trim().length > 0
-        )
+        !remotePaths.every((p) => typeof p === "string" && p.trim().length > 0)
       ) {
         throw new Error("Remote paths are required");
       }
 
       const trimmedSessionId = sessionId.trim();
       const paths = Array.from(
-        new Set(remotePaths.map((p) => (p as string).trim()))
+        new Set(remotePaths.map((p) => (p as string).trim())),
       );
 
       // 父子合并：被另一选中路径包含的后代路径跳过（父级删除后自动消失）。
       const topLevel = paths.filter(
-        (p) =>
-          !paths.some(
-            (other) => other !== p && p.startsWith(`${other}/`)
-          )
+        (p) => !paths.some((other) => other !== p && p.startsWith(`${other}/`)),
       );
 
       const deleted: string[] = [];
@@ -718,13 +735,12 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         } catch (error) {
           failed.push({
             path: remotePath,
-            error:
-              error instanceof Error ? error.message : String(error),
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       }
       return { deleted, failed };
-    }
+    },
   );
 
   ipcMain.handle(
@@ -733,7 +749,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       _event,
       sessionId: unknown,
       remotePath: unknown,
-      newName: unknown
+      newName: unknown,
     ) => {
       if (typeof sessionId !== "string" || !sessionId.trim()) {
         throw new Error("SSH session ID is required");
@@ -759,7 +775,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
           : `${parentDir}/${trimmedNewName}`;
 
       return renameSshFile(sessionId.trim(), trimmedPath, newPath);
-    }
+    },
   );
 
   ipcMain.handle("ssh:disconnect", (_event, sessionId: unknown) => {
@@ -778,12 +794,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     const port = typeof obj.port === "number" ? obj.port : 22;
     const username =
       typeof obj.username === "string" ? obj.username.trim() : "";
-    const authMethod =
-      obj.authMethod === "password" ||
-      obj.authMethod === "privateKey" ||
-      obj.authMethod === "agent"
-        ? (obj.authMethod as SshConnectParams["authMethod"])
-        : "password";
+    const authMethod = normalizeSshAuthMethod(obj.authMethod);
 
     if (!host || !username) {
       throw new Error("SSH host and username are required");
@@ -797,6 +808,9 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       privateKeyPath:
         typeof obj.privateKeyPath === "string" ? obj.privateKeyPath : undefined,
       secret: typeof obj.secret === "string" ? obj.secret : undefined,
+      jump: normalizeSshJumpHost(obj.jump),
+      jumpSecret:
+        typeof obj.jumpSecret === "string" ? obj.jumpSecret : undefined,
     });
   });
 
@@ -808,7 +822,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       const portNum = typeof port === "number" ? port : 22;
       return getSshCredential(host.trim(), portNum, username.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -819,13 +833,32 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       const portNum = typeof port === "number" ? port : 22;
       return getDecryptedSecret(host.trim(), portNum, username.trim());
-    }
+    },
+  );
+
+  ipcMain.handle(
+    "ssh:get-decrypted-jump-secret",
+    (_event, host: unknown, port: unknown, username: unknown) => {
+      if (typeof host !== "string" || typeof username !== "string") {
+        return null;
+      }
+      const portNum = typeof port === "number" ? port : 22;
+      return getDecryptedJumpSecret(host.trim(), portNum, username.trim());
+    },
   );
 
   ipcMain.handle("ssh:list-credentials", () => listSshCredentials());
 
   // 读取本地 ~/.ssh/config 中的主机条目，供渲染层快速导入 SSH 连接。
   ipcMain.handle("ssh:list-config-hosts", () => listSshConfigHosts());
+
+  // 解析向导里填写的跳板机（ssh config 别名或 user@host:port）。
+  ipcMain.handle("ssh:resolve-jump-host", (_event, spec: unknown) => {
+    if (typeof spec !== "string" || !spec.trim()) {
+      return null;
+    }
+    return resolveSshConfigJumpHost(spec);
+  });
 
   ipcMain.handle(
     "ssh:delete-credential",
@@ -835,7 +868,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       const portNum = typeof port === "number" ? port : 22;
       deleteSshCredential(host.trim(), portNum, username.trim());
-    }
+    },
   );
 
   ipcMain.handle(
@@ -855,8 +888,8 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       const result = browserWindow
         ? await dialog.showOpenDialog(browserWindow, options)
         : await dialog.showOpenDialog(options);
-      return result.canceled ? null : result.filePaths[0] ?? null;
-    }
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
   );
 
   ipcMain.handle("ssh:parse-url", (_event, sshUrl: unknown) => {

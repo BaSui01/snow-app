@@ -1,7 +1,8 @@
 import { AlertCircle, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SshConnectParams, SshFileVersion } from "../../../../preload";
+import type { SshFileVersion } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { buildSshConnectParams } from "../../sidebar/personalization/roleFileUtils";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { Modal } from "../../common/Modal";
 
@@ -20,11 +21,11 @@ type RoleEditorPanelProps = {
 };
 
 const resolveProjectDirectory = async (
-  projectId: string
+  projectId: string,
 ): Promise<ProjectDirectoryInfo | null> => {
   const directories = await window.snow.listWorkspaceDirectories();
   const matched = directories.find(
-    (directory) => directory.directoryId === projectId
+    (directory) => directory.directoryId === projectId,
   );
   if (!matched) {
     return null;
@@ -33,46 +34,6 @@ const resolveProjectDirectory = async (
     path: matched.path,
     isSsh: matched.path.startsWith("ssh://"),
   };
-};
-
-const buildSshConnectParams = async (
-  sshUrl: string
-): Promise<SshConnectParams | null> => {
-  const parsed = await window.snow.sshParseUrl(sshUrl);
-  const credential = await window.snow.sshGetCredential(
-    parsed.host,
-    parsed.port,
-    parsed.username
-  );
-
-  const connectParams: SshConnectParams = {
-    host: parsed.host,
-    port: parsed.port,
-    username: parsed.username,
-    authMethod: credential?.authMethod ?? "password",
-  };
-
-  if (credential?.privateKeyPath) {
-    connectParams.privateKeyPath = credential.privateKeyPath;
-  }
-
-  const secret = credential?.encryptedSecret
-    ? await window.snow.sshGetDecryptedSecret(
-        parsed.host,
-        parsed.port,
-        parsed.username
-      )
-    : null;
-
-  if (secret) {
-    if (connectParams.authMethod === "password") {
-      connectParams.password = secret;
-    } else {
-      connectParams.passphrase = secret;
-    }
-  }
-
-  return connectParams;
 };
 
 export const RoleEditorPanel = ({
@@ -156,7 +117,9 @@ export const RoleEditorPanel = ({
           const text = result.isBinary ? "" : result.content;
           setContent(text);
           setOriginalContent(text);
-          remoteRoleVersionRef.current = result.remoteVersion ?? { exists: false };
+          remoteRoleVersionRef.current = result.remoteVersion ?? {
+            exists: false,
+          };
         } catch (readError) {
           if (loadGenerationRef.current !== generation) return;
           // File does not exist yet — start with empty content.
@@ -181,7 +144,7 @@ export const RoleEditorPanel = ({
     } catch (loadError) {
       if (loadGenerationRef.current !== generation) return;
       setError(
-        loadError instanceof Error ? loadError.message : String(loadError)
+        loadError instanceof Error ? loadError.message : String(loadError),
       );
     } finally {
       if (loadGenerationRef.current === generation) {
@@ -240,7 +203,7 @@ export const RoleEditorPanel = ({
           {
             workspaceId: projectId,
             expectedVersion: remoteRoleVersionRef.current,
-          }
+          },
         );
         remoteRoleVersionRef.current = writeResult.version;
       } else {
@@ -251,7 +214,7 @@ export const RoleEditorPanel = ({
       setSaveSuccess(true);
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : String(saveError)
+        saveError instanceof Error ? saveError.message : String(saveError),
       );
     } finally {
       setIsSaving(false);

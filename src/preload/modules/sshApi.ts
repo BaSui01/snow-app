@@ -8,12 +8,14 @@ import type {
   SshCapabilities,
   SshAuthMethod,
   SshConfigHost,
+  SshConfigJumpHost,
   SshConnectParams,
   SshConnectResult,
   SshCredentialRecord,
   SshDirectoryEntry,
   SshFileWriteOptions,
   SshFileWriteResult,
+  SshJumpHostRecord,
   SshProfileConnection,
   RemoteDraftInput,
   RemoteDraftRecord,
@@ -69,19 +71,25 @@ export const sshApi = {
   /** 读取本地 ~/.ssh/config 中的主机条目（无文件或解析失败返回空数组）。 */
   sshListConfigHosts: (): Promise<SshConfigHost[]> =>
     ipcRenderer.invoke("ssh:list-config-hosts"),
+  /**
+   * 解析跳板机描述：优先匹配 ~/.ssh/config 别名，否则按 `[user@]host[:port]`
+   * 解析；无法解析时返回 null。
+   */
+  sshResolveJumpHost: (spec: string): Promise<SshConfigJumpHost | null> =>
+    ipcRenderer.invoke("ssh:resolve-jump-host", spec),
   sshConnectProfile: (
-    params: SshConnectParams
+    params: SshConnectParams,
   ): Promise<SshProfileConnection> =>
     ipcRenderer.invoke("ssh:profiles:connect", params),
   sshGetProfileConnection: (
-    profileId: string
+    profileId: string,
   ): Promise<SshProfileConnection | null> =>
     ipcRenderer.invoke("ssh:profiles:get", profileId),
   sshReleaseProfile: (profileId: string): Promise<void> =>
     ipcRenderer.invoke("ssh:profiles:release", profileId),
   sshListRemoteDrafts: (
     workspaceId: string,
-    profileId?: string
+    profileId?: string,
   ): Promise<RemoteDraftRecord[]> =>
     ipcRenderer.invoke("ssh:drafts:list", workspaceId, profileId),
   sshUpsertRemoteDraft: (draft: RemoteDraftInput): Promise<RemoteDraftRecord> =>
@@ -89,15 +97,15 @@ export const sshApi = {
   sshDeleteRemoteDraft: (
     profileId: string,
     workspaceId: string,
-    remotePath: string
+    remotePath: string,
   ): Promise<void> =>
     ipcRenderer.invoke("ssh:drafts:delete", profileId, workspaceId, remotePath),
   onSshProfileConnection: (
-    callback: (connection: SshProfileConnection) => void
+    callback: (connection: SshProfileConnection) => void,
   ): (() => void) => {
     const handler = (
       _event: IpcRendererEvent,
-      connection: SshProfileConnection
+      connection: SshProfileConnection,
     ): void => {
       callback(connection);
     };
@@ -106,7 +114,7 @@ export const sshApi = {
   },
   sshListDirectory: (
     sessionId: string,
-    remotePath: string
+    remotePath: string,
   ): Promise<SshDirectoryEntry[]> =>
     ipcRenderer.invoke("ssh:list-directory", sessionId, remotePath),
   sshExecuteCommand: (sessionId: string, command: string): Promise<string> =>
@@ -115,38 +123,38 @@ export const sshApi = {
     ipcRenderer.invoke("ssh:probe-capabilities", sessionId),
   searchRemoteWorkspaceFiles: (
     workspacePath: string,
-    options: RemoteWorkspaceFileSearchOptions
+    options: RemoteWorkspaceFileSearchOptions,
   ): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("ssh:search-workspace-files", workspacePath, options),
   sshReadFile: (
     sessionId: string,
-    remotePath: string
+    remotePath: string,
   ): Promise<FileContentResult> =>
     ipcRenderer.invoke("ssh:read-file", sessionId, remotePath),
   sshWriteFile: (
     sessionId: string,
     remotePath: string,
     content: string,
-    options: SshFileWriteOptions
+    options: SshFileWriteOptions,
   ): Promise<SshFileWriteResult> =>
     ipcRenderer.invoke(
       "ssh:write-file",
       sessionId,
       remotePath,
       content,
-      options
+      options,
     ),
   sshDeleteEntry: (sessionId: string, remotePath: string): Promise<void> =>
     ipcRenderer.invoke("ssh:delete-entry", sessionId, remotePath),
   sshDeleteEntries: (
     sessionId: string,
-    remotePaths: string[]
+    remotePaths: string[],
   ): Promise<BatchWorkspaceDeleteResult> =>
     ipcRenderer.invoke("ssh:delete-entries", sessionId, remotePaths),
   sshRenameEntry: (
     sessionId: string,
     remotePath: string,
-    newName: string
+    newName: string,
   ): Promise<void> =>
     ipcRenderer.invoke("ssh:rename-entry", sessionId, remotePath, newName),
   sshDisconnect: (sessionId: string): Promise<void> =>
@@ -158,26 +166,35 @@ export const sshApi = {
     authMethod: SshAuthMethod;
     privateKeyPath?: string;
     secret?: string;
+    jump?: Omit<SshJumpHostRecord, "encryptedSecret">;
+    jumpSecret?: string;
   }): Promise<SshCredentialRecord> =>
     ipcRenderer.invoke("ssh:save-credential", params),
   sshGetCredential: (
     host: string,
     port: number,
-    username: string
+    username: string,
   ): Promise<SshCredentialRecord | null> =>
     ipcRenderer.invoke("ssh:get-credential", host, port, username),
   sshGetDecryptedSecret: (
     host: string,
     port: number,
-    username: string
+    username: string,
   ): Promise<string | null> =>
     ipcRenderer.invoke("ssh:get-decrypted-secret", host, port, username),
+  /** 读取已保存跳板机的明文口令（authMethod 决定它是密码还是密钥口令）。 */
+  sshGetDecryptedJumpSecret: (
+    host: string,
+    port: number,
+    username: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("ssh:get-decrypted-jump-secret", host, port, username),
   sshListCredentials: (): Promise<SshCredentialRecord[]> =>
     ipcRenderer.invoke("ssh:list-credentials"),
   sshDeleteCredential: (
     host: string,
     port: number,
-    username: string
+    username: string,
   ): Promise<void> =>
     ipcRenderer.invoke("ssh:delete-credential", host, port, username),
   sshSelectPrivateKey: (dialogTitle?: string): Promise<string | null> =>

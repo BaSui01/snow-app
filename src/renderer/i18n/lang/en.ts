@@ -158,6 +158,7 @@ export const en = {
     "No other projects available — add another directory first.",
   "sidebar.linkProjectsConfirm": "Link",
   "sidebar.collectionDotTitle": "Linked project group: {{name}}",
+  "sidebar.projectGridMemberUnlinked": "Unlinked — kept in the collection only",
   "sidebar.createProjectTitle": "Create a new project",
   "sidebar.createProjectNamePlaceholder": "Project name",
   "sidebar.createProjectNameLabel": "Project name",
@@ -234,6 +235,10 @@ export const en = {
   "sidebar.sshPassword": "Password",
   "sidebar.sshPrivateKeyFile": "Private key file",
   "sidebar.sshPassphrase": "Passphrase (optional)",
+  "sidebar.sshJumpHost": "Jump host (ProxyJump, optional)",
+  "sidebar.sshJumpSecret": "Jump host password / key passphrase (optional)",
+  "sidebar.sshJumpHostInvalid":
+    "Cannot resolve this jump host. Use an SSH config alias or user@host:port.",
   "sidebar.sshSelectPrivateKey": "Select private key file",
   "sidebar.sshRememberCredential": "Remember credentials (encrypted)",
   "sidebar.sshConnectError": "Failed to connect to SSH server",

@@ -65,6 +65,12 @@ flowchart TD
 
 > 支持 `ssh://user@host:port/path` 形式的 URL 解析与连接（`ssh:parse-url`）；
 > 已保存的凭据可在 **SSH 管理界面**中列出与管理（`ssh:list-credentials`）。
+>
+> **跳板机（ProxyJump）**：目标机位于内网、只能经跳板机访问时，在向导的
+> **跳板机**字段填写 `~/.ssh/config` 中的别名或 `user@host:port`；导入
+> 声明了 `ProxyJump` 的 config 主机会自动带上跳板链路。跳板机优先使用别名
+> 对应的 `IdentityFile`，没有则走 SSH Agent。仅支持单级跳板；跳板机信息随
+> 凭证一起保存，工作区后续重连同样经跳板机（远程终端会追加 `-o ProxyJump`）。
 
 ### 2.2 远程 Git
 

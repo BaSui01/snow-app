@@ -71,6 +71,14 @@ flowchart TD
 > `ssh://user@host:port/path` URLs are parsed and connected directly
 > (`ssh:parse-url`); saved credentials can be listed/managed in the SSH
 > management UI (`ssh:list-credentials`).
+>
+> **Jump host (ProxyJump)**: for a target machine behind a bastion, fill the
+> wizard's **Jump host** field with an `~/.ssh/config` alias or
+> `user@host:port`. Importing a `~/.ssh/config` host that declares `ProxyJump`
+> prefills the jump chain automatically; the jump host uses the alias's
+> `IdentityFile` when present, otherwise the SSH agent. One hop is supported,
+> and the saved credential keeps the jump host so the workspace reconnects
+> through it later (remote terminals add `-o ProxyJump` too).
 
 ### 2.2 Remote Git
 

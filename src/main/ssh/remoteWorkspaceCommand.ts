@@ -21,7 +21,11 @@ import {
   type SshFileVersion,
   type SshFileWriteResult,
 } from "./sshManager";
-import { getDecryptedSecret, getSshCredential } from "./sshCredentials";
+import {
+  getDecryptedSecret,
+  getSshCredential,
+  toSshJumpParams,
+} from "./sshCredentials";
 import {
   abortCheckpointScan,
   registerCheckpointScanAbort,
@@ -172,6 +176,10 @@ export const buildSshConnectParams = (
     } else {
       connectParams.passphrase = secret;
     }
+  }
+
+  if (credential?.jump) {
+    connectParams.jump = toSshJumpParams(credential.jump);
   }
 
   return connectParams;

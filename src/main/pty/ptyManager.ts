@@ -18,7 +18,11 @@ import {
   parseSshUrl,
   type SshConnectParams,
 } from "../ssh/sshManager";
-import { getDecryptedSecret, getSshCredential } from "../ssh/sshCredentials";
+import {
+  getDecryptedSecret,
+  getSshCredential,
+  toSshJumpParams,
+} from "../ssh/sshCredentials";
 import {
   formatSshKnownHost,
   getSshHostKey,
@@ -224,6 +228,9 @@ const buildSshConnectParams = (
       }
     }
   }
+  if (credential.jump) {
+    params.jump = toSshJumpParams(credential.jump);
+  }
   return params;
 };
 
@@ -263,15 +270,23 @@ const resolveVerifiedSshHostKey = async (params: {
 };
 
 const createKnownHostsFile = (
-  record: SshHostKeyRecord,
+  records: SshHostKeyRecord[],
 ): {
   path: string;
   dispose: () => void;
 } => {
-  const contents = formatSshKnownHost(record);
-  if (!contents) {
+  const entries: string[] = [];
+  for (const record of records) {
+    const entry = formatSshKnownHost(record);
+    if (!entry) {
+      throw new Error("SSH terminal blocked: verified host key is unavailable");
+    }
+    entries.push(entry);
+  }
+  if (entries.length === 0) {
     throw new Error("SSH terminal blocked: verified host key is unavailable");
   }
+  const contents = entries.join("");
 
   const directory = mkdtempSync(join(tmpdir(), "snow-ssh-known-hosts-"));
   const path = join(directory, "known_hosts");
@@ -313,9 +328,21 @@ const buildSshSpawnConfig = async (
   }
 
   const { host, port, username, remotePath } = parsed;
-  const knownHosts = createKnownHostsFile(
-    await resolveVerifiedSshHostKey({ host, port, username }),
-  );
+  // Look up stored credentials
+  const credential = getSshCredential(host, port, username);
+  // 经跳板机时临时 known_hosts 必须同时固定跳板机与目标机的公钥，
+  // 否则 StrictHostKeyChecking=yes 会在跳板机上失败。
+  const hostKeys = [await resolveVerifiedSshHostKey({ host, port, username })];
+  if (credential?.jump) {
+    hostKeys.push(
+      await resolveVerifiedSshHostKey({
+        host: credential.jump.host,
+        port: credential.jump.port,
+        username: credential.jump.username,
+      }),
+    );
+  }
+  const knownHosts = createKnownHostsFile(hostKeys);
   const sshArgs: string[] = [];
 
   sshArgs.push("-o", `UserKnownHostsFile=${knownHosts.path}`);
@@ -326,8 +353,6 @@ const buildSshSpawnConfig = async (
     sshArgs.push("-p", String(port));
   }
 
-  // Look up stored credentials
-  const credential = getSshCredential(host, port, username);
   const config: SshSpawnConfig = {
     shell: resolveWindowsExecutable("ssh"),
     args: sshArgs,
@@ -350,6 +375,19 @@ const buildSshSpawnConfig = async (
       }
     }
     // agent auth: no extra args needed
+
+    if (credential.jump) {
+      const jump = credential.jump;
+      config.args.push(
+        "-o",
+        `ProxyJump=${jump.username}@${jump.host}:${jump.port}`,
+      );
+      // 跳板机也用密码认证时无法分辨提示来自哪一跳，交给用户手动输入，
+      // 避免把目标机密码注入到跳板机的提示上。
+      if (jump.authMethod === "password") {
+        config.password = undefined;
+      }
+    }
   }
 
   const destination = `${username}@${host}`;

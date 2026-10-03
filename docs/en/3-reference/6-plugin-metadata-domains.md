@@ -502,11 +502,11 @@ No declaration · Not live · Parameters: `projectId`, `page`, `pageSize`
 
 **Whole-domain sensitive: `ssh`** · Not live · Parameters: `directoryId`
 
-| Field          | Type             | Description                                                                                                                |
-| -------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `credentials`  | object[] \| null | `{ profileKey, host, port, username, authMethod, privateKeyPath, encryptedSecret }` (the secret is an encrypted reference) |
-| `configHosts`  | object[] \| null | `~/.ssh/config` hosts: `{ alias, host, user, port, identityFile }`                                                         |
-| `remoteDrafts` | object[] \| null | Remote drafts: `{ id, profileId, workspaceId, remotePath, baseVersionJson, content, status, updatedAt }`                   |
+| Field          | Type             | Description                                                                                                                       |
+| -------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `credentials`  | object[] \| null | `{ profileKey, host, port, username, authMethod, privateKeyPath, encryptedSecret, jump? }` (the secret is an encrypted reference) |
+| `configHosts`  | object[] \| null | `~/.ssh/config` hosts: `{ alias, host, user, port, identityFile, proxyJump?, proxyJumpHost? }`                                    |
+| `remoteDrafts` | object[] \| null | Remote drafts: `{ id, profileId, workspaceId, remotePath, baseVersionJson, content, status, updatedAt }`                          |
 
 #### 4.5.2 `remoteControl`
 

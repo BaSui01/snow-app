@@ -12,6 +12,7 @@ import {
   Key,
   Loader2,
   Lock,
+  Network,
   RefreshCw,
   Server,
   User,
@@ -24,10 +25,13 @@ import { localizeSshError } from "../../../utils/sshErrorMessages";
 import type {
   SshAuthMethod,
   SshConfigHost,
+  SshConfigJumpHost,
   SshConnectErrorCode,
   SshConnectParams,
   SshCredentialRecord,
   SshDirectoryEntry,
+  SshJumpHost,
+  SshJumpHostRecord,
 } from "../../../../preload";
 
 type WizardStep = "connect" | "browse";
@@ -62,6 +66,7 @@ type CredentialOption = {
   authMethod: SshAuthMethod;
   privateKeyPath?: string;
   hasSecret: boolean;
+  jump?: SshJumpHostRecord;
 };
 
 const normalizeRemotePath = (path: string): string => {
@@ -73,7 +78,7 @@ const buildSshUrl = (
   host: string,
   port: number,
   username: string,
-  remotePath: string
+  remotePath: string,
 ): string =>
   `ssh://${username}@${host}:${port}${normalizeRemotePath(remotePath)}`;
 
@@ -95,10 +100,19 @@ export function SshConnectWizard({
   const [showPassword, setShowPassword] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [rememberCredential, setRememberCredential] = useState(true);
+  // 跳板机（ProxyJump）：spec 支持 ssh config 别名或 [user@]host[:port]，
+  // resolved 为主进程解析出的实际连接字段
+  const [jumpSpec, setJumpSpec] = useState("");
+  const [jumpResolved, setJumpResolved] = useState<SshConfigJumpHost | null>(
+    null,
+  );
+  const [jumpKeyPath, setJumpKeyPath] = useState("");
+  const [jumpSecret, setJumpSecret] = useState("");
+  const [showJumpSecret, setShowJumpSecret] = useState(false);
 
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<ConnectErrorState | null>(
-    null
+    null,
   );
   const [hostKeyChanged, setHostKeyChanged] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -108,12 +122,12 @@ export function SshConnectWizard({
   const [entries, setEntries] = useState<SshDirectoryEntry[]>([]);
   const [isLoadingEntries, setIsLoadingEntries] = useState(false);
   const [entriesError, setEntriesError] = useState<ConnectErrorState | null>(
-    null
+    null,
   );
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
   const [savedCredentials, setSavedCredentials] = useState<CredentialOption[]>(
-    []
+    [],
   );
   const [showSavedList, setShowSavedList] = useState(false);
   // 本地 ~/.ssh/config 中解析出的主机条目，点击后自动填充表单
@@ -121,6 +135,7 @@ export function SshConnectWizard({
   const [showConfigList, setShowConfigList] = useState(false);
   const directoryRequestIdRef = useRef(0);
   const pendingNavigationPathRef = useRef<string | null>(null);
+  const jumpResolveRequestRef = useRef(0);
   const wizardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -133,6 +148,7 @@ export function SshConnectWizard({
         authMethod: c.authMethod,
         privateKeyPath: c.privateKeyPath,
         hasSecret: !!c.encryptedSecret,
+        jump: c.jump,
       }));
       setSavedCredentials(options);
     });
@@ -141,6 +157,31 @@ export function SshConnectWizard({
   useEffect(() => {
     void window.snow.sshListConfigHosts().then(setConfigHosts);
   }, []);
+
+  /** 跳板机连接参数：ssh config 里的 IdentityFile 优先，否则用 SSH agent。 */
+  const buildJumpHost = (userId: string): SshJumpHost | undefined => {
+    if (!jumpSpec.trim() || !jumpResolved) {
+      return undefined;
+    }
+    const authMethod: SshAuthMethod = jumpKeyPath
+      ? "privateKey"
+      : jumpSecret
+        ? "password"
+        : "agent";
+    const jump: SshJumpHost = {
+      host: jumpResolved.host,
+      port: jumpResolved.port,
+      username: jumpResolved.user ?? userId,
+      authMethod,
+    };
+    if (jumpKeyPath) {
+      jump.privateKeyPath = jumpKeyPath;
+    }
+    if (jumpSecret) {
+      jump.secret = jumpSecret;
+    }
+    return jump;
+  };
 
   /** 点击 SSH config 条目：用解析出的字段填充表单（保留用户已填内容）。 */
   const handleLoadConfigHost = (entry: SshConfigHost): void => {
@@ -155,7 +196,31 @@ export function SshConnectWizard({
     }
     setPassword("");
     setPassphrase("");
+    setJumpSpec(entry.proxyJumpHost ? (entry.proxyJump ?? "") : "");
+    setJumpResolved(entry.proxyJumpHost ?? null);
+    setJumpKeyPath(entry.proxyJumpHost?.identityFile ?? "");
+    setJumpSecret("");
     setShowConfigList(false);
+  };
+
+  /** 跳板机输入变化：交给主进程解析（ssh config 别名 / user@host:port）。 */
+  const handleJumpSpecChange = (value: string): void => {
+    setJumpSpec(value);
+    const spec = value.trim();
+    const requestId = jumpResolveRequestRef.current + 1;
+    jumpResolveRequestRef.current = requestId;
+    if (!spec) {
+      setJumpResolved(null);
+      setJumpKeyPath("");
+      return;
+    }
+    void window.snow.sshResolveJumpHost(spec).then((resolved) => {
+      if (jumpResolveRequestRef.current !== requestId) {
+        return;
+      }
+      setJumpResolved(resolved);
+      setJumpKeyPath(resolved?.identityFile ?? "");
+    });
   };
 
   const loadEntries = useCallback(
@@ -170,7 +235,7 @@ export function SshConnectWizard({
       try {
         const result = await window.snow.sshListDirectory(
           sessionId,
-          normalizedPath
+          normalizedPath,
         );
         if (requestId !== directoryRequestIdRef.current) {
           return false;
@@ -179,7 +244,7 @@ export function SshConnectWizard({
           result.map((entry) => ({
             ...entry,
             path: normalizeRemotePath(entry.path),
-          }))
+          })),
         );
         setRemotePath(normalizedPath);
         return true;
@@ -201,7 +266,7 @@ export function SshConnectWizard({
         }
       }
     },
-    [sessionId, t]
+    [sessionId, t],
   );
 
   useEffect(() => {
@@ -235,7 +300,7 @@ export function SshConnectWizard({
     const selected = await window.snow.sshSelectPrivateKey(
       t("sidebar.sshSelectPrivateKey", {
         defaultValue: "Select private key file",
-      })
+      }),
     );
     if (selected) {
       setPrivateKeyPath(selected);
@@ -243,7 +308,7 @@ export function SshConnectWizard({
   };
 
   const handleLoadCredential = async (
-    cred: CredentialOption
+    cred: CredentialOption,
   ): Promise<void> => {
     setHost(cred.host);
     setPort(cred.port);
@@ -254,11 +319,38 @@ export function SshConnectWizard({
     setPassphrase("");
     setShowSavedList(false);
 
+    if (cred.jump) {
+      setJumpSpec(`${cred.jump.username}@${cred.jump.host}:${cred.jump.port}`);
+      setJumpResolved({
+        host: cred.jump.host,
+        port: cred.jump.port,
+        user: cred.jump.username,
+        identityFile: cred.jump.privateKeyPath,
+      });
+      setJumpKeyPath(cred.jump.privateKeyPath ?? "");
+      setJumpSecret("");
+      if (cred.jump.encryptedSecret) {
+        const jumpSecretValue = await window.snow.sshGetDecryptedJumpSecret(
+          cred.host,
+          cred.port,
+          cred.username,
+        );
+        if (jumpSecretValue) {
+          setJumpSecret(jumpSecretValue);
+        }
+      }
+    } else {
+      setJumpSpec("");
+      setJumpResolved(null);
+      setJumpKeyPath("");
+      setJumpSecret("");
+    }
+
     if (cred.hasSecret) {
       const secret = await window.snow.sshGetDecryptedSecret(
         cred.host,
         cred.port,
-        cred.username
+        cred.username,
       );
       if (secret) {
         if (cred.authMethod === "password") {
@@ -270,9 +362,7 @@ export function SshConnectWizard({
     }
   };
 
-  const handleConnect = async (
-    hostKeyPolicy?: "replace"
-  ): Promise<void> => {
+  const handleConnect = async (hostKeyPolicy?: "replace"): Promise<void> => {
     setIsConnecting(true);
     setConnectError(null);
     setHostKeyChanged(false);
@@ -294,6 +384,11 @@ export function SshConnectWizard({
       if (passphrase) {
         params.passphrase = passphrase;
       }
+    }
+
+    const jump = buildJumpHost(username.trim());
+    if (jump) {
+      params.jump = jump;
     }
 
     try {
@@ -326,6 +421,16 @@ export function SshConnectWizard({
           authMethod,
           privateKeyPath: privateKeyPath.trim() || undefined,
           secret,
+          jump: jump
+            ? {
+                host: jump.host,
+                port: jump.port,
+                username: jump.username,
+                authMethod: jump.authMethod,
+                privateKeyPath: jump.privateKeyPath,
+              }
+            : undefined,
+          jumpSecret: jumpSecret || undefined,
         });
       }
 
@@ -340,7 +445,7 @@ export function SshConnectWizard({
             });
       setHostKeyChanged(
         message.includes("Host key changed") ||
-          message.startsWith("[SSH_HOST_KEY_CHANGED]")
+          message.startsWith("[SSH_HOST_KEY_CHANGED]"),
       );
       setConnectError({
         code: null,
@@ -353,7 +458,7 @@ export function SshConnectWizard({
 
   const handleEntryClick = (
     entry: SshDirectoryEntry,
-    event: React.MouseEvent<HTMLDivElement>
+    event: React.MouseEvent<HTMLDivElement>,
   ): void => {
     // The first click already opens a directory. Ignore the second click from
     // a double-click so a fast response cannot navigate into a same-named child.
@@ -377,7 +482,7 @@ export function SshConnectWizard({
         .then((loaded) => {
           if (loaded) {
             setPathHistory((prev) =>
-              prev[prev.length - 1] === entryPath ? prev : [...prev, entryPath]
+              prev[prev.length - 1] === entryPath ? prev : [...prev, entryPath],
             );
           }
         })
@@ -422,7 +527,7 @@ export function SshConnectWizard({
       host.trim(),
       port,
       username.trim(),
-      selectedPath
+      selectedPath,
     );
     if (sessionId) {
       void window.snow.sshDisconnect(sessionId);
@@ -594,11 +699,16 @@ export function SshConnectWizard({
                         key={entry.alias}
                         onClick={() => handleLoadConfigHost(entry)}
                         type="button"
-                        title={
+                        title={[
                           entry.identityFile
                             ? `IdentityFile: ${entry.identityFile}`
-                            : undefined
-                        }
+                            : null,
+                          entry.proxyJumpHost
+                            ? `ProxyJump: ${entry.proxyJumpHost.host}:${entry.proxyJumpHost.port}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join("\n")}
                       >
                         <Server size={12} />
                         <span className="ssh-wizard-saved-name">
@@ -607,6 +717,7 @@ export function SshConnectWizard({
                         <span className="ssh-wizard-saved-method">
                           {entry.user ? `${entry.user}@` : ""}
                           {entry.host}:{entry.port}
+                          {entry.proxyJumpHost ? " · ProxyJump" : ""}
                         </span>
                       </button>
                     ))}
@@ -811,6 +922,72 @@ export function SshConnectWizard({
               </>
             ) : null}
 
+            <div className="ssh-wizard-field">
+              <label className="ssh-wizard-label">
+                {t("sidebar.sshJumpHost", {
+                  defaultValue: "Jump host (ProxyJump, optional)",
+                })}
+              </label>
+              <div className="ssh-wizard-input-wrap">
+                <Network size={13} className="ssh-wizard-input-icon" />
+                <input
+                  className="ssh-wizard-input"
+                  onChange={(e) => handleJumpSpecChange(e.target.value)}
+                  placeholder="user@bastion.example.com:22"
+                  spellCheck={false}
+                  type="text"
+                  value={jumpSpec}
+                />
+              </div>
+              {jumpSpec.trim() && jumpResolved ? (
+                <span className="ssh-wizard-hint">
+                  {`${jumpResolved.user ?? username.trim()}@${
+                    jumpResolved.host
+                  }:${jumpResolved.port}`}
+                  {" · "}
+                  {jumpKeyPath
+                    ? jumpKeyPath
+                    : t("sidebar.sshAuthAgent", { defaultValue: "SSH agent" })}
+                </span>
+              ) : jumpSpec.trim() ? (
+                <span className="ssh-wizard-hint ssh-wizard-hint-error">
+                  {t("sidebar.sshJumpHostInvalid", {
+                    defaultValue:
+                      "Cannot resolve this jump host. Use an SSH config alias or user@host:port.",
+                  })}
+                </span>
+              ) : null}
+            </div>
+
+            {jumpSpec.trim() ? (
+              <div className="ssh-wizard-field">
+                <label className="ssh-wizard-label">
+                  {t("sidebar.sshJumpSecret", {
+                    defaultValue:
+                      "Jump host password / key passphrase (optional)",
+                  })}
+                </label>
+                <div className="ssh-wizard-input-wrap">
+                  <Lock size={13} className="ssh-wizard-input-icon" />
+                  <input
+                    className="ssh-wizard-input"
+                    onChange={(e) => setJumpSecret(e.target.value)}
+                    placeholder="********"
+                    spellCheck={false}
+                    type={showJumpSecret ? "text" : "password"}
+                    value={jumpSecret}
+                  />
+                  <button
+                    className="ssh-wizard-input-toggle"
+                    onClick={() => setShowJumpSecret((v) => !v)}
+                    type="button"
+                  >
+                    {showJumpSecret ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             <label className="toggle-switch">
               <input
                 type="checkbox"
@@ -951,8 +1128,8 @@ export function SshConnectWizard({
                           {entry.size < 1024
                             ? `${entry.size} B`
                             : entry.size < 1024 * 1024
-                            ? `${(entry.size / 1024).toFixed(1)} KB`
-                            : `${(entry.size / (1024 * 1024)).toFixed(1)} MB`}
+                              ? `${(entry.size / 1024).toFixed(1)} KB`
+                              : `${(entry.size / (1024 * 1024)).toFixed(1)} MB`}
                         </span>
                       ) : null}
                     </div>

@@ -141,6 +141,7 @@ export const zhTW = {
   "sidebar.linkProjectsEmpty": "暫無可關聯的其它專案，請先新增目錄。",
   "sidebar.linkProjectsConfirm": "關聯",
   "sidebar.collectionDotTitle": "關聯專案組：{{name}}",
+  "sidebar.projectGridMemberUnlinked": "已斷連 — 僅保留在合集中",
   "sidebar.createProjectTitle": "新增專案",
   "sidebar.createProjectNamePlaceholder": "專案名稱",
   "sidebar.createProjectNameLabel": "專案名稱",
@@ -214,6 +215,10 @@ export const zhTW = {
   "sidebar.sshPassword": "密碼",
   "sidebar.sshPrivateKeyFile": "金鑰檔案",
   "sidebar.sshPassphrase": "金鑰口令（選填）",
+  "sidebar.sshJumpHost": "跳板機（ProxyJump，選填）",
+  "sidebar.sshJumpSecret": "跳板機口令（密碼或金鑰口令，選填）",
+  "sidebar.sshJumpHostInvalid":
+    "無法解析此跳板機。請填寫 ssh config 中的別名或 user@host:port。",
   "sidebar.sshSelectPrivateKey": "選擇金鑰檔案",
   "sidebar.sshRememberCredential": "記住憑證（加密儲存）",
   "sidebar.sshConnectError": "連線 SSH 伺服器失敗",

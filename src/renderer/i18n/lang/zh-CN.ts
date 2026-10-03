@@ -141,6 +141,7 @@ export const zhCN = {
   "sidebar.linkProjectsEmpty": "暂无可关联的其它项目，请先添加目录。",
   "sidebar.linkProjectsConfirm": "关联",
   "sidebar.collectionDotTitle": "关联项目组：{{name}}",
+  "sidebar.projectGridMemberUnlinked": "已断连 — 仅保留在合集中",
   "sidebar.createProjectTitle": "新建项目",
   "sidebar.createProjectNamePlaceholder": "项目名称",
   "sidebar.createProjectNameLabel": "项目名称",
@@ -214,6 +215,10 @@ export const zhCN = {
   "sidebar.sshPassword": "密码",
   "sidebar.sshPrivateKeyFile": "密钥文件",
   "sidebar.sshPassphrase": "密钥口令（可选）",
+  "sidebar.sshJumpHost": "跳板机（ProxyJump，可选）",
+  "sidebar.sshJumpSecret": "跳板机口令（密码或密钥口令，可选）",
+  "sidebar.sshJumpHostInvalid":
+    "无法解析该跳板机。请填写 ssh config 中的别名或 user@host:port。",
   "sidebar.sshSelectPrivateKey": "选择密钥文件",
   "sidebar.sshRememberCredential": "记住凭证（加密存储）",
   "sidebar.sshConnectError": "连接 SSH 服务器失败",

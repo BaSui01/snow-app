@@ -24,12 +24,7 @@ export type SshProfileConnection = {
  * 渲染层据此展示本地化的友好提示。
  */
 export type SshConnectErrorCode =
-  | "network"
-  | "timeout"
-  | "auth"
-  | "sftp"
-  | "invalid"
-  | "unknown";
+  "network" | "timeout" | "auth" | "sftp" | "invalid" | "unknown";
 
 /** preload 抛出的 SSH 连接错误：携带错误码与原始技术细节。 */
 export type SshConnectError = Error & {
@@ -46,6 +41,22 @@ export type SshConnectResult =
   | { ok: true; sessionId: string }
   | { ok: false; code: SshConnectErrorCode; message: string; detail: string };
 
+/** 单级 ProxyJump 的跳板机连接参数。 */
+export type SshJumpHost = {
+  host: string;
+  port: number;
+  username: string;
+  authMethod: SshAuthMethod;
+  privateKeyPath?: string;
+  /** password (authMethod "password") 或 passphrase (authMethod "privateKey") */
+  secret?: string;
+};
+
+/** 已保存的跳板机记录：secret 以密文存放。 */
+export type SshJumpHostRecord = Omit<SshJumpHost, "secret"> & {
+  encryptedSecret?: string;
+};
+
 export type SshConnectParams = {
   host: string;
   port: number;
@@ -54,6 +65,8 @@ export type SshConnectParams = {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** 经跳板机（ProxyJump）连接目标主机，仅支持单级。 */
+  jump?: SshJumpHost;
   hostKeyPolicy?: "replace";
 };
 
@@ -77,9 +90,7 @@ export type SshCapabilities = {
 };
 
 export type SshFileSaveGuarantee =
-  | "strong_atomic"
-  | "atomic_best_effort"
-  | "compatibility";
+  "strong_atomic" | "atomic_best_effort" | "compatibility";
 
 export type SshFileVersion = {
   exists: boolean;
@@ -135,6 +146,8 @@ export type SshCredentialRecord = {
   authMethod: SshAuthMethod;
   privateKeyPath?: string;
   encryptedSecret?: string;
+  /** 经跳板机（ProxyJump）连接时的跳板机记录。 */
+  jump?: SshJumpHostRecord;
 };
 
 export type ParsedSshUrl = {
@@ -142,6 +155,16 @@ export type ParsedSshUrl = {
   port: number;
   username: string;
   remotePath: string;
+};
+
+/** 跳板机（ProxyJump）解析结果：来自 ssh config 别名的实际连接字段。 */
+export type SshConfigJumpHost = {
+  /** 匹配到的 ssh config 别名；直接以 host 形式给出时为空 */
+  alias?: string;
+  host: string;
+  port: number;
+  user?: string;
+  identityFile?: string;
 };
 
 /** 本地 ~/.ssh/config 中解析出的主机条目。 */
@@ -156,4 +179,8 @@ export type SshConfigHost = {
   port: number;
   /** 私钥文件路径（IdentityFile） */
   identityFile?: string;
+  /** ProxyJump 原始值（`[user@]host[:port]` 或 ssh config 别名） */
+  proxyJump?: string;
+  /** ProxyJump 解析后的跳板机字段 */
+  proxyJumpHost?: SshConfigJumpHost;
 };

@@ -1,4 +1,12 @@
-import { Check, GripVertical, Library, Search, Server, X } from "lucide-react";
+import {
+  Check,
+  GripVertical,
+  Library,
+  Link2Off,
+  Search,
+  Server,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
@@ -125,14 +133,17 @@ export function ProjectGridDialog({
   const draggedDirectoryId = dragAndDrop.draggedDirectoryId;
   const dragOverDirectoryId = dragAndDrop.dragOverDirectoryId;
 
-  const collectionMemberIds = useMemo(() => {
-    const ids = new Set<string>();
+  const collectionMemberInfo = useMemo(() => {
+    const info = new Map<string, { color: string; linked: boolean }>();
     for (const collection of collections) {
       for (const directoryId of collection.memberDirectoryIds) {
-        ids.add(directoryId);
+        info.set(directoryId, {
+          color: collection.color,
+          linked: collection.linkedDirectoryIds.includes(directoryId),
+        });
       }
     }
-    return ids;
+    return info;
   }, [collections]);
 
   const resolveDraggedId = (event: DragEvent<HTMLElement>): string | null =>
@@ -213,7 +224,7 @@ export function ProjectGridDialog({
     if (event.defaultPrevented || !isDragEnabled || !draggedDirectoryId) {
       return;
     }
-    if (!collectionMemberIds.has(draggedDirectoryId)) {
+    if (!collectionMemberInfo.has(draggedDirectoryId)) {
       return;
     }
     event.preventDefault();
@@ -240,6 +251,9 @@ export function ProjectGridDialog({
     const isActive = directory.directoryId === activeDirectoryId;
     const displayName =
       displayNames.get(directory.directoryId) ?? directory.name;
+    const memberInfo = group.collection
+      ? collectionMemberInfo.get(directory.directoryId)
+      : undefined;
     const isDragging = draggedDirectoryId === directory.directoryId;
     const isDragOver =
       !isDragging && dragOverDirectoryId === directory.directoryId;
@@ -258,12 +272,40 @@ export function ProjectGridDialog({
         onDrop={(event) => handleCardDrop(event, group, directory.directoryId)}
       >
         <button
-          className={`project-grid-card${isActive ? " active" : ""}`}
+          className={`project-grid-card${isActive ? " active" : ""}${
+            memberInfo && !memberInfo.linked ? " unlinked" : ""
+          }`}
           disabled={isActionLocked}
           onClick={() => onActivate(directory.directoryId)}
           title={directory.path}
           type="button"
         >
+          {memberInfo ? (
+            memberInfo.linked ? (
+              <span
+                aria-hidden="true"
+                className="project-collection-dot"
+                style={{ background: memberInfo.color }}
+                title={t("sidebar.collectionDotTitle", {
+                  values: { name: group.collection?.name ?? "" },
+                  defaultValue: "Linked project group: {{name}}",
+                })}
+              />
+            ) : (
+              <span
+                aria-label={t("sidebar.projectGridMemberUnlinked", {
+                  defaultValue: "Unlinked — kept in the collection only",
+                })}
+                className="project-grid-card-unlinked-mark"
+                role="img"
+                title={t("sidebar.projectGridMemberUnlinked", {
+                  defaultValue: "Unlinked — kept in the collection only",
+                })}
+              >
+                <Link2Off size={12} />
+              </span>
+            )
+          ) : null}
           <span className="project-grid-card-icon">
             {directory.kind === "ssh" ? (
               <Server className="list-icon list-icon--ssh" size={16} />
@@ -361,7 +403,7 @@ export function ProjectGridDialog({
                 collectionId === null &&
                 isDragEnabled &&
                 draggedDirectoryId !== null &&
-                collectionMemberIds.has(draggedDirectoryId);
+                collectionMemberInfo.has(draggedDirectoryId);
               return (
                 <div
                   className={`project-grid-group${

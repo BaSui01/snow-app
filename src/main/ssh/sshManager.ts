@@ -10,6 +10,22 @@ const { Client } = ssh2;
 
 export type SshAuthMethod = "password" | "privateKey" | "agent";
 
+/** 单级 ProxyJump 的跳板机连接参数（secret 为密码或密钥口令）。 */
+export type SshJumpHost = {
+  host: string;
+  port: number;
+  username: string;
+  authMethod: SshAuthMethod;
+  privateKeyPath?: string;
+  /** password (authMethod "password") 或 passphrase (authMethod "privateKey") */
+  secret?: string;
+};
+
+/** 持久化的跳板机记录：secret 由 safeStorage 加密存放。 */
+export type SshJumpHostRecord = Omit<SshJumpHost, "secret"> & {
+  encryptedSecret?: string;
+};
+
 export type SshConnectParams = {
   host: string;
   port: number;
@@ -18,6 +34,8 @@ export type SshConnectParams = {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
+  /** 经跳板机（ProxyJump）连接目标主机，仅支持单级。 */
+  jump?: SshJumpHost;
   /** Replaces a pinned host key only after an explicit renderer confirmation. */
   hostKeyPolicy?: "replace";
 };
@@ -57,11 +75,11 @@ export class SshOperationError extends Error {
 }
 
 export const isSshOperationError = (
-  error: unknown
+  error: unknown,
 ): error is SshOperationError => error instanceof SshOperationError;
 
 export const toSshOperationErrorResult = (
-  error: SshOperationError
+  error: SshOperationError,
 ): Record<string, unknown> => ({
   code: error.code,
   operation: error.operation,
@@ -87,6 +105,8 @@ export type SshSession = {
   sftp: import("ssh2").SFTPWrapper;
   params: SshConnectParams;
   capabilities?: SshCapabilities;
+  /** 跳板机连接：随目标会话一起关闭，否则中转链路会一直存活。 */
+  jumpClient?: import("ssh2").Client;
 };
 
 export type SshCapabilities = {
@@ -102,9 +122,7 @@ export type SshCapabilities = {
 };
 
 export type SshFileSaveGuarantee =
-  | "strong_atomic"
-  | "atomic_best_effort"
-  | "compatibility";
+  "strong_atomic" | "atomic_best_effort" | "compatibility";
 
 /** A content-addressed remote file version used as the write CAS precondition. */
 export type SshFileVersion = {
@@ -151,6 +169,15 @@ export type SshFileWriteResult = {
 
 const sessions = new Map<string, SshSession>();
 
+/** 关闭会话的跳板机中转连接（目标会话结束后它已无用途）。 */
+const endSshJumpClient = (session: SshSession): void => {
+  try {
+    session.jumpClient?.end();
+  } catch {
+    // The transport may already be closed.
+  }
+};
+
 /**
  * A stable profile handle can be resolved to the current ephemeral SSH
  * session by SshConnectionManager. Keeping this indirection here lets the
@@ -160,12 +187,14 @@ type SshSessionHandleResolver = (handle: string) => string | undefined;
 let sessionHandleResolver: SshSessionHandleResolver | undefined;
 
 export const setSshSessionHandleResolver = (
-  resolver?: SshSessionHandleResolver
+  resolver?: SshSessionHandleResolver,
 ): void => {
   sessionHandleResolver = resolver;
 };
 
-export const getSshSession = (sessionIdOrHandle: string): SshSession | undefined => {
+export const getSshSession = (
+  sessionIdOrHandle: string,
+): SshSession | undefined => {
   const direct = sessions.get(sessionIdOrHandle);
   if (direct) {
     return direct;
@@ -179,7 +208,7 @@ let sshClientFactory: SshClientFactory = () => new Client();
 
 /** Test-only injection point for deterministic cancellation and disconnect races. */
 export const setSshClientFactoryForTesting = (
-  factory?: SshClientFactory
+  factory?: SshClientFactory,
 ): void => {
   sshClientFactory = factory ?? (() => new Client());
 };
@@ -212,9 +241,274 @@ export const getSshProfileKey = (params: {
   username: string;
 }): string => `${params.username}@${params.host}:${params.port}`;
 
-export const connectSsh = (
+const observeSshHostKey = (
+  value: string | Buffer,
+): ObservedSshHostKey | null => {
+  const key = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  const keyType = parseSshHostKeyType(key);
+  if (!keyType) {
+    return null;
+  }
+  return {
+    fingerprint: createHash("sha256").update(key).digest("hex"),
+    keyType,
+    publicKey: key.toString("base64"),
+  };
+};
+
+/** 与已固定主机密钥比对，返回不一致信息；未固定或一致时返回 null。 */
+const findSshHostKeyMismatch = (
+  host: string,
+  port: number,
+  observed: ObservedSshHostKey,
+): { expected: string; received: string } | null => {
+  const trusted = getSshHostKey(host, port);
+  if (
+    !trusted ||
+    (trusted.fingerprint === observed.fingerprint &&
+      (!trusted.publicKey || trusted.publicKey === observed.publicKey))
+  ) {
+    return null;
+  }
+  return { expected: trusted.fingerprint, received: observed.fingerprint };
+};
+
+const sshHostKeyChangedError = (
+  host: string,
+  port: number,
+  mismatch: { expected: string; received: string },
+  label = "",
+): SshOperationError =>
+  new SshOperationError({
+    code: "SSH_HOST_KEY_CHANGED",
+    operation: "connect",
+    message: `Host key changed for ${host}:${port}${label}. Expected ${mismatch.expected}, received ${mismatch.received}. Confirm the new fingerprint before reconnecting.`,
+  });
+
+/** 把认证设置展开为 ssh2 ConnectConfig 片段（跳板机与目标机共用）。 */
+const resolveAuthConfig = (params: {
+  authMethod: SshAuthMethod;
+  password?: string;
+  privateKeyPath?: string;
+  passphrase?: string;
+}): import("ssh2").ConnectConfig => {
+  if (params.authMethod === "password" && params.password) {
+    return { password: params.password };
+  }
+  if (params.authMethod === "privateKey" && params.privateKeyPath) {
+    let privateKey: string;
+    try {
+      privateKey = readFileSync(params.privateKeyPath, "utf-8");
+    } catch {
+      throw new Error(
+        `Failed to read private key file: ${params.privateKeyPath}`,
+      );
+    }
+    return params.passphrase
+      ? { privateKey, passphrase: params.passphrase }
+      : { privateKey };
+  }
+  if (params.authMethod === "agent") {
+    const agentSocket = process.env.SSH_AUTH_SOCK;
+    if (!agentSocket) {
+      throw new SshOperationError({
+        code: "SSH_AGENT_UNAVAILABLE",
+        operation: "connect",
+        message: "SSH agent authentication requires SSH_AUTH_SOCK",
+      });
+    }
+    return { agent: agentSocket };
+  }
+  throw new Error("Invalid authentication method or missing credentials");
+};
+
+const JUMP_READY_TIMEOUT_MS = 15_000;
+
+/**
+ * 单级 ProxyJump：先建立到跳板机的 SSH 会话，再通过 forwardOut 打通
+ * 目标主机的 host:port，把返回的 channel 当作目标连接的 sock 使用
+ * （等价于 OpenSSH 的 `-J`）。跳板机会话必须与目标会话同生命周期，
+ * 由调用方在失败/断开时结束。
+ */
+const openJumpTransport = (
+  jump: SshJumpHost,
   params: SshConnectParams,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
+): Promise<{
+  client: import("ssh2").Client;
+  stream: import("ssh2").ClientChannel;
+}> =>
+  new Promise((resolve, reject) => {
+    const client = sshClientFactory();
+    const signal = options?.signal;
+    let settled = false;
+    let observedHostKey: ObservedSshHostKey | null = null;
+    let hostKeyMismatch: { expected: string; received: string } | null = null;
+
+    const clearAbortListener = (): void => {
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    const rejectJump = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearAbortListener();
+      try {
+        client.end();
+      } catch {
+        // The transport may already be closed.
+      }
+      reject(error);
+    };
+
+    const onAbort = (): void => {
+      rejectJump(
+        new SshOperationError({
+          code: "SSH_OPERATION_CANCELLED",
+          operation: "connect",
+          message: "SSH connection cancelled",
+        }),
+      );
+    };
+
+    const jumpLabel = ` (jump host ${jump.host}:${jump.port})`;
+    const connectConfig: import("ssh2").ConnectConfig = {
+      host: jump.host,
+      port: jump.port,
+      username: jump.username,
+      readyTimeout: JUMP_READY_TIMEOUT_MS,
+      keepaliveInterval: 10_000,
+      keepaliveCountMax: 3,
+      agentForward: false,
+      hostVerifier: (value: string | Buffer): boolean => {
+        const observed = observeSshHostKey(value);
+        if (!observed) {
+          rejectJump(
+            new SshOperationError({
+              code: "SSH_HOST_KEY_UNAVAILABLE",
+              operation: "connect",
+              message: `SSH jump host provided an invalid host key${jumpLabel}`,
+            }),
+          );
+          return false;
+        }
+        const mismatch =
+          params.hostKeyPolicy === "replace"
+            ? null
+            : findSshHostKeyMismatch(jump.host, jump.port, observed);
+        if (mismatch) {
+          hostKeyMismatch = mismatch;
+          rejectJump(
+            sshHostKeyChangedError(jump.host, jump.port, mismatch, jumpLabel),
+          );
+          return false;
+        }
+        observedHostKey = observed;
+        return true;
+      },
+    };
+
+    try {
+      Object.assign(connectConfig, resolveAuthConfig(jump));
+    } catch (error) {
+      rejectJump(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    client.on("ready", () => {
+      if (observedHostKey) {
+        try {
+          saveSshHostKey({
+            host: jump.host,
+            port: jump.port,
+            fingerprint: observedHostKey.fingerprint,
+            keyType: observedHostKey.keyType,
+            publicKey: observedHostKey.publicKey,
+          });
+        } catch {
+          // 主机密钥落盘失败不阻断连接，目标会话会重新校验。
+        }
+      }
+      client.forwardOut(
+        "127.0.0.1",
+        0,
+        params.host,
+        params.port,
+        (error: Error | undefined, stream: import("ssh2").ClientChannel) => {
+          if (settled) {
+            try {
+              stream?.close();
+            } catch {
+              // The channel may already be gone.
+            }
+            return;
+          }
+          if (error) {
+            rejectJump(
+              new SshOperationError({
+                code: "SSH_JUMP_FORWARD_FAILED",
+                operation: "connect",
+                message: `Jump host ${jump.host}:${jump.port} could not forward to ${params.host}:${params.port}: ${error.message}`,
+              }),
+            );
+            return;
+          }
+          settled = true;
+          clearAbortListener();
+          resolve({ client, stream });
+        },
+      );
+    });
+
+    client.on("error", (err: Error) => {
+      if (hostKeyMismatch) {
+        rejectJump(
+          sshHostKeyChangedError(
+            jump.host,
+            jump.port,
+            hostKeyMismatch,
+            jumpLabel,
+          ),
+        );
+        return;
+      }
+      rejectJump(new Error(err.message));
+    });
+
+    client.on("close", () => {
+      if (!settled) {
+        rejectJump(
+          new Error(
+            `SSH jump host ${jump.host}:${jump.port} closed before the target channel was established`,
+          ),
+        );
+      }
+    });
+
+    try {
+      client.connect(connectConfig);
+    } catch (error) {
+      rejectJump(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+
+type SshJumpTransport = {
+  sock: import("ssh2").ClientChannel;
+  jumpClient: import("ssh2").Client;
+};
+
+const connectSshDirect = (
+  params: SshConnectParams,
+  options?: { signal?: AbortSignal },
+  transport?: SshJumpTransport,
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -222,80 +516,6 @@ export const connectSsh = (
     let hostKeyMismatch: { expected: string; received: string } | null = null;
     const client = sshClientFactory();
     const signal = options?.signal;
-
-    const connectConfig: import("ssh2").ConnectConfig = {
-      host: params.host,
-      port: params.port,
-      username: params.username,
-      readyTimeout: 15000,
-      keepaliveInterval: 10_000,
-      keepaliveCountMax: 3,
-      agentForward: false,
-      hostVerifier: (value: string | Buffer): boolean => {
-        const key = Buffer.isBuffer(value) ? value : Buffer.from(value);
-        const fingerprint = createHash("sha256").update(key).digest("hex");
-        const keyType = parseSshHostKeyType(key);
-        if (!keyType) {
-          rejectConnection(
-            new SshOperationError({
-              code: "SSH_HOST_KEY_UNAVAILABLE",
-              operation: "connect",
-              message: "SSH server provided an invalid host key",
-            })
-          );
-          return false;
-        }
-        const publicKey = key.toString("base64");
-        const trusted = getSshHostKey(params.host, params.port);
-        if (
-          trusted &&
-          (trusted.fingerprint !== fingerprint ||
-            (trusted.publicKey && trusted.publicKey !== publicKey)) &&
-          params.hostKeyPolicy !== "replace"
-        ) {
-          hostKeyMismatch = {
-            expected: trusted.fingerprint,
-            received: fingerprint,
-          };
-          rejectHostKeyMismatch();
-          return false;
-        }
-        observedHostKey = { fingerprint, keyType, publicKey };
-        return true;
-      },
-    };
-
-    if (params.authMethod === "password" && params.password) {
-      connectConfig.password = params.password;
-    } else if (params.authMethod === "privateKey" && params.privateKeyPath) {
-      try {
-        connectConfig.privateKey = readFileSync(params.privateKeyPath, "utf-8");
-      } catch {
-        reject(
-          new Error(`Failed to read private key file: ${params.privateKeyPath}`)
-        );
-        return;
-      }
-      if (params.passphrase) {
-        connectConfig.passphrase = params.passphrase;
-      }
-    } else if (params.authMethod === "agent") {
-      const agentSocket = process.env.SSH_AUTH_SOCK;
-      if (!agentSocket) {
-        reject(
-          new SshOperationError({
-            code: "SSH_AGENT_UNAVAILABLE",
-            operation: "connect",
-            message: "SSH agent authentication requires SSH_AUTH_SOCK",
-          })
-        );
-        return;
-      }
-      connectConfig.agent = agentSocket;
-    } else {
-      reject(new Error("Invalid authentication method or missing credentials"));
-      return;
-    }
 
     const clearAbortListener = (): void => {
       signal?.removeEventListener("abort", onAbort);
@@ -323,11 +543,7 @@ export const connectSsh = (
       // Reject here so that a known key mismatch cannot be masked as a
       // transient connection loss.
       rejectConnection(
-        new SshOperationError({
-          code: "SSH_HOST_KEY_CHANGED",
-          operation: "connect",
-          message: `Host key changed for ${params.host}:${params.port}. Expected ${hostKeyMismatch.expected}, received ${hostKeyMismatch.received}. Confirm the new fingerprint before reconnecting.`,
-        })
+        sshHostKeyChangedError(params.host, params.port, hostKeyMismatch),
       );
     };
 
@@ -337,9 +553,56 @@ export const connectSsh = (
           code: "SSH_OPERATION_CANCELLED",
           operation: "connect",
           message: "SSH connection cancelled",
-        })
+        }),
       );
     };
+
+    const connectConfig: import("ssh2").ConnectConfig = {
+      host: params.host,
+      port: params.port,
+      username: params.username,
+      readyTimeout: 15000,
+      keepaliveInterval: 10_000,
+      keepaliveCountMax: 3,
+      agentForward: false,
+      hostVerifier: (value: string | Buffer): boolean => {
+        const observed = observeSshHostKey(value);
+        if (!observed) {
+          rejectConnection(
+            new SshOperationError({
+              code: "SSH_HOST_KEY_UNAVAILABLE",
+              operation: "connect",
+              message: "SSH server provided an invalid host key",
+            }),
+          );
+          return false;
+        }
+        const mismatch =
+          params.hostKeyPolicy === "replace"
+            ? null
+            : findSshHostKeyMismatch(params.host, params.port, observed);
+        if (mismatch) {
+          hostKeyMismatch = mismatch;
+          rejectHostKeyMismatch();
+          return false;
+        }
+        observedHostKey = observed;
+        return true;
+      },
+    };
+
+    if (transport) {
+      connectConfig.sock = transport.sock;
+    }
+
+    try {
+      Object.assign(connectConfig, resolveAuthConfig(params));
+    } catch (error) {
+      rejectConnection(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+      return;
+    }
 
     if (signal?.aborted) {
       onAbort();
@@ -352,7 +615,7 @@ export const connectSsh = (
         (err: Error | undefined, sftp: import("ssh2").SFTPWrapper) => {
           if (err) {
             rejectConnection(
-              new Error(`SFTP initialization failed: ${err.message}`)
+              new Error(`SFTP initialization failed: ${err.message}`),
             );
             return;
           }
@@ -373,7 +636,7 @@ export const connectSsh = (
                 code: "SSH_HOST_KEY_UNAVAILABLE",
                 operation: "connect",
                 message: "SSH server did not provide a host key fingerprint",
-              })
+              }),
             );
             return;
           }
@@ -391,32 +654,32 @@ export const connectSsh = (
               new Error(
                 `Failed to persist SSH host key: ${
                   error instanceof Error ? error.message : String(error)
-                }`
-              )
+                }`,
+              ),
             );
             return;
           }
 
           const id = generateSessionId();
-          const session: SshSession = { id, client, sftp, params };
+          const session: SshSession = {
+            id,
+            client,
+            sftp,
+            params,
+            jumpClient: transport?.jumpClient,
+          };
           sessions.set(id, session);
           settled = true;
           clearAbortListener();
           resolve(id);
-        }
+        },
       );
     });
 
     client.on("error", (err: Error) => {
       if (!settled) {
         if (hostKeyMismatch) {
-          rejectConnection(
-            new SshOperationError({
-              code: "SSH_HOST_KEY_CHANGED",
-              operation: "connect",
-              message: `Host key changed for ${params.host}:${params.port}. Expected ${hostKeyMismatch.expected}, received ${hostKeyMismatch.received}. Confirm the new fingerprint before reconnecting.`,
-            })
-          );
+          rejectHostKeyMismatch();
           return;
         }
         rejectConnection(new Error(err.message));
@@ -427,12 +690,13 @@ export const connectSsh = (
       for (const [id, session] of sessions) {
         if (session.client === client) {
           sessions.delete(id);
+          endSshJumpClient(session);
           break;
         }
       }
       if (!settled) {
         rejectConnection(
-          new Error("SSH connection closed before establishing session")
+          new Error("SSH connection closed before establishing session"),
         );
       }
     });
@@ -441,16 +705,46 @@ export const connectSsh = (
       client.connect(connectConfig);
     } catch (err) {
       rejectConnection(
-        new Error(err instanceof Error ? err.message : String(err))
+        new Error(err instanceof Error ? err.message : String(err)),
       );
     }
   });
 };
 
+export const connectSsh = async (
+  params: SshConnectParams,
+  options?: { signal?: AbortSignal },
+): Promise<string> => {
+  if (!params.jump) {
+    return connectSshDirect(params, options);
+  }
+
+  const jump = await openJumpTransport(params.jump, params, options);
+  const transport: SshJumpTransport = {
+    sock: jump.stream,
+    jumpClient: jump.client,
+  };
+  try {
+    return await connectSshDirect(params, options, transport);
+  } catch (error) {
+    try {
+      transport.sock.close();
+    } catch {
+      // The channel may already be gone.
+    }
+    try {
+      transport.jumpClient.end();
+    } catch {
+      // The transport may already be closed.
+    }
+    throw error;
+  }
+};
+
 export const listSshDirectory = (
   sessionId: string,
   remotePath: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
 ): Promise<SshDirectoryEntry[]> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -476,7 +770,7 @@ export const listSshDirectory = (
           code: "SSH_OPERATION_CANCELLED",
           operation: "sftp_list",
           message: "Remote directory read cancelled",
-        })
+        }),
       );
     };
     if (signal?.aborted) {
@@ -490,7 +784,9 @@ export const listSshDirectory = (
         return;
       }
       if (err) {
-        settleAndReject(new Error(`Failed to read remote directory: ${err.message}`));
+        settleAndReject(
+          new Error(`Failed to read remote directory: ${err.message}`),
+        );
         return;
       }
 
@@ -536,7 +832,7 @@ export type SshCommandOptions = {
 export const executeSshCommand = (
   sessionId: string,
   command: string,
-  options?: SshCommandOptions
+  options?: SshCommandOptions,
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -596,10 +892,11 @@ export const executeSshCommand = (
         new SshOperationError({
           code: "SSH_COMMAND_CANCELLED",
           operation: "exec",
-          message: "Remote command cancelled; remote process termination is unconfirmed",
+          message:
+            "Remote command cancelled; remote process termination is unconfirmed",
           sideEffect: "possible",
           remoteProcessTermination: "unconfirmed",
-        })
+        }),
       );
     };
     const onClientError = (err: Error): void => {
@@ -611,7 +908,7 @@ export const executeSshCommand = (
           sideEffect: "possible",
           remoteProcessTermination: "unconfirmed",
         }),
-        false
+        false,
       );
     };
     const onClientClose = (): void => {
@@ -623,7 +920,7 @@ export const executeSshCommand = (
           sideEffect: "possible",
           remoteProcessTermination: "unconfirmed",
         }),
-        false
+        false,
       );
     };
 
@@ -642,14 +939,14 @@ export const executeSshCommand = (
           message: `Remote command timed out after ${timeoutMs}ms; remote process termination is unconfirmed`,
           sideEffect: "possible",
           remoteProcessTermination: "unconfirmed",
-        })
+        }),
       );
     }, timeoutMs);
 
     session.client.exec(command, (err, stream) => {
       if (err) {
         settleAndReject(
-          new Error(`Failed to execute remote command: ${err.message}`)
+          new Error(`Failed to execute remote command: ${err.message}`),
         );
         return;
       }
@@ -685,8 +982,8 @@ export const executeSshCommand = (
         if (exitCode !== 0) {
           reject(
             new Error(
-              errorOutput || `Remote command failed with exit code ${exitCode}`
-            )
+              errorOutput || `Remote command failed with exit code ${exitCode}`,
+            ),
           );
           return;
         }
@@ -694,7 +991,7 @@ export const executeSshCommand = (
       });
       stream.on("error", (streamError: Error) => {
         settleAndReject(
-          new Error(`Failed to execute remote command: ${streamError.message}`)
+          new Error(`Failed to execute remote command: ${streamError.message}`),
         );
       });
     });
@@ -723,8 +1020,8 @@ export const probeSshPty = (sessionId: string): Promise<void> =>
         } else {
           reject(
             new Error(
-              `SSH PTY allocation was rejected with exit code ${exitCode ?? "unknown"}`
-            )
+              `SSH PTY allocation was rejected with exit code ${exitCode ?? "unknown"}`,
+            ),
           );
         }
       });
@@ -756,21 +1053,29 @@ const WINDOWS_CAPABILITY_PROBE_COMMAND =
 
 export const probeSshCapabilities = async (
   sessionId: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
 ): Promise<SshCapabilities> => {
   let platform: SshCapabilities["platform"] = "posix";
   let output: string;
   try {
-    output = await executeSshCommand(sessionId, POSIX_CAPABILITY_PROBE_COMMAND, {
-      timeoutMs: 5_000,
-      signal: options?.signal,
-    });
+    output = await executeSshCommand(
+      sessionId,
+      POSIX_CAPABILITY_PROBE_COMMAND,
+      {
+        timeoutMs: 5_000,
+        signal: options?.signal,
+      },
+    );
   } catch (posixError) {
     try {
-      output = await executeSshCommand(sessionId, WINDOWS_CAPABILITY_PROBE_COMMAND, {
-        timeoutMs: 10_000,
-        signal: options?.signal,
-      });
+      output = await executeSshCommand(
+        sessionId,
+        WINDOWS_CAPABILITY_PROBE_COMMAND,
+        {
+          timeoutMs: 10_000,
+          signal: options?.signal,
+        },
+      );
       platform = "windows";
     } catch {
       throw posixError;
@@ -785,7 +1090,7 @@ export const probeSshCapabilities = async (
         const key = rawKey?.trim();
         const value = rawValue?.trim();
         return key && value ? [[key, value] as const] : [];
-      })
+      }),
   );
   const capabilities: SshCapabilities = {
     platform,
@@ -808,7 +1113,7 @@ export const probeSshCapabilities = async (
 export const readSshFile = (
   sessionId: string,
   remotePath: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
 ): Promise<Buffer> => {
   return readSshFileRange(sessionId, remotePath, { signal: options?.signal });
 };
@@ -817,7 +1122,7 @@ export const readSshFile = (
 export const readSshFileRange = (
   sessionId: string,
   remotePath: string,
-  options?: { offset?: number; length?: number; signal?: AbortSignal }
+  options?: { offset?: number; length?: number; signal?: AbortSignal },
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -830,8 +1135,7 @@ export const readSshFileRange = (
     const signal = options?.signal;
     let settled = false;
     let stream:
-      | ReturnType<import("ssh2").SFTPWrapper["createReadStream"]>
-      | undefined;
+      ReturnType<import("ssh2").SFTPWrapper["createReadStream"]> | undefined;
     const cleanup = (): void => {
       signal?.removeEventListener("abort", onAbort);
     };
@@ -847,7 +1151,7 @@ export const readSshFileRange = (
           code: "SSH_OPERATION_CANCELLED",
           operation: "sftp_read",
           message: "Remote file read cancelled",
-        })
+        }),
       );
       try {
         stream?.destroy();
@@ -870,15 +1174,15 @@ export const readSshFileRange = (
           : {
               start: offset,
               end: offset + Math.max(1, Math.floor(length)) - 1,
-            }
+            },
       );
     } catch (error) {
       settleAndReject(
         new Error(
           `Failed to read remote file: ${
             error instanceof Error ? error.message : String(error)
-          }`
-        )
+          }`,
+        ),
       );
       return;
     }
@@ -940,7 +1244,7 @@ type SftpAbortOptions = {
 
 const atomicWriteAbortOptions = (
   signal: AbortSignal | undefined,
-  sideEffect: SshOperationSideEffect = "none"
+  sideEffect: SshOperationSideEffect = "none",
 ): SftpAbortOptions => ({
   signal,
   operation: "sftp_atomic_write",
@@ -963,8 +1267,8 @@ const withSftpAbort = <T>(
   options: SftpAbortOptions | undefined,
   run: (
     resolvePromise: (value: T) => void,
-    rejectPromise: (reason?: unknown) => void
-  ) => void
+    rejectPromise: (reason?: unknown) => void,
+  ) => void,
 ): Promise<T> =>
   new Promise((resolvePromise, rejectPromise) => {
     let settled = false;
@@ -990,7 +1294,7 @@ const withSftpAbort = <T>(
           operation: options?.operation ?? "sftp",
           message: options?.message ?? "SFTP operation cancelled",
           sideEffect: options?.sideEffect,
-        })
+        }),
       );
     };
 
@@ -1009,7 +1313,7 @@ const withSftpAbort = <T>(
 const sftpVoid = (
   sftp: import("ssh2").SFTPWrapper,
   run: (callback: (error?: Error | null) => void) => void,
-  options?: SftpAbortOptions
+  options?: SftpAbortOptions,
 ): Promise<void> =>
   withSftpAbort(sftp, options, (resolvePromise, rejectPromise) => {
     run((error?: Error | null) => {
@@ -1026,7 +1330,7 @@ const sftpOpen = (
   path: string,
   mode: string,
   attributes?: { mode: number },
-  options?: SftpAbortOptions
+  options?: SftpAbortOptions,
 ): Promise<Buffer> =>
   withSftpAbort(sftp, options, (resolvePromise, rejectPromise) => {
     const callback = (error: Error | undefined, handle: Buffer): void => {
@@ -1050,7 +1354,7 @@ const sftpOpen = (
 const sftpLstat = async (
   sftp: import("ssh2").SFTPWrapper,
   path: string,
-  options?: SftpAbortOptions
+  options?: SftpAbortOptions,
 ): Promise<import("ssh2").Stats | null> =>
   withSftpAbort(sftp, options, (resolvePromise, rejectPromise) => {
     try {
@@ -1073,7 +1377,7 @@ const sftpLstat = async (
 const sftpRealpath = (
   sftp: import("ssh2").SFTPWrapper,
   path: string,
-  options?: SftpAbortOptions
+  options?: SftpAbortOptions,
 ): Promise<string> =>
   withSftpAbort(sftp, options, (resolvePromise, rejectPromise) => {
     try {
@@ -1094,7 +1398,7 @@ const sha256 = (content: Buffer): string =>
 
 const toFileVersion = (
   stats: import("ssh2").Stats,
-  content: Buffer
+  content: Buffer,
 ): SshFileVersion => ({
   exists: true,
   sha256: sha256(content),
@@ -1104,7 +1408,7 @@ const toFileVersion = (
 
 const sameMetadata = (
   first: import("ssh2").Stats,
-  second: import("ssh2").Stats
+  second: import("ssh2").Stats,
 ): boolean =>
   first.size === second.size &&
   first.mtime === second.mtime &&
@@ -1112,7 +1416,7 @@ const sameMetadata = (
 
 const sameFileVersion = (
   expected: SshFileVersion,
-  actual: SshFileVersion
+  actual: SshFileVersion,
 ): boolean => {
   if (expected.exists !== actual.exists) {
     return false;
@@ -1130,7 +1434,7 @@ const sameFileVersion = (
 
 const fileTypeError = (
   path: string,
-  stats: import("ssh2").Stats
+  stats: import("ssh2").Stats,
 ): SshOperationError => {
   if (stats.isSymbolicLink()) {
     return new SshOperationError({
@@ -1146,10 +1450,7 @@ const fileTypeError = (
   });
 };
 
-const assertRegularFile = (
-  path: string,
-  stats: import("ssh2").Stats
-): void => {
+const assertRegularFile = (path: string, stats: import("ssh2").Stats): void => {
   if (!stats.isFile()) {
     throw fileTypeError(path, stats);
   }
@@ -1194,7 +1495,7 @@ const assertWorkspaceBoundary = async (
   sftp: import("ssh2").SFTPWrapper,
   remotePath: string,
   workspaceRoot: string | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> => {
   if (!workspaceRoot) {
     return;
@@ -1215,7 +1516,7 @@ const assertWorkspaceBoundary = async (
     sftpRealpath(
       sftp,
       dirname(normalizedPath),
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     ),
   ]);
   if (!isWithinRemoteRoot(resolvedParent, resolvedRoot)) {
@@ -1242,7 +1543,7 @@ const closeHandle = async (
   sftp: import("ssh2").SFTPWrapper,
   handle: Buffer | undefined,
   signal?: AbortSignal,
-  sideEffect: SshOperationSideEffect = "none"
+  sideEffect: SshOperationSideEffect = "none",
 ): Promise<void> => {
   if (!handle) {
     return;
@@ -1250,20 +1551,20 @@ const closeHandle = async (
   await sftpVoid(
     sftp,
     (callback) => sftp.close(handle, callback),
-    atomicWriteAbortOptions(signal, sideEffect)
+    atomicWriteAbortOptions(signal, sideEffect),
   );
 };
 
 const cleanupTemporaryFile = async (
   sftp: import("ssh2").SFTPWrapper,
   temporaryPath: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<string | null> => {
   try {
     await sftpVoid(
       sftp,
       (callback) => sftp.unlink(temporaryPath, callback),
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     );
     return null;
   } catch (error) {
@@ -1275,7 +1576,7 @@ const writeHandle = async (
   sftp: import("ssh2").SFTPWrapper,
   handle: Buffer,
   data: Buffer,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<void> => {
   for (let offset = 0; offset < data.length; offset += SFTP_WRITE_CHUNK_SIZE) {
     assertNotAborted(signal);
@@ -1283,7 +1584,7 @@ const writeHandle = async (
     await sftpVoid(
       sftp,
       (callback) => sftp.write(handle, data, offset, length, offset, callback),
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     );
   }
   assertNotAborted(signal);
@@ -1293,13 +1594,13 @@ const tryFsync = async (
   sftp: import("ssh2").SFTPWrapper,
   handle: Buffer,
   signal?: AbortSignal,
-  sideEffect: SshOperationSideEffect = "none"
+  sideEffect: SshOperationSideEffect = "none",
 ): Promise<boolean> => {
   try {
     await sftpVoid(
       sftp,
       (callback) => sftp.ext_openssh_fsync(handle, callback),
-      atomicWriteAbortOptions(signal, sideEffect)
+      atomicWriteAbortOptions(signal, sideEffect),
     );
     return true;
   } catch (error) {
@@ -1314,13 +1615,14 @@ const tryPosixRename = async (
   sftp: import("ssh2").SFTPWrapper,
   temporaryPath: string,
   remotePath: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<boolean> => {
   try {
     await sftpVoid(
       sftp,
-      (callback) => sftp.ext_openssh_rename(temporaryPath, remotePath, callback),
-      atomicWriteAbortOptions(signal, "possible")
+      (callback) =>
+        sftp.ext_openssh_rename(temporaryPath, remotePath, callback),
+      atomicWriteAbortOptions(signal, "possible"),
     );
     return true;
   } catch (error) {
@@ -1336,7 +1638,7 @@ const writeCompatibilityFile = async (
   remotePath: string,
   data: Buffer,
   targetExists: boolean,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<boolean> => {
   let handle: Buffer | undefined;
   try {
@@ -1348,7 +1650,7 @@ const writeCompatibilityFile = async (
       remotePath,
       "w",
       targetExists ? undefined : { mode: 0o600 },
-      atomicWriteAbortOptions(signal, "possible")
+      atomicWriteAbortOptions(signal, "possible"),
     );
     await writeHandle(sftp, handle, data, signal);
     const fsynced = await tryFsync(sftp, handle, signal, "possible");
@@ -1357,7 +1659,9 @@ const writeCompatibilityFile = async (
     return fsynced;
   } finally {
     if (handle) {
-      await closeHandle(sftp, handle, signal, "possible").catch(() => undefined);
+      await closeHandle(sftp, handle, signal, "possible").catch(
+        () => undefined,
+      );
     }
   }
 };
@@ -1366,7 +1670,7 @@ const copyBasicPosixMode = async (
   sftp: import("ssh2").SFTPWrapper,
   handle: Buffer,
   targetStats: import("ssh2").Stats | null,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> => {
   if (!targetStats) {
     return;
@@ -1380,7 +1684,7 @@ const copyBasicPosixMode = async (
   await sftpVoid(
     sftp,
     (callback) => sftp.fchmod(handle, targetStats.mode & 0o777, callback),
-    atomicWriteAbortOptions(signal)
+    atomicWriteAbortOptions(signal),
   );
 };
 
@@ -1394,7 +1698,7 @@ const createTemporaryPath = (remotePath: string): string => {
 export const readSshFileWithVersion = async (
   sessionId: string,
   remotePath: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
 ): Promise<{ content: Buffer; version: SshFileVersion }> => {
   const session = getSshSession(sessionId);
   if (!session) {
@@ -1404,7 +1708,7 @@ export const readSshFileWithVersion = async (
   const before = await sftpLstat(
     session.sftp,
     remotePath,
-    atomicWriteAbortOptions(options?.signal)
+    atomicWriteAbortOptions(options?.signal),
   );
   if (!before) {
     throw new SshOperationError({
@@ -1418,13 +1722,14 @@ export const readSshFileWithVersion = async (
   const after = await sftpLstat(
     session.sftp,
     remotePath,
-    atomicWriteAbortOptions(options?.signal)
+    atomicWriteAbortOptions(options?.signal),
   );
   if (!after || !sameMetadata(before, after)) {
     throw new SshOperationError({
       code: "SSH_FILE_CHANGED_DURING_READ",
       operation: "sftp_read",
-      message: "Remote file changed while it was being read; reload before editing",
+      message:
+        "Remote file changed while it was being read; reload before editing",
     });
   }
   assertRegularFile(remotePath, after);
@@ -1437,17 +1742,18 @@ const completeCompatibilityWrite = async (
   remotePath: string,
   data: Buffer,
   targetExists: boolean,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
 ): Promise<SshFileWriteResult> => {
   const fsynced = await writeCompatibilityFile(
     sftp,
     remotePath,
     data,
     targetExists,
-    signal
+    signal,
   );
-  const version = (await readSshFileWithVersion(sessionId, remotePath, { signal }))
-    .version;
+  const version = (
+    await readSshFileWithVersion(sessionId, remotePath, { signal })
+  ).version;
   if (
     !version.exists ||
     version.size !== data.length ||
@@ -1456,7 +1762,8 @@ const completeCompatibilityWrite = async (
     throw new SshOperationError({
       code: "SSH_FILE_VERIFY_FAILED",
       operation: "sftp_compatibility_write",
-      message: "Remote compatibility save completed but content verification failed",
+      message:
+        "Remote compatibility save completed but content verification failed",
       sideEffect: "possible",
     });
   }
@@ -1473,7 +1780,7 @@ const writeSshFileWithOptions = async (
   sessionId: string,
   remotePath: string,
   content: string | Buffer,
-  options?: SshInternalFileWriteOptions
+  options?: SshInternalFileWriteOptions,
 ): Promise<SshFileWriteResult> => {
   const session = getSshSession(sessionId);
   if (!session) {
@@ -1482,7 +1789,9 @@ const writeSshFileWithOptions = async (
 
   const normalizedPath = normalizedRemotePath(remotePath);
   const signal = options?.signal;
-  const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf-8");
+  const data = Buffer.isBuffer(content)
+    ? content
+    : Buffer.from(content, "utf-8");
   const temporaryPath = createTemporaryPath(normalizedPath);
   let handle: Buffer | undefined;
   let temporaryCreated = false;
@@ -1496,13 +1805,13 @@ const writeSshFileWithOptions = async (
       session.sftp,
       normalizedPath,
       options?.workspaceRoot,
-      signal
+      signal,
     );
 
     const initialStats = await sftpLstat(
       session.sftp,
       normalizedPath,
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     );
     if (initialStats) {
       assertRegularFile(normalizedPath, initialStats);
@@ -1510,13 +1819,15 @@ const writeSshFileWithOptions = async (
 
     if (options?.expectedVersion) {
       const actualVersion = initialStats
-        ? (await readSshFileWithVersion(sessionId, normalizedPath, { signal })).version
+        ? (await readSshFileWithVersion(sessionId, normalizedPath, { signal }))
+            .version
         : { exists: false };
       if (!sameFileVersion(options.expectedVersion, actualVersion)) {
         throw new SshOperationError({
           code: "SSH_FILE_CONFLICT",
           operation: "sftp_atomic_write",
-          message: "Remote file changed since it was loaded; reload and resolve the conflict",
+          message:
+            "Remote file changed since it was loaded; reload and resolve the conflict",
         });
       }
     }
@@ -1529,7 +1840,7 @@ const writeSshFileWithOptions = async (
         normalizedPath,
         data,
         true,
-        signal
+        signal,
       );
     }
 
@@ -1539,7 +1850,7 @@ const writeSshFileWithOptions = async (
       temporaryPath,
       "wx",
       { mode },
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     );
     temporaryCreated = true;
     await writeHandle(session.sftp, handle, data, signal);
@@ -1549,25 +1860,27 @@ const writeSshFileWithOptions = async (
       session.sftp,
       normalizedPath,
       options?.workspaceRoot,
-      signal
+      signal,
     );
     const currentStats = await sftpLstat(
       session.sftp,
       normalizedPath,
-      atomicWriteAbortOptions(signal)
+      atomicWriteAbortOptions(signal),
     );
     if (currentStats) {
       assertRegularFile(normalizedPath, currentStats);
     }
     if (options?.expectedVersion) {
       const currentVersion = currentStats
-        ? (await readSshFileWithVersion(sessionId, normalizedPath, { signal })).version
+        ? (await readSshFileWithVersion(sessionId, normalizedPath, { signal }))
+            .version
         : { exists: false };
       if (!sameFileVersion(options.expectedVersion, currentVersion)) {
         throw new SshOperationError({
           code: "SSH_FILE_CONFLICT",
           operation: "sftp_atomic_write",
-          message: "Remote file changed before replacement; reload and resolve the conflict",
+          message:
+            "Remote file changed before replacement; reload and resolve the conflict",
         });
       }
     }
@@ -1582,13 +1895,13 @@ const writeSshFileWithOptions = async (
       session.sftp,
       temporaryPath,
       normalizedPath,
-      signal
+      signal,
     );
     if (!usedPosixRename) {
       const cleanupFailure = await cleanupTemporaryFile(
         session.sftp,
         temporaryPath,
-        signal
+        signal,
       );
       if (cleanupFailure) {
         throw new SshOperationError({
@@ -1606,7 +1919,7 @@ const writeSshFileWithOptions = async (
         normalizedPath,
         data,
         false,
-        signal
+        signal,
       );
     }
     renamed = true;
@@ -1621,7 +1934,8 @@ const writeSshFileWithOptions = async (
       throw new SshOperationError({
         code: "SSH_FILE_VERIFY_FAILED",
         operation: "sftp_atomic_write",
-        message: "Remote file replacement completed but content verification failed",
+        message:
+          "Remote file replacement completed but content verification failed",
         sideEffect: "possible",
       });
     }
@@ -1647,7 +1961,7 @@ const writeSshFileWithOptions = async (
         const unlinkFailure = await cleanupTemporaryFile(
           session.sftp,
           temporaryPath,
-          signal
+          signal,
         );
         cleanupFailure = cleanupFailure ?? unlinkFailure;
       }
@@ -1655,7 +1969,8 @@ const writeSshFileWithOptions = async (
 
     if (error instanceof SshOperationError) {
       const sideEffect =
-        (renameAttempted || compatibilityWriteStarted) && error.sideEffect === "none"
+        (renameAttempted || compatibilityWriteStarted) &&
+        error.sideEffect === "none"
           ? "possible"
           : error.sideEffect;
       if (cleanupFailure || sideEffect !== error.sideEffect) {
@@ -1703,7 +2018,7 @@ export const writeSshFile = (
   sessionId: string,
   remotePath: string,
   content: string | Buffer,
-  options: SshFileWriteOptions
+  options: SshFileWriteOptions,
 ): Promise<SshFileWriteResult> =>
   writeSshFileWithOptions(sessionId, remotePath, content, options);
 
@@ -1711,13 +2026,13 @@ export const writeInternalSshFile = (
   sessionId: string,
   remotePath: string,
   content: string | Buffer,
-  options?: SshInternalFileWriteOptions
+  options?: SshInternalFileWriteOptions,
 ): Promise<SshFileWriteResult> =>
   writeSshFileWithOptions(sessionId, remotePath, content, options);
 
 export const deleteSshFile = (
   sessionId: string,
-  remotePath: string
+  remotePath: string,
 ): Promise<void> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -1739,7 +2054,7 @@ export const deleteSshFile = (
 export const renameSshFile = (
   sessionId: string,
   oldPath: string,
-  newPath: string
+  newPath: string,
 ): Promise<void> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -1760,7 +2075,7 @@ export const renameSshFile = (
 
 export const removeEmptySshDirectory = (
   sessionId: string,
-  remotePath: string
+  remotePath: string,
 ): Promise<boolean> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -1780,7 +2095,7 @@ export const removeEmptySshDirectory = (
 
 export const deleteSshDirectory = (
   sessionId: string,
-  remotePath: string
+  remotePath: string,
 ): Promise<void> => {
   // SFTP rmdir only works on empty directories. For recursive removal we
   // shell out to `rm -rf` via the existing exec channel, which is the most
@@ -1791,7 +2106,7 @@ export const deleteSshDirectory = (
 
 export const statSshEntry = (
   sessionId: string,
-  remotePath: string
+  remotePath: string,
 ): Promise<import("ssh2").Stats | null> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -1809,7 +2124,7 @@ export const statSshEntry = (
           return;
         }
         resolve(stats);
-      }
+      },
     );
   });
 };
@@ -1831,6 +2146,7 @@ export const disconnectSsh = (sessionId: string): void => {
   } catch {
     // Ignore
   }
+  endSshJumpClient(session);
   sessions.delete(resolvedSessionId);
 };
 
@@ -1842,6 +2158,7 @@ export const disconnectAllSsh = (): void => {
     } catch {
       // Ignore
     }
+    endSshJumpClient(session);
   }
   sessions.clear();
 };
@@ -1881,7 +2198,7 @@ export const parseSshUrl = (sshUrl: string): ParsedSshUrl => {
  */
 export const resolveSshWorkspaceRoot = (
   sessionId: string,
-  workspaceUrl: string
+  workspaceUrl: string,
 ): string => {
   const session = getSshSession(sessionId);
   if (!session) {

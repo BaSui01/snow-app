@@ -355,6 +355,7 @@ export function ChatItemMenu({
               <div
                 ref={menuRef}
                 className="chat-item-menu"
+                data-snow-conversation-id={conversationId}
                 style={
                   menuPosition
                     ? { top: menuPosition.top, left: menuPosition.left }

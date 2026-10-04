@@ -5,6 +5,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Sparkles,
+  Store,
   Trash2,
   Upload,
   Puzzle,
@@ -25,6 +26,7 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PluginIcon } from "../common/PluginIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { PluginCreateBox } from "./PluginCreateBox";
+import { PluginMarketPanel } from "./PluginMarketPanel";
 import { PluginMetadataCatalog } from "./PluginMetadataCatalog";
 import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
 import {
@@ -56,7 +58,9 @@ export const PluginsPanel = ({
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [createRequest, setCreateRequest] = useState("");
   const [createOpen, setCreateOpen] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<"list" | "metadata">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "market" | "metadata">(
+    "list",
+  );
   const [listTab, setListTab] = useState<"plugins" | "scripts">("plugins");
   const [privacyTarget, setPrivacyTarget] =
     useState<PluginPrivacyTarget | null>(null);
@@ -240,6 +244,18 @@ export const PluginsPanel = ({
             <Puzzle size={14} strokeWidth={1.8} />
             <span>{t("plugins.tabList", { defaultValue: "Plugin list" })}</span>
             <small>{state.plugins.length + clientScripts.scripts.length}</small>
+          </button>
+          <button
+            aria-selected={activeTab === "market"}
+            className={`plugins-tab${activeTab === "market" ? " active" : ""}`}
+            onClick={() => setActiveTab("market")}
+            role="tab"
+            type="button"
+          >
+            <Store size={14} strokeWidth={1.8} />
+            <span>
+              {t("plugins.market.tab", { defaultValue: "Plugin market" })}
+            </span>
           </button>
           <button
             aria-selected={activeTab === "metadata"}
@@ -575,6 +591,8 @@ export const PluginsPanel = ({
               )}
             </div>
           </>
+        ) : activeTab === "market" ? (
+          <PluginMarketPanel />
         ) : (
           <PluginMetadataCatalog
             onClearPlugin={clearMetadataPlugin}

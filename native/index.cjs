@@ -103,6 +103,10 @@ const requiredExports = [
   "browserHistoryList",
   "browserHistoryDelete",
   "browserHistoryClear",
+  // 插件市场（索引拉取 / 从市场安装插件与脚本）
+  "fetchPluginRegistry",
+  "installPluginFromMarket",
+  "installScriptFromMarket",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

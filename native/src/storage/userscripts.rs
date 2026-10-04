@@ -329,11 +329,56 @@ pub fn list_userscripts(database_path: &Path) -> Result<Vec<UserscriptRecord>> {
 
 /// 创建用户脚本：解析元数据 → 写文件 → 插入 DB（元数据 + file_path）。
 pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRecord> {
-    let meta = parse_meta(raw);
     let script_id = Uuid::new_v4().to_string();
+    insert_new_userscript(database_path, &script_id, raw)
+}
+
+/// 从插件市场安装用户脚本：`script_id` 由市场条目指定（跨版本稳定，更新时命中同一行）。
+pub fn install_market_userscript(
+    database_path: &Path,
+    script_id: &str,
+    raw: &str,
+) -> Result<UserscriptRecord> {
+    let script_id = script_id.trim();
+    let is_valid = !script_id.is_empty()
+        && script_id.len() <= 96
+        && script_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_'));
+    if !is_valid {
+        return Err(Error::from_reason(
+            "Userscript market id is invalid".to_string(),
+        ));
+    }
+    let exists = database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT 1 FROM userscripts WHERE script_id = ?1",
+                    [script_id],
+                    |_row| Ok(()),
+                )
+                .optional()
+        })
+        .map_err(|error| database::database_error(database_path, "check userscript", error))?
+        .is_some();
+    if exists {
+        update_userscript(database_path, script_id, raw)
+    } else {
+        insert_new_userscript(database_path, script_id, raw)
+    }
+}
+
+/// 以指定 id 新建脚本：解析元数据 → 写文件 → 插入 DB（元数据 + file_path）。
+fn insert_new_userscript(
+    database_path: &Path,
+    script_id: &str,
+    raw: &str,
+) -> Result<UserscriptRecord> {
+    let meta = parse_meta(raw);
 
     // 确保目录存在并写出文件
-    let file_path = script_file_path(&script_id)?;
+    let file_path = script_file_path(script_id)?;
     fs::create_dir_all(file_path.parent().unwrap())
         .map_err(|e| Error::from_reason(format!("Failed to create browser-script dir: {e}")))?;
     fs::write(&file_path, raw)
@@ -381,7 +426,7 @@ pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRe
         )
         .map_err(|error| database::database_error(database_path, "create userscript", error))?;
 
-    let created = query_userscript(database_path, &script_id)?;
+    let created = query_userscript(database_path, script_id)?;
     created.ok_or_else(|| Error::from_reason("Failed to read back created userscript"))
 }
 

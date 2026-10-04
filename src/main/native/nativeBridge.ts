@@ -1994,6 +1994,12 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(new Error("Rust native bridge is required for plugins")),
       getPluginsDirectory: () =>
         Promise.reject(new Error("Rust native bridge is required for plugins")),
+      fetchPluginRegistry: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      installPluginFromMarket: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
+      installScriptFromMarket: () =>
+        Promise.reject(new Error("Rust native bridge is required for plugins")),
     };
   }
 };

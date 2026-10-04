@@ -6,6 +6,7 @@ mod formatting;
 mod git;
 mod ide;
 mod images;
+mod market;
 mod pets;
 pub(crate) mod pre_script;
 mod remote_control;

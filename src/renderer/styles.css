@@ -15476,22 +15476,34 @@ body.is-panel-resizing * {
   color: #f85149;
   border-color: rgba(248, 81, 73, 0.4);
 }
+.tool-call-ansi-output {
+  position: relative;
+}
 .tool-call-ansi-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: transparent;
-  border: none;
+  background: var(--bg-secondary, #21262d);
   color: var(--text-tertiary, #8b949e);
-  font-size: 10.5px;
-  padding: 2px 6px;
+  border: 1px solid var(--border-color, #30363d);
   border-radius: var(--radius-xs, 3px);
+  padding: 2px 6px;
+  font-size: 10.5px;
   cursor: pointer;
-  transition: color 0.12s ease;
+  opacity: 0.6;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease;
+}
+.tool-call-ansi-output:hover .tool-call-ansi-copy-btn {
+  opacity: 1;
 }
 .tool-call-ansi-copy-btn:hover {
   color: var(--text-primary, #e6edf3);
-  background: var(--bg-tertiary, #30363d);
+  border-color: var(--accent, #58a6ff);
 }
 .tool-call-ansi-pre {
   margin: 0;
@@ -51992,7 +52004,7 @@ pre.file-viewer-code {
 
 .plugins-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex-shrink: 0;
   gap: 4px;
   padding: 4px;
@@ -53058,6 +53070,140 @@ img.plugin-icon {
 
 .plugins-scripts-install-input::placeholder {
   color: var(--text-muted);
+}
+
+.plugin-market-search {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+
+.plugin-market-search:focus-within {
+  border-color: var(--accent-color);
+}
+
+.plugin-market-search-input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.plugin-market-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.plugin-market-source {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.plugin-market-source-link,
+.plugin-market-repo-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.plugin-market-source-link:hover,
+.plugin-market-repo-link:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.plugin-market-updated {
+  margin-left: auto;
+}
+
+.plugin-market-installed {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.plugin-market-item-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.plugin-market-item-foot .plugin-market-repo-link {
+  margin-left: auto;
+}
+
+.plugin-market-update-hint {
+  color: var(--text-secondary);
+}
+
+.plugin-market-requires {
+  color: var(--accent-amber-text);
+}
+
+.plugin-market-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.plugin-market-confirm p {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.plugin-market-confirm-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.plugin-market-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plugin-market-confirm-row > span {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.plugin-market-hash {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== Git Multi-Remote & Tracking Badges ===== */

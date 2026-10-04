@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 
 import type { PluginRecord } from "../../preload/types/plugins";
+import { clientScriptStore } from "../userscripts/clientScriptStore";
+import { buildMarketDownloadUrl, type MarketPluginEntry } from "./market";
 import { parsePluginRecord } from "./manifest";
 import { runtimeSnapshot } from "./runtimeSnapshot";
 import type { PluginView } from "./types";
@@ -88,6 +90,30 @@ export const pluginStore = {
     const record = await window.snow.installPlugin(directory);
     await pluginStore.refresh();
     return parsePluginRecord(record);
+  },
+  /** 从插件市场安装（或更新）面板插件或用户脚本：下载、SHA256 校验与落盘由 Rust 侧完成。 */
+  async installFromMarket(entry: MarketPluginEntry): Promise<void> {
+    const downloadUrl = buildMarketDownloadUrl(entry);
+    if (!downloadUrl) {
+      throw new Error("Plugin entry has no downloadable archive");
+    }
+    if (entry.kind === "script") {
+      await window.snow.installScriptFromMarket({
+        scriptId: entry.id,
+        downloadUrl,
+        sha256: entry.sha256,
+      });
+      await window.snow.reapplyClientScripts().catch(() => undefined);
+      await clientScriptStore.refresh();
+      return;
+    }
+    await window.snow.installPluginFromMarket({
+      pluginId: entry.id,
+      downloadUrl,
+      sha256: entry.sha256,
+      sourceUrl: entry.repo,
+    });
+    await pluginStore.refresh();
   },
   async rescan(pluginId: string): Promise<void> {
     await window.snow.rescanPlugin(pluginId);

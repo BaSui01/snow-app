@@ -142,9 +142,8 @@ export const AnsiOutput = ({
 
   return (
     <div className={`tool-call-ansi-container ${className}`}>
-      {/* 终端日志工具条 */}
-      <div className="tool-call-ansi-toolbar">
-        {hasErrors && (
+      {hasErrors && (
+        <div className="tool-call-ansi-toolbar">
           <div className="tool-call-ansi-filter-tabs">
             <button
               type="button"
@@ -172,8 +171,35 @@ export const AnsiOutput = ({
               仅报错
             </button>
           </div>
-        )}
+        </div>
+      )}
 
+      <div className="tool-call-ansi-output">
+        <pre className="tool-call-section-pre tool-call-bash-output-pre tool-call-ansi-pre">
+          {displayedLines.map((line, lineIdx) => {
+            const spans = parseAnsiLine(line);
+            const isErr = isErrorLine(line);
+            return (
+              <div
+                key={lineIdx}
+                className={`tool-call-ansi-line ${isErr ? "is-error-line" : ""}`}
+              >
+                {spans.map((span, spanIdx) => (
+                  <span
+                    key={spanIdx}
+                    style={{
+                      color: span.color,
+                      fontWeight: span.bold ? "bold" : "normal",
+                      textDecoration: span.underline ? "underline" : "none",
+                    }}
+                  >
+                    {span.text}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </pre>
         <button
           type="button"
           className="tool-call-ansi-copy-btn"
@@ -185,36 +211,8 @@ export const AnsiOutput = ({
           ) : (
             <Copy size={11} aria-hidden="true" />
           )}
-          <span>{copied ? "已复制" : "复制"}</span>
         </button>
       </div>
-
-      {/* 终端内容区 */}
-      <pre className="tool-call-section-pre tool-call-bash-output-pre tool-call-ansi-pre">
-        {displayedLines.map((line, lineIdx) => {
-          const spans = parseAnsiLine(line);
-          const isErr = isErrorLine(line);
-          return (
-            <div
-              key={lineIdx}
-              className={`tool-call-ansi-line ${isErr ? "is-error-line" : ""}`}
-            >
-              {spans.map((span, spanIdx) => (
-                <span
-                  key={spanIdx}
-                  style={{
-                    color: span.color,
-                    fontWeight: span.bold ? "bold" : "normal",
-                    textDecoration: span.underline ? "underline" : "none",
-                  }}
-                >
-                  {span.text}
-                </span>
-              ))}
-            </div>
-          );
-        })}
-      </pre>
     </div>
   );
 };

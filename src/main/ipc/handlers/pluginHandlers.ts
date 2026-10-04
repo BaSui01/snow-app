@@ -1,6 +1,12 @@
 import { BrowserWindow, dialog, ipcMain, net } from "electron";
 import { extname } from "node:path";
-import type { NativeBridge, PluginRecord } from "../../native/types";
+import { refreshUserscriptSyncStore } from "../../app/userscriptSyncStore";
+import type {
+  NativeBridge,
+  PluginRecord,
+  UserscriptRecord,
+} from "../../native/types";
+import { safeSend } from "../../utils/safeSend";
 
 const PLUGIN_HTTP_DEFAULT_TIMEOUT_MS = 30000;
 const PLUGIN_HTTP_MAX_TIMEOUT_MS = 120000;
@@ -80,6 +86,87 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
         throw new Error("Plugin directory is required");
       }
       return native.installPlugin(sourceDir.trim());
+    },
+  );
+
+  ipcMain.handle(
+    "plugins:market-registry",
+    (_event, forceRefresh: unknown): Promise<string> =>
+      native.fetchPluginRegistry(forceRefresh === true),
+  );
+
+  ipcMain.handle(
+    "plugins:market-install",
+    async (event, payload: unknown): Promise<PluginRecord> => {
+      if (payload === null || typeof payload !== "object") {
+        throw new Error("Invalid plugin market install payload");
+      }
+      const { pluginId, downloadUrl, sha256, sourceUrl } = payload as {
+        pluginId?: unknown;
+        downloadUrl?: unknown;
+        sha256?: unknown;
+        sourceUrl?: unknown;
+      };
+      if (!isNonEmptyString(pluginId)) {
+        throw new Error("Plugin id is required");
+      }
+      if (
+        !isNonEmptyString(downloadUrl) ||
+        !/^https:\/\//i.test(downloadUrl.trim())
+      ) {
+        throw new Error("Plugin download URL must use https");
+      }
+      if (!isNonEmptyString(sha256) || !/^[0-9a-f]{64}$/i.test(sha256.trim())) {
+        throw new Error("Plugin archive SHA256 is invalid");
+      }
+      if (
+        !isNonEmptyString(sourceUrl) ||
+        !/^https:\/\//i.test(sourceUrl.trim())
+      ) {
+        throw new Error("Plugin source URL must use https");
+      }
+      const record = await native.installPluginFromMarket(
+        pluginId.trim(),
+        downloadUrl.trim(),
+        sha256.trim().toLowerCase(),
+        sourceUrl.trim(),
+      );
+      safeSend(event.sender, "plugins:changed");
+      return record;
+    },
+  );
+
+  ipcMain.handle(
+    "plugins:market-install-script",
+    async (event, payload: unknown): Promise<UserscriptRecord> => {
+      if (payload === null || typeof payload !== "object") {
+        throw new Error("Invalid userscript market install payload");
+      }
+      const { scriptId, downloadUrl, sha256 } = payload as {
+        scriptId?: unknown;
+        downloadUrl?: unknown;
+        sha256?: unknown;
+      };
+      if (!isNonEmptyString(scriptId)) {
+        throw new Error("Userscript id is required");
+      }
+      if (
+        !isNonEmptyString(downloadUrl) ||
+        !/^https:\/\//i.test(downloadUrl.trim())
+      ) {
+        throw new Error("Userscript download URL must use https");
+      }
+      if (!isNonEmptyString(sha256) || !/^[0-9a-f]{64}$/i.test(sha256.trim())) {
+        throw new Error("Userscript SHA256 is invalid");
+      }
+      const record = await native.installScriptFromMarket(
+        scriptId.trim(),
+        downloadUrl.trim(),
+        sha256.trim().toLowerCase(),
+      );
+      refreshUserscriptSyncStore(native);
+      safeSend(event.sender, "userscripts:changed");
+      return record;
     },
   );
 

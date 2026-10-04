@@ -5,6 +5,7 @@ import type {
   PluginRecord,
   PluginStorageValue,
 } from "../types/plugins";
+import type { UserscriptRecord } from "../types/userscripts";
 
 export const pluginsApi = {
   /** 列出全部已安装插件。 */
@@ -19,6 +20,24 @@ export const pluginsApi = {
   /** 从本地目录安装（或更新）插件：自动扫描 plugin.json 并复制到插件目录。 */
   installPlugin: (sourceDir: string): Promise<PluginRecord> =>
     ipcRenderer.invoke("plugins:install", sourceDir),
+  /** 拉取插件市场索引 JSON（Rust 侧负责镜像降级与缓存）。 */
+  fetchPluginRegistry: (forceRefresh?: boolean): Promise<string> =>
+    ipcRenderer.invoke("plugins:market-registry", forceRefresh === true),
+  /** 从插件市场安装（或更新）插件：下载 zip、校验 SHA256 后复用目录安装链路。 */
+  installPluginFromMarket: (payload: {
+    pluginId: string;
+    downloadUrl: string;
+    sha256: string;
+    sourceUrl: string;
+  }): Promise<PluginRecord> =>
+    ipcRenderer.invoke("plugins:market-install", payload),
+  /** 从插件市场安装（或更新）用户脚本：下载 .user.js、校验 SHA256 后写入脚本库。 */
+  installScriptFromMarket: (payload: {
+    scriptId: string;
+    downloadUrl: string;
+    sha256: string;
+  }): Promise<UserscriptRecord> =>
+    ipcRenderer.invoke("plugins:market-install-script", payload),
   /** 重新读取插件目录中的 plugin.json 并刷新元数据。 */
   rescanPlugin: (pluginId: string): Promise<PluginRecord> =>
     ipcRenderer.invoke("plugins:rescan", pluginId),

@@ -491,6 +491,24 @@ pub fn list_plugins(database_path: &Path) -> Result<Vec<PluginRecord>> {
 }
 
 pub fn install_plugin(database_path: &Path, source_dir: &str) -> Result<PluginRecord> {
+    install_plugin_internal(database_path, source_dir, None)
+}
+
+/// 与 [`install_plugin`] 相同，但把 `source_path` 改写为调用方给定的来源标识
+/// （插件市场安装时记录插件仓库地址，供更新检查与来源展示使用）。
+pub fn install_plugin_with_source(
+    database_path: &Path,
+    source_dir: &str,
+    source_origin: &str,
+) -> Result<PluginRecord> {
+    install_plugin_internal(database_path, source_dir, Some(source_origin))
+}
+
+fn install_plugin_internal(
+    database_path: &Path,
+    source_dir: &str,
+    source_origin: Option<&str>,
+) -> Result<PluginRecord> {
     let source = PathBuf::from(source_dir.trim());
     if !source.is_dir() {
         return Err(Error::from_reason(format!(
@@ -540,7 +558,9 @@ pub fn install_plugin(database_path: &Path, source_dir: &str) -> Result<PluginRe
     }
 
     let install_path = target.to_string_lossy().to_string();
-    let source_path = if already_in_place {
+    let source_path = if let Some(origin) = source_origin {
+        origin.trim().to_string()
+    } else if already_in_place {
         install_path.clone()
     } else {
         source.to_string_lossy().to_string()

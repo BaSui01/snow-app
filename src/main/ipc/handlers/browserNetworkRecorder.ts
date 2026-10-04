@@ -1,4 +1,6 @@
 import { app, session, webContents } from "electron";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { snowLog } from "../../../utils/snowLogger";
 
 /**
@@ -24,6 +26,20 @@ export const registerDebuggerMessageListener = (
   listener: (webContentsId: number, method: string, params: unknown) => void,
 ): void => {
   debuggerMessageListeners.add(listener);
+};
+
+const notifyDebuggerMessageListeners = (
+  webContentsId: number,
+  method: string,
+  params: unknown,
+): void => {
+  for (const listener of debuggerMessageListeners) {
+    try {
+      listener(webContentsId, method, params);
+    } catch {
+      // 扩展监听器失败不影响核心调试功能。
+    }
+  }
 };
 
 // ===== 网络请求记录 =====
@@ -59,9 +75,49 @@ let nextRecordId = 1;
 let networkRecorderInitialized = false;
 
 // ===== CDP 网络记录（主数据源）=====
-// webContentsId -> requestId -> 进行中的 CDP 记录；请求完成后保留在 map 内供详情查询。
-const cdpNetworkRecords = new Map<number, Map<string, BrowserNetworkRecord>>();
+// webContentsId -> 当前导航代际的 CDP 记录（requestId -> record）；主帧导航时归档，保留最近 3 代。
+type CdpNetworkState = {
+  current: Map<string, BrowserNetworkRecord>;
+  archived: Map<string, BrowserNetworkRecord>[];
+};
+
+const cdpNetworkRecords = new Map<number, CdpNetworkState>();
+const mainFrameIds = new Map<number, string>();
+const MAX_ARCHIVED_GENERATIONS = 3;
 let nextCdpRecordId = 1;
+
+const findCdpRecord = (
+  webContentsId: number,
+  requestId: string,
+): BrowserNetworkRecord | undefined => {
+  const state = cdpNetworkRecords.get(webContentsId);
+  if (!state) {
+    return undefined;
+  }
+  const direct = state.current.get(requestId);
+  if (direct) {
+    return direct;
+  }
+  for (const generation of state.archived) {
+    const hit = generation.get(requestId);
+    if (hit) {
+      return hit;
+    }
+  }
+  return undefined;
+};
+
+const archiveNetworkGeneration = (webContentsId: number): void => {
+  const state = cdpNetworkRecords.get(webContentsId);
+  if (!state || state.current.size === 0) {
+    return;
+  }
+  state.archived.unshift(state.current);
+  if (state.archived.length > MAX_ARCHIVED_GENERATIONS) {
+    state.archived.length = MAX_ARCHIVED_GENERATIONS;
+  }
+  state.current = new Map();
+};
 
 /** 详情查询时响应体/请求体的最大字节数（超出截断并标记 truncated）。 */
 const MAX_BODY_BYTES = 128 * 1024;
@@ -160,11 +216,11 @@ export const initBrowserNetworkRecorder = (): void => {
   });
 };
 
-/** 查询网络记录：最新在前；filter 为 URL 正则（Rust 入口已校验）。
+/** 查询网络记录（最新在前）。
  * 优先返回 CDP 记录（含 requestId，可进一步查详情）；该 webContents 无 CDP
  * 记录（debugger 会话不可用）时降级返回 webRequest 记录。
- * includeStatic=false 时，过滤掉成功的静态资源（图片/字体/脚本/样式表等），
- * 与 Playwright browser_network_requests 的 static 参数对齐。 */
+ * includeStatic=false 时过滤掉成功的静态资源（图片/字体/脚本/样式表等），
+ * 请求失败（error）/进行中（pending）的记录始终保留。 */
 const STATIC_RESOURCE_TYPES = new Set([
   "image",
   "font",
@@ -172,48 +228,133 @@ const STATIC_RESOURCE_TYPES = new Set([
   "stylesheet",
 ]);
 
-export const queryNetworkRecords = (
-  webContentsId: number,
-  filter?: string,
-  limit = 50,
-  includeStatic = false,
-): BrowserNetworkRecord[] => {
-  const cdp = cdpNetworkRecords.get(webContentsId);
-  let result =
-    cdp && cdp.size > 0
-      ? [...cdp.values()]
-      : networkRecords.filter(
-          (record) => record.webContentsId === webContentsId,
-        );
-  if (!includeStatic) {
-    result = result.filter(
-      (record) =>
-        typeof record.status === "number" &&
-        !STATIC_RESOURCE_TYPES.has(record.resourceType),
-    );
-  }
-  if (filter) {
-    try {
-      const expression = new RegExp(filter);
-      result = result.filter((record) => expression.test(record.url));
-    } catch {
-      return [];
-    }
-  }
-  return result.slice(-limit).reverse();
+export type NetworkQueryOptions = {
+  filter?: string;
+  resourceTypes?: string[];
+  includeStatic?: boolean;
+  pageIdx?: number;
+  pageSize?: number;
+  includePreserved?: boolean;
 };
 
-/** 按 id 获取单条网络记录详情。 */
+export type NetworkQueryResult = {
+  records: BrowserNetworkRecord[];
+  total: number;
+  pageIdx: number;
+  pageSize: number;
+  hasMore: boolean;
+  archivedGenerations: number;
+  source: "cdp" | "webrequest";
+};
+
+export const queryNetworkRecords = (
+  webContentsId: number,
+  options: NetworkQueryOptions = {},
+): NetworkQueryResult => {
+  const state = cdpNetworkRecords.get(webContentsId);
+  const hasCdp =
+    state !== undefined &&
+    (state.current.size > 0 || state.archived.some((gen) => gen.size > 0));
+  let rows: BrowserNetworkRecord[];
+  let source: "cdp" | "webrequest";
+  let archivedGenerations = 0;
+  if (hasCdp && state) {
+    const merged: BrowserNetworkRecord[] = [];
+    if (options.includePreserved) {
+      for (let index = state.archived.length - 1; index >= 0; index--) {
+        merged.push(...state.archived[index].values());
+      }
+    }
+    merged.push(...state.current.values());
+    merged.sort((left, right) => left.id - right.id);
+    rows = merged.reverse();
+    source = "cdp";
+    archivedGenerations = state.archived.length;
+  } else {
+    rows = networkRecords
+      .filter((record) => record.webContentsId === webContentsId)
+      .reverse();
+    source = "webrequest";
+  }
+  let filtered = rows;
+  if (options.includeStatic !== true) {
+    filtered = filtered.filter(
+      (record) =>
+        !(
+          typeof record.status === "number" &&
+          STATIC_RESOURCE_TYPES.has(record.resourceType)
+        ),
+    );
+  }
+  if (options.resourceTypes && options.resourceTypes.length > 0) {
+    const wanted = new Set(
+      options.resourceTypes.map((type) => type.toLowerCase()),
+    );
+    filtered = filtered.filter((record) =>
+      wanted.has(record.resourceType.toLowerCase()),
+    );
+  }
+  if (options.filter) {
+    try {
+      const expression = new RegExp(options.filter);
+      filtered = filtered.filter((record) => expression.test(record.url));
+    } catch {
+      filtered = [];
+    }
+  }
+  const pageIdx = Math.max(0, options.pageIdx ?? 0);
+  const pageSize = Math.max(
+    1,
+    options.pageSize ?? Math.max(filtered.length, 1),
+  );
+  const start = pageIdx * pageSize;
+  const records = filtered.slice(start, start + pageSize);
+  return {
+    records,
+    total: filtered.length,
+    pageIdx,
+    pageSize,
+    hasMore: start + records.length < filtered.length,
+    archivedGenerations,
+    source,
+  };
+};
+
+/** 按数字 id 获取单条网络记录（先查 CDP 各代际，再查 webRequest 降级记录）。 */
 export const getNetworkRecord = (
   recordId: number,
-): BrowserNetworkRecord | undefined =>
-  networkRecords.find((record) => record.id === recordId);
+): BrowserNetworkRecord | undefined => {
+  for (const state of cdpNetworkRecords.values()) {
+    for (const record of state.current.values()) {
+      if (record.id === recordId) {
+        return record;
+      }
+    }
+    for (const generation of state.archived) {
+      for (const record of generation.values()) {
+        if (record.id === recordId) {
+          return record;
+        }
+      }
+    }
+  }
+  return networkRecords.find((record) => record.id === recordId);
+};
 
-/** 清除指定 webview 的所有网络记录；webContentsId 为 -1 时清除全部。 */
+/** 统计某个 webContents 的 CDP 记录数（含归档代际）。 */
+const countCdpRecords = (state: CdpNetworkState): number =>
+  state.current.size +
+  state.archived.reduce((sum, generation) => sum + generation.size, 0);
+
+/** 清除指定 webview 的所有网络记录（含归档代际）；webContentsId 为 -1 时清除全部。 */
 export const clearNetworkRecords = (webContentsId: number): number => {
   if (webContentsId < 0) {
-    const count = networkRecords.length;
+    let count = networkRecords.length;
     networkRecords.splice(0, networkRecords.length);
+    for (const state of cdpNetworkRecords.values()) {
+      count += countCdpRecords(state);
+    }
+    cdpNetworkRecords.clear();
     return count;
   }
   const before = networkRecords.length;
@@ -222,7 +363,13 @@ export const clearNetworkRecords = (webContentsId: number): number => {
       networkRecords.splice(i, 1);
     }
   }
-  return before - networkRecords.length;
+  let count = before - networkRecords.length;
+  const state = cdpNetworkRecords.get(webContentsId);
+  if (state) {
+    count += countCdpRecords(state);
+    cdpNetworkRecords.delete(webContentsId);
+  }
+  return count;
 };
 
 // ===== webview 注册表与 CDP 消息路由 =====
@@ -241,10 +388,11 @@ const debuggerDomainsEnabled = new Set<number>();
  * CDP 开销。 */
 const networkRecordingEnabled = new Set<number>();
 
-/** 确保 webview 的 CDP debugger 会话可用（attach + 启用 Page 域）。
+/** 确保 webview 的 CDP debugger 会话可用（attach + 启用 Page/Runtime/Log 域）。
  * CDP 网络记录、路由 mock、登录态注入共用同一会话；
  * DevTools 打开时会话被占用，devtools-closed 后自动重连。
- * Network.enable 由 ensureNetworkRecording 按需启用。 */
+ * Runtime/Log 域为控制台采集（含堆栈）提供事件流；Network.enable 由
+ * ensureNetworkRecording 按需启用。 */
 export const ensureWebContentsDebugger = async (
   contents: Electron.WebContents,
 ): Promise<void> => {
@@ -260,6 +408,8 @@ export const ensureWebContentsDebugger = async (
     }
     if (!debuggerDomainsEnabled.has(contents.id)) {
       await contents.debugger.sendCommand("Page.enable");
+      await contents.debugger.sendCommand("Runtime.enable");
+      await contents.debugger.sendCommand("Log.enable");
       debuggerDomainsEnabled.add(contents.id);
     }
   } catch {
@@ -339,14 +489,18 @@ export const initBrowserWebviewRegistry = (): void => {
         case "Fetch.requestPaused":
           handleFetchRequestPaused(contents, params);
           break;
-        default:
-          for (const listener of debuggerMessageListeners) {
-            try {
-              listener(contents.id, method, params);
-            } catch {
-              // 扩展监听器失败不影响核心调试功能。
-            }
+        case "Page.frameNavigated": {
+          const frame = (
+            params as { frame?: { id?: unknown; parentId?: unknown } } | null
+          )?.frame;
+          if (frame && frame.parentId == null && typeof frame.id === "string") {
+            mainFrameIds.set(contents.id, frame.id);
           }
+          notifyDebuggerMessageListeners(contents.id, method, params);
+          break;
+        }
+        default:
+          notifyDebuggerMessageListeners(contents.id, method, params);
           break;
       }
     });
@@ -365,6 +519,7 @@ export const initBrowserWebviewRegistry = (): void => {
       debuggerDomainsEnabled.delete(contents.id);
       networkRecordingEnabled.delete(contents.id);
       cdpNetworkRecords.delete(contents.id);
+      mainFrameIds.delete(contents.id);
       routeRules.delete(contents.id);
     });
   });
@@ -375,6 +530,7 @@ export const initBrowserWebviewRegistry = (): void => {
 type CdpRequestWillBeSent = {
   requestId?: unknown;
   type?: unknown;
+  frameId?: unknown;
   request?: { url?: unknown; method?: unknown; headers?: unknown };
   redirectResponse?: {
     status?: unknown;
@@ -434,18 +590,18 @@ const pushCdpRecord = (
   webContentsId: number,
   record: BrowserNetworkRecord,
 ): void => {
-  let map = cdpNetworkRecords.get(webContentsId);
-  if (!map) {
-    map = new Map();
-    cdpNetworkRecords.set(webContentsId, map);
+  let state = cdpNetworkRecords.get(webContentsId);
+  if (!state) {
+    state = { current: new Map(), archived: [] };
+    cdpNetworkRecords.set(webContentsId, state);
   }
   if (record.requestId) {
-    map.set(record.requestId, record);
+    state.current.set(record.requestId, record);
   }
-  if (map.size > MAX_RECORDS) {
-    const oldest = map.keys().next().value;
+  if (state.current.size > MAX_RECORDS) {
+    const oldest = state.current.keys().next().value;
     if (oldest !== undefined) {
-      map.delete(oldest);
+      state.current.delete(oldest);
     }
   }
 };
@@ -459,11 +615,19 @@ const handleNetworkRequestWillBeSent = (
   if (typeof requestId !== "string") {
     return;
   }
+  // 主帧文档请求 = 新一次导航：当前代际归档（includePreserved 可见）。
+  if (
+    p?.type === "Document" &&
+    typeof p?.frameId === "string" &&
+    p.frameId === mainFrameIds.get(webContentsId)
+  ) {
+    archiveNetworkGeneration(webContentsId);
+  }
   const url = typeof p?.request?.url === "string" ? p.request.url : "";
   const method = typeof p?.request?.method === "string" ? p.request.method : "";
   const requestHeaders = toHeaderRecord(p?.request?.headers);
   const resourceType = typeof p?.type === "string" ? p.type : "";
-  const existing = cdpNetworkRecords.get(webContentsId)?.get(requestId);
+  const existing = cdpNetworkRecords.get(webContentsId)?.current.get(requestId);
   if (existing && p?.redirectResponse) {
     // 重定向链：更新为目标请求与响应信息，不新建记录。
     existing.url = url;
@@ -509,7 +673,7 @@ const handleNetworkResponseReceived = (
   if (typeof requestId !== "string") {
     return;
   }
-  const record = cdpNetworkRecords.get(webContentsId)?.get(requestId);
+  const record = cdpNetworkRecords.get(webContentsId)?.current.get(requestId);
   if (!record) {
     return;
   }
@@ -535,7 +699,7 @@ const handleNetworkLoadingFailed = (
   if (typeof requestId !== "string") {
     return;
   }
-  const record = cdpNetworkRecords.get(webContentsId)?.get(requestId);
+  const record = cdpNetworkRecords.get(webContentsId)?.current.get(requestId);
   if (!record) {
     return;
   }
@@ -581,22 +745,48 @@ export const getBrowserWebContents = (
   return contents;
 };
 
+export type NetworkDetailsOptions = {
+  maxBodyBytes?: number;
+  requestFilePath?: string;
+  responseFilePath?: string;
+};
+
 export type BrowserNetworkDetails = {
   found: boolean;
   error?: string;
   record?: BrowserNetworkRecord;
   requestBody?: { text: string; truncated: boolean };
+  requestBodyFile?: { path: string; bytes: number; truncated: boolean };
   responseBody?: { text: string; base64Encoded: boolean; truncated: boolean };
+  responseBodyFile?: { path: string; bytes: number; truncated: boolean };
   responseBodyError?: string;
 };
 
-/** 查询单条请求的完整详情（请求头/请求体/响应头/响应体）。 */
+const saveBodyToFile = async (
+  filePath: string,
+  text: string,
+  base64Encoded: boolean,
+  maxBytes: number,
+): Promise<{ bytes: number; truncated: boolean }> => {
+  const buffer = base64Encoded
+    ? Buffer.from(text, "base64")
+    : Buffer.from(text, "utf8");
+  const truncated = buffer.byteLength > maxBytes;
+  const chunk = truncated ? buffer.subarray(0, maxBytes) : buffer;
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, chunk);
+  return { bytes: chunk.byteLength, truncated };
+};
+
+/** 查询单条请求的完整详情（请求头/请求体/响应头/响应体）。
+ * 提供 requestFilePath / responseFilePath 时把 body 写入文件（受 maxBodyBytes 上限截断）。 */
 export const queryNetworkDetails = async (
   webContentsId: number,
   requestId: string,
-  maxBodyBytes = MAX_BODY_BYTES,
+  options: NetworkDetailsOptions = {},
 ): Promise<BrowserNetworkDetails> => {
-  const record = cdpNetworkRecords.get(webContentsId)?.get(requestId);
+  const maxBodyBytes = options.maxBodyBytes ?? MAX_BODY_BYTES;
+  const record = findCdpRecord(webContentsId, requestId);
   if (!record) {
     return {
       found: false,
@@ -621,7 +811,17 @@ export const queryNetworkDetails = async (
       { requestId },
     )) as { postData?: unknown };
     if (typeof result.postData === "string") {
-      details.requestBody = truncateText(result.postData, maxBodyBytes);
+      if (options.requestFilePath) {
+        const saved = await saveBodyToFile(
+          options.requestFilePath,
+          result.postData,
+          false,
+          maxBodyBytes,
+        );
+        details.requestBodyFile = { path: options.requestFilePath, ...saved };
+      } else {
+        details.requestBody = truncateText(result.postData, maxBodyBytes);
+      }
     }
   } catch {
     // 无请求体或请求已过期。
@@ -632,12 +832,26 @@ export const queryNetworkDetails = async (
       { requestId },
     )) as { body?: unknown; base64Encoded?: unknown };
     if (typeof result.body === "string") {
-      const truncated = truncateText(result.body, maxBodyBytes);
-      details.responseBody = {
-        text: truncated.text,
-        base64Encoded: result.base64Encoded === true,
-        truncated: truncated.truncated,
-      };
+      const base64Encoded = result.base64Encoded === true;
+      if (options.responseFilePath) {
+        const saved = await saveBodyToFile(
+          options.responseFilePath,
+          result.body,
+          base64Encoded,
+          maxBodyBytes,
+        );
+        details.responseBodyFile = {
+          path: options.responseFilePath,
+          ...saved,
+        };
+      } else {
+        const truncated = truncateText(result.body, maxBodyBytes);
+        details.responseBody = {
+          text: truncated.text,
+          base64Encoded,
+          truncated: truncated.truncated,
+        };
+      }
     }
   } catch {
     details.responseBodyError =

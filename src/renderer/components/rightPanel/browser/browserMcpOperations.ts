@@ -2,7 +2,6 @@ import {
   buildElementLocatorScript,
   DESCRIBE_ELEMENT_SCRIPT,
 } from "../../../../shared/browserElementLocator";
-import { captureWebviewPage } from "./captureWebviewPage";
 import {
   resolveAxRef,
   serializeAxTree,
@@ -11,7 +10,6 @@ import {
 import type { BrowserMcpCommandArgs } from "./browserMcpController";
 
 const TEXT_PREVIEW_LENGTH = 160;
-const MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024;
 
 // 公共元素描述函数片段（normalize + describe）。定位脚本、fill 脚本与
 // CDP callFunctionOn 复用。注意：const 在同一作用域重复声明会抛
@@ -241,10 +239,11 @@ const currentPageMetadata = async (
   title: await webview.executeJavaScript("document.title || ''"),
 });
 
-const waitForNavigation = (
+/** 等待一次加载完成（did-stop-loading）；trigger 触发导航/重载。 */
+const waitForLoad = (
   webview: Electron.WebviewTag,
-  url: string,
   timeoutMs: number,
+  trigger: () => void | Promise<unknown>,
 ): Promise<void> =>
   new Promise<void>((resolve, reject) => {
     let sawSuccessfulNavigation = false;
@@ -276,13 +275,13 @@ const waitForNavigation = (
       reject(
         new Error(
           event.errorDescription ||
-            `Failed to navigate browser to ${event.validatedURL || url}`,
+            `Failed to load ${event.validatedURL || "the target page"}`,
         ),
       );
     };
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error(`Browser navigation timed out after ${timeoutMs}ms`));
+      reject(new Error(`Browser load timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     const cleanup = (): void => {
       clearTimeout(timer);
@@ -308,31 +307,97 @@ const waitForNavigation = (
     );
     webview.addEventListener("did-stop-loading", handleStop as EventListener);
     webview.addEventListener("did-fail-load", handleFail as EventListener);
-    Promise.resolve(webview.loadURL(url)).catch((error: unknown) => {
-      const code =
-        error instanceof Error
-          ? (error as Error & { code?: string }).code
-          : undefined;
-      if (code === "ERR_ABORTED" || code === "ERR_FAILED") {
-        return;
+    try {
+      const pending = trigger();
+      if (
+        pending &&
+        typeof (pending as Promise<unknown>).catch === "function"
+      ) {
+        (pending as Promise<unknown>).catch((error: unknown) => {
+          const code =
+            error instanceof Error
+              ? (error as Error & { code?: string }).code
+              : undefined;
+          if (code === "ERR_ABORTED" || code === "ERR_FAILED") {
+            return;
+          }
+          cleanup();
+          reject(error instanceof Error ? error : new Error(String(error)));
+        });
       }
+    } catch (error) {
       cleanup();
       reject(error instanceof Error ? error : new Error(String(error)));
-    });
+    }
   });
+
+const waitForNavigation = (
+  webview: Electron.WebviewTag,
+  url: string,
+  timeoutMs: number,
+): Promise<void> => waitForLoad(webview, timeoutMs, () => webview.loadURL(url));
+
+const waitForReload = (
+  webview: Electron.WebviewTag,
+  timeoutMs: number,
+  ignoreCache: boolean,
+): Promise<void> =>
+  waitForLoad(webview, timeoutMs, () =>
+    ignoreCache ? webview.reloadIgnoringCache() : webview.reload(),
+  );
 
 const navigate = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const url = requiredString(args, "url");
   const timeoutMs =
     typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
-  await waitForNavigation(webview, url, timeoutMs);
+  const reload = args.reload === true;
+  const ignoreCache = args.ignoreCache === true;
+  const initScript = optionalString(args, "initScript");
+  const url = optionalString(args, "url") ?? "";
+  if (!reload && !url) {
+    throw new Error("url is required unless reload=true for browser-navigate");
+  }
+  const webContentsId = webview.getWebContentsId();
+  let scriptId: string | null = null;
+  if (initScript) {
+    if (
+      /cookie|localStorage|sessionStorage|indexedDB|authorization|password|secret|token/i.test(
+        initScript,
+      )
+    ) {
+      throw new Error("Credential/storage access is not allowed in initScript");
+    }
+    const added = (await window.snow.browserCdpCommand(
+      webContentsId,
+      "Page.addScriptToEvaluateOnNewDocument",
+      { source: initScript },
+    )) as { identifier?: string };
+    scriptId = typeof added?.identifier === "string" ? added.identifier : null;
+  }
+  try {
+    if (reload) {
+      await waitForReload(webview, timeoutMs, ignoreCache);
+    } else {
+      await waitForNavigation(webview, url, timeoutMs);
+    }
+  } finally {
+    if (scriptId) {
+      await window.snow
+        .browserCdpCommand(
+          webContentsId,
+          "Page.removeScriptToEvaluateOnNewDocument",
+          { identifier: scriptId },
+        )
+        .catch(() => {});
+    }
+  }
   return {
     ...(await currentPageMetadata(webview, instanceId)),
     success: true,
+    reloaded: reload,
   };
 };
 
@@ -345,7 +410,13 @@ const locateElementTarget = async (
   args: BrowserMcpCommandArgs,
   actionBody: string,
   exact = false,
-): Promise<{ x: number; y: number; element: unknown }> => {
+): Promise<{
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  element: unknown;
+}> => {
   const selector = optionalString(args, "selector");
   const text = optionalString(args, "text");
   const ref = optionalString(args, "ref");
@@ -366,6 +437,8 @@ const locateElementTarget = async (
   return (await webview.executeJavaScript(locateScript)) as {
     x: number;
     y: number;
+    width?: number;
+    height?: number;
     element: unknown;
   };
 };
@@ -375,10 +448,16 @@ const click = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const target = await locateElementTarget(
-    webview,
-    args,
-    `const rect = element.getBoundingClientRect();
+  const x = typeof args.x === "number" ? args.x : null;
+  const y = typeof args.y === "number" ? args.y : null;
+  let target: { x: number; y: number; element: unknown };
+  if (x !== null && y !== null) {
+    target = { x: Math.round(x), y: Math.round(y), element: null };
+  } else {
+    target = await locateElementTarget(
+      webview,
+      args,
+      `const rect = element.getBoundingClientRect();
     const x = Math.round(rect.left + rect.width / 2);
     const y = Math.round(rect.top + rect.height / 2);
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
@@ -394,8 +473,9 @@ const click = async (
         href: element.href || null,
       },
     };`,
-    args.exact === true,
-  );
+      args.exact === true,
+    );
+  }
   const metadata = await currentPageMetadata(webview, instanceId);
   webview.focus();
   await webview.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
@@ -416,6 +496,23 @@ const click = async (
     button: "left",
     clickCount: 1,
   });
+  if (args.dblClick === true) {
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await webview.sendInputEvent({
+      type: "mouseDown",
+      x: target.x,
+      y: target.y,
+      button: "left",
+      clickCount: 2,
+    });
+    await webview.sendInputEvent({
+      type: "mouseUp",
+      x: target.x,
+      y: target.y,
+      button: "left",
+      clickCount: 2,
+    });
+  }
   return {
     ...metadata,
     success: true,
@@ -440,28 +537,58 @@ const evaluate = async (
 const buildFillBody = (
   value: string,
   submit: boolean,
-): string => `const editable = element.matches(
-    'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"], [contenteditable=""]'
-  );
-  if (!editable) {
-    throw new Error('Target element is not editable (expected input, textarea, or contenteditable)');
-  }
-  const value = ${JSON.stringify(value)};
-  if (element.matches('[contenteditable="true"], [contenteditable=""]')) {
-    element.textContent = value;
-  } else {
-    const proto = element.tagName === 'TEXTAREA'
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter) {
-      setter.call(element, value);
-    } else {
-      element.value = value;
+): string => `const value = ${JSON.stringify(value)};
+  if (element.matches('input[type="checkbox"], input[type="radio"]')) {
+    const desired = value === 'true' || value === '1' || value === 'checked';
+    const isRadio = element.type === 'radio';
+    if (!(isRadio && !desired) && element.checked !== desired) {
+      element.click();
+      if (element.checked !== desired) {
+        element.checked = desired;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     }
+  } else if (element.matches('select')) {
+    const option = Array.from(element.options).find((candidate) => candidate.value === value || candidate.label === value);
+    if (!option) {
+      throw new Error('No option matches the provided value: ' + value);
+    }
+    if (option.disabled) {
+      throw new Error('Option is disabled: ' + value);
+    }
+    if (!element.multiple) {
+      for (const item of element.options) item.selected = false;
+    }
+    option.selected = true;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    const editable = element.matches(
+      'input:not([type="hidden"]), textarea, [contenteditable="true"], [contenteditable=""]'
+    );
+    if (!editable) {
+      throw new Error('Target element is not editable (expected input, textarea, select, checkbox, radio, or contenteditable)');
+    }
+    if (element.readOnly) {
+      throw new Error('Target element is readonly');
+    }
+    if (element.matches('[contenteditable="true"], [contenteditable=""]')) {
+      element.textContent = value;
+    } else {
+      const proto = element.tagName === 'TEXTAREA'
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) {
+        setter.call(element, value);
+      } else {
+        element.value = value;
+      }
+    }
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
   }
-  element.dispatchEvent(new Event('input', { bubbles: true }));
-  element.dispatchEvent(new Event('change', { bubbles: true }));
   if (${JSON.stringify(submit)}) {
     const form = element.closest('form');
     if (form) {
@@ -594,6 +721,331 @@ const type = async (
     mode: "fill",
     value,
     element: result.element,
+  };
+};
+
+/** 批量填充表单：逐个元素调用 type 的填充逻辑，单项失败不中断，汇总结果。 */
+const fillForm = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> => {
+  const elements = Array.isArray(args.elements) ? args.elements : [];
+  if (elements.length === 0) {
+    throw new Error("elements must be a non-empty array");
+  }
+  const results: { index: number; ok: boolean; error?: string }[] = [];
+  let successCount = 0;
+  for (const [index, item] of elements.entries()) {
+    const itemArgs =
+      item !== null && typeof item === "object" && !Array.isArray(item)
+        ? (item as BrowserMcpCommandArgs)
+        : {};
+    try {
+      await type(webview, instanceId, { ...itemArgs, instanceId });
+      results.push({ index, ok: true });
+      successCount += 1;
+    } catch (error) {
+      results.push({
+        index,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return {
+    ...(await currentPageMetadata(webview, instanceId)),
+    results,
+    successCount,
+    failureCount: results.length - successCount,
+  };
+};
+
+/** 主进程直通操作：页面元数据 + 操作结果合并返回。 */
+const passthrough = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  invoke: () => Promise<unknown>,
+): Promise<unknown> => {
+  const metadata = await currentPageMetadata(webview, instanceId);
+  const result = await invoke();
+  return result !== null && typeof result === "object" && !Array.isArray(result)
+    ? { ...metadata, ...(result as object) }
+    : { ...metadata, result };
+};
+
+const readStringOrNull = (value: unknown): string | null | undefined =>
+  typeof value === "string" ? value : value === null ? null : undefined;
+
+const emulatePage = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserEmulate(webview.getWebContentsId(), {
+      colorScheme:
+        args.colorScheme === "dark" ||
+        args.colorScheme === "light" ||
+        args.colorScheme === "auto"
+          ? args.colorScheme
+          : undefined,
+      cpuThrottlingRate:
+        typeof args.cpuThrottlingRate === "number"
+          ? args.cpuThrottlingRate
+          : undefined,
+      extraHttpHeaders:
+        args.extraHttpHeaders === null
+          ? null
+          : args.extraHttpHeaders !== undefined &&
+              typeof args.extraHttpHeaders === "object" &&
+              !Array.isArray(args.extraHttpHeaders)
+            ? (args.extraHttpHeaders as Record<string, string>)
+            : undefined,
+      geolocation:
+        args.geolocation === null
+          ? null
+          : args.geolocation !== undefined &&
+              typeof args.geolocation === "object" &&
+              !Array.isArray(args.geolocation) &&
+              typeof (args.geolocation as { latitude?: unknown }).latitude ===
+                "number" &&
+              typeof (args.geolocation as { longitude?: unknown }).longitude ===
+                "number"
+            ? {
+                latitude: (args.geolocation as { latitude: number }).latitude,
+                longitude: (args.geolocation as { longitude: number })
+                  .longitude,
+                accuracy:
+                  typeof (args.geolocation as { accuracy?: unknown })
+                    .accuracy === "number"
+                    ? (args.geolocation as { accuracy: number }).accuracy
+                    : undefined,
+              }
+            : undefined,
+      networkConditions: readStringOrNull(args.networkConditions),
+      userAgent: readStringOrNull(args.userAgent),
+      viewport: readStringOrNull(args.viewport),
+    }),
+  );
+
+const resizePage = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserResizePage(
+      webview.getWebContentsId(),
+      typeof args.width === "number" ? args.width : 800,
+      typeof args.height === "number" ? args.height : 600,
+    ),
+  );
+
+const traceStart = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserTraceStart(
+      webview.getWebContentsId(),
+      Array.isArray(args.categories)
+        ? args.categories.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : undefined,
+    ),
+  );
+
+const traceStop = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserTraceStop(webview.getWebContentsId(), {
+      filePath: optionalString(args, "filePath"),
+    }),
+  );
+
+const traceInsight = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserTraceInsight(
+      webview.getWebContentsId(),
+      requiredString(args, "insightId"),
+    ),
+  );
+
+const cssStyles = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> => {
+  const selector = optionalString(args, "selector");
+  const ref = optionalString(args, "ref");
+  let backendNodeId: number | undefined;
+  if (ref) {
+    backendNodeId = resolveAxRef(ref) ?? undefined;
+    if (backendNodeId === undefined) {
+      throw new Error(
+        `Ref ${ref} is not in the current snapshot. Capture a new accessibility snapshot (browser-devtools action=ax) first.`,
+      );
+    }
+  }
+  if (!selector && backendNodeId === undefined) {
+    throw new Error(
+      "Either selector or ref is required for browser-get_css_styles",
+    );
+  }
+  return passthrough(webview, instanceId, () =>
+    window.snow.browserCssStyles(webview.getWebContentsId(), {
+      selector,
+      backendNodeId,
+      pageIdx: typeof args.pageIdx === "number" ? args.pageIdx : undefined,
+      pageSize: typeof args.pageSize === "number" ? args.pageSize : undefined,
+    }),
+  );
+};
+
+const auditPage = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserAudit(
+      webview.getWebContentsId(),
+      Array.isArray(args.categories)
+        ? args.categories.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : undefined,
+    ),
+  );
+
+const HEAP_ACTIONS = new Map<
+  string,
+  | "take"
+  | "summary"
+  | "query"
+  | "details"
+  | "edges"
+  | "retainers"
+  | "paths"
+  | "strings"
+  | "compare"
+>([
+  ["take_heapsnapshot", "take"],
+  ["get_heapsnapshot_summary", "summary"],
+  ["query_heapsnapshot_objects", "query"],
+  ["get_heapsnapshot_object_details", "details"],
+  ["get_heapsnapshot_edges", "edges"],
+  ["get_heapsnapshot_retainers", "retainers"],
+  ["get_heapsnapshot_retaining_paths", "paths"],
+  ["get_heapsnapshot_duplicate_strings", "strings"],
+  ["compare_heapsnapshots", "compare"],
+]);
+
+const heapOperation = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  operation: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> => {
+  const action = HEAP_ACTIONS.get(operation);
+  if (!action) {
+    throw new Error(`Unsupported heap operation: ${operation}`);
+  }
+  return passthrough(webview, instanceId, () =>
+    window.snow.browserHeap(action, {
+      ...args,
+      ...(action === "take"
+        ? { webContentsId: webview.getWebContentsId() }
+        : {}),
+    }),
+  );
+};
+
+const screencastStart = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserScreencastStart(webview.getWebContentsId(), {
+      filePath: optionalString(args, "filePath"),
+      quality: typeof args.quality === "number" ? args.quality : undefined,
+      maxWidth: typeof args.maxWidth === "number" ? args.maxWidth : undefined,
+      maxFrames:
+        typeof args.maxFrames === "number" ? args.maxFrames : undefined,
+      maxDurationMs:
+        typeof args.maxDurationMs === "number" ? args.maxDurationMs : undefined,
+    }),
+  );
+
+const screencastStop = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserScreencastStop(webview.getWebContentsId()),
+  );
+
+const PAGE_TOOL_REGISTRY_SNIPPET = `const registry = window.__snowPageTools;
+  const entries = Array.isArray(registry) ? registry : registry && typeof registry === 'object' ? Object.values(registry) : [];`;
+
+const listPageTools = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+): Promise<unknown> => {
+  const tools = (await webview.executeJavaScript(`(() => {
+    ${PAGE_TOOL_REGISTRY_SNIPPET}
+    const out = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      if (typeof entry.name !== 'string' || !entry.name.trim()) continue;
+      out.push({
+        name: entry.name.trim(),
+        description: typeof entry.description === 'string' ? entry.description.slice(0, 500) : '',
+        parameters: entry.parameters && typeof entry.parameters === 'object' ? entry.parameters : null,
+      });
+    }
+    return out;
+  })()`)) as unknown[];
+  return {
+    ...(await currentPageMetadata(webview, instanceId)),
+    tools,
+    total: tools.length,
+    note: "Page tools are registered by the page via window.__snowPageTools (an array or record of { name, description?, parameters?, run(args) }).",
+  };
+};
+
+const callPageTool = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> => {
+  const name = requiredString(args, "name");
+  const params = args.params ?? null;
+  const result = await webview.executeJavaScript(`(async () => {
+    ${PAGE_TOOL_REGISTRY_SNIPPET}
+    const target = entries.find((candidate) => candidate && typeof candidate === 'object' && candidate.name === ${JSON.stringify(name)});
+    if (!target) throw new Error('Page tool not found: ' + ${JSON.stringify(name)});
+    if (typeof target.run !== 'function') throw new Error('Page tool has no run() function');
+    const value = await target.run(${JSON.stringify(params)});
+    if (value !== undefined) {
+      try { JSON.stringify(value); } catch { throw new Error('Page tool returned a non-serializable value'); }
+    }
+    return value === undefined ? null : value;
+  })()`);
+  return {
+    ...(await currentPageMetadata(webview, instanceId)),
+    result,
   };
 };
 
@@ -744,35 +1196,131 @@ const screenshot = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  // 最近一次主 Frame 导航失败时，页面停留在 Chromium 错误页，capturePage
-  // 只会返回全黑 PNG。此时直接返回原导航错误，不把错误页当作正常结果。
+  // 最近一次主 Frame 导航失败时，页面停留在 Chromium 错误页，截图
+  // 只会返回全黑图像。此时直接返回原导航错误，不把错误页当作正常结果。
   const navigationState = getMainFrameNavigationState(instanceId);
   if (navigationState?.status === "failed") {
     throw new Error(
       `Browser screenshot unavailable: main-frame navigation to ${navigationState.url} failed with ${navigationState.errorDescription}`,
     );
   }
-  // Viewport-only by default: full-page captures of long pages produce
-  // huge base64 payloads that inflate context and may exceed provider
-  // per-image limits.
+  const format: "png" | "jpeg" | "webp" =
+    args.format === "jpeg" || args.format === "webp" ? args.format : "png";
+  const quality = typeof args.quality === "number" ? args.quality : undefined;
+  const filePath = optionalString(args, "filePath");
   const fullPage = args.fullPage === true;
-  const dataUrl = fullPage
-    ? await captureWebviewPage(webview)
-    : (await webview.capturePage()).toDataURL();
-  if (!dataUrl.startsWith("data:image/png;base64,")) {
-    throw new Error("Browser screenshot did not return PNG data");
-  }
-  const base64 = dataUrl.slice("data:image/png;base64,".length);
-  const estimatedBytes = Math.floor((base64.length * 3) / 4);
-  if (estimatedBytes > MAX_SCREENSHOT_BYTES) {
-    throw new Error(
-      `Browser screenshot is too large to return (${estimatedBytes} bytes, maximum ${MAX_SCREENSHOT_BYTES} bytes)`,
+  const selector = optionalString(args, "selector");
+  const ref = optionalString(args, "ref");
+  const webContentsId = webview.getWebContentsId();
+
+  let clip: { x: number; y: number; width: number; height: number } | null =
+    null;
+  let elementInfo: unknown = null;
+  if (ref) {
+    const { objectId } = await resolveRefHandle(webview, webContentsId, ref);
+    const rectInfo = (await window.snow.browserCdpCommand(
+      webContentsId,
+      "Runtime.callFunctionOn",
+      {
+        objectId,
+        functionDeclaration: `function() {
+          try {
+            this.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+          } catch {}
+          const rect = this.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) throw new Error('Element has no layout box');
+          return {
+            x: rect.left + window.scrollX,
+            y: rect.top + window.scrollY,
+            width: rect.width,
+            height: rect.height,
+            element: {
+              tagName: this.tagName ? this.tagName.toLowerCase() : '',
+              id: this.id || null,
+              text: (this.innerText || this.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, ${TEXT_PREVIEW_LENGTH}),
+            },
+          };
+        }`,
+        returnByValue: true,
+      },
+    )) as {
+      result?: {
+        value?: {
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
+          element?: unknown;
+        };
+      };
+    };
+    const value = rectInfo?.result?.value;
+    if (
+      !value ||
+      typeof value.x !== "number" ||
+      typeof value.y !== "number" ||
+      typeof value.width !== "number" ||
+      typeof value.height !== "number"
+    ) {
+      throw new Error(`Element for ref ${ref} could not be captured`);
+    }
+    clip = { x: value.x, y: value.y, width: value.width, height: value.height };
+    elementInfo = value.element ?? null;
+  } else if (selector) {
+    const target = await locateElementTarget(
+      webview,
+      args,
+      `const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) throw new Error('Element has no layout box');
+      return {
+        x: rect.left + window.scrollX,
+        y: rect.top + window.scrollY,
+        width: rect.width,
+        height: rect.height,
+        element: {
+          tagName: element.tagName.toLowerCase(),
+          id: element.id || null,
+          text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
+        },
+      };`,
+      args.exact === true,
     );
+    clip = {
+      x: target.x,
+      y: target.y,
+      width: target.width ?? 0,
+      height: target.height ?? 0,
+    };
+    elementInfo = target.element;
   }
+
+  const result = await window.snow.browserCaptureScreenshot(webContentsId, {
+    format,
+    quality,
+    fullPage,
+    clip: clip ?? undefined,
+    filePath,
+  });
   const metadata = await currentPageMetadata(webview, instanceId);
+  if (result.savedTo) {
+    return {
+      ...metadata,
+      fullPage: fullPage || clip !== null,
+      savedTo: result.savedTo,
+      bytes: result.bytes,
+      mimeType: result.mimeType,
+      element: elementInfo,
+    };
+  }
+  if (!result.data) {
+    throw new Error("Browser screenshot did not return image data");
+  }
   return {
     ...metadata,
-    fullPage,
+    fullPage: fullPage || clip !== null,
+    bytes: result.bytes,
+    mimeType: result.mimeType,
+    element: elementInfo,
     content: [
       {
         type: "text",
@@ -780,8 +1328,8 @@ const screenshot = async (
       },
       {
         type: "image",
-        data: base64,
-        mimeType: "image/png",
+        data: result.data,
+        mimeType: result.mimeType,
       },
     ],
   };
@@ -999,41 +1547,137 @@ const devtools = async (
   if (action === "console") {
     const level = typeof args.level === "string" ? args.level : undefined;
     const minLevel = level !== undefined ? CONSOLE_LEVEL_MIN[level] : undefined;
-    const messages =
-      minLevel === undefined
-        ? consoleMessages
-        : consoleMessages.filter((entry) => {
-            const entryLevel = (entry as { level?: unknown }).level;
-            return typeof entryLevel === "number" && entryLevel >= minLevel;
-          });
+    const types = Array.isArray(args.types)
+      ? args.types.filter((item): item is string => typeof item === "string")
+      : undefined;
+    const pageIdx = typeof args.pageIdx === "number" ? args.pageIdx : undefined;
+    const pageSize =
+      typeof args.pageSize === "number" ? args.pageSize : undefined;
+    const includePreserved = args.includePreserved === true;
+    const webviewFallback = async (note?: string): Promise<unknown> => {
+      const messages =
+        minLevel === undefined
+          ? consoleMessages
+          : consoleMessages.filter((entry) => {
+              const entryLevel = (entry as { level?: unknown }).level;
+              return typeof entryLevel === "number" && entryLevel >= minLevel;
+            });
+      const total = messages.length;
+      const size = pageSize ?? Math.max(total, 1);
+      const paged =
+        pageIdx !== undefined || pageSize !== undefined
+          ? messages.slice((pageIdx ?? 0) * size, (pageIdx ?? 0) * size + size)
+          : messages;
+      return {
+        ...(await currentPageMetadata(webview, instanceId)),
+        source: "webview",
+        messages: paged,
+        total,
+        level: level ?? "all",
+        ...(note ? { note } : {}),
+      };
+    };
+    try {
+      const result = await window.snow.browserConsoleRecords(
+        webview.getWebContentsId(),
+        { level: minLevel, types, pageIdx, pageSize, includePreserved },
+      );
+      if (
+        result.total === 0 &&
+        consoleMessages.length > 0 &&
+        !includePreserved
+      ) {
+        // CDP 采集刚启用（缓存为空）：退回 webview console-message 事件流。
+        return webviewFallback(
+          "CDP console capture just started; showing webview console-message data (no stack traces). Query again after the next messages.",
+        );
+      }
+      let cleared: number | null = null;
+      if (args.clearConsole === true) {
+        const clearResult = await window.snow.browserConsoleClear(
+          webview.getWebContentsId(),
+        );
+        cleared = clearResult.cleared;
+      }
+      return {
+        ...(await currentPageMetadata(webview, instanceId)),
+        source: "cdp",
+        messages: result.messages,
+        total: result.total,
+        pageIdx: result.pageIdx,
+        pageSize: result.pageSize,
+        hasMore: result.hasMore,
+        archivedGenerations: result.archivedGenerations,
+        level: level ?? "all",
+        ...(cleared !== null ? { cleared } : {}),
+      };
+    } catch {
+      // CDP 不可用（如页面 DevTools 打开占用调试会话）：回退 webview console-message 数据。
+      return webviewFallback(
+        "CDP console capture is unavailable; falling back to the webview console-message stream (no stack traces).",
+      );
+    }
+  }
+  if (action === "console_message") {
+    const messageId =
+      typeof args.msgid === "number" && Number.isFinite(args.msgid)
+        ? Math.floor(args.msgid)
+        : null;
+    if (messageId === null || messageId <= 0) {
+      throw new Error("msgid is required for browser-devtools console_message");
+    }
+    const record = await window.snow.browserConsoleRecord(
+      webview.getWebContentsId(),
+      messageId,
+    );
+    if (record === null || record === undefined) {
+      const fallback = consoleMessages[messageId - 1] ?? null;
+      return {
+        ...(await currentPageMetadata(webview, instanceId)),
+        found: fallback !== null,
+        message: fallback,
+      };
+    }
     return {
       ...(await currentPageMetadata(webview, instanceId)),
-      messages,
-      totalMessages: messages.length,
-      level: level ?? "all",
+      found: true,
+      message: record,
     };
   }
   if (action === "network") {
     const filter = optionalString(args, "filter");
-    const limit = typeof args.limit === "number" ? args.limit : 50;
     const includeStatic = args.static === true;
-    const requests = await window.snow.browserNetworkRequests(
+    const resourceTypes = Array.isArray(args.resourceTypes)
+      ? args.resourceTypes.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : undefined;
+    const pageIdx = typeof args.pageIdx === "number" ? args.pageIdx : undefined;
+    const pageSize =
+      typeof args.pageSize === "number" ? args.pageSize : undefined;
+    const includePreserved = args.includePreserved === true;
+    const result = await window.snow.browserNetworkRequests(
       webview.getWebContentsId(),
-      filter,
-      limit,
-      includeStatic,
+      {
+        filter,
+        resourceTypes,
+        includeStatic,
+        pageIdx,
+        pageSize,
+        includePreserved,
+      },
     );
-    // 为每条记录附加序号，便于用 network_detail 按 index 查询
-    const numbered = (requests as unknown[]).map((record, index) => ({
-      index: index + 1,
-      record,
-    }));
     return {
       ...(await currentPageMetadata(webview, instanceId)),
-      requests: numbered,
-      total: numbered.length,
+      requests: result.records,
+      total: result.total,
+      pageIdx: result.pageIdx,
+      pageSize: result.pageSize,
+      hasMore: result.hasMore,
+      archivedGenerations: result.archivedGenerations,
+      source: result.source,
       static: includeStatic,
-      note: "Use action=networkDetails with a requestId to fetch full headers and bodies (CDP records).",
+      note: "Each request carries a numeric id (for action=network_detail) and a requestId string (for action=networkDetails, which returns full headers and bodies).",
     };
   }
   if (action === "network_detail") {
@@ -1073,10 +1717,12 @@ const devtools = async (
     const requestId = requiredString(args, "requestId");
     const maxBodyBytes =
       typeof args.maxBodyBytes === "number" ? args.maxBodyBytes : undefined;
+    const requestFilePath = optionalString(args, "requestFilePath");
+    const responseFilePath = optionalString(args, "responseFilePath");
     const details = await window.snow.browserNetworkDetails(
       webview.getWebContentsId(),
       requestId,
-      maxBodyBytes,
+      { maxBodyBytes, requestFilePath, responseFilePath },
     );
     return {
       ...(await currentPageMetadata(webview, instanceId)),
@@ -1273,6 +1919,7 @@ export const executeBrowserMcpOperation = async (
 ): Promise<unknown> => {
   if (
     operation === "frames" ||
+    operation === "drag" ||
     (args.frameId !== undefined && args.frameId !== null)
   ) {
     return window.snow.browserFrameOperation(
@@ -1290,6 +1937,40 @@ export const executeBrowserMcpOperation = async (
       return evaluate(webview, instanceId, args);
     case "type":
       return type(webview, instanceId, args);
+    case "fill_form":
+      return fillForm(webview, instanceId, args);
+    case "emulate":
+      return emulatePage(webview, instanceId, args);
+    case "resize_page":
+      return resizePage(webview, instanceId, args);
+    case "performance_start_trace":
+      return traceStart(webview, instanceId, args);
+    case "performance_stop_trace":
+      return traceStop(webview, instanceId, args);
+    case "performance_analyze_insight":
+      return traceInsight(webview, instanceId, args);
+    case "get_css_styles":
+      return cssStyles(webview, instanceId, args);
+    case "audit":
+      return auditPage(webview, instanceId, args);
+    case "take_heapsnapshot":
+    case "get_heapsnapshot_summary":
+    case "query_heapsnapshot_objects":
+    case "get_heapsnapshot_object_details":
+    case "get_heapsnapshot_edges":
+    case "get_heapsnapshot_retainers":
+    case "get_heapsnapshot_retaining_paths":
+    case "get_heapsnapshot_duplicate_strings":
+    case "compare_heapsnapshots":
+      return heapOperation(webview, instanceId, operation, args);
+    case "screencast_start":
+      return screencastStart(webview, instanceId, args);
+    case "screencast_stop":
+      return screencastStop(webview, instanceId);
+    case "list_page_tools":
+      return listPageTools(webview, instanceId);
+    case "call_page_tool":
+      return callPageTool(webview, instanceId, args);
     case "screenshot":
       return screenshot(webview, instanceId, args);
     case "wait":

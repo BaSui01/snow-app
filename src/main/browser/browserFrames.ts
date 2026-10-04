@@ -1,8 +1,8 @@
 import type { BrowserFramesResult } from "../../preload/types/browser";
 import { ipcMain, type WebContents, type WebFrameMain } from "electron";
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute } from "node:path";
 import {
   getBrowserWebContents,
   ensureWebContentsDebugger,
@@ -37,6 +37,8 @@ const frameOperations = new Set([
   "select_option",
   "upload-file",
   "devtools",
+  "drag",
+  "fill_form",
 ]);
 const bounded = (
   args: Args,
@@ -523,6 +525,62 @@ const rootPointerPoint = async (
   await execute(contents, entry, "true");
   return point;
 };
+
+/** drag 端点定位：定位元素 → 就绪检查 → 映射到 root 视口坐标并附元素描述。 */
+const dragElementPoint = async (
+  contents: WebContents,
+  entry: FrameEntry,
+  args: Args,
+  prefix: "from" | "to",
+): Promise<{ x: number; y: number; element: unknown }> =>
+  withCdpFrame(contents, entry, async (target) => {
+    const locator: Args = {
+      selector: args[`${prefix}Selector`],
+      text: args[`${prefix}Text`],
+      ref: args[`${prefix}Ref`],
+      exact: args[`${prefix}Exact`] === true,
+    };
+    const objectId = await elementHandle(contents, entry, target, locator);
+    try {
+      const prepared = (await contents.debugger.sendCommand(
+        "Runtime.callFunctionOn",
+        {
+          objectId,
+          functionDeclaration: `function() {
+        if (!this.isConnected || this.ownerDocument !== document || !(this instanceof Element) || this.matches(':disabled,[aria-disabled="true"]')) throw new Error('Element is stale or disabled');
+        this.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        return true;
+      }`,
+          returnByValue: true,
+        },
+        target.sessionId,
+      )) as { exceptionDetails?: unknown };
+      if (prepared.exceptionDetails)
+        throw new Error("Drag target element is stale or disabled");
+      const point = await rootPointerPoint(contents, entry, target, objectId);
+      const described = (await contents.debugger.sendCommand(
+        "Runtime.callFunctionOn",
+        {
+          objectId,
+          functionDeclaration: `function() {
+        return {
+          tagName: this.tagName ? this.tagName.toLowerCase() : '',
+          id: this.id || null,
+          text: (this.innerText || this.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
+        };
+      }`,
+          returnByValue: true,
+        },
+        target.sessionId,
+      )) as { result?: { value?: unknown } };
+      return { ...point, element: described.result?.value ?? null };
+    } finally {
+      await contents.debugger
+        .sendCommand("Runtime.releaseObject", { objectId }, target.sessionId)
+        .catch(() => {});
+    }
+  });
+
 const perform = async (
   contents: WebContents,
   entry: FrameEntry,
@@ -535,19 +593,61 @@ const perform = async (
     title: await execute(contents, entry, "String(document.title || '')"),
   };
   if (operation === "evaluate") {
-    if (typeof args.expression !== "string" || !args.expression.trim())
-      throw new Error("expression is required");
+    const format =
+      args.format === "function" || typeof args.function === "string"
+        ? "function"
+        : "script";
+    let source: string;
+    if (typeof args.sourcePath === "string" && args.sourcePath.trim()) {
+      source = await readFile(args.sourcePath, "utf8");
+    } else if (typeof args.expression === "string" && args.expression.trim()) {
+      source = args.expression;
+    } else if (typeof args.function === "string" && args.function.trim()) {
+      source = args.function;
+    } else {
+      throw new Error("expression, function, or sourcePath is required");
+    }
     if (
       /cookie|localStorage|sessionStorage|indexedDB|authorization|password|secret|token/i.test(
-        args.expression,
+        source,
       )
     )
       throw new Error(
         "Credential/storage access is not allowed in frame evaluation",
       );
+    if (format === "function") {
+      const callArgs = Array.isArray(args.args) ? args.args : [];
+      source = `(${source})\n.apply(undefined, ${JSON.stringify(callArgs)})`;
+    }
+    if (args.waitForStableDom !== false) {
+      await execute(
+        contents,
+        entry,
+        `new Promise((resolve) => {
+        let timer;
+        let observer;
+        const settle = () => { if (timer) clearTimeout(timer); if (observer) observer.disconnect(); resolve(true); };
+        observer = new MutationObserver(() => { if (timer) clearTimeout(timer); timer = setTimeout(settle, 80); });
+        timer = setTimeout(settle, 80);
+        try { observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true }); } catch {}
+        setTimeout(settle, 1000);
+      })`,
+      );
+    }
+    const resultValue = await execute(contents, entry, source);
+    if (typeof args.filePath === "string" && args.filePath.trim()) {
+      const text = JSON.stringify(resultValue, null, 2) ?? "undefined";
+      await mkdir(dirname(args.filePath), { recursive: true });
+      await writeFile(args.filePath, text, "utf8");
+      return {
+        ...metadata,
+        savedTo: args.filePath,
+        bytes: Buffer.byteLength(text, "utf8"),
+      };
+    }
     return {
       ...metadata,
-      result: await execute(contents, entry, args.expression),
+      result: resultValue,
     };
   }
   if (
@@ -636,6 +736,80 @@ const perform = async (
       return { ...metadata, ...snapshot, valuesRedacted: true };
     });
   }
+  if (operation === "drag") {
+    const fromEntry = await selectFrame(contents, args.fromFrameId);
+    const toEntry = await selectFrame(contents, args.toFrameId);
+    const from = await dragElementPoint(contents, fromEntry, args, "from");
+    const to = await dragElementPoint(contents, toEntry, args, "to");
+    await ensureWebContentsDebugger(contents);
+    if (!contents.debugger.isAttached())
+      throw new Error("FRAME_CDP_UNAVAILABLE: close page DevTools and retry");
+    contents.focus();
+    const send = (params: Record<string, unknown>): Promise<unknown> =>
+      contents.debugger.sendCommand("Input.dispatchMouseEvent", params);
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.max(8, Math.min(24, Math.round(distance / 16)));
+    await send({ type: "mouseMoved", x: from.x, y: from.y, buttons: 0 });
+    await send({
+      type: "mousePressed",
+      x: from.x,
+      y: from.y,
+      button: "left",
+      buttons: 1,
+      clickCount: 1,
+    });
+    for (let step = 1; step <= steps; step++) {
+      const x = from.x + ((to.x - from.x) * step) / steps;
+      const y = from.y + ((to.y - from.y) * step) / steps;
+      await send({ type: "mouseMoved", x, y, button: "left", buttons: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 12));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await send({
+      type: "mouseReleased",
+      x: to.x,
+      y: to.y,
+      button: "left",
+      buttons: 0,
+      clickCount: 1,
+    });
+    return {
+      ...metadata,
+      success: true,
+      from: from.element,
+      to: to.element,
+    };
+  }
+  if (operation === "fill_form") {
+    const elements = Array.isArray(args.elements) ? args.elements : [];
+    if (elements.length === 0)
+      throw new Error("elements must be a non-empty array");
+    const results: { index: number; ok: boolean; error?: string }[] = [];
+    let successCount = 0;
+    for (const [index, item] of elements.entries()) {
+      const itemArgs =
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? (item as Args)
+          : {};
+      try {
+        await perform(contents, entry, "type", itemArgs);
+        results.push({ index, ok: true });
+        successCount += 1;
+      } catch (error) {
+        results.push({
+          index,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return {
+      ...metadata,
+      results,
+      successCount,
+      failureCount: results.length - successCount,
+    };
+  }
   return withElement(contents, entry, args, async (target, objectId) => {
     const send = (
       method: string,
@@ -698,6 +872,23 @@ const perform = async (
           button: "left",
           clickCount: 1,
         });
+        if (args.dblClick === true) {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          await pointer({
+            type: "mousePressed",
+            x,
+            y,
+            button: "left",
+            clickCount: 2,
+          });
+          await pointer({
+            type: "mouseReleased",
+            x,
+            y,
+            button: "left",
+            clickCount: 2,
+          });
+        }
       }
       return { ...metadata, success: true };
     }
@@ -724,9 +915,50 @@ const perform = async (
         throw new Error("value must be a string");
       const delay = bounded(args, "delayMs", 0, 0, 1000);
       contents.focus();
-      await locate(`element.focus();
-        if (!element.isContentEditable && !['INPUT','TEXTAREA'].includes(element.tagName)) throw new Error('Target is not editable');
+      const mode = await locate(`const tag = element.tagName;
+        if (tag === 'SELECT') return 'select';
+        if (tag === 'INPUT' && (element.type === 'checkbox' || element.type === 'radio')) return 'choice';
+        if (!element.isContentEditable && !(tag === 'INPUT' || tag === 'TEXTAREA')) throw new Error('Target is not editable');
         if (element.readOnly) throw new Error('Target is readonly');
+        return 'text';`);
+      if (mode === "choice") {
+        const checked =
+          args.value === "true" ||
+          args.value === "1" ||
+          args.value === "checked";
+        const applied = await locate(`const desired = ${checked};
+          const isRadio = element.type === 'radio';
+          if (isRadio && !desired) return element.checked;
+          if (element.checked !== desired) {
+            element.click();
+            if (element.checked !== desired) {
+              element.checked = desired;
+              element.dispatchEvent(new Event('input', { bubbles: true }));
+              element.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }
+          return element.checked;`);
+        return {
+          ...metadata,
+          success: true,
+          mode: "choice",
+          checked: applied === true,
+        };
+      }
+      if (mode === "select") {
+        const selected =
+          await locate(`const wanted = ${JSON.stringify(args.value)};
+          const option = Array.from(element.options).find((candidate) => candidate.value === wanted || candidate.label === wanted);
+          if (!option) throw new Error('No option matches the provided value: ' + wanted);
+          if (option.disabled) throw new Error('Option is disabled: ' + wanted);
+          if (!element.multiple) for (const item of element.options) item.selected = false;
+          option.selected = true;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          return Array.from(element.selectedOptions).map((item) => item.value);`);
+        return { ...metadata, success: true, mode: "select", selected };
+      }
+      await locate(`element.focus();
         if (element.isContentEditable) {
           element.textContent = '';
           const range = document.createRange(); range.selectNodeContents(element); range.collapse(false);

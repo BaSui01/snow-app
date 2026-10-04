@@ -99,7 +99,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "navigate".to_string(),
-                description: "Navigate an embedded browser instance to a URL (http://, https://, or file://) and wait asynchronously for loading to finish. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Navigate an embedded browser instance to a URL (http://, https://, or file://) and wait asynchronously for loading to finish, or reload the current page with reload=true (optionally ignoreCache=true). initScript injects JavaScript before any other script runs in the next document (one-shot, credential access blocked). Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -109,7 +109,21 @@ impl McpService for BrowserService {
                         },
                         "url": {
                             "type": "string",
-                            "description": "URL to visit (http://, https://, or file://)."
+                            "description": "URL to visit (http://, https://, or file://). Omit when reload=true."
+                        },
+                        "reload": {
+                            "type": "boolean",
+                            "description": "Reload the current page instead of navigating to url (default false).",
+                            "default": false
+                        },
+                        "ignoreCache": {
+                            "type": "boolean",
+                            "description": "Bypass the cache when reloading (reload=true only).",
+                            "default": false
+                        },
+                        "initScript": {
+                            "type": "string",
+                            "description": "JavaScript to execute before any other script of the next document (one-shot; credential/storage access is blocked)."
                         },
                         "timeoutMs": {
                             "type": "number",
@@ -118,14 +132,13 @@ impl McpService for BrowserService {
                             "minimum": MIN_TIMEOUT_MS,
                             "maximum": MAX_TIMEOUT_MS
                         }
-                    },
-                    "required": ["url"]
+                    }
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "click".to_string(),
-                description: "Click page content in an embedded browser with a real Electron mouse input event. Target an element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax). Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Click page content in an embedded browser with a real Electron mouse input event. Target an element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax), or click viewport coordinates with x and y. Set dblClick to double-click. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -145,6 +158,19 @@ impl McpService for BrowserService {
                             "type": "string",
                             "description": "Optional accessibility ref (uid from a recent browser-devtools action=ax snapshot) for deterministic element targeting."
                         },
+                        "x": {
+                            "type": "number",
+                            "description": "Viewport x coordinate to click (main frame only; provide both x and y instead of selector/text/ref)."
+                        },
+                        "y": {
+                            "type": "number",
+                            "description": "Viewport y coordinate to click (main frame only; provide both x and y instead of selector/text/ref)."
+                        },
+                        "dblClick": {
+                            "type": "boolean",
+                            "description": "Whether to double-click the target (default false).",
+                            "default": false
+                        },
                         "exact": {
                             "type": "boolean",
                             "description": "Whether text matching must be exact (default false).",
@@ -154,14 +180,15 @@ impl McpService for BrowserService {
                     "anyOf": [
                         { "required": ["selector"] },
                         { "required": ["text"] },
-                        { "required": ["ref"] }
+                        { "required": ["ref"] },
+                        { "required": ["x", "y"] }
                     ]
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screenshot".to_string(),
-                description: "Capture an embedded browser page as PNG. Omit instanceId to capture the most recently focused browser tab, including a browser opened by the user. Returns page metadata and an image content block containing base64 PNG data.".to_string(),
+                description: "Capture an embedded browser page or a single element as an image (CDP, including off-screen content). Pass selector or ref to capture only that element, format/quality to choose the output type, and filePath to save the image to a file instead of returning it inline. Omit instanceId to capture the most recently focused browser tab, including a browser opened by the user. Returns page metadata and, when filePath is omitted, an image content block containing base64 image data.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -173,6 +200,30 @@ impl McpService for BrowserService {
                             "type": "boolean",
                             "description": "Capture the full scrollable page instead of only the viewport (default false).",
                             "default": false
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "Optional CSS selector; capture only that element (mutually exclusive with fullPage)."
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Optional accessibility ref (uid from a recent browser-devtools action=ax snapshot); capture only that element (mutually exclusive with fullPage)."
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["png", "jpeg", "webp"],
+                            "description": "Image format (default png).",
+                            "default": "png"
+                        },
+                        "quality": {
+                            "type": "number",
+                            "description": "Compression quality 0-100 for jpeg/webp formats (ignored for png).",
+                            "minimum": 0,
+                            "maximum": 100
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Optional absolute path; save the image to this file instead of returning base64 data inline."
                         }
                     }
                 }),
@@ -180,7 +231,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "devtools".to_string(),
-                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages (optionally filtered by level), action=network for recorded network requests (CDP records include requestId for details), action=network_detail for full details of a single request by id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request, action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
+                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages (filterable by level/types, paginated with pageIdx/pageSize, includePreserved covers the last 3 navigations, clearConsole clears after returning), action=console_message for one message by msgid, action=network for recorded network requests (filterable by regexp/resourceTypes, paginated, includePreserved covers the last 3 navigations; CDP records include a numeric id and a requestId string), action=network_detail for full details of a single request by numeric id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request (requestFilePath/responseFilePath save bodies to files), action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -190,7 +241,7 @@ impl McpService for BrowserService {
                         },
                         "action": {
                             "type": "string",
-                            "enum": ["snapshot", "console", "open", "network", "network_detail", "network_clear", "networkDetails", "networkState", "route", "routeClear", "storageSave", "storageRestore", "cookies", "cookieDelete", "ax", "trace", "dialog"],
+                            "enum": ["snapshot", "console", "console_message", "open", "network", "network_detail", "network_clear", "networkDetails", "networkState", "route", "routeClear", "storageSave", "storageRestore", "cookies", "cookieDelete", "ax", "trace", "dialog"],
                             "description": "Developer tools action (default snapshot).",
                             "default": "snapshot"
                         },
@@ -239,6 +290,37 @@ impl McpService for BrowserService {
                             "minimum": 1,
                             "maximum": 200
                         },
+                        "pageIdx": {
+                            "type": "number",
+                            "description": "Zero-based page index for console/network listings (default 0).",
+                            "minimum": 0,
+                            "maximum": 1000
+                        },
+                        "pageSize": {
+                            "type": "number",
+                            "description": "Page size for console/network listings (when omitted all records are returned, up to 1000).",
+                            "minimum": 1,
+                            "maximum": 1000
+                        },
+                        "includePreserved": {
+                            "type": "boolean",
+                            "description": "Include records preserved from the previous navigations (console/network actions; keeps the last 3 navigations).",
+                            "default": false
+                        },
+                        "types": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Only return console messages whose type/kind matches one of these values (console action only), e.g. [\"error\", \"warning\"]."
+                        },
+                        "resourceTypes": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Only return network requests of these resource types (network action only), e.g. [\"XHR\", \"Fetch\", \"Document\"]."
+                        },
+                        "msgid": {
+                            "type": "number",
+                            "description": "Numeric id of the console message to retrieve (console_message action only; use action=console to obtain ids)."
+                        },
                         "requestId": {
                             "type": "string",
                             "description": "Network request reference. For networkDetails: CDP request id from the network list (string). For network_detail: the numeric id of the request to retrieve full details for (use network action first to obtain ids)."
@@ -249,6 +331,14 @@ impl McpService for BrowserService {
                             "default": 131072,
                             "minimum": 1024,
                             "maximum": 1048576
+                        },
+                        "requestFilePath": {
+                            "type": "string",
+                            "description": "Absolute path to save the request body to (networkDetails action only; body is written to the file instead of being returned)."
+                        },
+                        "responseFilePath": {
+                            "type": "string",
+                            "description": "Absolute path to save the response body to (networkDetails action only; body is written to the file instead of being returned)."
                         },
                         "state": {
                             "type": "string",
@@ -491,7 +581,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "evaluate".to_string(),
-                description: "Evaluate a JavaScript expression in an embedded browser page and return the serialized result. Use for inspecting page state, reading variables, or exercising the page directly. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Evaluate JavaScript in an embedded browser page and return the serialized result. Provide the source via expression (inline) or sourcePath (a local file); with format=function the source is treated as a function and args are passed to it (JSON-serializable). waitForStableDom (default true) waits for the DOM to settle before evaluating; filePath saves the result JSON to a file instead of returning it. Credential/storage access (cookies, localStorage, etc.) is blocked; use browser-devtools cookies for those. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -501,16 +591,43 @@ impl McpService for BrowserService {
                         },
                         "expression": {
                             "type": "string",
-                            "description": "JavaScript expression to evaluate in the page (e.g. \"document.title\" or \"(() => ({ url: location.href, ready: document.readyState }))()\")."
+                            "description": "JavaScript source to evaluate (e.g. \"document.title\" or an async IIFE). With format=function, a function declaration such as \"(el) => el.innerText\"."
+                        },
+                        "function": {
+                            "type": "string",
+                            "description": "Alias of expression for function-style scripts; provide only one of expression, function, or sourcePath."
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["script", "function"],
+                            "description": "How to interpret the source: script evaluates it as-is (default); function treats it as a function declaration and applies args.",
+                            "default": "script"
+                        },
+                        "args": {
+                            "type": "array",
+                            "items": {},
+                            "description": "JSON-serializable arguments passed to the function when format=function."
+                        },
+                        "sourcePath": {
+                            "type": "string",
+                            "description": "Absolute path of a local JavaScript file to load as the source (mutually exclusive with expression/function)."
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Optional absolute path; save the result as JSON to this file instead of returning it."
+                        },
+                        "waitForStableDom": {
+                            "type": "boolean",
+                            "description": "Wait for the DOM to settle before evaluating (default true; pass false for pure reads).",
+                            "default": true
                         }
-                    },
-                    "required": ["expression"]
+                    }
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "type".to_string(),
-                description: "Type text into an editable element in an embedded browser. Target the element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax; same locating rules as browser-click). By default the value is set at once and input/change events are fired; pass delayMs to type character by character for key handlers. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Type text into an editable element (or fill a form control) in an embedded browser. Target the element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax; same locating rules as browser-click). Supports inputs, textareas, contenteditable, checkboxes and radios (value \"true\"/\"false\") and <select> (value or label). By default the value is set at once and input/change events are fired; pass delayMs to type character by character for key handlers. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -532,7 +649,7 @@ impl McpService for BrowserService {
                         },
                         "value": {
                             "type": "string",
-                            "description": "Text to type into the element."
+                            "description": "Text to type into the element. For checkbox/radio pass \"true\" to check or \"false\" to uncheck; for <select> pass the option value or label to select."
                         },
                         "submit": {
                             "type": "boolean",
@@ -594,6 +711,130 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
+                name: "drag".to_string(),
+                description: "Drag an element onto another element with a real mouse input sequence (HTML5 drag-and-drop and pointer-drag widgets). Locate the source with fromSelector/fromText/fromRef and the drop target with toSelector/toText/toRef; fromFrameId/toFrameId optionally target specific frames from browser-frames. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "fromSelector": {
+                            "type": "string",
+                            "description": "CSS selector of the element to drag."
+                        },
+                        "fromText": {
+                            "type": "string",
+                            "description": "Visible text of the element to drag when fromSelector is not provided."
+                        },
+                        "fromRef": {
+                            "type": "string",
+                            "description": "Accessibility ref (uid from browser-devtools action=ax) of the element to drag."
+                        },
+                        "fromExact": {
+                            "type": "boolean",
+                            "description": "Whether fromText matching must be exact (default false).",
+                            "default": false
+                        },
+                        "fromFrameId": {
+                            "type": "string",
+                            "description": "Optional frameId (from browser-frames) containing the source element."
+                        },
+                        "toSelector": {
+                            "type": "string",
+                            "description": "CSS selector of the drop target element."
+                        },
+                        "toText": {
+                            "type": "string",
+                            "description": "Visible text of the drop target element when toSelector is not provided."
+                        },
+                        "toRef": {
+                            "type": "string",
+                            "description": "Accessibility ref (uid from browser-devtools action=ax) of the drop target element."
+                        },
+                        "toExact": {
+                            "type": "boolean",
+                            "description": "Whether toText matching must be exact (default false).",
+                            "default": false
+                        },
+                        "toFrameId": {
+                            "type": "string",
+                            "description": "Optional frameId (from browser-frames) containing the drop target element."
+                        }
+                    },
+                    "allOf": [
+                        {
+                            "anyOf": [
+                                { "required": ["fromSelector"] },
+                                { "required": ["fromText"] },
+                                { "required": ["fromRef"] }
+                            ]
+                        },
+                        {
+                            "anyOf": [
+                                { "required": ["toSelector"] },
+                                { "required": ["toText"] },
+                                { "required": ["toRef"] }
+                            ]
+                        }
+                    ]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "fill_form".to_string(),
+                description: "Fill multiple form elements in one call (inputs, textareas, checkboxes, radios, selects, contenteditable). Each elements entry locates its target with selector/text/ref and provides a value; checkbox/radio use \"true\"/\"false\", selects accept the option value or label, and submit=true submits the containing form. Failures are reported per element without aborting the remaining ones. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "elements": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for this element."
+                                    },
+                                    "text": {
+                                        "type": "string",
+                                        "description": "Visible text to locate this element when selector is not provided."
+                                    },
+                                    "ref": {
+                                        "type": "string",
+                                        "description": "Accessibility ref (uid from browser-devtools action=ax) for this element."
+                                    },
+                                    "value": {
+                                        "type": "string",
+                                        "description": "Value to fill. checkbox/radio: \"true\"/\"false\"; select: option value or label."
+                                    },
+                                    "submit": {
+                                        "type": "boolean",
+                                        "description": "Whether to submit the containing form after filling this element (default false).",
+                                        "default": false
+                                    }
+                                },
+                                "required": ["value"],
+                                "anyOf": [
+                                    { "required": ["selector"] },
+                                    { "required": ["text"] },
+                                    { "required": ["ref"] }
+                                ]
+                            },
+                            "description": "Form elements to fill, applied in order."
+                        }
+                    },
+                    "required": ["elements"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
                 name: "back".to_string(),
                 description: "Go back to the previous page in the browser history and wait for navigation. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
@@ -618,6 +859,532 @@ impl McpService for BrowserService {
                             "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         }
                     }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "emulate".to_string(),
+                description: "Emulate browser features on the target page (CDP Emulation/Network domains): color scheme, CPU throttling, geolocation, extra HTTP headers, network conditions, user agent and viewport. Pass null (or an empty string for viewport) to clear a specific override. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "colorScheme": {
+                            "type": "string",
+                            "enum": ["dark", "light", "auto"],
+                            "description": "Emulate prefers-color-scheme; auto clears the override."
+                        },
+                        "cpuThrottlingRate": {
+                            "type": "number",
+                            "description": "CPU slowdown factor, 1 disables throttling (range 1-20).",
+                            "minimum": 1,
+                            "maximum": 20
+                        },
+                        "extraHttpHeaders": {
+                            "type": "object",
+                            "additionalProperties": { "type": "string" },
+                            "description": "Extra HTTP headers sent with every page request; null clears them."
+                        },
+                        "geolocation": {
+                            "type": "object",
+                            "properties": {
+                                "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+                                "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+                                "accuracy": { "type": "number", "minimum": 0 }
+                            },
+                            "required": ["latitude", "longitude"],
+                            "description": "Geolocation override; null clears it."
+                        },
+                        "networkConditions": {
+                            "type": "string",
+                            "enum": ["Offline", "Slow 3G", "Fast 3G", "Slow 4G", "Fast 4G"],
+                            "description": "Network throttling preset; null restores online."
+                        },
+                        "userAgent": {
+                            "type": "string",
+                            "description": "User agent override; an empty string clears it."
+                        },
+                        "viewport": {
+                            "type": "string",
+                            "description": "Device viewport \"<width>x<height>[x<devicePixelRatio>][,mobile][,touch][,landscape]\"; an empty string clears it."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "resize_page".to_string(),
+                description: "Resize the page viewport to the given dimensions (device metrics override). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "width": {
+                            "type": "number",
+                            "description": "Viewport width in pixels (50-8000).",
+                            "minimum": 50,
+                            "maximum": 8000
+                        },
+                        "height": {
+                            "type": "number",
+                            "description": "Viewport height in pixels (50-8000).",
+                            "minimum": 50,
+                            "maximum": 8000
+                        }
+                    },
+                    "required": ["width", "height"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "performance_start_trace".to_string(),
+                description: "Start recording a performance trace (CDP Tracing) on the target page. Navigate or reload BEFORE starting when you want to capture load performance. Stop with performance_stop_trace to receive Core Web Vitals, long tasks and actionable insights. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "categories": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Optional trace categories (defaults to devtools.timeline, v8.execute, blink.user_timing, loading and latencyInfo)."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "performance_stop_trace".to_string(),
+                description: "Stop the active performance trace and return Core Web Vitals (FCP/LCP/CLS/load/DCL/first response), long-task statistics and insights (long-tasks, render-blocking, lcp, cls, document-latency, third-parties). filePath optionally saves the raw trace (.json or .json.gz) for Perfetto/DevTools. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Optional absolute path to save the raw trace data (.json, or .json.gz for compression)."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "performance_analyze_insight".to_string(),
+                description: "Return full details of one insight from the last stopped trace: long-tasks, render-blocking, lcp, cls, document-latency or third-parties. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "insightId": {
+                            "type": "string",
+                            "description": "Insight id from the performance_stop_trace result."
+                        }
+                    },
+                    "required": ["insightId"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_css_styles".to_string(),
+                description: "Inspect the CSS cascade for an element: matched rules from all origins with source locations and media queries, inline style, inherited rules and computed values; overridden declarations are marked overloaded. Locate the element with selector or an accessibility ref (uid from browser-devtools action=ax). Rules are paginated (10 per page by default). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector of the element to inspect."
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Accessibility ref (uid from browser-devtools action=ax) of the element to inspect."
+                        },
+                        "pageIdx": {
+                            "type": "number",
+                            "description": "Zero-based page index for the matched rules list (default 0).",
+                            "minimum": 0,
+                            "maximum": 1000
+                        },
+                        "pageSize": {
+                            "type": "number",
+                            "description": "Matched rules per page (default 10, range 1-100).",
+                            "minimum": 1,
+                            "maximum": 100
+                        }
+                    },
+                    "anyOf": [
+                        { "required": ["selector"] },
+                        { "required": ["ref"] }
+                    ]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "audit".to_string(),
+                description: "Audit the current page: axe-core accessibility scan (violations with impact, help and failing targets), lightweight SEO checks (title, meta description, h1, lang, viewport, canonical, Open Graph) and best-practice checks (secure context, doctype, charset, duplicate ids, image alt). Also reports the console error count. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "categories": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["accessibility", "seo", "best-practices"]
+                            },
+                            "description": "Categories to run (default all three)."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "take_heapsnapshot".to_string(),
+                description: "Capture a V8 heap snapshot of the page and save it to filePath (.heapsnapshot). Analyze it with the get_heapsnapshot_* tools and compare_heapsnapshots. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path to save the .heapsnapshot file."
+                        }
+                    },
+                    "required": ["filePath"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_summary".to_string(),
+                description: "Summarize a .heapsnapshot file: node/edge counts, total self size, detached node count, top constructors and node types by size.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "topN": {
+                            "type": "number",
+                            "description": "Number of constructors to list (default 30).",
+                            "minimum": 1,
+                            "maximum": 200
+                        }
+                    },
+                    "required": ["filePath"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "query_heapsnapshot_objects".to_string(),
+                description: "Query objects inside a .heapsnapshot file by constructor name (plain text substring or /regex/), node type, minimum self size and detachedness; results carry nodeIndex values for follow-up calls.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "className": {
+                            "type": "string",
+                            "description": "Constructor name filter: substring match, or /regex/ for a regular expression."
+                        },
+                        "nodeType": {
+                            "type": "string",
+                            "description": "V8 node type filter, e.g. object, closure, string, array, code."
+                        },
+                        "minSelfSize": {
+                            "type": "number",
+                            "description": "Minimum self size in bytes.",
+                            "minimum": 0
+                        },
+                        "isDetached": {
+                            "type": "boolean",
+                            "description": "Only return detached DOM nodes."
+                        },
+                        "sortBy": {
+                            "type": "string",
+                            "enum": ["selfSize", "id"],
+                            "description": "Sort order (default selfSize descending)."
+                        },
+                        "pageIdx": {
+                            "type": "number",
+                            "description": "Zero-based page index (default 0).",
+                            "minimum": 0
+                        },
+                        "pageSize": {
+                            "type": "number",
+                            "description": "Rows per page (default 20, maximum 200).",
+                            "minimum": 1,
+                            "maximum": 200
+                        }
+                    },
+                    "required": ["filePath"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_object_details".to_string(),
+                description: "Describe one object inside a .heapsnapshot file by nodeIndex (id, constructor, type, self size, edge count, detachedness, retainer count).".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "nodeIndex": {
+                            "type": "number",
+                            "description": "Node index from query/get results.",
+                            "minimum": 0
+                        }
+                    },
+                    "required": ["filePath", "nodeIndex"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_edges".to_string(),
+                description: "List outgoing references (edges) of one object inside a .heapsnapshot file by nodeIndex.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "nodeIndex": {
+                            "type": "number",
+                            "description": "Node index from query/get results.",
+                            "minimum": 0
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum edges to return (default 50, maximum 500).",
+                            "minimum": 1,
+                            "maximum": 500
+                        }
+                    },
+                    "required": ["filePath", "nodeIndex"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_retainers".to_string(),
+                description: "List objects retaining one object inside a .heapsnapshot file (reverse references) by nodeIndex.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "nodeIndex": {
+                            "type": "number",
+                            "description": "Node index from query/get results.",
+                            "minimum": 0
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum retainers to return (default 50, maximum 500).",
+                            "minimum": 1,
+                            "maximum": 500
+                        }
+                    },
+                    "required": ["filePath", "nodeIndex"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_retaining_paths".to_string(),
+                description: "Trace retaining paths from one object inside a .heapsnapshot file towards GC roots (why is it not collected) by nodeIndex.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "nodeIndex": {
+                            "type": "number",
+                            "description": "Node index from query/get results.",
+                            "minimum": 0
+                        },
+                        "maxDepth": {
+                            "type": "number",
+                            "description": "Maximum path depth (default 6, maximum 30).",
+                            "minimum": 1,
+                            "maximum": 30
+                        },
+                        "maxPaths": {
+                            "type": "number",
+                            "description": "Maximum number of paths to return (default 5, maximum 20).",
+                            "minimum": 1,
+                            "maximum": 20
+                        }
+                    },
+                    "required": ["filePath", "nodeIndex"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "get_heapsnapshot_duplicate_strings".to_string(),
+                description: "List the most wasteful duplicate strings inside a .heapsnapshot file (value, occurrences, wasted bytes).".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "type": "string",
+                            "description": "Absolute path of the .heapsnapshot file."
+                        },
+                        "topN": {
+                            "type": "number",
+                            "description": "Number of entries to list (default 20, maximum 200).",
+                            "minimum": 1,
+                            "maximum": 200
+                        }
+                    },
+                    "required": ["filePath"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "compare_heapsnapshots".to_string(),
+                description: "Compare two .heapsnapshot files and report the biggest constructor growth and shrink (leak hunting between two points in time).".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "baseFilePath": {
+                            "type": "string",
+                            "description": "Absolute path of the earlier .heapsnapshot file."
+                        },
+                        "currentFilePath": {
+                            "type": "string",
+                            "description": "Absolute path of the later .heapsnapshot file."
+                        },
+                        "topN": {
+                            "type": "number",
+                            "description": "Entries per direction (default 30, maximum 200).",
+                            "minimum": 1,
+                            "maximum": 200
+                        }
+                    },
+                    "required": ["baseFilePath", "currentFilePath"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "screencast_start".to_string(),
+                description: "Start recording the page as a video (CDP screencast frames, combined into a MJPEG AVI on stop). Recording auto-stops at maxFrames or maxDurationMs. Stop with screencast_stop. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "filePath": {
+                            "type": "string",
+                            "description": "Optional absolute path for the resulting .avi file (defaults to the app recordings folder)."
+                        },
+                        "quality": {
+                            "type": "number",
+                            "description": "JPEG frame quality (default 70, range 1-100).",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "maxWidth": {
+                            "type": "number",
+                            "description": "Optional maximum frame width in pixels.",
+                            "minimum": 64,
+                            "maximum": 3840
+                        },
+                        "maxFrames": {
+                            "type": "number",
+                            "description": "Frame cap before auto-stop (default 1200, maximum 6000).",
+                            "minimum": 1,
+                            "maximum": 6000
+                        },
+                        "maxDurationMs": {
+                            "type": "number",
+                            "description": "Duration cap before auto-stop in milliseconds (default 120000, maximum 600000).",
+                            "minimum": 1000,
+                            "maximum": 600000
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "screencast_stop".to_string(),
+                description: "Stop the active screencast and produce the MJPEG AVI file (returns file path, frame count, duration, size and fps). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "list_page_tools".to_string(),
+                description: "List tools exposed by the page itself (WebMCP-style): the page registers window.__snowPageTools as an array or record of { name, description?, parameters?, run(args) }. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "call_page_tool".to_string(),
+                description: "Execute a page-registered tool (window.__snowPageTools) by name with JSON parameters and return its JSON-serializable result. Use list_page_tools first. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Name of the page tool to execute."
+                        },
+                        "params": {
+                            "description": "JSON-serializable parameters passed to the tool's run(args) function."
+                        }
+                    },
+                    "required": ["name"]
                 }),
             },
             McpTool {
@@ -649,7 +1416,7 @@ impl McpService for BrowserService {
             input_schema: json!({"type": "object", "properties": {"instanceId": {"type": "string", "description": "Optional browser tab ID; omit or use current for the focused tab."}}}),
         });
         for tool in &mut tools {
-            if matches!(tool.name.as_str(), "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "hover" | "select_option" | "upload-file" | "devtools") {
+            if matches!(tool.name.as_str(), "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "fill_form" | "hover" | "select_option" | "upload-file" | "devtools") {
                 tool.input_schema["properties"]["frameId"] = json!({
                     "type": "string",
                     "pattern": "^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -668,13 +1435,22 @@ impl McpService for BrowserService {
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
             "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
-            | "list" | "evaluate" | "type" | "wait" | "press_key"
+            | "list" | "evaluate" | "type" | "fill_form" | "drag" | "wait" | "press_key"
             | "select_option" | "hover" | "upload-file" | "back"
-| "forward" | "get_tab_content" | "frames" => Err(Error::new(
-                Status::GenericFailure,
-                "Browser tools must be executed through the asynchronous Electron command bridge"
-                    .to_string(),
-            )),
+            | "forward" | "get_tab_content" | "frames"
+            | "emulate" | "resize_page" | "performance_start_trace" | "performance_stop_trace"
+            | "performance_analyze_insight" | "get_css_styles" | "audit"
+            | "take_heapsnapshot" | "get_heapsnapshot_summary" | "query_heapsnapshot_objects"
+            | "get_heapsnapshot_object_details" | "get_heapsnapshot_edges"
+            | "get_heapsnapshot_retainers" | "get_heapsnapshot_retaining_paths"
+            | "get_heapsnapshot_duplicate_strings" | "compare_heapsnapshots"
+            | "screencast_start" | "screencast_stop" | "list_page_tools" | "call_page_tool" => {
+                Err(Error::new(
+                    Status::GenericFailure,
+                    "Browser tools must be executed through the asynchronous Electron command bridge"
+                        .to_string(),
+                ))
+            }
             _ => Err(validation::unknown_tool_error(tool_name)),
         }
     }

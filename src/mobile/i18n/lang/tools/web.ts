@@ -120,6 +120,8 @@ export const webEn: Record<string, string> = {
   "remote.toolCall.web.browser.op.back": "Back",
   "remote.toolCall.web.browser.op.forward": "Forward",
   "remote.toolCall.web.browser.op.get_tab_content": "Tab content",
+  "remote.toolCall.web.browser.op.drag": "Drag",
+  "remote.toolCall.web.browser.op.fill_form": "Fill form",
 
   // ── browser-*：状态与徽章 ──
   "remote.toolCall.web.browser.newTab": "New tab",
@@ -137,6 +139,9 @@ export const webEn: Record<string, string> = {
   "remote.toolCall.web.browser.waitTarget": "Wait for",
   "remote.toolCall.web.browser.waitedMs": "Waited {{count}} ms",
   "remote.toolCall.web.browser.uploaded": "Uploaded {{count}} files",
+  "remote.toolCall.web.browser.dragged": "Dragged",
+  "remote.toolCall.web.browser.filled": "Filled {{count}} fields",
+  "remote.toolCall.web.browser.fillFailed": "{{count}} failed",
   "remote.toolCall.web.browser.submitted": "Submitted",
   "remote.toolCall.web.browser.exactMatch": "Exact match",
   "remote.toolCall.web.browser.selectedCount": "{{count}} selected",
@@ -288,6 +293,8 @@ export const webZhCN: Record<string, string> = {
   "remote.toolCall.web.browser.op.back": "后退",
   "remote.toolCall.web.browser.op.forward": "前进",
   "remote.toolCall.web.browser.op.get_tab_content": "页面内容",
+  "remote.toolCall.web.browser.op.drag": "拖拽",
+  "remote.toolCall.web.browser.op.fill_form": "填充表单",
 
   // ── browser-*：状态与徽章 ──
   "remote.toolCall.web.browser.newTab": "新建标签页",
@@ -305,6 +312,9 @@ export const webZhCN: Record<string, string> = {
   "remote.toolCall.web.browser.waitTarget": "等待条件",
   "remote.toolCall.web.browser.waitedMs": "等待 {{count}} ms",
   "remote.toolCall.web.browser.uploaded": "已上传 {{count}} 个文件",
+  "remote.toolCall.web.browser.dragged": "拖拽完成",
+  "remote.toolCall.web.browser.filled": "已填充 {{count}} 项",
+  "remote.toolCall.web.browser.fillFailed": "失败 {{count}} 项",
   "remote.toolCall.web.browser.submitted": "已提交",
   "remote.toolCall.web.browser.exactMatch": "精确匹配",
   "remote.toolCall.web.browser.selectedCount": "已选 {{count}} 项",
@@ -456,6 +466,8 @@ export const webZhTW: Record<string, string> = {
   "remote.toolCall.web.browser.op.back": "上一頁",
   "remote.toolCall.web.browser.op.forward": "下一頁",
   "remote.toolCall.web.browser.op.get_tab_content": "頁面內容",
+  "remote.toolCall.web.browser.op.drag": "拖曳",
+  "remote.toolCall.web.browser.op.fill_form": "填充表單",
 
   // ── browser-*：狀態與徽章 ──
   "remote.toolCall.web.browser.newTab": "新增分頁",
@@ -473,6 +485,9 @@ export const webZhTW: Record<string, string> = {
   "remote.toolCall.web.browser.waitTarget": "等待條件",
   "remote.toolCall.web.browser.waitedMs": "等待 {{count}} ms",
   "remote.toolCall.web.browser.uploaded": "已上傳 {{count}} 個檔案",
+  "remote.toolCall.web.browser.dragged": "拖曳完成",
+  "remote.toolCall.web.browser.filled": "已填充 {{count}} 項",
+  "remote.toolCall.web.browser.fillFailed": "失敗 {{count}} 項",
   "remote.toolCall.web.browser.submitted": "已提交",
   "remote.toolCall.web.browser.exactMatch": "精確比對",
   "remote.toolCall.web.browser.selectedCount": "已選 {{count}} 項",

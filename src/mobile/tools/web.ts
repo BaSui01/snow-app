@@ -1020,7 +1020,7 @@ const renderImageGen = (tool: SnowRemoteToolCall): HTMLElement | null => {
 
 /**
  * browser 族全部工具名（native/src/mcp/servers/browser/validation.rs 的注册表，
- * 共 18 个；未登记的 browser-* 返回 null 交给兜底卡）。
+ * 共 20 个；未登记的 browser-* 返回 null 交给兜底卡）。
  */
 const BROWSER_OPS = [
   "create",
@@ -1028,6 +1028,8 @@ const BROWSER_OPS = [
   "click",
   "hover",
   "type",
+  "fill_form",
+  "drag",
   "select_option",
   "press_key",
   "screenshot",
@@ -1312,7 +1314,8 @@ const consoleView = (messages: unknown[]): Node[] => {
         ),
         textSpan("tc-web-row-text", readString(item, "message") ?? ""),
       );
-      const sourceId = readString(item, "sourceId") ?? "";
+      const sourceId =
+        readString(item, "sourceId") ?? readString(item, "url") ?? "";
       const line = readNumber(item, "line");
       if (sourceId) {
         const file = sourceId.split("/").pop() || sourceId;
@@ -2115,6 +2118,48 @@ const buildBrowserView = (
         meta.push(
           badge(tc("charCount", { count: content.length.toLocaleString() })),
         );
+      break;
+    }
+    case "drag": {
+      const fromLabel = argStr(ctx, "fromSelector") ?? argStr(ctx, "fromText");
+      const toLabel = argStr(ctx, "toSelector") ?? argStr(ctx, "toText");
+      if (data) {
+        body.push(
+          statusRow(
+            "move",
+            tr("browser.dragged"),
+            ...(fromLabel || toLabel
+              ? [tag(`${fromLabel ?? "?"} → ${toLabel ?? "?"}`)]
+              : []),
+          ),
+        );
+      }
+      display = fromLabel ?? undefined;
+      break;
+    }
+    case "fill_form": {
+      const elements = Array.isArray(ctx.args?.elements)
+        ? ctx.args?.elements
+        : [];
+      const results = data ? (readArray(data, "results") ?? []) : [];
+      const failureCount = outNum(ctx, "failureCount") ?? 0;
+      if (data) {
+        body.push(
+          statusRow(
+            "list-checks",
+            tr("browser.filled", {
+              count: results.length || elements.length,
+            }),
+            ...(failureCount > 0
+              ? [
+                  badge(tr("browser.fillFailed", { count: failureCount }), {
+                    variant: "warn",
+                  }),
+                ]
+              : []),
+          ),
+        );
+      }
       break;
     }
   }

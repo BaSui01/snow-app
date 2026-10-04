@@ -200,6 +200,10 @@ function computeGraph(
       (color, lane) => color ?? LANE_COLORS[lane % LANE_COLORS.length],
     );
 
+    // 本提交所在线条的颜色：第一父边与并入已占用车道的合流曲线都沿用它，
+    // 让一条分支从分叉点到汇合点保持同色。
+    const lineColor = topColors[dotLane];
+
     lanes[dotLane] = null;
     laneColors[dotLane] = null;
     const curves: { from: number; to: number; color: string }[] = [];
@@ -212,6 +216,9 @@ function computeGraph(
       );
 
       let parentLane: number;
+      let edgeColor: string;
+      let joinsClaimedLane = false;
+
       if (hashToLane.has(parentHash)) {
         parentLane = hashToLane.get(parentHash)!;
         if (
@@ -230,6 +237,15 @@ function computeGraph(
           laneColors[parentLane] = null;
           hashToLane.set(parentHash, dotLane);
           parentLane = dotLane;
+          edgeColor =
+            worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
+        } else if (isFirstParent && parentLane !== dotLane) {
+          // 并入已占用的车道：合流曲线沿用本线颜色，目标车道保留原有颜色。
+          edgeColor = worktreeColor ?? lineColor;
+          joinsClaimedLane = true;
+        } else {
+          edgeColor =
+            worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
         }
       } else {
         if (isFirstParent) {
@@ -243,12 +259,14 @@ function computeGraph(
           }
         }
         hashToLane.set(parentHash, parentLane);
+        edgeColor =
+          worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
       }
 
-      const edgeColor =
-        worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
       lanes[parentLane] = parentHash;
-      laneColors[parentLane] = edgeColor;
+      if (!joinsClaimedLane) {
+        laneColors[parentLane] = edgeColor;
+      }
       if (parentLane !== dotLane) {
         curves.push({ from: dotLane, to: parentLane, color: edgeColor });
       }

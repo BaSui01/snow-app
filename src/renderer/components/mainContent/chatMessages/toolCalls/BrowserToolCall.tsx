@@ -58,6 +58,8 @@ type BrowserOperation =
   | "click"
   | "evaluate"
   | "type"
+  | "fill_form"
+  | "drag"
   | "screenshot"
   | "devtools"
   | "close"
@@ -255,10 +257,14 @@ const parseConsoleMessages = (value: unknown): ConsoleMessage[] => {
   }
   return value.filter(isRecord).map((item) => ({
     level: asNumber(item.level) ?? 1,
-    message: asString(item.message) ?? "",
+    message: asString(item.message) ?? asString(item.text) ?? "",
     line: asNumber(item.line) ?? 0,
-    sourceId: asString(item.sourceId) ?? "",
-    recordedAt: asString(item.recordedAt) ?? "",
+    sourceId: asString(item.sourceId) ?? asString(item.url) ?? "",
+    recordedAt:
+      asString(item.recordedAt) ??
+      (asNumber(item.timestamp) !== undefined
+        ? new Date(asNumber(item.timestamp) as number).toISOString()
+        : ""),
   }));
 };
 
@@ -1102,6 +1108,81 @@ const UploadFileView = ({
       {url || instanceId ? (
         <PageCard title={title ?? ""} url={url ?? ""} instanceId={instanceId} />
       ) : null}
+    </>
+  );
+};
+
+/* drag：拖拽源 → 目标。 */
+const DragView = ({
+  args,
+  data,
+}: {
+  args: Record<string, unknown> | null;
+  data: Record<string, unknown> | null;
+}): React.JSX.Element | null => {
+  const { t } = useI18n();
+  const fromLabel =
+    asString(args?.fromSelector) ??
+    asString(args?.fromText) ??
+    (isRecord(data?.from) ? asString(data.from.text) : undefined);
+  const toLabel =
+    asString(args?.toSelector) ??
+    asString(args?.toText) ??
+    (isRecord(data?.to) ? asString(data.to.text) : undefined);
+  if (!fromLabel && !toLabel) {
+    return null;
+  }
+  return (
+    <StatusRow icon={MousePointerClick} label={t("toolCall.browser.dragged")}>
+      <span className="tool-call-browser-target-text">
+        {fromLabel ? truncateLabel(fromLabel, 32) : "?"}
+        {" → "}
+        {toLabel ? truncateLabel(toLabel, 32) : "?"}
+      </span>
+    </StatusRow>
+  );
+};
+
+/* fill_form：批量填充结果。 */
+const FillFormView = ({
+  args,
+  data,
+}: {
+  args: Record<string, unknown> | null;
+  data: Record<string, unknown> | null;
+}): React.JSX.Element | null => {
+  const { t } = useI18n();
+  const elements = Array.isArray(args?.elements) ? args.elements : [];
+  const results = Array.isArray(data?.results) ? data.results : [];
+  if (elements.length === 0 && results.length === 0) {
+    return null;
+  }
+  const failureCount = asNumber(data?.failureCount) ?? 0;
+  const failed = results.filter(isRecord).filter((item) => item.ok !== true);
+  return (
+    <>
+      <StatusRow
+        icon={ListChecks}
+        label={t("toolCall.browser.filledCount", {
+          values: { count: results.length || elements.length },
+        })}
+      >
+        {failureCount > 0 ? (
+          <Tag tone="amber">
+            {t("toolCall.browser.fillFailedCount", {
+              values: { count: failureCount },
+            })}
+          </Tag>
+        ) : null}
+      </StatusRow>
+      {failed.map((item, index) => (
+        <div key={index} className="tool-call-error">
+          <AlertCircle size={12} aria-hidden="true" />
+          <span>
+            {asString(item.error) ?? t("toolCall.browser.fillFailed")}
+          </span>
+        </div>
+      ))}
     </>
   );
 };
@@ -2097,6 +2178,8 @@ const RUNNING_LABEL_KEYS: Record<BrowserOperation, string> = {
   click: "toolCall.browser.running.click",
   evaluate: "toolCall.browser.running.evaluate",
   type: "toolCall.browser.running.type",
+  fill_form: "toolCall.browser.running.fill_form",
+  drag: "toolCall.browser.running.drag",
   screenshot: "toolCall.browser.running.screenshot",
   devtools: "toolCall.browser.running.devtools",
   close: "toolCall.browser.running.close",
@@ -2180,6 +2263,28 @@ export const BrowserToolCall = ({
             ? truncateLabel(`"${argText}"`, 48)
             : undefined;
       break;
+    case "fill_form": {
+      const elements = Array.isArray(parsedArgs?.elements)
+        ? parsedArgs.elements
+        : [];
+      displayName =
+        elements.length > 0
+          ? t("toolCall.browser.filledCount", {
+              values: { count: elements.length },
+            })
+          : undefined;
+      break;
+    }
+    case "drag": {
+      const fromLabel =
+        asString(parsedArgs?.fromSelector) ?? asString(parsedArgs?.fromText);
+      const toLabel =
+        asString(parsedArgs?.toSelector) ?? asString(parsedArgs?.toText);
+      displayName = fromLabel
+        ? `${truncateLabel(fromLabel, 24)} → ${toLabel ? truncateLabel(toLabel, 24) : "?"}`
+        : undefined;
+      break;
+    }
     case "wait": {
       const waitText = asString(parsedArgs?.text);
       const waitTextGone = asString(parsedArgs?.textGone);
@@ -2467,6 +2572,10 @@ export const BrowserToolCall = ({
         return <SelectOptionView args={parsedArgs} data={data} />;
       case "upload-file":
         return <UploadFileView args={parsedArgs} data={data} />;
+      case "fill_form":
+        return <FillFormView args={parsedArgs} data={data} />;
+      case "drag":
+        return <DragView args={parsedArgs} data={data} />;
       case "back":
       case "forward":
       case "navigate_back":
@@ -2503,6 +2612,8 @@ export const BrowserToolCall = ({
     (operation === "click" ||
       operation === "evaluate" ||
       operation === "type" ||
+      operation === "fill_form" ||
+      operation === "drag" ||
       operation === "wait" ||
       operation === "press_key" ||
       operation === "hover" ||
@@ -2557,7 +2668,10 @@ export const BrowserToolCall = ({
         {parsedResult.type === "empty" ? (
           <PendingBlock
             isRunning={isRunning}
-            runningLabel={t(RUNNING_LABEL_KEYS[operation])}
+            runningLabel={t(
+              RUNNING_LABEL_KEYS[operation] ??
+                "toolCall.browser.running.default",
+            )}
             waitingLabel={t("toolCall.browser.waiting")}
           />
         ) : null}

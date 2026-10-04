@@ -12,12 +12,10 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
     })?;
     let mut normalized = object.clone();
     if let Some(frame_id) = optional_non_empty_string(args, "frameId")? {
-        if !matches!(tool_name, "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "hover" | "select_option" | "upload-file" | "devtools") {
+        if !matches!(tool_name, "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "fill_form" | "hover" | "select_option" | "upload-file" | "devtools") {
             return Err(Error::new(Status::InvalidArg, "frameId is not supported for this browser tool".to_string()));
         }
-        if !regex::Regex::new(r"^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").unwrap().is_match(frame_id) {
-            return Err(Error::new(Status::InvalidArg, "Invalid frameId; use browser-frames first".to_string()));
-        }
+        validate_frame_id(frame_id)?;
         if tool_name == "devtools" && !matches!(args.get("action").and_then(Value::as_str).unwrap_or("snapshot"), "snapshot" | "ax") {
             return Err(Error::new(Status::InvalidArg, "frameId supports only devtools snapshot/ax".to_string()));
         }
@@ -32,8 +30,34 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         }
         "navigate" => {
             optional_non_empty_string(args, "instanceId")?;
-            let url = required_non_empty_string(args, "url", tool_name)?;
-            validate_web_url(url)?;
+            optional_boolean(args, "reload")?;
+            optional_boolean(args, "ignoreCache")?;
+            let reloading = args.get("reload").and_then(Value::as_bool).unwrap_or(false);
+            let url = optional_non_empty_string(args, "url")?;
+            if reloading {
+                if url.is_some() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "url cannot be combined with reload=true for browser-navigate".to_string(),
+                    ));
+                }
+            } else {
+                let url = url.ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "url is required for browser-navigate unless reload=true".to_string(),
+                    )
+                })?;
+                validate_web_url(url)?;
+            }
+            if let Some(init_script) = args.get("initScript") {
+                if !init_script.is_null() && !init_script.is_string() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "initScript must be a string for browser-navigate".to_string(),
+                    ));
+                }
+            }
             let timeout = bounded_u64(
                 args,
                 "timeoutMs",
@@ -48,17 +72,77 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             let selector = optional_non_empty_string(args, "selector")?;
             let text = optional_non_empty_string(args, "text")?;
             let ref_value = optional_non_empty_string(args, "ref")?;
-            if selector.is_none() && text.is_none() && ref_value.is_none() {
+            let x = optional_number(args, "x")?;
+            let y = optional_number(args, "y")?;
+            let has_element_target = selector.is_some() || text.is_some() || ref_value.is_some();
+            if x.is_some() != y.is_some() {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "Either selector, text, or ref is required for browser-click".to_string(),
+                    "x and y must be provided together for browser-click".to_string(),
+                ));
+            }
+            if x.is_some() && has_element_target {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "x/y coordinates are mutually exclusive with selector/text/ref for browser-click".to_string(),
+                ));
+            }
+            if x.is_none() && !has_element_target {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Either selector, text, ref, or x+y is required for browser-click".to_string(),
+                ));
+            }
+            if x.is_some() && args.get("frameId").is_some_and(|value| !value.is_null()) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "x/y coordinate clicks are not supported with frameId for browser-click; use selector/text/ref".to_string(),
                 ));
             }
             optional_boolean(args, "exact")?;
+            optional_boolean(args, "dblClick")?;
         }
         "screenshot" => {
             optional_non_empty_string(args, "instanceId")?;
             optional_boolean(args, "fullPage")?;
+            if let Some(format) = optional_non_empty_string(args, "format")? {
+                if !matches!(format, "png" | "jpeg" | "webp") {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "format must be one of png, jpeg, or webp for browser-screenshot".to_string(),
+                    ));
+                }
+            }
+            if let Some(quality) = args.get("quality") {
+                if !quality.is_null() {
+                    let value = quality.as_u64().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "quality must be an integer between 0 and 100 for browser-screenshot"
+                                .to_string(),
+                        )
+                    })?;
+                    if value > 100 {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            "quality must be between 0 and 100 for browser-screenshot".to_string(),
+                        ));
+                    }
+                }
+            }
+            let selector = optional_non_empty_string(args, "selector")?;
+            let ref_value = optional_non_empty_string(args, "ref")?;
+            optional_boolean(args, "exact")?;
+            let full_page = args.get("fullPage").and_then(Value::as_bool).unwrap_or(false);
+            if (selector.is_some() || ref_value.is_some()) && full_page {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "fullPage cannot be combined with selector/ref for browser-screenshot".to_string(),
+                ));
+            }
+            if let Some(path) = optional_non_empty_string(args, "filePath")? {
+                validate_absolute_path(path, "filePath")?;
+            }
         }
         "devtools" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -70,6 +154,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 action,
                 "snapshot"
                     | "console"
+                    | "console_message"
                     | "open"
                     | "network"
                     | "network_detail"
@@ -88,7 +173,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             ) {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "action must be one of snapshot, console, open, network, network_detail, network_clear, networkDetails, networkState, route, routeClear, storageSave, storageRestore, cookies, cookieDelete, ax, trace, or dialog for browser-devtools"
+                    "action must be one of snapshot, console, console_message, open, network, network_detail, network_clear, networkDetails, networkState, route, routeClear, storageSave, storageRestore, cookies, cookieDelete, ax, trace, or dialog for browser-devtools"
                         .to_string(),
                 ));
             }
@@ -112,7 +197,15 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 }
             }
             optional_boolean(args, "static")?;
-            let limit = bounded_u64(args, "limit", 50, 1, 200)?;
+            optional_boolean(args, "includePreserved")?;
+            if let Some(value) = optional_bounded_u64(args, "pageIdx", 0, 1000)? {
+                normalized.insert("pageIdx".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "pageSize", 1, 1000)? {
+                normalized.insert("pageSize".to_string(), json!(value));
+            }
+            validate_string_array(args, "types", 30)?;
+            validate_string_array(args, "resourceTypes", 30)?;
             if let Some(response) = args.get("dialogResponse") {
                 if !response.is_object() {
                     return Err(Error::new(
@@ -136,11 +229,31 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 MIN_MAX_CONTENT_LENGTH,
                 MAX_MAX_CONTENT_LENGTH,
             )?;
-            // networkDetails：requestId 必填，maxBodyBytes 限界。
+            // networkDetails：requestId 必填，maxBodyBytes 限界，body 落盘路径校验。
             if action == "networkDetails" {
                 required_non_empty_string(args, "requestId", "devtools")?;
                 let max_body_bytes = bounded_u64(args, "maxBodyBytes", 131_072, 1024, 1_048_576)?;
                 normalized.insert("maxBodyBytes".to_string(), json!(max_body_bytes));
+                for field in ["requestFilePath", "responseFilePath"] {
+                    if let Some(path) = optional_non_empty_string(args, field)? {
+                        validate_absolute_path(path, field)?;
+                    }
+                }
+            }
+            // console_message：msgid 必填且为正整数。
+            if action == "console_message" {
+                let msgid = args.get("msgid").ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "msgid is required for browser-devtools console_message".to_string(),
+                    )
+                })?;
+                if msgid.as_u64().is_none() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "msgid must be a positive integer for browser-devtools".to_string(),
+                    ));
+                }
             }
             // networkState：state 必填且限枚举。
             if action == "networkState" {
@@ -254,12 +367,54 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 }
             }
             normalized.insert("action".to_string(), json!(action));
-            normalized.insert("limit".to_string(), json!(limit));
             normalized.insert("maxContentLength".to_string(), json!(max_content_length));
         }
         "evaluate" => {
             optional_non_empty_string(args, "instanceId")?;
-            required_non_empty_string(args, "expression", tool_name)?;
+            let expression = optional_non_empty_string(args, "expression")?;
+            let function = optional_non_empty_string(args, "function")?;
+            let source_path = optional_non_empty_string(args, "sourcePath")?;
+            let provided = [expression.is_some(), function.is_some(), source_path.is_some()]
+                .iter()
+                .filter(|value| **value)
+                .count();
+            if provided == 0 {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "One of expression, function, or sourcePath is required for browser-evaluate"
+                        .to_string(),
+                ));
+            }
+            if provided > 1 {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Provide only one of expression, function, or sourcePath for browser-evaluate"
+                        .to_string(),
+                ));
+            }
+            if let Some(path) = source_path {
+                validate_absolute_path(path, "sourcePath")?;
+            }
+            if let Some(format) = optional_non_empty_string(args, "format")? {
+                if !matches!(format, "script" | "function") {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "format must be script or function for browser-evaluate".to_string(),
+                    ));
+                }
+            }
+            if let Some(call_args) = args.get("args") {
+                if !call_args.is_null() && !call_args.is_array() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "args must be an array for browser-evaluate".to_string(),
+                    ));
+                }
+            }
+            optional_boolean(args, "waitForStableDom")?;
+            if let Some(path) = optional_non_empty_string(args, "filePath")? {
+                validate_absolute_path(path, "filePath")?;
+            }
         }
         "type" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -353,6 +508,103 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 }
             }
         }
+        "drag" => {
+            optional_non_empty_string(args, "instanceId")?;
+            if args.get("frameId").is_some_and(|value| !value.is_null()) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "drag does not take frameId; use fromFrameId/toFrameId instead".to_string(),
+                ));
+            }
+            let from_selector = optional_non_empty_string(args, "fromSelector")?;
+            let from_text = optional_non_empty_string(args, "fromText")?;
+            let from_ref = optional_non_empty_string(args, "fromRef")?;
+            if from_selector.is_none() && from_text.is_none() && from_ref.is_none() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Either fromSelector, fromText, or fromRef is required for browser-drag"
+                        .to_string(),
+                ));
+            }
+            let to_selector = optional_non_empty_string(args, "toSelector")?;
+            let to_text = optional_non_empty_string(args, "toText")?;
+            let to_ref = optional_non_empty_string(args, "toRef")?;
+            if to_selector.is_none() && to_text.is_none() && to_ref.is_none() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Either toSelector, toText, or toRef is required for browser-drag"
+                        .to_string(),
+                ));
+            }
+            optional_boolean(args, "fromExact")?;
+            optional_boolean(args, "toExact")?;
+            for field in ["fromFrameId", "toFrameId"] {
+                if let Some(frame_id) = optional_non_empty_string(args, field)? {
+                    validate_frame_id(frame_id)?;
+                }
+            }
+        }
+        "fill_form" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let elements = args
+                .get("elements")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "elements must be a non-empty array for browser-fill_form".to_string(),
+                    )
+                })?;
+            if elements.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "elements must not be empty for browser-fill_form".to_string(),
+                ));
+            }
+            if elements.len() > 50 {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "elements supports at most 50 items for browser-fill_form".to_string(),
+                ));
+            }
+            for item in elements {
+                let entry = item.as_object().ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "each elements item must be an object for browser-fill_form".to_string(),
+                    )
+                })?;
+                let has_target = ["selector", "text", "ref"].iter().any(|key| {
+                    entry
+                        .get(*key)
+                        .and_then(Value::as_str)
+                        .is_some_and(|value| !value.trim().is_empty())
+                });
+                if !has_target {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "each elements item requires selector, text, or ref for browser-fill_form"
+                            .to_string(),
+                    ));
+                }
+                if !entry.get("value").is_some_and(Value::is_string) {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "each elements item requires a string value for browser-fill_form"
+                            .to_string(),
+                    ));
+                }
+                if entry
+                    .get("submit")
+                    .is_some_and(|value| !value.is_null() && !value.is_boolean())
+                {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "submit must be a boolean for browser-fill_form".to_string(),
+                    ));
+                }
+            }
+        }
         "back" | "forward" => {
             optional_non_empty_string(args, "instanceId")?;
         }
@@ -404,6 +656,309 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         }
         "focus" => {
             required_non_empty_string(args, "instanceId", tool_name)?;
+        }
+        "emulate" => {
+            optional_non_empty_string(args, "instanceId")?;
+            if let Some(scheme) = optional_non_empty_string(args, "colorScheme")? {
+                if !matches!(scheme, "dark" | "light" | "auto") {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "colorScheme must be dark, light, or auto for browser-emulate"
+                            .to_string(),
+                    ));
+                }
+            }
+            if let Some(rate) = args.get("cpuThrottlingRate") {
+                if !rate.is_null() {
+                    let value = rate.as_f64().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "cpuThrottlingRate must be a number for browser-emulate"
+                                .to_string(),
+                        )
+                    })?;
+                    if !(1.0..=20.0).contains(&value) {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            "cpuThrottlingRate must be between 1 and 20 for browser-emulate"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            if let Some(headers) = args.get("extraHttpHeaders") {
+                if !headers.is_null() {
+                    let obj = headers.as_object().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "extraHttpHeaders must be an object for browser-emulate"
+                                .to_string(),
+                        )
+                    })?;
+                    for value in obj.values() {
+                        if !value.is_string() {
+                            return Err(Error::new(
+                                Status::InvalidArg,
+                                "extraHttpHeaders values must be strings for browser-emulate"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            if let Some(geo) = args.get("geolocation") {
+                if !geo.is_null() {
+                    let obj = geo.as_object().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "geolocation must be an object for browser-emulate".to_string(),
+                        )
+                    })?;
+                    let lat = obj.get("latitude").and_then(Value::as_f64).ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "geolocation.latitude is required for browser-emulate".to_string(),
+                        )
+                    })?;
+                    let lng = obj.get("longitude").and_then(Value::as_f64).ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "geolocation.longitude is required for browser-emulate".to_string(),
+                        )
+                    })?;
+                    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lng) {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            "geolocation latitude/longitude out of range for browser-emulate"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            if let Some(preset) = optional_non_empty_string(args, "networkConditions")? {
+                if !matches!(preset, "Offline" | "Slow 3G" | "Fast 3G" | "Slow 4G" | "Fast 4G") {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "networkConditions must be one of Offline, Slow 3G, Fast 3G, Slow 4G, or Fast 4G for browser-emulate"
+                            .to_string(),
+                    ));
+                }
+            }
+            for field in ["userAgent", "viewport"] {
+                if let Some(value) = args.get(field) {
+                    if !value.is_null() && !value.is_string() {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!("{field} must be a string for browser-emulate"),
+                        ));
+                    }
+                }
+            }
+        }
+        "resize_page" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let width = args.get("width").and_then(Value::as_u64).ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "width is required for browser-resize_page".to_string(),
+                )
+            })?;
+            let height = args.get("height").and_then(Value::as_u64).ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "height is required for browser-resize_page".to_string(),
+                )
+            })?;
+            if !(50..=8000).contains(&width) || !(50..=8000).contains(&height) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "width and height must be between 50 and 8000 for browser-resize_page"
+                        .to_string(),
+                ));
+            }
+        }
+        "performance_start_trace" => {
+            optional_non_empty_string(args, "instanceId")?;
+            validate_string_array(args, "categories", 30)?;
+        }
+        "performance_stop_trace" => {
+            optional_non_empty_string(args, "instanceId")?;
+            if let Some(path) = optional_non_empty_string(args, "filePath")? {
+                validate_absolute_path(path, "filePath")?;
+            }
+        }
+        "performance_analyze_insight" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let insight_id = required_non_empty_string(args, "insightId", tool_name)?;
+            if !matches!(
+                insight_id,
+                "long-tasks" | "render-blocking" | "lcp" | "cls" | "document-latency" | "third-parties"
+            ) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "insightId must be one of long-tasks, render-blocking, lcp, cls, document-latency, or third-parties for browser-performance_analyze_insight"
+                        .to_string(),
+                ));
+            }
+        }
+        "get_css_styles" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let selector = optional_non_empty_string(args, "selector")?;
+            let ref_value = optional_non_empty_string(args, "ref")?;
+            if selector.is_none() && ref_value.is_none() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Either selector or ref is required for browser-get_css_styles".to_string(),
+                ));
+            }
+            if let Some(value) = optional_bounded_u64(args, "pageIdx", 0, 1000)? {
+                normalized.insert("pageIdx".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "pageSize", 1, 100)? {
+                normalized.insert("pageSize".to_string(), json!(value));
+            }
+        }
+        "audit" => {
+            optional_non_empty_string(args, "instanceId")?;
+            if let Some(categories) = args.get("categories") {
+                if !categories.is_null() {
+                    let list = categories.as_array().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "categories must be an array for browser-audit".to_string(),
+                        )
+                    })?;
+                    for item in list {
+                        let value = item.as_str().ok_or_else(|| {
+                            Error::new(
+                                Status::InvalidArg,
+                                "categories items must be strings for browser-audit".to_string(),
+                            )
+                        })?;
+                        if !matches!(value, "accessibility" | "seo" | "best-practices") {
+                            return Err(Error::new(
+                                Status::InvalidArg,
+                                "categories items must be accessibility, seo, or best-practices for browser-audit"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        "take_heapsnapshot" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let path = required_non_empty_string(args, "filePath", tool_name)?;
+            validate_absolute_path(path, "filePath")?;
+        }
+        "get_heapsnapshot_summary" | "get_heapsnapshot_duplicate_strings" => {
+            let path = required_non_empty_string(args, "filePath", tool_name)?;
+            validate_absolute_path(path, "filePath")?;
+            if let Some(value) = optional_bounded_u64(args, "topN", 1, 200)? {
+                normalized.insert("topN".to_string(), json!(value));
+            }
+        }
+        "query_heapsnapshot_objects" => {
+            let path = required_non_empty_string(args, "filePath", tool_name)?;
+            validate_absolute_path(path, "filePath")?;
+            optional_non_empty_string(args, "className")?;
+            optional_non_empty_string(args, "nodeType")?;
+            if let Some(value) = args.get("minSelfSize") {
+                if !value.is_null() && value.as_u64().is_none() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "minSelfSize must be a non-negative integer for browser-query_heapsnapshot_objects"
+                            .to_string(),
+                    ));
+                }
+            }
+            optional_boolean(args, "isDetached")?;
+            if let Some(sort_by) = optional_non_empty_string(args, "sortBy")? {
+                if !matches!(sort_by, "selfSize" | "id") {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "sortBy must be selfSize or id for browser-query_heapsnapshot_objects"
+                            .to_string(),
+                    ));
+                }
+            }
+            if let Some(value) = optional_bounded_u64(args, "pageIdx", 0, 100_000)? {
+                normalized.insert("pageIdx".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "pageSize", 1, 200)? {
+                normalized.insert("pageSize".to_string(), json!(value));
+            }
+        }
+        "get_heapsnapshot_object_details"
+        | "get_heapsnapshot_edges"
+        | "get_heapsnapshot_retainers"
+        | "get_heapsnapshot_retaining_paths" => {
+            let path = required_non_empty_string(args, "filePath", tool_name)?;
+            validate_absolute_path(path, "filePath")?;
+            if args.get("nodeIndex").and_then(Value::as_u64).is_none() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("nodeIndex is required for browser-{tool_name}"),
+                ));
+            }
+            if let Some(value) = optional_bounded_u64(args, "limit", 1, 500)? {
+                normalized.insert("limit".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "maxDepth", 1, 30)? {
+                normalized.insert("maxDepth".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "maxPaths", 1, 20)? {
+                normalized.insert("maxPaths".to_string(), json!(value));
+            }
+        }
+        "compare_heapsnapshots" => {
+            let base = required_non_empty_string(args, "baseFilePath", tool_name)?;
+            validate_absolute_path(base, "baseFilePath")?;
+            let current = required_non_empty_string(args, "currentFilePath", tool_name)?;
+            validate_absolute_path(current, "currentFilePath")?;
+            if let Some(value) = optional_bounded_u64(args, "topN", 1, 200)? {
+                normalized.insert("topN".to_string(), json!(value));
+            }
+        }
+        "screencast_start" => {
+            optional_non_empty_string(args, "instanceId")?;
+            if let Some(path) = optional_non_empty_string(args, "filePath")? {
+                validate_absolute_path(path, "filePath")?;
+            }
+            if let Some(quality) = args.get("quality") {
+                if !quality.is_null() {
+                    let value = quality.as_u64().ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "quality must be an integer between 1 and 100 for browser-screencast_start"
+                                .to_string(),
+                        )
+                    })?;
+                    if !(1..=100).contains(&value) {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            "quality must be between 1 and 100 for browser-screencast_start"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            if let Some(value) = optional_bounded_u64(args, "maxWidth", 64, 3840)? {
+                normalized.insert("maxWidth".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "maxFrames", 1, 6000)? {
+                normalized.insert("maxFrames".to_string(), json!(value));
+            }
+            if let Some(value) = optional_bounded_u64(args, "maxDurationMs", 1000, 600_000)? {
+                normalized.insert("maxDurationMs".to_string(), json!(value));
+            }
+        }
+        "screencast_stop" | "list_page_tools" => {
+            optional_non_empty_string(args, "instanceId")?;
+        }
+        "call_page_tool" => {
+            optional_non_empty_string(args, "instanceId")?;
+            required_non_empty_string(args, "name", tool_name)?;
         }
         "frames" => { optional_non_empty_string(args, "instanceId")?; }
         "list" => {}
@@ -510,6 +1065,100 @@ fn bounded_u64(
     Ok(value)
 }
 
+fn optional_bounded_u64(
+    args: &Value,
+    field: &str,
+    minimum: u64,
+    maximum: u64,
+) -> napi::Result<Option<u64>> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let number = value.as_u64().ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    format!("{field} must be a positive integer"),
+                )
+            })?;
+            if !(minimum..=maximum).contains(&number) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("{field} must be between {minimum} and {maximum}"),
+                ));
+            }
+            Ok(Some(number))
+        }
+    }
+}
+
+fn optional_number(args: &Value, field: &str) -> napi::Result<Option<f64>> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    format!("{field} must be a number when provided"),
+                )
+            }),
+    }
+}
+
+fn validate_string_array(args: &Value, field: &str, maximum: usize) -> napi::Result<()> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(()),
+        Some(value) => {
+            let list = value.as_array().ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    format!("{field} must be an array of strings"),
+                )
+            })?;
+            if list.len() > maximum {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("{field} supports at most {maximum} items"),
+                ));
+            }
+            for item in list {
+                if !item.is_string() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        format!("{field} items must be strings"),
+                    ));
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_absolute_path(path: &str, field: &str) -> napi::Result<()> {
+    if std::path::Path::new(path).is_absolute() {
+        Ok(())
+    } else {
+        Err(Error::new(
+            Status::InvalidArg,
+            format!("{field} must be an absolute path"),
+        ))
+    }
+}
+
+fn validate_frame_id(frame_id: &str) -> napi::Result<()> {
+    let pattern = regex::Regex::new(r"^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        .expect("frame id pattern is static");
+    if pattern.is_match(frame_id) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            Status::InvalidArg,
+            "Invalid frameId; use browser-frames first".to_string(),
+        ))
+    }
+}
+
 fn validate_web_url(url: &str) -> napi::Result<()> {
     if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("file://") {
         return Ok(());
@@ -524,7 +1173,7 @@ pub(crate) fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-fill_form, browser-drag, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames, browser-emulate, browser-resize_page, browser-performance_start_trace, browser-performance_stop_trace, browser-performance_analyze_insight, browser-get_css_styles, browser-audit, browser-take_heapsnapshot, browser-get_heapsnapshot_summary, browser-query_heapsnapshot_objects, browser-get_heapsnapshot_object_details, browser-get_heapsnapshot_edges, browser-get_heapsnapshot_retainers, browser-get_heapsnapshot_retaining_paths, browser-get_heapsnapshot_duplicate_strings, browser-compare_heapsnapshots, browser-screencast_start, browser-screencast_stop, browser-list_page_tools, browser-call_page_tool]"
         ),
     )
 }

@@ -1367,29 +1367,175 @@ export const windowApi = {
     ipcRenderer.invoke("browser:open-devtools", webContentsId),
   browserNetworkRequests: (
     webContentsId: number,
-    filter?: string,
-    limit?: number,
-    includeStatic?: boolean,
-  ): Promise<unknown[]> =>
-    ipcRenderer.invoke(
-      "browser:network-requests",
-      webContentsId,
-      filter,
-      limit,
-      includeStatic,
-    ),
-  /** 查询单条网络请求的完整详情（请求/响应头 + 请求/响应体）。 */
+    options?: {
+      filter?: string;
+      resourceTypes?: string[];
+      includeStatic?: boolean;
+      pageIdx?: number;
+      pageSize?: number;
+      includePreserved?: boolean;
+    },
+  ): Promise<{
+    records: unknown[];
+    total: number;
+    pageIdx: number;
+    pageSize: number;
+    hasMore: boolean;
+    archivedGenerations: number;
+    source: "cdp" | "webrequest";
+  }> => ipcRenderer.invoke("browser:network-requests", webContentsId, options),
+  /** 查询单条网络请求的完整详情（请求/响应头 + 请求/响应体；可配置 body 落盘）。 */
   browserNetworkDetails: (
     webContentsId: number,
     requestId: string,
-    maxBodyBytes?: number,
+    options?: {
+      maxBodyBytes?: number;
+      requestFilePath?: string;
+      responseFilePath?: string;
+    },
   ): Promise<unknown> =>
     ipcRenderer.invoke(
       "browser:network-details",
       webContentsId,
       requestId,
-      maxBodyBytes,
+      options,
     ),
+  /** 截图（CDP Page.captureScreenshot）：格式/质量/元素裁剪/整页/落盘。 */
+  browserCaptureScreenshot: (
+    webContentsId: number,
+    request: {
+      format?: "png" | "jpeg" | "webp";
+      quality?: number;
+      fullPage?: boolean;
+      clip?: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        scale?: number;
+      };
+      filePath?: string;
+    },
+  ): Promise<{
+    mimeType: string;
+    bytes: number;
+    savedTo: string | null;
+    data?: string;
+  }> =>
+    ipcRenderer.invoke("browser:capture-screenshot", webContentsId, request),
+  /** 控制台记录（CDP Runtime/Log）：查询（分页/过滤/preserved）。 */
+  browserConsoleRecords: (
+    webContentsId: number,
+    options?: {
+      level?: number;
+      types?: string[];
+      pageIdx?: number;
+      pageSize?: number;
+      includePreserved?: boolean;
+    },
+  ): Promise<{
+    messages: unknown[];
+    total: number;
+    pageIdx: number;
+    pageSize: number;
+    hasMore: boolean;
+    archivedGenerations: number;
+    cdpAvailable: boolean;
+  }> => ipcRenderer.invoke("browser:console-records", webContentsId, options),
+  /** 控制台单条记录。 */
+  browserConsoleRecord: (
+    webContentsId: number,
+    messageId: number,
+  ): Promise<unknown | null> =>
+    ipcRenderer.invoke("browser:console-record", webContentsId, messageId),
+  /** 清空控制台记录（含归档代际）。 */
+  browserConsoleClear: (webContentsId: number): Promise<{ cleared: number }> =>
+    ipcRenderer.invoke("browser:console-clear", webContentsId),
+  /** 性能 trace：start / stop / insight。 */
+  browserTraceStart: (
+    webContentsId: number,
+    categories?: string[],
+  ): Promise<{ started: boolean; startedAt: string; categories: string[] }> =>
+    ipcRenderer.invoke("browser:trace-start", webContentsId, categories),
+  browserTraceStop: (
+    webContentsId: number,
+    options?: { filePath?: string },
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("browser:trace-stop", webContentsId, options),
+  browserTraceInsight: (
+    webContentsId: number,
+    insightId: string,
+  ): Promise<{ found: boolean; detail?: Record<string, unknown> }> =>
+    ipcRenderer.invoke("browser:trace-insight", webContentsId, insightId),
+  /** 页面仿真（配色/CPU/地理位置/请求头/网络档位/UA/视口）。 */
+  browserEmulate: (
+    webContentsId: number,
+    params: {
+      colorScheme?: "dark" | "light" | "auto";
+      cpuThrottlingRate?: number;
+      extraHttpHeaders?: Record<string, string> | null;
+      geolocation?: {
+        latitude: number;
+        longitude: number;
+        accuracy?: number;
+      } | null;
+      networkConditions?: string | null;
+      userAgent?: string | null;
+      viewport?: string | null;
+    },
+  ): Promise<Record<string, unknown>> =>
+    ipcRenderer.invoke("browser:emulate", webContentsId, params),
+  browserResizePage: (
+    webContentsId: number,
+    width: number,
+    height: number,
+  ): Promise<{ width: number; height: number }> =>
+    ipcRenderer.invoke("browser:resize-page", webContentsId, width, height),
+  /** 元素 CSS 级联检查（匹配规则 / 内联 / 继承 / computed）。 */
+  browserCssStyles: (
+    webContentsId: number,
+    query: {
+      selector?: string;
+      backendNodeId?: number;
+      pageIdx?: number;
+      pageSize?: number;
+    },
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("browser:css-styles", webContentsId, query),
+  /** 页面审计：axe-core 无障碍 + 轻量 SEO / 最佳实践。 */
+  browserAudit: (
+    webContentsId: number,
+    categories?: string[],
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("browser:audit", webContentsId, categories),
+  /** 堆快照操作（take/summary/query/details/edges/retainers/paths/strings/compare）。 */
+  browserHeap: (
+    action:
+      | "take"
+      | "summary"
+      | "query"
+      | "details"
+      | "edges"
+      | "retainers"
+      | "paths"
+      | "strings"
+      | "compare",
+    params: Record<string, unknown>,
+  ): Promise<unknown> => ipcRenderer.invoke("browser:heap", action, params),
+  /** 录屏：CDP 帧采集 + MJPEG AVI 合成。 */
+  browserScreencastStart: (
+    webContentsId: number,
+    options?: {
+      filePath?: string;
+      quality?: number;
+      maxWidth?: number;
+      maxFrames?: number;
+      maxDurationMs?: number;
+    },
+  ): Promise<{ started: boolean; file: string; startedAt: string }> =>
+    ipcRenderer.invoke("browser:screencast-start", webContentsId, options),
+  browserScreencastStop: (webContentsId: number): Promise<unknown> =>
+    ipcRenderer.invoke("browser:screencast-stop", webContentsId),
   /** 模拟网络状态：offline=true 离线，false 恢复在线。 */
   browserNetworkState: (
     webContentsId: number,

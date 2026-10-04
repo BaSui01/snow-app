@@ -38,6 +38,13 @@ import {
   setBrowserRouteRules,
 } from "./browserNetworkRecorder";
 import {
+  clearConsoleRecords,
+  getConsoleRecord,
+  initBrowserConsoleRecorder,
+  queryConsoleRecords,
+} from "./browserConsoleRecorder";
+import { captureBrowserScreenshot } from "../../browser/browserScreenshot";
+import {
   cancelDownload,
   listDownloads,
   openDownload,
@@ -50,9 +57,38 @@ import {
   restoreBrowserStorageState,
   saveBrowserStorageState,
 } from "./browserStorageState";
-import { runBrowserTrace } from "./browserTrace";
+import {
+  getTraceInsight,
+  runBrowserTrace,
+  startBrowserTrace,
+  stopBrowserTrace,
+} from "./browserTrace";
 import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
 import { createDetachedBrowserWindow } from "../../browser/browserWindow";
+import {
+  applyBrowserEmulation,
+  resizeBrowserViewport,
+} from "../../browser/browserEmulation";
+import { getCssStyles } from "../../browser/browserCssInspector";
+import {
+  runBrowserAudit,
+  type AuditCategories,
+} from "../../browser/browserAudit";
+import {
+  compareHeapSnapshots,
+  getHeapObjectDetails,
+  getHeapSnapshotDuplicateStrings,
+  getHeapSnapshotEdges,
+  getHeapSnapshotRetainers,
+  getHeapSnapshotRetainingPaths,
+  getHeapSnapshotSummary,
+  queryHeapObjects,
+  takeHeapSnapshot,
+} from "../../browser/heapProfiler";
+import {
+  startBrowserScreencast,
+  stopBrowserScreencast,
+} from "../../browser/browserScreencast";
 
 const browserDevToolsWindows = new Map<number, BrowserWindow>();
 
@@ -251,6 +287,7 @@ export const openBrowserDevTools = (contents: WebContents): void => {
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
   registerBrowserFrameHandlers();
+  initBrowserConsoleRecorder();
   // 注入主窗口关闭请求处理器（close 拦截后按设置自动执行：询问/退出/最小化）。
   bindCloseRequestHandler();
 
@@ -572,6 +609,8 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     "DOM.getDocument",
     "DOM.querySelector",
     "DOM.setFileInputFiles",
+    "Page.addScriptToEvaluateOnNewDocument",
+    "Page.removeScriptToEvaluateOnNewDocument",
   ]);
   ipcMain.handle(
     "browser:cdp-command",
@@ -615,34 +654,397 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   // webview（含手动新建的 tab）不产生网络 CDP 事件流。
   ipcMain.handle(
     "browser:network-requests",
-    async (
-      _event,
-      webContentsId: number,
-      filter?: string,
-      limit?: number,
-      includeStatic?: boolean,
-    ) => {
+    async (_event, webContentsId: number, options?: unknown) => {
       const id = typeof webContentsId === "number" ? webContentsId : -1;
       if (id >= 0) {
         await ensureNetworkRecording(getBrowserWebContents(id));
       }
-      return queryNetworkRecords(
-        id,
-        typeof filter === "string" ? filter : undefined,
-        typeof limit === "number" ? limit : 50,
-        includeStatic === true,
+      const raw =
+        options !== null && typeof options === "object"
+          ? (options as Record<string, unknown>)
+          : {};
+      return queryNetworkRecords(id, {
+        filter: typeof raw.filter === "string" ? raw.filter : undefined,
+        resourceTypes: Array.isArray(raw.resourceTypes)
+          ? raw.resourceTypes.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : undefined,
+        includeStatic: raw.includeStatic === true,
+        pageIdx: typeof raw.pageIdx === "number" ? raw.pageIdx : undefined,
+        pageSize: typeof raw.pageSize === "number" ? raw.pageSize : undefined,
+        includePreserved: raw.includePreserved === true,
+      });
+    },
+  );
+  // 网络请求详情：请求/响应头 + 请求体 + 响应体（基于 CDP 记录中的 requestId）；
+  // requestFilePath / responseFilePath 提供时把 body 落盘（不回传内容）。
+  ipcMain.handle(
+    "browser:network-details",
+    (_event, webContentsId: number, requestId: string, options?: unknown) => {
+      const raw =
+        options !== null && typeof options === "object"
+          ? (options as Record<string, unknown>)
+          : {};
+      return queryNetworkDetails(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof requestId === "string" ? requestId : "",
+        {
+          maxBodyBytes:
+            typeof raw.maxBodyBytes === "number" ? raw.maxBodyBytes : undefined,
+          requestFilePath:
+            typeof raw.requestFilePath === "string"
+              ? raw.requestFilePath
+              : undefined,
+          responseFilePath:
+            typeof raw.responseFilePath === "string"
+              ? raw.responseFilePath
+              : undefined,
+        },
       );
     },
   );
-  // 网络请求详情：请求/响应头 + 请求体 + 响应体（基于 CDP 记录中的 requestId）。
+  // 截图：CDP Page.captureScreenshot（格式/质量/元素 clip/整页/落盘）。
   ipcMain.handle(
-    "browser:network-details",
-    (_event, webContentsId: number, requestId: string, maxBodyBytes?: number) =>
-      queryNetworkDetails(
+    "browser:capture-screenshot",
+    (_event, webContentsId: number, request: unknown) => {
+      const raw =
+        request !== null && typeof request === "object"
+          ? (request as Record<string, unknown>)
+          : {};
+      const format =
+        raw.format === "jpeg" || raw.format === "webp" ? raw.format : "png";
+      const clip =
+        raw.clip !== null && typeof raw.clip === "object"
+          ? (raw.clip as Record<string, unknown>)
+          : null;
+      return captureBrowserScreenshot(
         typeof webContentsId === "number" ? webContentsId : -1,
-        typeof requestId === "string" ? requestId : "",
-        typeof maxBodyBytes === "number" ? maxBodyBytes : undefined,
+        {
+          format,
+          quality: typeof raw.quality === "number" ? raw.quality : undefined,
+          fullPage: raw.fullPage === true,
+          clip:
+            clip &&
+            typeof clip.x === "number" &&
+            typeof clip.y === "number" &&
+            typeof clip.width === "number" &&
+            typeof clip.height === "number"
+              ? {
+                  x: clip.x,
+                  y: clip.y,
+                  width: clip.width,
+                  height: clip.height,
+                  scale:
+                    typeof clip.scale === "number" ? clip.scale : undefined,
+                }
+              : undefined,
+          filePath: typeof raw.filePath === "string" ? raw.filePath : undefined,
+        },
+      );
+    },
+  );
+  // 控制台记录（CDP Runtime/Log）：查询（分页/过滤/preserved）与单条、清空。
+  ipcMain.handle(
+    "browser:console-records",
+    async (_event, webContentsId: number, options?: unknown) => {
+      const id = typeof webContentsId === "number" ? webContentsId : -1;
+      let cdpAvailable = false;
+      if (id >= 0) {
+        const contents = getBrowserWebContents(id);
+        await ensureWebContentsDebugger(contents);
+        cdpAvailable = contents.debugger.isAttached();
+      }
+      const raw =
+        options !== null && typeof options === "object"
+          ? (options as Record<string, unknown>)
+          : {};
+      const result = queryConsoleRecords(id, {
+        level: typeof raw.level === "number" ? raw.level : undefined,
+        types: Array.isArray(raw.types)
+          ? raw.types.filter((item): item is string => typeof item === "string")
+          : undefined,
+        pageIdx: typeof raw.pageIdx === "number" ? raw.pageIdx : undefined,
+        pageSize: typeof raw.pageSize === "number" ? raw.pageSize : undefined,
+        includePreserved: raw.includePreserved === true,
+      });
+      return { ...result, cdpAvailable };
+    },
+  );
+  ipcMain.handle(
+    "browser:console-record",
+    (_event, webContentsId: number, messageId: number) =>
+      getConsoleRecord(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof messageId === "number" ? messageId : -1,
       ),
+  );
+  ipcMain.handle(
+    "browser:console-clear",
+    async (_event, webContentsId: number) => {
+      const id = typeof webContentsId === "number" ? webContentsId : -1;
+      if (id >= 0) {
+        await ensureWebContentsDebugger(getBrowserWebContents(id));
+      }
+      return { cleared: clearConsoleRecords(id) };
+    },
+  );
+  // 性能 trace：start / stop / insight（performance_* 工具）。
+  ipcMain.handle(
+    "browser:trace-start",
+    (_event, webContentsId: number, categories?: unknown) =>
+      startBrowserTrace(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        Array.isArray(categories)
+          ? categories.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : undefined,
+      ),
+  );
+  ipcMain.handle(
+    "browser:trace-stop",
+    (_event, webContentsId: number, options?: unknown) => {
+      const raw =
+        options !== null && typeof options === "object"
+          ? (options as Record<string, unknown>)
+          : {};
+      return stopBrowserTrace(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        {
+          filePath: typeof raw.filePath === "string" ? raw.filePath : undefined,
+        },
+      );
+    },
+  );
+  ipcMain.handle(
+    "browser:trace-insight",
+    (_event, webContentsId: number, insightId: string) =>
+      getTraceInsight(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof insightId === "string" ? insightId : "",
+      ),
+  );
+  // 页面仿真：emulate（配色/CPU/地理位置/请求头/网络档位/UA/视口）。
+  ipcMain.handle(
+    "browser:emulate",
+    (_event, webContentsId: number, params: unknown) => {
+      const raw =
+        params !== null && typeof params === "object"
+          ? (params as Record<string, unknown>)
+          : {};
+      const emulation: Parameters<typeof applyBrowserEmulation>[1] = {};
+      if (
+        raw.colorScheme === "dark" ||
+        raw.colorScheme === "light" ||
+        raw.colorScheme === "auto"
+      ) {
+        emulation.colorScheme = raw.colorScheme;
+      }
+      if (typeof raw.cpuThrottlingRate === "number") {
+        emulation.cpuThrottlingRate = raw.cpuThrottlingRate;
+      }
+      if (raw.extraHttpHeaders !== undefined) {
+        if (raw.extraHttpHeaders === null) {
+          emulation.extraHttpHeaders = null;
+        } else if (typeof raw.extraHttpHeaders === "object") {
+          const headers: Record<string, string> = {};
+          for (const [key, value] of Object.entries(
+            raw.extraHttpHeaders as Record<string, unknown>,
+          )) {
+            if (typeof value === "string") {
+              headers[key] = value;
+            }
+          }
+          emulation.extraHttpHeaders = headers;
+        }
+      }
+      if (raw.geolocation !== undefined) {
+        if (raw.geolocation === null) {
+          emulation.geolocation = null;
+        } else if (typeof raw.geolocation === "object") {
+          const geo = raw.geolocation as Record<string, unknown>;
+          if (
+            typeof geo.latitude === "number" &&
+            typeof geo.longitude === "number"
+          ) {
+            emulation.geolocation = {
+              latitude: geo.latitude,
+              longitude: geo.longitude,
+              accuracy:
+                typeof geo.accuracy === "number" ? geo.accuracy : undefined,
+            };
+          }
+        }
+      }
+      if (typeof raw.networkConditions === "string") {
+        emulation.networkConditions = raw.networkConditions;
+      } else if (raw.networkConditions === null) {
+        emulation.networkConditions = null;
+      }
+      if (typeof raw.userAgent === "string") {
+        emulation.userAgent = raw.userAgent;
+      } else if (raw.userAgent === null) {
+        emulation.userAgent = null;
+      }
+      if (typeof raw.viewport === "string") {
+        emulation.viewport = raw.viewport;
+      } else if (raw.viewport === null) {
+        emulation.viewport = null;
+      }
+      return applyBrowserEmulation(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        emulation,
+      );
+    },
+  );
+  ipcMain.handle(
+    "browser:resize-page",
+    (_event, webContentsId: number, width: number, height: number) =>
+      resizeBrowserViewport(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        typeof width === "number" ? width : 800,
+        typeof height === "number" ? height : 600,
+      ),
+  );
+  // CSS 级联检查：匹配规则 / 内联 / 继承 / computed（get_css_styles 工具）。
+  ipcMain.handle(
+    "browser:css-styles",
+    (_event, webContentsId: number, query: unknown) => {
+      const raw =
+        query !== null && typeof query === "object"
+          ? (query as Record<string, unknown>)
+          : {};
+      return getCssStyles(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        {
+          selector:
+            typeof raw.selector === "string" && raw.selector
+              ? raw.selector
+              : undefined,
+          backendNodeId:
+            typeof raw.backendNodeId === "number"
+              ? raw.backendNodeId
+              : undefined,
+          pageIdx: typeof raw.pageIdx === "number" ? raw.pageIdx : undefined,
+          pageSize: typeof raw.pageSize === "number" ? raw.pageSize : undefined,
+        },
+      );
+    },
+  );
+  // 页面审计：axe-core 无障碍 + 轻量 SEO / 最佳实践（audit 工具）。
+  ipcMain.handle(
+    "browser:audit",
+    (_event, webContentsId: number, categories?: unknown) => {
+      const list = Array.isArray(categories)
+        ? categories.filter(
+            (item): item is AuditCategories =>
+              item === "accessibility" ||
+              item === "seo" ||
+              item === "best-practices",
+          )
+        : [];
+      return runBrowserAudit(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        list.length > 0 ? list : ["accessibility", "seo", "best-practices"],
+      );
+    },
+  );
+  // 堆快照：采集与文件分析（take/summary/query/details/edges/retainers/paths/strings/compare）。
+  ipcMain.handle("browser:heap", (_event, action: unknown, params: unknown) => {
+    const raw =
+      params !== null && typeof params === "object"
+        ? (params as Record<string, unknown>)
+        : {};
+    const file = typeof raw.filePath === "string" ? raw.filePath : "";
+    const num = (key: string, fallback: number): number =>
+      typeof raw[key] === "number" ? (raw[key] as number) : fallback;
+    switch (action) {
+      case "take":
+        return takeHeapSnapshot(
+          typeof raw.webContentsId === "number" ? raw.webContentsId : -1,
+          file,
+        );
+      case "summary":
+        return getHeapSnapshotSummary(file, num("topN", 30));
+      case "query":
+        return queryHeapObjects(file, {
+          className:
+            typeof raw.className === "string" ? raw.className : undefined,
+          nodeType: typeof raw.nodeType === "string" ? raw.nodeType : undefined,
+          minSelfSize:
+            typeof raw.minSelfSize === "number" ? raw.minSelfSize : undefined,
+          isDetached: raw.isDetached === true ? true : undefined,
+          sortBy:
+            raw.sortBy === "id"
+              ? "id"
+              : raw.sortBy === "selfSize"
+                ? "selfSize"
+                : undefined,
+          pageIdx: typeof raw.pageIdx === "number" ? raw.pageIdx : undefined,
+          pageSize: typeof raw.pageSize === "number" ? raw.pageSize : undefined,
+        });
+      case "details":
+        return getHeapObjectDetails(file, num("nodeIndex", -1));
+      case "edges":
+        return getHeapSnapshotEdges(
+          file,
+          num("nodeIndex", -1),
+          num("limit", 50),
+        );
+      case "retainers":
+        return getHeapSnapshotRetainers(
+          file,
+          num("nodeIndex", -1),
+          num("limit", 50),
+        );
+      case "paths":
+        return getHeapSnapshotRetainingPaths(
+          file,
+          num("nodeIndex", -1),
+          num("maxDepth", 6),
+          num("maxPaths", 5),
+        );
+      case "strings":
+        return getHeapSnapshotDuplicateStrings(file, num("topN", 20));
+      case "compare":
+        return compareHeapSnapshots(
+          typeof raw.baseFilePath === "string" ? raw.baseFilePath : "",
+          typeof raw.currentFilePath === "string" ? raw.currentFilePath : "",
+          num("topN", 30),
+        );
+      default:
+        throw new Error(`Unknown heap action: ${String(action)}`);
+    }
+  });
+  // 录屏：CDP 帧采集 + MJPEG AVI 合成（screencast_start / screencast_stop）。
+  ipcMain.handle(
+    "browser:screencast-start",
+    (_event, webContentsId: number, options?: unknown) => {
+      const raw =
+        options !== null && typeof options === "object"
+          ? (options as Record<string, unknown>)
+          : {};
+      return startBrowserScreencast(
+        typeof webContentsId === "number" ? webContentsId : -1,
+        {
+          filePath: typeof raw.filePath === "string" ? raw.filePath : undefined,
+          quality: typeof raw.quality === "number" ? raw.quality : undefined,
+          maxWidth: typeof raw.maxWidth === "number" ? raw.maxWidth : undefined,
+          maxFrames:
+            typeof raw.maxFrames === "number" ? raw.maxFrames : undefined,
+          maxDurationMs:
+            typeof raw.maxDurationMs === "number"
+              ? raw.maxDurationMs
+              : undefined,
+        },
+      );
+    },
+  );
+  ipcMain.handle("browser:screencast-stop", (_event, webContentsId: number) =>
+    stopBrowserScreencast(
+      typeof webContentsId === "number" ? webContentsId : -1,
+    ),
   );
   // 网络状态模拟：offline=true 离线，false 恢复在线。
   ipcMain.handle(

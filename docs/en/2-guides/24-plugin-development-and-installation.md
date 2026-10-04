@@ -1,11 +1,12 @@
 # 24-Plugin Development and Installation (Plugins)
 
-> Applies to: Snow App desktop (Windows / macOS / Linux). A plugin is a **local folder** package that contributes custom tabs to the right panel; this guide covers both installing/removing plugins and authoring one.
+> Applies to: Snow App desktop (Windows / macOS / Linux). A plugin is a **local folder** package that contributes custom tabs to the right panel; this guide covers installing/removing plugins (local folder and plugin market), authoring one, and publishing it to the plugin market.
 
 ## Goal
 
-- Install a plugin from a local folder and open the panels it provides;
+- Install a plugin from a local folder or the **plugin market** and open the panels it provides;
 - write a `plugin.json` manifest plus an entry module that reads metadata, writes application data through `api.write`, stores private settings, and declares privacy scopes;
+- **publish** a plugin to the plugin market: prepare the Release asset, compute its SHA-256, and submit the index entry;
 - let the AI **install, toggle, reload, and uninstall plugins automatically** through the `plugins` scope of the `config` tool, without opening any settings UI.
 
 ## Prerequisites
@@ -15,14 +16,16 @@
 - Application data access is "read plus controlled write": reads go through `api.metadata` and writes through `api.write`, where each write action's `scope` decides whether a `privacy` declaration is required (see the writable-capabilities section below).
 - Installation copies at most **128 MB** per plugin folder and skips `.git` and `node_modules`.
 - One text file may be read up to 8 MB, one binary asset up to 16 MB.
+- The plugin market needs network access to GitHub raw or the jsDelivr mirror; publishing a plugin requires its own GitHub repository and Release.
 
 ## Entry Point
 
-The **Plugins** button at the bottom of the sidebar (with an installed-count badge) opens the plugin management page — a main-content view (view id `plugins`), not a settings page, and it has no settings page id. The page has two top-level tabs, whose small counters show the total entry count (panel plugins + client scripts) and the number of metadata domains:
+The **Plugins** button at the bottom of the sidebar (with an installed-count badge) opens the plugin management page — a main-content view (view id `plugins`), not a settings page, and it has no settings page id. The page has three top-level tabs: **Plugin list** (badge: panel plugins plus client scripts), **Plugin market**, and **Metadata catalog** (badge: the metadata-domain count):
 
 | Tab                  | Contents                                                                                                                                                                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Plugin list**      | The main management area; it carries two sub-tabs with counters, **Panel plugins** and **Script plugins** — the former covers the folder-installed plugins described in the rest of this guide, the latter holds client UI scripts |
+| **Plugin market**    | Install or update panel plugins and client scripts in one click from the snow-plugin-store index; installation, updates, and the author publishing flow live in the plugin market section                                          |
 | **Metadata catalog** | The app metadata domains plugins can read together with the write actions and the network capability a plugin can use                                                                                                              |
 
 Under the **Panel plugins** sub-tab the toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`; clicking any amber tag opens the "Privacy scopes" dialog, which explains each scope in one line and lists the metadata domains it unlocks (field-level declarations name the exact fields) plus the writable capabilities aggregated per write domain, along with where it is declared (`privacy` in `plugin.json` / `@snow-privacy` in the script metadata header). The **Script plugins** sub-tab shows the script's `@snow-privacy` declarations as the same amber badges and opens the very same dialog. The **Metadata catalog** tab shows "Reading", "Writable" and "Network" sub-tabs: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search, while the Writable sub-tab lists every write action with its required `scope` and declaration state and the Network sub-tab lists the `api.net.fetch` external request capability (forwarded by the main process, no privacy declaration needed). The per-row "Metadata n/34" and "Write n/201" links mark that plugin's declared (readable/writable) and undeclared (denied) domains and actions, so users can audit the `privacy` declaration. The page is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
@@ -396,6 +399,61 @@ Key points:
 - The scope reuses exactly the same storage layer as the UI, so folder copying, skipped entries, the database row, and the default-enabled state behave identically; the panel host does **not** auto-refresh its list, it re-reads when the page or a panel opens.
 - Uninstalling is destructive: `config-delete` requires user confirmation first and then `confirmed: true`.
 
+### 11. Plugin market (install, update, publish)
+
+The **Plugin market** tab reads `app/registry.json` from the [snow-plugin-store](https://github.com/MayDay-wpf/snow-plugin-store) index repository to install or update panel plugins and client scripts in one click: each plugin ships from its own GitHub repository as a Release asset, and the client verifies the SHA-256 pinned in the index before installing. The index is fetched when the tab opens (the in-memory result is reused for 60 seconds; **Refresh** forces a re-fetch): when the GitHub raw source fails it falls back to the jsDelivr mirror, and when both fail it reuses the last successful disk cache (`~/.snowapp/plugin-market/registry.json`).
+
+#### 11.1 Installing and updating in the client
+
+- Each entry shows its name, version, author, tags, and type (script entries carry a Script label), and supports keyword search over name, description, author, and tags; a `lucide:Name` icon is resolved to the matching icon, and anything else falls back to a placeholder.
+- A not-installed entry offers **Install**; an entry already on the indexed version shows **Installed**; a higher indexed version offers **Update** with an `Installed v<from> → v<to>` hint — updates replace in place: a panel plugin keeps its enabled state, and a script is re-matched and keeps its enabled state.
+- When the entry declares `privacy` scopes they show as amber badges that open the shared "Privacy scopes" dialog; when the entry's `minAppVersion` is newer than the running app, installation is disabled with a "Requires app v<version> or newer" hint.
+- Install/update first shows a confirmation dialog: version, author, description, source repository link, the first 16 characters of the SHA-256, and the privacy badges. After confirmation Rust downloads, verifies the SHA-256, and installs.
+  - Panel plugin: downloads the zip (`plugin.json` at the zip root or inside a single top-level folder), verifies that the manifest `id` equals the entry `id`, then reuses the same storage layer as a folder install; `source_path` records the entry repository for update display and provenance.
+  - Script entry (`kind: "script"`): downloads the `.user.js` file directly and stores it under the entry `id` in the `userscripts` table, re-matching immediately; installing the same id again updates it in place and leaves its enabled state untouched.
+
+Size limits match folder installs: 128 MB per zip, 512 MB extracted in total, and 10 MB per script file.
+
+#### 11.2 Publishing to the market (author flow)
+
+Publishing and updating both happen through a pull request on the [snow-plugin-store](https://github.com/MayDay-wpf/snow-plugin-store) index repository; after the merge the client refreshes to see the new version:
+
+```mermaid
+flowchart TD
+    A[Package the zip or prepare the script file] --> B[Create a GitHub Release and upload the asset]
+    B --> C[Compute the SHA-256]
+    C --> D[Submit the app/plugins index entry]
+    D --> E[CI validates every entry]
+    E --> F[registry.json is rebuilt after the merge]
+    F --> G[The client refreshes and installs or updates]
+```
+
+1. **Prepare the plugin**: author it by the rules in this guide; a script entry follows the client-script rules in [22-Userscripts](22-userscripts.md), and either way install it locally once as a self-test.
+2. **Publish a Release**: package the plugin folder as a zip — `plugin.json` must sit at the zip root, with no extra wrapping folder — create a Release in the plugin's own GitHub repository (a semantic tag such as `v1.2.0` is recommended), and upload the zip as the Release asset; a script entry uploads the single `.user.js` file instead (do not pack it into a zip).
+3. **Compute the SHA-256**: `sha256sum my-plugin-1.2.0.zip` on Linux / macOS or `Get-FileHash .\my-plugin-1.2.0.zip -Algorithm SHA256` on Windows; the same applies to the script file. The hash must cover the raw bytes of the Release asset.
+4. **Submit the index entry**: add or update `app/plugins/<id>.json` (one file per plugin, named exactly `<id>.json`) and open a pull request; run `node app/scripts/validate-registry.mjs` locally first.
+5. **Merge and ship**: once CI validation passes and the maintainer merges, `app/registry.json` is rebuilt automatically (never edit it by hand); the client **Refresh** then offers the new version.
+
+Entry fields (the authoritative JSON Schema is `app/entry.schema.json` in the repository):
+
+| Field                  | Required    | Notes                                                                                                                                                                                    |
+| ---------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | yes         | Unique ID; for a panel plugin it must equal the `plugin.json` `id`. Letters, digits, `.`, `-`, `_`, at most 96 characters, must not start with `.`                                       |
+| `kind`                 | no          | `plugin` (default, panel plugin) or `script` (client script whose Release asset is the `.user.js` file itself)                                                                           |
+| `name` / `description` | yes         | Display name and summary, a string or a localized object (such as `{"default": "...", "zh-CN": "..."}`)                                                                                  |
+| `repo`                 | yes         | Plugin repository shaped `https://github.com/owner/repo`                                                                                                                                 |
+| `version`              | yes         | Version matching the Release content                                                                                                                                                     |
+| `tag` / `asset`        | conditional | Release tag and asset file name; both are required unless `downloadUrl` is given, and the download URL is derived as `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` |
+| `downloadUrl`          | no          | Explicit https asset URL; when present the `tag`/`asset` derivation is skipped                                                                                                           |
+| `sha256`               | yes         | Asset SHA-256 (64 hex characters)                                                                                                                                                        |
+| `author` / `homepage`  | no          | Author credit and homepage / docs URL                                                                                                                                                    |
+| `minAppVersion`        | no          | Minimum app version; older clients disable installation and show a hint                                                                                                                  |
+| `privacy`              | no          | Sensitive-scope list kept in sync with the plugin `plugin.json` (or `@snow-privacy` for scripts); drives the market badges and the install confirmation                                  |
+| `tags`                 | no          | Search keywords                                                                                                                                                                          |
+| `icon`                 | no          | Market list icon such as `lucide:Puzzle`; a placeholder is shown when absent                                                                                                             |
+
+> A merged entry only means the index format and hash checks passed; it is not a security endorsement of the plugin. Plugin code still ships from the author's repository, so verify the source and privacy declarations before installing.
+
 ## Verification
 
 - `config-list scope=plugins` includes the new plugin with `enabled: true`, and `pluginsDirectory` points at `~/.snowapp/plugins`.
@@ -404,6 +462,8 @@ Key points:
 - For granted domains `denied` from `api.metadata.get` is empty.
 - For granted write actions `api.write.run` returns `ok: true`; without the declaration it returns `denied.reason = "write-declaration-missing"` plus the required `scope`, and `api.write.domains()` lists every action with its declaration state.
 - The counters and the list under **Plugin list → Script plugins** cover only scripts whose `target` is `client` or `all`; a `client` script never appears in the **Settings → Browser settings → Userscripts** list.
+- The Plugin market loads its entry list and shows privacy badges; installing a panel plugin adds it enabled under **Plugin list → Panel plugins**, and a `kind: "script"` entry appears under **Script plugins**.
+- An entry whose indexed version is newer than the installed one shows **Update** with the version hint and switches to **Installed** afterwards; entries whose `minAppVersion` is newer than the app have their install button disabled.
 
 ## Troubleshooting and recovery
 
@@ -422,6 +482,11 @@ Key points:
 | `api.write` returns `denied.reason = "write-declaration-missing"`                      | The write action needs the `scope` shown in `denied.scope`; declare it in the `plugin.json` `privacy` list, then reinstall or `rescan`                           |
 | `api.write` returns `denied.reason = "unknown-action"`                                 | The action id is misspelled or absent from this version; list the available actions with `api.write.domains()`                                                   |
 | `api.write` returns `ok: false` without `denied`                                       | Parameter validation or the backend call failed; fix the argument named in `error`                                                                               |
+| The plugin market fails to load (`Failed to fetch the plugin market index`)            | Both the raw source and the jsDelivr mirror are unreachable and no cache is available; check the network/proxy and press **Refresh**                             |
+| `Plugin archive SHA256 mismatch (...)`                                                 | The Release asset and the index `sha256` disagree (re-packed asset or stale entry); recompute the hash and update the entry                                      |
+| `Plugin archive id 'x' does not match the market entry 'y'`                            | The `id` in the zip `plugin.json` differs from the index entry `id`; fix it, re-release, and update the entry                                                    |
+| The market install button is disabled with "Requires app vX.Y.Z or newer"              | The running app is older than the entry `minAppVersion`; upgrade the app first                                                                                   |
+| The index changed but the market list is stale                                         | The 60-second memory cache still serves the old result; press **Refresh** to force a re-fetch                                                                    |
 
 ## Source anchors
 
@@ -434,11 +499,16 @@ Key points:
 - `src/renderer/plugins/metadata/domains.ts`, `src/renderer/plugins/metadata/index.ts`: metadata domains and privacy redaction
 - `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`, `::WRITE_ACTION_IDS`: write execution, privacy-declaration checks, and the action list
 - `src/renderer/plugins/writes/domains/content.ts`, `system.ts`, `config.ts`, `admin.ts`: the 201 write action definitions (grouped as sections 8.4 to 8.7 here)
-- `src/renderer/components/sidebar/PluginsPanel.tsx`: the two top-level tabs (Plugin list / Metadata catalog), the list sub-tabs (Panel plugins / Script plugins), their counters, and the Panel plugins toolbar
+- `src/renderer/components/sidebar/PluginsPanel.tsx`: the three top-level tabs (Plugin list / Plugin market / Metadata catalog), the list sub-tabs (Panel plugins / Script plugins), their counters, and the Panel plugins toolbar
 - `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the Metadata catalog tab (Reading / Writable) and the badge data
 - `src/renderer/plugins/privacy.ts`, `src/renderer/components/sidebar/PluginPrivacyBadges.tsx`, `src/renderer/components/sidebar/PluginPrivacyDialog.tsx`: the privacy-scope badges and the "Privacy scopes" dialog shared by panel plugins and script plugins
 - `src/renderer/components/sidebar/PluginScriptsSection.tsx`, `src/renderer/userscripts/clientScriptStore.ts`: the Script plugins sub-tab UI and the client-script state source
 - `native/src/storage/userscripts.rs::parse_meta`: client-script metadata (`target` / `view_json` / `surface_json` / `scope` / `sandbox`)
 - `src/renderer/components/rightPanel/PluginPanelContent.tsx`, `src/renderer/components/sidebar/PluginsPanel.tsx`: panel host and management page
+- `native/src/plugin_market.rs::fetch_registry_blocking`, `::install_from_market_blocking`, `::install_script_from_market_blocking`: market index fetching (dual-source fallback plus memory/disk cache) and market installs (download, SHA-256 check, extraction, id verification)
+- `src/renderer/plugins/market.ts::parseMarketRegistry`, `::buildMarketDownloadUrl`, `::compareMarketVersions`: registry parsing, download-URL derivation, and version comparison
+- `src/renderer/components/sidebar/PluginMarketPanel.tsx`: the Plugin market tab (search, install/update confirmation dialog, `minAppVersion` gating, and privacy badges)
+- `src/renderer/plugins/pluginStore.ts::installFromMarket`: panel-plugin / script install dispatch
+- `native/src/storage/plugins.rs::install_plugin_with_source`, `native/src/storage/userscripts.rs::install_market_userscript`: market provenance recording and in-place script updates
 - `native/src/mcp/servers/config/plugins_scope.rs`, `native/src/mcp/servers/config/mod.rs`: the `plugins` scope of the `config` tool
 - Install folder and data locations: [Data storage locations](../3-reference/4-data-storage-locations.md); `config` scope fields: [Built-in tools reference](../3-reference/2-builtin-tools-reference.md)

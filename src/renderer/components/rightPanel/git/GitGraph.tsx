@@ -70,6 +70,7 @@ interface GraphRow {
   bottomLines: number[];
   bottomColors: string[];
   curves: { from: number; to: number; color: string }[];
+  merges: { from: number; color: string }[];
 }
 
 // --- Constants ---
@@ -192,20 +193,37 @@ function computeGraph(
       }
     }
 
+    // 其他车道上同样指向本提交的线条：本行的顶部竖线由大半径弯弧取代，
+    // 弧线在整行高度内平滑汇入圆点。
+    const merges: { from: number; color: string }[] = [];
+    for (let i = 0; i < lanes.length; i++) {
+      if (i !== dotLane && lanes[i] === commit.hash) {
+        merges.push({
+          from: i,
+          color: laneColors[i] ?? LANE_COLORS[i % LANE_COLORS.length],
+        });
+      }
+    }
+    const mergeLanes = new Set(merges.map((merge) => merge.from));
+
     const topLines: number[] = [];
     for (let i = 0; i < lanes.length; i++) {
-      if (lanes[i] !== null) topLines.push(i);
+      if (lanes[i] !== null && !mergeLanes.has(i)) topLines.push(i);
     }
     const topColors = laneColors.map(
       (color, lane) => color ?? LANE_COLORS[lane % LANE_COLORS.length],
     );
 
-    // 本提交所在线条的颜色：第一父边与并入已占用车道的合流曲线都沿用它，
-    // 让一条分支从分叉点到汇合点保持同色。
+    // 本提交所在线条的颜色：继续向前延伸的第一父边沿用它，让一条分支从
+    // 分叉点到汇合点保持同色。
     const lineColor = topColors[dotLane];
 
     lanes[dotLane] = null;
     laneColors[dotLane] = null;
+    for (const lane of mergeLanes) {
+      lanes[lane] = null;
+      laneColors[lane] = null;
+    }
     const curves: { from: number; to: number; color: string }[] = [];
 
     for (let p = 0; p < commit.parents.length; p++) {
@@ -215,58 +233,43 @@ function computeGraph(
         `${commit.hash}\0${parentHash}`,
       );
 
-      let parentLane: number;
-      let edgeColor: string;
-      let joinsClaimedLane = false;
-
       if (hashToLane.has(parentHash)) {
-        parentLane = hashToLane.get(parentHash)!;
-        if (
-          isFirstParent &&
-          mainline.has(commit.hash) &&
-          parentLane !== dotLane
-        ) {
-          curves.push({
-            from: parentLane,
-            to: dotLane,
-            color:
-              laneColors[parentLane] ??
-              LANE_COLORS[parentLane % LANE_COLORS.length],
-          });
-          lanes[parentLane] = null;
-          laneColors[parentLane] = null;
-          hashToLane.set(parentHash, dotLane);
-          parentLane = dotLane;
-          edgeColor =
-            worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
-        } else if (isFirstParent && parentLane !== dotLane) {
-          // 并入已占用的车道：合流曲线沿用本线颜色，目标车道保留原有颜色。
-          edgeColor = worktreeColor ?? lineColor;
-          joinsClaimedLane = true;
-        } else {
-          edgeColor =
-            worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
-        }
-      } else {
+        const parentLane = hashToLane.get(parentHash)!;
         if (isFirstParent) {
-          parentLane = dotLane;
-        } else {
-          const freeLane = lanes.indexOf(null);
-          parentLane = freeLane !== -1 ? freeLane : lanes.length;
-          if (parentLane >= lanes.length) {
-            lanes.push(null);
-            laneColors.push(null);
+          // 第一父提交已停在别的车道上：本线沿用当前车道继续指向它，到
+          // 父提交所在行再弯入圆点；主线提交让父提交的圆点回到主线车道。
+          lanes[dotLane] = parentHash;
+          laneColors[dotLane] = worktreeColor ?? lineColor;
+          if (mainline.has(commit.hash)) {
+            hashToLane.set(parentHash, dotLane);
           }
+          continue;
         }
-        hashToLane.set(parentHash, parentLane);
-        edgeColor =
+        const edgeColor =
           worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
+        laneColors[parentLane] = edgeColor;
+        if (parentLane !== dotLane) {
+          curves.push({ from: dotLane, to: parentLane, color: edgeColor });
+        }
+        continue;
       }
 
-      lanes[parentLane] = parentHash;
-      if (!joinsClaimedLane) {
-        laneColors[parentLane] = edgeColor;
+      let parentLane: number;
+      if (isFirstParent) {
+        parentLane = dotLane;
+      } else {
+        const freeLane = lanes.indexOf(null);
+        parentLane = freeLane !== -1 ? freeLane : lanes.length;
+        if (parentLane >= lanes.length) {
+          lanes.push(null);
+          laneColors.push(null);
+        }
       }
+      hashToLane.set(parentHash, parentLane);
+      const edgeColor =
+        worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
+      lanes[parentLane] = parentHash;
+      laneColors[parentLane] = edgeColor;
       if (parentLane !== dotLane) {
         curves.push({ from: dotLane, to: parentLane, color: edgeColor });
       }
@@ -288,6 +291,7 @@ function computeGraph(
       bottomLines,
       bottomColors,
       curves,
+      merges,
     });
   }
 
@@ -1666,16 +1670,35 @@ export const GitGraph = ({
                 {row.curves.map((c, i) => {
                   const fromX = c.from * LANE_WIDTH + LANE_WIDTH / 2;
                   const toX = c.to * LANE_WIDTH + LANE_WIDTH / 2;
+                  const dir = toX > fromX ? 1 : -1;
                   return (
                     <path
                       key={`curve-${i}`}
-                      d={`M ${fromX},${ROW_HEIGHT / 2} C ${fromX},${
-                        ROW_HEIGHT * 0.75
-                      } ${toX},${ROW_HEIGHT * 0.75} ${toX},${
+                      d={`M ${fromX},${ROW_HEIGHT / 2} C ${
+                        fromX + dir * (LANE_WIDTH / 2)
+                      },${ROW_HEIGHT / 2} ${toX},${ROW_HEIGHT * 0.75} ${toX},${
                         ROW_HEIGHT + LINE_WIDTH / 2
                       }`}
                       fill="none"
                       stroke={c.color}
+                      strokeWidth={LINE_WIDTH}
+                    />
+                  );
+                })}
+                {row.merges.map((m, i) => {
+                  const fromX = m.from * LANE_WIDTH + LANE_WIDTH / 2;
+                  const dotX = row.dotLane * LANE_WIDTH + LANE_WIDTH / 2;
+                  const dir = fromX > dotX ? 1 : -1;
+                  return (
+                    <path
+                      key={`merge-${i}`}
+                      d={`M ${fromX},${-LINE_WIDTH / 2} C ${fromX},${
+                        ROW_HEIGHT * 0.25
+                      } ${dotX + dir * (LANE_WIDTH * 0.6)},${
+                        ROW_HEIGHT * 0.41
+                      } ${dotX},${ROW_HEIGHT / 2}`}
+                      fill="none"
+                      stroke={m.color}
                       strokeWidth={LINE_WIDTH}
                     />
                   );
@@ -1770,7 +1793,7 @@ export const GitGraph = ({
                   width={graphWidth}
                   height="100%"
                 >
-                  {bottomLines.map((lane) => (
+                  {row.bottomLines.map((lane) => (
                     <line
                       key={`detail-${lane}`}
                       x1={lane * LANE_WIDTH + LANE_WIDTH / 2}

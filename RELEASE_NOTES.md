@@ -1,5 +1,19 @@
 # Release Notes
 
+## v0.4.14
+
+## New Features
+
+- **Plugin Market**: The plugins page gains a Market tab to browse, install and update plugins and userscripts online — the index comes from the snow-plugin-store repository (GitHub raw + jsDelivr dual source), installs are SHA-256 verified, and version updates are detected.
+- **Cross-Origin iframes**: The built-in browser gains `browser-frames`, returning opaque frameIds bound to the document lifecycle; reading, evaluating, waiting, clicking, typing, hovering, selecting, uploading and snapshots / AX can all target a frame, with output and errors redacted and unsupported operations failing loudly instead of falling back onto the main frame (#175).
+- **Browser Debugging Toolset**: New browser MCP capabilities include device emulation and viewport resizing, performance traces with insight analysis, CSS cascade inspection, accessibility audits (axe-core), JS heap snapshots with comparison, page screencast recording, form filling and dragging, and page-registered tool invocation.
+- **SSH Single-Hop ProxyJump**: SSH connections support a single-hop ProxyJump, configurable from the connection wizard.
+- **Linked Project Groups**: Project collections upgrade to "linked project groups" — members can be included at creation, carry a link toggle (kept in the group but excluded from resolution once unlinked), and support unified search across the group plus color identity; the collection dialog gains a custom color picker.
+
+## Improvements
+
+- Git commit graph rework: merging lanes sweep into the dot with a full-row arc, and branch colors stay consistent from fork to merge point.
+
 ## v0.4.13
 
 ## New Features

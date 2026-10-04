@@ -127,6 +127,7 @@ export const en = {
   "sidebar.renameCollectionConfirm": "Save",
   "sidebar.renameCollectionError": "Failed to rename collection",
   "sidebar.collectionColorLabel": "Color",
+  "sidebar.collectionCustomColor": "Custom color",
   "sidebar.updateCollectionColorError": "Failed to update the collection color",
   "sidebar.deleteCollection": "Delete collection",
   "sidebar.deleteCollectionTitle": "Delete collection",

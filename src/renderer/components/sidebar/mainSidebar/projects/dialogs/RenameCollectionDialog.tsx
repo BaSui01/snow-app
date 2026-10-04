@@ -1,3 +1,4 @@
+import { Palette } from "lucide-react";
 import { useRef } from "react";
 
 import { useI18n } from "../../../../../i18n";
@@ -29,6 +30,9 @@ export function RenameCollectionDialog({
 }: RenameCollectionDialogProps): React.JSX.Element {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const isCustomColor = !(
+    PROJECT_COLLECTION_COLORS as readonly string[]
+  ).includes(color);
 
   return (
     <FormDialog
@@ -93,6 +97,26 @@ export function RenameCollectionDialog({
               type="button"
             />
           ))}
+          <label
+            className={`collection-color-custom${
+              isCustomColor ? " selected" : ""
+            }`}
+            style={isCustomColor && color ? { background: color } : undefined}
+            title={t("sidebar.collectionCustomColor", {
+              defaultValue: "Custom color",
+            })}
+          >
+            <input
+              aria-label={t("sidebar.collectionCustomColor", {
+                defaultValue: "Custom color",
+              })}
+              disabled={isSubmitting}
+              onChange={(event) => onColorChange(event.target.value)}
+              type="color"
+              value={color || PROJECT_COLLECTION_COLORS[0]}
+            />
+            <Palette size={12} />
+          </label>
         </div>
       </div>
       {error ? <span className="form-dialog-error">{error}</span> : null}

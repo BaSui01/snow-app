@@ -3211,6 +3211,58 @@ body.is-panel-resizing * {
   border-color: var(--text-primary);
 }
 
+.collection-color-custom {
+  position: relative;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  background: conic-gradient(
+    from 180deg,
+    #f87171,
+    #fbbf24,
+    #34d399,
+    #38bdf8,
+    #a78bfa,
+    #f472b6,
+    #f87171
+  );
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.collection-color-custom:hover {
+  transform: scale(1.08);
+}
+
+.collection-color-custom.selected {
+  border-color: var(--text-primary);
+}
+
+.collection-color-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.collection-color-custom svg {
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+}
+
 .link-projects-list {
   display: flex;
   max-height: 220px;

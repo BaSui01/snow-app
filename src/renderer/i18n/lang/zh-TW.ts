@@ -114,6 +114,7 @@ export const zhTW = {
   "sidebar.renameCollectionConfirm": "儲存",
   "sidebar.renameCollectionError": "重新命名合集失敗",
   "sidebar.collectionColorLabel": "顏色",
+  "sidebar.collectionCustomColor": "自訂顏色",
   "sidebar.updateCollectionColorError": "修改合集顏色失敗",
   "sidebar.deleteCollection": "刪除合集",
   "sidebar.deleteCollectionTitle": "刪除合集",

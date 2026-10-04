@@ -114,6 +114,7 @@ export const zhCN = {
   "sidebar.renameCollectionConfirm": "保存",
   "sidebar.renameCollectionError": "重命名合集失败",
   "sidebar.collectionColorLabel": "颜色",
+  "sidebar.collectionCustomColor": "自定义颜色",
   "sidebar.updateCollectionColorError": "修改合集颜色失败",
   "sidebar.deleteCollection": "删除合集",
   "sidebar.deleteCollectionTitle": "删除合集",

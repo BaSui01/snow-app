@@ -1,7 +1,16 @@
 import type { SubAgentConfigInput } from "../../../../preload";
+import { SUB_AGENT_MAIN_TOOL_NAMES } from "../../mainContent/chatMessages/hooks/subAgentActivation";
 import type { SubAgentDraft, SubAgentItem } from "./types";
 
 export const SUB_AGENT_ALL_TOOLS_MARKER = "*";
+
+/** 子代理运行时永远不会获得的工具：主会话管理工具 + Plan Mode / WorkFlow 模式专属工具。 */
+export const SUB_AGENT_RESERVED_TOOL_NAMES = new Set<string>([
+  ...SUB_AGENT_MAIN_TOOL_NAMES,
+  "app-control-requestApproval",
+  "workflow-workflow-generate",
+  "workflow-workflow-resume",
+]);
 
 export const EMPTY_SUB_AGENT_DRAFT: SubAgentDraft = {
   agentId: "",
@@ -23,8 +32,10 @@ const parseStoredToolNames = (value: string): string[] => {
       return [];
     }
     return Array.from(
-      new Set(parsed.filter((tool): tool is string => typeof tool === "string"))
-    );
+      new Set(
+        parsed.filter((tool): tool is string => typeof tool === "string"),
+      ),
+    ).filter((tool) => !SUB_AGENT_RESERVED_TOOL_NAMES.has(tool));
   } catch {
     return [];
   }
@@ -64,7 +75,7 @@ export const toSubAgentInput = (draft: SubAgentDraft): SubAgentConfigInput => ({
 
 export const countTools = (
   item: SubAgentItem,
-  availableToolCount = 0
+  availableToolCount = 0,
 ): number => {
   const toolNames = parseStoredToolNames(item.toolsJson);
   return usesAllTools(toolNames) ? availableToolCount : toolNames.length;

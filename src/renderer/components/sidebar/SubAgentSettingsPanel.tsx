@@ -18,6 +18,7 @@ import { SubAgentSummary } from "./subAgent/SubAgentSummary";
 import {
   createDraftFromItem,
   EMPTY_SUB_AGENT_DRAFT,
+  SUB_AGENT_RESERVED_TOOL_NAMES,
   toSubAgentInput,
   usesAllTools,
 } from "./subAgent/subAgentUtils";
@@ -106,7 +107,11 @@ export function SubAgentSettingsPanel({
       const uniqueTools = new Map<string, SubAgentToolOption>();
       for (const server of availableServers) {
         for (const tool of server.tools) {
-          if (!tool.enabled || uniqueTools.has(tool.name)) {
+          if (
+            !tool.enabled ||
+            uniqueTools.has(tool.name) ||
+            SUB_AGENT_RESERVED_TOOL_NAMES.has(tool.name)
+          ) {
             continue;
           }
           uniqueTools.set(tool.name, {

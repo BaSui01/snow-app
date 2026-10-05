@@ -218,7 +218,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 - MAINTAIN existing code style and patterns
 - DOCUMENT significant decisions or assumptions"#;
 
-const DEFAULT_GENERAL_AGENT_TOOLS_JSON: &str = r#"["*"]"#;
+pub(crate) const DEFAULT_GENERAL_AGENT_TOOLS_JSON: &str = r#"["*"]"#;
 
 pub fn list_sub_agent_configs(
     database_path: &Path,

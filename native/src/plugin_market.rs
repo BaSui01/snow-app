@@ -2,7 +2,8 @@
 //!
 //! 索引来自 snow-plugin-store 仓库的 app/registry.json，候选地址按序尝试
 //! （GitHub raw 直连 + jsDelivr 镜像），成功后写入磁盘缓存；网络不可用时
-//! 回退到上一次成功的缓存。
+//! 回退到上一次成功的缓存。强制刷新时先清理 jsDelivr 镜像缓存，避免 CDN
+//! 上的旧副本让「刷新」失效。
 //!
 //! 安装链路（全部在 spawn_blocking 内执行，不阻塞 Node 主线程）：
 //! 下载 zip -> SHA256 校验 -> 解压到临时目录 -> 校验 plugin.json 的 id ->
@@ -115,7 +116,51 @@ fn fetch_registry_source(url: &str) -> std::result::Result<String, String> {
     Ok(text)
 }
 
+/// 构造 jsDelivr 镜像的缓存清理地址（purge）：
+/// `https://cdn.jsdelivr.net/{path}` -> `https://purge.jsdelivr.net/{path}`。
+fn jsdelivr_purge_url(cdn_url: &str) -> Option<String> {
+    let path = cdn_url.strip_prefix("https://cdn.jsdelivr.net/")?;
+    Some(format!("https://purge.jsdelivr.net/{path}"))
+}
+
+/// 清理 jsDelivr 镜像缓存；返回 true 表示该地址随后的拉取不会再命中镜像旧缓存。
+fn purge_jsdelivr_cache(cdn_url: &str) -> bool {
+    let Some(purge_url) = jsdelivr_purge_url(cdn_url) else {
+        return false;
+    };
+    let Ok(client) = build_blocking_client() else {
+        return false;
+    };
+    let Ok(response) = client
+        .get(&purge_url)
+        .timeout(Duration::from_secs(10))
+        .send()
+    else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    let Ok(body) = response.text() else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .map(|status| status == "finished")
+        })
+        .unwrap_or(false)
+}
+
 /// 拉取插件市场索引 JSON 文本（带内存 / 磁盘缓存与镜像降级）。
+///
+/// `force_refresh` 为 true 时跳过内存缓存；两个候选源自身都带 CDN 缓存
+/// （GitHub raw 约 5 分钟、jsDelivr 分支引用最长 12 小时），因此先清理
+/// jsDelivr 镜像缓存并把清理成功的镜像提到候选首位，保证拿到最新索引
+/// 而不是 CDN 上的旧副本。
 pub fn fetch_registry_blocking(force_refresh: bool) -> Result<String> {
     if !force_refresh {
         if let Some(text) = cached_registry_from_memory() {
@@ -123,8 +168,21 @@ pub fn fetch_registry_blocking(force_refresh: bool) -> Result<String> {
         }
     }
 
+    let mut sources: Vec<&str> = MARKET_REGISTRY_SOURCES.to_vec();
+    if force_refresh {
+        let mirrored = sources
+            .iter()
+            .position(|source| jsdelivr_purge_url(source).is_some());
+        if let Some(index) = mirrored {
+            if purge_jsdelivr_cache(sources[index]) {
+                let source = sources.remove(index);
+                sources.insert(0, source);
+            }
+        }
+    }
+
     let mut last_error = String::new();
-    for source in MARKET_REGISTRY_SOURCES {
+    for source in sources {
         match fetch_registry_source(source) {
             Ok(text) => {
                 store_registry_memory_cache(&text);

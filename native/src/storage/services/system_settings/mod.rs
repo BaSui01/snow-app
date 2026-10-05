@@ -108,7 +108,7 @@ const PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX: &str = "project_tool_approval_s
 /// semantic analysis — the latter requires user opt-in because it spawns
 /// external language-server processes) and keeps high-risk surfaces off
 /// by default (computer-use controls the user's mouse and keyboard).
-const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] = &["terminal", "lsp", "computer-use"];
+const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] = &["terminal", "lsp", "computer-use", "browser"];
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]

@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { ChevronDown, Loader2, Minimize2, Undo2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { Tooltip } from "../../../common/Tooltip";
 import { MarkdownBlock } from "./markdownRenderer";
 import { MessageCopyButton } from "./MessageCopyButton";
 
@@ -32,59 +33,59 @@ export const CompactionMessage = memo(
           isExpanded ? " is-expanded" : ""
         }`}
       >
-        <div className="context-compaction-message-header">
-          <button
-            className="context-compaction-message-toggle"
-            type="button"
-            aria-expanded={isExpanded}
-            aria-label={toggleLabel}
-            title={toggleLabel}
-            onClick={() => setIsExpanded((current) => !current)}
-          >
-            <span
-              className="context-compaction-message-icon"
-              aria-hidden="true"
-            >
-              <Minimize2 size={15} strokeWidth={1.9} />
-            </span>
-            <span className="context-compaction-message-copy">
-              <strong>{t("chat.compactionSummary")}</strong>
-              <span className="context-compaction-message-description">
-                {t("chat.contextCompacted")}
-              </span>
-            </span>
-            <span
-              className="context-compaction-message-action"
-              aria-hidden="true"
-            >
-              {toggleLabel}
-              <ChevronDown
-                className="context-compaction-message-chevron"
-                size={15}
-                strokeWidth={1.8}
-              />
-            </span>
-          </button>
-          <MessageCopyButton
-            content={content}
-            className="context-compaction-message-copy-btn"
+        <div className="context-compaction-message-bar">
+          <span
+            className="context-compaction-message-rule"
+            aria-hidden="true"
           />
-          {canRollback && !isStreaming ? (
-            <button
-              className="context-compaction-message-rollback"
-              type="button"
-              aria-label={t("chat.rollbackMessage")}
-              title={t("chat.rollbackMessage")}
-              disabled={isRollbackPreparing}
-              onClick={onRollback}
-            >
-              {isRollbackPreparing ? (
-                <Loader2 size={15} strokeWidth={1.8} className="spin" />
-              ) : (
-                <Undo2 size={15} strokeWidth={1.8} />
-              )}
-            </button>
-          ) : null}
+          <div className="context-compaction-message-cluster">
+            <Tooltip content={t("chat.contextCompacted")}>
+              <button
+                className="context-compaction-message-toggle"
+                type="button"
+                aria-expanded={isExpanded}
+                aria-label={toggleLabel}
+                onClick={() => setIsExpanded((current) => !current)}
+              >
+                <Minimize2 size={13} strokeWidth={1.8} aria-hidden="true" />
+                <span className="context-compaction-message-label">
+                  {t("chat.compactionSummary")}
+                </span>
+                <ChevronDown
+                  className="context-compaction-message-chevron"
+                  size={13}
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </button>
+            </Tooltip>
+            <div className="context-compaction-message-actions">
+              <MessageCopyButton
+                content={content}
+                className="context-compaction-message-action-btn"
+              />
+              {canRollback && !isStreaming ? (
+                <button
+                  className="context-compaction-message-action-btn"
+                  type="button"
+                  aria-label={t("chat.rollbackMessage")}
+                  title={t("chat.rollbackMessage")}
+                  disabled={isRollbackPreparing}
+                  onClick={onRollback}
+                >
+                  {isRollbackPreparing ? (
+                    <Loader2 size={15} strokeWidth={1.8} className="spin" />
+                  ) : (
+                    <Undo2 size={15} strokeWidth={1.8} />
+                  )}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <span
+            className="context-compaction-message-rule"
+            aria-hidden="true"
+          />
         </div>
         {isExpanded ? (
           <div className="context-compaction-message-body">

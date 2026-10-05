@@ -5,6 +5,7 @@ import {
   Database,
   DatabaseBackup,
   Download,
+  ExternalLink,
   FileText,
   Filter,
   FolderCog,
@@ -33,6 +34,7 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
+import { GitHubLogo } from "../common/GitHubLogo";
 import { OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
 import {
   TEAM_ENABLED_CHANGED_EVENT,
@@ -64,6 +66,8 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   releaseNotes: null,
   releaseNotesZh: null,
 };
+
+const GITHUB_REPOSITORY_URL = "https://github.com/MayDay-wpf/snow-app";
 
 // 手动检查后的提示类型
 type CheckHint = "up-to-date" | "error" | null;
@@ -2401,6 +2405,31 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                 </button>
               )}
             </div>
+
+            <button
+              className="about-github-row"
+              type="button"
+              title={GITHUB_REPOSITORY_URL}
+              onClick={() => window.open(GITHUB_REPOSITORY_URL, "_blank")}
+            >
+              <GitHubLogo size={16} className="about-github-logo" />
+              <span className="about-github-text">
+                <span className="about-github-title">
+                  {t("settings.aboutRepository", {
+                    defaultValue: "GitHub 仓库",
+                  })}
+                </span>
+                <span className="about-github-url">
+                  {GITHUB_REPOSITORY_URL.replace("https://", "")}
+                </span>
+              </span>
+              <ExternalLink
+                size={13}
+                strokeWidth={1.8}
+                className="about-github-external"
+                aria-hidden="true"
+              />
+            </button>
 
             <div className="api-settings-form-section">
               <div className="api-settings-manual-header">

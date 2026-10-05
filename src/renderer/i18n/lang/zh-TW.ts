@@ -2946,6 +2946,7 @@ export const zhTW = {
   "settings.petsInstalledSection": "已安裝的寵物",
   "settings.petsInstalledInfo": "點擊選擇要啟用的寵物。",
   "settings.about": "關於",
+  "settings.aboutRepository": "GitHub 儲存庫",
   "settings.aboutLicense": "開源授權",
   "settings.aboutLicenseInfo": "Snow App 以 MIT 授權發布。",
   "settings.aboutLicenseCopyright": "Copyright (c) 2026 MayMay",

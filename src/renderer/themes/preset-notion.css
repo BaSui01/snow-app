@@ -485,7 +485,6 @@
 }
 
 :root[data-theme-preset="notion"] .chat-message-tool,
-:root[data-theme-preset="notion"] .context-compaction-message,
 :root[data-theme-preset="notion"] .context-compaction-stream,
 :root[data-theme-preset="notion"] .file-changes-card,
 :root[data-theme-preset="notion"] .tool-call-bash-terminal {

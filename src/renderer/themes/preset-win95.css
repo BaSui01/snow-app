@@ -610,7 +610,6 @@
 :root[data-theme-preset="win95"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .pending-messages-area

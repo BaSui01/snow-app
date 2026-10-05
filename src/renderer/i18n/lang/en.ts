@@ -3109,6 +3109,7 @@ export const en = {
   "settings.petsInstalledSection": "Installed pets",
   "settings.petsInstalledInfo": "Select a pet to make it the active one.",
   "settings.about": "About",
+  "settings.aboutRepository": "GitHub repository",
   "settings.aboutLicense": "Open-source license",
   "settings.aboutLicenseInfo": "Snow App is released under the MIT License.",
   "settings.aboutLicenseCopyright": "Copyright (c) 2026 MayMay",

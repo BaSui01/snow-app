@@ -540,7 +540,6 @@
 }
 
 :root[data-theme-preset="cyberpunk"] .chat-message-tool,
-:root[data-theme-preset="cyberpunk"] .context-compaction-message,
 :root[data-theme-preset="cyberpunk"] .context-compaction-stream,
 :root[data-theme-preset="cyberpunk"] .file-changes-card,
 :root[data-theme-preset="cyberpunk"] .tool-call-bash-terminal {

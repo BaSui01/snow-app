@@ -2943,6 +2943,7 @@ export const zhCN = {
   "settings.petsInstalledSection": "已安装的宠物",
   "settings.petsInstalledInfo": "点击选择要激活的宠物。",
   "settings.about": "关于",
+  "settings.aboutRepository": "GitHub 仓库",
   "settings.aboutLicense": "开源协议",
   "settings.aboutLicenseInfo": "Snow App 以 MIT 许可发布。",
   "settings.aboutLicenseCopyright": "Copyright (c) 2026 MayMay",

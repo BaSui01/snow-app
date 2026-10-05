@@ -393,7 +393,6 @@
 :root[data-theme-preset="google"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .tool-call-bash-terminal
@@ -1171,7 +1170,6 @@
 :root[data-theme-preset="google"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .tool-call-bash-terminal

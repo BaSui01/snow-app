@@ -490,7 +490,6 @@
 }
 
 :root[data-theme-preset="cream"] .chat-message-tool,
-:root[data-theme-preset="cream"] .context-compaction-message,
 :root[data-theme-preset="cream"] .context-compaction-stream,
 :root[data-theme-preset="cream"] .file-changes-card,
 :root[data-theme-preset="cream"] .tool-call-bash-terminal {

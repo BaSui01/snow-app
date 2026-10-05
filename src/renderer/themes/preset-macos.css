@@ -796,7 +796,6 @@
 :root[data-theme-preset="macos"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .pending-messages-area

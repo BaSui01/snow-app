@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { AlertCircle, Loader2, Minimize2 } from "lucide-react";
+import { AlertCircle, Minimize2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { MarkdownBlock } from "./markdownRenderer";
 
@@ -39,10 +39,6 @@ export const CompactionStream = ({
             <span className="context-compaction-stream-heading">
               {t("chat.compactionGenerating")}
             </span>
-            <Loader2
-              className="context-compaction-stream-spinner spin"
-              size={14}
-            />
           </header>
           <div
             className="context-compaction-stream-body"

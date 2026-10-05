@@ -1121,7 +1121,6 @@
 :root[data-theme-preset="tesseract"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .tool-call-bash-terminal

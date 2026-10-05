@@ -795,7 +795,6 @@
 :root[data-theme-preset="rococo"]
   :is(
     .chat-message-tool,
-    .context-compaction-message,
     .context-compaction-stream,
     .file-changes-card,
     .pending-messages-area

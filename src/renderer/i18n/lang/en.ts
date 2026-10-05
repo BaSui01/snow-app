@@ -3565,6 +3565,8 @@ export const en = {
   "fileMention.skillSearching": "Searching skills...",
   "fileMention.skillHint": "Type to search skills",
   "fileMention.skillNoResults": "No matching skills found",
+  "fileMention.directoryNoResults": "No matching working directories",
+  "fileMention.currentDirectory": "Current",
   "rollbackPicker.title": "Rollback to message",
   "rollbackPicker.count": "{{count}} rollback targets",
   "rollbackPicker.loading": "Loading history…",

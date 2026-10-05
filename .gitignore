@@ -5,6 +5,7 @@ node_modules/
 dist/
 out/
 release/
+.preview/
 *.tsbuildinfo
 
 # Rust outputs

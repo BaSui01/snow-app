@@ -3009,11 +3009,6 @@ body.is-panel-resizing * {
     color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
-.workspace-directory-collection-dot {
-  width: 7px;
-  height: 7px;
-}
-
 /* 项目条目通知徽标：该项目的跨项目通知会话数 */
 .workspace-directory-notification-badge {
   flex-shrink: 0;
@@ -16687,28 +16682,21 @@ body.is-panel-resizing * {
 }
 
 .tool-call-diff-shell {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .tool-call-diff-view {
   min-width: 0;
 }
 
-/* 定位在滚动容器之外的壳层上,横向滚动时按钮保持固定在可视区右侧 */
 .tool-call-diff-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 2;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.tool-call-diff-shell:hover .tool-call-diff-actions {
-  opacity: 1;
 }
 
 .tool-call-diff-action-btn {
@@ -27120,6 +27108,22 @@ body.is-panel-resizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 60%;
+}
+
+.mention-entry-root {
+  flex-shrink: 0;
+  max-width: 28%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-color, #3b82f6) 30%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent-color, #3b82f6) 10%, transparent);
+  color: var(--accent-color, #3b82f6);
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .mention-entry-path {

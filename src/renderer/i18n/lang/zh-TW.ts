@@ -3316,6 +3316,8 @@ export const zhTW = {
   "fileMention.skillSearching": "正在搜尋技能...",
   "fileMention.skillHint": "輸入以搜尋技能",
   "fileMention.skillNoResults": "未找到相關技能",
+  "fileMention.directoryNoResults": "找不到符合的工作目錄",
+  "fileMention.currentDirectory": "目前",
   "rollbackPicker.title": "回滾到歷史訊息",
   "rollbackPicker.count": "{{count}} 條可回滾訊息",
   "rollbackPicker.loading": "正在載入歷史訊息…",

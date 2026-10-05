@@ -28,7 +28,7 @@
     "check:docs": "node scripts/check-docs.cjs",
     "check:ts": "tsc --noEmit",
     "check:packaged-runtime": "node scripts/check-packaged-runtime-deps.mjs",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite build && node scripts/preview.cjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

@@ -3370,6 +3370,8 @@ export const zhCN = {
   "fileMention.skillSearching": "正在搜索技能...",
   "fileMention.skillHint": "输入以搜索技能",
   "fileMention.skillNoResults": "未找到相关技能",
+  "fileMention.directoryNoResults": "未找到匹配的工作目录",
+  "fileMention.currentDirectory": "当前",
   "rollbackPicker.title": "回滚到历史消息",
   "rollbackPicker.count": "{{count}} 条可回滚消息",
   "rollbackPicker.loading": "正在加载历史消息…",

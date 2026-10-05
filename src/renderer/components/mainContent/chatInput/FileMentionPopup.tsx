@@ -23,6 +23,7 @@ import { createPortal } from "react-dom";
 import type {
   FileSearchAgentProgress,
   FileSearchResult,
+  ProjectCollectionRecord,
   SkillDefinition,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
@@ -73,6 +74,111 @@ const getRelativePath = (path: string, rootPath: string): string => {
   return normalizedPath.startsWith(`${normalizedRoot}/`)
     ? normalizedPath.slice(normalizedRoot.length + 1)
     : normalizedPath;
+};
+
+/** 解析项目所属关联项目组（合集）的本地成员根；不足两个根时不算关联。 */
+const resolveLinkedProjectDirectories = (
+  directories: WorkspaceDirectoryRecord[],
+  active: WorkspaceDirectoryRecord | null,
+  collections: ProjectCollectionRecord[],
+): WorkspaceDirectoryRecord[] => {
+  if (!active || active.kind !== "local") {
+    return [];
+  }
+
+  const collection = collections.find((item) =>
+    item.linkedDirectoryIds.includes(active.directoryId),
+  );
+  if (!collection) {
+    return [];
+  }
+
+  const linkedIds = new Set(collection.linkedDirectoryIds);
+  const roots = directories.filter(
+    (directory) =>
+      linkedIds.has(directory.directoryId) &&
+      directory.kind === "local" &&
+      directory.path.trim().length > 0,
+  );
+
+  return roots.length > 1 ? roots : [];
+};
+
+/** 按绝对路径前缀匹配条目所属的关联项目根，最长前缀优先。 */
+const resolveEntryRoot = (
+  roots: WorkspaceDirectoryRecord[],
+  entryPath: string,
+): WorkspaceDirectoryRecord | null => {
+  const target = normalizePath(entryPath).toLowerCase();
+  let matched: WorkspaceDirectoryRecord | null = null;
+  let matchedLength = 0;
+
+  for (const root of roots) {
+    const rootPath = normalizePath(root.path).toLowerCase();
+    if (
+      rootPath.length > matchedLength &&
+      (target === rootPath || target.startsWith(`${rootPath}/`))
+    ) {
+      matched = root;
+      matchedLength = rootPath.length;
+    }
+  }
+
+  return matched;
+};
+
+/** 兄弟根的相对路径带「目录名/」前缀；徽章已标明项目，展示时去掉该前缀。 */
+const stripRootNamePrefix = (
+  relativePath: string,
+  rootName: string,
+): string => {
+  const normalized = relativePath.replace(/\\/g, "/");
+  const prefix = `${rootName}/`;
+
+  return normalized.toLowerCase().startsWith(prefix.toLowerCase())
+    ? normalized.slice(prefix.length)
+    : normalized;
+};
+
+type DirectoryScope = {
+  /** 尚未选定目录时的列表过滤词 */
+  filter: string;
+  /** 已选定的工作目录（查询含「/」且名称可解析时） */
+  directory: WorkspaceDirectoryRecord | null;
+  /** 选定目录后、相对该目录的查询文本 */
+  inner: string;
+};
+
+/** `@:` 目录 token：去掉空白字符，避免 @ 查询被空格截断。 */
+const getDirectoryToken = (directory: WorkspaceDirectoryRecord): string =>
+  directory.name.replace(/\s+/g, "") || directory.directoryId;
+
+/** 解析 `@:工作目录/剩余查询`：未带「/」或名称无法解析时仍处于目录选择状态。 */
+const resolveDirectoryScope = (
+  directories: WorkspaceDirectoryRecord[],
+  query: string,
+): DirectoryScope | null => {
+  const trimmed = query.trim();
+  if (!trimmed.startsWith(":")) {
+    return null;
+  }
+
+  const rest = trimmed.slice(1);
+  const slashIndex = rest.indexOf("/");
+  const nameToken = slashIndex === -1 ? rest : rest.slice(0, slashIndex);
+  const token = nameToken.toLowerCase();
+  const directory =
+    slashIndex > 0 && token.length > 0
+      ? (directories.find(
+          (item) => getDirectoryToken(item).toLowerCase() === token,
+        ) ?? null)
+      : null;
+
+  return {
+    filter: nameToken,
+    directory,
+    inner: directory ? rest.slice(slashIndex + 1) : "",
+  };
 };
 
 /**
@@ -179,6 +285,10 @@ export const FileMentionPopup = forwardRef<
       setLastQuery(propQuery);
     }
   }, [visible, propQuery]);
+  const [directories, setDirectories] = useState<WorkspaceDirectoryRecord[]>(
+    [],
+  );
+  const [collections, setCollections] = useState<ProjectCollectionRecord[]>([]);
   const [activeDirectory, setActiveDirectory] =
     useState<WorkspaceDirectoryRecord | null>(null);
   const [entries, setEntries] = useState<FileSearchResult[]>([]);
@@ -196,10 +306,34 @@ export const FileMentionPopup = forwardRef<
   // `@!技能关键词`：感叹号前缀表示 Skills 搜索模式。
   const isSkillMode = query.trim().startsWith("!");
   const skillQuery = isSkillMode ? query.trim().slice(1).trim() : "";
+  // 关联项目组（合集）的本地成员根：未关联的项目不提供 `@:目录` 指令。
+  const linkedDirectories = useMemo(
+    () =>
+      resolveLinkedProjectDirectories(
+        directories,
+        activeDirectory,
+        collections,
+      ),
+    [activeDirectory, collections, directories],
+  );
+  // `@:工作目录/`：冒号前缀进入工作目录选择模式，选定后在该目录内搜索。
+  const directoryScope = useMemo(
+    () =>
+      linkedDirectories.length > 0
+        ? resolveDirectoryScope(linkedDirectories, query)
+        : null,
+    [linkedDirectories, query],
+  );
+  const scopedDirectory = directoryScope?.directory ?? null;
+  const searchRoot = scopedDirectory ?? activeDirectory;
+  const searchQuery = directoryScope
+    ? directoryScope.inner.trim()
+    : query.trim();
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
   const loadSeqRef = useRef(0);
+  const directorySeqRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const lastQueryRef = useRef("");
@@ -248,31 +382,35 @@ export const FileMentionPopup = forwardRef<
   );
 
   const loadDirectories = useCallback(async () => {
-    const loadSeq = ++loadSeqRef.current;
+    const loadSeq = ++directorySeqRef.current;
 
     try {
-      const dirs = await window.snow.listWorkspaceDirectories();
-      if (loadSeq !== loadSeqRef.current) {
+      const [dirs, projectCollections] = await Promise.all([
+        window.snow.listWorkspaceDirectories(),
+        window.snow.listProjectCollections().catch(() => []),
+      ]);
+      if (loadSeq !== directorySeqRef.current) {
         return;
       }
 
       const active = dirs.find((d) => d.isActive) ?? dirs[0] ?? null;
+      setDirectories(dirs);
+      setCollections(projectCollections);
       setActiveDirectory(active);
-      if (active) {
-        await preloadRootEntries(active, loadSeq);
-      } else {
+      if (!active) {
         setIsLoadingInitial(false);
       }
     } catch {
-      if (loadSeq === loadSeqRef.current) {
+      if (loadSeq === directorySeqRef.current) {
         setActiveDirectory(null);
         setIsLoadingInitial(false);
       }
     }
-  }, [preloadRootEntries]);
+  }, []);
 
   useEffect(() => {
     if (!visible) {
+      ++directorySeqRef.current;
       ++loadSeqRef.current;
       ++searchSeqRef.current;
       return;
@@ -287,6 +425,7 @@ export const FileMentionPopup = forwardRef<
     lastQueryRef.current = "";
 
     return () => {
+      ++directorySeqRef.current;
       ++loadSeqRef.current;
       ++searchSeqRef.current;
       if (searchTimerRef.current) {
@@ -295,16 +434,44 @@ export const FileMentionPopup = forwardRef<
     };
   }, [visible, loadDirectories]);
 
+  // 项目列表 / 关联状态变更时重新拉取，避免弹窗停留在旧的关联结果上。
   useEffect(() => {
     if (!visible) {
       return;
     }
 
-    const trimmed = query.trim();
-    // `@?自然语言搜索词`：问号前缀表示自然语言搜索模式，交由 AI agent 查找。
-    const isNaturalLanguage = trimmed.startsWith("?");
+    return window.snow.onWorkspaceDirectoryListChanged(() => {
+      void loadDirectories();
+    });
+  }, [visible, loadDirectories]);
+
+  // 搜索根变化（打开弹窗、@: 切换工作目录）时重新预加载其根目录列表。
+  useEffect(() => {
+    if (!visible || !searchRoot) {
+      return;
+    }
+
+    setIsLoadingInitial(true);
+    setEntries([]);
+    setSelectedIndex(0);
+    setCheckedPaths(new Set());
+    preloadedEntriesRef.current = [];
+    const loadSeq = ++loadSeqRef.current;
+    void preloadRootEntries(searchRoot, loadSeq);
+  }, [visible, searchRoot?.directoryId, preloadRootEntries]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const rawTrimmed = query.trim();
+    // `@?自然语言搜索词`：问号前缀表示自然语言搜索模式，交由 AI agent 查找；
+    // `@:工作目录/` 模式下前缀作用于所选目录内的查询文本。
+    const isNaturalLanguage = searchQuery.startsWith("?");
     // `@!技能关键词`：感叹号前缀表示 Skills 搜索模式，列出已启用的技能。
-    const isSkillMode = trimmed.startsWith("!");
+    const isSkillMode = rawTrimmed.startsWith("!");
+    const searchKey = `${searchRoot?.directoryId ?? ""}\n${searchQuery}`;
 
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
@@ -314,12 +481,12 @@ export const FileMentionPopup = forwardRef<
       // 取消进行中的根目录预加载，避免预加载结果干扰技能列表。
       ++loadSeqRef.current;
       setIsLoadingInitial(false);
-      const skillQuery = trimmed.slice(1).trim();
+      const skillQuery = rawTrimmed.slice(1).trim();
 
-      if (trimmed === lastQueryRef.current) {
+      if (rawTrimmed === lastQueryRef.current) {
         return;
       }
-      lastQueryRef.current = trimmed;
+      lastQueryRef.current = rawTrimmed;
 
       setIsSearching(true);
       const seq = ++searchSeqRef.current;
@@ -361,13 +528,26 @@ export const FileMentionPopup = forwardRef<
       };
     }
 
+    // `@:` 目录模式：尚未选定工作目录时只展示目录选择列表，不执行搜索。
+    if (directoryScope && !scopedDirectory) {
+      ++searchSeqRef.current;
+      setIsSearching(false);
+      setIsAgentPending(false);
+      setAgentProgress([]);
+      setAgentError(false);
+      setEntries([]);
+      setSelectedIndex(0);
+      lastQueryRef.current = "";
+      return;
+    }
+
     if (isNaturalLanguage) {
       // 取消进行中的根目录预加载，避免预加载结果覆盖 AI 搜索结果。
       ++loadSeqRef.current;
       setIsLoadingInitial(false);
-      const nlQuery = trimmed.slice(1).trim();
+      const nlQuery = searchQuery.slice(1).trim();
 
-      if (!activeDirectory || isSshPath(activeDirectory.path) || !nlQuery) {
+      if (!searchRoot || isSshPath(searchRoot.path) || !nlQuery) {
         ++searchSeqRef.current;
         setIsSearching(false);
         setIsAgentPending(false);
@@ -379,10 +559,10 @@ export const FileMentionPopup = forwardRef<
         return;
       }
 
-      if (trimmed === lastQueryRef.current) {
+      if (searchKey === lastQueryRef.current) {
         return;
       }
-      lastQueryRef.current = trimmed;
+      lastQueryRef.current = searchKey;
 
       setIsSearching(false);
       setIsAgentPending(true);
@@ -402,7 +582,7 @@ export const FileMentionPopup = forwardRef<
         try {
           const results = await window.snow.searchFilesByAgent(
             nlQuery,
-            activeDirectory.path,
+            searchRoot.path,
             (chunk) => {
               if (seq !== searchSeqRef.current) {
                 return;
@@ -435,7 +615,7 @@ export const FileMentionPopup = forwardRef<
       };
     }
 
-    if (!trimmed || !activeDirectory) {
+    if (!searchQuery || !searchRoot) {
       ++searchSeqRef.current;
       setIsSearching(false);
       if (preloadedEntriesRef.current.length > 0) {
@@ -446,10 +626,10 @@ export const FileMentionPopup = forwardRef<
       return;
     }
 
-    if (trimmed === lastQueryRef.current) {
+    if (searchKey === lastQueryRef.current) {
       return;
     }
-    lastQueryRef.current = trimmed;
+    lastQueryRef.current = searchKey;
 
     setIsSearching(true);
     const seq = ++searchSeqRef.current;
@@ -459,16 +639,16 @@ export const FileMentionPopup = forwardRef<
         return;
       }
 
-      const queryLower = trimmed.toLowerCase();
+      const queryLower = searchQuery.toLowerCase();
       const endsWithSlash = queryLower.endsWith("/");
 
       try {
-        const results = isSshPath(activeDirectory.path)
-          ? await window.snow.searchRemoteWorkspaceFiles(activeDirectory.path, {
-              query: trimmed,
+        const results = isSshPath(searchRoot.path)
+          ? await window.snow.searchRemoteWorkspaceFiles(searchRoot.path, {
+              query: searchQuery,
               listChildren: false,
             })
-          : await window.snow.searchFiles(activeDirectory.path, trimmed);
+          : await window.snow.searchFiles(searchRoot.path, searchQuery);
 
         if (seq !== searchSeqRef.current) {
           return;
@@ -490,25 +670,54 @@ export const FileMentionPopup = forwardRef<
         clearTimeout(searchTimerRef.current);
       }
     };
-  }, [visible, query, activeDirectory]);
+  }, [
+    visible,
+    query,
+    searchQuery,
+    searchRoot,
+    directoryScope,
+    scopedDirectory,
+    projectId,
+  ]);
 
   // 路径导航：从查询文本解析当前浏览的路径段（用于面包屑与 ← 返回）
-  const pathSegments = useMemo(() => getPathSegments(query), [query]);
+  const pathSegments = useMemo(
+    () => getPathSegments(directoryScope ? directoryScope.inner : query),
+    [directoryScope, query],
+  );
 
   // 路径模式下（查询以 "/" 结尾，如 "src/renderer/"），后端会同时返回
   // "当前目录本身"与其子项；过滤掉目录本身，使面板呈现"已进入目录内容"的效果。
   const displayEntries = useMemo(() => {
-    const trimmed = query.trim();
-    if (!trimmed.endsWith("/")) {
+    if (!searchQuery.endsWith("/")) {
       return entries;
     }
-    const currentRel = trimmed.replace(/\/+$/, "").toLowerCase();
-    const rootPath = activeDirectory?.path ?? "";
+    const currentRel = searchQuery.replace(/\/+$/, "").toLowerCase();
+    const rootPath = searchRoot?.path ?? "";
     return entries.filter((entry) => {
       const rel = getRelativePath(entry.path, rootPath).toLowerCase();
       return rel !== currentRel;
     });
-  }, [entries, query, activeDirectory]);
+  }, [entries, searchQuery, searchRoot]);
+
+  // `@:` 目录模式下尚未选定目录时，列出关联项目组的成员目录。
+  const directoryOptions = useMemo(() => {
+    if (!directoryScope || directoryScope.directory) {
+      return [];
+    }
+    const keyword = directoryScope.filter.trim().toLowerCase();
+    if (!keyword) {
+      return linkedDirectories;
+    }
+    return linkedDirectories.filter(
+      (item) =>
+        item.name.toLowerCase().includes(keyword) ||
+        item.path.toLowerCase().includes(keyword),
+    );
+  }, [linkedDirectories, directoryScope]);
+  const isDirectoryPicker = Boolean(
+    directoryScope && !directoryScope.directory,
+  );
 
   const toggleCheck = useCallback((entry: FileSearchResult) => {
     setCheckedPaths((prev) => {
@@ -522,16 +731,36 @@ export const FileMentionPopup = forwardRef<
     });
   }, []);
 
+  // 目录模式下的导航目标：保留 @: 前缀，避免把查询回写成普通路径。
+  const buildNavigateTarget = useCallback(
+    (relative: string): string => {
+      if (!scopedDirectory) {
+        return relative;
+      }
+      const token = getDirectoryToken(scopedDirectory);
+      return relative ? `:${token}/${relative}` : `:${token}`;
+    },
+    [scopedDirectory],
+  );
+
+  const handleSelectDirectory = useCallback(
+    (directory: WorkspaceDirectoryRecord) => {
+      textareaRef.current?.focus();
+      onNavigateTo(`:${getDirectoryToken(directory)}`);
+    },
+    [onNavigateTo, textareaRef],
+  );
+
   const handleSelectEntry = useCallback(
     (entry: FileSearchResult) => {
       // 目录条目：进入文件夹浏览（路径@），而不是直接插入目录引用。
       if (entry.isDirectory) {
         // 恢复输入框焦点与选区，确保父组件能正确回写 @ 路径
         textareaRef.current?.focus();
-        const rootPath = activeDirectory?.path ?? "";
+        const rootPath = searchRoot?.path ?? "";
         const rel = getRelativePath(entry.path, rootPath);
         if (rel && rel !== entry.path) {
-          onNavigateTo(rel);
+          onNavigateTo(buildNavigateTarget(rel));
         }
         return;
       }
@@ -553,7 +782,8 @@ export const FileMentionPopup = forwardRef<
       onSelectBatch,
       onClose,
       onNavigateTo,
-      activeDirectory,
+      searchRoot,
+      buildNavigateTarget,
     ],
   );
 
@@ -565,6 +795,13 @@ export const FileMentionPopup = forwardRef<
       }
       onSelect(toSkillTag(skill));
       onClose();
+      return;
+    }
+    if (isDirectoryPicker) {
+      const directory = directoryOptions[selectedIndex];
+      if (directory) {
+        handleSelectDirectory(directory);
+      }
       return;
     }
     const checkedEntries = entries.filter((e) => checkedPaths.has(e.path));
@@ -587,6 +824,9 @@ export const FileMentionPopup = forwardRef<
     selectedIndex,
     isSkillMode,
     skills,
+    isDirectoryPicker,
+    directoryOptions,
+    handleSelectDirectory,
     onSelect,
     onSelectBatch,
     onClose,
@@ -637,6 +877,34 @@ export const FileMentionPopup = forwardRef<
           return false;
         }
 
+        // 目录选择模式：上下选择工作目录，Enter / → 进入该目录。
+        if (isDirectoryPicker) {
+          if (directoryOptions.length === 0) {
+            return false;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setSelectedIndex((prev) =>
+              prev < directoryOptions.length - 1 ? prev + 1 : prev,
+            );
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "ArrowRight") {
+            event.preventDefault();
+            const directory = directoryOptions[selectedIndex];
+            if (directory) {
+              handleSelectDirectory(directory);
+            }
+            return true;
+          }
+          return false;
+        }
+
         if (displayEntries.length === 0) {
           return false;
         }
@@ -660,10 +928,10 @@ export const FileMentionPopup = forwardRef<
           const entry = displayEntries[selectedIndex];
           if (entry?.isDirectory) {
             event.preventDefault();
-            const rootPath = activeDirectory?.path ?? "";
+            const rootPath = searchRoot?.path ?? "";
             const rel = getRelativePath(entry.path, rootPath);
             if (rel && rel !== entry.path) {
-              onNavigateTo(rel);
+              onNavigateTo(buildNavigateTarget(rel));
             }
             return true;
           }
@@ -673,7 +941,14 @@ export const FileMentionPopup = forwardRef<
         if (event.key === "ArrowLeft") {
           if (pathSegments.length > 0) {
             event.preventDefault();
-            onNavigateTo(pathSegments.slice(0, -1).join("/"));
+            onNavigateTo(
+              buildNavigateTarget(pathSegments.slice(0, -1).join("/")),
+            );
+            return true;
+          }
+          if (scopedDirectory) {
+            event.preventDefault();
+            onNavigateTo(":");
             return true;
           }
         }
@@ -704,9 +979,14 @@ export const FileMentionPopup = forwardRef<
       onClose,
       pathSegments,
       onNavigateTo,
-      activeDirectory,
+      searchRoot,
+      buildNavigateTarget,
+      scopedDirectory,
       isSkillMode,
       skills,
+      isDirectoryPicker,
+      directoryOptions,
+      handleSelectDirectory,
     ],
   );
 
@@ -731,7 +1011,14 @@ export const FileMentionPopup = forwardRef<
     } else if (itemRect.bottom > containerRect.bottom) {
       container.scrollTop += itemRect.bottom - containerRect.bottom;
     }
-  }, [selectedIndex, visible, displayEntries.length, skills.length]);
+  }, [
+    selectedIndex,
+    visible,
+    displayEntries.length,
+    skills.length,
+    directoryOptions.length,
+    isDirectoryPicker,
+  ]);
 
   useEffect(() => {
     if (!visible) {
@@ -766,9 +1053,9 @@ export const FileMentionPopup = forwardRef<
     [onDragStart],
   );
 
-  const isNaturalLanguage = query.trim().startsWith("?");
+  const isNaturalLanguage = searchQuery.startsWith("?");
   const naturalLanguageQuery = isNaturalLanguage
-    ? query.trim().slice(1).trim()
+    ? searchQuery.slice(1).trim()
     : "";
 
   const emptyText = useMemo(() => {
@@ -781,7 +1068,7 @@ export const FileMentionPopup = forwardRef<
       if (isNaturalLanguage && agentError) {
         return t("fileMention.aiError");
       }
-      if (!query || (isNaturalLanguage && !naturalLanguageQuery)) {
+      if (!searchQuery || (isNaturalLanguage && !naturalLanguageQuery)) {
         return isNaturalLanguage
           ? t("fileMention.aiHint")
           : t("fileMention.typeToSearch");
@@ -797,7 +1084,7 @@ export const FileMentionPopup = forwardRef<
   }, [
     isSearching,
     entries.length,
-    query,
+    searchQuery,
     isNaturalLanguage,
     naturalLanguageQuery,
     agentError,
@@ -813,19 +1100,19 @@ export const FileMentionPopup = forwardRef<
         style={style}
         data-esc-panel
       >
-        {pathSegments.length > 0 && (
+        {(pathSegments.length > 0 || scopedDirectory) && (
           <div className="file-mention-breadcrumbs">
             <button
               type="button"
               className="file-mention-crumb"
               onClick={() => {
                 textareaRef.current?.focus();
-                onNavigateTo("");
+                onNavigateTo(scopedDirectory ? ":" : "");
               }}
-              title={activeDirectory?.path ?? ""}
+              title={searchRoot?.path ?? ""}
             >
               <Folder size={11} />
-              <span>{activeDirectory?.name ?? "workspace"}</span>
+              <span>{searchRoot?.name ?? "workspace"}</span>
             </button>
             {pathSegments.map((segment, index) => (
               <span className="file-mention-crumb-segment" key={index}>
@@ -835,7 +1122,11 @@ export const FileMentionPopup = forwardRef<
                   className="file-mention-crumb"
                   onClick={() => {
                     textareaRef.current?.focus();
-                    onNavigateTo(pathSegments.slice(0, index + 1).join("/"));
+                    onNavigateTo(
+                      buildNavigateTarget(
+                        pathSegments.slice(0, index + 1).join("/"),
+                      ),
+                    );
                   }}
                 >
                   {segment}
@@ -844,11 +1135,18 @@ export const FileMentionPopup = forwardRef<
             ))}
           </div>
         )}
-        {(displayEntries.length > 0 || skills.length > 0) && (
+        {(displayEntries.length > 0 ||
+          skills.length > 0 ||
+          directoryOptions.length > 0) && (
           <span className="file-mention-count">
             {isSearching && displayEntries.length > 0 && (
               <Loader2 className="spin" size={11} />
             )}
+            {isDirectoryPicker &&
+              directoryOptions.length > 0 &&
+              t("fileMention.results", {
+                values: { count: directoryOptions.length },
+              })}
             {displayEntries.length > 0 &&
               t("fileMention.results", {
                 values: { count: displayEntries.length },
@@ -903,6 +1201,37 @@ export const FileMentionPopup = forwardRef<
                   </div>
                 );
               })
+            )
+          ) : isDirectoryPicker ? (
+            directoryOptions.length > 0 ? (
+              directoryOptions.map((directory, index) => {
+                const isSelected = selectedIndex === index;
+                const isActiveDirectory =
+                  directory.directoryId === activeDirectory?.directoryId;
+                return (
+                  <div
+                    key={directory.directoryId}
+                    data-mention-index={index}
+                    className={`mention-entry ${isSelected ? "selected" : ""}`}
+                    onClick={() => handleSelectDirectory(directory)}
+                    title={directory.path}
+                  >
+                    <span className="mention-entry-check" />
+                    <Folder size={14} className="mention-entry-icon" />
+                    <span className="mention-entry-name">{directory.name}</span>
+                    {isActiveDirectory && (
+                      <span className="mention-entry-root">
+                        {t("fileMention.currentDirectory")}
+                      </span>
+                    )}
+                    <span className="mention-entry-path">{directory.path}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="file-mention-empty">
+                <span>{t("fileMention.directoryNoResults")}</span>
+              </div>
             )
           ) : isLoadingInitial ? (
             <div className="file-mention-skeleton">
@@ -959,6 +1288,13 @@ export const FileMentionPopup = forwardRef<
               {displayEntries.map((entry, index) => {
                 const isChecked = checkedPaths.has(entry.path);
                 const isSelected = selectedIndex === index;
+                const rootLabel = resolveEntryRoot(
+                  linkedDirectories,
+                  entry.path,
+                );
+                const displayPath = rootLabel
+                  ? stripRootNamePrefix(entry.relativePath, rootLabel.name)
+                  : entry.relativePath.replace(/\\/g, "/");
                 return (
                   <div
                     key={entry.path}
@@ -979,10 +1315,13 @@ export const FileMentionPopup = forwardRef<
                       className: "mention-entry-icon",
                     })}
                     <span className="mention-entry-name">{entry.name}</span>
-                    {entry.relativePath && (
-                      <span className="mention-entry-path">
-                        {entry.relativePath.replace(/\\/g, "/")}
+                    {rootLabel && (
+                      <span className="mention-entry-root">
+                        {rootLabel.name}
                       </span>
+                    )}
+                    {displayPath && (
+                      <span className="mention-entry-path">{displayPath}</span>
                     )}
                     {entry.isDirectory && (
                       <ChevronRight

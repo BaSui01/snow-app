@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import type {
   ConversationContextValue,
+  ConversationSessionState,
   TokenUsage,
 } from "../utils/conversationTypes";
 import {
@@ -117,6 +118,17 @@ export const useConversationManagement = (
     [],
   );
 
+  const isConversationCacheExpired = (
+    session: ConversationSessionState,
+  ): boolean => {
+    const ttlMs = ctx.conversationCacheTtlMsRef.current;
+    return (
+      Number.isFinite(ttlMs) &&
+      ttlMs > 0 &&
+      Date.now() - session.lastAccessedAt > ttlMs
+    );
+  };
+
   const handleSelectConversation = useCallback(
     async (
       conversationId: string,
@@ -132,13 +144,16 @@ export const useConversationManagement = (
       const selectionRequestId = ++ctx.selectionRequestIdRef.current;
       const cachedSession = ctx.sessionsRef.current[trimmedId];
       const hasLoadedCachedHistory =
+        cachedSession !== undefined &&
+        !isConversationCacheExpired(cachedSession) &&
         ctx.sessionsRefData.current.has(trimmedId) &&
-        cachedSession?.isInitialHistoryLoaded === true;
+        cachedSession.isInitialHistoryLoaded === true;
 
       if (
         trimmedId === ctx.activeConversationIdRef.current &&
         hasLoadedCachedHistory
       ) {
+        ctx.updateSessionField(trimmedId, "lastAccessedAt", Date.now());
         ctx.setIsLoadingInitialHistory(false);
         return;
       }
@@ -368,7 +383,8 @@ export const useConversationManagement = (
             // Guard with the current session so a newer load's snapshot is
             // never clobbered by an older one. Later selections of the same
             // conversation then render instantly from the cache.
-            if (!ctx.sessionsRef.current[trimmedId]) {
+            const currentSession = ctx.sessionsRef.current[trimmedId];
+            if (!currentSession || isConversationCacheExpired(currentSession)) {
               // Never overwrite an existing session ref (e.g. one created by
               // ensureSession while the history was still loading) — the live
               // ref is authoritative.
@@ -405,7 +421,10 @@ export const useConversationManagement = (
                 });
               }
               ctx.setSessions((prev) => {
-                if (prev[trimmedId]) return prev;
+                const existing = prev[trimmedId];
+                if (existing && !isConversationCacheExpired(existing)) {
+                  return prev;
+                }
                 return {
                   ...prev,
                   [trimmedId]: {
@@ -418,6 +437,7 @@ export const useConversationManagement = (
                     isLoadingOlderMessages: false,
                     hasMoreMessages: page.hasMore,
                     isInitialHistoryLoaded: true,
+                    lastAccessedAt: Date.now(),
                     tokenUsage:
                       tokenUsageFromMessageRecords(page.items) ??
                       conversationTokenUsage ??
@@ -651,6 +671,7 @@ export const useConversationManagement = (
             messageRecords: combinedRecords,
             isLoadingOlderMessages: false,
             hasMoreMessages: page.hasMore,
+            lastAccessedAt: Date.now(),
           },
         };
       });

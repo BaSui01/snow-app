@@ -19,6 +19,12 @@ import {
   getPendingSessionKey,
   isPendingSessionKey,
 } from "../utils/conversationTypes";
+import {
+  CONVERSATION_CACHE_TTL_CHANGED_EVENT,
+  CONVERSATION_CACHE_TTL_DEFAULT_MINUTES,
+  CONVERSATION_CACHE_TTL_SETTING,
+  normalizeConversationCacheTtlMinutes,
+} from "../../../../constants/conversationCache";
 import { useConversationSession } from "./useConversationSession";
 import { useToolAuthorization } from "./useToolAuthorization";
 import { useUserQuestion } from "./useUserQuestion";
@@ -127,6 +133,8 @@ export const useChatConversation = (
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
+  const streamingConversationIdsRef = useRef(streamingConversationIds);
+  streamingConversationIdsRef.current = streamingConversationIds;
   const [completedConversationIds, setCompletedConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -371,6 +379,153 @@ export const useChatConversation = (
     setWorktreeModeState,
     setGoalModeTokenBudgetState,
   ]);
+
+  // --- 会话消息缓存 TTL ---
+  // sessions state 没有其他自动回收机制：过期条目由「按到期时刻调度」的清扫
+  // 释放——无缓存或无到期条目时零定时器、不扫描；正在查看（active / 活动槽位）
+  // 或运行中的会话永不回收，其解除跳过时经 sessions 变化触发重排。
+  const conversationCacheTtlMsRef = useRef(
+    CONVERSATION_CACHE_TTL_DEFAULT_MINUTES * 60_000,
+  );
+  const sweepScheduleRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const loadConversationCacheTtl = (): void => {
+      window.snow
+        .getSystemSettingValue(CONVERSATION_CACHE_TTL_SETTING)
+        .then((value) => {
+          conversationCacheTtlMsRef.current =
+            normalizeConversationCacheTtlMinutes(value) * 60_000;
+          sweepScheduleRef.current();
+        })
+        .catch(() => undefined);
+    };
+    loadConversationCacheTtl();
+    window.addEventListener(
+      CONVERSATION_CACHE_TTL_CHANGED_EVENT,
+      loadConversationCacheTtl,
+    );
+    return () => {
+      window.removeEventListener(
+        CONVERSATION_CACHE_TTL_CHANGED_EVENT,
+        loadConversationCacheTtl,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    let scanTimer: number | null = null;
+    let debounceTimer: number | null = null;
+    let disposed = false;
+
+    const clearScanTimer = (): void => {
+      if (scanTimer !== null) {
+        window.clearTimeout(scanTimer);
+        scanTimer = null;
+      }
+    };
+
+    const scheduleScanAt = (dueAt: number): void => {
+      clearScanTimer();
+      if (disposed) {
+        return;
+      }
+      scanTimer = window.setTimeout(
+        () => {
+          scanTimer = null;
+          runSweep();
+        },
+        Math.max(dueAt - Date.now(), 1000),
+      );
+    };
+
+    const runSweep = (): void => {
+      if (disposed) {
+        return;
+      }
+      const ttlMs = conversationCacheTtlMsRef.current;
+      if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+        return;
+      }
+      const now = Date.now();
+      const activeKey = activeConversationIdRef.current;
+      const activeSlotKey = activeSessionKeyRef.current;
+      const expiredKeys: string[] = [];
+      let nextDueAt = Number.POSITIVE_INFINITY;
+      for (const [key, session] of Object.entries(sessionsRef.current)) {
+        if (key === activeKey || key === activeSlotKey) {
+          continue;
+        }
+        if (
+          session.isStreaming ||
+          streamingConversationIdsRef.current.has(key)
+        ) {
+          continue;
+        }
+        const sessionRefData = sessionsRefData.current.get(key);
+        if (
+          sessionRefData?.isSending ||
+          sessionRefData?.streamPromise ||
+          sessionRefData?.summaryPromise ||
+          pauseControllerRef.current.get(key)?.paused
+        ) {
+          continue;
+        }
+        const dueAt = session.lastAccessedAt + ttlMs;
+        if (dueAt <= now) {
+          expiredKeys.push(key);
+        } else if (dueAt < nextDueAt) {
+          nextDueAt = dueAt;
+        }
+      }
+      if (expiredKeys.length > 0) {
+        setSessions((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          for (const key of expiredKeys) {
+            if (next[key]) {
+              delete next[key];
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      }
+      if (Number.isFinite(nextDueAt)) {
+        scheduleScanAt(nextDueAt);
+      } else {
+        clearScanTimer();
+      }
+    };
+
+    const scheduleSweep = (): void => {
+      if (disposed) {
+        return;
+      }
+      if (debounceTimer !== null) {
+        window.clearTimeout(debounceTimer);
+      }
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null;
+        runSweep();
+      }, 2000);
+    };
+    sweepScheduleRef.current = scheduleSweep;
+    scheduleSweep();
+    return () => {
+      disposed = true;
+      if (debounceTimer !== null) {
+        window.clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      clearScanTimer();
+      sweepScheduleRef.current = () => {};
+    };
+  }, []);
+
+  useEffect(() => {
+    sweepScheduleRef.current();
+  }, [sessions]);
+
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<
@@ -515,6 +670,7 @@ export const useChatConversation = (
     selectionRequestIdRef,
     historyLoadPromisesRef,
     loadingOlderConversationIdsRef,
+    conversationCacheTtlMsRef,
     sessionsRef,
     newChatRequestedRef,
     pendingQueueRef,

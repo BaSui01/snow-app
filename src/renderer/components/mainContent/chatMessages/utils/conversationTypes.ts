@@ -248,6 +248,8 @@ export type ConversationSessionState = {
   isLoadingOlderMessages: boolean;
   hasMoreMessages: boolean;
   isInitialHistoryLoaded: boolean;
+  /** 会话缓存 TTL 的计时基准（Date.now() 毫秒时间戳）：查看会话或消息更新时刷新。 */
+  lastAccessedAt: number;
   tokenUsage: TokenUsage | null;
   directoryId?: string;
   hasNewContent: boolean;
@@ -668,6 +670,7 @@ export type ConversationContextValue = {
    *  while a load is pending does not trigger a duplicate full re-fetch. */
   historyLoadPromisesRef: RefValue<Map<string, Promise<void>>>;
   loadingOlderConversationIdsRef: RefValue<Set<string>>;
+  conversationCacheTtlMsRef: RefValue<number>;
   sessionsRef: RefValue<Record<string, ConversationSessionState>>;
   /** Ref mirror of newChatRequested for use inside async agent-loop closures
    *  that cannot read the latest React state directly. */

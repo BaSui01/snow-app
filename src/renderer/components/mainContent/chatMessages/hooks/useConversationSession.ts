@@ -55,8 +55,11 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       ctx.setActiveConversationId(id);
       // 视图会话 key 同步：新会话视图（id 为空）映射到当前序号的
       // pending 槽位 key，所有异步闭包读取它定位当前视图的会话。
-      ctx.activeSessionKeyRef.current =
+      const sessionKey =
         id ?? getPendingSessionKey(ctx.pendingSessionSeqRef.current);
+      ctx.activeSessionKeyRef.current = sessionKey;
+      // 查看即重置会话缓存 TTL 计时。
+      ctx.updateSessionField(sessionKey, "lastAccessedAt", Date.now());
       // 视图身份 key 同步；迁移（pending -> 真实 ID）传 preserveViewKey
       // 跳过，避免 chat-area / ChatInput 因 key 变化整体重建。
       if (!opts?.preserveViewKey) {
@@ -69,6 +72,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       ctx.activeSessionKeyRef,
       ctx.pendingSessionSeqRef,
       ctx.setSessionViewKey,
+      ctx.updateSessionField,
     ],
   );
 
@@ -117,6 +121,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             isLoadingOlderMessages: false,
             hasMoreMessages: false,
             isInitialHistoryLoaded: true,
+            lastAccessedAt: Date.now(),
             tokenUsage: null,
             directoryId: dirId,
             hasNewContent: false,
@@ -151,7 +156,11 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         if (!session) return prev;
         return {
           ...prev,
-          [key]: { ...session, messages: updater(session.messages) },
+          [key]: {
+            ...session,
+            messages: updater(session.messages),
+            lastAccessedAt: Date.now(),
+          },
         };
       });
     },
@@ -206,6 +215,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         delete next[oldKey];
         return next;
       });
+      // 迁移后新键立即刷新 TTL 计时，避免刚迁完的会话被当作旧缓存回收。
+      ctx.updateSessionField(newKey, "lastAccessedAt", Date.now());
       ctx.setStreamingConversationIds((prev) => {
         if (!prev.has(oldKey)) return prev;
         const next = new Set(prev);
@@ -219,6 +230,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       ctx.pendingQueueRef,
       ctx.setSessions,
       ctx.setStreamingConversationIds,
+      ctx.updateSessionField,
     ],
   );
 

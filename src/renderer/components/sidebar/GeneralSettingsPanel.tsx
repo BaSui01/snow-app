@@ -46,6 +46,15 @@ import {
   normalizeCloseBehavior,
   type CloseBehavior,
 } from "../../constants/closeBehavior";
+import {
+  CONVERSATION_CACHE_TTL_CHANGED_EVENT,
+  CONVERSATION_CACHE_TTL_DEFAULT_MINUTES,
+  CONVERSATION_CACHE_TTL_MAX_MINUTES,
+  CONVERSATION_CACHE_TTL_MIN_MINUTES,
+  CONVERSATION_CACHE_TTL_SETTING,
+  CONVERSATION_CACHE_TTL_SETTING_NAME,
+  normalizeConversationCacheTtlMinutes,
+} from "../../constants/conversationCache";
 import type {
   CleanupCategoryId,
   CleanupCategoryStats,
@@ -346,6 +355,15 @@ export function GeneralSettingsPanel(): React.JSX.Element {
     typeof setTimeout
   > | null>(null);
 
+  // 会话消息缓存 TTL（分钟；超过该时长未被查看的会话会从内存释放）
+  const [conversationCacheTtlMinutes, setConversationCacheTtlMinutes] =
+    useState<string>(String(CONVERSATION_CACHE_TTL_DEFAULT_MINUTES));
+  const [conversationCacheTtlSaved, setConversationCacheTtlSaved] =
+    useState(false);
+  const conversationCacheTtlSavedTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
+
   // 团队协作启停开关（默认关闭；写入 system_settings，Rust 侧据此放行）
   const [teamEnabled, setTeamEnabled] = useState(false);
 
@@ -393,9 +411,10 @@ export function GeneralSettingsPanel(): React.JSX.Element {
 
   useEffect(() => {
     void (async () => {
-      const [single, total] = await Promise.all([
+      const [single, total, ttl] = await Promise.all([
         window.snow.getSystemSettingValue(ATTACH_CONTEXT_SINGLE_BUDGET_SETTING),
         window.snow.getSystemSettingValue(ATTACH_CONTEXT_TOTAL_BUDGET_SETTING),
+        window.snow.getSystemSettingValue(CONVERSATION_CACHE_TTL_SETTING),
       ]);
       setAttachSingleBudget(
         single ?? String(ATTACH_CONTEXT_SINGLE_BUDGET_DEFAULT),
@@ -403,11 +422,18 @@ export function GeneralSettingsPanel(): React.JSX.Element {
       setAttachTotalBudget(
         total ?? String(ATTACH_CONTEXT_TOTAL_BUDGET_DEFAULT),
       );
+      setConversationCacheTtlMinutes(
+        String(normalizeConversationCacheTtlMinutes(ttl)),
+      );
     })().catch(() => undefined);
     return () => {
       if (attachBudgetSavedTimerRef.current) {
         clearTimeout(attachBudgetSavedTimerRef.current);
         attachBudgetSavedTimerRef.current = null;
+      }
+      if (conversationCacheTtlSavedTimerRef.current) {
+        clearTimeout(conversationCacheTtlSavedTimerRef.current);
+        conversationCacheTtlSavedTimerRef.current = null;
       }
     };
   }, []);
@@ -466,6 +492,65 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           setAttachBudgetSaved(false);
           attachBudgetSavedTimerRef.current = null;
         }, 2000);
+      })
+      .catch(() => undefined);
+  };
+
+  const markConversationCacheTtlSaved = (): void => {
+    setConversationCacheTtlSaved(true);
+    if (conversationCacheTtlSavedTimerRef.current) {
+      clearTimeout(conversationCacheTtlSavedTimerRef.current);
+    }
+    conversationCacheTtlSavedTimerRef.current = setTimeout(() => {
+      setConversationCacheTtlSaved(false);
+      conversationCacheTtlSavedTimerRef.current = null;
+    }, 2000);
+  };
+
+  /** 保存会话消息缓存 TTL（分钟）；非法值不保存，超上限截断。 */
+  const saveConversationCacheTtl = (): void => {
+    const parsed = Number.parseInt(conversationCacheTtlMinutes, 10);
+    if (
+      !Number.isFinite(parsed) ||
+      parsed < CONVERSATION_CACHE_TTL_MIN_MINUTES
+    ) {
+      return;
+    }
+    const normalized = String(
+      Math.min(parsed, CONVERSATION_CACHE_TTL_MAX_MINUTES),
+    );
+    setConversationCacheTtlMinutes(normalized);
+    void window.snow
+      .setSystemSetting(
+        CONVERSATION_CACHE_TTL_SETTING_NAME,
+        CONVERSATION_CACHE_TTL_SETTING,
+        normalized,
+      )
+      .then(() => {
+        window.dispatchEvent(
+          new CustomEvent(CONVERSATION_CACHE_TTL_CHANGED_EVENT),
+        );
+        markConversationCacheTtlSaved();
+      })
+      .catch(() => undefined);
+  };
+
+  /** 恢复默认 TTL 并写入设置。 */
+  const resetConversationCacheTtl = (): void => {
+    setConversationCacheTtlMinutes(
+      String(CONVERSATION_CACHE_TTL_DEFAULT_MINUTES),
+    );
+    void window.snow
+      .setSystemSetting(
+        CONVERSATION_CACHE_TTL_SETTING_NAME,
+        CONVERSATION_CACHE_TTL_SETTING,
+        String(CONVERSATION_CACHE_TTL_DEFAULT_MINUTES),
+      )
+      .then(() => {
+        window.dispatchEvent(
+          new CustomEvent(CONVERSATION_CACHE_TTL_CHANGED_EVENT),
+        );
+        markConversationCacheTtlSaved();
       })
       .catch(() => undefined);
   };
@@ -2221,90 +2306,167 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         <div className="api-settings-manual-form">
           <div className="api-settings-manual-header">
             <strong>
-              {t("settings.attachContextTitle", {
-                defaultValue: "会话上下文注入",
+              {t("settings.sessionSectionTitle", {
+                defaultValue: "会话",
               })}
             </strong>
             <span>
-              {t("settings.attachContextInfo", {
-                defaultValue:
-                  "拖拽历史会话到输入框，可将其注入为当前会话的开头上下文。注入前会自动清洗（剔除思考链与工具执行细节）并按预算裁剪，保护上下文窗口。",
+              {t("settings.sessionSectionInfo", {
+                defaultValue: "会话消息缓存的保活时长与会话上下文注入预算。",
               })}
             </span>
           </div>
 
           <div className="api-settings-form-body">
-            <div className="settings-about-row">
+            <div className="api-settings-form-section">
+              <div className="api-settings-form-section-header">
+                <span className="api-settings-form-section-title">
+                  {t("settings.attachContextTitle", {
+                    defaultValue: "会话上下文注入",
+                  })}
+                </span>
+              </div>
               <span className="settings-item-description">
-                {t("settings.attachContextSingleBudget", {
-                  defaultValue: "单附件预算（字符）",
+                {t("settings.attachContextInfo", {
+                  defaultValue:
+                    "拖拽历史会话到输入框，可将其注入为当前会话的开头上下文。注入前会自动清洗（剔除思考链与工具执行细节）并按预算裁剪，保护上下文窗口。",
                 })}
               </span>
-              <input
-                className="settings-number-input"
-                type="number"
-                min={ATTACH_CONTEXT_BUDGET_MIN}
-                max={ATTACH_CONTEXT_BUDGET_MAX}
-                step={1000}
-                value={attachSingleBudget}
-                onChange={(event) => setAttachSingleBudget(event.target.value)}
-                onBlur={() =>
-                  saveAttachBudget(
-                    ATTACH_CONTEXT_SINGLE_BUDGET_SETTING,
-                    attachSingleBudget,
-                  )
-                }
-                title={t("settings.attachContextBudgetHint", {
-                  defaultValue: "范围 1000-200000，超出自动截断。",
-                })}
-              />
+              <div className="settings-about-row">
+                <span className="settings-item-description">
+                  {t("settings.attachContextSingleBudget", {
+                    defaultValue: "单附件预算（字符）",
+                  })}
+                </span>
+                <input
+                  className="settings-number-input"
+                  type="number"
+                  min={ATTACH_CONTEXT_BUDGET_MIN}
+                  max={ATTACH_CONTEXT_BUDGET_MAX}
+                  step={1000}
+                  value={attachSingleBudget}
+                  onChange={(event) =>
+                    setAttachSingleBudget(event.target.value)
+                  }
+                  onBlur={() =>
+                    saveAttachBudget(
+                      ATTACH_CONTEXT_SINGLE_BUDGET_SETTING,
+                      attachSingleBudget,
+                    )
+                  }
+                  title={t("settings.attachContextBudgetHint", {
+                    defaultValue: "范围 1000-200000，超出自动截断。",
+                  })}
+                />
+              </div>
+              <div className="settings-about-row">
+                <span className="settings-item-description">
+                  {t("settings.attachContextTotalBudget", {
+                    defaultValue: "全部附件合计预算（字符）",
+                  })}
+                </span>
+                <input
+                  className="settings-number-input"
+                  type="number"
+                  min={ATTACH_CONTEXT_BUDGET_MIN}
+                  max={ATTACH_CONTEXT_BUDGET_MAX}
+                  step={1000}
+                  value={attachTotalBudget}
+                  onChange={(event) => setAttachTotalBudget(event.target.value)}
+                  onBlur={() =>
+                    saveAttachBudget(
+                      ATTACH_CONTEXT_TOTAL_BUDGET_SETTING,
+                      attachTotalBudget,
+                    )
+                  }
+                  title={t("settings.attachContextBudgetHint", {
+                    defaultValue: "范围 1000-200000，超出自动截断。",
+                  })}
+                />
+              </div>
+              <div className="settings-update-actions">
+                <div className="settings-attach-budget-actions">
+                  <button
+                    className="nav-item"
+                    onClick={resetAttachBudgets}
+                    type="button"
+                  >
+                    <RotateCcw size={14} strokeWidth={1.8} />
+                    <span>
+                      {t("settings.attachContextReset", {
+                        defaultValue: "恢复默认",
+                      })}
+                    </span>
+                  </button>
+                  {attachBudgetSaved && (
+                    <span className="settings-update-hint">
+                      {t("settings.attachContextSaved", {
+                        defaultValue: "已保存",
+                      })}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="settings-about-row">
+
+            <div className="api-settings-form-section">
+              <div className="api-settings-form-section-header">
+                <span className="api-settings-form-section-title">
+                  {t("settings.sessionCacheTtlTitle", {
+                    defaultValue: "TTL",
+                  })}
+                </span>
+              </div>
               <span className="settings-item-description">
-                {t("settings.attachContextTotalBudget", {
-                  defaultValue: "全部附件合计预算（字符）",
+                {t("settings.sessionCacheTtlInfo", {
+                  defaultValue:
+                    "自最后一次查看起算，超过该时长未再查看的会话会从内存缓存中释放；正在查看或运行中的会话不受影响。",
                 })}
               </span>
-              <input
-                className="settings-number-input"
-                type="number"
-                min={ATTACH_CONTEXT_BUDGET_MIN}
-                max={ATTACH_CONTEXT_BUDGET_MAX}
-                step={1000}
-                value={attachTotalBudget}
-                onChange={(event) => setAttachTotalBudget(event.target.value)}
-                onBlur={() =>
-                  saveAttachBudget(
-                    ATTACH_CONTEXT_TOTAL_BUDGET_SETTING,
-                    attachTotalBudget,
-                  )
-                }
-                title={t("settings.attachContextBudgetHint", {
-                  defaultValue: "范围 1000-200000，超出自动截断。",
-                })}
-              />
-            </div>
-            <div className="settings-update-actions">
-              <div className="settings-attach-budget-actions">
-                <button
-                  className="nav-item"
-                  onClick={resetAttachBudgets}
-                  type="button"
-                >
-                  <RotateCcw size={14} strokeWidth={1.8} />
-                  <span>
-                    {t("settings.attachContextReset", {
-                      defaultValue: "恢复默认",
-                    })}
-                  </span>
-                </button>
-                {attachBudgetSaved && (
-                  <span className="settings-update-hint">
-                    {t("settings.attachContextSaved", {
-                      defaultValue: "已保存",
-                    })}
-                  </span>
-                )}
+              <div className="settings-about-row">
+                <span className="settings-item-description">
+                  {t("settings.sessionCacheTtlLabel", {
+                    defaultValue: "保活时长（分钟）",
+                  })}
+                </span>
+                <input
+                  className="settings-number-input"
+                  type="number"
+                  min={CONVERSATION_CACHE_TTL_MIN_MINUTES}
+                  max={CONVERSATION_CACHE_TTL_MAX_MINUTES}
+                  step={5}
+                  value={conversationCacheTtlMinutes}
+                  onChange={(event) =>
+                    setConversationCacheTtlMinutes(event.target.value)
+                  }
+                  onBlur={saveConversationCacheTtl}
+                  title={t("settings.sessionCacheTtlHint", {
+                    defaultValue: "范围 1-10080 分钟，超出自动截断。",
+                  })}
+                />
+              </div>
+              <div className="settings-update-actions">
+                <div className="settings-attach-budget-actions">
+                  <button
+                    className="nav-item"
+                    onClick={resetConversationCacheTtl}
+                    type="button"
+                  >
+                    <RotateCcw size={14} strokeWidth={1.8} />
+                    <span>
+                      {t("settings.attachContextReset", {
+                        defaultValue: "恢复默认",
+                      })}
+                    </span>
+                  </button>
+                  {conversationCacheTtlSaved && (
+                    <span className="settings-update-hint">
+                      {t("settings.attachContextSaved", {
+                        defaultValue: "已保存",
+                      })}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>

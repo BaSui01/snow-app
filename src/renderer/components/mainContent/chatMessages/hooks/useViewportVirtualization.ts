@@ -25,7 +25,9 @@ import {
  * width changes (every message group still participates in the reflow pass).
  *
  * This hook tracks which message ids are inside the scroll viewport (plus a
- * buffer margin) using a single shared IntersectionObserver. Components can
+ * buffer margin) using two shared IntersectionObservers: a near box that
+ * promotes ids into the visible set, and a wider exit box that keeps them
+ * visible until they leave it. Components can
  * then render a cheap placeholder for off-screen messages instead of the full
  * AiResponse / MarkdownBlock subtree, which:
  *   - eliminates React reconciliation work for off-screen messages on every
@@ -142,9 +144,13 @@ export const useViewportVirtualization = (
   const lastMeasureAtRef = useRef<Map<string, number>>(new Map());
   // rAF id for the eager-measure batch. Non-zero while a batch is pending.
   const measureRafRef = useRef(0);
-  // Live set of ids currently intersecting the viewport. Mutated in place in
-  // the observer callback; a shallow copy is pushed to state when it changes.
-  const intersectingIdsRef = useRef<Set<string>>(new Set());
+  // 两个观察器各自的权威状态集：近场（视口 ±600，决定进入可见）与远场
+  // （±720，决定退出可见）。只由对应观察器 entry 的 isIntersecting 驱动，
+  // 绝不在回调里按当时的 rect 重算判定——重算会与观察器自身状态脱钩：entry
+  // 翻转后若 rect 因反向滚动退回边界外，id 被判为不可见，而观察器不再产生
+  // 新 entry 纠正，视口内的消息会长期停在占位符上（滚出再滚回才恢复）。
+  const nearIdsRef = useRef<Set<string>>(new Set());
+  const farIdsRef = useRef<Set<string>>(new Set());
   // Ids that render real content unconditionally until the observer reports
   // their first intersection state (top-prepended pages and id-migrated
   // messages). Keeps a newly prepended page from spending frames as 80px
@@ -158,20 +164,29 @@ export const useViewportVirtualization = (
   const pinnedIdsRef = useRef<ReadonlySet<string>>(pinnedIds);
   pinnedIdsRef.current = pinnedIds;
 
-  // Recompute the visible set from intersecting + pinned, and push to state
-  // only when it actually changes.
+  // Recompute the visible set from near + hysteresis + pinned, and push to
+  // state only when it actually changes.
   const flushVisibleIds = useCallback(() => {
-    const next = new Set<string>(intersectingIdsRef.current);
-    for (const id of forceVisibleIdsRef.current) {
-      next.add(id);
-    }
-    const pinned = pinnedIdsRef.current;
-    if (pinned.size > 0) {
-      for (const id of pinned) {
+    setVisibleIds((prev) => {
+      const next = new Set<string>(nearIdsRef.current);
+      // 迟滞：上一轮已可见且仍在远场内的 id 保持可见——边界附近来回滚动
+      // 不会反复卸载/重挂内容，离开远场（>720）才真正虚拟化出去。
+      if (prev !== null) {
+        for (const id of prev) {
+          if (farIdsRef.current.has(id)) {
+            next.add(id);
+          }
+        }
+      }
+      for (const id of forceVisibleIdsRef.current) {
         next.add(id);
       }
-    }
-    setVisibleIds((prev) => {
+      const pinned = pinnedIdsRef.current;
+      if (pinned.size > 0) {
+        for (const id of pinned) {
+          next.add(id);
+        }
+      }
       // prev === null means "not initialized yet". Any real `next` set
       // (including empty) supersedes it and starts the virtualization.
       if (prev === null) {
@@ -254,52 +269,43 @@ export const useViewportVirtualization = (
 
   // IntersectionObserver callback factory. Kept as a stable function so both
   // the lazy creation path and the container-change path share one impl.
-  const handleIntersection = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
+  // 每个 id 的判定只听对应观察器自己的 entry.isIntersecting；退出远场
+  // （isIntersecting 变 false，下一步即变占位符）时量取真实高度写缓存。
+  const applyObserverEntries = useCallback(
+    (
+      targets: Set<string>,
+      entries: IntersectionObserverEntry[],
+      measureOnExit: boolean,
+    ) => {
       const container = scrollContainerRef.current;
       if (!container) return;
-      const rootRect = container.getBoundingClientRect();
-      const viewportTop = rootRect.top + container.clientTop;
-      const viewportBottom = viewportTop + container.clientHeight;
-      const viewportLeft = rootRect.left + container.clientLeft;
-      const viewportRight = viewportLeft + container.clientWidth;
-      const intersecting = intersectingIdsRef.current;
       const updates: Array<[string, number]> = [];
       let changed = false;
       for (const entry of entries) {
         const node = entry.target as HTMLElement;
         const id = nodeToIdRef.current.get(node);
         if (!id || !container.contains(node)) continue;
-        const wasVisible =
-          intersecting.has(id) ||
-          visibleIdsRef.current === null ||
-          visibleIdsRef.current.has(id);
-        const rect = node.getBoundingClientRect();
-        const margin = wasVisible
-          ? VIEWPORT_EXIT_BUFFER_PX
-          : VIEWPORT_BUFFER_PX;
-        const isVisibleNow =
-          rect.bottom >= viewportTop - margin &&
-          rect.top <= viewportBottom + margin &&
-          rect.right >= viewportLeft &&
-          rect.left <= viewportRight;
         // The observer has produced its authoritative verdict for this id —
         // the force-visible escape hatch (prepended pages) is no longer needed.
         if (forceVisibleIdsRef.current.delete(id)) {
           changed = true;
         }
-        if (isVisibleNow) {
-          if (!intersecting.has(id)) {
-            intersecting.add(id);
+        if (entry.isIntersecting) {
+          if (!targets.has(id)) {
+            targets.add(id);
             changed = true;
           }
-        } else {
-          if (!node.classList.contains("is-placeholder") && rect.height > 0) {
+          continue;
+        }
+        if (targets.delete(id)) {
+          changed = true;
+        }
+        if (measureOnExit && !node.classList.contains("is-placeholder")) {
+          // 占位符高度来自 inline style，不是真实内容高度，写回会污染缓存。
+          const height = node.getBoundingClientRect().height;
+          if (height > 0) {
             lastMeasureAtRef.current.set(id, Date.now());
-            updates.push([id, rect.height]);
-          }
-          if (intersecting.delete(id) || wasVisible) {
-            changed = true;
+            updates.push([id, height]);
           }
         }
       }
@@ -350,10 +356,11 @@ export const useViewportVirtualization = (
     intersectionObserverRef.current?.disconnect();
     exitObserverRef.current?.disconnect();
     resizeObserverRef.current?.disconnect();
-    intersectingIdsRef.current.clear();
+    nearIdsRef.current.clear();
+    farIdsRef.current.clear();
 
     const intersection = new IntersectionObserver(
-      (entries) => handleIntersection(entries),
+      (entries) => applyObserverEntries(nearIdsRef.current, entries, false),
       {
         root,
         rootMargin: `${VIEWPORT_BUFFER_PX}px 0px ${VIEWPORT_BUFFER_PX}px 0px`,
@@ -361,7 +368,7 @@ export const useViewportVirtualization = (
       },
     );
     const exit = new IntersectionObserver(
-      (entries) => handleIntersection(entries),
+      (entries) => applyObserverEntries(farIdsRef.current, entries, true),
       {
         root,
         rootMargin: `${VIEWPORT_EXIT_BUFFER_PX}px 0px ${VIEWPORT_EXIT_BUFFER_PX}px 0px`,
@@ -380,7 +387,7 @@ export const useViewportVirtualization = (
     }
     // Let the observer settle asynchronously; flushVisibleIds will run from
     // the initial intersection callback batch.
-  }, [flushVisibleIds, handleIntersection, handleResize, scrollContainerRef]);
+  }, [applyObserverEntries, handleResize, scrollContainerRef]);
 
   // Rebuild when the container element identity changes. The key on
   // `.chat-area` in ChatContent forces a remount per conversation, so this
@@ -478,7 +485,8 @@ export const useViewportVirtualization = (
       nodeToIdRef.current.clear();
       idToNodeRef.current.clear();
       lastMeasureAtRef.current.clear();
-      intersectingIdsRef.current.clear();
+      nearIdsRef.current.clear();
+      farIdsRef.current.clear();
       forceVisibleIdsRef.current.clear();
     };
   }, []);

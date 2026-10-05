@@ -2912,6 +2912,13 @@ export const zhTW = {
   "settings.cleanupCategoryAppLogs": "應用日誌",
   "settings.cleanupCategoryAppLogsInfo": "~/.snow/log 下的執行日誌檔案。",
   "settings.generalSettingsClosePanel": "關閉通用設定",
+  "settings.sessionSectionTitle": "會話",
+  "settings.sessionSectionInfo": "會話訊息快取的保活時長與會話上下文注入預算。",
+  "settings.sessionCacheTtlTitle": "TTL",
+  "settings.sessionCacheTtlInfo":
+    "自最後一次檢視起算，超過該時長未再檢視的會話會從記憶體快取中釋放；正在檢視或執行中的會話不受影響。",
+  "settings.sessionCacheTtlLabel": "保活時長（分鐘）",
+  "settings.sessionCacheTtlHint": "範圍 1-10080 分鐘，超出自動截斷。",
   "settings.attachContextTitle": "會話上下文注入",
   "settings.attachContextInfo":
     "拖曳歷史會話到輸入框，可將其注入為目前會話的開頭上下文。注入前會自動清洗（剔除思考鏈與工具執行細節）並依預算裁切，保護上下文視窗。",

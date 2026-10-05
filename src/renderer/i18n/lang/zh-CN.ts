@@ -2909,6 +2909,13 @@ export const zhCN = {
   "settings.cleanupCategoryAppLogs": "应用日志",
   "settings.cleanupCategoryAppLogsInfo": "~/.snow/log 下的运行日志文件。",
   "settings.generalSettingsClosePanel": "关闭通用设置",
+  "settings.sessionSectionTitle": "会话",
+  "settings.sessionSectionInfo": "会话消息缓存的保活时长与会话上下文注入预算。",
+  "settings.sessionCacheTtlTitle": "TTL",
+  "settings.sessionCacheTtlInfo":
+    "自最后一次查看起算，超过该时长未再查看的会话会从内存缓存中释放；正在查看或运行中的会话不受影响。",
+  "settings.sessionCacheTtlLabel": "保活时长（分钟）",
+  "settings.sessionCacheTtlHint": "范围 1-10080 分钟，超出自动截断。",
   "settings.attachContextTitle": "会话上下文注入",
   "settings.attachContextInfo":
     "拖拽历史会话到输入框，可将其注入为当前会话的开头上下文。注入前会自动清洗（剔除思考链与工具执行细节）并按预算裁剪，保护上下文窗口。",

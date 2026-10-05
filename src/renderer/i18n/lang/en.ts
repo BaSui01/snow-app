@@ -3071,6 +3071,15 @@ export const en = {
   "settings.cleanupCategoryAppLogs": "App logs",
   "settings.cleanupCategoryAppLogsInfo": "Runtime log files under ~/.snow/log.",
   "settings.generalSettingsClosePanel": "Close general settings",
+  "settings.sessionSectionTitle": "Sessions",
+  "settings.sessionSectionInfo":
+    "Cache lifetime for conversation messages and context injection budgets.",
+  "settings.sessionCacheTtlTitle": "TTL",
+  "settings.sessionCacheTtlInfo":
+    "Conversations not viewed within this duration are released from the in-memory cache. The conversation being viewed and running conversations are never released.",
+  "settings.sessionCacheTtlLabel": "Lifetime (minutes)",
+  "settings.sessionCacheTtlHint":
+    "Range 1-10080 minutes; overflow is truncated automatically.",
   "settings.attachContextTitle": "Conversation context injection",
   "settings.attachContextInfo":
     "Drag a past conversation into the input box to inject it as the opening context of the current conversation. It is cleaned automatically before injection (thinking chains and tool execution details removed) and trimmed to fit the budget to protect the context window.",

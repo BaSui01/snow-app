@@ -23,7 +23,10 @@ import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
 import { DecisionModelsPanel } from "./apiSettings/DecisionModelsPanel";
 import { RetrySettingsPanel } from "./apiSettings/RetrySettingsPanel";
 import { ImageGenSettingsPanel } from "./ImageGenSettingsPanel";
-import { orderApiConfigsByName } from "./apiSettings/apiConfigReorder";
+import {
+  moveApiConfigName,
+  orderApiConfigsByName,
+} from "./apiSettings/apiConfigReorder";
 import { buildDuplicateName } from "./duplicateName";
 import {
   emptyApiConfigForm,
@@ -471,7 +474,13 @@ export function ApiSettingsTreePanel({
         configJson: config.configJson,
         source: config.source,
       });
-      setConfigs(list);
+      const orderedNames = moveApiConfigName(
+        list.map((item) => item.profileName),
+        profileName,
+        config.profileName,
+        "after",
+      );
+      setConfigs(await window.snow.reorderApiConfigs([...orderedNames]));
       setStatus(
         t("settings.apiDuplicateSuccess", {
           defaultValue: "Duplicated API profile {name}.",

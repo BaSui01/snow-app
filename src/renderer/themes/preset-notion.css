@@ -11,6 +11,7 @@
   --nt-accent: var(--nt-charcoal);
   --nt-accent-bg: rgba(55, 53, 47, 0.06);
   --nt-accent-text: #37352f;
+  --nt-cache-read: #9065b0;
   --accent: var(--nt-charcoal);
   --accent-primary: var(--nt-charcoal);
   --accent-secondary: #0f7b0f;
@@ -53,6 +54,7 @@
   --nt-accent: var(--nt-charcoal-dark);
   --nt-accent-bg: rgba(212, 212, 210, 0.1);
   --nt-accent-text: #d4d4d2;
+  --nt-cache-read: #8d5bc1;
   --accent-orange-bg: var(--nt-accent-bg);
   --accent-orange-text: var(--nt-accent-text);
   --accent-primary-bg: var(--nt-accent-bg);
@@ -669,7 +671,7 @@
 }
 
 :root[data-theme-preset="notion"] .token-usage-ring-cache {
-  stroke: var(--accent-blue);
+  stroke: var(--nt-cache-read);
 }
 
 :root[data-theme-preset="notion"] .token-usage-ring-text {
@@ -704,7 +706,7 @@
 }
 
 :root[data-theme-preset="notion"] .token-usage-dot-cache-read {
-  background: var(--accent-blue);
+  background: var(--nt-cache-read);
 }
 
 :root[data-theme-preset="notion"] .token-usage-tooltip-divider {

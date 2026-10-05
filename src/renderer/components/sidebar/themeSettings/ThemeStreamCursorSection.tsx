@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { RangeSlider } from "../../common/RangeSlider";
+import { AnimatedSnowBotIcon } from "../../icons/AnimatedSnowBotIcon";
 import { STREAM_CURSOR_LUCIDE_ICONS } from "./streamCursorIcons";
 import type { ThemeStreamCursor } from "./types";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
@@ -43,7 +44,9 @@ export function ThemeStreamCursorSection({
 
   const handleTypeChange = (iconType: string): void => {
     const resolved: ThemeStreamCursor["iconType"] =
-      iconType === "lucide" || iconType === "custom" ? iconType : "dot";
+      iconType === "lucide" || iconType === "custom" || iconType === "snowbot"
+        ? iconType
+        : "dot";
     if (resolved === "dot") {
       onChange({
         iconType: "dot",
@@ -55,6 +58,13 @@ export function ThemeStreamCursorSection({
       onChange({
         iconType: "lucide",
         lucideName: cursor.lucideName || STREAM_CURSOR_LUCIDE_ICONS[0].name,
+        svgPath: "",
+        iconSize: cursor.iconSize,
+      });
+    } else if (resolved === "snowbot") {
+      onChange({
+        iconType: "snowbot",
+        lucideName: "",
         svgPath: "",
         iconSize: cursor.iconSize,
       });
@@ -109,6 +119,12 @@ export function ThemeStreamCursorSection({
               value: "lucide",
               label: t("settings.themeStreamCursorTypeLucide", {
                 defaultValue: "Built-in icon",
+              }),
+            },
+            {
+              value: "snowbot",
+              label: t("settings.themeStreamCursorTypeSnowBot", {
+                defaultValue: "Snow Bot",
               }),
             },
             {
@@ -206,6 +222,9 @@ export function ThemeStreamCursorSection({
                   />
                 ) : null;
               })()}
+            {cursor.iconType === "snowbot" && (
+              <AnimatedSnowBotIcon size={localSize} strokeWidth={2} />
+            )}
             {cursor.iconType === "custom" && cursor.svgPath && (
               <span
                 className="stream-cursor-custom-icon"

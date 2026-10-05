@@ -47,9 +47,10 @@ export type ThemeBackground = {
  * - "dot"：默认脉冲圆点
  * - "lucide"：使用内置 lucide 图标，由 lucideName 指定
  * - "custom"：使用用户上传的 SVG，由 svgPath 指定文件路径
+ * - "snowbot"：内置 Snow Bot 动态机器人图标
  */
 export type ThemeStreamCursor = {
-  iconType: "dot" | "lucide" | "custom";
+  iconType: "dot" | "lucide" | "custom" | "snowbot";
   lucideName: string;
   svgPath: string;
   iconSize: number;

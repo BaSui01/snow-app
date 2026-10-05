@@ -3276,6 +3276,7 @@ export const en = {
     "Customize the indicator shown while the AI is generating a response.",
   "settings.themeStreamCursorTypeDot": "Pulsing dot",
   "settings.themeStreamCursorTypeLucide": "Built-in icon",
+  "settings.themeStreamCursorTypeSnowBot": "Snow Bot",
   "settings.themeStreamCursorTypeCustom": "Custom SVG",
   "settings.themeStreamCursorSelectSvg": "Select SVG",
   "settings.themeStreamCursorSelectDialogTitle": "Select stream cursor SVG",

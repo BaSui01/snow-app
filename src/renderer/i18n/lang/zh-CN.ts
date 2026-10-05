@@ -3105,6 +3105,7 @@ export const zhCN = {
   "settings.themeStreamCursorInfo": "自定义 AI 生成回复时显示的指示器。",
   "settings.themeStreamCursorTypeDot": "脉冲圆点",
   "settings.themeStreamCursorTypeLucide": "内置图标",
+  "settings.themeStreamCursorTypeSnowBot": "Snow Bot",
   "settings.themeStreamCursorTypeCustom": "自定义 SVG",
   "settings.themeStreamCursorSelectSvg": "选择 SVG",
   "settings.themeStreamCursorSelectDialogTitle": "选择流式指示器 SVG",

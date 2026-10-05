@@ -3108,6 +3108,7 @@ export const zhTW = {
   "settings.themeStreamCursorInfo": "自訂 AI 產生回覆時顯示的指示器。",
   "settings.themeStreamCursorTypeDot": "脈動圓點",
   "settings.themeStreamCursorTypeLucide": "內建圖示",
+  "settings.themeStreamCursorTypeSnowBot": "Snow Bot",
   "settings.themeStreamCursorTypeCustom": "自訂 SVG",
   "settings.themeStreamCursorSelectSvg": "選擇 SVG",
   "settings.themeStreamCursorSelectDialogTitle": "選擇串流指示器 SVG",

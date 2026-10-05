@@ -2286,6 +2286,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["built-in icon", "内置图标"],
       ],
       [
+        "theme.streamCursor.typeSnowBot",
+        "field",
+        "settings.themeStreamCursorTypeSnowBot",
+        "Snow Bot",
+        [],
+        ["snow bot", "机器人"],
+      ],
+      [
         "theme.streamCursor.typeCustom",
         "field",
         "settings.themeStreamCursorTypeCustom",

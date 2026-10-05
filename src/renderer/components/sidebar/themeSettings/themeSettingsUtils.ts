@@ -348,7 +348,9 @@ export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
   const source = isRecord(value) ? value : {};
   const rawType = toText(source.iconType) || "dot";
   const iconType: ThemeStreamCursor["iconType"] =
-    rawType === "lucide" || rawType === "custom" ? rawType : "dot";
+    rawType === "lucide" || rawType === "custom" || rawType === "snowbot"
+      ? rawType
+      : "dot";
   const lucideName = toText(source.lucideName);
   const svgPath = toText(source.svgPath);
   const rawSize =
@@ -357,7 +359,7 @@ export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
       : 14;
   const iconSize = Math.max(8, Math.min(48, rawSize));
   // 根据类型清理无关字段，与 Rust 端 normalize 逻辑保持一致。
-  if (iconType === "dot") {
+  if (iconType === "dot" || iconType === "snowbot") {
     return { iconType, lucideName: "", svgPath: "", iconSize };
   }
   if (iconType === "lucide") {
@@ -511,7 +513,7 @@ export function applyFontFamilyToDocument(fontFamily: string): void {
 
 /**
  * 将流式光标配置应用到 document 根元素。
- * - dot：清除 lucide 和自定义 SVG 相关属性
+ * - dot / snowbot：清除 lucide 和自定义 SVG 相关属性
  * - lucide：设置 data-stream-cursor="lucide" 和 data-stream-cursor-lucide 属性
  * - custom：设置 data-stream-cursor="custom" 和 --stream-cursor-svg CSS 变量
  */

@@ -34,6 +34,8 @@ type RightPanelTabContextMenuProps = {
   onNewTerminal: () => void;
   onNewBrowser: () => void;
   onNewDrawing: () => void;
+  /** 已启用插件的声明式面板入口，与加号菜单保持一致。 */
+  pluginItems?: ContextMenuItem[];
   onCloseTab: () => void;
   onClose: () => void;
 };
@@ -57,6 +59,7 @@ export function RightPanelTabContextMenu({
   onNewTerminal,
   onNewBrowser,
   onNewDrawing,
+  pluginItems = [],
   onCloseTab,
   onClose,
 }: RightPanelTabContextMenuProps): React.JSX.Element {
@@ -87,6 +90,7 @@ export function RightPanelTabContextMenu({
       icon: <Paintbrush size={13} strokeWidth={1.8} />,
       onClick: onNewDrawing,
     },
+    ...pluginItems,
   ];
 
   // 浏览器 tab 专属：把当前实例弹出到独立浏览器窗口（继承实例 id，

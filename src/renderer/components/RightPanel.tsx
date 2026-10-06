@@ -1888,6 +1888,35 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             x={tabContextMenu.x}
             y={tabContextMenu.y}
             isClosable={contextMenuTargetClosable}
+            pluginItems={pluginPanels.map(({ plugin, panelIndex }, index) => {
+              const panel = plugin.panels[panelIndex];
+              return {
+                id: `plugin:${plugin.pluginId}:${panel.id}`,
+                label: resolveLocalized(panel.title, locale) || panel.id,
+                icon: (
+                  <PluginIcon
+                    pluginId={plugin.pluginId}
+                    icon={panel.icon || plugin.icon}
+                    size={13}
+                  />
+                ),
+                separator: index === 0,
+                onClick: () => {
+                  setTabContextMenu(null);
+                  const current = pluginStore.getById(plugin.pluginId);
+                  const currentPanel = current?.panels.find(
+                    (item) => item.id === panel.id,
+                  );
+                  if (!current?.enabled || !currentPanel) return;
+                  handleOpenPluginPanel(
+                    current.pluginId,
+                    currentPanel.id,
+                    resolveLocalized(currentPanel.title, locale) ||
+                      currentPanel.id,
+                  );
+                },
+              };
+            })}
             onCloseOthers={
               contextMenuTargetClosable && hasClosableOthers
                 ? () => {

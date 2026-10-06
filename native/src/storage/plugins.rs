@@ -879,6 +879,15 @@ fn query_plugin_record(connection: &Connection, plugin_id: &str) -> rusqlite::Re
         return Ok(None);
     };
 
+    // panels_json is an installation-time projection. Re-normalize the registered
+    // raw manifest so host upgrades expose newly supported declarative fields
+    // without requiring a rescan or mutating the plugin registration.
+    let panels_json = parse_manifest(&manifest_json)
+        .ok()
+        .filter(|manifest| manifest.id == plugin_id)
+        .map(|manifest| manifest.panels.to_string())
+        .unwrap_or(panels_json);
+
     Ok(Some(PluginRecord {
         plugin_id,
         name: name_json,

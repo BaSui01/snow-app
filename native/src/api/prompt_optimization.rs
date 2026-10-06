@@ -154,17 +154,29 @@ pub async fn optimize_prompt_stream(
             .as_deref()
             .map(str::trim)
             .filter(|id| !id.is_empty());
-        let bound_profile = match id {
-            Some(id) => crate::storage::services::chat_conversations::get_conversation_api_profile(
-                &path, id,
-            )?,
-            None => None,
-        };
-        // Existing conversation binding wins; an explicit profile serves a new
-        // or unbound conversation. Deleted bound profiles follow chat fallback.
-        let context = match bound_profile.as_deref() {
-            Some(profile) => get_api_request_context_with_fallback(Some(profile))?,
-            None => get_api_request_context_for_profile(input.api_profile.as_deref())?,
+        let explicit_profile = input
+            .api_profile
+            .as_deref()
+            .map(str::trim)
+            .filter(|profile| !profile.is_empty());
+        // Explicit service selection is strict and independent of history's
+        // conversation. Only implicit selection retains chat binding fallback.
+        let context = match explicit_profile {
+            Some(profile) => get_api_request_context_for_profile(Some(profile))?,
+            None => {
+                let bound_profile = match id {
+                    Some(id) => {
+                        crate::storage::services::chat_conversations::get_conversation_api_profile(
+                            &path, id,
+                        )?
+                    }
+                    None => None,
+                };
+                match bound_profile.as_deref() {
+                    Some(profile) => get_api_request_context_with_fallback(Some(profile))?,
+                    None => get_api_request_context_for_profile(None)?,
+                }
+            }
         };
         let model = resolve_basic_model(input.model.as_deref(), &context.api_config.basic_model)?;
         let history = if input.include_context == Some(true) {

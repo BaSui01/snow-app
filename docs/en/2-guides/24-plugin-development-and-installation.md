@@ -28,7 +28,7 @@ The **Plugins** button at the bottom of the sidebar (with an installed-count bad
 | **Plugin market**    | Install or update panel plugins and client scripts in one click from the snow-plugin-store index; installation, updates, and the author publishing flow live in the plugin market section                                          |
 | **Metadata catalog** | The app metadata domains plugins can read together with the write actions and the network capability a plugin can use                                                                                                              |
 
-Under the **Panel plugins** sub-tab the toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`; clicking any amber tag opens the "Privacy scopes" dialog, which explains each scope in one line and lists the metadata domains it unlocks (field-level declarations name the exact fields) plus the writable capabilities aggregated per write domain, along with where it is declared (`privacy` in `plugin.json` / `@snow-privacy` in the script metadata header). The **Script plugins** sub-tab shows the script's `@snow-privacy` declarations as the same amber badges and opens the very same dialog. The **Metadata catalog** tab shows "Reading", "Writable" and "Network" sub-tabs: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search, while the Writable sub-tab lists every write action with its required `scope` and declaration state and the Network sub-tab lists the `api.net.fetch` external request capability (forwarded by the main process, no privacy declaration needed). The per-row "Metadata n/34" and "Write n/201" links mark that plugin's declared (readable/writable) and undeclared (denied) domains and actions, so users can audit the `privacy` declaration. The page is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
+Under the **Panel plugins** sub-tab the toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`; clicking any amber tag opens the "Privacy scopes" dialog, which explains each scope in one line and lists the metadata domains it unlocks (field-level declarations name the exact fields) plus the writable capabilities aggregated per write domain, along with where it is declared (`privacy` in `plugin.json` / `@snow-privacy` in the script metadata header). The **Script plugins** sub-tab shows the script's `@snow-privacy` declarations as the same amber badges and opens the very same dialog. The **Metadata catalog** tab shows "Reading", "Writable" and "Network" sub-tabs: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search, while the Writable sub-tab lists every write action with its required `scope` and declaration state and the Network sub-tab lists the `api.net.fetch` external request capability (forwarded by the main process, no privacy declaration needed). The per-row "Metadata n/34" and "Write n/204" links mark that plugin's declared (readable/writable) and undeclared (denied) domains and actions, so users can audit the `privacy` declaration. The page is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
 
 ## Script plugins (client UI scripts)
 
@@ -142,6 +142,8 @@ Field reference (actual parsed semantics):
 | `privacyNote`                     | string                     | no       | empty          | Only the `note` of an object-form `privacy` is read and displayed                                                                                                                     |
 | `minAppVersion`                   | string                     | no       | empty          | Currently stored and displayed only; **no version gating**                                                                                                                            |
 
+A manifest panel may additionally declare `"chatInput": true` (only boolean `true` enables it; default `false`) for an input-toolbar entry. Existing `entry`, `icon`, `widthHint` and privacy semantics are unchanged; see section 6.1.
+
 ### 5. Write the entry module (`renderMode: "esm"`)
 
 The entry is imported dynamically as an ES module; pick one of the export shapes:
@@ -190,7 +192,7 @@ With `renderMode: "iframe"` those globals are not injected: the entry runs insid
 | `api.id` / `api.version` / `api.name` / `api.installPath` / `api.locale` | Plugin identity and current language                                                                                                                                                                                                                                                                                                        |
 | `api.t(key, { defaultValue, values })`                                   | Message lookup; a missing `key` falls back to `defaultValue` then to the key itself; `{{name}}` placeholders are interpolated from `values`                                                                                                                                                                                                 |
 | `api.metadata.get(domain \| domain[], { params })`                       | Collects metadata domains, returning `{ generatedAt, domains, denied, withheld, unknown }`                                                                                                                                                                                                                                                  |
-| `api.metadata.subscribe(domain, listener, { params, intervalMs })`       | Subscribes: `live` domains re-emit on runtime snapshot changes (200 ms debounce) and other domains poll every `intervalMs` (minimum 1000 ms); without an interval only the initial value is emitted; returns `{ unsubscribe }`                                                                                                              |
+| `api.metadata.subscribe(domain, listener, { params, intervalMs })`       | Subscribes: `live` domains re-emit on runtime snapshot changes (200 ms debounce) and other domains poll every `intervalMs` (minimum 1000 ms); without an interval only the initial value is emitted; returns `Promise<{ unsubscribe }>` (use `await`)                                                                                       |
 | `api.metadata.domains()`                                                 | Lists domains with authorization state: `{ id, scope, granted, live, sensitiveFields }`                                                                                                                                                                                                                                                     |
 | `api.write.<domain>.<action>(params)`                                    | Calls one write action (ESM only); identical to `api.write.run("<domain>.<action>", params)`                                                                                                                                                                                                                                                |
 | `api.write.run(actionId, params)`                                        | Calls a write action by id and returns `{ ok, action, data, denied, error }` (see the writable-capabilities section)                                                                                                                                                                                                                        |
@@ -205,6 +207,170 @@ With `renderMode: "iframe"` those globals are not injected: the entry runs insid
 Frequent `params` keys: `projectId`, `projectPath`, `directoryId`, `conversationId` (defaulting to the active project or conversation) plus domain-specific pagination and filters.
 
 The `runtime` domain is the live data source: `conversation` is the full snapshot of the focused conversation (`conversationId`, `sessionKey`, `title`, `directoryId`, `isStreaming`, `isPaused`, `isAborting`, `streamTokenCount`, `streamElapsedMs`, `streamTtftMs`, `streamStartedAt`, `runTtftMs`, `lastRunDurationMs`, `streamingConversationIds`, ...), while `streamingSessions` lists every running conversation (including pending new-chat slots) with `sessionKey`, `conversationId`, `title`, `directoryId`, `isStreaming`, `isPaused`, `isAborting`, `messageCount`, `tokenCount`, `elapsedMs`, `ttftMs`, `runTtftMs`, `startedAt`, `lastRunDurationMs`, and `runTokenUsage`. `startedAt` is the wall-clock anchor of the current run, so live wall-clock duration is `Date.now() - startedAt` and live speed is `tokenCount / elapsedMs`, matching the stream metrics bar above the input box. `chatInput` carries the live input-area data (published by the input area while it is mounted; the last published value is kept when it is unmounted): `inputText` is the current raw chat-input content (keeping `@@file:...@@` / `@@image:...@@` tag markers, an empty string means nothing has been typed, updated as you type), `conversationId` is the conversation the input area is bound to (`null` for a fresh-chat input area), `maxContextTokens` is the context window limit of the API profile in effect for that conversation, and `isLoadingApiConfig` is the API config loading state. Together with `conversation.tokenUsage` (already normalized by Rust; cache reads are a subset of input) this reproduces the token usage ring next to the input box: `total = inputTokens + outputTokens` and the ratio is `min(total / maxContextTokens, 1)` (falling back to a full ring keyed on `total` when `maxContextTokens` is absent); treat `isLoadingApiConfig === true` as the placeholder ring so a still-loading config is not misread as a full window.
+
+### 6.1 Prompt optimization and safe drafts (ESM)
+
+Declare `panels[].chatInput: true` (boolean, default `false`) to show an enabled panel's icon in `toolbar-right`, immediately before the model selector, using the panel/plugin icon. `chatInputTitle` is a separate localized action tooltip, falling back to `panel.title`, so the wand can say “Optimize draft” while the panel says “Optimization strategy”. `chatInputAction` names an entry-module export (a valid JS Unicode IdentifierName; invalid / empty values normalize to empty): **an empty value still only opens the panel**; a non-empty ESM action is invoked only on the user's wand click and does not open the right panel. Its separate small gear opens the configuration panel even without draft text or API configuration. iframe does not execute Actions and retains panel-launcher behavior. The execution button is disabled for empty plain text (chips alone count as empty), unavailable / loading API configuration, streaming, stopping, or compaction. Existing plus-menu and right-panel entries remain unchanged; no plugin id is hardcoded.
+
+`optimizationInstructions?: string` supplies an optional optimization meta prompt / strategy. Its raw value is limited to **8000 Unicode code points**, not UTF-16 code units; non-string / oversized values are rejected in renderer and backend. The backend trims surrounding whitespace and treats empty text as omitted, preserving older requests. Instructions occupy a separate trusted system section and cannot override fixed safety constraints. Never concatenate API secrets or attachment content into instructions.
+
+#### Generic input Action signature and interaction
+
+Manifest panel example:
+
+```json
+{
+  "id": "settings",
+  "title": { "default": "Optimization strategy", "zh-CN": "优化策略" },
+  "chatInput": true,
+  "chatInputAction": "optimizeDraft",
+  "chatInputTitle": { "default": "Optimize draft", "zh-CN": "优化草稿" },
+  "icon": "lucide:WandSparkles"
+}
+```
+
+Export `async optimizeDraft({ api, signal, onStatus, confirm }): Promise<PluginChatInputActionResult>` from the entry module. The host does not call `mount`; configuration remains a separate panel. Types are exported from `src/renderer/plugins/pluginApi.ts`:
+
+```typescript
+type PluginChatInputActionContext = {
+  api: PluginRuntimeApi;
+  signal: AbortSignal;
+  onStatus: (message: string) => void;
+  confirm: (message: string) => Promise<boolean>;
+};
+type PluginChatInputActionResult = {
+  message?: string;
+  preview?: string;
+  apply?: () => Promise<PluginChatInputActionResult>;
+  undo?: () => Promise<void>;
+};
+```
+
+- The right panel configures the meta prompt / strategy and saves private preferences. By default, a single wand click runs optimization; the plugin safely calls `applyDraft` to refill the input automatically and returns an `undo` closure based on `restoreToken`. The host shows a prominent Undo button. No additional right-panel action is needed and no message is sent.
+- Optional preview-confirm mode returns `preview + apply`. An input-area preview displays plain text, Copy and Apply. Successful `apply` returns a new result with `undo`. If the draft is stale, return `preview` without `apply` for copy-only recovery; never re-capture a changed draft to force old output onto it.
+- `onStatus` updates inline status. Execution / Apply / Undo shows a spinner; clicking the primary button again cancels only this Action's signal, never ordinary chat. Pass `signal` to `api.ai.optimizePrompt`; the scoped host API also combines the Action cancellation signal.
+- `confirm` uses the existing host Modal: Confirm accepts, Close / Escape declines; cancellation or context invalidation settles the pending prompt and interrupts continuation. This is runtime UI confirmation, not tool authorization or automatic approval of a paid request.
+- Each click loads messages, creates a **fresh API** (reloading current private storage; storage read failure prevents execution), loads the entry module and resolves `module[panel.chatInputAction]`. It never caches the configuration panel's API/storage snapshot; existing `api.storage` methods are unchanged. Cancellation is checked across awaited loading stages; a missing export shows an error without paid fallbacks.
+- Parameters / API profile / model, project or real / pending session changes, plugin update / disable / removal, input unmount, streaming / stopping / compaction automatically cancel and invalidate callbacks. Late status, confirmation, results and scoped Action AI/write calls are rejected. Completed output may remain read-only after stripping `apply/undo`. Opening the configuration gear also cancels the current Action to prevent old strategies from refilling during configuration.
+- Panel mount, module import top level and metadata subscription / refresh must never invoke Actions or paid APIs. The host invokes the export only on a user click; ESM remains trusted local code, not a sandbox for malicious top-level code. Refill / Undo must still use draft tokens, never guessed DOM writes, privacy bypasses or ordinary message-send channels.
+
+`api.ai.optimizePrompt(options): Promise<{ content: string }>` is **ESM-only**; the iframe bridge has no `ai` capability. Options:
+
+| Field                      | Type                    | Contract                                                                                                                                          |
+| -------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `draft`                    | string                  | Required, non-empty plain text; send only after an explicit user optimization action, never automatically on mount, subscription or panel opening |
+| `conversationId`           | string?                 | Optional conversation id; do not invent an id for a fresh chat                                                                                    |
+| `apiProfile` / `model`     | string?                 | Optional profile / model overrides; backend owns defaults and model fallback                                                                      |
+| `includeContext`           | boolean?                | Defaults to `false`; only explicit `true` includes history and requires `messages` in `privacy.scopes`                                            |
+| `optimizationInstructions` | string?                 | Optional meta prompt / strategy; at most 8000 raw Unicode code points, whitespace-only text omitted, fixed safety constraints unchanged           |
+| `contextRounds`            | number?                 | Non-negative integer; backend owns defaults and actual history selection                                                                          |
+| `onChunk`                  | (delta: string) => void | Optional delta callback, not accumulated output                                                                                                   |
+| `signal`                   | AbortSignal?            | Optional cancellation; rejects with `AbortError` when cancelled                                                                                   |
+
+The host creates a separate UUID per request and uses dedicated optimization / cancellation channels. Cancelling never stops an ordinary chat session, and optimization input/output is not saved as conversation messages. Abort listeners are removed on success, failure and cancellation, and no chunks are delivered after stopping. Missing context privacy declarations reject before calling the backend; do not bypass privacy through other metadata or ordinary conversation APIs. Drafts do not automatically include chips, attachments or history: pass captured `text`, not `inputText`. Explicitly sending a draft to the model requires no new sensitive scope, but the panel must explain possible API costs.
+
+Older running versions may lack these capabilities; `minAppVersion` is not a runtime gate. Check `typeof api.ai?.optimizePrompt === "function"` and use `api.write.domains()` to check the three draft actions. If unavailable, show an upgrade hint or a read-only preview; never fall back to guessed DOM writes or ordinary chat requests.
+
+The three public `chatInput` actions use the existing standard response `{ ok, action, data, error?, denied? }`, with no new privacy scope. Check `ok` before accessing `data`:
+
+| Action                   | Parameters                             | Success `data`                                                                            |
+| ------------------------ | -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `chatInput.captureDraft` | `{}`                                   | `{ draftToken: string, inputText: string, text: string, conversationId: string \| null }` |
+| `chatInput.applyDraft`   | `{ draftToken: string, text: string }` | `{ restoreToken: string }`                                                                |
+| `chatInput.restoreDraft` | `{ restoreToken: string }`             | `{ restored: true }`                                                                      |
+
+- Capture requires the actual mounted, editable input. `inputText` is the complete original draft with encoded `@@file/image/...@@` chips; `text` contains plain text only, without expanding chips or reading file, image or referenced attachment contents.
+- Apply replaces only plain text and retains captured chips verbatim, in their original order after the new text. Replacement text containing encoded chips is rejected. The user must still send manually. Restore recovers the complete captured input. Both use `useChatInputController.restoreContent` to synchronize the editor, immediate draft mirror and draft pool; neither sends messages.
+- Tokens are random UUIDs in a host-private in-memory map, limited to 128 entries and five minutes, single-use, bound to plugin id, unique input instance, project, real / pending session, draft revision and actual original content. Do not persist tokens in plugin storage or use them across plugins.
+- User edits, programmatic restoration, project/session switching, entering streaming / stopping / compaction, or input unmount invalidate old results. A→B→A changes still fail because revisions increment synchronously, not merely when text differs at render time. Restore also validates the actual applied input and revision, so subsequent user edits are never overwritten.
+- Failures return `ok: false` and `error`, leaving content unchanged. Re-capture and obtain user confirmation after invalidation. `runtime.chatInput.inputText` and entry props are preview snapshots, not safe-capture substitutes.
+
+Example flow (run from a button click; apply / restore are separate explicit user buttons):
+
+```javascript
+const captured = await api.write.run("chatInput.captureDraft", {});
+if (!captured.ok) throw new Error(captured.error);
+const controller = new AbortController();
+const result = await api.ai.optimizePrompt({
+  draft: captured.data.text,
+  conversationId: captured.data.conversationId ?? undefined,
+  includeContext: false,
+  signal: controller.signal,
+  onChunk: (delta) => appendPreview(delta),
+});
+// When the user confirms Apply:
+const applied = await api.write.run("chatInput.applyDraft", {
+  draftToken: captured.data.draftToken,
+  text: result.content,
+});
+// On a separate Restore click, only use the token if applied.ok:
+if (applied.ok) {
+  await api.write.run("chatInput.restoreDraft", {
+    restoreToken: applied.data.restoreToken,
+  });
+}
+// Call controller.abort() on Cancel or panel unmount.
+```
+
+### 6.2 Message footer v1 (ESM-only)
+
+A plugin can contribute the formal message-footer slot through **top-level** `contributions` in `plugin.json`, alongside existing `panels` and input Actions:
+
+```json
+{
+  "renderMode": "esm",
+  "entry": "index.js",
+  "contributions": {
+    "messageFooters": [
+      { "id": "files", "entry": "footer.js", "exportName": "mountFooter" }
+    ]
+  }
+}
+```
+
+- Only `renderMode: "esm"` loads footer v1. Contributions from `iframe` plugins are ignored: no conversion to ESM or privilege upgrade. Existing plugins without contributions keep their behavior.
+- Only the first 16 items per plugin are inspected. Each `id` must match `[A-Za-z_][A-Za-z0-9_-]*` and be unique within the plugin. `exportName` must be a complete JavaScript export identifier, not an expression such as `obj.mount`. The host resolves that named function, not a React component.
+- `entry` is a safe plugin-relative path such as `ui/footer.js`. Absolute paths, drive prefixes, backslashes, empty segments, `.` / `..`, URLs, encoded paths and queries/fragments are rejected. Only an omitted entry falls back to the plugin's `entry`; explicit invalid values do not.
+- A panel can detect support with `api.ui.messageFooterVersion === 1`. On an older host without this field, show a compatibility notice in the panel rather than injecting a replacement into chat DOM.
+
+The contract is a **synchronous DOM mount function**:
+
+```javascript
+export function mountFooter(container, api, context, signal) {
+  let subscription;
+  const render = (response) => {
+    if (signal.aborted) return;
+    const current = response.domains.runtime?.conversation;
+    if (current?.conversationId !== context.conversationId) return;
+    container.textContent = api.t("footer.completed", {
+      defaultValue: "Reply completed",
+    });
+  };
+  void (async () => {
+    // subscribe returns Promise<MetadataSubscription>; await before unsubscribing.
+    const sub = await api.metadata.subscribe("runtime", render);
+    if (signal.aborted) {
+      sub.unsubscribe();
+      return;
+    }
+    subscription = sub;
+  })().catch(() => {
+    if (!signal.aborted) api.log("Footer subscription unavailable");
+  });
+  return () => {
+    subscription?.unsubscribe();
+    container.replaceChildren();
+  };
+}
+```
+
+`mountFooter(container, api, context, signal)` returns `void`, a cleanup function, or `{ unmount() }`, not a Promise. The `container` is dedicated to this contribution; mount only inside it. The frozen `context` is `{ slot: "message-footer", conversationId, messageId, directoryId }` (unknown directory is `undefined`). It contains no message body, thinking or file records: obtain data through privacy-checked metadata on demand. The host does not compute file statistics or worktree data.
+
+The footer receives a **lifecycle-scoped read-only API subset**: plugin identity fields, `t`, `log`, `assets.resolve`, `ui` (including `React`, `icon`, `messageFooterVersion`), and `metadata.get / subscribe / domains`. There is no `write`, `ai`, `net` or `storage`. Metadata defaults include the mounted `conversationId` and known `directoryId`; explicit caller parameters still work, and no tracking root is invented. Existing `privacy` declarations and field redaction remain in effect. Expired reads reject with `AbortError`, logs stop, late `get` / asset results are discarded, and subscription callbacks stop.
+
+Mounting is limited to the focused conversation whose **last non-tool message is this completed assistant reply**, with streaming, pause and abort all inactive; a new user message hides the previous footer. Disable, uninstall, record replacement after refresh, conversation/reply switches, a new run, locale changes and component unmount abort `signal` and remove containers, styles and subscriptions. The host owns subscription promises as well as subscriptions: it unsubscribes even when the plugin supplies no cleanup or the promise resolves after unmount. Throwing cleanup does not prevent host-resource release. One plugin's failure does not break other footers or chat.
+
+> The read-only API and lifecycle cleanup are **not a sandbox guarantee**. Initial ESM execution still runs in the main renderer, and the existing `window.SnowAppPlugin` global loading mechanism is not isolated. Install only trusted plugins. Use the explicitly passed `api` and `container`, not a captured global API or DOM outside the container. Enable/disable uses existing plugin management and never automatically starts writes or AI.
 
 ### 7. Available metadata domains and privacy declarations
 
@@ -274,7 +440,7 @@ Missing or mistyped parameters and backend failures produce only `ok: false` plu
 
 #### 8.3 Declaration rules and sensitive scopes
 
-- An action whose `scope` is `null` is **public** and callable without any declaration (60 of the 201 actions).
+- An action whose `scope` is `null` is **public** and callable without any declaration (63 of the 204 actions).
 - A sensitive write action shares its scope with reading that same area: writing a memo needs `memos`, writing a file needs `filesystem`, and calling an MCP tool needs `mcpSecrets`.
 - Six sensitive scopes exist purely for writes (the original 21 are unchanged, 27 scopes in total):
 
@@ -301,16 +467,16 @@ The full definition of all 27 sensitive scopes lives in the [plugin metadata dom
 | `projects`       | —                | `projects.create`, `projects.addDirectory`, `projects.activate`, `projects.reorder`, `projects.relink`, `projects.undoRelink`                                                                                                       | Create a project folder, add an existing one, activate, reorder, relink a moved path, undo a relink    |
 | `collections`    | —                | `collections.create`, `collections.rename`, `collections.remove`, `collections.moveMember`, `collections.removeMember`, `collections.reorderMembers`                                                                                | Create, rename, and delete groups plus move members in, out, and into order                            |
 
-#### 8.5 Write action cheat sheet: system and UI (9)
+#### 8.5 Write action cheat sheet: system and UI (12)
 
-| Domain        | Declaration     | Action ids                                                                                             | Behavior                                                                                  |
-| ------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `ide`         | —               | `ide.open`                                                                                             | Open a project in an external IDE                                                         |
-| `system`      | —               | `system.notify`, `system.writeClipboardText`, `system.showItemInFolder`, `system.openStorageDirectory` | System notification, clipboard text, reveal in the file manager, open a storage directory |
-| `nav`         | —               | `nav.openSettings`                                                                                     | Open a settings page                                                                      |
-| `chatInput`   | —               | `chatInput.insertText`                                                                                 | Append text to the chat input                                                             |
-| `chatInput`   | `conversations` | `chatInput.sendMessage`                                                                                | Send a message to the active conversation                                                 |
-| `pluginsSelf` | —               | `pluginsSelf.openPanel`                                                                                | Open one of this plugin's own panels                                                      |
+| Domain        | Declaration     | Action ids                                                                                             | Behavior                                                                                       |
+| ------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `ide`         | —               | `ide.open`                                                                                             | Open a project in an external IDE                                                              |
+| `system`      | —               | `system.notify`, `system.writeClipboardText`, `system.showItemInFolder`, `system.openStorageDirectory` | System notification, clipboard text, reveal in the file manager, open a storage directory      |
+| `nav`         | —               | `nav.openSettings`                                                                                     | Open a settings page                                                                           |
+| `chatInput`   | —               | `chatInput.insertText`, `chatInput.captureDraft`, `chatInput.applyDraft`, `chatInput.restoreDraft`     | Append text, or safely capture, apply and restore drafts using single-use tokens (section 6.1) |
+| `chatInput`   | `conversations` | `chatInput.sendMessage`                                                                                | Send a message to the active conversation                                                      |
+| `pluginsSelf` | —               | `pluginsSelf.openPanel`                                                                                | Open one of this plugin's own panels                                                           |
 
 #### 8.6 Write action cheat sheet: app configuration (62)
 
@@ -358,7 +524,7 @@ The full definition of all 27 sensitive scopes lives in the [plugin metadata dom
 
 #### 8.8 User-visible surfaces
 
-- The "Write X/Y" badge on every Plugins page row: X counts the write actions the plugin has declared, Y is the total (201); an action counts as writable as soon as its scope is declared.
+- The "Write X/Y" badge on every Plugins page row: X counts the write actions the plugin has declared, Y is the total (204); an action counts as writable as soon as its scope is declared.
 - The "Writable" sub-tab of the Metadata catalog tab: it lists each `domain.action` with its required `scope` ("Public" for scope-less actions) and declaration state ("Writable" / "Not declared"), with the same keyword search as the metadata section.
 - Both surfaces render the same `api.write.domains()` data, so a panel can use it to check its own declaration state.
 
@@ -498,7 +664,7 @@ Entry fields (the authoritative JSON Schema is `app/entry.schema.json` in the re
 - `src/renderer/plugins/pluginRuntime.ts`, `src/renderer/plugins/pluginApi.ts`, `src/renderer/plugins/pluginIframeBridge.js`: ESM and iframe runtime assembly plus the API
 - `src/renderer/plugins/metadata/domains.ts`, `src/renderer/plugins/metadata/index.ts`: metadata domains and privacy redaction
 - `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`, `::WRITE_ACTION_IDS`: write execution, privacy-declaration checks, and the action list
-- `src/renderer/plugins/writes/domains/content.ts`, `system.ts`, `config.ts`, `admin.ts`: the 201 write action definitions (grouped as sections 8.4 to 8.7 here)
+- `src/renderer/plugins/writes/domains/content.ts`, `system.ts`, `draft.ts`, `config.ts`, `admin.ts`: the 204 write action definitions (including 3 safe-draft actions; grouped as sections 8.4 to 8.7 here)
 - `src/renderer/components/sidebar/PluginsPanel.tsx`: the three top-level tabs (Plugin list / Plugin market / Metadata catalog), the list sub-tabs (Panel plugins / Script plugins), their counters, and the Panel plugins toolbar
 - `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the Metadata catalog tab (Reading / Writable) and the badge data
 - `src/renderer/plugins/privacy.ts`, `src/renderer/components/sidebar/PluginPrivacyBadges.tsx`, `src/renderer/components/sidebar/PluginPrivacyDialog.tsx`: the privacy-scope badges and the "Privacy scopes" dialog shared by panel plugins and script plugins

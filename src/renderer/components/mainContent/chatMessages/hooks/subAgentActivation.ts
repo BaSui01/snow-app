@@ -21,7 +21,10 @@ import {
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
-import { extractFileChangesFromTool } from "./fileChangeTracking";
+import {
+  extractFileChangesFromTool,
+  extractFileChangeCoverageFromTool,
+} from "./fileChangeTracking";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import type { SubAgentRuntimeConfig } from "./subAgentRuntimeConfig";
 import {
@@ -658,6 +661,20 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
           reason:
             subAuthorizationDecision.reason || "User declined tool execution",
         });
+        const coverage = extractFileChangeCoverageFromTool(
+          subToolCall.name,
+          subRejectResult,
+        );
+        if (coverage) {
+          const record = {
+            ...coverage,
+            agent: "sub" as const,
+            subAgentName: agentName,
+            timestamp: Date.now(),
+          };
+          ctx.recordFileChangeCoverage(subConvId, record);
+          ctx.recordFileChangeCoverage(parentConversationId, record);
+        }
         subToolResults.push(formatMcpToolResultForModel(subRejectResult));
         subStructuredResults.push({
           name: subToolCall.name,
@@ -903,7 +920,22 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       // under the parent key lets the file-change stats panel show the
       // full picture (main agent + sub-agents) without extra lookups;
       // the sub-agent's own key keeps its per-session view accurate.
-      if (!subToolErrored && subResult !== undefined) {
+      if (subResult !== undefined) {
+        const timestamp = Date.now();
+        const coverage = extractFileChangeCoverageFromTool(
+          subToolCall.name,
+          subResult,
+        );
+        if (coverage) {
+          const record = {
+            ...coverage,
+            agent: "sub" as const,
+            subAgentName: agentName,
+            timestamp,
+          };
+          ctx.recordFileChangeCoverage(subConvId, record);
+          ctx.recordFileChangeCoverage(parentConversationId, record);
+        }
         const subFileChanges = extractFileChangesFromTool(
           subToolCall.name,
           subToolArgs,
@@ -1392,7 +1424,8 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       current: activeCheckpointIds,
     };
     const parentWorktreeMode =
-      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ?? false;
+      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ??
+      false;
     const projectSessionDirPath = directoryIdToPath(dirId) ?? ctx.directoryPath;
     const subCheckpointWorkDir =
       activeCheckpointIds.length > 0

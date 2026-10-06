@@ -162,6 +162,7 @@ pub fn clear_app_logs(database_path: &Path) -> Result<u32> {
 /// never blocked by database I/O. Failures are silently ignored to avoid
 /// disrupting the main request flow.
 pub async fn log_api_warning(database_path: &Path, func: &str, message: &str, context: &str) {
+    if crate::api::ephemeral::is_active() { return; }
     let db_path = database_path.to_path_buf();
     let func = func.to_string();
     let message = message.to_string();
@@ -194,6 +195,7 @@ pub async fn log_api_warning(database_path: &Path, func: &str, message: &str, co
 /// never blocked by database I/O. Failures are silently ignored to avoid
 /// disrupting the main request flow.
 pub async fn log_api_error(database_path: &Path, func: &str, message: &str, error: &str) {
+    if crate::api::ephemeral::is_active() { return; }
     let db_path = database_path.to_path_buf();
     let func = func.to_string();
     let message = message.to_string();
@@ -301,6 +303,10 @@ async fn maybe_log_api_payload(
     api_key: Option<String>,
     is_response: bool,
 ) {
+    // Check in the async caller before spawn_blocking: task-local state is not
+    // inherited by blocking jobs. No draft, context, response or provider error
+    // from ephemeral requests may enter the request/response log database.
+    if crate::api::ephemeral::is_active() { return; }
     tokio::task::spawn_blocking(move || {
         let enabled = system_settings::get_request_logging(&database_path).unwrap_or(false);
         if !enabled {

@@ -14,6 +14,9 @@ const nativeRequire = createRequire(import.meta.url);
  * 瞬间一起返回，看上去像是同步批量加载。
  */
 const STORAGE_INDEPENDENT_METHODS = new Set<string>([
+  // Request-local optimization cancellation does not touch SQLite.
+  "preparePromptOptimization",
+  "abortPromptOptimization",
   // Git（本地仓库子进程操作）
   "getGitStatus",
   "getGitBranches",
@@ -136,6 +139,8 @@ const createUnavailableBridge = (): NativeBridge => {
     flushPendingFileFormats: () => Promise.resolve(),
     cancelConversationSummary: () => false,
     abortResponseStream: () => false,
+    preparePromptOptimization: () => false,
+    abortPromptOptimization: () => false,
     abortToolExecution: () => false,
     migrateCheckpointLayout: () => Promise.resolve(0),
     setRemoteControlRendererBridge: () => {},

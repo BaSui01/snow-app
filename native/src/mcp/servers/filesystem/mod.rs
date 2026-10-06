@@ -12,13 +12,13 @@ use super::remote_workspace::{
     execute_remote_workspace_command, is_ssh_path, RemoteWorkspaceCallback,
 };
 
-mod office;
-mod text_codec;
-mod fuzzy_edit;
+mod copy;
 mod file_lock;
 mod format;
+mod fuzzy_edit;
 mod io;
-mod copy;
+mod office;
+mod text_codec;
 
 use text_codec::{decode_text_bytes, encode_text, encode_text_back, encoding_for_label};
 
@@ -246,6 +246,11 @@ impl FilesystemService {
         // 剪切会同时改写源文件与目标文件，两把锁按路径排序后依次获取，
         // 避免两次交叉剪切互相等待。
         let write_paths = write_target_paths(tool_name, args, file_path.as_deref());
+        let tracking_lease = if write_paths.is_empty() {
+            None
+        } else {
+            Some(crate::mcp::tools::file_tracking::coordinate(&write_paths).await)
+        };
         let mut _in_flight_writes = Vec::with_capacity(write_paths.len());
         let mut _write_permits = Vec::with_capacity(write_paths.len());
         for path in &write_paths {
@@ -261,7 +266,8 @@ impl FilesystemService {
             }
         }
 
-        self.execute_local(tool_name, args, &write_paths).await
+        self.execute_local(tool_name, args, &write_paths, tracking_lease)
+            .await
     }
 
     /// 本地执行：同步 IO 与模糊匹配放入 blocking pool；写文件类工具成功后
@@ -271,13 +277,45 @@ impl FilesystemService {
         tool_name: &str,
         args: &Value,
         write_paths: &[String],
+        tracking_lease: Option<std::sync::Arc<crate::mcp::tools::file_tracking::WriteLease>>,
     ) -> napi::Result<Value> {
         // 本地文件系统读写、编码转换和模糊匹配都是同步操作，必须放进
         // Tokio blocking pool，不能占用承载 Electron N-API Promise 的异步线程。
         let tool_name_owned = tool_name.to_owned();
         let args_owned = args.clone();
+        let tracking_paths = write_paths.to_vec();
+        let blocking_lease = tracking_lease.clone();
         let mut result = tokio::task::spawn_blocking(move || {
-            FilesystemService::new().execute(&tool_name_owned, &args_owned)
+            let _lease = blocking_lease;
+            let before = crate::mcp::tools::file_tracking::filesystem_before(&tracking_paths);
+            let mut result = FilesystemService::new().execute(&tool_name_owned, &args_owned)?;
+            if matches!(tool_name_owned.as_str(), "create" | "replace_edit" | "copy") {
+                // Keep legacy path fields, but make their values agree with the
+                // physical identity in the tracking envelope (including symlinks).
+                for field in ["path", "filePath", "targetFilePath", "sourceFilePath"] {
+                    if let Some(path) = result
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                    {
+                        if let Some(path) =
+                            crate::mcp::tools::file_tracking::physical_path(Path::new(&path))
+                        {
+                            result[field] =
+                                Value::String(crate::mcp::tools::file_tracking::path_string(&path));
+                        }
+                    }
+                }
+                if tool_name_owned == "copy" {
+                    result["filePath"] = result["targetFilePath"].clone();
+                }
+                result["fileTracking"] = crate::mcp::tools::file_tracking::filesystem_after(
+                    before,
+                    &result,
+                    tracking_paths.len(),
+                );
+            }
+            Ok::<_, napi::Error>(result)
         })
         .await
         .map_err(|error| {
@@ -365,7 +403,8 @@ impl FilesystemService {
         if search_content.is_empty() {
             return Err(Error::new(
                 Status::InvalidArg,
-                "searchContent must be a non-empty string for tool \"filesystem-replace_edit\".".to_string(),
+                "searchContent must be a non-empty string for tool \"filesystem-replace_edit\"."
+                    .to_string(),
             ));
         }
 
@@ -453,13 +492,16 @@ impl FilesystemService {
                 ) {
                     continue;
                 }
-                let rest_match = search_lines[1..].iter().enumerate().all(|(offset, &sline)| {
-                    line_matches_normalized(
-                        file_lines[start + 1 + offset],
-                        sline,
-                        preserve_indentation,
-                    )
-                });
+                let rest_match = search_lines[1..]
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, &sline)| {
+                        line_matches_normalized(
+                            file_lines[start + 1 + offset],
+                            sline,
+                            preserve_indentation,
+                        )
+                    });
                 if rest_match {
                     match_positions.push(start);
                 }
@@ -477,8 +519,7 @@ impl FilesystemService {
                 )
                 .map_err(|message| Error::new(Status::InvalidArg, message))?;
 
-                let replacement_lines =
-                    fuzzy_edit::split_replacement_lines(&effective_replacement);
+                let replacement_lines = fuzzy_edit::split_replacement_lines(&effective_replacement);
                 let replacement_line_count = replacement_lines.len();
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
                 new_lines.splice(target_start..end_line, replacement_lines);
@@ -611,10 +652,7 @@ impl FilesystemService {
                 let replacement_lines = fuzzy_edit::split_replacement_lines(&relaxed.replacement);
                 let replacement_line_count = replacement_lines.len();
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
-                new_lines.splice(
-                    relaxed.start_line..relaxed.end_line,
-                    replacement_lines,
-                );
+                new_lines.splice(relaxed.start_line..relaxed.end_line, replacement_lines);
                 let new_content = new_lines.join("\n");
 
                 // 0 修改检测：缩进宽松匹配替换后内容与原文一致同样拒绝写盘。
@@ -680,8 +718,7 @@ impl FilesystemService {
                 )
                 .map_err(|message| Error::new(Status::InvalidArg, message))?;
 
-                let replacement_lines =
-                    fuzzy_edit::split_replacement_lines(&effective_replacement);
+                let replacement_lines = fuzzy_edit::split_replacement_lines(&effective_replacement);
                 let replacement_line_count = replacement_lines.len();
                 let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
                 new_lines.splice(start_line..end_line, replacement_lines);
@@ -719,8 +756,7 @@ impl FilesystemService {
                 let review = fuzzy_edit::build_edit_review_context_lines(
                     &new_content,
                     start_line,
-                    (replacement_line_count > 0)
-                        .then_some(start_line + replacement_line_count - 1),
+                    (replacement_line_count > 0).then_some(start_line + replacement_line_count - 1),
                 );
 
                 return Ok(json!({

@@ -51,6 +51,7 @@ use super::servers::remote_workspace::{
     resolve_remote_workspace_path, RemoteWorkspaceCallback,
 };
 
+pub(crate) mod file_tracking;
 mod call;
 mod collect;
 mod plan_write;

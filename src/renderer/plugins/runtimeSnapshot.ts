@@ -41,6 +41,8 @@ export type RuntimeConversationState = {
   liteMode: boolean;
   yoloMode: boolean;
   fileChangeStats: unknown;
+  fileChangeCoverage: unknown;
+  fileChangeTrackingVersion: 1;
   streamingConversationIds: string[];
   completedConversationIds: string[];
   attentionRequiredConversationIds: string[];

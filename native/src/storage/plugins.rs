@@ -98,6 +98,10 @@ fn normalize_panels(value: Option<&Value>, default_entry: &str) -> Value {
     let Some(Value::Array(items)) = value else {
         return Value::Array(panels);
     };
+    // ECMAScript exported IdentifierName (including Unicode identifiers), not
+    // an expression/property path. Missing or invalid actions remain launchers.
+    let action_pattern = regex::Regex::new(r"^[$_\p{ID_Start}][$_\u{200C}\u{200D}\p{ID_Continue}]*$")
+        .expect("valid JavaScript export identifier pattern");
 
     for item in items {
         let Some(object) = item.as_object() else { continue };
@@ -118,6 +122,14 @@ fn normalize_panels(value: Option<&Value>, default_entry: &str) -> Value {
             .unwrap_or(default_entry)
             .to_string();
         let title = normalize_localized(object.get("title").or_else(|| object.get("name")), &id);
+        let chat_input_action = object.get("chatInputAction")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|action| action_pattern.is_match(action))
+            .unwrap_or_default();
+        // Leave a missing override empty so the renderer can fall back to the
+        // complete localized panel title, not only its default language.
+        let chat_input_title = normalize_localized(object.get("chatInputTitle"), "");
         let icon = object
             .get("icon")
             .and_then(Value::as_str)
@@ -131,6 +143,9 @@ fn normalize_panels(value: Option<&Value>, default_entry: &str) -> Value {
             "entry": entry,
             "icon": icon,
             "widthHint": width,
+            "chatInput": object.get("chatInput").and_then(Value::as_bool).unwrap_or(false),
+            "chatInputAction": chat_input_action,
+            "chatInputTitle": chat_input_title,
         }));
     }
 
@@ -863,6 +878,15 @@ fn query_plugin_record(connection: &Connection, plugin_id: &str) -> rusqlite::Re
     else {
         return Ok(None);
     };
+
+    // panels_json is an installation-time projection. Re-normalize the registered
+    // raw manifest so host upgrades expose newly supported declarative fields
+    // without requiring a rescan or mutating the plugin registration.
+    let panels_json = parse_manifest(&manifest_json)
+        .ok()
+        .filter(|manifest| manifest.id == plugin_id)
+        .map(|manifest| manifest.panels.to_string())
+        .unwrap_or(panels_json);
 
     Ok(Some(PluginRecord {
         plugin_id,

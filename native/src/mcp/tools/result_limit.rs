@@ -58,7 +58,10 @@ async fn load_limits() -> (usize, usize) {
         .and_then(Result::ok);
 
     let Some(context) = context else {
-        return (DEFAULT_MAX_CONTEXT_TOKENS, DEFAULT_TOOL_RESULT_LIMIT_PERCENT);
+        return (
+            DEFAULT_MAX_CONTEXT_TOKENS,
+            DEFAULT_TOOL_RESULT_LIMIT_PERCENT,
+        );
     };
 
     let snowcfg = serde_json::from_str::<Value>(&context.api_config.config_json)
@@ -92,7 +95,10 @@ async fn load_limits() -> (usize, usize) {
 }
 
 fn should_skip_limit(tool_full_name: &str, serialized: &str) -> bool {
-    if matches!(tool_full_name, "imagegen-generate" | "imagegen-image-describe") {
+    if matches!(
+        tool_full_name,
+        "imagegen-generate" | "imagegen-image-describe"
+    ) {
         return true;
     }
 
@@ -139,9 +145,7 @@ fn contains_image_content(value: &Value) -> bool {
 
             object.values().any(contains_image_content)
         }
-        Value::String(value) => {
-            value.contains("@@image:") || value.starts_with("data:image/")
-        }
+        Value::String(value) => value.contains("@@image:") || value.starts_with("data:image/"),
         _ => false,
     }
 }
@@ -155,7 +159,11 @@ fn truncate_result(
     let Ok(Value::Object(mut object)) = serde_json::from_str::<Value>(serialized) else {
         return fallback_result(serialized, message, original_tokens, max_result_tokens);
     };
-    let Some(content) = object.get("content").and_then(Value::as_str).map(str::to_owned) else {
+    let Some(content) = object
+        .get("content")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
         return fallback_result(serialized, message, original_tokens, max_result_tokens);
     };
 
@@ -194,8 +202,9 @@ fn truncate_result(
         );
     }
 
-    serde_json::to_string(&Value::Object(object))
-        .unwrap_or_else(|_| fallback_result(serialized, message, original_tokens, max_result_tokens))
+    serde_json::to_string(&Value::Object(object)).unwrap_or_else(|_| {
+        fallback_result(serialized, message, original_tokens, max_result_tokens)
+    })
 }
 
 fn fallback_result(
@@ -211,6 +220,49 @@ fn fallback_result(
         "tokenLimit": max_result_tokens,
         "content": "",
     });
+    // Structured tracking cannot be recovered from a truncated JSON string.
+    // Preserve it as a top-level object, reducing only the bounded files list
+    // when the configured result budget is too small (with explicit coverage).
+    if let Ok(original) = serde_json::from_str::<Value>(serialized) {
+        if let Some(tracking) = original
+            .get("fileTracking")
+            .filter(|value| value.is_object())
+        {
+            result["fileTracking"] = tracking.clone();
+            for field in [
+                "success",
+                "path",
+                "filePath",
+                "targetFilePath",
+                "sourceFilePath",
+                "deleteSource",
+            ] {
+                if let Some(value) = original.get(field) {
+                    result[field] = value.clone();
+                }
+            }
+            loop {
+                if count_tokens(&result.to_string()) <= max_result_tokens {
+                    break;
+                }
+                let Some(files) = result["fileTracking"]["files"].as_array_mut() else {
+                    break;
+                };
+                if files.pop().is_none() {
+                    break;
+                }
+                result["fileTracking"]["coverage"] = Value::String("partial".into());
+                if let Some(reasons) = result["fileTracking"]["reasons"].as_array_mut() {
+                    if !reasons
+                        .iter()
+                        .any(|value| value.as_str() == Some("result-token-limit"))
+                    {
+                        reasons.push(Value::String("result-token-limit".into()));
+                    }
+                }
+            }
+        }
+    }
     let base_tokens = crate::api::token_counter::count_tokens(&result.to_string());
     let content_budget = max_result_tokens.saturating_sub(base_tokens);
     let (piece, _) = truncate_to_token_prefix(serialized, content_budget);

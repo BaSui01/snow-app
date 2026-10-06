@@ -22,3 +22,4 @@ export type * from "./pets";
 export type * from "./team";
 export type * from "./userscripts";
 export type * from "./remoteControl";
+export type * from "./promptOptimization";

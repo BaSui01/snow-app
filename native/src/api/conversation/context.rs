@@ -125,6 +125,31 @@ fn build_sub_agents_section(database_path: &Path, directory_id: Option<&str>) ->
 pub async fn prepare_context_request(
     request: ConversationContextRequest<'_>,
 ) -> Result<PreparedConversationRequest> {
+    // Ephemeral auxiliary requests must return before image persistence or
+    // any conversation/system/ROLE lookup, including skip-context side effects.
+    if crate::api::ephemeral::is_active() {
+        // Route only caller-supplied metadata instructions through the provider
+        // system slot (Interactions does not interpret a system-role input as
+        // system_instruction). Never resolve configured or built-in prompts.
+        let mut current_messages = Vec::new();
+        let mut user_system_prompts = Vec::new();
+        for message in normalize_messages(request.messages) {
+            if matches!(message.role.as_str(), "system" | "developer") {
+                user_system_prompts.push(message.content);
+            } else {
+                current_messages.push(message);
+            }
+        }
+        if current_messages.is_empty() {
+            return Err(Error::from_reason("Chat message content is required"));
+        }
+        return Ok(PreparedConversationRequest {
+            conversation_id: String::new(),
+            messages: current_messages.clone(),
+            current_messages,
+            user_system_prompts,
+        });
+    }
     let mut current_messages = if request.resume_after_compaction {
         // Resume after auto-compaction: the handoff is already persisted as
         // the latest `context_compaction` boundary message and will be loaded

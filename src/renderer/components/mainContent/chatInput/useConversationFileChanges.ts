@@ -79,7 +79,10 @@ export const useConversationFileChanges = ({
     () =>
       messages
         .flatMap((message) => message.toolCalls ?? [])
-        .filter((toolCall) => toolCall.status === "completed")
+        .filter(
+          (toolCall) =>
+            toolCall.status === "completed" || toolCall.status === "error",
+        )
         .map(
           (toolCall) =>
             `${toolCall.interactionId}:${toolCall.status}:${toolCall.result?.length ?? 0}`,
@@ -198,7 +201,10 @@ export const useConversationFileChanges = ({
     return checkpointState.diffs.map((diff, index) => {
       const fallback = findFallbackChange(diff.path, fallbackChanges);
       return {
-        filePath: diff.path,
+        filePath: fallback?.filePath ?? diff.path,
+        fileKey: fallback?.fileKey,
+        source: fallback?.source,
+        root: fallback?.root,
         kind: toFileChangeKind(diff.changeType),
         agent: fallback?.agent ?? "main",
         subAgentName: fallback?.subAgentName,

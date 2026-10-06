@@ -57,7 +57,22 @@ export const PluginRuntimeBridge = ({
       goalMode: conversation.goalMode,
       liteMode: conversation.liteMode,
       yoloMode: conversation.yoloMode,
-      fileChangeStats: conversation.fileChangeStats ?? null,
+      fileChangeStats: conversation.activeConversationId
+        ? {
+            [conversation.activeConversationId]:
+              conversation.fileChangeStats[conversation.activeConversationId] ??
+              [],
+          }
+        : {},
+      fileChangeCoverage: conversation.activeConversationId
+        ? {
+            [conversation.activeConversationId]:
+              conversation.fileChangeCoverage[
+                conversation.activeConversationId
+              ] ?? [],
+          }
+        : {},
+      fileChangeTrackingVersion: 1,
       streamingConversationIds: Array.from(
         conversation.streamingConversationIds,
       ),
@@ -100,6 +115,7 @@ export const PluginRuntimeBridge = ({
     conversation.liteMode,
     conversation.yoloMode,
     conversation.fileChangeStats,
+    conversation.fileChangeCoverage,
     conversation.streamingConversationIds,
     conversation.completedConversationIds,
     conversation.attentionRequiredConversationIds,

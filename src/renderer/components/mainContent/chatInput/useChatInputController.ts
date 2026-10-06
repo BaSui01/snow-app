@@ -27,6 +27,7 @@ import {
   getThinkingValueFromConfig,
   normalizeRequestMethod,
 } from "./configThinking";
+import { markPluginDraftChanged } from "../../../plugins/pluginDraft";
 import { resolveAutoSendOptions } from "./autoSendOptions";
 import { useSendKeyMode } from "./useSendKeyMode";
 import type {
@@ -121,8 +122,12 @@ export const useChatInputController = ({
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const { sendKeyMode, setSendKeyMode } = useSendKeyMode();
-  const [value, setValue] = useState("");
+  const [value, setInputValue] = useState("");
   const textareaRef = useRef<HTMLDivElement>(null);
+  const setValue = useCallback((content: string): void => {
+    markPluginDraftChanged(textareaRef.current);
+    setInputValue(content);
+  }, []);
   // Mirrors `value` so unmount cleanup can save the latest draft without
   // stale closure captures.
   const latestValueRef = useRef(value);
@@ -594,6 +599,7 @@ export const useChatInputController = ({
       // setValue 的异步更新，卸载清理会用旧值（如过滤词 /clear）把残留
       // 写回草稿池并在重建后恢复出来。这里立即同步 latestValueRef。
       latestValueRef.current = content;
+      saveInputDraft?.(conversationId, content);
 
       if (textareaRef.current) {
         const html = buildSegmentsHtml(parseContentSegments(content));
@@ -609,7 +615,7 @@ export const useChatInputController = ({
         });
       }
     },
-    [adjustHeight, textareaRef],
+    [adjustHeight, textareaRef, conversationId, saveInputDraft, setValue],
   );
 
   // --- Per-conversation draft persistence ---

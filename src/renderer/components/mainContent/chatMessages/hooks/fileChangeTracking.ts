@@ -3,7 +3,10 @@ import type {
   FileChangeDiff,
   ToolCallInfo,
 } from "../utils/conversationTypes";
-import type { FileChangeRecord } from "../utils/conversationTypes";
+import type {
+  FileChangeRecord,
+  FileChangeCoverageRecord,
+} from "../utils/conversationTypes";
 import { parseToolCalls } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
 import { pathsReferToSameFile } from "../toolCalls/shared/formatters";
@@ -19,8 +22,137 @@ const FILE_MODIFYING_TOOLS = new Set([
 /** 单次工具调用产生的文件变更（归属与时间戳由调用方补齐）。 */
 type ExtractedFileMutation = Pick<
   FileChangeRecord,
-  "filePath" | "kind" | "diff"
+  "filePath" | "fileKey" | "source" | "root" | "kind" | "diff"
 >;
+
+type ExtractedCoverage = Omit<
+  FileChangeCoverageRecord,
+  "timestamp" | "agent" | "subAgentName"
+>;
+type FileTrackingEnvelope = ExtractedCoverage & {
+  version: 1;
+  files: Array<{
+    filePath: string;
+    fileKey: string;
+    kind: FileChangeRecord["kind"];
+  }>;
+};
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const isAbsolutePath = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.trim() === value &&
+  !value.includes("\u0000") &&
+  /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(value);
+
+/** Parse only a complete JSON payload, never repair truncated responses. */
+const parseTrackingResult = (
+  text: string,
+): Record<string, unknown> | undefined => {
+  try {
+    const value: unknown = JSON.parse(stripHookSuffix(text));
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
+const readTrackingEnvelope = (
+  toolName: string,
+  result: Record<string, unknown> | undefined,
+): FileTrackingEnvelope | undefined => {
+  if (
+    !FILE_MODIFYING_TOOLS.has(toolName) &&
+    toolName !== "bash-terminal-execute"
+  )
+    return undefined;
+  let value = result?.fileTracking;
+  let wrappedError = false;
+  // Native throws may be preserved as a complete JSON string in result.error.
+  // Inspect exactly one wrapper, only when there is no top-level envelope;
+  // never search fragments, strip inner suffixes or repair truncated JSON.
+  if (
+    result &&
+    !("fileTracking" in result) &&
+    typeof result.error === "string"
+  ) {
+    try {
+      const inner: unknown = JSON.parse(result.error);
+      if (isRecord(inner) && "fileTracking" in inner) {
+        value = inner.fileTracking;
+        wrappedError = true;
+      }
+    } catch {
+      /* Keep the original error and unavailable evidence. */
+    }
+  }
+  const source =
+    toolName === "bash-terminal-execute" ? "terminal" : "filesystem";
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    value.source !== source ||
+    !(value.root === null || isAbsolutePath(value.root)) ||
+    !(
+      value.coverage === "scoped" ||
+      value.coverage === "partial" ||
+      value.coverage === "unavailable"
+    ) ||
+    (source === "terminal" && value.coverage === "scoped") ||
+    !Array.isArray(value.reasons) ||
+    !value.reasons.every((reason) => typeof reason === "string") ||
+    !Array.isArray(value.files) ||
+    !value.files.every(
+      (file) =>
+        isRecord(file) &&
+        isAbsolutePath(file.filePath) &&
+        typeof file.fileKey === "string" &&
+        file.fileKey.trim().length > 0 &&
+        !file.fileKey.includes("\u0000") &&
+        (file.kind === "create" ||
+          file.kind === "edit" ||
+          file.kind === "delete"),
+    ) ||
+    (value.coverage === "unavailable" && value.files.length > 0) ||
+    (source === "filesystem" &&
+      value.files.length > 0 &&
+      (wrappedError ||
+        result?.success !== true ||
+        (result && "error" in result)))
+  )
+    return undefined;
+  return value as unknown as FileTrackingEnvelope;
+};
+
+export function extractFileChangeCoverageFromTool(
+  toolName: string,
+  resultJson: string,
+): ExtractedCoverage | undefined {
+  const result = parseTrackingResult(resultJson);
+  const envelope = readTrackingEnvelope(toolName, result);
+  if (envelope) {
+    const { source, root, coverage, reasons } = envelope;
+    return { source, root, coverage, reasons };
+  }
+  if (
+    toolName === "bash-terminal-execute" ||
+    (FILE_MODIFYING_TOOLS.has(toolName) &&
+      result &&
+      ("fileTracking" in result || result.success === true))
+  ) {
+    return {
+      source: toolName === "bash-terminal-execute" ? "terminal" : "filesystem",
+      root: null,
+      coverage: "unavailable",
+      reasons: [
+        result && "fileTracking" in result
+          ? "invalid_file_tracking"
+          : "missing_file_tracking",
+      ],
+    };
+  }
+  return undefined;
+}
 
 /**
  * Build the diff patch for a successful file-modifying tool call so the
@@ -92,86 +224,83 @@ const buildCopyFileChanges = (
   return changes;
 };
 
-/**
- * Extract the file-change records from a completed tool call, or an empty array
- * when the tool call did not modify a file (different tool, missing filePath,
- * or the tool result indicates failure).
- *
- * Only the dedicated filesystem write tools are tracked:
- *   - filesystem-create:        success = { "success": true, "path": ... }
- *   - filesystem-replace_edit:  success = { "success": true, ... }
- *   - filesystem-copy:          success = { "success": true, ... }
- * All of them carry the target path in the `filePath` argument, which is where
- * we read it from (the create result also echoes it, but the argument is the
- * single source of truth).
- *
- * The result JSON is parsed defensively: hooks may append context to the
- * result string, so a parse failure simply means "no record".
- */
+/** Consume v1 evidence even for non-zero terminal exits. Legacy file tools
+ * retain their old non-canonical paths; invalid v1 never falls back. */
 export function extractFileChangesFromTool(
   toolName: string,
   argsJson: string,
   resultJson: string,
 ): ExtractedFileMutation[] {
-  if (!FILE_MODIFYING_TOOLS.has(toolName)) {
-    return [];
-  }
-
-  let args: unknown;
-  let result: unknown;
+  const result = parseTrackingResult(resultJson);
+  const envelope = readTrackingEnvelope(toolName, result);
+  let args: Record<string, unknown> = {};
   try {
-    args = JSON.parse(argsJson);
-    result = JSON.parse(resultJson);
+    const parsed: unknown = JSON.parse(argsJson);
+    if (isRecord(parsed)) args = parsed;
   } catch {
-    return [];
+    /* Evidence does not depend on arguments. */
   }
-
-  // A successful tool result carries "success": true. Anything else
-  // (error JSON, plain text error, hook-abort JSON) is not a modification.
+  if (envelope) {
+    const target =
+      readText(result!, "targetFilePath") ||
+      readText(result!, "filePath") ||
+      readText(result!, "path");
+    const source = readText(result!, "sourceFilePath");
+    return envelope.files.map((file) => {
+      let diff: FileChangeDiff | undefined;
+      if (envelope.source === "filesystem") {
+        if (toolName === "filesystem-create") {
+          diff = buildFileChangeDiff(
+            file.filePath,
+            "",
+            readText(args, "content"),
+          );
+        } else if (toolName === "filesystem-replace_edit") {
+          diff = buildFileChangeDiff(
+            file.filePath,
+            readText(args, "searchContent"),
+            readText(args, "replaceContent"),
+          );
+        } else if (target && pathsReferToSameFile(file.filePath, target)) {
+          diff = buildFileChangeDiff(
+            file.filePath,
+            readText(result!, "replacedContent"),
+            readText(result!, "pastedContent"),
+          );
+        } else if (source && pathsReferToSameFile(file.filePath, source)) {
+          diff = buildFileChangeDiff(
+            file.filePath,
+            readText(result!, "removedContent"),
+            "",
+          );
+        }
+      }
+      return { ...file, source: envelope.source, root: envelope.root, diff };
+    });
+  }
   if (
-    typeof args !== "object" ||
-    args === null ||
-    typeof (args as Record<string, unknown>).filePath !== "string" ||
-    typeof result !== "object" ||
-    result === null ||
-    (result as Record<string, unknown>).success !== true
-  ) {
+    !FILE_MODIFYING_TOOLS.has(toolName) ||
+    !result ||
+    "fileTracking" in result ||
+    "error" in result ||
+    result.success !== true
+  )
     return [];
-  }
-
-  const argsRecord = args as Record<string, unknown>;
-  const resultRecord = result as Record<string, unknown>;
-  const filePath = (argsRecord.filePath as string).trim();
-  if (!filePath) {
-    return [];
-  }
-
-  if (toolName === "filesystem-copy") {
-    return buildCopyFileChanges(argsRecord, resultRecord, filePath);
-  }
-
-  if (toolName === "filesystem-create") {
-    return [
-      {
-        filePath,
-        kind: "create",
-        diff: buildFileChangeDiff(
-          filePath,
-          "",
-          readText(argsRecord, "content"),
-        ),
-      },
-    ];
-  }
-
+  const filePath = readText(args, "filePath").trim();
+  if (!filePath) return [];
+  if (toolName === "filesystem-copy")
+    return buildCopyFileChanges(args, result, filePath);
   return [
     {
       filePath,
-      kind: "edit",
+      kind: toolName === "filesystem-create" ? "create" : "edit",
       diff: buildFileChangeDiff(
         filePath,
-        readText(argsRecord, "searchContent"),
-        readText(argsRecord, "replaceContent"),
+        toolName === "filesystem-create" ? "" : readText(args, "searchContent"),
+        readText(
+          args,
+          toolName === "filesystem-create" ? "content" : "replaceContent",
+        ),
       ),
     },
   ];
@@ -196,9 +325,9 @@ export function collectConversationFileChanges(
   const changes = fileChangeStats[conversationId] ?? [];
   const latestByPath = new Map<string, FileChangeRecord>();
   for (const change of changes) {
-    const existing = latestByPath.get(change.filePath);
+    const existing = latestByPath.get(change.fileKey ?? change.filePath);
     if (!existing || change.timestamp >= existing.timestamp) {
-      latestByPath.set(change.filePath, change);
+      latestByPath.set(change.fileKey ?? change.filePath, change);
     }
   }
   return [...latestByPath.values()].sort(
@@ -208,7 +337,8 @@ export function collectConversationFileChanges(
 
 /** Count of unique file paths in a list of change records. */
 export function countUniqueFiles(changes: FileChangeRecord[]): number {
-  return new Set(changes.map((change) => change.filePath)).size;
+  return new Set(changes.map((change) => change.fileKey ?? change.filePath))
+    .size;
 }
 
 export type FileChangeLineStats = {
@@ -248,7 +378,7 @@ export function countFileChangeLines(
  *  (the caller decides whether it belongs to the main agent or a sub-agent). */
 export type ExtractedFileChange = Pick<
   FileChangeRecord,
-  "filePath" | "kind" | "timestamp" | "diff"
+  "filePath" | "fileKey" | "source" | "root" | "kind" | "timestamp" | "diff"
 >;
 
 /**
@@ -271,67 +401,65 @@ const stripHookSuffix = (result: string): string =>
  * extraction (e.g. after switching conversations) yields stable keys that the
  * merge step can de-duplicate against.
  */
-export function extractFileChangesFromRecords(
-  records: ChatMessageRecord[],
-): ExtractedFileChange[] {
+export function extractFileTrackingFromRecords(records: ChatMessageRecord[]): {
+  changes: ExtractedFileChange[];
+  coverage: Array<ExtractedCoverage & { timestamp: number }>;
+} {
   const toolResultQueues = new Map<string, string[]>();
   for (const record of records) {
-    if (record.role !== "tool" || !record.content) {
-      continue;
-    }
-    for (const segment of record.content.split("\n\n")) {
+    if (record.role !== "tool" || !record.content) continue;
+    // Split only at an actual tool header, not at blank lines in a result/hook.
+    for (const segment of record.content.split(/\n\n(?=\[Tool: [^\n]+\]\n)/)) {
       const match = segment.match(/^\[Tool:\s*(.+?)\]\n([\s\S]*)$/);
-      if (!match) {
-        continue;
-      }
+      if (!match) continue;
       const queue = toolResultQueues.get(match[1]) ?? [];
       queue.push(match[2]);
       toolResultQueues.set(match[1], queue);
     }
   }
-
   const consumeToolResult = (toolCall: ToolCallInfo): string | undefined => {
     const identifiers = toolCall.callId
       ? [`${toolCall.name}#${toolCall.callId}`, toolCall.name]
       : [toolCall.name];
     for (const identifier of identifiers) {
       const queue = toolResultQueues.get(identifier);
-      if (queue && queue.length > 0) {
-        return queue.shift();
-      }
+      if (queue?.length) return queue.shift();
     }
     return undefined;
   };
-
   const changes: ExtractedFileChange[] = [];
+  const coverage: Array<ExtractedCoverage & { timestamp: number }> = [];
   for (const record of records) {
-    if (
-      record.role !== "assistant" ||
-      resolveResponseDisposition(record).kind !== "complete"
-    ) {
-      continue;
-    }
+    if (record.role !== "assistant") continue;
+    const complete = resolveResponseDisposition(record).kind === "complete";
     for (const toolCall of parseToolCalls(record.toolCallsJson)) {
       const result = consumeToolResult(toolCall);
-      if (result === undefined) {
+      if (result === undefined) continue;
+      // An incomplete assistant is not evidence of execution. Only a valid
+      // paired v1 result proves side effects independently of response status.
+      if (
+        !complete &&
+        !readTrackingEnvelope(toolCall.name, parseTrackingResult(result))
+      )
         continue;
-      }
-      const extracted = extractFileChangesFromTool(
+      const parsedTimestamp = Date.parse(record.createdAt);
+      const timestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : 0;
+      const evidence = extractFileChangeCoverageFromTool(toolCall.name, result);
+      if (evidence) coverage.push({ ...evidence, timestamp });
+      for (const change of extractFileChangesFromTool(
         toolCall.name,
         toolCall.arguments,
-        stripHookSuffix(result),
-      );
-      if (extracted.length === 0) {
-        continue;
-      }
-      const parsedTimestamp = Date.parse(record.createdAt);
-      const timestamp = Number.isFinite(parsedTimestamp)
-        ? parsedTimestamp
-        : Date.now();
-      for (const change of extracted) {
+        result,
+      )) {
         changes.push({ ...change, timestamp });
       }
     }
   }
-  return changes;
+  return { changes, coverage };
+}
+
+export function extractFileChangesFromRecords(
+  records: ChatMessageRecord[],
+): ExtractedFileChange[] {
+  return extractFileTrackingFromRecords(records).changes;
 }

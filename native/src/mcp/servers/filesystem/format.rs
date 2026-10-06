@@ -170,6 +170,9 @@ fn take_ready() -> Vec<String> {
 
 /// 对单个文件执行一次格式化。
 async fn format_file(file_path: &str) {
+    // Always take the independent tracking reservation before the file lock.
+    let tracking_lease =
+        crate::mcp::tools::file_tracking::coordinate(&[file_path.to_string()]).await;
     // 与编辑工具共用同一把文件锁：格式化永远排在正在进行的编辑之后，也不会
     // 和编辑的「读取 -> 计算 -> 写盘」交错。
     let write_lock = file_lock::file_write_lock(file_path);
@@ -186,9 +189,15 @@ async fn format_file(file_path: &str) {
     // Prettier 子进程是同步阻塞调用，放进 blocking pool，避免占用承载
     // Electron N-API Promise 的异步线程；改写发生时补记检查点 expected。
     let _ = tokio::task::spawn_blocking(move || {
+        let _tracking_lease = tracking_lease;
+        let write_permit = _permit;
         let Some(previous_object_id) = run_prettier(&path) else {
             return;
         };
+        // No disk write remains. Release before entering checkpoint locking:
+        // a file-tool checkpoint reader may already be waiting for this lease.
+        drop(write_permit);
+        drop(_tracking_lease);
         if let Err(error) = crate::storage::services::checkpoint::record_formatted_file(
             &recorded_path,
             &previous_object_id,
@@ -215,9 +224,25 @@ fn is_prettier_supported_extension(file_path: &Path) -> bool {
     };
     matches!(
         extension.to_ascii_lowercase().as_str(),
-        "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts"
-            | "json" | "jsonc" | "css" | "scss" | "less" | "html"
-            | "md" | "markdown" | "yaml" | "yml" | "graphql" | "gql"
+        "js" | "jsx"
+            | "mjs"
+            | "cjs"
+            | "ts"
+            | "tsx"
+            | "mts"
+            | "cts"
+            | "json"
+            | "jsonc"
+            | "css"
+            | "scss"
+            | "less"
+            | "html"
+            | "md"
+            | "markdown"
+            | "yaml"
+            | "yml"
+            | "graphql"
+            | "gql"
     )
 }
 

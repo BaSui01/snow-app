@@ -49,6 +49,15 @@ export type PluginPanelDefinition = {
   entry: string;
   icon: string;
   widthHint: string;
+  chatInput?: boolean;
+  chatInputAction?: string;
+  chatInputTitle?: PluginLocalizedMap;
+};
+
+export type PluginMessageFooterDefinition = {
+  id: string;
+  entry: string;
+  exportName: string;
 };
 
 /** 渲染层使用的插件视图模型（PluginRecord 解析后的形态）。 */
@@ -64,6 +73,7 @@ export type PluginView = {
   renderMode: PluginRenderMode;
   entry: string;
   panels: PluginPanelDefinition[];
+  messageFooters: PluginMessageFooterDefinition[];
   locales: Record<string, string>;
   styles: string[];
   privacy: SensitiveScope[];

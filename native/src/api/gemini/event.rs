@@ -1,6 +1,7 @@
 //! Gemini SSE event block parsing and individual event processing.
 
 use napi::bindgen_prelude::*;
+use crate::api::ephemeral::diagnostic as eprintln;
 use serde_json::Value;
 
 use crate::api::common::{read_first_i64, read_string};

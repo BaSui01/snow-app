@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { AiResponse } from "./AiResponse";
+import { PluginMessageFooters } from "./PluginMessageFooters";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
 import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
@@ -139,6 +140,18 @@ export const MessageContent = memo(
           interruptionReason={message.interruptionReason}
           recoveryOutcome={message.recoveryOutcome}
           showActions={showActions}
+          footerContent={
+            isLastAssistant &&
+            showActions &&
+            !isAborting &&
+            activeConversationId ? (
+              <PluginMessageFooters
+                key={`${activeConversationId}:${message.id}`}
+                conversationId={activeConversationId}
+                messageId={message.id}
+              />
+            ) : undefined
+          }
           toolCalls={message.toolCalls}
           hookExecutions={message.hookExecutions}
           pendingToolAuthorizations={

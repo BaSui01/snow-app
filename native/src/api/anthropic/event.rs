@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use napi::bindgen_prelude::*;
+use crate::api::ephemeral::diagnostic as eprintln;
 use serde_json::Value;
 
 use crate::api::common::{push_trimmed_string, read_path_i64, read_string, truncate_utf8_safe};

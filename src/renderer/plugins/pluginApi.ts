@@ -9,12 +9,19 @@ import {
   type MetadataDomainSummary,
   type MetadataSubscription,
 } from "./metadata";
+import { createPluginAiApi, type PluginAiApi } from "./pluginAi";
 import type { MetadataResponse, PluginView } from "./types";
 import { describeWriteDomains, executeWrite, WRITE_ACTION_IDS } from "./writes";
 import type {
   PluginWriteDomainSummary,
   PluginWriteResponse,
 } from "./writes/types";
+
+export type {
+  PluginChatInputAction,
+  PluginChatInputActionContext,
+  PluginChatInputActionResult,
+} from "./pluginChatInputAction";
 
 type TranslationValues = Record<string, string | number>;
 
@@ -87,9 +94,11 @@ export type PluginRuntimeApi = {
   metadata: PluginMetadataApi;
   write: PluginWriteApi;
   storage: PluginStorageApi;
+  ai: PluginAiApi;
   net: PluginNetApi;
   assets: { resolve: (relativePath: string) => Promise<string | null> };
   ui: {
+    messageFooterVersion: 1;
     React: typeof ReactNamespace;
     icon: (name: string) => unknown;
   };
@@ -136,6 +145,8 @@ export const createPluginApi = async (params: {
   locale: Locale;
   messages: Record<string, string>;
   icons: Record<string, unknown>;
+  /** Actions must not silently run with defaults when current preferences cannot load. */
+  requireFreshStorage?: boolean;
 }): Promise<PluginRuntimeApi> => {
   const { plugin, locale, messages, icons } = params;
   const storageCache = new Map<string, string>();
@@ -173,6 +184,9 @@ export const createPluginApi = async (params: {
       storageCache.set(entry.key, entry.value);
     }
   } catch (error) {
+    if (params.requireFreshStorage) {
+      throw new Error("Cannot load current plugin preferences");
+    }
     console.warn(`Failed to load plugin storage for ${plugin.pluginId}`, error);
   }
 
@@ -199,6 +213,7 @@ export const createPluginApi = async (params: {
         subscribeMetadata(plugin, locale, domain, listener, options ?? {}),
       domains: () => describeMetadataDomains(plugin),
     },
+    ai: createPluginAiApi(plugin),
     write: createWriteApi(plugin, locale),
     storage,
     assets: {
@@ -210,6 +225,7 @@ export const createPluginApi = async (params: {
         window.snow.requestPluginHttp({ ...(options ?? {}), url }),
     },
     ui: {
+      messageFooterVersion: 1,
       React: ReactNamespace,
       icon: (name) => icons[name] ?? null,
     },

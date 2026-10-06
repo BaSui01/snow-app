@@ -2,6 +2,7 @@ import type { Locale } from "../../shared/locale";
 import type { PluginRecord } from "../../preload/types/plugins";
 import type {
   PluginLocalizedMap,
+  PluginMessageFooterDefinition,
   PluginPanelDefinition,
   PluginRenderMode,
   PluginView,
@@ -46,7 +47,7 @@ const PRIMARY_LOCALE_TAG: Record<Locale, string> = {
 
 export const resolveLocalized = (
   map: PluginLocalizedMap,
-  locale: Locale
+  locale: Locale,
 ): string => {
   if (map[locale]) {
     return map[locale];
@@ -70,7 +71,7 @@ export const resolveLocalized = (
 /** 依据应用语言挑选插件的语言包文件路径。 */
 export const pickLocaleFile = (
   locales: Record<string, string>,
-  locale: Locale
+  locale: Locale,
 ): string | null => {
   if (locales[locale]) {
     return locales[locale];
@@ -106,6 +107,15 @@ const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
     }
     panels.push({
       id,
+      chatInput: record.chatInput === true,
+      chatInputAction:
+        typeof record.chatInputAction === "string" &&
+        /^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(
+          record.chatInputAction.trim(),
+        )
+          ? record.chatInputAction.trim()
+          : "",
+      chatInputTitle: normalizeLocalizedMap(record.chatInputTitle),
       title: normalizeLocalizedMap(record.title),
       entry: typeof record.entry === "string" ? record.entry.trim() : "",
       icon: typeof record.icon === "string" ? record.icon.trim() : "",
@@ -114,6 +124,43 @@ const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
     });
   }
   return panels;
+};
+
+const normalizeMessageFooters = (
+  record: PluginRecord,
+): PluginMessageFooterDefinition[] => {
+  if (record.renderMode !== "esm") return [];
+  const manifest = parseJson<unknown>(record.manifestJson, null);
+  if (!manifest || typeof manifest !== "object") return [];
+  const contributions = (manifest as Record<string, unknown>).contributions;
+  if (!contributions || typeof contributions !== "object") return [];
+  const items = (contributions as Record<string, unknown>).messageFooters;
+  if (!Array.isArray(items)) return [];
+  const result: PluginMessageFooterDefinition[] = [];
+  const ids = new Set<string>();
+  for (const item of items.slice(0, 16)) {
+    if (!item || typeof item !== "object") continue;
+    const value = item as Record<string, unknown>;
+    const id = typeof value.id === "string" ? value.id.trim() : "";
+    const exportName =
+      typeof value.exportName === "string" ? value.exportName.trim() : "";
+    // Only an omitted entry falls back; a supplied invalid path is rejected.
+    const entry = value.entry === undefined ? record.entry : value.entry;
+    if (
+      !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(id) ||
+      ids.has(id) ||
+      !/^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(exportName) ||
+      typeof entry !== "string" ||
+      !entry ||
+      entry !== entry.trim() ||
+      /[\\\x00-\x1f\x7f:%?#]/.test(entry) ||
+      entry.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      continue;
+    ids.add(id);
+    result.push({ id, entry, exportName });
+  }
+  return result;
 };
 
 export const parsePluginRecord = (record: PluginRecord): PluginView => ({
@@ -125,12 +172,16 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   homepage: record.homepage,
   license: record.license,
   icon: record.icon,
-  renderMode: (record.renderMode === "iframe" ? "iframe" : "esm") as PluginRenderMode,
+  renderMode: (record.renderMode === "iframe"
+    ? "iframe"
+    : "esm") as PluginRenderMode,
   entry: record.entry,
   panels: normalizePanels(parseJson(record.panels, [])),
+  messageFooters: normalizeMessageFooters(record),
   locales: parseJson(record.locales, {}),
   styles: parseJson<string[]>(record.styles, []).filter(
-    (item): item is string => typeof item === "string" && item.trim().length > 0
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
   ),
   privacy: Array.isArray(record.privacy)
     ? record.privacy.filter(isSensitiveScope)
@@ -147,8 +198,9 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
 
 /** 插件图标：lucide:IconName / 相对路径 / 内联或远程 URL。 */
 export const resolvePluginIcon = (
-  icon: string
-): { kind: "lucide"; name: string } | { kind: "asset"; path: string } | null => {
+  icon: string,
+):
+  { kind: "lucide"; name: string } | { kind: "asset"; path: string } | null => {
   const trimmed = icon.trim();
   if (!trimmed) {
     return null;
@@ -175,27 +227,34 @@ const localeTagCandidates = (locale: Locale): string[] => {
 /** 读取插件语言包（缺失时返回空表，调用方回退到插件自带文案）。 */
 export const loadPluginMessages = async (
   plugin: PluginView,
-  locale: Locale
+  locale: Locale,
+  signal?: AbortSignal,
 ): Promise<Record<string, string>> => {
+  signal?.throwIfAborted();
   const direct = pickLocaleFile(plugin.locales, locale);
   if (direct) {
     try {
       const raw = await window.snow.readPluginFile(plugin.pluginId, direct);
+      signal?.throwIfAborted();
       return parseJson<Record<string, string>>(raw, {});
     } catch {
+      signal?.throwIfAborted();
       return {};
     }
   }
 
   for (const tag of localeTagCandidates(locale)) {
+    signal?.throwIfAborted();
     const candidate = plugin.locales[tag];
     if (!candidate) {
       continue;
     }
     try {
       const raw = await window.snow.readPluginFile(plugin.pluginId, candidate);
+      signal?.throwIfAborted();
       return parseJson<Record<string, string>>(raw, {});
     } catch {
+      signal?.throwIfAborted();
       continue;
     }
   }

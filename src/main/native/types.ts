@@ -1,3 +1,8 @@
+import type {
+  PromptOptimizationRequest,
+  PromptOptimizationResult,
+} from "../../preload/types/promptOptimization";
+
 export type AppStorageInfo = {
   directoryPath: string;
   databasePath: string;
@@ -2576,6 +2581,12 @@ export type NativeBridge = {
   ) => Promise<string>;
   /** 删除某条记录（消息/笔记）的整个媒体目录。 */
   teamMediaDelete: (repoPath: string, ownerId: string) => Promise<boolean>;
+  preparePromptOptimization: (streamId: string) => boolean;
+  abortPromptOptimization: (streamId: string) => boolean;
+  optimizePrompt: (
+    request: PromptOptimizationRequest,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+  ) => Promise<PromptOptimizationResult>;
   generateCommitMessage: (
     repoPath: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,

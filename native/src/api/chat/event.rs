@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::api::common::{push_reasoning_text, push_trimmed_string, read_first_i64, read_string};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 use napi::bindgen_prelude::*;
+use crate::api::ephemeral::diagnostic as eprintln;
 use serde_json::Value;
 
 /// Process a raw SSE event block (text between two separators) for the

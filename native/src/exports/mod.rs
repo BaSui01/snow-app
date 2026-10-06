@@ -8,6 +8,7 @@ mod ide;
 mod images;
 mod market;
 mod pets;
+mod prompt_optimization;
 pub(crate) mod pre_script;
 mod remote_control;
 mod sample;

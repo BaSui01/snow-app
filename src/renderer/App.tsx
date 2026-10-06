@@ -656,6 +656,19 @@ export const App = (): React.JSX.Element => {
     [isRightPanelCollapsed, clearAutoCollapsed],
   );
 
+  const handleOpenProjectExplorer = useCallback(
+    (directoryId: string) => {
+      if (isRightPanelCollapsed) {
+        clearAutoCollapsed("rightPanel");
+        setIsRightPanelCollapsed(false);
+      }
+      requestAnimationFrame(() => {
+        rightPanelRef.current?.openExplorer(directoryId);
+      });
+    },
+    [isRightPanelCollapsed, clearAutoCollapsed],
+  );
+
   const handleOpenFile = useCallback(
     (
       filePath: string,
@@ -998,6 +1011,7 @@ export const App = (): React.JSX.Element => {
             onOpenTerminal={handleOpenTerminal}
             onOpenBrowser={handleOpenBrowser}
             onOpenCodebase={handleOpenCodebase}
+            onOpenProjectExplorer={handleOpenProjectExplorer}
             onOpenDrawing={handleOpenDrawing}
             onOpenPluginPanel={handleOpenPluginPanel}
           />

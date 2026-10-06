@@ -24,6 +24,8 @@ import {
 } from "./gitGraphRefs";
 import { formatDate } from "./gitGraphUtils";
 
+const ARC_KAPPA = 0.5523;
+
 type CommitRowProps = {
   row: GraphRow;
   graphWidth: number;
@@ -133,15 +135,16 @@ export function CommitRow({
           {row.curves.map((c, i) => {
             const fromX = c.from * LANE_WIDTH + LANE_WIDTH / 2;
             const toX = c.to * LANE_WIDTH + LANE_WIDTH / 2;
-            const dir = toX > fromX ? 1 : -1;
+            const startY = ROW_HEIGHT / 2;
+            const endY = ROW_HEIGHT + LINE_WIDTH / 2;
             return (
               <path
                 key={`curve-${i}`}
-                d={`M ${fromX},${ROW_HEIGHT / 2} C ${
-                  fromX + dir * (LANE_WIDTH / 2)
-                },${ROW_HEIGHT / 2} ${toX},${ROW_HEIGHT * 0.75} ${toX},${
-                  ROW_HEIGHT + LINE_WIDTH / 2
-                }`}
+                d={`M ${fromX},${startY} C ${
+                  fromX + (toX - fromX) * ARC_KAPPA
+                },${startY} ${toX},${
+                  endY - (endY - startY) * ARC_KAPPA
+                } ${toX},${endY}`}
                 fill="none"
                 stroke={c.color}
                 strokeWidth={LINE_WIDTH}
@@ -151,15 +154,14 @@ export function CommitRow({
           {row.merges.map((m, i) => {
             const fromX = m.from * LANE_WIDTH + LANE_WIDTH / 2;
             const dotX = row.dotLane * LANE_WIDTH + LANE_WIDTH / 2;
-            const dir = fromX > dotX ? 1 : -1;
+            const startY = -LINE_WIDTH / 2;
+            const endY = ROW_HEIGHT / 2;
             return (
               <path
                 key={`merge-${i}`}
-                d={`M ${fromX},${-LINE_WIDTH / 2} C ${fromX},${
-                  ROW_HEIGHT * 0.25
-                } ${dotX + dir * (LANE_WIDTH * 0.6)},${
-                  ROW_HEIGHT * 0.41
-                } ${dotX},${ROW_HEIGHT / 2}`}
+                d={`M ${fromX},${startY} C ${fromX},${
+                  startY + (endY - startY) * ARC_KAPPA
+                } ${dotX + (fromX - dotX) * ARC_KAPPA},${endY} ${dotX},${endY}`}
                 fill="none"
                 stroke={m.color}
                 strokeWidth={LINE_WIDTH}

@@ -77,6 +77,11 @@ export type OpenPluginPanelPayload = {
   title?: string;
 };
 
+export type OpenExplorerPayload = {
+  /** 资源管理器要展示的工作区目录 id */
+  directoryId: string;
+};
+
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
@@ -84,6 +89,7 @@ type RightPanelEventMap = {
   "open-file": (payload: OpenFilePayload) => void;
   "open-terminal-command": (payload: OpenTerminalCommandPayload) => void;
   "open-plugin-panel": (payload: OpenPluginPanelPayload) => void;
+  "open-explorer": (payload: OpenExplorerPayload) => void;
   "request-expand": () => void;
 };
 
@@ -96,6 +102,7 @@ const listeners: {
   "open-file"?: Set<(payload: OpenFilePayload) => void>;
   "open-terminal-command"?: Set<(payload: OpenTerminalCommandPayload) => void>;
   "open-plugin-panel"?: Set<(payload: OpenPluginPanelPayload) => void>;
+  "open-explorer"?: Set<(payload: OpenExplorerPayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};
 

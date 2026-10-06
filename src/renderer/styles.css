@@ -4306,6 +4306,42 @@ body.is-panel-resizing * {
 
 /* ===== Project Explorer ===== */
 
+.explorer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.explorer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 0;
+  flex-shrink: 0;
+}
+
+.explorer-toolbar .explorer-search-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+.explorer-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.explorer-placement-btn {
+  margin-left: auto;
+}
+
+.explorer-placement-btn,
+.explorer-refresh-btn {
+  flex-shrink: 0;
+}
+
 .explorer-content {
   flex: 1;
   min-height: 0;
@@ -4313,10 +4349,6 @@ body.is-panel-resizing * {
   flex-direction: column;
   gap: 6px;
   padding: 4px 4px 2px;
-}
-
-.explorer-refresh-btn {
-  margin-left: auto;
 }
 
 .explorer-root-info {
@@ -31419,9 +31451,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .branch-header-action-btn.active {
-  background: var(--accent-blue-subtle, rgba(59, 130, 246, 0.15));
-  border-color: var(--accent-blue, #3b82f6);
-  color: var(--accent-blue, #3b82f6);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
+  color: var(--accent-color);
 }
 
 .branch-create-error {
@@ -31543,9 +31575,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .branch-base-ref-chip.active {
-  background: var(--accent-blue-subtle, rgba(59, 130, 246, 0.15));
-  border-color: var(--accent-blue, #3b82f6);
-  color: var(--accent-blue, #3b82f6);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
+  color: var(--accent-color);
   font-weight: 500;
 }
 
@@ -31575,7 +31607,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .branch-create-select:focus {
-  border-color: var(--accent-blue, #3b82f6);
+  border-color: var(--accent-color);
 }
 
 /* ===== Worktree Base Ref Custom Select ===== */
@@ -31610,8 +31642,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .branch-ref-select-trigger:focus-visible,
 .branch-ref-select-trigger.is-open {
-  border-color: var(--accent-blue, #3b82f6);
-  box-shadow: 0 0 0 1px var(--accent-blue, #3b82f6);
+  border-color: var(--accent-color);
 }
 
 .branch-ref-select-trigger:disabled {
@@ -31664,9 +31695,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .branch-ref-badge-current {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--accent-blue, #60a5fa);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+  border: 1px solid color-mix(in srgb, var(--accent-color) 32%, transparent);
 }
 
 .branch-ref-badge-main {
@@ -31764,8 +31795,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .branch-ref-option.is-active {
-  background: var(--accent-blue-subtle, rgba(59, 130, 246, 0.12));
-  color: var(--accent-blue, #60a5fa);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
   font-weight: 500;
 }
 
@@ -31842,8 +31873,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .branch-name-action-btn:hover {
   background: var(--bg-hover);
-  color: var(--accent-blue, #3b82f6);
-  border-color: var(--accent-blue, #3b82f6);
+  color: var(--accent-color);
+  border-color: color-mix(in srgb, var(--accent-color) 55%, transparent);
 }
 
 .branch-ref-select-btn {
@@ -31949,8 +31980,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   padding: 4px 10px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--accent-blue, #2563eb);
-  color: #fff;
+  background: var(--accent-color);
+  color: var(--on-solid);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -31968,6 +31999,16 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .branch-dropdown-content-scroll {
   max-height: 340px;
   overflow-y: auto;
+}
+
+.branch-dropdown-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .branch-dropdown-group {
@@ -41646,6 +41687,7 @@ pre.file-viewer-code {
 
 /* 行号槽逐行渲染：折叠箭头固定在左侧列，行号靠右对齐 */
 .file-viewer-gutter-line {
+  position: relative;
   display: flex;
   align-items: center;
 }
@@ -41666,20 +41708,22 @@ pre.file-viewer-code {
 }
 
 .file-viewer-fold-toggle {
-  flex: none;
+  position: absolute;
+  top: 50%;
+  right: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 14px;
   height: 14px;
   padding: 0;
-  margin-right: 4px;
   border: none;
   border-radius: 3px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0.5;
+  transform: translateY(-50%);
   transition:
     opacity 0.12s ease,
     background 0.12s ease;

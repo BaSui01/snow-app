@@ -527,7 +527,7 @@ export function WorkspaceDirectoryMenu({
                   <FileSearch size={13} />
                   <span>
                     {t("sidebar.directoryDetails", {
-                      defaultValue: "Details",
+                      defaultValue: "Browse files",
                     })}
                   </span>
                   <ShortcutHint action="openProjectExplorer" />

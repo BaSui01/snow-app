@@ -6,9 +6,8 @@ export type SidebarContentKey = "main" | "settings" | "explorer";
 export type SidebarContentProps = {
   activeMainView: MainContentView;
   activeDirectory?: WorkspaceDirectoryRecord | null;
-  explorerDirectoryId?: string | null;
   onActiveDirectoryChange?: (
-    directory: WorkspaceDirectoryRecord | null
+    directory: WorkspaceDirectoryRecord | null,
   ) => void;
   onSelectMainView: (view: MainContentView) => void;
   onSwitchContent: (content: SidebarContentKey) => void;
@@ -23,6 +22,6 @@ export type SidebarContentProps = {
     sshSessionId?: string | null,
     focusLine?: number,
     sshWorkspaceRoot?: string,
-    sshWorkspaceId?: string
+    sshWorkspaceId?: string,
   ) => void;
 };

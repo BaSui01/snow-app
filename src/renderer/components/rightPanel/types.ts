@@ -73,6 +73,11 @@ export type CodebaseTabData = {
   projectName: string;
 };
 
+/** 资源管理器 tab 数据：绑定的工作区目录（切换项目时更新，驱动列表重新加载）。 */
+export type ExplorerTabData = {
+  directoryId: string;
+};
+
 /** 绘图工作台 tab 数据（画布内容保存在组件内部状态，无需持久化字段）。 */
 export type DrawingTabData = Record<string, never>;
 
@@ -92,6 +97,7 @@ export type RightPanelTab = {
     | "file"
     | "file-diff-preview"
     | "codebase"
+    | "explorer"
     | "drawing"
     | "plugin";
   title: string;
@@ -102,6 +108,7 @@ export type RightPanelTab = {
     | FileViewerTabData
     | FileDiffPreviewTabData
     | CodebaseTabData
+    | ExplorerTabData
     | DrawingTabData
     | PluginTabData;
 };

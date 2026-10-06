@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
-import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
+import { explorerPlacementStore } from "./common/explorerPlacementStore";
+import { rightPanelEvents } from "./rightPanel/rightPanelEvents";
 import { shortcutEvents } from "./shortcutEvents";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
 import type { MainContentView } from "./mainContent/types";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
+
+// 资源管理器按需加载（与右侧面板共用同一 chunk），避免首次渲染时同步加载。
+const ProjectExplorerContent = lazy(() =>
+  import("./rightPanel/ProjectExplorerContent").then((m) => ({
+    default: m.ProjectExplorerContent,
+  })),
+);
 
 type SidebarProps = {
   activeMainView: SidebarContentProps["activeMainView"];
@@ -41,25 +49,52 @@ export const Sidebar = ({
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
     null,
   );
+  const [explorerPlacement, setExplorerPlacement] = useState(() =>
+    explorerPlacementStore.get(),
+  );
 
-  const handleSwitchContent = useCallback(
-    (content: SidebarContentKey): void => {
-      if (content === "explorer") {
-        // explorerDirectoryId is set separately via onSwitchToExplorer
+  // 订阅显示位置偏好：用户切换位置时同步在目标位置展示资源管理器。订阅回调在
+  // 状态变更的同一批次内执行，因此这里能读到切换前记住的目录（effect 会晚于
+  // 资源管理器自身挂载，读到已被重置的值）。
+  useEffect(() => {
+    return explorerPlacementStore.subscribe((next) => {
+      setExplorerPlacement(next);
+      if (next === "sidebar") {
+        // 从右侧面板移回侧栏：沿用最近展示的目录，直接切到资源管理器视图。
+        const targetDirectoryId =
+          explorerPlacementStore.getDirectoryId() ||
+          activeDirectory?.directoryId;
+        if (targetDirectoryId) {
+          setExplorerDirectoryId(targetDirectoryId);
+        }
         setActiveContent("explorer");
         return;
       }
+      // 移到右侧面板：侧栏退出资源管理器视图（tab 由右侧面板打开）。
+      setActiveContent((current) =>
+        current === "explorer" ? "main" : current,
+      );
+    });
+  }, [activeDirectory]);
+
+  const handleSwitchContent = useCallback(
+    (content: SidebarContentKey): void => {
       setActiveContent(content);
     },
     [],
   );
 
+  // 资源管理器入口：按显示位置偏好内嵌到侧栏，或请求右侧面板打开 tab。
   const handleSwitchToExplorer = useCallback((directoryId: string): void => {
-    setExplorerDirectoryId(directoryId);
-    setActiveContent("explorer");
+    if (explorerPlacementStore.get() === "sidebar") {
+      setExplorerDirectoryId(directoryId);
+      setActiveContent("explorer");
+      return;
+    }
+    rightPanelEvents.emit("open-explorer", { directoryId });
   }, []);
 
-  // 订阅快捷键事件：Ctrl/Cmd+D 打开当前项目明细（Explorer 视图）。
+  // 订阅快捷键事件：Ctrl/Cmd+D 打开当前项目明细（按偏好落在侧栏或右侧面板）。
   // 使用当前激活的工作区目录作为 explorer 目标。
   useEffect(() => {
     return shortcutEvents.on("open-project-explorer", () => {
@@ -103,7 +138,6 @@ export const Sidebar = ({
   const sidebarProps: SidebarContentProps = {
     activeMainView,
     activeDirectory,
-    explorerDirectoryId,
     onActiveDirectoryChange,
     onSelectMainView,
     onSwitchContent: handleSwitchContent,
@@ -132,13 +166,22 @@ export const Sidebar = ({
       >
         <SettingsSidebarContent {...sidebarProps} />
       </div>
-      <div
-        className={`sidebar-content-wrapper ${
-          activeContent === "explorer" ? "" : "is-hidden"
-        }`}
-      >
-        <ProjectExplorerContent {...sidebarProps} />
-      </div>
+      {explorerPlacement === "sidebar" ? (
+        <div
+          className={`sidebar-content-wrapper ${
+            activeContent === "explorer" ? "" : "is-hidden"
+          }`}
+        >
+          <Suspense fallback={null}>
+            <ProjectExplorerContent
+              directoryId={explorerDirectoryId}
+              onOpenFile={onOpenFile}
+              onOpenTerminal={onOpenTerminal}
+              onBack={() => handleSwitchContent("main")}
+            />
+          </Suspense>
+        </div>
+      ) : null}
     </aside>
   );
 };

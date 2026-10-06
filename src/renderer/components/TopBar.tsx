@@ -2,6 +2,7 @@ import {
   Copy,
   Database,
   FolderOpen,
+  FolderTree,
   Globe,
   Maximize2,
   Minimize2,
@@ -28,6 +29,7 @@ import { codebaseSyncStore } from "./TopBar/codebaseSyncStore";
 import { useTeamTopBarSnapshot } from "./TopBar/teamTopBarStore";
 import { ContextMenu, type ContextMenuItem } from "./common/ContextMenu";
 import { PlusMenuButton, type PlusMenuItem } from "./common/PlusMenuButton";
+import { explorerPlacementStore } from "./common/explorerPlacementStore";
 import { PluginIcon } from "./common/PluginIcon";
 import { SnowLogo } from "./common/SnowLogo";
 import { Puzzle } from "lucide-react";
@@ -52,6 +54,7 @@ type TopBarProps = {
   onOpenTerminal?: () => void;
   onOpenBrowser?: () => void;
   onOpenCodebase?: (projectId: string, projectName: string) => void;
+  onOpenProjectExplorer?: (directoryId: string) => void;
   onOpenDrawing?: () => void;
   onOpenPluginPanel?: (pluginId: string, panelId: string) => void;
 };
@@ -69,11 +72,17 @@ export const TopBar = ({
   onOpenTerminal,
   onOpenBrowser,
   onOpenCodebase,
+  onOpenProjectExplorer,
   onOpenDrawing,
   onOpenPluginPanel,
 }: TopBarProps): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
   const { t, locale } = useI18n();
+  // 资源管理器显示位置偏好：仅“右侧面板”方案下提供 Plus 菜单入口。
+  const [explorerPlacement, setExplorerPlacement] = useState(() =>
+    explorerPlacementStore.get(),
+  );
+  useEffect(() => explorerPlacementStore.subscribe(setExplorerPlacement), []);
   const pluginState = usePluginStore();
   // 团队协作视图的顶栏数据（由 TeamPanel 发布，详见 teamTopBarStore）
   const teamTopBar = useTeamTopBarSnapshot();
@@ -655,6 +664,15 @@ export const TopBar = ({
       label: t("topBar.plusMenu.drawing", { defaultValue: "Drawing" }),
       icon: Paintbrush,
     },
+    ...(explorerPlacement === "right-panel"
+      ? [
+          {
+            id: "explorer" as const,
+            label: t("topBar.plusMenu.explorer", { defaultValue: "Explorer" }),
+            icon: FolderTree,
+          },
+        ]
+      : []),
     ...(canOpenCodebase
       ? [
           {
@@ -698,6 +716,8 @@ export const TopBar = ({
       onOpenBrowser?.();
     } else if (actionId === "drawing") {
       onOpenDrawing?.();
+    } else if (actionId === "explorer") {
+      onOpenProjectExplorer?.(activeProjectId ?? "");
     } else if (actionId === "codebase" && activeProjectId) {
       onOpenCodebase?.(
         activeProjectId,

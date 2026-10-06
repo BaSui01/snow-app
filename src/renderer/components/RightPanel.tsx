@@ -1,5 +1,6 @@
 import {
   Database,
+  FolderTree,
   Globe,
   Maximize2,
   Minimize2,
@@ -27,6 +28,7 @@ import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
 import { codebaseSyncStore } from "./TopBar/codebaseSyncStore";
+import { explorerPlacementStore } from "./common/explorerPlacementStore";
 import {
   PlusMenuButton,
   type PlusMenuAction,
@@ -68,6 +70,7 @@ import type {
   BrowserTabData,
   CodebaseTabData,
   DiffTabData,
+  ExplorerTabData,
   FileDiffPreviewTabData,
   FileViewerTabData,
   OpenDiffTabCallback,
@@ -177,9 +180,15 @@ const PluginPanelContent = lazy(() =>
     default: m.PluginPanelContent,
   })),
 );
+const ProjectExplorerContent = lazy(() =>
+  import("./rightPanel/ProjectExplorerContent").then((m) => ({
+    default: m.ProjectExplorerContent,
+  })),
+);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
+const EXPLORER_TAB_ID = "explorer";
 
 // 文件类 tab(diff / file / file-diff-preview)在标题前显示对应的文件类型图标。
 const getTabFileIcon = (tab: RightPanelTab): React.ReactNode => {
@@ -222,6 +231,7 @@ export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
   openCodebase: (projectId: string, projectName: string) => void;
+  openExplorer: (directoryId: string) => void;
   openDrawing: () => void;
   openPluginPanel: (pluginId: string, panelId: string) => void;
   openFile: (
@@ -292,6 +302,30 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       codebaseSyncStore.get(),
     );
     useEffect(() => codebaseSyncStore.subscribe(setCodebaseSyncSnapshot), []);
+
+    // 订阅资源管理器显示位置偏好：仅“右侧面板”方案下提供 Plus 菜单入口；
+    // 偏好切回左侧面板时同一批次内关闭右侧 tab，避免同一目录双实例。
+    const [explorerPlacement, setExplorerPlacement] = useState(() =>
+      explorerPlacementStore.get(),
+    );
+    useEffect(
+      () =>
+        explorerPlacementStore.subscribe((next) => {
+          setExplorerPlacement(next);
+          if (next !== "sidebar") {
+            return;
+          }
+          setTabs((prev) =>
+            prev.some((t) => t.id === EXPLORER_TAB_ID)
+              ? prev.filter((t) => t.id !== EXPLORER_TAB_ID)
+              : prev,
+          );
+          setActiveTabId((current) =>
+            current === EXPLORER_TAB_ID ? GIT_TAB_ID : current,
+          );
+        }),
+      [],
+    );
 
     const handleOpenDiffTab = useCallback<OpenDiffTabCallback>(
       (file, diffResult, diffLoading, imageDiff) => {
@@ -451,6 +485,36 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [t],
     );
 
+    // 打开（或切换到已存在的）资源管理器 tab。tab id 固定：全局唯一，
+    // 切换项目时更新 data 复用同一 tab，文件列表随之重新加载。
+    const handleOpenExplorerTab = useCallback(
+      (directoryId: string) => {
+        setTabs((prev) => {
+          const existing = prev.find((t) => t.id === EXPLORER_TAB_ID);
+          if (existing) {
+            return prev.map((t) =>
+              t.id === EXPLORER_TAB_ID
+                ? { ...t, data: { directoryId } as ExplorerTabData }
+                : t,
+            );
+          }
+          const explorerData: ExplorerTabData = { directoryId };
+          return [
+            ...prev,
+            {
+              id: EXPLORER_TAB_ID,
+              type: "explorer",
+              title: t("rightPanel.explorerTab"),
+              data: explorerData,
+            },
+          ];
+        });
+        setActiveTabId(EXPLORER_TAB_ID);
+        rightPanelEvents.emit("request-expand");
+      },
+      [t],
+    );
+
     // 新建绘图工作台 tab：每次新建独立画布，可开多个并行绘图。
     const handleOpenDrawingTab = useCallback((): string => {
       const tabId = `drawing-${Date.now()}`;
@@ -499,6 +563,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         rightPanelEvents.emit("request-expand");
       });
     }, [handleOpenPluginPanel]);
+
+    useEffect(() => {
+      return rightPanelEvents.on("open-explorer", (payload) => {
+        handleOpenExplorerTab(payload.directoryId);
+      });
+    }, [handleOpenExplorerTab]);
 
     const pluginState = usePluginStore();
 
@@ -596,6 +666,23 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       }
       return handleCodebaseProjectChanged(activeDirectory.directoryId);
     }, [activeDirectory?.directoryId, handleCodebaseProjectChanged]);
+
+    // 切换项目后资源管理器 tab 自动指向新的活动目录，文件列表随之重新加载。
+    useEffect(() => {
+      const directoryId = activeDirectory?.directoryId;
+      if (!directoryId) {
+        return;
+      }
+      setTabs((prev) =>
+        prev.some((t) => t.id === EXPLORER_TAB_ID)
+          ? prev.map((t) =>
+              t.id === EXPLORER_TAB_ID
+                ? { ...t, data: { directoryId } as ExplorerTabData }
+                : t,
+            )
+          : prev,
+      );
+    }, [activeDirectory?.directoryId]);
 
     const handleOpenFileTab = useCallback(
       (
@@ -857,6 +944,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openCodebase: (projectId: string, projectName: string) => {
           handleOpenCodebaseTab(projectId, projectName);
         },
+        openExplorer: (directoryId: string) => {
+          handleOpenExplorerTab(directoryId);
+        },
         openDrawing: () => {
           handleOpenDrawingTab();
         },
@@ -895,6 +985,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenTerminalTab,
         handleOpenBrowserTab,
         handleOpenCodebaseTab,
+        handleOpenExplorerTab,
         handleOpenDrawingTab,
         handleOpenPluginPanel,
         handleOpenFileTab,
@@ -1348,6 +1439,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         label: t("topBar.plusMenu.drawing", { defaultValue: "Drawing" }),
         icon: Paintbrush,
       },
+      ...(explorerPlacement === "right-panel"
+        ? [
+            {
+              id: "explorer" as PlusMenuAction,
+              label: t("topBar.plusMenu.explorer", {
+                defaultValue: "Explorer",
+              }),
+              icon: FolderTree,
+            },
+          ]
+        : []),
       ...(canOpenCodebase
         ? [
             {
@@ -1399,6 +1501,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenBrowserTab();
       } else if (actionId === "drawing") {
         handleOpenDrawingTab();
+      } else if (actionId === "explorer") {
+        handleOpenExplorerTab(activeDirectory?.directoryId ?? "");
       } else if (actionId === "codebase" && activeDirectory?.directoryId) {
         handleOpenCodebaseTab(
           activeDirectory.directoryId,
@@ -1473,6 +1577,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 projectName={(tab.data as CodebaseTabData).projectName}
               />
             ) : null
+          ) : tab.type === "explorer" ? (
+            <ProjectExplorerContent
+              directoryId={
+                (tab.data as ExplorerTabData | undefined)?.directoryId ?? ""
+              }
+              onOpenFile={handleOpenFileTab}
+              onOpenTerminal={(cwd) => handleOpenTerminalTab(cwd ?? "")}
+            />
           ) : tab.type === "drawing" ? (
             <DrawingPanelContent
               isActive={activeTabId === tab.id}

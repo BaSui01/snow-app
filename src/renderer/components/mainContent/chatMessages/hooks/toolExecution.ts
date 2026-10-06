@@ -12,7 +12,10 @@ import {
   isStructuredPlanApproval,
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
-import { extractFileChangesFromTool } from "./fileChangeTracking";
+import {
+  extractFileChangesFromTool,
+  extractFileChangeCoverageFromTool,
+} from "./fileChangeTracking";
 import { SUB_AGENT_MAIN_TOOL_NAMES } from "./subAgentActivation";
 import { isPendingSessionKey } from "../utils/conversationTypes";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
@@ -858,6 +861,38 @@ export function createToolExecutor(
       }
 
       let result: string | undefined;
+      let fileTrackingRecorded = false;
+      const recordFileTracking = (): void => {
+        if (
+          fileTrackingRecorded ||
+          isPendingSessionKey(effectiveKey) ||
+          result === undefined
+        )
+          return;
+        fileTrackingRecorded = true;
+        const timestamp = Date.now();
+        const coverage = extractFileChangeCoverageFromTool(
+          toolCall.name,
+          result,
+        );
+        if (coverage)
+          ctx.recordFileChangeCoverage(effectiveKey, {
+            ...coverage,
+            agent: "main",
+            timestamp,
+          });
+        for (const change of extractFileChangesFromTool(
+          toolCall.name,
+          toolCall.arguments,
+          result,
+        )) {
+          ctx.recordFileChange(effectiveKey, {
+            ...change,
+            agent: "main",
+            timestamp,
+          });
+        }
+      };
       const authorizationDecision = authorizationDecisions[toolIndex];
 
       if (authorizationDecision.status === "rejected") {
@@ -1190,34 +1225,11 @@ export function createToolExecutor(
                   // PENDING 会话没有真实会话 id，传 undefined。
                   isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
                 );
-
-                // Record successful file modifications (filesystem-create /
-                // filesystem-replace_edit / filesystem-copy) into the
-                // conversation's file-change stats. Done right after the tool
-                // returns — before afterToolCall hooks may append context to
-                // the result — so the success JSON is always parseable. The
-                // pending session has no persisted conversation, so its changes
-                // are skipped; they land in the real session once it is
-                // created.
-                if (
-                  !isPendingSessionKey(effectiveKey) &&
-                  result !== undefined
-                ) {
-                  const fileChanges = extractFileChangesFromTool(
-                    toolCall.name,
-                    toolCall.arguments,
-                    result,
-                  );
-                  for (const fileChange of fileChanges) {
-                    ctx.recordFileChange(effectiveKey, {
-                      ...fileChange,
-                      agent: "main",
-                      timestamp: Date.now(),
-                    });
-                  }
-                }
               }
 
+              // Capture actual execution before hooks can append/replace output
+              // or abort the loop. The final settlement covers thrown errors.
+              recordFileTracking();
               // Execute afterToolCall hooks (with matcher) after the tool call completes.
               // Unified exit-code semantics:
               //   0 = pass (stdout context appended to the tool result)
@@ -1370,6 +1382,8 @@ export function createToolExecutor(
         planApprovedSessionKeysRef.current.add(effectiveKey);
       }
 
+      // Cover rejections and thrown errors, without double-recording execution.
+      recordFileTracking();
       const modelToolResult = formatMcpToolResultForModel(result!);
       structuredToolResults.push({
         name: toolCall.name,

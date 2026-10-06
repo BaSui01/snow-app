@@ -5,9 +5,6 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::worktree_execution::{
-    force_worktree_execution_args, is_builtin_mcp_tool, load_conversation_worktree_binding,
-};
 use super::super::builtin::{execute_builtin_tool, sanitize_tool_full_name};
 use super::super::servers::app_control::{AppControlCallback, AppControlService};
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
@@ -29,6 +26,9 @@ use super::super::servers::websearch::{WebSearchCommandCallback, WebSearchServic
 use super::collect::ensure_project_tool_enabled;
 use super::plan_write::is_allowed_plan_document_write;
 use super::result_limit::limit_tool_result;
+use super::worktree_execution::{
+    force_worktree_execution_args, is_builtin_mcp_tool, load_conversation_worktree_binding,
+};
 
 /// Register a cancellation token for a remote (SSH) tool execution and emit
 /// its id as a `tool_execution` stream chunk so the frontend can abort the
@@ -75,19 +75,18 @@ pub async fn call_mcp_tool(
     // before any matching or whitelist check.
     let tool_full_name = sanitize_tool_full_name(&tool_full_name);
     let is_sub_agent_call = sub_agent_allowed_tools.is_some();
-    let requires_workspace_context =
-        tool_full_name.starts_with("terminal-")
-            || tool_full_name.starts_with("codelens-")
-            || tool_full_name.starts_with("lsp-")
-            || matches!(
-                tool_full_name.as_str(),
-                "filesystem-read"
-                    | "filesystem-replace_edit"
-                    | "filesystem-create"
-                    | "filesystem-copy"
-                    | "grep-search"
-                    | "bash-terminal-execute"
-            );
+    let requires_workspace_context = tool_full_name.starts_with("terminal-")
+        || tool_full_name.starts_with("codelens-")
+        || tool_full_name.starts_with("lsp-")
+        || matches!(
+            tool_full_name.as_str(),
+            "filesystem-read"
+                | "filesystem-replace_edit"
+                | "filesystem-create"
+                | "filesystem-copy"
+                | "grep-search"
+                | "bash-terminal-execute"
+        );
     if requires_workspace_context
         && conversation_id
             .as_deref()
@@ -160,14 +159,12 @@ pub async fn call_mcp_tool(
             .ok_or_else(|| {
                 Error::new(
                     Status::GenericFailure,
-                    "Workspace tool execution requires the conversation's project directory id".to_string(),
+                    "Workspace tool execution requires the conversation's project directory id"
+                        .to_string(),
                 )
             })?;
-        let binding = load_conversation_worktree_binding(
-            conversation_id,
-            directory_id.to_string(),
-        )
-        .await?;
+        let binding =
+            load_conversation_worktree_binding(conversation_id, directory_id.to_string()).await?;
         if worktree_mode && binding.is_none() {
             return Err(Error::new(
                 Status::GenericFailure,
@@ -237,11 +234,36 @@ pub async fn call_mcp_tool(
 
     // 本地（非 SSH）filesystem / grep / codelens 工具：将相对路径（如 "."）
     // 解析到当前项目根目录，避免其被解析为 Electron 进程的工作目录。
-    let args = if uses_remote_workspace {
+    let mut args = if uses_remote_workspace {
         args
     } else {
-        resolve_local_workspace_args(&tool_full_name, args, project_id.as_deref()).await?
+        let mut resolved =
+            resolve_local_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
+        if tool_full_name == "filesystem-copy" {
+            if let Some(source) = resolved
+                .get("sourceFilePath")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                let source_args = serde_json::json!({"filePath": source});
+                let source_args = resolve_local_workspace_args(
+                    "filesystem-read",
+                    source_args,
+                    project_id.as_deref(),
+                )
+                .await?;
+                resolved["sourceFilePath"] = source_args["filePath"].clone();
+            }
+        }
+        resolved
     };
+    if tool_full_name == "bash-terminal-execute" {
+        // Host identity only; never trust a model-provided sessionId.
+        args["sessionId"] = conversation_id
+            .as_deref()
+            .map(Value::from)
+            .unwrap_or(Value::Null);
+    }
 
     // 先定 checkpoint 影响范围再捕获：None/Unknown 的工具不校验
     // checkpointWorkDir，Skill / 外部 MCP 等不因缺失上下文被阻断。
@@ -325,6 +347,8 @@ pub async fn call_mcp_tool(
     let returns_plain_text = tool_full_name == "skills-skill-execute";
     let masking_tool_name = tool_full_name.clone();
     let result = if tool_full_name == "bash-terminal-execute" {
+        let tracking =
+            super::file_tracking::TerminalTracking::begin(&args, uses_remote_workspace).await;
         let terminal_result = BashService::new()
             .execute_terminal_stream(
                 &args,
@@ -334,15 +358,18 @@ pub async fn call_mcp_tool(
                 &on_remote_workspace_command,
             )
             .await;
+        // Even nonzero, timeout and N-API errors get an after scan. Collection
+        // failures never replace the executor's output/status/security error.
+        let mut file_tracking = tracking.finish().await;
         if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
-            if uses_remote_workspace {
+            let after_result = if uses_remote_workspace {
                 // on_chunk 已被流式执行器占用，after 阶段不发提示
                 capture_checkpoint_after_tool_remote(
                     ToolCheckpointCapture::Worktree(Some(capture)),
                     &on_remote_workspace_command,
                     None,
                 )
-                .await?;
+                .await
             } else {
                 // Worktree 的 after 软失败：记录失败不覆盖已完成的命令结果。
                 tokio::task::spawn_blocking(move || {
@@ -354,10 +381,32 @@ pub async fn call_mcp_tool(
                         Status::GenericFailure,
                         format!("Failed to capture checkpoint after tool execution: {error}"),
                     )
-                })??;
+                })
+                .and_then(|result| result)
+            };
+            if after_result.is_err() {
+                if let Some(reasons) = file_tracking["reasons"].as_array_mut() {
+                    reasons.push(Value::String("checkpoint-after-failed".into()));
+                }
             }
         }
-        terminal_result?
+        let mut result = terminal_result.map_err(|mut error| {
+            // Sensitive-command errors are themselves JSON parsed by the host.
+            // Preserve that shape, status and all existing safety fields.
+            if let Ok(Value::Object(mut payload)) = serde_json::from_str::<Value>(&error.reason) {
+                payload.insert("fileTracking".into(), file_tracking.clone());
+                error.reason = Value::Object(payload).to_string();
+            } else if !error.reason.starts_with("[SELF-PROTECTION]") {
+                error.reason = serde_json::json!({
+                    "error": error.reason,
+                    "fileTracking": file_tracking.clone(),
+                })
+                .to_string();
+            }
+            error
+        })?;
+        result["fileTracking"] = file_tracking;
+        result
     } else if tool_full_name == "grep-search" {
         // Register a cancellable tool execution only for the SSH branch; the
         // local ripgrep/native search has its own 30s timeout and cannot be
@@ -488,13 +537,13 @@ pub async fn call_mcp_tool(
         tokio::task::spawn_blocking(move || {
             super::super::service::McpService::execute(&service, "logs-read", &scoped_args)
         })
-            .await
-            .map_err(|error| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("App log query task failed: {error}"),
-                )
-            })??
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("App log query task failed: {error}"),
+            )
+        })??
     } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
         AppControlService::new()
             .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
@@ -572,12 +621,16 @@ pub async fn call_mcp_tool(
         } else {
             let service = CodeLensService::new();
             match codelens_tool {
-                "find_definition" => service
-                    .execute_find_definition(&args, project_id.as_deref())
-                    .await?,
-                "find_references" => service
-                    .execute_find_references(&args, project_id.as_deref())
-                    .await?,
+                "find_definition" => {
+                    service
+                        .execute_find_definition(&args, project_id.as_deref())
+                        .await?
+                }
+                "find_references" => {
+                    service
+                        .execute_find_references(&args, project_id.as_deref())
+                        .await?
+                }
                 "file_outline" => service.execute_file_outline(&args).await?,
                 _ => {
                     return Err(Error::new(

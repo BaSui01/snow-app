@@ -108,15 +108,28 @@ export const useChatConversation = (
       setFileChangeStats((prev) => {
         const existing = prev[conversationId] ?? [];
         const existingKeys = new Set(
-          existing.map(
-            (record) =>
-              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`,
+          existing.map((record) =>
+            JSON.stringify([
+              record.fileKey ?? record.filePath,
+              record.kind,
+              record.timestamp,
+              record.agent,
+              record.subAgentName,
+              record.source,
+            ]),
           ),
         );
         const fresh = records.filter(
           (record) =>
             !existingKeys.has(
-              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`,
+              JSON.stringify([
+                record.fileKey ?? record.filePath,
+                record.kind,
+                record.timestamp,
+                record.agent,
+                record.subAgentName,
+                record.source,
+              ]),
             ),
         );
         if (fresh.length === 0) {
@@ -126,6 +139,46 @@ export const useChatConversation = (
           ...prev,
           [conversationId]: [...existing, ...fresh],
         };
+      });
+    },
+    [],
+  );
+  const [fileChangeCoverage, setFileChangeCoverage] = useState<
+    ConversationContextValue["fileChangeCoverage"]
+  >({});
+  const recordFileChangeCoverage = useCallback(
+    (
+      conversationId: string,
+      record: ConversationContextValue["fileChangeCoverage"][string][number],
+    ) => {
+      fileChangeStatsHydratedRef.current.add(conversationId);
+      setFileChangeCoverage((prev) => ({
+        ...prev,
+        [conversationId]: [...(prev[conversationId] ?? []), record],
+      }));
+    },
+    [],
+  );
+  const mergeFileChangeCoverage = useCallback(
+    (
+      conversationId: string,
+      records: ConversationContextValue["fileChangeCoverage"][string],
+    ) => {
+      setFileChangeCoverage((prev) => {
+        const existing = prev[conversationId] ?? [];
+        const key = (
+          record: ConversationContextValue["fileChangeCoverage"][string][number],
+        ) => JSON.stringify(record);
+        const keys = new Set(existing.map(key));
+        const fresh = records.filter((record) => {
+          const value = key(record);
+          if (keys.has(value)) return false;
+          keys.add(value);
+          return true;
+        });
+        return fresh.length
+          ? { ...prev, [conversationId]: [...existing, ...fresh] }
+          : prev;
       });
     },
     [],
@@ -625,6 +678,9 @@ export const useChatConversation = (
     subAgentSessionEvents,
     subAgentSessionEventsRef,
     fileChangeStats,
+    fileChangeCoverage,
+    recordFileChangeCoverage,
+    mergeFileChangeCoverage,
     recordFileChange,
     mergeFileChangeStats,
     fileChangeStatsHydratedRef,
@@ -920,6 +976,9 @@ export const useChatConversation = (
     pendingQueueRef,
     subAgentSessionEvents,
     fileChangeStats,
+    fileChangeCoverage,
+    recordFileChangeCoverage,
+    mergeFileChangeCoverage,
     recordFileChange,
     sessions,
     activeConversationId,

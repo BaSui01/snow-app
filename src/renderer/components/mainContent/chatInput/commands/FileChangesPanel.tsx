@@ -12,6 +12,7 @@ import {
   countUniqueFiles,
 } from "../../chatMessages/hooks/fileChangeTracking";
 import type { FileChangeRecord } from "../../chatMessages/utils/conversationTypes";
+import { useChatConversationContext } from "../../chatMessages";
 
 type FileChangesPanelProps = {
   /** Whether the panel is visible. Controlled by the /changes command. */
@@ -34,6 +35,11 @@ export const FileChangesPanel = ({
   onClose,
 }: FileChangesPanelProps): React.JSX.Element | null => {
   const { t } = useI18n();
+  const { activeConversationId, fileChangeCoverage } =
+    useChatConversationContext();
+  const coverage = activeConversationId
+    ? (fileChangeCoverage[activeConversationId] ?? [])
+    : [];
   const [isDiffView, setIsDiffView] = useState(false);
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
 
@@ -123,6 +129,27 @@ export const FileChangesPanel = ({
         ) : undefined
       }
     >
+      {!isDiffView && coverage.length > 0 ? (
+        <ul className="file-changes-list" aria-label="fileTracking.coverage">
+          {coverage.map((record, index) => (
+            <li
+              className="file-changes-row"
+              key={`${record.timestamp}-${index}`}
+            >
+              <code>
+                {record.source}: {record.coverage}
+              </code>
+              <span>
+                {" "}
+                · {record.subAgentName ?? record.agent} · {record.root ?? "—"}
+              </span>
+              {record.reasons.length > 0 ? (
+                <span> · {record.reasons.join(", ")}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {isDiffView ? (
         <div className="file-changes-diff-view">
           <div className="file-changes-diff-toolbar">
@@ -153,7 +180,8 @@ export const FileChangesPanel = ({
             }}
           />
         </div>
-      ) : changes.length === 0 ? (
+      ) : changes.length === 0 &&
+        coverage.length > 0 ? null : changes.length === 0 ? (
         <div className="file-changes-empty">
           <span className="file-changes-empty-title">
             {t("chat.fileChanges.emptyTitle")}

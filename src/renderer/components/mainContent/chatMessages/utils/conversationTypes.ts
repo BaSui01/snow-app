@@ -185,13 +185,23 @@ export type FileChangeDiff = {
   isBinary?: boolean;
 };
 
-/** A file that was modified (created or edited) by the main agent or a
- *  sub-agent during a conversation session. Recorded at tool-execution time
- *  and surfaced by the file-change stats panel. */
+/** Coverage evidence is independent of whether any changed file was observed. */
+export type FileChangeCoverageRecord = {
+  coverage: "scoped" | "partial" | "unavailable";
+  reasons: string[];
+  source: "filesystem" | "terminal";
+  root: string | null;
+  timestamp: number;
+  agent: "main" | "sub";
+  subAgentName?: string;
+};
+
 export type FileChangeRecord = {
-  /** The filePath argument passed to the filesystem tool (as the model
-   *  supplied it, e.g. relative to the workspace root). */
+  /** Canonical response path for v1; legacy records retain the supplied path. */
   filePath: string;
+  fileKey?: string;
+  source?: "filesystem" | "terminal";
+  root?: string | null;
   kind: "create" | "edit" | "delete";
   /** Whether the change was made by the main agent loop or by a sub-agent
    *  running inside this conversation. */
@@ -588,6 +598,15 @@ export type ConversationContextValue = {
    *  (agent: "main") and — via childSubAgentIds — every sub-agent's changes
    *  (agent: "sub"). Records are filled live by the tool-execution pipeline
    *  and re-hydrated from persisted history when a conversation is opened. */
+  fileChangeCoverage: Record<string, FileChangeCoverageRecord[]>;
+  recordFileChangeCoverage: (
+    conversationId: string,
+    record: FileChangeCoverageRecord,
+  ) => void;
+  mergeFileChangeCoverage: (
+    conversationId: string,
+    records: FileChangeCoverageRecord[],
+  ) => void;
   fileChangeStats: Record<string, FileChangeRecord[]>;
   /** Merge pre-built records into a conversation's stats, de-duplicating by
    *  (filePath, kind, timestamp, agent). Used to re-hydrate stats from
@@ -849,6 +868,15 @@ export type UseChatConversationResult = {
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   /** File changes recorded during this renderer session, keyed by
    *  conversationId. See FileChangeRecord for the shape. */
+  fileChangeCoverage: Record<string, FileChangeCoverageRecord[]>;
+  recordFileChangeCoverage: (
+    conversationId: string,
+    record: FileChangeCoverageRecord,
+  ) => void;
+  mergeFileChangeCoverage: (
+    conversationId: string,
+    records: FileChangeCoverageRecord[],
+  ) => void;
   fileChangeStats: Record<string, FileChangeRecord[]>;
   /** Records a successful file modification for a conversation. */
   recordFileChange: (conversationId: string, record: FileChangeRecord) => void;

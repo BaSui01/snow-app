@@ -15,7 +15,7 @@ import {
   directoryIdToPath,
   killRunningToolExecutions,
 } from "../utils/conversationHelpers";
-import { extractFileChangesFromRecords } from "./fileChangeTracking";
+import { extractFileTrackingFromRecords } from "./fileChangeTracking";
 import {
   appendHookExecutionToMessage,
   runHook,
@@ -328,7 +328,20 @@ export const useConversationManagement = (
                 )[0];
               baselineCheckpointId =
                 firstCheckpointRecord?.checkpointId ?? baselineCheckpointId;
-              const ownChanges = extractFileChangesFromRecords(fullHistory);
+              const ownTracking = extractFileTrackingFromRecords(fullHistory);
+              const ownChanges = ownTracking.changes;
+              ctx.mergeFileChangeCoverage(
+                trimmedId,
+                ownTracking.coverage.map((coverage) => ({
+                  ...coverage,
+                  agent: isSubAgentConversation
+                    ? ("sub" as const)
+                    : ("main" as const),
+                  subAgentName: isSubAgentConversation
+                    ? conversationRecord?.subAgentName || undefined
+                    : undefined,
+                })),
+              );
               if (ownChanges.length > 0) {
                 ctx.mergeFileChangeStats(
                   trimmedId,
@@ -354,8 +367,33 @@ export const useConversationManagement = (
                       const subRecords = await window.snow.listChatMessages(
                         subConversation.conversationId,
                       );
-                      const subChanges =
-                        extractFileChangesFromRecords(subRecords);
+                      const subTracking =
+                        extractFileTrackingFromRecords(subRecords);
+                      const subChanges = subTracking.changes;
+                      const subAgentName =
+                        subConversation.subAgentName ||
+                        subConversation.title ||
+                        undefined;
+                      const coverageRecords = subTracking.coverage.map(
+                        (coverage) => ({
+                          ...coverage,
+                          agent: "sub" as const,
+                          subAgentName,
+                        }),
+                      );
+                      ctx.mergeFileChangeCoverage(trimmedId, coverageRecords);
+                      ctx.mergeFileChangeCoverage(
+                        subConversation.conversationId,
+                        coverageRecords,
+                      );
+                      ctx.mergeFileChangeStats(
+                        subConversation.conversationId,
+                        subChanges.map((change) => ({
+                          ...change,
+                          agent: "sub" as const,
+                          subAgentName,
+                        })),
+                      );
                       if (subChanges.length > 0) {
                         ctx.mergeFileChangeStats(
                           trimmedId,

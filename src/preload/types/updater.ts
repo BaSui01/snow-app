@@ -9,4 +9,6 @@ export interface UpdateStatus {
   releaseNotes: string | null;
   /** 新版本的中文发行说明（markdown 文本；未提供翻译时为 null） */
   releaseNotesZh: string | null;
+  /** 新版本的繁体中文发行说明（markdown 文本；未提供翻译时为 null） */
+  releaseNotesZhTw: string | null;
 }

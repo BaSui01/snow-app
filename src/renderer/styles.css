@@ -5998,12 +5998,6 @@ body.is-panel-resizing * {
   padding: 2px 4px;
 }
 
-.settings-update-hint {
-  font-size: 12px;
-  color: var(--success, #16a34a);
-  padding: 2px 4px;
-}
-
 .about-github-row {
   display: flex;
   align-items: center;
@@ -49097,6 +49091,78 @@ pre.file-viewer-code {
   color: var(--text-muted);
   font-size: 12px;
   text-align: center;
+}
+
+.settings-changelog-card {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.settings-changelog-card > .api-settings-form-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-changelog-notes {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.settings-changelog-node {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.settings-changelog-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-changelog-node-header:hover {
+  background: var(--bg-hover);
+}
+
+.settings-changelog-node.open .settings-changelog-node-header {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.settings-changelog-node-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.settings-changelog-node.open .settings-changelog-node-chevron {
+  transform: rotate(90deg);
+}
+
+.settings-changelog-node-body {
+  padding: 2px 12px 10px;
+}
+
+.settings-changelog-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* 主操作按钮（footer）：使用主题色 */

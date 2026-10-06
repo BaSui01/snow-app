@@ -21,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   Scale,
+  ScrollText,
   Server,
   ShieldCheck,
   Terminal,
@@ -32,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
+import { ChangelogSection } from "./ChangelogSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { GitHubLogo } from "../common/GitHubLogo";
@@ -74,6 +76,7 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   error: null,
   releaseNotes: null,
   releaseNotesZh: null,
+  releaseNotesZhTw: null,
 };
 
 const GITHUB_REPOSITORY_URL = "https://github.com/MayDay-wpf/snow-app";
@@ -256,7 +259,8 @@ type ImageLibraryMigrationState = {
   total: number;
 };
 
-type GeneralSettingsTab = "general" | "storage" | "privacy" | "about";
+type GeneralSettingsTab =
+  "general" | "storage" | "privacy" | "about" | "changelog";
 
 /** 取文件路径的父目录（跨平台字符串处理，避免在渲染层引入 node:path）。 */
 const parentDirOf = (filePath: string): string =>
@@ -350,19 +354,11 @@ export function GeneralSettingsPanel(): React.JSX.Element {
   const [attachTotalBudget, setAttachTotalBudget] = useState<string>(
     String(ATTACH_CONTEXT_TOTAL_BUDGET_DEFAULT),
   );
-  const [attachBudgetSaved, setAttachBudgetSaved] = useState(false);
-  const attachBudgetSavedTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
 
   // 会话消息缓存 TTL（分钟；超过该时长未被查看的会话会从内存释放）
   const [conversationCacheTtlMinutes, setConversationCacheTtlMinutes] =
     useState<string>(String(CONVERSATION_CACHE_TTL_DEFAULT_MINUTES));
-  const [conversationCacheTtlSaved, setConversationCacheTtlSaved] =
-    useState(false);
-  const conversationCacheTtlSavedTimerRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
+  const [sessionSettingsSaved, setSessionSettingsSaved] = useState(false);
 
   // 团队协作启停开关（默认关闭；写入 system_settings，Rust 侧据此放行）
   const [teamEnabled, setTeamEnabled] = useState(false);
@@ -426,16 +422,6 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         String(normalizeConversationCacheTtlMinutes(ttl)),
       );
     })().catch(() => undefined);
-    return () => {
-      if (attachBudgetSavedTimerRef.current) {
-        clearTimeout(attachBudgetSavedTimerRef.current);
-        attachBudgetSavedTimerRef.current = null;
-      }
-      if (conversationCacheTtlSavedTimerRef.current) {
-        clearTimeout(conversationCacheTtlSavedTimerRef.current);
-        conversationCacheTtlSavedTimerRef.current = null;
-      }
-    };
   }, []);
 
   /** 保存单个预算设置；非法（非数字 / 低于下限）不保存，超上限截断。 */
@@ -453,16 +439,7 @@ export function GeneralSettingsPanel(): React.JSX.Element {
     }
     void window.snow
       .setSystemSetting("会话上下文注入预算", code, normalized)
-      .then(() => {
-        setAttachBudgetSaved(true);
-        if (attachBudgetSavedTimerRef.current) {
-          clearTimeout(attachBudgetSavedTimerRef.current);
-        }
-        attachBudgetSavedTimerRef.current = setTimeout(() => {
-          setAttachBudgetSaved(false);
-          attachBudgetSavedTimerRef.current = null;
-        }, 2000);
-      })
+      .then(() => setSessionSettingsSaved(true))
       .catch(() => undefined);
   };
 
@@ -483,28 +460,8 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           String(ATTACH_CONTEXT_TOTAL_BUDGET_DEFAULT),
         ),
       )
-      .then(() => {
-        setAttachBudgetSaved(true);
-        if (attachBudgetSavedTimerRef.current) {
-          clearTimeout(attachBudgetSavedTimerRef.current);
-        }
-        attachBudgetSavedTimerRef.current = setTimeout(() => {
-          setAttachBudgetSaved(false);
-          attachBudgetSavedTimerRef.current = null;
-        }, 2000);
-      })
+      .then(() => setSessionSettingsSaved(true))
       .catch(() => undefined);
-  };
-
-  const markConversationCacheTtlSaved = (): void => {
-    setConversationCacheTtlSaved(true);
-    if (conversationCacheTtlSavedTimerRef.current) {
-      clearTimeout(conversationCacheTtlSavedTimerRef.current);
-    }
-    conversationCacheTtlSavedTimerRef.current = setTimeout(() => {
-      setConversationCacheTtlSaved(false);
-      conversationCacheTtlSavedTimerRef.current = null;
-    }, 2000);
   };
 
   /** 保存会话消息缓存 TTL（分钟）；非法值不保存，超上限截断。 */
@@ -530,7 +487,7 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         window.dispatchEvent(
           new CustomEvent(CONVERSATION_CACHE_TTL_CHANGED_EVENT),
         );
-        markConversationCacheTtlSaved();
+        setSessionSettingsSaved(true);
       })
       .catch(() => undefined);
   };
@@ -550,7 +507,7 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         window.dispatchEvent(
           new CustomEvent(CONVERSATION_CACHE_TTL_CHANGED_EVENT),
         );
-        markConversationCacheTtlSaved();
+        setSessionSettingsSaved(true);
       })
       .catch(() => undefined);
   };
@@ -1298,6 +1255,18 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           <Info size={13} strokeWidth={1.8} />
           {t("settings.about", { defaultValue: "About" })}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "changelog"}
+          className={`import-settings-tab ${
+            activeTab === "changelog" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("changelog")}
+        >
+          <ScrollText size={13} strokeWidth={1.8} />
+          {t("settings.changelogTab", { defaultValue: "Changelog" })}
+        </button>
       </div>
 
       <AutoDismissNotice
@@ -1306,6 +1275,9 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           repairHint ||
           optimizeHint ||
           cleanupHint ||
+          (sessionSettingsSaved
+            ? t("settings.attachContextSaved", { defaultValue: "已保存" })
+            : "") ||
           (checkHint === "up-to-date"
             ? t("settings.upToDate", { defaultValue: "You're up to date" })
             : checkHint === "error"
@@ -1320,11 +1292,14 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           setRepairHint("");
           setOptimizeHint("");
           setCleanupHint("");
+          setSessionSettingsSaved(false);
           setCheckHint(null);
         }}
       />
 
       {activeTab === "privacy" && <AppLockSettingsSection />}
+
+      {activeTab === "changelog" && <ChangelogSection />}
 
       {activeTab === "general" && (
         <div className="api-settings-manual-form">
@@ -2398,13 +2373,6 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                       })}
                     </span>
                   </button>
-                  {attachBudgetSaved && (
-                    <span className="settings-update-hint">
-                      {t("settings.attachContextSaved", {
-                        defaultValue: "已保存",
-                      })}
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
@@ -2459,13 +2427,6 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                       })}
                     </span>
                   </button>
-                  {conversationCacheTtlSaved && (
-                    <span className="settings-update-hint">
-                      {t("settings.attachContextSaved", {
-                        defaultValue: "已保存",
-                      })}
-                    </span>
-                  )}
                 </div>
               </div>
             </div>

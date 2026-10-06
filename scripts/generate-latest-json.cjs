@@ -17,9 +17,10 @@
 //
 // 应用主进程请求该清单比对版本、下载 zip 并校验 SHA-256 后静默替换。
 //
-// 同时从 RELEASE_NOTES_ZH.md 提取当前 tag 的中文发行说明，生成
-// latest-zh.json（{ version, releaseNotesZh }）并随 Release 上传，
-// 供应用内更新弹窗展示中文翻译（GitHub 发行页保持英文原文）。
+// 同时从 RELEASE_NOTES_ZH.md 与 RELEASE_NOTES_ZH_TW.md 提取当前 tag 的
+// 中文发行说明，生成 latest-zh.json（{ version, releaseNotesZh,
+// releaseNotesZhTw }）并随 Release 上传，供应用内更新弹窗展示中文翻译
+// （GitHub 发行页保持英文原文）。
 
 const { createHash } = require("node:crypto");
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
@@ -32,7 +33,7 @@ const REPO = "snow-app";
 const tag = process.argv[2];
 if (!tag) {
   console.error(
-    "Usage: node scripts/generate-latest-json.cjs <tag> [releaseDir]"
+    "Usage: node scripts/generate-latest-json.cjs <tag> [releaseDir]",
   );
   process.exit(1);
 }
@@ -58,13 +59,13 @@ for (const arch of ["arm64", "x64"]) {
     size: content.length,
   };
   console.log(
-    `[generate-latest-json] ${zipName}: sha256=${files[arch].sha256} size=${files[arch].size}`
+    `[generate-latest-json] ${zipName}: sha256=${files[arch].sha256} size=${files[arch].size}`,
   );
 }
 
 if (Object.keys(files).length === 0) {
   console.error(
-    `[generate-latest-json] No Snow-App-${version}-*.zip found in ${releaseDir}`
+    `[generate-latest-json] No Snow-App-${version}-*.zip found in ${releaseDir}`,
   );
   process.exit(1);
 }
@@ -79,20 +80,25 @@ const outputPath = join(releaseDir, "latest-mac.json");
 writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`[generate-latest-json] Written ${outputPath}`);
 
-// 中文发行说明：从 RELEASE_NOTES_ZH.md 提取当前 tag 的段落。
-// 未提供翻译时 releaseNotesZh 为 null，应用内自动回退显示英文。
+// 中文发行说明：从 RELEASE_NOTES_ZH.md / RELEASE_NOTES_ZH_TW.md 提取当前
+// tag 的段落。未提供翻译时为 null，应用内自动回退显示英文。
 const zhNotes = extractReleaseNotes(
   join(__dirname, "..", "RELEASE_NOTES_ZH.md"),
-  tag
+  tag,
+);
+const zhTwNotes = extractReleaseNotes(
+  join(__dirname, "..", "RELEASE_NOTES_ZH_TW.md"),
+  tag,
 );
 const zhManifest = {
   version,
   releaseNotesZh: zhNotes || null,
+  releaseNotesZhTw: zhTwNotes || null,
 };
 const zhOutputPath = join(releaseDir, "latest-zh.json");
 writeFileSync(zhOutputPath, `${JSON.stringify(zhManifest, null, 2)}\n`);
 console.log(
   `[generate-latest-json] Written ${zhOutputPath} (zh notes: ${
     zhNotes ? `${zhNotes.length} chars` : "none"
-  })`
+  }, zh-TW notes: ${zhTwNotes ? `${zhTwNotes.length} chars` : "none"})`,
 );

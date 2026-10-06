@@ -1,7 +1,7 @@
 import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { useI18n } from "../../i18n";
+import { localeLabels, useI18n, type Locale } from "../../i18n";
 import type { UpdateStatus } from "../../../preload";
 import { Modal } from "../common/Modal";
 import { MarkdownBlock } from "../mainContent/chatMessages/components/markdownRenderer";
@@ -15,7 +15,12 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   error: null,
   releaseNotes: null,
   releaseNotesZh: null,
+  releaseNotesZhTw: null,
 };
+
+/** 默认发行说明语言：跟随应用语言（zh-CN → 简体，zh-TW → 繁体，其余英文）。 */
+const defaultNotesLang = (locale: Locale): Locale =>
+  locale === "zh-CN" ? "zh-CN" : locale === "zh-TW" ? "zh-TW" : "en";
 
 type UpdateDialogProps = {
   open: boolean;
@@ -105,8 +110,8 @@ export function UpdateDialog({
   );
   const [currentVersion, setCurrentVersion] = useState("");
   // 发行说明语言：默认按应用语言选择（中文环境优先中文翻译）
-  const [notesLang, setNotesLang] = useState<"zh" | "en">(() =>
-    locale.startsWith("zh") ? "zh" : "en",
+  const [notesLang, setNotesLang] = useState<Locale>(() =>
+    defaultNotesLang(locale),
   );
 
   useEffect(() => {
@@ -141,16 +146,22 @@ export function UpdateDialog({
     error,
     releaseNotes,
     releaseNotesZh,
+    releaseNotesZhTw,
   } = updateStatus;
 
   const showDownloadAction = available && !downloading && !downloaded;
   const showProgress = available && downloading;
   const newVersionLabel = version ? `v${version}` : "";
-  // 有中文翻译时允许切换语言；否则固定显示英文
-  const hasZhNotes = Boolean(releaseNotesZh);
-  const activeNotesLang = hasZhNotes ? notesLang : "en";
-  const activeNotes =
-    activeNotesLang === "zh" && releaseNotesZh ? releaseNotesZh : releaseNotes;
+  // 可切换的发行说明：缺失的翻译不显示按钮，顺序为简体 / 繁体 / 英文
+  const noteVariants = [
+    { lang: "zh-CN" as Locale, notes: releaseNotesZh },
+    { lang: "zh-TW" as Locale, notes: releaseNotesZhTw },
+    { lang: "en" as Locale, notes: releaseNotes },
+  ].filter((variant) => Boolean(variant.notes));
+  const activeVariant =
+    noteVariants.find((variant) => variant.lang === notesLang) ??
+    noteVariants[0];
+  const activeNotes = activeVariant?.notes ?? null;
 
   return (
     <Modal
@@ -261,26 +272,24 @@ export function UpdateDialog({
             defaultValue: "Release notes",
           })}
         </span>
-        {hasZhNotes && (
+        {noteVariants.length > 1 && (
           <div
             className="update-dialog-lang-switch"
             role="group"
-            aria-label="Release notes language"
+            aria-label={t("settings.updateDialogNotesLanguage", {
+              defaultValue: "Release notes language",
+            })}
           >
-            <button
-              type="button"
-              className={activeNotesLang === "zh" ? "active" : ""}
-              onClick={() => setNotesLang("zh")}
-            >
-              中文
-            </button>
-            <button
-              type="button"
-              className={activeNotesLang === "en" ? "active" : ""}
-              onClick={() => setNotesLang("en")}
-            >
-              English
-            </button>
+            {noteVariants.map(({ lang }) => (
+              <button
+                key={lang}
+                type="button"
+                className={activeVariant?.lang === lang ? "active" : ""}
+                onClick={() => setNotesLang(lang)}
+              >
+                {localeLabels[lang]}
+              </button>
+            ))}
           </div>
         )}
       </div>

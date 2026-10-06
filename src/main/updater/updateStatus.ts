@@ -12,6 +12,8 @@ export interface UpdateStatus {
   releaseNotes: string | null;
   /** 新版本的中文发行说明（markdown 文本；未提供翻译时为 null） */
   releaseNotesZh: string | null;
+  /** 新版本的繁体中文发行说明（markdown 文本；未提供翻译时为 null） */
+  releaseNotesZhTw: string | null;
 }
 
 const INITIAL_STATUS: UpdateStatus = {
@@ -23,6 +25,7 @@ const INITIAL_STATUS: UpdateStatus = {
   error: null,
   releaseNotes: null,
   releaseNotesZh: null,
+  releaseNotesZhTw: null,
 };
 
 let status: UpdateStatus = { ...INITIAL_STATUS };
@@ -43,7 +46,7 @@ export const resetUpdateStatus = (): void => {
 };
 
 export const subscribeUpdateStatus = (
-  listener: (status: UpdateStatus) => void
+  listener: (status: UpdateStatus) => void,
 ): (() => void) => {
   listeners.add(listener);
   return () => {

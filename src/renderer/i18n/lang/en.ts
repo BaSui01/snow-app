@@ -3190,6 +3190,9 @@ export const en = {
   "settings.updateDialogDownloadingHint":
     "Downloading continues in the background. You can close this window.",
   "settings.updateDialogNotesTitle": "Release notes",
+  "settings.updateDialogNotesLanguage": "Release notes language",
+  "settings.changelogTab": "Changelog",
+  "settings.changelogInfo": "Release notes for every Snow App version.",
   "settings.updateDialogNoNotes": "No release notes for this version.",
   "settings.themeSettings": "Theme settings",
   "settings.themeSettingsInfo": "Adjust appearance and color theme.",

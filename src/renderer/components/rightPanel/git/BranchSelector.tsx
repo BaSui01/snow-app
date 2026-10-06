@@ -148,6 +148,13 @@ export const BranchSelector = ({
   } | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
+  // 弹出层宽度上限：按「按钮左边缘到视口右侧」的可用空间收敛。仅靠 CSS 的
+  // 100vw 无法扣除下拉开在按钮处带来的左侧偏移，窄窗口（或高 DPI 缩放下
+  // CSS 视口变小时）仍会顶出窗口右侧被裁切。
+  const [dropdownWidthCap, setDropdownWidthCap] = useState<number | null>(null);
+  // 选择器根容器：按钮与弹出层都要被视为「内部」。若只把弹出层当内部，
+  // 点击按钮时 mousedown 先判定为外部点击而关闭，紧接着的 click 又按
+  // 「当前未展开」重新打开并触发一次列表加载，表现为「点第二下变刷新」。
   const dropdownRef = useRef<HTMLDivElement>(null);
   const branchInputRef = useRef<HTMLInputElement>(null);
   const worktreeInputRef = useRef<HTMLInputElement>(null);
@@ -365,6 +372,27 @@ export const BranchSelector = ({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setDropdownWidthCap(null);
+      return;
+    }
+
+    const updateCap = (): void => {
+      const rect = dropdownRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return;
+      }
+      // 右侧留 16px 安全边距；下限 220px 以免极窄窗口下把下拉压到不可用。
+      const available = window.innerWidth - rect.left - 16;
+      setDropdownWidthCap(Math.max(220, Math.min(440, available)));
+    };
+
+    updateCap();
+    window.addEventListener("resize", updateCap);
+    return () => window.removeEventListener("resize", updateCap);
   }, [isOpen]);
 
   useEffect(() => {
@@ -748,7 +776,7 @@ export const BranchSelector = ({
   }, [branches, normalizedSearch]);
 
   return (
-    <div className="branch-selector">
+    <div className="branch-selector" ref={dropdownRef}>
       <button
         type="button"
         className="branch-selector-btn"
@@ -789,7 +817,17 @@ export const BranchSelector = ({
       </button>
 
       {isOpen && (
-        <div className="branch-dropdown" ref={dropdownRef}>
+        <div
+          className="branch-dropdown"
+          style={
+            dropdownWidthCap === null
+              ? undefined
+              : {
+                  minWidth: `${Math.min(dropdownWidthCap, 330)}px`,
+                  maxWidth: `${dropdownWidthCap}px`,
+                }
+          }
+        >
           {/* 顶部搜索与快捷创建按钮组 */}
           <div className="branch-dropdown-header-bar">
             <div className="branch-dropdown-search">

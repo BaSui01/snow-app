@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.4.16
+
+## New Features
+
+- **Session File Change Tracking**: Real files changed by a conversation are captured at tool-execution boundaries — dedicated file tools record the actual physical paths, and terminal commands are diffed with content fingerprints (including re-edits of already-modified files and non-zero exits); the file-changes panel annotates capture source, coverage, root and gap reasons, and the data is exposed to plugins through the v1 contract (`fileChangeTrackingVersion` / `fileChangeCoverage`).
+- **Plugin Message Footer Slot**: Plugins can mount custom cards between a reply's body and its action buttons (`contributions.messageFooters`, ESM-only, with a lifecycle-scoped read-only API and automatic cleanup); session file statistics and similar displays now come from plugins.
+- **One-Click Prompt Optimization for Plugins**: A host-side prompt-optimization channel (streaming in Rust, cancelled independently of ordinary chat, honoring an explicitly selected model service or profile) lets plugins optimize the draft in one click from the chat input toolbar, write the result back safely and undo it, without sending a message.
+- **Changelog Tab**: Settings gain a Changelog tab to browse release notes version by version, with Simplified Chinese / Traditional Chinese / English switching; Traditional Chinese release notes are new, and the update dialog supports them as well.
+- **Stream Retry and Error Cards**: Streaming retries show the attempt number and error details (expandable, copyable), and failed requests now render as a structured error notice card.
+
+## Improvements
+
+- Browser element picking returns the DOM hierarchy tree (ancestor chain plus a summary of direct children), helping the model place an element in the page structure.
+- Installed plugins and scripts show update badges inline and update in one click, without opening the Market tab.
+- The plugin market index is fetched by commit-SHA content addressing, bypassing the CDN's long-lived cache of branch references.
+- The right-panel tab context menu lists the declared panels of enabled plugins.
+
 ## v0.4.15
 
 ## New Features

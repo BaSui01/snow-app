@@ -3356,6 +3356,7 @@ export const en = {
     "Failed to select terminal executable",
   "settings.terminalFont": "Font",
   "settings.terminalFontDefault": "Default",
+  "settings.terminalFontPreset": "Font presets (Nerd Font)",
   "settings.terminalFontFamily": "Font family",
   "settings.terminalFontFamilyPlaceholder": "e.g. Consolas, Monaco, monospace",
   "settings.terminalFontSize": "Font size",

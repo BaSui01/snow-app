@@ -7733,6 +7733,23 @@ body.is-panel-resizing * {
 }
 /* ===== Terminal Combobox ===== */
 
+/* 终端字体族：自由输入 + 常用 Nerd Font 预设一键填入。 */
+.terminal-font-family-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-font-family-row > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal-font-family-row > .custom-select {
+  flex-shrink: 0;
+  min-width: 168px;
+}
+
 .terminal-combobox-field {
   position: relative;
 }

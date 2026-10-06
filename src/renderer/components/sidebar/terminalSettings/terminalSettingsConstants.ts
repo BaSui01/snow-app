@@ -25,3 +25,39 @@ export const FONT_WEIGHT_OPTIONS = [
   { value: "600", label: "Semibold" },
   { value: "700", label: "Bold" },
 ];
+
+/**
+ * 终端字体族预设：值为可直接写入 fontFamily 的 CSS 字体栈。
+ * 空值代表「使用内置默认栈」（已包含常见 Nerd Font 探测与等宽回退），
+ * 其余项是 Oh My Posh / starship 提示符常用的 Nerd Font 家族。
+ */
+export const TERMINAL_FONT_FAMILY_PRESETS = [
+  { value: "", label: "" },
+  {
+    value: "'Maple Mono Normal NF CN', monospace",
+    label: "Maple Mono Normal NF CN",
+  },
+  { value: "'Maple Mono NF CN', monospace", label: "Maple Mono NF CN" },
+  {
+    value: "'CaskaydiaCove Nerd Font', monospace",
+    label: "CaskaydiaCove Nerd Font",
+  },
+  {
+    value: "'CaskaydiaCove NF', monospace",
+    label: "CaskaydiaCove NF",
+  },
+  {
+    value: "'JetBrainsMono Nerd Font', monospace",
+    label: "JetBrainsMono Nerd Font",
+  },
+  { value: "'MesloLGS NF', monospace", label: "MesloLGS NF" },
+  {
+    value: "'FiraCode Nerd Font', monospace",
+    label: "FiraCode Nerd Font",
+  },
+  { value: "'Hack Nerd Font', monospace", label: "Hack Nerd Font" },
+  {
+    value: "'Symbols Nerd Font Mono', 'Consolas', monospace",
+    label: "Symbols Nerd Font Mono",
+  },
+];

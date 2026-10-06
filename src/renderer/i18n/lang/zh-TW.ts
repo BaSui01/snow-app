@@ -3179,6 +3179,7 @@ export const zhTW = {
   "settings.terminalExecutableSelectError": "選擇終端可執行檔失敗",
   "settings.terminalFont": "字型",
   "settings.terminalFontDefault": "預設",
+  "settings.terminalFontPreset": "字型預設（Nerd Font）",
   "settings.terminalFontFamily": "字型族",
   "settings.terminalFontFamilyPlaceholder": "例如 Consolas, Monaco, monospace",
   "settings.terminalFontSize": "字型大小",

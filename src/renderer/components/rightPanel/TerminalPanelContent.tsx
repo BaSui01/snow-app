@@ -108,8 +108,33 @@ const getTerminalTheme = (): ITheme => {
   return lightTerminalTheme;
 };
 
-const DEFAULT_FONT_FAMILY =
-  "'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace";
+// 默认字体栈：优先命中系统里的常见 Nerd Font。Oh My Posh / starship 等提示符
+// 依赖 Nerd Font 的私有区图标字形，字体缺失时这些字符只能渲染成方框；未安装
+// Nerd Font 时逐级回退到平台自带等宽字体，保证正文可读。用户显式配置
+// 终端字体（settings.fontFamily）时以用户配置为准，不走这条默认链。
+const DEFAULT_FONT_FAMILY = [
+  // 中文场景优先：Maple Mono 系列同时提供 CJK 字形与 Nerd Font 图标。
+  "'Maple Mono Normal NF CN'",
+  "'Maple Mono NF CN'",
+  "'Maple Mono Normal NF'",
+  "'Maple Mono NF'",
+  // JetBrains Mono 与 Maple Mono 的融合版本，字宽与 JetBrains Mono 保持一致。
+  "'JetBrains Maple Mono'",
+  "'CaskaydiaCove Nerd Font'",
+  "'CaskaydiaCove NF'",
+  "'JetBrainsMono Nerd Font'",
+  "'JetBrainsMono NF'",
+  "'MesloLGS NF'",
+  "'FiraCode Nerd Font'",
+  "'Hack Nerd Font'",
+  // 纯图标字体：只提供 Nerd Font 的符号字形，常与普通等宽字体搭配安装。
+  "'Symbols Nerd Font Mono'",
+  "'SF Mono'",
+  "'Menlo'",
+  "'Consolas'",
+  "'Liberation Mono'",
+  "monospace",
+].join(", ");
 
 export const TerminalPanelContent = ({
   tabId,

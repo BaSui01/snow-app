@@ -2360,7 +2360,7 @@ const RAW_GROUPS: RawGroup[] = [
         "settings.terminalFontFamily",
         "Font family",
         [],
-        ["consolas", "字体族"],
+        ["consolas", "字体族", "nerd font", "nerd font 预设", "oh my posh"],
       ],
       [
         "terminal.fontSize",

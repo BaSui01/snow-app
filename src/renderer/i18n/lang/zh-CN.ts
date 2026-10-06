@@ -3176,6 +3176,7 @@ export const zhCN = {
   "settings.terminalExecutableSelectError": "选择终端可执行文件失败",
   "settings.terminalFont": "字体",
   "settings.terminalFontDefault": "默认",
+  "settings.terminalFontPreset": "字体预设（Nerd Font）",
   "settings.terminalFontFamily": "字体族",
   "settings.terminalFontFamilyPlaceholder": "例如 Consolas, Monaco, monospace",
   "settings.terminalFontSize": "字号",

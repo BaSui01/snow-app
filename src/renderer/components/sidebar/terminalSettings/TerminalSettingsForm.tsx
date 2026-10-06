@@ -2,7 +2,10 @@ import { RotateCcw } from "lucide-react";
 import { type ChangeEvent, type FocusEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
-import { FONT_WEIGHT_OPTIONS } from "./terminalSettingsConstants";
+import {
+  FONT_WEIGHT_OPTIONS,
+  TERMINAL_FONT_FAMILY_PRESETS,
+} from "./terminalSettingsConstants";
 import { TerminalCombobox } from "./TerminalCombobox";
 import type {
   DetectedTerminalOption,
@@ -118,15 +121,44 @@ export function TerminalSettingsForm({
                   defaultValue: "Font family",
                 })}
               </span>
-              <input
-                value={form.fontFamily}
-                onChange={onUpdateField("fontFamily")}
-                onBlur={handleInputBlur}
-                placeholder={t("settings.terminalFontFamilyPlaceholder", {
-                  defaultValue: "e.g. Consolas, Monaco, monospace",
-                })}
-                disabled={isBusy}
-              />
+              <div className="terminal-font-family-row">
+                <input
+                  value={form.fontFamily}
+                  onChange={onUpdateField("fontFamily")}
+                  onBlur={handleInputBlur}
+                  placeholder={t("settings.terminalFontFamilyPlaceholder", {
+                    defaultValue: "e.g. Consolas, Monaco, monospace",
+                  })}
+                  disabled={isBusy}
+                />
+                {/* 预设下拉：Oh My Posh / starship 等提示符依赖 Nerd Font 的
+                    私有区图标字形，手写字体族对用户不友好，这里提供一键填入。
+                    与输入框共用同一字段，选择后仍可继续手工微调。 */}
+                <CustomSelect
+                  value={form.fontFamily}
+                  options={TERMINAL_FONT_FAMILY_PRESETS}
+                  title={t("settings.terminalFontPreset", {
+                    defaultValue: "Font presets",
+                  })}
+                  renderOption={(option) =>
+                    option.label ||
+                    t("settings.terminalFontDefault", {
+                      defaultValue: "Default",
+                    })
+                  }
+                  renderLabel={(option) =>
+                    option.label ||
+                    t("settings.terminalFontDefault", {
+                      defaultValue: "Default",
+                    })
+                  }
+                  onChange={(value) => {
+                    onSetValue("fontFamily", value);
+                    onBlurSave({ ...form, fontFamily: value });
+                  }}
+                  disabled={isBusy}
+                />
+              </div>
             </label>
             <label className="api-settings-field">
               <span>

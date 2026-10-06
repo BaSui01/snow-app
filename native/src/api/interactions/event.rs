@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use regex::Regex;
+use crate::api::ephemeral::diagnostic as eprintln;
 use serde_json::{json, Value};
 
 use crate::api::common::{read_first_i64, truncate_utf8_safe};

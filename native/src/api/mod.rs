@@ -9,6 +9,8 @@ pub mod common;
 pub mod config;
 pub mod conversation;
 pub mod embedding;
+pub mod ephemeral;
+pub mod prompt_optimization;
 pub mod file_search_agent;
 pub mod gemini;
 pub mod http_client;

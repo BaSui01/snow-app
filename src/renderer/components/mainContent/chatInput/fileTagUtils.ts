@@ -423,10 +423,32 @@ export const buildTextSnippetSummary = (text: string, maxLen = 30): string => {
   return summary.length > maxLen ? `${summary.slice(0, maxLen)}...` : summary;
 };
 
+const contentTagPattern =
+  /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill):(.+?)@@/g;
+
+/** Treat chips as opaque encoded spans: no attachment loading or re-encoding. */
+export const splitDraftText = (
+  content: string,
+): { text: string; chips: string[] } => {
+  const chips: string[] = [];
+  const text = content.replace(new RegExp(contentTagPattern), (chip) => {
+    chips.push(chip);
+    return "";
+  });
+  return { text, chips };
+};
+
+export const replaceDraftText = (content: string, text: string): string => {
+  if (splitDraftText(text).chips.length > 0) {
+    throw new Error("Replacement must be plain text, not encoded chips");
+  }
+  const { chips } = splitDraftText(content);
+  return chips.length ? `${text}\n${chips.join("\n")}` : text;
+};
+
 export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
-  const regex =
-    /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill):(.+?)@@/g;
+  const regex = new RegExp(contentTagPattern);
   let lastIndex = 0;
   let imageCounter = 0;
   let match: RegExpExecArray | null;

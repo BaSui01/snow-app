@@ -4,6 +4,7 @@ import type { Locale } from "../../shared/locale";
 import bridgeSource from "./pluginIframeBridge.js?raw";
 import type { PluginMetadataApi, PluginRuntimeApi } from "./pluginApi";
 import type { PluginMessageFooterApi } from "./pluginMessageFooter";
+import type { PluginChatInputAction } from "./pluginChatInputAction";
 import type { MetadataResponse, PluginView } from "./types";
 
 export type PluginModuleExports = {
@@ -15,6 +16,17 @@ export type PluginModuleExports = {
   ) => void | (() => void) | { unmount?: () => void };
   render?: PluginModuleExports["mount"];
   unmount?: () => void;
+};
+
+export const resolvePluginChatInputAction = (
+  module: PluginModuleExports,
+  exportName: string,
+): PluginChatInputAction => {
+  const action = module[exportName];
+  if (typeof action !== "function") {
+    throw new Error(`Plugin chat input action '${exportName}' is not exported`);
+  }
+  return action as PluginChatInputAction;
 };
 
 let lucideIcons: Record<string, unknown> | null = null;

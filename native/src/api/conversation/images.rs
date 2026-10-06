@@ -27,6 +27,12 @@ pub fn parse_chat_message_content(
     content: &str,
     database_path: &Path,
 ) -> Result<ParsedChatMessageContent> {
+    // Auxiliary drafts/history are literal text, including attachment tags.
+    // In particular Interactions must not expand @@conversation or read images
+    // when rewriting untrusted data, regardless of its payload parsing path.
+    if crate::api::ephemeral::is_active() {
+        return Ok(ParsedChatMessageContent { text: content.to_string(), images: Vec::new() });
+    }
     const IMAGE_TAG_PREFIX: &str = "@@image:";
     const REVIEW_TAG_PREFIX: &str = "@@review:";
     const COMMAND_TAG_PREFIX: &str = "@@command:";

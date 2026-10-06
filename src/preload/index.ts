@@ -22,6 +22,7 @@ import { resourceApi } from "./modules/resourceApi";
 import { ideApi } from "./modules/ideApi";
 import { petApi } from "./modules/petApi";
 import { remoteControlApi } from "./modules/remoteControlApi";
+import { promptOptimizationApi } from "./modules/promptOptimizationApi";
 
 export type * from "./types";
 
@@ -50,6 +51,7 @@ const api = {
   ...ideApi,
   ...petApi,
   ...remoteControlApi,
+  ...promptOptimizationApi,
 };
 
 contextBridge.exposeInMainWorld("snow", api);

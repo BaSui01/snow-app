@@ -1,5 +1,12 @@
 import { Plug, Settings } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useI18n } from "../../../i18n";
 import type { ChatInputViewProps } from "./types";
 import { InputOverlayLayer } from "./InputOverlayLayer";
@@ -37,6 +44,7 @@ import {
 import { useChipInteractions } from "./useChipInteractions";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
+import { registerPluginDraftHost } from "../../../plugins/pluginDraft";
 import { registerChatInputDraftSink } from "./chatInputDraftBridge";
 import { runtimeSnapshot } from "../../../plugins/runtimeSnapshot";
 
@@ -143,6 +151,7 @@ export const ChatInputView = ({
     handleSendMessage,
     messages,
     activeConversationId,
+    sessionViewKey,
     conversationDirectoryId,
     conversationVersion,
     fileChangeStats,
@@ -675,6 +684,29 @@ export const ChatInputView = ({
 
   // 用户消息「写回输入框」入口：注册真实的 restoreContent 供消息侧调用。
   useEffect(() => registerChatInputDraftSink(restoreContent), [restoreContent]);
+
+  useLayoutEffect(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    return registerPluginDraftHost({
+      element,
+      projectId: projectId ?? conversationDirectoryId ?? "",
+      sessionKey: sessionViewKey ?? "",
+      conversationId: activeConversationId ?? null,
+      blocked: isStreaming || isAborting || isCompacting,
+      restoreContent,
+    });
+  }, [
+    textareaRef,
+    projectId,
+    conversationDirectoryId,
+    sessionViewKey,
+    activeConversationId,
+    isStreaming,
+    isAborting,
+    isCompacting,
+    restoreContent,
+  ]);
 
   return (
     <div className="input-area">

@@ -59,14 +59,13 @@ pub(super) fn build_interactions_payload(
     tools: Option<Value>,
     user_system_prompts: &[String],
 ) -> Result<Value> {
-    let clean_model = request
+    let selected_model = request
         .model
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .unwrap_or(api_config.advanced_model.as_str())
-        .strip_prefix("models/")
-        .unwrap_or(&api_config.advanced_model);
+        .unwrap_or(api_config.advanced_model.as_str());
+    let clean_model = selected_model.strip_prefix("models/").unwrap_or(selected_model);
 
     // The proxy may route this request through ordinary Gemini, so replay
     // complete call/result pairs instead of relying only on interaction state.

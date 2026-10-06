@@ -49,6 +49,9 @@ export type PluginPanelDefinition = {
   entry: string;
   icon: string;
   widthHint: string;
+  chatInput?: boolean;
+  chatInputAction?: string;
+  chatInputTitle?: PluginLocalizedMap;
 };
 
 export type PluginMessageFooterDefinition = {

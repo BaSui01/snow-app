@@ -4,6 +4,7 @@ import { registerNativeHandlers } from "./handlers/nativeHandlers";
 import { registerAppLockHandlers } from "./handlers/appLockHandlers";
 import { registerApiConfigHandlers } from "./handlers/apiConfigHandlers";
 import { registerChatHandlers } from "./handlers/chatHandlers";
+import { registerPromptOptimizationHandlers } from "./handlers/promptOptimizationHandlers";
 import { registerConfigHandlers } from "./handlers/configHandlers";
 import { registerConversationHandlers } from "./handlers/conversationHandlers";
 import { registerWorkspaceHandlers } from "./handlers/workspaceHandlers";
@@ -35,6 +36,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerAppLockHandlers(native);
   registerApiConfigHandlers(native);
   registerChatHandlers(native);
+  registerPromptOptimizationHandlers(native);
   registerConfigHandlers(native);
   registerConversationHandlers(native);
   registerWorkspaceHandlers(native);

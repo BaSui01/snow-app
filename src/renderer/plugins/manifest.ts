@@ -47,7 +47,7 @@ const PRIMARY_LOCALE_TAG: Record<Locale, string> = {
 
 export const resolveLocalized = (
   map: PluginLocalizedMap,
-  locale: Locale
+  locale: Locale,
 ): string => {
   if (map[locale]) {
     return map[locale];
@@ -71,7 +71,7 @@ export const resolveLocalized = (
 /** 依据应用语言挑选插件的语言包文件路径。 */
 export const pickLocaleFile = (
   locales: Record<string, string>,
-  locale: Locale
+  locale: Locale,
 ): string | null => {
   if (locales[locale]) {
     return locales[locale];
@@ -107,6 +107,15 @@ const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
     }
     panels.push({
       id,
+      chatInput: record.chatInput === true,
+      chatInputAction:
+        typeof record.chatInputAction === "string" &&
+        /^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(
+          record.chatInputAction.trim(),
+        )
+          ? record.chatInputAction.trim()
+          : "",
+      chatInputTitle: normalizeLocalizedMap(record.chatInputTitle),
       title: normalizeLocalizedMap(record.title),
       entry: typeof record.entry === "string" ? record.entry.trim() : "",
       icon: typeof record.icon === "string" ? record.icon.trim() : "",
@@ -163,13 +172,16 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   homepage: record.homepage,
   license: record.license,
   icon: record.icon,
-  renderMode: (record.renderMode === "iframe" ? "iframe" : "esm") as PluginRenderMode,
+  renderMode: (record.renderMode === "iframe"
+    ? "iframe"
+    : "esm") as PluginRenderMode,
   entry: record.entry,
   panels: normalizePanels(parseJson(record.panels, [])),
   messageFooters: normalizeMessageFooters(record),
   locales: parseJson(record.locales, {}),
   styles: parseJson<string[]>(record.styles, []).filter(
-    (item): item is string => typeof item === "string" && item.trim().length > 0
+    (item): item is string =>
+      typeof item === "string" && item.trim().length > 0,
   ),
   privacy: Array.isArray(record.privacy)
     ? record.privacy.filter(isSensitiveScope)
@@ -186,8 +198,9 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
 
 /** 插件图标：lucide:IconName / 相对路径 / 内联或远程 URL。 */
 export const resolvePluginIcon = (
-  icon: string
-): { kind: "lucide"; name: string } | { kind: "asset"; path: string } | null => {
+  icon: string,
+):
+  { kind: "lucide"; name: string } | { kind: "asset"; path: string } | null => {
   const trimmed = icon.trim();
   if (!trimmed) {
     return null;

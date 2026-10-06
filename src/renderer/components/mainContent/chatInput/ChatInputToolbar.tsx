@@ -10,6 +10,8 @@ import {
 import type { ComponentProps, RefObject } from "react";
 import { useI18n } from "../../../i18n";
 import { Tooltip } from "../../common/Tooltip";
+import { ChatInputPluginButtons } from "./ChatInputPluginButtons";
+import { splitDraftText } from "./fileTagUtils";
 import { ModelSelector } from "./ModelSelector";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { TokenUsageRing } from "./TokenUsageRing";
@@ -246,6 +248,22 @@ export const ChatInputToolbar = ({
         )}
       </div>
       <div className="toolbar-right">
+        <ChatInputPluginButtons
+          parametersKey={JSON.stringify([
+            modelSelectorProps.selectedApiProfile,
+            modelSelectorProps.selectedModel,
+            modelSelectorProps.thinkingValue,
+            modelSelectorProps.responsesFastModeEnabled,
+          ])}
+          apiConfigIdentity={runtimeApiConfig}
+          disabled={
+            isSessionRunning ||
+            isLoadingApiConfig ||
+            !runtimeApiConfig ||
+            modelSelectorProps.apiConfigs.length === 0 ||
+            !splitDraftText(value).text.trim()
+          }
+        />
         <ModelSelector {...modelSelectorProps} />
         <TokenUsageRing
           tokenUsage={tokenUsage}

@@ -324,8 +324,9 @@ export const accumulateConversationRunStats = (
 
 /**
  * Applies one backend stream chunk to the current assistant message. A retry
- * chunk is an attempt boundary: discard the failed partial and normalize the
- * message back to ordinary streaming without retaining transport diagnostics.
+ * chunk is an attempt boundary: discard the failed partial and mark the
+ * message as retrying (attempt number + transport error) so the UI can show
+ * it; the first ordinary chunk of the new attempt clears the retry state.
  */
 export const applyStreamChunkToMessage = (
   currentMessage: ChatConversationMessage,
@@ -333,22 +334,25 @@ export const applyStreamChunkToMessage = (
   timestamp: string = formatMessageTime(),
   thinkingActiveOverride?: boolean | null,
 ): ChatConversationMessage => {
+  if (chunk.retrying) {
+    return {
+      ...currentMessage,
+      content: "",
+      thinking: undefined,
+      isThinkingActive: false,
+      isRetrying: true,
+      retryAttempt: chunk.retryAttempt ?? undefined,
+      retryError: chunk.retryError ?? undefined,
+      status: "sending",
+    };
+  }
+
   const {
     isRetrying: _isRetrying,
     retryAttempt: _retryAttempt,
     retryError: _retryError,
     ...ordinaryStreamingMessage
   } = currentMessage;
-
-  if (chunk.retrying) {
-    return {
-      ...ordinaryStreamingMessage,
-      content: "",
-      thinking: undefined,
-      isThinkingActive: false,
-      status: "sending",
-    };
-  }
 
   const existingContent = ordinaryStreamingMessage.content;
   const nextContent =

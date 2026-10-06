@@ -5,11 +5,13 @@ import { useI18n } from "../../i18n";
 type HoverCopyButtonProps = {
   text: string;
   className?: string;
+  label?: string;
 };
 
 export const HoverCopyButton = ({
   text,
   className,
+  label: labelProp,
 }: HoverCopyButtonProps): React.JSX.Element => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -43,7 +45,8 @@ export const HoverCopyButton = ({
 
   const label = copied
     ? t("common.copied", { defaultValue: "已复制" })
-    : t("common.copyReviewPrompt", { defaultValue: "复制审查提示词" });
+    : (labelProp ??
+      t("common.copyReviewPrompt", { defaultValue: "复制审查提示词" }));
 
   return (
     <button

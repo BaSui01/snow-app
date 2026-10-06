@@ -125,6 +125,10 @@ export const MessageContent = memo(
         <AiResponse
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
+          isRetrying={isLastAssistant && message.isRetrying}
+          retryAttempt={message.retryAttempt}
+          retryError={message.retryError}
+          isError={message.status === "error"}
           summary={message.content}
           timestamp={message.timestamp}
           thinking={message.thinking}

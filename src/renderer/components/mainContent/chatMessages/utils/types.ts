@@ -35,6 +35,16 @@ export type AiResponseProps = {
   sections?: AiResponseSection[];
   isStreaming?: boolean;
   isAborting?: boolean;
+  /** True while the backend is re-issuing a failed stream request; the retry
+   *  status line replaces the streaming cursor. */
+  isRetrying?: boolean;
+  /** 1-based ordinal of the in-flight retry attempt. */
+  retryAttempt?: number;
+  /** Transport error that triggered the current retry attempt. */
+  retryError?: string;
+  /** True when the persisted assistant response represents a terminal
+   *  failure; the body renders as an error notice instead of markdown. */
+  isError?: boolean;
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;

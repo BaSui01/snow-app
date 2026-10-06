@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { HookExecutionRecord, ToolCallInfo } from "./conversationTypes";
 import type {
   IncompleteVariant,
@@ -39,6 +40,8 @@ export type AiResponseProps = {
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
   showActions?: boolean;
+  /** Optional production UI between response content and message actions. */
+  footerContent?: ReactNode;
   toolCalls?: ToolCallInfo[];
   /** Hook execution records bound to tool calls in this message (via
    *  toolCallInteractionId).  Rendered attached to the matching tool card

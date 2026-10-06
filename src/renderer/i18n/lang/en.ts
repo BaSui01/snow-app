@@ -4065,6 +4065,21 @@ export const en = {
   "chat.fileChanges.diffTitle": "Change preview",
   "chat.fileChanges.diffEmpty": "No changes to display",
   "chat.fileChanges.selectFile": "Select a file to view changes",
+  "chat.fileCard.title": "Conversation file records",
+  "chat.fileCard.recorded": "{{count}} files recorded",
+  "chat.fileCard.empty": "No files recorded yet",
+  "chat.fileCard.cumulative": "Conversation cumulative, including sub-agents",
+  "chat.fileCard.added": "added",
+  "chat.fileCard.deleted": "deleted",
+  "chat.fileCard.knownLines":
+    "Latest known diff lines (not cumulative net changes)",
+  "chat.fileCard.linesUnavailable": "Lines not collected",
+  "chat.fileCard.allFiles": "All {{count}} files",
+  "chat.fileCard.collapse": "Collapse file list",
+  "chat.fileCard.partial": "Partial or unavailable coverage · Details",
+  "chat.fileCard.scoped": "Explicit tool scope only · Details",
+  "chat.fileCard.legacy":
+    "Includes legacy records without canonical file identity",
   "chat.memory.title": "Conversation memories",
   "chat.memory.description":
     "Memories this conversation (and its sub-agents / WorkFlow nodes) saved or merged.",

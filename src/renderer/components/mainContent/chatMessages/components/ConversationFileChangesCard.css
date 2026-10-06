@@ -1,0 +1,114 @@
+.conversation-files-card {
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.conversation-files-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.conversation-files-card-heading > svg {
+  color: var(--accent-blue);
+  flex-shrink: 0;
+}
+.conversation-files-card-heading strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.conversation-files-card-subtitle,
+.conversation-files-muted {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.conversation-files-card-subtitle {
+  margin-top: 3px;
+}
+.conversation-files-card-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 7px;
+}
+.conversation-files-additions {
+  color: var(--accent-green);
+}
+.conversation-files-deletions {
+  color: var(--accent-red);
+}
+.conversation-files-card-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.conversation-files-card-list > li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  min-width: 0;
+}
+.conversation-files-card-list > li > svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.conversation-files-card-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.conversation-files-card-row-lines {
+  display: flex;
+  gap: 7px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.conversation-files-card-list .conversation-files-muted {
+  flex-shrink: 0;
+}
+.conversation-files-card-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 7px;
+  padding: 7px 0 1px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.conversation-files-card-toggle:hover {
+  color: var(--text-primary);
+}
+.conversation-files-card-toggle:focus-visible,
+.conversation-files-card-coverage > summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 3px;
+}
+.conversation-files-card-coverage {
+  margin-top: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.conversation-files-card-coverage > summary {
+  cursor: pointer;
+}
+.conversation-files-card-coverage ul {
+  padding-left: 16px;
+  margin: 5px 0 0;
+  max-height: 140px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}

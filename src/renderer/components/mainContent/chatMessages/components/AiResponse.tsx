@@ -90,6 +90,7 @@ export const AiResponse = memo(
     interruptionReason,
     recoveryOutcome,
     showActions = true,
+    footerContent,
     toolCalls = [],
     hookExecutions = [],
     pendingToolAuthorizations = [],
@@ -320,6 +321,7 @@ export const AiResponse = memo(
           ) : null}
         </div>
 
+        {footerContent}
         {/* 7. Actions */}
         {showFooterTime || (showActions && conversationId && onFork) ? (
           <div className="ai-message-footer">

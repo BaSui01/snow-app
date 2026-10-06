@@ -30124,8 +30124,8 @@ body.is-panel-resizing * {
 .top-bar-branch-info .branch-dropdown {
   left: 0;
   right: auto;
-  min-width: 340px;
-  max-width: 440px;
+  min-width: min(340px, calc(100vw - 24px));
+  max-width: min(440px, calc(100vw - 24px));
 }
 
 .git-panel-container {
@@ -31299,8 +31299,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   top: 100%;
   left: 0;
   margin-top: 5px;
-  min-width: 330px;
-  max-width: 440px;
+  /* 以视口为上限收缩，窄窗口下不再固定 330px 溢出被裁切，无需手动拉宽窗口。 */
+  min-width: min(330px, calc(100vw - 24px));
+  max-width: min(440px, calc(100vw - 24px));
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -32044,7 +32045,15 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-weight: 600;
   font-size: 11px;
   color: var(--text-primary);
-  flex-shrink: 0;
+  /* 窄弹层里允许收缩并省略，把宽度留给右侧操作按钮。 */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.branch-wt-folder-badge > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .branch-wt-branch-badge {
@@ -32054,6 +32063,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-size: 11px;
   color: var(--text-muted);
   min-width: 0;
+  overflow: hidden;
+}
+
+.branch-wt-branch-badge > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .branch-badge-main {
@@ -32077,6 +32093,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   display: flex;
   align-items: center;
   gap: 3px;
+  /* 行内内容再长也要保住右侧操作按钮，否则窄宽度下按钮被挤出弹层裁掉。 */
+  flex-shrink: 0;
 }
 
 .branch-wt-action-btn {

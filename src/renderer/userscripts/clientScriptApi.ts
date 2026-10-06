@@ -49,6 +49,7 @@ const buildScriptPluginView = (
   renderMode: "esm",
   entry: "",
   panels: [],
+  messageFooters: [],
   locales: {},
   styles: [],
   privacy: Array.isArray(info.privacy)

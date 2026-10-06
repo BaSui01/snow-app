@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { AiResponse } from "./AiResponse";
-import { ConversationFileChangesCard } from "./ConversationFileChangesCard";
+import { PluginMessageFooters } from "./PluginMessageFooters";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
 import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
@@ -141,7 +141,7 @@ export const MessageContent = memo(
             showActions &&
             !isAborting &&
             activeConversationId ? (
-              <ConversationFileChangesCard
+              <PluginMessageFooters
                 key={`${activeConversationId}:${message.id}`}
                 conversationId={activeConversationId}
                 messageId={message.id}

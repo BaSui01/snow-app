@@ -3,9 +3,11 @@ import * as ReactNamespace from "react";
 import type { Locale } from "../../shared/locale";
 import bridgeSource from "./pluginIframeBridge.js?raw";
 import type { PluginMetadataApi, PluginRuntimeApi } from "./pluginApi";
+import type { PluginMessageFooterApi } from "./pluginMessageFooter";
 import type { MetadataResponse, PluginView } from "./types";
 
 export type PluginModuleExports = {
+  [exportName: string]: unknown;
   default?: unknown;
   mount?: (
     container: HTMLElement,
@@ -64,43 +66,70 @@ export const resolveLucideIcon = async (
 
 export const injectPluginStyles = async (
   plugin: PluginView,
+  signal?: AbortSignal,
+  isCurrent?: () => boolean,
 ): Promise<() => void> => {
   const elements: HTMLStyleElement[] = [];
-  for (const relativePath of plugin.styles) {
-    try {
-      const css = await window.snow.readPluginFile(
-        plugin.pluginId,
-        relativePath,
-      );
-      const element = document.createElement("style");
-      element.dataset.snowPlugin = plugin.pluginId;
-      element.textContent = css;
-      document.head.appendChild(element);
-      elements.push(element);
-    } catch (error) {
-      console.warn(
-        `Failed to load plugin style '${relativePath}' (${plugin.pluginId})`,
-        error,
-      );
-    }
-  }
-  return () => {
-    for (const element of elements) {
-      element.remove();
-    }
+  const cleanup = (): void => {
+    for (const element of elements) element.remove();
+    signal?.removeEventListener("abort", cleanup);
   };
+  const check = (): void => {
+    signal?.throwIfAborted();
+    if (isCurrent && !isCurrent())
+      throw new DOMException("Plugin context expired", "AbortError");
+  };
+  signal?.addEventListener("abort", cleanup, { once: true });
+  try {
+    check();
+    for (const relativePath of plugin.styles) {
+      try {
+        check();
+        const css = await window.snow.readPluginFile(
+          plugin.pluginId,
+          relativePath,
+        );
+        check();
+        const element = document.createElement("style");
+        element.dataset.snowPlugin = plugin.pluginId;
+        element.textContent = css;
+        document.head.appendChild(element);
+        elements.push(element);
+      } catch (error) {
+        check();
+        console.warn(
+          `Failed to load plugin style '${relativePath}' (${plugin.pluginId})`,
+          error,
+        );
+      }
+    }
+    return cleanup;
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 };
 
 /** 以 ESM 方式加载插件代码：注入 React / 图标 / API 后动态 import。 */
 export const loadPluginModule = async (params: {
   plugin: PluginView;
   entry: string;
-  api: PluginRuntimeApi;
+  api: PluginRuntimeApi | PluginMessageFooterApi;
   locale: Locale;
+  signal?: AbortSignal;
+  isCurrent?: () => boolean;
 }): Promise<PluginModuleExports> => {
-  const { plugin, entry, api, locale } = params;
+  const { plugin, entry, api, locale, signal, isCurrent } = params;
+  const check = (): void => {
+    signal?.throwIfAborted();
+    if (isCurrent && !isCurrent())
+      throw new DOMException("Plugin context expired", "AbortError");
+  };
+  check();
   const source = await window.snow.readPluginFile(plugin.pluginId, entry);
+  check();
   const icons = await loadLucideIcons();
+  check();
 
   const scope = window as unknown as Record<string, unknown>;
   scope.SnowAppPlugin = {
@@ -122,6 +151,7 @@ export const loadPluginModule = async (params: {
     const module = (await import(
       /* @vite-ignore */ url
     )) as PluginModuleExports;
+    check();
     return module;
   } finally {
     URL.revokeObjectURL(url);

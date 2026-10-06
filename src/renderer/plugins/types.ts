@@ -51,6 +51,12 @@ export type PluginPanelDefinition = {
   widthHint: string;
 };
 
+export type PluginMessageFooterDefinition = {
+  id: string;
+  entry: string;
+  exportName: string;
+};
+
 /** 渲染层使用的插件视图模型（PluginRecord 解析后的形态）。 */
 export type PluginView = {
   pluginId: string;
@@ -64,6 +70,7 @@ export type PluginView = {
   renderMode: PluginRenderMode;
   entry: string;
   panels: PluginPanelDefinition[];
+  messageFooters: PluginMessageFooterDefinition[];
   locales: Record<string, string>;
   styles: string[];
   privacy: SensitiveScope[];

@@ -90,6 +90,7 @@ export type PluginRuntimeApi = {
   net: PluginNetApi;
   assets: { resolve: (relativePath: string) => Promise<string | null> };
   ui: {
+    messageFooterVersion: 1;
     React: typeof ReactNamespace;
     icon: (name: string) => unknown;
   };
@@ -210,6 +211,7 @@ export const createPluginApi = async (params: {
         window.snow.requestPluginHttp({ ...(options ?? {}), url }),
     },
     ui: {
+      messageFooterVersion: 1,
       React: ReactNamespace,
       icon: (name) => icons[name] ?? null,
     },

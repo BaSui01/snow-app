@@ -2,6 +2,7 @@ import type { Locale } from "../../shared/locale";
 import type { PluginRecord } from "../../preload/types/plugins";
 import type {
   PluginLocalizedMap,
+  PluginMessageFooterDefinition,
   PluginPanelDefinition,
   PluginRenderMode,
   PluginView,
@@ -116,6 +117,43 @@ const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
   return panels;
 };
 
+const normalizeMessageFooters = (
+  record: PluginRecord,
+): PluginMessageFooterDefinition[] => {
+  if (record.renderMode !== "esm") return [];
+  const manifest = parseJson<unknown>(record.manifestJson, null);
+  if (!manifest || typeof manifest !== "object") return [];
+  const contributions = (manifest as Record<string, unknown>).contributions;
+  if (!contributions || typeof contributions !== "object") return [];
+  const items = (contributions as Record<string, unknown>).messageFooters;
+  if (!Array.isArray(items)) return [];
+  const result: PluginMessageFooterDefinition[] = [];
+  const ids = new Set<string>();
+  for (const item of items.slice(0, 16)) {
+    if (!item || typeof item !== "object") continue;
+    const value = item as Record<string, unknown>;
+    const id = typeof value.id === "string" ? value.id.trim() : "";
+    const exportName =
+      typeof value.exportName === "string" ? value.exportName.trim() : "";
+    // Only an omitted entry falls back; a supplied invalid path is rejected.
+    const entry = value.entry === undefined ? record.entry : value.entry;
+    if (
+      !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(id) ||
+      ids.has(id) ||
+      !/^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(exportName) ||
+      typeof entry !== "string" ||
+      !entry ||
+      entry !== entry.trim() ||
+      /[\\\x00-\x1f\x7f:%?#]/.test(entry) ||
+      entry.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      continue;
+    ids.add(id);
+    result.push({ id, entry, exportName });
+  }
+  return result;
+};
+
 export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   pluginId: record.pluginId,
   name: normalizeLocalizedMap(parseJson(record.name, {})),
@@ -128,6 +166,7 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   renderMode: (record.renderMode === "iframe" ? "iframe" : "esm") as PluginRenderMode,
   entry: record.entry,
   panels: normalizePanels(parseJson(record.panels, [])),
+  messageFooters: normalizeMessageFooters(record),
   locales: parseJson(record.locales, {}),
   styles: parseJson<string[]>(record.styles, []).filter(
     (item): item is string => typeof item === "string" && item.trim().length > 0
@@ -175,27 +214,34 @@ const localeTagCandidates = (locale: Locale): string[] => {
 /** 读取插件语言包（缺失时返回空表，调用方回退到插件自带文案）。 */
 export const loadPluginMessages = async (
   plugin: PluginView,
-  locale: Locale
+  locale: Locale,
+  signal?: AbortSignal,
 ): Promise<Record<string, string>> => {
+  signal?.throwIfAborted();
   const direct = pickLocaleFile(plugin.locales, locale);
   if (direct) {
     try {
       const raw = await window.snow.readPluginFile(plugin.pluginId, direct);
+      signal?.throwIfAborted();
       return parseJson<Record<string, string>>(raw, {});
     } catch {
+      signal?.throwIfAborted();
       return {};
     }
   }
 
   for (const tag of localeTagCandidates(locale)) {
+    signal?.throwIfAborted();
     const candidate = plugin.locales[tag];
     if (!candidate) {
       continue;
     }
     try {
       const raw = await window.snow.readPluginFile(plugin.pluginId, candidate);
+      signal?.throwIfAborted();
       return parseJson<Record<string, string>>(raw, {});
     } catch {
+      signal?.throwIfAborted();
       continue;
     }
   }

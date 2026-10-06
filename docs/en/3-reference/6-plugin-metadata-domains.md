@@ -25,6 +25,8 @@ flowchart LR
 
 ### 1.1 Call shapes
 
+Message footers read their display data through the same privacy-controlled metadata, with the host defaulting only conversation and known directory identifiers; see “Message footer v1” in [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md) for DOM mounting and subscription ownership.
+
 ```javascript
 const response = await api.metadata.get(["conversations", "memos"], {
   params: { directoryId: "local:D:/repo" },

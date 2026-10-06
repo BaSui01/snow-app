@@ -1,11 +1,13 @@
-// 中文发行说明获取。
+// 中文发行说明获取（简体 + 繁体）。
 //
-// 发布流程（scripts/generate-latest-json.cjs）从 RELEASE_NOTES_ZH.md 提取
-// 当前版本的中文翻译，生成 latest-zh.json 并随 GitHub Release 上传：
+// 发布流程（scripts/generate-latest-json.cjs）从 RELEASE_NOTES_ZH.md 与
+// RELEASE_NOTES_ZH_TW.md 提取当前版本的中文翻译，生成 latest-zh.json
+// 并随 GitHub Release 上传：
 //
 //   {
 //     "version": "0.2.2",
-//     "releaseNotesZh": "# ...markdown..."
+//     "releaseNotesZh": "# ...markdown...",
+//     "releaseNotesZhTw": "# ...markdown..."
 //   }
 //
 // 应用检测到新版本后在此拉取中文翻译写入更新状态；拉取失败或版本不匹配
@@ -30,10 +32,29 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 interface ZhNotesManifest {
   version?: string;
   releaseNotesZh?: string | null;
+  releaseNotesZhTw?: string | null;
 }
 
+/** 单个版本可用的中文发行说明（缺失或空白时为 null）。 */
+type ZhNotes = {
+  simplified: string | null;
+  traditional: string | null;
+};
+
+const EMPTY_NOTES: ZhNotes = { simplified: null, traditional: null };
+
+const readNotes = (value: string | null | undefined): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
+
+const applyNotes = (notes: ZhNotes): void => {
+  setUpdateStatus({
+    releaseNotesZh: notes.simplified,
+    releaseNotesZhTw: notes.traditional,
+  });
+};
+
 // 内存缓存：版本 + 翻译 + 获取时间
-let cached: { version: string; notes: string | null; fetchedAt: number } | null =
+let cached: { version: string; notes: ZhNotes; fetchedAt: number } | null =
   null;
 
 const fetchZhManifest = async (): Promise<ZhNotesManifest | null> => {
@@ -64,26 +85,28 @@ const fetchZhManifest = async (): Promise<ZhNotesManifest | null> => {
  */
 export const loadZhReleaseNotes = async (version: string): Promise<void> => {
   const now = Date.now();
-  if (cached && cached.version === version && now - cached.fetchedAt < CACHE_TTL_MS) {
-    setUpdateStatus({ releaseNotesZh: cached.notes });
+  if (
+    cached &&
+    cached.version === version &&
+    now - cached.fetchedAt < CACHE_TTL_MS
+  ) {
+    applyNotes(cached.notes);
     return;
   }
 
   const manifest = await fetchZhManifest();
-  let notes: string | null = null;
-  if (
-    manifest &&
-    manifest.version === version &&
-    typeof manifest.releaseNotesZh === "string" &&
-    manifest.releaseNotesZh.trim()
-  ) {
-    notes = manifest.releaseNotesZh.trim();
+  let notes = EMPTY_NOTES;
+  if (manifest && manifest.version === version) {
+    notes = {
+      simplified: readNotes(manifest.releaseNotesZh),
+      traditional: readNotes(manifest.releaseNotesZhTw),
+    };
   }
 
   cached = { version, notes, fetchedAt: now };
-  setUpdateStatus({ releaseNotesZh: notes });
+  applyNotes(notes);
 
-  if (!notes) {
+  if (!notes.simplified && !notes.traditional) {
     snowLog.info({
       module: "updater/zh-notes",
       func: "loadZhReleaseNotes",

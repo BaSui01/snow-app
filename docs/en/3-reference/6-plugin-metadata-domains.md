@@ -168,20 +168,20 @@ Every section states the privacy requirement, liveness, parameters, and return s
 
 No declaration · Not live · No parameters
 
-| Field                                 | Type           | Description                                                                                      |
-| ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------ |
-| `appVersion`                          | string \| null | App version (`app:get-version`)                                                                  |
-| `updateStatus`                        | object \| null | `{ available, version, downloading, progress, downloaded, error, releaseNotes, releaseNotesZh }` |
-| `engine`                              | string \| null | Rust engine information string                                                                   |
-| `processMemoryBytes`                  | number \| null | Resident memory of the app process in bytes                                                      |
-| `storageLocations`                    | object \| null | `{ databasePath, archiveDbPath, checkpointDir, uploadDir, checkpointRoot, uploadRoot }`          |
-| `pluginsDirectory`                    | string \| null | Plugin install root (`~/.snowapp/plugins`)                                                       |
-| `locale`                              | string         | UI language (`en` / `zh-CN` / `zh-TW`)                                                           |
-| `language` / `platform` / `userAgent` | string         | Matching `navigator` values                                                                      |
-| `hardwareConcurrency`                 | number         | Logical core count                                                                               |
-| `timezone`                            | string         | IANA time zone                                                                                   |
-| `startedAt`                           | number         | Renderer `performance.timeOrigin`                                                                |
-| `now`                                 | number         | Collection timestamp (epoch milliseconds)                                                        |
+| Field                                 | Type           | Description                                                                                                        |
+| ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `appVersion`                          | string \| null | App version (`app:get-version`)                                                                                    |
+| `updateStatus`                        | object \| null | `{ available, version, downloading, progress, downloaded, error, releaseNotes, releaseNotesZh, releaseNotesZhTw }` |
+| `engine`                              | string \| null | Rust engine information string                                                                                     |
+| `processMemoryBytes`                  | number \| null | Resident memory of the app process in bytes                                                                        |
+| `storageLocations`                    | object \| null | `{ databasePath, archiveDbPath, checkpointDir, uploadDir, checkpointRoot, uploadRoot }`                            |
+| `pluginsDirectory`                    | string \| null | Plugin install root (`~/.snowapp/plugins`)                                                                         |
+| `locale`                              | string         | UI language (`en` / `zh-CN` / `zh-TW`)                                                                             |
+| `language` / `platform` / `userAgent` | string         | Matching `navigator` values                                                                                        |
+| `hardwareConcurrency`                 | number         | Logical core count                                                                                                 |
+| `timezone`                            | string         | IANA time zone                                                                                                     |
+| `startedAt`                           | number         | Renderer `performance.timeOrigin`                                                                                  |
+| `now`                                 | number         | Collection timestamp (epoch milliseconds)                                                                          |
 
 #### 4.1.2 `theme`
 

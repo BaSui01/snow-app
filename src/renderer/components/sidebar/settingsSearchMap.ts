@@ -75,6 +75,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["about", "关于", "版本"],
       ],
       [
+        "general.tab.changelog",
+        "tab",
+        "settings.changelogTab",
+        "Changelog",
+        [],
+        ["changelog", "更新日志", "更新日誌", "发行说明", "release notes"],
+      ],
+      [
         "general.language",
         "section",
         "settings.languageSettings",

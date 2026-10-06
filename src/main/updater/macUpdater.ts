@@ -133,7 +133,10 @@ const isNewerVersion = (candidate: string, current: string): boolean => {
 
 const fetchManifest = async (): Promise<MacUpdateManifest> => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MANIFEST_FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    MANIFEST_FETCH_TIMEOUT_MS,
+  );
   try {
     const response = await net.fetch(MANIFEST_URL, {
       signal: controller.signal,
@@ -154,12 +157,16 @@ const fetchManifest = async (): Promise<MacUpdateManifest> => {
     if (!fileInfo || typeof fileInfo.url !== "string" || !fileInfo.url.trim()) {
       throw new Error(`更新清单缺少 ${process.arch} 架构的下载地址`);
     }
-    if (typeof fileInfo.sha256 !== "string" || !/^[0-9a-fA-F]{64}$/.test(fileInfo.sha256)) {
+    if (
+      typeof fileInfo.sha256 !== "string" ||
+      !/^[0-9a-fA-F]{64}$/.test(fileInfo.sha256)
+    ) {
       throw new Error("更新清单的 sha256 字段非法");
     }
     return {
       version: raw.version.trim(),
-      publishedAt: typeof raw.publishedAt === "string" ? raw.publishedAt : undefined,
+      publishedAt:
+        typeof raw.publishedAt === "string" ? raw.publishedAt : undefined,
       releaseNotes:
         typeof raw.releaseNotes === "string" && raw.releaseNotes.trim()
           ? raw.releaseNotes.trim()
@@ -177,7 +184,7 @@ const fetchManifest = async (): Promise<MacUpdateManifest> => {
 
 const downloadZip = async (
   fileInfo: MacUpdateFileInfo,
-  zipPath: string
+  zipPath: string,
 ): Promise<void> => {
   const response = await net.fetch(fileInfo.url, {
     headers: {
@@ -233,19 +240,21 @@ const downloadZip = async (
 
 const verifyZip = async (
   zipPath: string,
-  fileInfo: MacUpdateFileInfo
+  fileInfo: MacUpdateFileInfo,
 ): Promise<void> => {
   const fileStat = await stat(zipPath);
   if (typeof fileInfo.size === "number" && fileStat.size !== fileInfo.size) {
     throw new Error(
-      `文件大小不匹配：期望 ${fileInfo.size} 字节，实际 ${fileStat.size} 字节`
+      `文件大小不匹配：期望 ${fileInfo.size} 字节，实际 ${fileStat.size} 字节`,
     );
   }
 
   // Rust 后端异步计算 SHA-256，不阻塞 Node 主线程
   const actualHash = await getRawNative().sha256File(zipPath);
   if (actualHash.toLowerCase() !== fileInfo.sha256.toLowerCase()) {
-    throw new Error(`SHA256 校验失败：期望 ${fileInfo.sha256}，实际 ${actualHash}`);
+    throw new Error(
+      `SHA256 校验失败：期望 ${fileInfo.sha256}，实际 ${actualHash}`,
+    );
   }
 };
 
@@ -300,6 +309,7 @@ const checkForUpdatesAction = async (): Promise<void> => {
         error: null,
         releaseNotes: null,
         releaseNotesZh: null,
+        releaseNotesZhTw: null,
       });
       downloadedZipPath = null;
       downloadedVersion = null;
@@ -326,6 +336,7 @@ const checkForUpdatesAction = async (): Promise<void> => {
         error: null,
         releaseNotes: manifest.releaseNotes ?? null,
         releaseNotesZh: null,
+        releaseNotesZhTw: null,
       });
       // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
       void loadZhReleaseNotes(manifest.version);
@@ -343,6 +354,7 @@ const checkForUpdatesAction = async (): Promise<void> => {
       error: null,
       releaseNotes: manifest.releaseNotes ?? null,
       releaseNotesZh: null,
+      releaseNotesZhTw: null,
     });
     // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
     void loadZhReleaseNotes(manifest.version);
@@ -398,6 +410,7 @@ const downloadUpdateAction = async (): Promise<void> => {
         error: null,
         releaseNotes: null,
         releaseNotesZh: null,
+        releaseNotesZhTw: null,
       });
       return;
     }
@@ -425,7 +438,7 @@ const downloadUpdateAction = async (): Promise<void> => {
     await writeFile(
       getStoredManifestPath(),
       JSON.stringify(manifest, null, 2),
-      "utf8"
+      "utf8",
     );
 
     await cleanupStaleZips(zipPath);
@@ -470,7 +483,7 @@ const buildInstallScript = (
   bundlePath: string,
   zipPath: string,
   destDir: string,
-  logPath: string
+  logPath: string,
 ): string => {
   const waitSeconds = INSTALL_WAIT_APP_EXIT_SEC;
   return [
@@ -557,7 +570,7 @@ const installUpdateAction = async (): Promise<void> => {
       bundlePath,
       downloadedZipPath,
       destDir,
-      logPath
+      logPath,
     );
     await writeFile(scriptPath, script, { mode: 0o755 });
 

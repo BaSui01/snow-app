@@ -49,6 +49,7 @@ const INITIAL_UPDATE_STATUS: UpdateStatus = {
   error: null,
   releaseNotes: null,
   releaseNotesZh: null,
+  releaseNotesZhTw: null,
 };
 
 export function MainSidebarContent({

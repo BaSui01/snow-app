@@ -57,10 +57,7 @@ const checkForUpdatesAction = async (): Promise<void> => {
 // - null / 空：返回 null。
 const normalizeReleaseNotes = (
   releaseNotes:
-    | string
-    | Array<{ version: string; note: string | null }>
-    | null
-    | undefined
+    string | Array<{ version: string; note: string | null }> | null | undefined,
 ): string | null => {
   if (typeof releaseNotes === "string") {
     return releaseNotes.trim() || null;
@@ -71,7 +68,7 @@ const normalizeReleaseNotes = (
   const parts = releaseNotes
     .slice()
     .sort((a, b) =>
-      b.version.localeCompare(a.version, undefined, { numeric: true })
+      b.version.localeCompare(a.version, undefined, { numeric: true }),
     )
     .map((item) => {
       const note = item.note?.trim();
@@ -120,6 +117,7 @@ export const initElectronUpdater = (mainWindow: BrowserWindow): void => {
       error: null,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
       releaseNotesZh: null,
+      releaseNotesZhTw: null,
     });
     // 异步拉取中文发行说明（失败时保持 null，UI 回退英文）
     void loadZhReleaseNotes(info.version);
@@ -140,6 +138,7 @@ export const initElectronUpdater = (mainWindow: BrowserWindow): void => {
       error: null,
       releaseNotes: null,
       releaseNotesZh: null,
+      releaseNotesZhTw: null,
     });
   });
 

@@ -218,7 +218,7 @@ export const ModelSelector = ({
     const setActiveIndex = isModelList
       ? setModelActiveIndex
       : setApiProfileActiveIndex;
-    if (list.length === 0) {
+    if (list.length === 0 || (isModelList && isLoadingModels)) {
       return;
     }
 
@@ -720,12 +720,6 @@ export const ModelSelector = ({
                   </button>
                   <span>{labels.selectModel}</span>
                 </div>
-                {isLoadingModels && (
-                  <div className="model-dropdown-status" aria-live="polite">
-                    <Loader2 size={14} className="spin" />
-                    <span>{labels.loadingModels}</span>
-                  </div>
-                )}
                 {modelError && (
                   <div className="model-dropdown-error">
                     <AlertCircle size={14} />
@@ -769,38 +763,47 @@ export const ModelSelector = ({
                   )}
                 </div>
                 <div className="model-dropdown-list" ref={modelListRef}>
-                  {models.length === 0 && !modelError && !isLoadingModels && (
-                    <div className="model-dropdown-empty">
-                      {labels.noModelsFound}
+                  {isLoadingModels ? (
+                    <div className="model-dropdown-status" aria-live="polite">
+                      <Loader2 size={14} className="spin" />
+                      <span>{labels.loadingModels}</span>
                     </div>
-                  )}
-                  {models.length > 0 && filteredModels.length === 0 && (
-                    <div className="model-dropdown-empty">
-                      {labels.noMatchingModels}
-                    </div>
-                  )}
-                  {filteredModels.map((model, index) => (
-                    <button
-                      key={model.id}
-                      className={`model-dropdown-item ${
-                        selectedModel === model.id ? "active" : ""
-                      } ${modelActiveIndex === index ? "highlighted" : ""}`}
-                      onClick={() => void handleSelectModel(model.id)}
-                      onMouseEnter={() => setModelActiveIndex(index)}
-                      type="button"
-                      title={model.id}
-                    >
-                      <span className="model-dropdown-item-name with-icon">
-                        <ModelBrandIcon model={model.id} size={16} />
-                        <span className="model-dropdown-item-name-text">
-                          {model.id}
-                        </span>
-                      </span>
-                      {selectedModel === model.id && (
-                        <Check size={14} className="model-dropdown-check" />
+                  ) : (
+                    <>
+                      {models.length === 0 && !modelError && (
+                        <div className="model-dropdown-empty">
+                          {labels.noModelsFound}
+                        </div>
                       )}
-                    </button>
-                  ))}
+                      {models.length > 0 && filteredModels.length === 0 && (
+                        <div className="model-dropdown-empty">
+                          {labels.noMatchingModels}
+                        </div>
+                      )}
+                      {filteredModels.map((model, index) => (
+                        <button
+                          key={model.id}
+                          className={`model-dropdown-item ${
+                            selectedModel === model.id ? "active" : ""
+                          } ${modelActiveIndex === index ? "highlighted" : ""}`}
+                          onClick={() => void handleSelectModel(model.id)}
+                          onMouseEnter={() => setModelActiveIndex(index)}
+                          type="button"
+                          title={model.id}
+                        >
+                          <span className="model-dropdown-item-name with-icon">
+                            <ModelBrandIcon model={model.id} size={16} />
+                            <span className="model-dropdown-item-name-text">
+                              {model.id}
+                            </span>
+                          </span>
+                          {selectedModel === model.id && (
+                            <Check size={14} className="model-dropdown-check" />
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
                 <div className="model-dropdown-footer model-dropdown-footer-actions">
                   <button

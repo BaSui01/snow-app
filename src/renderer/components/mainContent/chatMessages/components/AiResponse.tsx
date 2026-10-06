@@ -1,8 +1,10 @@
 import { Loader2, TriangleAlert } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { useI18n } from "../../../../i18n";
+import { AiErrorNotice } from "./AiErrorNotice";
 import { AiResponseActions } from "./AiResponseActions";
 import { StreamCursor } from "./StreamCursor";
+import { StreamRetryNotice } from "./StreamRetryNotice";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import { ToolCallGroup } from "./ToolCallGroup";
@@ -86,6 +88,10 @@ export const AiResponse = memo(
     sections = [],
     isStreaming = false,
     isAborting = false,
+    isRetrying = false,
+    retryAttempt,
+    retryError,
+    isError = false,
     incompleteVariant,
     interruptionReason,
     recoveryOutcome,
@@ -205,8 +211,10 @@ export const AiResponse = memo(
             />
           ) : null}
 
-          {/* 2. Body / Summary */}
-          {normalizedSummary ? (
+          {/* 2. Body / Summary — 错误消息以异常卡片呈现，而非渲染原始文本 */}
+          {isError && !showRawMarkdown ? (
+            <AiErrorNotice message={normalizedSummary} />
+          ) : normalizedSummary ? (
             showRawMarkdown ? (
               <pre className="ai-message-raw">{normalizedSummary}</pre>
             ) : (
@@ -288,6 +296,8 @@ export const AiResponse = memo(
               <Loader2 size={12} className="spin" />
               <span>{t("chat.stopping", { defaultValue: "Stopping..." })}</span>
             </span>
+          ) : isRetrying ? (
+            <StreamRetryNotice attempt={retryAttempt} error={retryError} />
           ) : isStreaming ? (
             <StreamCursor />
           ) : null}

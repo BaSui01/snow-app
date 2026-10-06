@@ -338,6 +338,7 @@ export type ElementTagPayload = {
   label: string;
   text: string;
   note: string;
+  domTree: string;
 };
 
 type ElementTagInsertSubscriber = (tag: ElementTagPayload) => void;
@@ -353,7 +354,8 @@ const isElementTagPayload = (value: unknown): value is ElementTagPayload => {
     typeof value.tag === "string" &&
     typeof value.label === "string" &&
     typeof value.text === "string" &&
-    typeof value.note === "string"
+    typeof value.note === "string" &&
+    typeof value.domTree === "string"
   );
 };
 

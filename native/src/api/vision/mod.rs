@@ -13,7 +13,7 @@ pub(crate) use tokio::sync::RwLock;
 pub(crate) use tokio_util::sync::CancellationToken;
 
 pub(crate) use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
-pub(crate) use crate::api::conversation::images::{parse_chat_message_content, ChatImage};
+pub(crate) use crate::api::conversation::{parse_chat_message_content, ChatImage};
 pub(crate) use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
 pub(crate) use crate::api::retry::{should_retry, wait_before_retry, RetryOptions};
 pub(crate) use crate::storage::services::chat_conversations::ChatContextMessage;

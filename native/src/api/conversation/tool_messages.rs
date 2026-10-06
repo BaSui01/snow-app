@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::api::conversation::images::{parse_chat_message_content, ChatImage};
+use crate::api::conversation::{parse_chat_message_content, ChatImage};
 use crate::storage::services::chat_conversations::ChatContextMessage;
 
 /// Convert stored tool_calls_json (any provider format) into Anthropic

@@ -72,7 +72,7 @@ fn emit_vision_status(
 /// 层会立即以 cancelled 状态结束）；正在进行的视觉 HTTP 请求由
 /// `send_vision_stream` 的 `tokio::select!` 中断，同样走此分支。
 pub(crate) async fn textify_parsed_content(
-    parsed: &crate::api::conversation::images::ParsedChatMessageContent,
+    parsed: &crate::api::conversation::ParsedChatMessageContent,
     client: &reqwest::Client,
     vision_config: &VisionApiConfig,
     include_reference_blocks: bool,

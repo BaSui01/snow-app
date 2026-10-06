@@ -19,13 +19,15 @@ export type PickedElement = {
   style: Record<string, string>;
   /** 用于样式应用时元素引用失效后的兜底重查选择器 */
   selector: string;
+  /** 元素在页面 DOM 中的层级树（根 -> 元素祖先链 + 直接子元素摘要） */
+  domTree: string;
 };
 
 /**
  * 注入到 webview guest 页面的元素选择脚本。
  *
  * 以 Promise 形式运行：监听鼠标移动高亮悬停元素、点击选中元素（返回其
- * 描述与视口矩形）、Escape 取消（resolve null）。点击使用捕获阶段并
+ * 描述、DOM 层级树与视口矩形）、Escape 取消（resolve null）。点击使用捕获阶段并
  * preventDefault/stopPropagation，避免选中链接时触发页面跳转。
  *
  * 选择期间通过注入的 !important 样式把整页光标强制为醒目的自定义鼠标指针
@@ -153,6 +155,51 @@ const ELEMENT_PICKER_SCRIPT = `(() => {
         if (value) style[key] = value;
       }
 
+      // 单个节点在树中的标识：tag#id.class（最多 3 个类名）。
+      const describeNode = (node) => {
+        let name = node.tagName.toLowerCase();
+        if (node.id) {
+          name += "#" + node.id;
+        }
+        const classes = Array.prototype.slice
+          .call(node.classList || [])
+          .slice(0, 3)
+          .join(".");
+        if (classes) {
+          name += "." + classes;
+        }
+        return name;
+      };
+
+      // DOM 层级树：「根 -> 选中元素」祖先链（每层一行、缩进表示层级，
+      // 叶子行标注选中元素），末尾附一行直接子元素摘要，便于 AI 理解元素
+      // 在页面结构中的位置。深度与长度都有上限，避免超大页面产生巨量文本。
+      const buildDomTree = (root) => {
+        const chain = [];
+        let node = root;
+        while (node && node.nodeType === 1 && chain.length < 40) {
+          chain.unshift(node);
+          node = node.parentElement;
+        }
+        const lines = chain.map((item, index) => {
+          return (
+            (index === 0 ? "" : "   ".repeat(index - 1) + "└─ ") + describeNode(item)
+          );
+        });
+        if (lines.length > 0) {
+          lines[lines.length - 1] += "  ← 选中元素";
+        }
+        const children = Array.prototype.slice.call(root.children || []);
+        if (children.length > 0) {
+          const listed = children.slice(0, 12).map(describeNode);
+          if (children.length > listed.length) {
+            listed.push("…(+" + (children.length - listed.length) + ")");
+          }
+          lines.push("子元素: " + listed.join(", "));
+        }
+        return lines.join("\\n").slice(0, 1600);
+      };
+
       // 生成一个尽量简单的选择器，供样式应用时在元素引用失效后兜底重查。
       let selector = el.tagName.toLowerCase();
       if (el.id) {
@@ -171,6 +218,7 @@ const ELEMENT_PICKER_SCRIPT = `(() => {
         rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
         style,
         selector,
+        domTree: buildDomTree(el),
       };
     };
 
@@ -243,6 +291,7 @@ type PickResult = {
   rect?: { x: number; y: number; width: number; height: number };
   style?: Record<string, string>;
   selector?: string;
+  domTree?: string;
 } | null;
 
 /**
@@ -258,7 +307,7 @@ type PickResult = {
  * 状态残留。
  */
 export const useWebviewElementPicker = (
-  webviewRef: React.RefObject<Electron.WebviewTag | null>
+  webviewRef: React.RefObject<Electron.WebviewTag | null>,
 ): {
   isPicking: boolean;
   picked: PickedElement | null;
@@ -283,7 +332,7 @@ export const useWebviewElementPicker = (
     webview
       .executeJavaScript(
         "window.__snowClearPickerOverlay && window.__snowClearPickerOverlay();" +
-          "delete window.__snowPickedElement; delete window.__snowPickedOriginalStyle;"
+          "delete window.__snowPickedElement; delete window.__snowPickedOriginalStyle;",
       )
       .catch(() => {
         // 页面可能已随导航销毁，忽略。
@@ -300,11 +349,11 @@ export const useWebviewElementPicker = (
     //（否则叠加层高亮与十字光标会残留在页面上，直到用户再次点击页面）。
     const webview = webviewRef.current;
     if (webview) {
-      webview.executeJavaScript(
-        "window.__snowElementPickerActive = false;"
-      ).catch(() => {
-        // 页面可能已随导航销毁，忽略。
-      });
+      webview
+        .executeJavaScript("window.__snowElementPickerActive = false;")
+        .catch(() => {
+          // 页面可能已随导航销毁，忽略。
+        });
     }
     // 清除选中后保留的蓝色高亮框与元素引用。
     clearPickerOverlay();
@@ -358,13 +407,13 @@ export const useWebviewElementPicker = (
       }
     });
   }
-})();`
+})();`,
         )
         .catch(() => {
           // 页面可能已随导航销毁，忽略。
         });
     },
-    [webviewRef]
+    [webviewRef],
   );
 
   const togglePicker = useCallback(() => {
@@ -391,7 +440,7 @@ export const useWebviewElementPicker = (
     // 同时递增代数使进行中的 executeJavaScript 结果作废，避免旧页面的
     // 元素被当作新页面的选取结果。
     const handleStartNavigation = (
-      event: Electron.DidStartNavigationEvent
+      event: Electron.DidStartNavigationEvent,
     ): void => {
       if (!event.isMainFrame) {
         return;
@@ -408,7 +457,7 @@ export const useWebviewElementPicker = (
     const settle = (): void => {
       webview.removeEventListener(
         "did-start-navigation",
-        handleStartNavigation
+        handleStartNavigation,
       );
     };
 
@@ -435,6 +484,7 @@ export const useWebviewElementPicker = (
           rect,
           style: info.style ?? {},
           selector: info.selector ?? "",
+          domTree: info.domTree ?? "",
         };
         pickedRef.current = element;
         setPicked(element);
@@ -461,16 +511,17 @@ export const useWebviewElementPicker = (
         label: element.label,
         text: element.text,
         note: note.trim(),
+        domTree: element.domTree,
       };
       window.dispatchEvent(
-        new CustomEvent<ElementTag>(INSERT_ELEMENT_TAG_EVENT, { detail: tag })
+        new CustomEvent<ElementTag>(INSERT_ELEMENT_TAG_EVENT, { detail: tag }),
       );
       pickedRef.current = null;
       setPicked(null);
       // 元素已加入输入框，清除蓝色高亮框与元素引用。
       clearPickerOverlay();
     },
-    [clearPickerOverlay]
+    [clearPickerOverlay],
   );
 
   return {

@@ -564,7 +564,8 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
       typeof (tag as Record<string, unknown>).tag !== "string" ||
       typeof (tag as Record<string, unknown>).label !== "string" ||
       typeof (tag as Record<string, unknown>).text !== "string" ||
-      typeof (tag as Record<string, unknown>).note !== "string"
+      typeof (tag as Record<string, unknown>).note !== "string" ||
+      typeof (tag as Record<string, unknown>).domTree !== "string"
     ) {
       return;
     }

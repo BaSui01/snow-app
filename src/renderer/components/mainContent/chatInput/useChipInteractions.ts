@@ -521,6 +521,7 @@ export const useChipInteractions = ({
             label?: string;
             text?: string;
             note?: string;
+            domTree?: string;
           };
           rows.push({
             label: t("chatInput.chipDetailsTag"),
@@ -544,9 +545,12 @@ export const useChipInteractions = ({
               value: base64ToUtf8(data.note),
             });
           }
-          if (data.text) {
-            content = base64ToUtf8(data.text);
-          }
+          // 内容区（可滚动）显示元素文本与 DOM 层级树：树为多行结构文本，
+          // 放在行式元信息里会撑破卡片高度，故与文本共用内容区。
+          const elementText = data.text ? base64ToUtf8(data.text) : "";
+          const domTree = data.domTree ? base64ToUtf8(data.domTree) : "";
+          content =
+            [elementText, domTree].filter(Boolean).join("\n\n") || undefined;
         } else if (chip.dataset.webTag === "true") {
           const data = JSON.parse(chip.dataset.webData ?? "{}") as {
             url?: string;

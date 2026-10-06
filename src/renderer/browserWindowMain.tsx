@@ -110,6 +110,7 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
         label: tag.label,
         text: tag.text,
         note: tag.note,
+        domTree: tag.domTree,
       });
     };
     window.addEventListener(INSERT_ELEMENT_TAG_EVENT, handleElementTag);

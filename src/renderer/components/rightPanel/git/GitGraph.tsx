@@ -21,11 +21,7 @@ import type { OpenDiffTabCallback } from "../types";
 import { CommitRow } from "./CommitRow";
 import { CommitTooltip } from "./CommitTooltip";
 import { WorktreeLegend } from "./WorktreeLegend";
-import {
-  LANE_WIDTH,
-  computeGraph,
-  reorderFirstParentFirst,
-} from "./gitGraphLayout";
+import { LANE_WIDTH, computeGraph } from "./gitGraphLayout";
 import {
   getCommitWorktrees,
   getWorktreeEdgeColors,
@@ -176,7 +172,7 @@ export const GitGraph = ({
     [commits, worktrees],
   );
   const { rows, maxLanes } = useMemo(
-    () => computeGraph(reorderFirstParentFirst(commits), worktreeEdgeColors),
+    () => computeGraph(commits, worktreeEdgeColors),
     [commits, worktreeEdgeColors],
   );
   const graphWidth = Math.max(maxLanes * LANE_WIDTH, LANE_WIDTH);

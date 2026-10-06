@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::super::database;
 use super::super::ChatConversationRecord;
-use crate::api::conversation::images::expand_display_tags_in_content;
+use crate::api::conversation::tags::expand_display_tags_in_content;
 
 mod fork_truncate;
 mod messages;

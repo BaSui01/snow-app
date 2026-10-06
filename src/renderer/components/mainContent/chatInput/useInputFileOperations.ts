@@ -266,6 +266,7 @@ export const useInputFileOperations = ({
         label: tag.label,
         text: tag.text,
         note: tag.note,
+        domTree: tag.domTree,
       });
     });
   }, [insertElementTag]);

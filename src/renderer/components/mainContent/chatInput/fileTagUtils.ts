@@ -89,6 +89,8 @@ export type ElementTag = {
   text: string;
   /** 用户添加的文字备注 */
   note: string;
+  /** 元素在页面 DOM 中的层级树（根 -> 元素祖先链 + 直接子元素摘要） */
+  domTree: string;
 };
 
 export type WebTag = {
@@ -345,7 +347,7 @@ export const encodeQuoteTag = (tag: QuoteTag): string =>
 
 /**
  * 将浏览器元素选择器选取的元素编码为 element 标签。
- * text / note 为用户或页面自由文本（可能含 `@@`），以 base64 承载，
+ * text / note / domTree 为自由文本（可能含 `@@`），以 base64 承载，
  * 避免破坏标签终止符；url / tag / label 为结构化字段，直接 JSON 内嵌。
  */
 export const encodeElementTag = (tag: ElementTag): string =>
@@ -355,6 +357,7 @@ export const encodeElementTag = (tag: ElementTag): string =>
     label: tag.label,
     text: utf8ToBase64(tag.text),
     note: utf8ToBase64(tag.note),
+    domTree: utf8ToBase64(tag.domTree),
   })}@@`;
 
 /**
@@ -552,6 +555,7 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
             label: data.label ?? "",
             text: data.text ? base64ToUtf8(data.text) : "",
             note: data.note ? base64ToUtf8(data.note) : "",
+            domTree: data.domTree ? base64ToUtf8(data.domTree) : "",
           },
         });
       } catch {
@@ -974,6 +978,7 @@ export const createElementChipHtml = (tag: ElementTag): string => {
       label: tag.label,
       text: utf8ToBase64(tag.text),
       note: utf8ToBase64(tag.note),
+      domTree: utf8ToBase64(tag.domTree),
     }),
   );
   const displayName = tag.note ? `${tag.label} · ${tag.note}` : tag.label;
@@ -1236,6 +1241,7 @@ const readEditableContentWith = (
             label: data.label ?? "",
             text: data.text ? base64ToUtf8(data.text) : "",
             note: data.note ? base64ToUtf8(data.note) : "",
+            domTree: data.domTree ? base64ToUtf8(data.domTree) : "",
           });
         } catch {
           // Ignore malformed element data

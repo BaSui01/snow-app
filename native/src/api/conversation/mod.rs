@@ -6,13 +6,15 @@ pub mod context;
 pub mod images;
 pub mod stream;
 pub mod sub_agent;
+pub mod tags;
 pub mod tail_guard;
 pub mod tool_messages;
 
 pub use context::{prepare_context_request, PreparedConversationRequest};
-pub use images::{parse_chat_message_content, ChatImage, ParsedChatMessageContent};
+pub use images::ChatImage;
 pub use stream::create_response_stream;
 pub use sub_agent::resolve_sub_agent_tools;
+pub use tags::{parse_chat_message_content, ParsedChatMessageContent};
 
 pub struct ConversationContextRequest<'a> {
     pub database_path: &'a Path,

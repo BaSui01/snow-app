@@ -199,6 +199,10 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
         &[
             "log",
             "HEAD",
+            // 顶层排序：与 git log --graph / VSCode 的行序一致——合并提交的
+            // 第二父分支紧跟其第一父展开，主线不会被更新的侧分支提交挤到
+            // 后面的车道；--skip/--max-count 分页在位序上依然连续。
+            "--topo-order",
             "--decorate=full",
             "--decorate-refs-exclude=refs/remotes/*/HEAD",
             "--shortstat",

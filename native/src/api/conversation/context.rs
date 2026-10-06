@@ -438,7 +438,7 @@ pub async fn prepare_context_request(
 
     // --- Conversation context attachments: 历史会话引用以 `@@conversation:`
     //     标签随用户消息内容进入请求，由各 provider 的 payload 构建层经
-    //     parse_chat_message_content 展开为渲染后的上下文块（见 images.rs）。 ---
+    //     parse_chat_message_content 展开为渲染后的上下文块（见 tags.rs）。 ---
 
     messages.extend(current_messages.iter().cloned());
 

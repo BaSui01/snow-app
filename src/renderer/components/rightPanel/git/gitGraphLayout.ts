@@ -27,66 +27,6 @@ export const LANE_COLORS = [
   "#14b8a6",
 ];
 
-/**
- * Reorders commits so the first-parent chain is laid out first.
- *
- * `git log` guarantees children appear before parents, but its default
- * date ordering can still list a merge's SECOND-parent branch before the
- * first parent's continuation (side branches are often newer). The
- * incremental lane algorithm assigns lanes as rows are consumed, so such
- * a side branch colonizes the early lanes; when the mainline later
- * reaches the same commits it bends into a side lane and the main axis
- * ends up red instead of blue.
- *
- * This is Kahn's topological sort with a LIFO worklist: children always
- * precede parents, and among the ready commits the one that became ready
- * most recently wins — i.e. "keep following the first parent before
- * backtracking into side branches". The newest tip pops first, so the
- * whole main axis lands in lane 0 (blue) and branches fill the remaining
- * lanes.
- */
-export function reorderFirstParentFirst(commits: GitLogEntry[]): GitLogEntry[] {
-  if (commits.length < 2) {
-    return commits;
-  }
-
-  const byHash = new Map<string, GitLogEntry>();
-  const childCount = new Map<string, number>();
-  for (const commit of commits) {
-    byHash.set(commit.hash, commit);
-    childCount.set(commit.hash, 0);
-  }
-  for (const commit of commits) {
-    for (const parent of commit.parents) {
-      if (byHash.has(parent)) {
-        childCount.set(parent, childCount.get(parent)! + 1);
-      }
-    }
-  }
-
-  const stack: GitLogEntry[] = [];
-  for (let i = commits.length - 1; i >= 0; i--) {
-    if (childCount.get(commits[i].hash) === 0) {
-      stack.push(commits[i]);
-    }
-  }
-
-  const ordered: GitLogEntry[] = [];
-  while (stack.length > 0) {
-    const commit = stack.pop()!;
-    ordered.push(commit);
-    for (let i = commit.parents.length - 1; i >= 0; i--) {
-      const remaining = childCount.get(commit.parents[i]);
-      if (remaining === undefined) continue;
-      if (remaining === 1) {
-        stack.push(byHash.get(commit.parents[i])!);
-      }
-      childCount.set(commit.parents[i], remaining - 1);
-    }
-  }
-  return ordered;
-}
-
 export function computeGraph(
   commits: GitLogEntry[],
   worktreeEdgeColors: Map<string, string>,
@@ -162,6 +102,11 @@ export function computeGraph(
         `${commit.hash}\0${parentHash}`,
       );
 
+      // 同名父提交（重复 parents）只处理一次，避免凭空多出一条重复线。
+      if (commit.parents.indexOf(parentHash) < p) {
+        continue;
+      }
+
       if (hashToLane.has(parentHash)) {
         const parentLane = hashToLane.get(parentHash)!;
         if (isFirstParent) {
@@ -174,11 +119,21 @@ export function computeGraph(
           }
           continue;
         }
+        // 第二父提交已停在别的车道上：不复用它的车道。直接并进去会让这条
+        // 合并边在子提交行就塌陷到对方线上，合并边自己的一列随之消失；
+        // 改为另开一条独立线一路下行，到父提交所在行再由 merges 弧弯入圆点。
+        const freeLane = lanes.indexOf(null);
+        const edgeLane = freeLane !== -1 ? freeLane : lanes.length;
+        if (edgeLane >= lanes.length) {
+          lanes.push(null);
+          laneColors.push(null);
+        }
         const edgeColor =
-          worktreeColor ?? LANE_COLORS[parentLane % LANE_COLORS.length];
-        laneColors[parentLane] = edgeColor;
-        if (parentLane !== dotLane) {
-          curves.push({ from: dotLane, to: parentLane, color: edgeColor });
+          worktreeColor ?? LANE_COLORS[edgeLane % LANE_COLORS.length];
+        lanes[edgeLane] = parentHash;
+        laneColors[edgeLane] = edgeColor;
+        if (edgeLane !== dotLane) {
+          curves.push({ from: dotLane, to: edgeLane, color: edgeColor });
         }
         continue;
       }

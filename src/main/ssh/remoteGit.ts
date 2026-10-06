@@ -1103,6 +1103,7 @@ const remoteUnpushedHashes = (workspacePath: string): Promise<Set<string>> =>
 /**
  * 只遍历当前分支（HEAD）可达的提交（与 Rust 的 get_git_log 一致）：不用
  * `--all`，避免其他分支（如其他 fork 远端的 main）独有的提交混进提交图。
+ * 行序同样与 Rust 端一致，取 `--topo-order`（git log --graph / VSCode 同款）。
  */
 export const remoteGetGitLog = async (
   workspacePath: string,
@@ -1117,6 +1118,7 @@ export const remoteGetGitLog = async (
     output = await runRemoteGitRaw(workspacePath, [
       "log",
       "HEAD",
+      "--topo-order",
       "--decorate=full",
       "--shortstat",
       "--pretty=format:%x1e%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P%x1f%b%x1f",

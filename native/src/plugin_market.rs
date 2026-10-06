@@ -1,9 +1,9 @@
 //! Snow App 插件市场：索引拉取与「从市场安装插件」链路。
 //!
-//! 索引来自 snow-plugin-store 仓库的 app/registry.json，候选地址按序尝试
-//! （GitHub raw 直连 + jsDelivr 镜像），成功后写入磁盘缓存；网络不可用时
-//! 回退到上一次成功的缓存。强制刷新时先清理 jsDelivr 镜像缓存，避免 CDN
-//! 上的旧副本让「刷新」失效。
+//! 索引来自 snow-plugin-store 仓库的 app/registry.json。拉取优先按最新
+//! commit SHA 内容寻址（raw 直连 + jsDelivr 镜像），绕开分支引用地址的
+//! CDN 长缓存；解析失败时回退分支引用地址（强制刷新先清理 jsDelivr 镜像
+//! 缓存）。成功后写入磁盘缓存，网络不可用时回退上一次成功的缓存。
 //!
 //! 安装链路（全部在 spawn_blocking 内执行，不阻塞 Node 主线程）：
 //! 下载 zip -> SHA256 校验 -> 解压到临时目录 -> 校验 plugin.json 的 id ->
@@ -26,8 +26,24 @@ const MARKET_REGISTRY_SOURCES: [&str; 2] = [
     "https://cdn.jsdelivr.net/gh/MayDay-wpf/snow-plugin-store@main/app/registry.json",
 ];
 
+/// 内容寻址拉取的地址前缀：拼接 commit SHA 组成不可变直链。
+const MARKET_REGISTRY_RAW_PREFIX: &str =
+    "https://raw.githubusercontent.com/MayDay-wpf/snow-plugin-store/";
+const MARKET_REGISTRY_CDN_PREFIX: &str =
+    "https://cdn.jsdelivr.net/gh/MayDay-wpf/snow-plugin-store@";
+/// 解析索引仓库最新 commit SHA 的两个地址：
+/// GitHub commits API（匿名限流 60 次/小时）与 commits atom 订阅源（无限流）。
+const MARKET_REGISTRY_COMMIT_API: &str =
+    "https://api.github.com/repos/MayDay-wpf/snow-plugin-store/commits/main";
+const MARKET_REGISTRY_COMMIT_ATOM: &str =
+    "https://github.com/MayDay-wpf/snow-plugin-store/commits/main.atom";
+
 /// 内存缓存有效期：刷新按钮以外的重复进入复用最近一次结果。
 const REGISTRY_CACHE_TTL: Duration = Duration::from_secs(60);
+/// SHA 解析请求的超时上限。
+const REGISTRY_SHA_RESOLVE_TIMEOUT: Duration = Duration::from_secs(8);
+/// SHA 解析失败后的退避时长：避免不可达网络下反复等待。
+const REGISTRY_SHA_RESOLVE_BACKOFF: Duration = Duration::from_secs(120);
 /// 插件归档（zip）大小上限，与存储层复制上限保持一致。
 const MAX_PLUGIN_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 /// 解压后总大小上限（防 zip 炸弹）。
@@ -36,9 +52,14 @@ const MAX_PLUGIN_EXTRACT_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_USERSCRIPT_BYTES: u64 = 10 * 1024 * 1024;
 
 static REGISTRY_MEMORY_CACHE: OnceLock<Mutex<Option<(Instant, String)>>> = OnceLock::new();
+static REGISTRY_SHA_RESOLVE_BACKOFF_UNTIL: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 fn memory_cache() -> &'static Mutex<Option<(Instant, String)>> {
     REGISTRY_MEMORY_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn sha_resolve_backoff_cell() -> &'static Mutex<Option<Instant>> {
+    REGISTRY_SHA_RESOLVE_BACKOFF_UNTIL.get_or_init(|| Mutex::new(None))
 }
 
 fn marketplace_dir() -> Result<PathBuf> {
@@ -116,6 +137,75 @@ fn fetch_registry_source(url: &str) -> std::result::Result<String, String> {
     Ok(text)
 }
 
+/// 校验字符串是否为 40 位十六进制 commit SHA。
+fn is_commit_sha(value: &str) -> bool {
+    value.len() == 40 && value.chars().all(|character| character.is_ascii_hexdigit())
+}
+
+/// 通过 GitHub commits API 解析索引仓库 main 分支最新 commit SHA。
+fn resolve_sha_via_github_api(client: &reqwest::blocking::Client) -> Option<String> {
+    let response = client
+        .get(MARKET_REGISTRY_COMMIT_API)
+        .timeout(REGISTRY_SHA_RESOLVE_TIMEOUT)
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let body = response.text().ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let sha = parsed.get("sha")?.as_str()?.trim().to_string();
+    is_commit_sha(&sha).then_some(sha)
+}
+
+/// 通过 commits atom 订阅源解析最新 commit SHA（API 不可用时的备用通道）。
+fn resolve_sha_via_commits_atom(client: &reqwest::blocking::Client) -> Option<String> {
+    let response = client
+        .get(MARKET_REGISTRY_COMMIT_ATOM)
+        .timeout(REGISTRY_SHA_RESOLVE_TIMEOUT)
+        .send()
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let body = response.text().ok()?;
+    let marker = "Grit::Commit/";
+    let marker_index = body.find(marker)?;
+    let sha: String = body[marker_index + marker.len()..].chars().take(40).collect();
+    is_commit_sha(&sha).then_some(sha)
+}
+
+/// 解析索引仓库最新 commit SHA；失败后短时间退避，避免不可达网络下反复等待。
+fn resolve_registry_commit_sha() -> Option<String> {
+    if let Ok(guard) = sha_resolve_backoff_cell().lock() {
+        if let Some(until) = *guard {
+            if Instant::now() < until {
+                return None;
+            }
+        }
+    }
+
+    let sha = build_blocking_client().ok().and_then(|client| {
+        resolve_sha_via_github_api(&client).or_else(|| resolve_sha_via_commits_atom(&client))
+    });
+
+    if let Ok(mut guard) = sha_resolve_backoff_cell().lock() {
+        *guard = sha
+            .is_none()
+            .then(|| Instant::now() + REGISTRY_SHA_RESOLVE_BACKOFF);
+    }
+    sha
+}
+
+/// 内容寻址的索引候选地址：按 commit SHA 直链拉取不可变文件，
+/// CDN 不会返回陈旧的分支引用缓存。
+fn commit_addressed_sources(sha: &str) -> [String; 2] {
+    [
+        format!("{MARKET_REGISTRY_RAW_PREFIX}{sha}/app/registry.json"),
+        format!("{MARKET_REGISTRY_CDN_PREFIX}{sha}/app/registry.json"),
+    ]
+}
+
 /// 构造 jsDelivr 镜像的缓存清理地址（purge）：
 /// `https://cdn.jsdelivr.net/{path}` -> `https://purge.jsdelivr.net/{path}`。
 fn jsdelivr_purge_url(cdn_url: &str) -> Option<String> {
@@ -144,27 +234,58 @@ fn purge_jsdelivr_cache(cdn_url: &str) -> bool {
     let Ok(body) = response.text() else {
         return false;
     };
+    // jsDelivr 对同一路径的 purge 有频率限制：被限流时同样返回
+    // status=finished，但 paths 下会带 throttled=true，此时缓存并未清理。
     serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|value| {
-            value
+        .map(|value| {
+            let finished = value
                 .get("status")
                 .and_then(serde_json::Value::as_str)
                 .map(|status| status == "finished")
+                .unwrap_or(false);
+            let throttled = value
+                .get("paths")
+                .and_then(serde_json::Value::as_object)
+                .map(|paths| {
+                    paths.values().any(|entry| {
+                        entry
+                            .get("throttled")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            finished && !throttled
         })
         .unwrap_or(false)
 }
 
 /// 拉取插件市场索引 JSON 文本（带内存 / 磁盘缓存与镜像降级）。
 ///
-/// `force_refresh` 为 true 时跳过内存缓存；两个候选源自身都带 CDN 缓存
-/// （GitHub raw 约 5 分钟、jsDelivr 分支引用最长 12 小时），因此先清理
-/// jsDelivr 镜像缓存并把清理成功的镜像提到候选首位，保证拿到最新索引
-/// 而不是 CDN 上的旧副本。
+/// 索引文件更新后分支引用地址会被 CDN 缓存数分钟到数小时（GitHub raw
+/// 约 5 分钟、jsDelivr 最长 12 小时），因此优先解析最新 commit SHA 并按
+/// SHA 直链拉取不可变文件；解析失败时回退分支引用地址（`force_refresh`
+/// 为 true 时先清理 jsDelivr 镜像缓存并把清理成功的镜像提到候选首位）。
 pub fn fetch_registry_blocking(force_refresh: bool) -> Result<String> {
     if !force_refresh {
         if let Some(text) = cached_registry_from_memory() {
             return Ok(text);
+        }
+    }
+
+    let mut last_error = String::new();
+
+    if let Some(sha) = resolve_registry_commit_sha() {
+        for source in commit_addressed_sources(&sha) {
+            match fetch_registry_source(&source) {
+                Ok(text) => {
+                    store_registry_memory_cache(&text);
+                    store_registry_disk_cache(&text);
+                    return Ok(text);
+                }
+                Err(error) => last_error = error,
+            }
         }
     }
 
@@ -181,7 +302,6 @@ pub fn fetch_registry_blocking(force_refresh: bool) -> Result<String> {
         }
     }
 
-    let mut last_error = String::new();
     for source in sources {
         match fetch_registry_source(source) {
             Ok(text) => {

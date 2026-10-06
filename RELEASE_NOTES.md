@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.15
+
+## New Features
+
+- **Dockable Explorer**: The project explorer can move between the sidebar and a right-panel tab (one click from its toolbar, plus a + menu entry while docked right); the placement is remembered and the current directory is kept when moving.
+- **Directory-Scoped File Mentions**: `@:directory/` first picks a workspace directory — members of the linked project group included, the active one flagged — then searches inside it; results from sibling projects carry a project-name badge.
+- **Configurable Session Cache TTL**: General settings gain a Sessions section where the conversation message cache TTL is adjustable (default 60 minutes, range 1-10080); a timed sweep releases conversations unviewed for longer than that, while conversations being viewed or actively running are never evicted.
+- **Snow Bot Streaming Cursor**: The streaming indicator gains a "Snow Bot" animated flow style.
+- **About GitHub Repository Entry**: The About section now links the GitHub repository.
+
+## Improvements
+
+- The default terminal font stack includes Nerd Fonts (Maple Mono, JetBrainsMono, MesloLGS, ...), so Oh My Posh / starship prompts render out of the box; terminal settings offer a font preset dropdown (#178).
+- Branch listing now uses `git for-each-ref` (1129ms → 112ms on a repository with 12 worktrees) (#177).
+- Plugin market force-refresh purges the jsDelivr mirror cache first, so refreshing is no longer defeated by stale CDN copies.
+- The built-in browser MCP server is disabled by default and enabled per project, keeping its tools out of the model context until opted in.
+- The built-in general subagent's defaults (system prompt and tool list) refresh automatically.
+- Compaction summary messages use a compact divider-bar style, with copy and rollback inline.
+
+## Bug Fixes
+
+- Fixed Git branch dropdown interactions: clicking the trigger twice no longer closes and immediately reopens it, the popup width follows the space actually available to the right of the trigger (no clipping in narrow windows or under display scaling), and worktree rows keep their action buttons.
+
 ## v0.4.14
 
 ## New Features

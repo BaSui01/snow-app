@@ -13,11 +13,12 @@ import { useI18n } from "../../i18n";
 import { resolveLocalized, resolvePluginIcon } from "../../plugins/manifest";
 import {
   buildMarketDownloadUrl,
-  compareMarketVersions,
-  parseMarketRegistry,
+  hasMarketUpdate,
+  isMarketEntryTooNew,
   PLUGIN_MARKET_REPO_URL,
   type MarketPluginEntry,
 } from "../../plugins/market";
+import { marketStore, useMarketStore } from "../../plugins/marketStore";
 import {
   resolveLucideIcon,
   type LucideIconComponent,
@@ -31,8 +32,6 @@ import {
   PluginPrivacyDialog,
   type PluginPrivacyTarget,
 } from "./PluginPrivacyDialog";
-
-type MarketStatus = "loading" | "ready" | "error";
 
 /** 市场条目图标：lucide:Name 解析为对应图标，其余回退为占位图标。 */
 const MarketEntryIcon = ({ icon }: { icon: string }): React.JSX.Element => {
@@ -74,10 +73,7 @@ const MarketEntryIcon = ({ icon }: { icon: string }): React.JSX.Element => {
 export const PluginMarketPanel = (): React.JSX.Element => {
   const { t, locale } = useI18n();
   const pluginState = usePluginStore();
-  const [status, setStatus] = useState<MarketStatus>("loading");
-  const [error, setError] = useState<string | null>(null);
-  const [entries, setEntries] = useState<MarketPluginEntry[]>([]);
-  const [updatedAt, setUpdatedAt] = useState("");
+  const market = useMarketStore();
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
@@ -86,25 +82,7 @@ export const PluginMarketPanel = (): React.JSX.Element => {
   );
   const [privacyTarget, setPrivacyTarget] =
     useState<PluginPrivacyTarget | null>(null);
-  const [appVersion, setAppVersion] = useState("");
   const [userscripts, setUserscripts] = useState<UserscriptRecord[]>([]);
-
-  const load = useCallback(async (forceRefresh: boolean): Promise<void> => {
-    setStatus((current) => (current === "ready" ? "ready" : "loading"));
-    setError(null);
-    try {
-      const text = await window.snow.fetchPluginRegistry(forceRefresh);
-      const registry = parseMarketRegistry(text);
-      setEntries(registry.plugins);
-      setUpdatedAt(registry.updatedAt);
-      setStatus("ready");
-    } catch (loadError) {
-      setStatus("error");
-      setError(
-        loadError instanceof Error ? loadError.message : String(loadError),
-      );
-    }
-  }, []);
 
   const refreshUserscripts = useCallback((): void => {
     void window.snow
@@ -114,14 +92,10 @@ export const PluginMarketPanel = (): React.JSX.Element => {
   }, []);
 
   useEffect(() => {
-    void load(false);
+    void marketStore.ensureLoaded();
     refreshUserscripts();
-    void window.snow
-      .getAppVersion()
-      .then(setAppVersion)
-      .catch(() => undefined);
     return window.snow.onUserscriptsChanged(refreshUserscripts);
-  }, [load, refreshUserscripts]);
+  }, [refreshUserscripts]);
 
   const installedById = useMemo(() => {
     const map = new Map<string, PluginView>();
@@ -146,9 +120,9 @@ export const PluginMarketPanel = (): React.JSX.Element => {
   const filteredEntries = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) {
-      return entries;
+      return market.entries;
     }
-    return entries.filter((entry) => {
+    return market.entries.filter((entry) => {
       const haystack = [
         entry.id,
         resolveLocalized(entry.name, locale),
@@ -160,15 +134,7 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         .toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [entries, locale, query]);
-
-  const isTooNewForApp = useCallback(
-    (entry: MarketPluginEntry): boolean =>
-      Boolean(entry.minAppVersion) &&
-      Boolean(appVersion) &&
-      compareMarketVersions(appVersion, entry.minAppVersion) < 0,
-    [appVersion],
-  );
+  }, [market.entries, locale, query]);
 
   const openPrivacy = useCallback(
     (entry: MarketPluginEntry): void => {
@@ -225,8 +191,8 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         <button
           className="plugins-toolbar-btn"
           type="button"
-          disabled={status === "loading"}
-          onClick={() => void load(true)}
+          disabled={market.status === "loading"}
+          onClick={() => void marketStore.refresh()}
         >
           <RefreshCw size={14} strokeWidth={1.8} />
           <span>{t("plugins.refresh", { defaultValue: "Refresh" })}</span>
@@ -243,17 +209,17 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         >
           {PLUGIN_MARKET_REPO_URL.replace("https://github.com/", "")}
         </button>
-        {updatedAt ? (
+        {market.updatedAt ? (
           <span className="plugin-market-updated">
             {t("plugins.market.updatedAt", {
-              values: { time: updatedAt },
+              values: { time: market.updatedAt },
               defaultValue: "Updated {{time}}",
             })}
           </span>
         ) : null}
       </div>
 
-      {status === "error" && (
+      {market.status === "error" && (
         <div className="plugins-empty">
           <ShieldAlert size={22} strokeWidth={1.6} />
           <span>
@@ -261,11 +227,13 @@ export const PluginMarketPanel = (): React.JSX.Element => {
               defaultValue: "Failed to load the plugin market",
             })}
           </span>
-          {error ? <span className="plugins-empty-hint">{error}</span> : null}
+          {market.error ? (
+            <span className="plugins-empty-hint">{market.error}</span>
+          ) : null}
           <button
             className="plugins-toolbar-btn"
             type="button"
-            onClick={() => void load(true)}
+            onClick={() => void marketStore.refresh()}
           >
             <RefreshCw size={14} strokeWidth={1.8} />
             <span>{t("plugins.market.retry", { defaultValue: "Retry" })}</span>
@@ -273,18 +241,18 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         </div>
       )}
 
-      {status === "loading" && entries.length === 0 && (
+      {market.status === "loading" && market.entries.length === 0 && (
         <div className="plugins-empty">
           <Loader2 size={20} className="spin" />
           <span>{t("plugins.loading", { defaultValue: "Loading…" })}</span>
         </div>
       )}
 
-      {status === "ready" && filteredEntries.length === 0 && (
+      {market.status === "ready" && filteredEntries.length === 0 && (
         <div className="plugins-empty">
           <Store size={22} strokeWidth={1.6} />
           <span>
-            {entries.length === 0
+            {market.entries.length === 0
               ? t("plugins.market.empty", {
                   defaultValue: "No plugins in the market yet",
                 })
@@ -299,10 +267,10 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         {filteredEntries.map((entry) => {
           const installed = findInstalled(entry);
           const downloadUrl = buildMarketDownloadUrl(entry);
-          const tooNew = isTooNewForApp(entry);
+          const tooNew = isMarketEntryTooNew(entry, market.appVersion);
           const isUpdate =
             installed !== null &&
-            compareMarketVersions(installed.version, entry.version) < 0;
+            hasMarketUpdate(installed.version, entry.version);
           const isCurrent = installed !== null && !isUpdate;
           const entryBusy = busyId === entry.id;
           return (
@@ -496,7 +464,7 @@ export const PluginMarketPanel = (): React.JSX.Element => {
               scopes={pendingEntry.privacy.filter(isSensitiveScope)}
               onOpen={() => openPrivacy(pendingEntry)}
             />
-            {isTooNewForApp(pendingEntry) ? (
+            {isMarketEntryTooNew(pendingEntry, market.appVersion) ? (
               <div className="plugin-market-requires">
                 {t("plugins.market.requiresApp", {
                   values: { version: pendingEntry.minAppVersion },

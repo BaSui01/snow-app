@@ -161,3 +161,18 @@ export const compareMarketVersions = (left: string, right: string): number => {
   }
   return 0;
 };
+
+/** 市场版本是否高于本地已安装版本。 */
+export const hasMarketUpdate = (
+  installedVersion: string,
+  marketVersion: string,
+): boolean => compareMarketVersions(installedVersion, marketVersion) < 0;
+
+/** 市场条目要求的应用版本是否高于当前应用版本。 */
+export const isMarketEntryTooNew = (
+  entry: MarketPluginEntry,
+  appVersion: string,
+): boolean =>
+  Boolean(entry.minAppVersion) &&
+  Boolean(appVersion) &&
+  compareMarketVersions(appVersion, entry.minAppVersion) < 0;

@@ -1,7 +1,9 @@
 import {
   Database,
+  Download,
   FileCode2,
   FolderOpen,
+  Loader2,
   RefreshCw,
   ShieldAlert,
   Sparkles,
@@ -15,6 +17,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { resolveLocalized } from "../../plugins/manifest";
+import {
+  hasMarketUpdate,
+  isMarketEntryTooNew,
+  type MarketPluginEntry,
+} from "../../plugins/market";
+import {
+  findMarketEntry,
+  marketStore,
+  useMarketStore,
+} from "../../plugins/marketStore";
 import {
   METADATA_DOMAINS,
   describeMetadataDomains,
@@ -48,6 +60,7 @@ export const PluginsPanel = ({
 }: PluginsPanelProps): React.JSX.Element => {
   const { t, locale } = useI18n();
   const state = usePluginStore();
+  const market = useMarketStore();
   const { buildFromContent } = useChatConversationContext();
   const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -78,6 +91,7 @@ export const PluginsPanel = ({
   useEffect(() => {
     void pluginStore.refresh();
     void clientScriptStore.ensureLoaded();
+    void marketStore.ensureLoaded();
   }, []);
 
   const openMetadata = useCallback((plugin: PluginView) => {
@@ -155,6 +169,25 @@ export const PluginsPanel = ({
       setBusyPluginId(null);
     }
   }, []);
+
+  const handleUpdate = useCallback(
+    async (entry: MarketPluginEntry): Promise<void> => {
+      setBusyPluginId(entry.id);
+      setError(null);
+      try {
+        await pluginStore.installFromMarket(entry);
+      } catch (updateError) {
+        setError(
+          updateError instanceof Error
+            ? updateError.message
+            : String(updateError),
+        );
+      } finally {
+        setBusyPluginId(null);
+      }
+    },
+    [],
+  );
 
   const confirmUninstall = useCallback(async () => {
     if (!pendingUninstall) {
@@ -414,6 +447,17 @@ export const PluginsPanel = ({
                   <div className="plugins-list">
                     {state.plugins.map((plugin) => {
                       const isBusy = busyPluginId === plugin.pluginId;
+                      const marketEntry = findMarketEntry(
+                        market.entries,
+                        plugin.pluginId,
+                        "plugin",
+                      );
+                      const updateAvailable =
+                        marketEntry !== null &&
+                        hasMarketUpdate(plugin.version, marketEntry.version);
+                      const updateTooNew =
+                        marketEntry !== null &&
+                        isMarketEntryTooNew(marketEntry, market.appVersion);
                       const metadata = describeMetadataDomains(plugin);
                       const readableDomains = metadata.filter(
                         (domain) => domain.granted,
@@ -452,6 +496,43 @@ export const PluginsPanel = ({
                               </span>
                             </div>
                             <div className="plugins-item-actions">
+                              {marketEntry !== null && updateAvailable ? (
+                                <button
+                                  className="plugins-toolbar-btn primary"
+                                  type="button"
+                                  disabled={isBusy || updateTooNew}
+                                  title={
+                                    updateTooNew
+                                      ? t("plugins.market.requiresApp", {
+                                          values: {
+                                            version: marketEntry.minAppVersion,
+                                          },
+                                          defaultValue:
+                                            "Requires app v{{version}} or newer",
+                                        })
+                                      : t("plugins.market.updateHint", {
+                                          values: {
+                                            from: plugin.version,
+                                            to: marketEntry.version,
+                                          },
+                                          defaultValue:
+                                            "Installed v{{from}} → v{{to}}",
+                                        })
+                                  }
+                                  onClick={() => void handleUpdate(marketEntry)}
+                                >
+                                  {isBusy ? (
+                                    <Loader2 size={13} className="spin" />
+                                  ) : (
+                                    <Download size={13} strokeWidth={1.8} />
+                                  )}
+                                  <span>
+                                    {t("plugins.market.update", {
+                                      defaultValue: "Update",
+                                    })}
+                                  </span>
+                                </button>
+                              ) : null}
                               <button
                                 className="plugins-toggle"
                                 type="button"

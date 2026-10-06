@@ -1,5 +1,7 @@
 import {
+  Download,
   FileCode2,
+  Loader2,
   Pencil,
   Plus,
   RefreshCw,
@@ -12,6 +14,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { UserscriptRecord } from "../../../preload/types/userscripts";
 import { useI18n } from "../../i18n";
+import {
+  hasMarketUpdate,
+  isMarketEntryTooNew,
+  type MarketPluginEntry,
+} from "../../plugins/market";
+import {
+  findMarketEntry,
+  marketStore,
+  useMarketStore,
+} from "../../plugins/marketStore";
+import { pluginStore } from "../../plugins/pluginStore";
 import { isSensitiveScope } from "../../plugins/types";
 import {
   clientScriptStore,
@@ -89,6 +102,7 @@ export const PluginScriptsSection = ({
 }: PluginScriptsSectionProps): React.JSX.Element => {
   const { t } = useI18n();
   const state = useClientScriptStore();
+  const market = useMarketStore();
   const { buildFromContent } = useChatConversationContext();
   const [busyScriptId, setBusyScriptId] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
@@ -104,6 +118,7 @@ export const PluginScriptsSection = ({
 
   useEffect(() => {
     void clientScriptStore.ensureLoaded();
+    void marketStore.ensureLoaded();
   }, []);
 
   const commandsByScript = useMemo(() => {
@@ -273,6 +288,25 @@ export const PluginScriptsSection = ({
     }
   }, [pendingDelete]);
 
+  const handleUpdate = useCallback(
+    async (entry: MarketPluginEntry): Promise<void> => {
+      setBusyScriptId(entry.id);
+      setError(null);
+      try {
+        await pluginStore.installFromMarket(entry);
+      } catch (updateError) {
+        setError(
+          updateError instanceof Error
+            ? updateError.message
+            : String(updateError),
+        );
+      } finally {
+        setBusyScriptId(null);
+      }
+    },
+    [],
+  );
+
   return (
     <>
       <div className="plugins-toolbar">
@@ -407,6 +441,17 @@ export const PluginScriptsSection = ({
       <div className="plugins-list">
         {state.scripts.map((script) => {
           const isBusy = busyScriptId === script.scriptId;
+          const marketEntry = findMarketEntry(
+            market.entries,
+            script.scriptId,
+            "script",
+          );
+          const updateAvailable =
+            marketEntry !== null &&
+            hasMarketUpdate(script.version, marketEntry.version);
+          const updateTooNew =
+            marketEntry !== null &&
+            isMarketEntryTooNew(marketEntry, market.appVersion);
           const failure = state.failures[script.scriptId];
           const commands = commandsByScript.get(script.scriptId) ?? [];
           const privacyScopes = script.privacy.filter(isSensitiveScope);
@@ -486,6 +531,40 @@ export const PluginScriptsSection = ({
                   />
                 </div>
                 <div className="plugins-item-actions">
+                  {marketEntry !== null && updateAvailable ? (
+                    <button
+                      className="plugins-toolbar-btn primary"
+                      type="button"
+                      disabled={isBusy || updateTooNew}
+                      title={
+                        updateTooNew
+                          ? t("plugins.market.requiresApp", {
+                              values: { version: marketEntry.minAppVersion },
+                              defaultValue:
+                                "Requires app v{{version}} or newer",
+                            })
+                          : t("plugins.market.updateHint", {
+                              values: {
+                                from: script.version,
+                                to: marketEntry.version,
+                              },
+                              defaultValue: "Installed v{{from}} → v{{to}}",
+                            })
+                      }
+                      onClick={() => void handleUpdate(marketEntry)}
+                    >
+                      {isBusy ? (
+                        <Loader2 size={13} className="spin" />
+                      ) : (
+                        <Download size={13} strokeWidth={1.8} />
+                      )}
+                      <span>
+                        {t("plugins.market.update", {
+                          defaultValue: "Update",
+                        })}
+                      </span>
+                    </button>
+                  ) : null}
                   <button
                     aria-checked={script.enabled}
                     className="plugins-toggle"

@@ -35,6 +35,7 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
 import { ChangelogSection } from "./ChangelogSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { useBusySendBehavior } from "../../constants/busySendBehavior";
 import { CustomSelect } from "../common/CustomSelect";
 import { GitHubLogo } from "../common/GitHubLogo";
 import { OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
@@ -381,6 +382,7 @@ export function GeneralSettingsPanel(): React.JSX.Element {
       .catch(() => undefined);
   };
 
+  const busySend = useBusySendBehavior();
   // 关闭 Snow App 时的行为（ask / exit / minimize，默认 ask）
   const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>("ask");
   const isMacPlatform = navigator.userAgent.includes("Mac");
@@ -1385,6 +1387,46 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                 />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "general" && (
+        <div className="api-settings-manual-form">
+          <div className="api-settings-manual-header">
+            <strong>{t("settings.busySendBehavior")}</strong>
+            <span>{t("settings.busySendBehaviorInfo")}</span>
+          </div>
+          <div className="api-settings-form-body">
+            <div className="settings-about-row">
+              <span className="settings-item-description">
+                {t("settings.busySendBehavior")}
+              </span>
+              <div className="settings-close-behavior-select">
+                <CustomSelect
+                  value={busySend.behavior}
+                  disabled={!busySend.ready || busySend.saving}
+                  options={[
+                    { value: "queue", label: t("settings.busySendQueue") },
+                    { value: "steer", label: t("settings.busySendSteer") },
+                  ]}
+                  onChange={(value) => {
+                    void busySend.setBusySendBehavior(
+                      value === "steer" ? "steer" : "queue",
+                    );
+                  }}
+                />
+              </div>
+            </div>
+            {busySend.error && (
+              <div role="alert" className="api-settings-error">
+                {t(
+                  busySend.error === "save"
+                    ? "settings.busySendSaveError"
+                    : "settings.busySendLoadError",
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,4 +1,19 @@
 export const en = {
+  "settings.busySendBehavior": "Send behavior while busy",
+  "settings.busySendBehaviorInfo":
+    "Queue waits for the current task to finish; steer is handled at the next available boundary. Use the alternate shortcut to switch for one send.",
+  "settings.busySendQueue": "Queue",
+  "settings.busySendSteer": "Steer",
+  "settings.busySendSaveError":
+    "Could not save. The previous send behavior remains active.",
+  "settings.busySendLoadError":
+    "Could not load the send preference. Using steer until successfully saved.",
+  "chatInput.busyQueue": "Wait for task to finish",
+  "chatInput.busySteer": "Wait for steer processing",
+  "chatInput.interruptAndSend": "Interrupt and send",
+  "chatInput.busySendHint":
+    "{{behavior}} ({{shortcut}}); alternate: {{alternate}}",
+
   "git.manageActions": "Manage branch…",
   "git.manageCreate": "Create branch from here…",
   "git.manageTrack": "Create local tracking branch…",

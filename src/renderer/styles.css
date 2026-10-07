@@ -23189,6 +23189,20 @@ body.is-panel-resizing * {
   -webkit-box-orient: vertical;
 }
 
+.pending-message-mode {
+  flex: 0 1 auto;
+  max-width: 30%;
+  padding: 2px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* pending 预览中 chip 作为 -webkit-box 弹性项时的对齐与防压缩 */
 .pending-message-text .user-message-file-chip {
   flex-shrink: 0;

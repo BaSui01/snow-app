@@ -1,4 +1,17 @@
 export const zhTW = {
+  "settings.busySendBehavior": "繁忙時的傳送行為",
+  "settings.busySendBehaviorInfo":
+    "排隊等待目前任務結束；插話等待下一個可處理邊界。使用另一快捷鍵可僅為本次傳送反選。",
+  "settings.busySendQueue": "排隊傳送",
+  "settings.busySendSteer": "插話傳送",
+  "settings.busySendSaveError": "儲存失敗，已保留原傳送行為。",
+  "settings.busySendLoadError": "讀取傳送偏好失敗，成功儲存前使用預設插話。",
+  "chatInput.busyQueue": "等待任務結束",
+  "chatInput.busySteer": "等待插話處理",
+  "chatInput.interruptAndSend": "中斷並傳送",
+  "chatInput.busySendHint":
+    "{{behavior}}（{{shortcut}}）；本次反選：{{alternate}}",
+
   "git.manageActions": "管理分支…",
   "git.manageCreate": "從此分支建立分支…",
   "git.manageTrack": "建立本機追蹤分支…",

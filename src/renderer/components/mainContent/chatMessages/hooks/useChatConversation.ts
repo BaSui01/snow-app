@@ -1015,6 +1015,9 @@ export const useChatConversation = (
     loadOlderMessages: conversationManagementApi.loadOlderMessages,
     handleSendMessage: agentLoopApi.handleSendMessage,
     pendingMessages: activePendingMessages,
+    pendingMessageModes: (
+      pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ?? []
+    ).map((item) => item.options.deliveryMode ?? "queue"),
     withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
     sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
     compactConversation: compactionApi.compactConversation,

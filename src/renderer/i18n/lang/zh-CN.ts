@@ -1,4 +1,17 @@
 export const zhCN = {
+  "settings.busySendBehavior": "繁忙时的发送行为",
+  "settings.busySendBehaviorInfo":
+    "排队等待当前任务结束；插话等待下一个可处理边界。使用另一快捷键可仅为本次发送反选。",
+  "settings.busySendQueue": "排队发送",
+  "settings.busySendSteer": "插话发送",
+  "settings.busySendSaveError": "保存失败，已保留原发送行为。",
+  "settings.busySendLoadError": "读取发送偏好失败，成功保存前使用默认插话。",
+  "chatInput.busyQueue": "等待任务结束",
+  "chatInput.busySteer": "等待插话处理",
+  "chatInput.interruptAndSend": "中断并发送",
+  "chatInput.busySendHint":
+    "{{behavior}}（{{shortcut}}）；本次反选：{{alternate}}",
+
   "git.manageActions": "管理分支…",
   "git.manageCreate": "从此分支创建分支…",
   "git.manageTrack": "创建本地跟踪分支…",

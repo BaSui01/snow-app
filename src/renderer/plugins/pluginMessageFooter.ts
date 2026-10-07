@@ -13,7 +13,7 @@ export type PluginMessageFooterContext = Readonly<{
   directoryId: string | undefined;
 }>;
 
-/** Footer exposes only file-reader navigation, never general write, AI, network or storage APIs. */
+/** Footer exposes only file-reader and read-only diff navigation, never general write, AI, network or storage APIs. */
 export type PluginMessageFooterApi = Pick<
   PluginRuntimeApi,
   | "id"
@@ -113,7 +113,9 @@ export const scopePluginMessageFooterApi = (
         check();
         return source.write.domains().flatMap((domain) => {
           const actions = domain.actions.filter(
-            (action) => action.id === "panels.openFile",
+            (action) =>
+              action.id === "panels.openFile" ||
+              action.id === "panels.openFileDiff",
           );
           return actions.length
             ? [
@@ -134,12 +136,16 @@ export const scopePluginMessageFooterApi = (
             error: "Footer context expired",
           };
         }
-        if (actionId !== "panels.openFile") {
+        if (
+          actionId !== "panels.openFile" &&
+          actionId !== "panels.openFileDiff"
+        ) {
           return {
             ok: false,
             action: actionId,
             denied: { reason: "unsupported-runtime" },
-            error: "Message footers only support 'panels.openFile'",
+            error:
+              "Message footers only support 'panels.openFile' and 'panels.openFileDiff'",
           };
         }
         const result = await source.write.run(actionId, params);

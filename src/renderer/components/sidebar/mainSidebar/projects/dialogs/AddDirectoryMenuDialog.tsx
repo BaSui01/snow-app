@@ -11,6 +11,8 @@ type AddDirectoryMenuDialogProps = {
   onCloneRepository: () => void;
   onAddSshDirectory: () => void;
   onCreateCollection: () => void;
+  /** 合集右键「添加项目」入口不展示「新建合集」（已处于合集场景） */
+  showCreateCollection?: boolean;
 };
 
 export function AddDirectoryMenuDialog({
@@ -21,6 +23,7 @@ export function AddDirectoryMenuDialog({
   onCloneRepository,
   onAddSshDirectory,
   onCreateCollection,
+  showCreateCollection = true,
 }: AddDirectoryMenuDialogProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -117,29 +120,33 @@ export function AddDirectoryMenuDialog({
             </span>
           </span>
         </button>
-        <div className="project-action-separator" role="separator" />
-        <button
-          className="project-action-card"
-          onClick={onCreateCollection}
-          type="button"
-        >
-          <span className="project-action-card-icon">
-            <Library size={16} />
-          </span>
-          <span className="project-action-card-content">
-            <strong>
-              {t("sidebar.createCollection", {
-                defaultValue: "Create collection",
-              })}
-            </strong>
-            <span>
-              {t("sidebar.createCollectionDescription", {
-                defaultValue:
-                  "Create a collection to organize projects (drag projects into it)",
-              })}
-            </span>
-          </span>
-        </button>
+        {showCreateCollection ? (
+          <>
+            <div className="project-action-separator" role="separator" />
+            <button
+              className="project-action-card"
+              onClick={onCreateCollection}
+              type="button"
+            >
+              <span className="project-action-card-icon">
+                <Library size={16} />
+              </span>
+              <span className="project-action-card-content">
+                <strong>
+                  {t("sidebar.createCollection", {
+                    defaultValue: "Create collection",
+                  })}
+                </strong>
+                <span>
+                  {t("sidebar.createCollectionDescription", {
+                    defaultValue:
+                      "Create a collection to organize projects (drag projects into it)",
+                  })}
+                </span>
+              </span>
+            </button>
+          </>
+        ) : null}
       </div>
     </FormDialog>
   );

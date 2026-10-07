@@ -167,6 +167,43 @@ export function useProjectCollections({
     }
   };
 
+  /** 把目录加入指定合集（右键合集「添加项目」流程的收尾，追加到成员末尾）。 */
+  const addProjectToCollection = useCallback(
+    async (collectionId: string, directoryId: string): Promise<boolean> => {
+      const collection = collections.find(
+        (item) => item.collectionId === collectionId,
+      );
+      if (!collection || collection.memberDirectoryIds.includes(directoryId)) {
+        return false;
+      }
+
+      setIsSavingDirectory(true);
+      setDirectoryError(null);
+
+      try {
+        const nextCollections = await window.snow.moveProjectToCollection(
+          collectionId,
+          directoryId,
+          [...collection.memberDirectoryIds, directoryId],
+        );
+        setCollections(nextCollections);
+        return true;
+      } catch (error) {
+        setDirectoryError(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.addToCollectionError", {
+                defaultValue: "Failed to add project to collection",
+              }),
+        );
+        return false;
+      } finally {
+        setIsSavingDirectory(false);
+      }
+    },
+    [collections, setDirectoryError, setIsSavingDirectory, t],
+  );
+
   /** 切换成员的「参与关联」：断连后该目录仍留在合集里，只是不参与关联。 */
   const setMemberLinked = async (
     collectionId: string,
@@ -318,6 +355,7 @@ export function useProjectCollections({
     loadProjectCollections,
     createCollection,
     updateCollectionColor,
+    addProjectToCollection,
     setMemberLinked,
     renameCollection,
     confirmDeleteCollection,

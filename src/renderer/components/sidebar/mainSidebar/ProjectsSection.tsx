@@ -107,6 +107,7 @@ export function ProjectsSection({
     loadProjectCollections,
     createCollection,
     updateCollectionColor,
+    addProjectToCollection,
     setMemberLinked,
     renameCollection,
     confirmDeleteCollection,
@@ -120,6 +121,7 @@ export function ProjectsSection({
     createCollection,
     updateCollectionColor,
     renameCollection,
+    addProjectToCollection,
     setIsSavingDirectory,
     setDirectoryError,
     onOpenSshWizard,
@@ -304,6 +306,7 @@ export function ProjectsSection({
         onCreateCollection={addFlow.handleCreateCollectionModeOpen}
         onCreateProject={addFlow.handleCreateProjectModeOpen}
         open={addFlow.isAddMenuOpen}
+        showCreateCollection={addFlow.collectionAddTargetId === null}
       />
 
       <CreateProjectDialog
@@ -458,6 +461,7 @@ export function ProjectsSection({
             onActivate={(directoryId) =>
               void handleActivateDirectory(directoryId)
             }
+            onAddProjectToCollection={addFlow.handleCollectionAddProjectOpen}
             onCollectionDragOver={dragAndDrop.handleCollectionDragOver}
             onCollectionDrop={dragAndDrop.handleCollectionDrop}
             onCollectionMemberDrop={dragAndDrop.handleCollectionMemberDrop}

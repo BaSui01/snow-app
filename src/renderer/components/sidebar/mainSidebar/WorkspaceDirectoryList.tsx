@@ -1,8 +1,16 @@
-import { ChevronRight, Library, Loader2, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  FolderPlus,
+  Library,
+  Loader2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import type { DragEvent, RefObject } from "react";
 
 import { useI18n } from "../../../i18n";
+import { ContextMenu } from "../../common/ContextMenu";
 import type {
   ProjectCollectionRecord,
   WorkspaceDirectoryRecord,
@@ -30,6 +38,8 @@ type WorkspaceDirectoryListProps = {
   /** 各项目通知计数（directoryId → 通知会话数），用于条目徽标 */
   notificationCountByDirectory?: Record<string, number>;
   onActivate: (directoryId: string) => void;
+  /** 右键合集「添加项目」：进入带目标合集的添加流程（新项目自动加入该合集） */
+  onAddProjectToCollection: (collection: ProjectCollectionRecord) => void;
   onCollectionDragOver: (collectionId: string) => void;
   onCollectionDrop: (collectionId: string, directoryId: string) => void;
   /** 合集成员行之间的 drop：同合集=成员重排；跨合集/顶层=移动进该合集的指定位置 */
@@ -82,6 +92,7 @@ export function WorkspaceDirectoryList({
   loadMoreRef,
   notificationCountByDirectory,
   onActivate,
+  onAddProjectToCollection,
   onCollectionDragOver,
   onCollectionDrop,
   onCollectionMemberDrop,
@@ -112,6 +123,12 @@ export function WorkspaceDirectoryList({
   const [editingValue, setEditingValue] = useState("");
   // 防重复提交：Enter 触发提交后 input 失焦会再次触发 onBlur
   const isSubmittingRef = useRef(false);
+  // 合集行右键菜单锚点（光标位置），同一时间只打开一个合集菜单
+  const [collectionMenuAnchor, setCollectionMenuAnchor] = useState<{
+    collectionId: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const displayNames = useMemo(
     () => buildDirectoryDisplayNames(workspaceDirectories),
@@ -372,6 +389,14 @@ export function WorkspaceDirectoryList({
     );
   };
 
+  // 右键菜单的目标合集：按 id 实时查表，避免缓存的对象过期
+  const collectionMenuTarget = collectionMenuAnchor
+    ? (collections.find(
+        (collection) =>
+          collection.collectionId === collectionMenuAnchor.collectionId,
+      ) ?? null)
+    : null;
+
   return (
     <div
       className="section-list workspace-directory-list"
@@ -399,6 +424,14 @@ export function WorkspaceDirectoryList({
                     className={`project-collection-row${
                       isDragOver ? " drag-over" : ""
                     }`}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setCollectionMenuAnchor({
+                        collectionId: collection.collectionId,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
+                    }}
                     onDragOver={(event) =>
                       handleCollectionDragOver(event, collection.collectionId)
                     }
@@ -557,6 +590,51 @@ export function WorkspaceDirectoryList({
           </>
         )}
       </div>
+      {collectionMenuAnchor && collectionMenuTarget ? (
+        <ContextMenu
+          items={[
+            {
+              id: "add-project-to-collection",
+              label: t("sidebar.addProject", { defaultValue: "Add project" }),
+              icon: <FolderPlus size={13} />,
+              disabled: isActionLocked,
+              onClick: () => {
+                setCollectionMenuAnchor(null);
+                onAddProjectToCollection(collectionMenuTarget);
+              },
+            },
+            {
+              id: "rename-collection",
+              label: t("sidebar.renameCollection", {
+                defaultValue: "Rename collection",
+              }),
+              icon: <Pencil size={13} />,
+              separator: true,
+              disabled: isActionLocked,
+              onClick: () => {
+                setCollectionMenuAnchor(null);
+                onRenameCollection(collectionMenuTarget);
+              },
+            },
+            {
+              id: "delete-collection",
+              label: t("sidebar.deleteCollection", {
+                defaultValue: "Delete collection",
+              }),
+              icon: <Trash2 size={13} />,
+              danger: true,
+              disabled: isActionLocked,
+              onClick: () => {
+                setCollectionMenuAnchor(null);
+                onDeleteCollection(collectionMenuTarget);
+              },
+            },
+          ]}
+          onClose={() => setCollectionMenuAnchor(null)}
+          x={collectionMenuAnchor.x}
+          y={collectionMenuAnchor.y}
+        />
+      ) : null}
     </div>
   );
 }

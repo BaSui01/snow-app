@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ProjectCollectionRecord,
@@ -21,7 +21,7 @@ type UseProjectAddFlowOptions = {
   setWorkspaceDirectories: (directories: WorkspaceDirectoryRecord[]) => void;
   persistWorkspaceDirectory: (
     item: WorkspaceDirectoryInput,
-  ) => Promise<boolean>;
+  ) => Promise<WorkspaceDirectoryRecord[] | null>;
   createCollection: (
     name: string,
     memberDirectoryIds?: string[],
@@ -31,9 +31,15 @@ type UseProjectAddFlowOptions = {
     color: string,
   ) => Promise<boolean>;
   renameCollection: (collectionId: string, name: string) => Promise<boolean>;
+  /** 把新添加的目录加入指定合集（合集右键「添加项目」流程的目标合集） */
+  addProjectToCollection: (
+    collectionId: string,
+    directoryId: string,
+  ) => Promise<boolean>;
   setIsSavingDirectory: (saving: boolean) => void;
   setDirectoryError: (message: string | null) => void;
-  onOpenSshWizard?: () => void;
+  /** 打开 SSH 连接向导；向导被取消时回调 onCanceled（用于清理一次性状态） */
+  onOpenSshWizard?: (options?: { onCanceled?: () => void }) => void;
 };
 
 export function useProjectAddFlow({
@@ -43,6 +49,7 @@ export function useProjectAddFlow({
   createCollection,
   updateCollectionColor,
   renameCollection,
+  addProjectToCollection,
   setIsSavingDirectory,
   setDirectoryError,
   onOpenSshWizard,
@@ -89,6 +96,15 @@ export function useProjectAddFlow({
   >(() => new Set());
   const [linkProjectsName, setLinkProjectsName] = useState("");
 
+  // 合集右键「添加项目」：目标合集 id、进入流程时的目录 id 快照（用于识别
+  // 本轮新增目录），以及异步回调读取用的 ref 镜像（回调闭包读不到最新 state）。
+  const [collectionAddTargetId, setCollectionAddTargetId] = useState<
+    string | null
+  >(null);
+  const collectionAddKnownIdsRef = useRef<Set<string> | null>(null);
+  const collectionAddTargetIdRef = useRef<string | null>(null);
+  collectionAddTargetIdRef.current = collectionAddTargetId;
+
   // 克隆的最终目录预览：所选保存位置 + 从仓库地址推导出的项目名。
   const cloneTargetPreview = useMemo(() => {
     const parentPath = cloneParentPath.trim();
@@ -107,6 +123,47 @@ export function useProjectAddFlow({
     [activeCloneStreamId, cloneTasks],
   );
 
+  const clearCollectionAddTarget = (): void => {
+    collectionAddTargetIdRef.current = null;
+    setCollectionAddTargetId(null);
+  };
+
+  /** 合集右键「添加项目」：记录目标合集，本轮新添加的目录自动加入该合集。 */
+  const handleCollectionAddProjectOpen = (
+    collection: ProjectCollectionRecord,
+  ): void => {
+    setDirectoryError(null);
+    setAddDirectoryMode("");
+    collectionAddTargetIdRef.current = collection.collectionId;
+    setCollectionAddTargetId(collection.collectionId);
+    collectionAddKnownIdsRef.current = new Set(
+      workspaceDirectories.map((directory) => directory.directoryId),
+    );
+    setIsAddMenuOpen(true);
+  };
+
+  /**
+   * 一轮添加的收尾：把本轮新出现的目录加入目标合集（没有目标合集时不做处理）。
+   * 目录列表未变化（如重复添加已有路径）时只清理目标，不产生副作用。
+   */
+  const finalizeCollectionAddProject = (
+    directories: WorkspaceDirectoryRecord[],
+  ): void => {
+    const targetCollectionId = collectionAddTargetIdRef.current;
+    const knownIds = collectionAddKnownIdsRef.current;
+    if (!targetCollectionId || !knownIds) {
+      return;
+    }
+    clearCollectionAddTarget();
+    const addedDirectory = directories.find(
+      (directory) => !knownIds.has(directory.directoryId),
+    );
+    if (!addedDirectory) {
+      return;
+    }
+    void addProjectToCollection(targetCollectionId, addedDirectory.directoryId);
+  };
+
   const resetAddMenu = (): void => {
     setAddDirectoryMode("");
     setIsAddMenuOpen(false);
@@ -115,12 +172,14 @@ export function useProjectAddFlow({
   const openAddMenu = (): void => {
     setDirectoryError(null);
     setAddDirectoryMode("");
+    clearCollectionAddTarget();
     setIsAddMenuOpen(true);
   };
 
   const closeAddMenu = (): void => {
     setIsAddMenuOpen(false);
     setAddDirectoryMode("");
+    clearCollectionAddTarget();
   };
 
   const returnToAddMenu = (): void => {
@@ -128,13 +187,37 @@ export function useProjectAddFlow({
     setIsAddMenuOpen(true);
   };
 
+  // SSH 向导在 App 层完成添加（返回时目录列表已刷新），这里在列表出现
+  // 新目录时补上「新目录加入目标合集」的收尾。
+  useEffect(() => {
+    if (!collectionAddTargetId) {
+      return;
+    }
+    const knownIds = collectionAddKnownIdsRef.current;
+    if (!knownIds) {
+      return;
+    }
+    const addedDirectory = workspaceDirectories.find(
+      (directory) => !knownIds.has(directory.directoryId),
+    );
+    if (!addedDirectory) {
+      return;
+    }
+    collectionAddTargetIdRef.current = null;
+    setCollectionAddTargetId(null);
+    void addProjectToCollection(
+      collectionAddTargetId,
+      addedDirectory.directoryId,
+    );
+  }, [addProjectToCollection, collectionAddTargetId, workspaceDirectories]);
+
   const handleAddDirectoryModeSelect = (mode: WorkspaceDirectoryKind): void => {
     setAddDirectoryMode(mode);
     setDirectoryError(null);
     setIsAddMenuOpen(false);
 
     if (mode === "ssh") {
-      onOpenSshWizard?.();
+      onOpenSshWizard?.({ onCanceled: clearCollectionAddTarget });
       return;
     }
 
@@ -209,17 +292,18 @@ export function useProjectAddFlow({
     const selectedPath = selectedLocalPath.trim();
     if (!selectedPath) return;
 
-    const didSave = await persistWorkspaceDirectory(
+    const directories = await persistWorkspaceDirectory(
       toWorkspaceDirectoryInput(
         selectedPath,
         "local",
         workspaceDirectories.length,
       ),
     );
-    if (didSave) {
+    if (directories) {
       setIsAddLocalDialogOpen(false);
       setSelectedLocalPath("");
       resetAddMenu();
+      finalizeCollectionAddProject(directories);
     }
   };
 
@@ -266,6 +350,7 @@ export function useProjectAddFlow({
       setWorkspaceDirectories(directories);
       setIsCreateProjectOpen(false);
       setProjectNameInput("");
+      finalizeCollectionAddProject(directories);
     } catch (error) {
       setDirectoryError(
         error instanceof Error
@@ -424,6 +509,7 @@ export function useProjectAddFlow({
       setCloneRepoUrl("");
       setCloneParentPath("");
       removeCloneTask(streamId);
+      finalizeCollectionAddProject(directories);
     } catch (error) {
       handleCloneFailure(streamId, error);
     } finally {
@@ -605,6 +691,8 @@ export function useProjectAddFlow({
     isAddMenuOpen,
     openAddMenu,
     closeAddMenu,
+    collectionAddTargetId,
+    handleCollectionAddProjectOpen,
     handleAddDirectoryModeSelect,
     isCreateProjectOpen,
     projectNameInput,

@@ -366,6 +366,8 @@ export const App = (): React.JSX.Element => {
     RIGHT_PANEL_DEFAULT_WIDTH,
   );
   const [showSshWizard, setShowSshWizard] = useState(false);
+  // SSH 向导取消回调：向导经合集右键「添加项目」打开时需要清理目标合集
+  const sshWizardCanceledRef = useRef<(() => void) | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   // 关闭确认弹窗的「不再询问」勾选：勾选后点退出/最小化会把对应行为
   // 写入设置，之后主进程 close 拦截直接自动执行，不再弹出确认。
@@ -698,30 +700,44 @@ export const App = (): React.JSX.Element => {
     [isRightPanelCollapsed, clearAutoCollapsed],
   );
 
-  const handleOpenSshWizard = useCallback((): void => {
-    setShowSshWizard(true);
-  }, []);
+  const handleOpenSshWizard = useCallback(
+    (options?: { onCanceled?: () => void }): void => {
+      sshWizardCanceledRef.current = options?.onCanceled ?? null;
+      setShowSshWizard(true);
+    },
+    [],
+  );
 
   const handleSshWizardConfirm = useCallback(
     async (sshUrl: string): Promise<void> => {
       setShowSshWizard(false);
+      const notifyCanceled = sshWizardCanceledRef.current;
+      sshWizardCanceledRef.current = null;
       const trimmedPath = sshUrl.trim();
       const name = trimmedPath.replace(/^ssh:\/\//, "") || trimmedPath;
-      await window.snow.upsertWorkspaceDirectory({
-        directoryId: `ssh:${trimmedPath}`,
-        name,
-        path: trimmedPath,
-        kind: "ssh",
-        isActive: true,
-        sortOrder: 0,
-        source: "manual",
-      });
+      try {
+        await window.snow.upsertWorkspaceDirectory({
+          directoryId: `ssh:${trimmedPath}`,
+          name,
+          path: trimmedPath,
+          kind: "ssh",
+          isActive: true,
+          sortOrder: 0,
+          source: "manual",
+        });
+      } catch (error) {
+        // 添加失败即流程结束：通知发起方清理一次性状态后再向上抛出
+        notifyCanceled?.();
+        throw error;
+      }
     },
     [],
   );
 
   const handleSshWizardCancel = useCallback((): void => {
     setShowSshWizard(false);
+    sshWizardCanceledRef.current?.();
+    sshWizardCanceledRef.current = null;
   }, []);
 
   const isChatFloatActive = isRightPanelFullscreen && activeMainView === "chat";

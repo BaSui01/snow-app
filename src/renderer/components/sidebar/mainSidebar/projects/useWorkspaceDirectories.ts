@@ -147,15 +147,18 @@ export function useWorkspaceDirectories({
     return unsubscribe;
   }, [loadWorkspaceDirectories]);
 
+  // 成功时返回最新目录列表（调用方需要识别本次新增的目录），失败返回 null
   const persistWorkspaceDirectory = useCallback(
-    async (item: WorkspaceDirectoryInput): Promise<boolean> => {
+    async (
+      item: WorkspaceDirectoryInput,
+    ): Promise<WorkspaceDirectoryRecord[] | null> => {
       setIsSavingDirectory(true);
       setDirectoryError(null);
 
       try {
         const directories = await window.snow.upsertWorkspaceDirectory(item);
         setWorkspaceDirectories(directories);
-        return true;
+        return directories;
       } catch (error) {
         setDirectoryError(
           error instanceof Error
@@ -164,7 +167,7 @@ export function useWorkspaceDirectories({
                 defaultValue: "Failed to add workspace directory",
               }),
         );
-        return false;
+        return null;
       } finally {
         setIsSavingDirectory(false);
       }

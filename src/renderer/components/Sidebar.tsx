@@ -22,7 +22,8 @@ type SidebarProps = {
   isCollapsed: boolean;
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
-  onOpenSshWizard?: () => void;
+  /** 打开 SSH 连接向导；onCanceled 在向导被取消时回调（用于清理一次性状态）。 */
+  onOpenSshWizard?: (options?: { onCanceled?: () => void }) => void;
   onOpenTerminal?: SidebarContentProps["onOpenTerminal"];
   onOpenFile?: (
     filePath: string,

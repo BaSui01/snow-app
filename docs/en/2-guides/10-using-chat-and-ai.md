@@ -102,6 +102,19 @@ Queues stay scoped to their owning conversation. A user stop, terminal failure, 
 
 **Pending queues are in-memory state for the current app run, with no promise of restoration after closing or restarting the app.** Only the send-behavior preference is persisted. A queued or pending steer can be withdrawn to the composer before consumption; an already-consumed instruction must be corrected by another message.
 
+### 2.5 Manually Optimize a Draft (Unreleased Source Capability)
+
+These behaviors require the accompanying host build and a trusted ESM plugin contributing the action. No released version is confirmed; installing a plugin does not upgrade Snow App.
+
+- Click the plugin wand before the model selector to manually optimize the draft's plain text. Optimization remains available while the Agent runs or stops if the input is editable; compaction, empty plain text or unavailable API configuration prevents execution.
+- Optimization refills only the draft, never sends automatically or edits queued entries. You still choose when to send using the Queue / Steer rules in section 2.4. Optimization cancellation is independent of ordinary chat and does not stop the Agent.
+- Apply and Undo use single-use tokens bound to the input instance, project, real / pending conversation, draft revision and original content. Edits, actual sends that clear the draft, context switches or compaction reject stale results; live replies and running / stopping alone do not invalidate tokens.
+- Prompt Optimizer hides its configuration gear by default but retains the wand. Its right-panel visibility switch persists independently; hiding the gear neither disables the plugin nor saves unsaved strategy edits. Other plugins choose their defaults through generic `chatInputSettings`; omission keeps the gear visible. Opening the gear only opens settings, without running or canceling optimization.
+
+The pending-message area is capped at `min(144px, 20vh)` and scrolls internally when needed. This does not change Queue / Steer semantics or the queue's in-memory lifetime.
+
+See [Plugin development and installation, section 6.1](24-plugin-development-and-installation.md) for the contract. Source anchors: `src/renderer/components/mainContent/chatInput/ChatInputPluginAction.tsx`, `src/renderer/plugins/pluginDraft.ts`, and `src/renderer/styles.css`.
+
 ## 3. Complete Slash Command List
 
 Type `/` to open the command palette. The current version has exactly eleven commands:
@@ -215,6 +228,16 @@ sequenceDiagram
 Tool cards cover command output, persistent terminals, file reads and diffs, search results, browser screenshots and network data, TODOs, image generation, sub-agents, and code diagnostics. After file changes, use `/file-changes` to inspect the conversation's changes together.
 
 AI messages support copy, copy as Markdown, copy as plain text, raw Markdown view, stop, and rollback. Rendering supports tables, code blocks, KaTeX (`$...$` and `$$...$$`), and Mermaid diagrams.
+
+### 6.1 Keep Plugin Cards per Task (Unreleased Source Capability)
+
+Plugins opting into `taskHistory: true` under `contributions.messageFooters` can show a card beneath each reliably persisted task-end reply. Earlier cards remain when another task starts. File statistics and inline diffs are plugin-rendered, not a fixed host UI.
+
+An outer send creates a stable task ID. Tool iterations, that task's sub-agents and admitted steers share it; queued follow-ups create another task only when they actually start. The host associates record references with the persisted end reply and reconstructs a read-only snapshot from the original tool records after reopening or restarting, never treating current disk contents or cumulative conversation changes as historical task diffs.
+
+Legacy history without reliable ownership may show a compatibility notice, but cannot guess attribution or fall back to cumulative data. No-file tasks cannot borrow earlier files. Missing records, failed persistence or exit before finalization provide no restoration guarantee. Deleting or rolling back related messages may remove cards, and virtualization/remounting need not preserve expanded state. The accompanying host and native-module build is required; no released version is confirmed, and real UI/restart recovery still awaits acceptance.
+
+See the [task-end slot in plugin development](24-plugin-development-and-installation.md). Source anchors: `src/renderer/components/mainContent/chatMessages/hooks/taskHistory.ts`, `src/renderer/components/mainContent/chatMessages/components/PluginMessageFooters.tsx`, and `native/src/storage/services/chat_conversations/task_history.rs`.
 
 ## 7. Checkpoints and Message Rollback
 

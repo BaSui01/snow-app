@@ -164,6 +164,19 @@ export const conversationApi = {
       "chat-conversations:list-sub-agents-by-parents",
       parentConversationIds,
     ),
+  saveTaskHistory: (
+    conversationId: string,
+    responseId: string,
+    manifest: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:save-task-history",
+      conversationId,
+      responseId,
+      manifest,
+    ),
+  listTaskHistory: (conversationId: string): Promise<string[]> =>
+    ipcRenderer.invoke("chat-conversations:list-task-history", conversationId),
   appendToolMessage: (conversationId: string, content: string): Promise<void> =>
     ipcRenderer.invoke(
       "chat-conversations:append-tool-message",

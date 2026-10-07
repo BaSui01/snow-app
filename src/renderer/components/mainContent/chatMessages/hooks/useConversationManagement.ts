@@ -22,6 +22,7 @@ import {
   toNonBlockingRecord,
 } from "./hookOutcome";
 import { prefetchMarkdown } from "../components/markdownRenderer";
+import { demotePendingSteering } from "../utils/pendingInputs";
 import {
   abandonWorkflowsForConversation,
   getActiveWorkflowNodeIds,
@@ -862,6 +863,9 @@ export const useConversationManagement = (
       }
       subRef.isAbortRequested = true;
       subRef.isSending = false;
+      subRef.activeSendOptions = undefined;
+      subRef.activeTaskMessages = undefined;
+      demotePendingSteering(ctx, subKey);
       // Settle the sub-agent's own pending authorizations (scoped to its
       // session key) so its agent loop cannot stay blocked awaiting a
       // decision that will never arrive.
@@ -977,6 +981,9 @@ export const useConversationManagement = (
       ref.isAbortRequested = true;
       ref.isSending = false;
       ref.runId += 1;
+      ref.activeSendOptions = undefined;
+      ref.activeTaskMessages = undefined;
+      demotePendingSteering(ctx, key);
       ctx.updateSessionMessages(key, (currentMessages) =>
         currentMessages.map((message) => {
           return {

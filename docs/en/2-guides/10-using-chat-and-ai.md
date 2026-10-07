@@ -79,6 +79,42 @@ The sidebar **Conversations** section normally shows only the **current project'
 - Paste or drag one or more images into the input. If the main model has no vision support, the auxiliary vision model produces a text description while retaining a safe `upload/...` reference to the original for later image editing;
 - See [Image Generation](9-image-generation.md) for generation and reference-image rules.
 
+### 2.4 Send Behavior While Busy
+
+Open **General settings → Send behavior while busy** and choose **Steer** or **Queue**. The default is **Steer** when no valid preference is saved; an explicitly saved Queue preference is preserved. The preference is persisted and synchronized to mounted composers after a successful save. A failed save shows an error and keeps the previous behavior.
+
+- **Queue** keeps the message in the current conversation's pending queue until its complete Agent run finishes normally. In the main conversation, this includes tool execution and stop-hook cleanup. Follow-up tasks run one at a time in FIFO order; they are not injected between tools or merged into one prompt.
+- **Steer** binds the message to the active run and adds requirements at a safe boundary after a model response or a complete tool batch settles. It continues the current task without canceling running tools or starting a parallel Agent loop. Pending input is labeled **Wait for steer processing**; once submitted in a model request it appears as a user message, which does not prove that the instruction has been executed successfully.
+- **Interrupt and send** remains a separate arrow action on a pending-message card. It stops the current run and resubmits the selected input; it is not steering.
+
+A run finishing means that the current Agent execution ends, not that the conversation window is closed or that a business goal is guaranteed to have succeeded. For example, queue “After this, organize the settings page” as a separate next task; steer “Keep the current public interface unchanged” to amend the task in progress. Neither steering nor interrupting automatically rolls back completed actions.
+
+While busy, the send button and the preferred send key use the saved behavior. The menu beside the button can send one message as Queue or Steer without changing that preference:
+
+| Preferred send key | Saved behavior | Alternate behavior for this send |
+| ------------------ | -------------- | -------------------------------- |
+| Enter              | Enter          | Ctrl/Cmd+Enter                   |
+| Ctrl/Cmd+Enter     | Ctrl/Cmd+Enter | Ctrl/Cmd+Shift+Enter             |
+
+`Shift+Enter` still inserts a newline, and IME composition does not trigger sending. Idle conversations send normally. Programmatic messages from plugins or scheduled tasks do not inherit the manual Steer preference.
+
+Queues stay scoped to their owning conversation. A user stop, terminal failure, or non-continuable authorization rejection retains pending messages without automatically starting the next task; unconsumed steers become queued follow-ups. A steer requesting incompatible runtime settings, such as another model or API profile, also becomes a follow-up. Sub-agents and Workflow nodes retain unsupported configuration changes with an explanatory message rather than forwarding them to the parent. Consuming new requirements in Plan Mode conservatively resets the applicable approval, so changed writes require approval again.
+
+**Pending queues are in-memory state for the current app run, with no promise of restoration after closing or restarting the app.** Only the send-behavior preference is persisted. A queued or pending steer can be withdrawn to the composer before consumption; an already-consumed instruction must be corrected by another message.
+
+### 2.5 Manually Optimize a Draft (Unreleased Source Capability)
+
+These behaviors require the accompanying host build and a trusted ESM plugin contributing the action. No released version is confirmed; installing a plugin does not upgrade Snow App.
+
+- Click the plugin wand before the model selector to manually optimize the draft's plain text. Optimization remains available while the Agent runs or stops if the input is editable; compaction, empty plain text or unavailable API configuration prevents execution.
+- Optimization refills only the draft, never sends automatically or edits queued entries. You still choose when to send using the Queue / Steer rules in section 2.4. Optimization cancellation is independent of ordinary chat and does not stop the Agent.
+- Apply and Undo use single-use tokens bound to the input instance, project, real / pending conversation, draft revision and original content. Edits, actual sends that clear the draft, context switches or compaction reject stale results; live replies and running / stopping alone do not invalidate tokens.
+- Prompt Optimizer hides its configuration gear by default but retains the wand. Its right-panel visibility switch persists independently; hiding the gear neither disables the plugin nor saves unsaved strategy edits. Other plugins choose their defaults through generic `chatInputSettings`; omission keeps the gear visible. Opening the gear only opens settings, without running or canceling optimization.
+
+The pending-message area is capped at `min(144px, 20vh)` and scrolls internally when needed. This does not change Queue / Steer semantics or the queue's in-memory lifetime.
+
+See [Plugin development and installation, section 6.1](24-plugin-development-and-installation.md) for the contract. Source anchors: `src/renderer/components/mainContent/chatInput/ChatInputPluginAction.tsx`, `src/renderer/plugins/pluginDraft.ts`, and `src/renderer/styles.css`.
+
 ## 3. Complete Slash Command List
 
 Type `/` to open the command palette. The current version has exactly eleven commands:
@@ -192,6 +228,16 @@ sequenceDiagram
 Tool cards cover command output, persistent terminals, file reads and diffs, search results, browser screenshots and network data, TODOs, image generation, sub-agents, and code diagnostics. After file changes, use `/file-changes` to inspect the conversation's changes together.
 
 AI messages support copy, copy as Markdown, copy as plain text, raw Markdown view, stop, and rollback. Rendering supports tables, code blocks, KaTeX (`$...$` and `$$...$$`), and Mermaid diagrams.
+
+### 6.1 Keep Plugin Cards per Task (Unreleased Source Capability)
+
+Plugins opting into `taskHistory: true` under `contributions.messageFooters` can show a card beneath each reliably persisted task-end reply. Earlier cards remain when another task starts. File statistics and inline diffs are plugin-rendered, not a fixed host UI.
+
+An outer send creates a stable task ID. Tool iterations, that task's sub-agents and admitted steers share it; queued follow-ups create another task only when they actually start. The host associates record references with the persisted end reply and reconstructs a read-only snapshot from the original tool records after reopening or restarting, never treating current disk contents or cumulative conversation changes as historical task diffs.
+
+Legacy history without reliable ownership may show a compatibility notice, but cannot guess attribution or fall back to cumulative data. No-file tasks cannot borrow earlier files. Missing records, failed persistence or exit before finalization provide no restoration guarantee. Deleting or rolling back related messages may remove cards, and virtualization/remounting need not preserve expanded state. The accompanying host and native-module build is required; no released version is confirmed, and real UI/restart recovery still awaits acceptance.
+
+See the [task-end slot in plugin development](24-plugin-development-and-installation.md). Source anchors: `src/renderer/components/mainContent/chatMessages/hooks/taskHistory.ts`, `src/renderer/components/mainContent/chatMessages/components/PluginMessageFooters.tsx`, and `native/src/storage/services/chat_conversations/task_history.rs`.
 
 ## 7. Checkpoints and Message Rollback
 

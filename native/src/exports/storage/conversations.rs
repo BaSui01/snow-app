@@ -573,6 +573,16 @@ pub async fn delete_conversations(
 }
 
 #[napi]
+pub async fn save_task_history(conversation_id: String, response_id: String, manifest: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::save_task_history(conversation_id, response_id, manifest)).await.map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_task_history(conversation_id: String) -> napi::Result<Vec<String>> {
+    tokio::task::spawn_blocking(move || crate::storage::list_task_history(conversation_id)).await.map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn append_tool_message(conversation_id: String, content: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::append_tool_message(conversation_id, content)

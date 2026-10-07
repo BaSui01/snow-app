@@ -1,5 +1,14 @@
 # Release Notes
 
+## Unreleased Source Changes
+
+> These additions describe local source changes, not released v0.4.16 / v0.4.17 support. They require the accompanying host build (including the native module for task history); installing a plugin does not upgrade Snow App. Real UI and restart recovery have not yet been accepted.
+
+- **Persistent task-end plugin cards**: `contributions.messageFooters` may opt into `taskHistory: true`. Stable task IDs associate original assistant/tool record references with the persisted end reply; reopening reconstructs read-only file snapshots rather than borrowing cumulative conversation changes or current disk contents. Earlier cards remain during the next task; plugins own statistics and inline diff rendering. Legacy history without reliable ownership is not guessed or cumulatively migrated, and missing records or failed persistence provide no restoration guarantee.
+- **Manual draft optimization while the Agent runs**: editable drafts can be optimized during streaming or stopping; compaction still blocks execution. Single-use draft tokens retain revision, original-content and input/project/session identity checks. Optimization cancellation remains independent of ordinary chat, and results never send automatically or rewrite pending entries; Queue / Steer behavior is unchanged.
+- **Independent settings-gear visibility**: generic `panels[].chatInputSettings` supports `defaultVisible` and a private `storageKey`. Prompt Optimizer hides the gear initially while retaining its wand; the right-panel switch saves a JSON boolean through `api.storage` independently of unsaved strategy edits. Hiding the gear does not disable the plugin, and opening it does not cancel optimization. Contributions without this setting retain the visible gear.
+- The pending-message area now scrolls within `min(144px, 20vh)`, without changing queue lifecycle or send policy.
+
 ## v0.4.16
 
 ## New Features

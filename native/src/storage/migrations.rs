@@ -102,7 +102,28 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_userscripts_icon(connection)?;
     migrate_git_worktrees(connection)?;
     migrate_app_logs_conversation_id(connection)?;
+    migrate_file_review_annotations(connection)?;
     Ok(())
+}
+
+/// Additive and idempotent: existing Diff comments and source files are untouched.
+fn migrate_file_review_annotations(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS file_review_annotations (
+           id TEXT PRIMARY KEY NOT NULL,
+           annotation_id TEXT NOT NULL,
+           source_key TEXT NOT NULL,
+           file_path TEXT NOT NULL,
+           anchor_json TEXT NOT NULL CHECK(length(CAST(anchor_json AS BLOB)) <= 32768),
+           content TEXT NOT NULL CHECK(length(CAST(content AS BLOB)) BETWEEN 1 AND 8192),
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_file_review_annotations_identity
+           ON file_review_annotations(source_key, file_path, annotation_id);
+         CREATE INDEX IF NOT EXISTS idx_file_review_annotations_file
+           ON file_review_annotations(source_key, file_path, created_at, id);",
+    )
 }
 
 /// Adds exact conversation ownership to app_logs for reliable per-session diagnostics.

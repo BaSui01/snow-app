@@ -79,6 +79,7 @@ const ChatContentBody = ({
     confirmRollback,
     cancelRollback,
     pendingMessages,
+    pendingMessageModes,
     withdrawPendingMessage,
     sendPendingMessageNow,
     compactConversation,
@@ -671,6 +672,7 @@ const ChatContentBody = ({
                 getRuntimeInputState={getRuntimeInputState}
                 loadOlderMessages={handleLoadOlderWithScroll}
                 pendingMessages={pendingMessages}
+                pendingMessageModes={pendingMessageModes}
                 onWithdrawPendingMessage={withdrawPendingMessage}
                 onSendPendingMessageNow={sendPendingMessageNow}
                 onCompactConversation={compactConversation}

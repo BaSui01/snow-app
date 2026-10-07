@@ -1,4 +1,17 @@
 export const zhTW = {
+  "settings.busySendBehavior": "繁忙時的傳送行為",
+  "settings.busySendBehaviorInfo":
+    "排隊等待目前任務結束；插話等待下一個可處理邊界。使用另一快捷鍵可僅為本次傳送反選。",
+  "settings.busySendQueue": "排隊傳送",
+  "settings.busySendSteer": "插話傳送",
+  "settings.busySendSaveError": "儲存失敗，已保留原傳送行為。",
+  "settings.busySendLoadError": "讀取傳送偏好失敗，成功儲存前使用預設插話。",
+  "chatInput.busyQueue": "等待任務結束",
+  "chatInput.busySteer": "等待插話處理",
+  "chatInput.interruptAndSend": "中斷並傳送",
+  "chatInput.busySendHint":
+    "{{behavior}}（{{shortcut}}）；本次反選：{{alternate}}",
+
   "git.manageActions": "管理分支…",
   "git.manageCreate": "從此分支建立分支…",
   "git.manageTrack": "建立本機追蹤分支…",
@@ -4290,6 +4303,32 @@ export const zhTW = {
   "diffViewer.unifiedMode": "單列檢視",
   "diffViewer.splitMode": "雙列檢視",
   "diffViewer.wrapLines": "自動換行",
+  "fileReview.title": "審閱標註",
+  "fileReview.add": "為選取文字新增標註",
+  "fileReview.close": "關閉標註面板",
+  "fileReview.hint":
+    "選取文字後按右鍵新增標註。標註僅儲存在 Snow；傳送僅填入聊天輸入框，不自動傳送。",
+  "fileReview.extractedHint":
+    "標註針對擷取後的文字，位置不是 Word 頁碼或 Excel 儲存格；不會寫入原檔案。",
+  "fileReview.loading": "正在載入標註與檢查內容版本…",
+  "fileReview.empty": "尚無標註。請在原始碼/文字檢視選取最多 4096 字元的內容。",
+  "fileReview.lines": "第 {{from}}–{{to}} 行",
+  "fileReview.source": "檔案文字",
+  "fileReview.extracted": "擷取文字",
+  "fileReview.exact": "原位置",
+  "fileReview.relocated": "已依唯一上下文重新定位",
+  "fileReview.outdated": "內容已變更，無法定位",
+  "fileReview.ambiguous": "存在多個符合位置，需重新定位",
+  "fileReview.invalid": "標註錨點無效",
+  "fileReview.locate": "定位並醒目顯示標註位置",
+  "fileReview.sendAll": "將全部標註填入聊天輸入框",
+  "fileReview.confirmDelete": "再次點擊刪除",
+  "fileReview.messageHeader": "請審閱檔案 {{path}} 的以下 Snow 側標註：",
+  "fileReview.contentLimit": "標註內容不能超過 8 KiB（UTF-8）。",
+  "fileReview.selectionChanged": "選取內容已變更，請重新選取。",
+  "fileReview.inputUnavailable": "聊天輸入框暫不可用；可以複製標註後手動貼上。",
+  "fileReview.selectHint":
+    "請先在文字檢視選取內容；跨摺疊或未渲染行的選取範圍不支援標註。",
   "diffComments.sideOld": "舊程式碼",
   "diffComments.sideNew": "新程式碼",
   "diffComments.placeholder": "輸入評論，Cmd/Ctrl + Enter 儲存",
@@ -4318,6 +4357,11 @@ export const zhTW = {
   "rightPanel.svgCodeMode": "以程式碼檢視",
   "rightPanel.fileViewerLoadError": "載入檔案失敗",
   "rightPanel.fileViewerEmpty": "沒有可顯示的內容",
+  "rightPanel.fileViewerReadOnlyPreview": "唯讀預覽",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "顯示擷取後的文件文字，可搜尋和複製；不保留原始排版，也不能覆寫儲存原文件。",
+  "rightPanel.fileViewerTextPreviewHint":
+    "此文字可以閱讀、搜尋和複製，但目前無法無損保留原編碼，已停用編輯。",
   "rightPanel.fileViewerEdit": "編輯檔案",
   "rightPanel.fileViewerExitEdit": "退出編輯模式（Esc）",
   "rightPanel.fileViewerSave": "儲存",

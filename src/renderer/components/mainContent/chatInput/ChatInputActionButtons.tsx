@@ -1,6 +1,7 @@
 import { ArrowUp, Check, ChevronUp, Loader2, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { useBusySendBehavior } from "../../../constants/busySendBehavior";
 import { useShortcutLabel } from "../../../hooks/useShortcutLabel";
 import type { ChatInputViewProps, SendKeyMode } from "./types";
 
@@ -34,6 +35,27 @@ export const ChatInputActionButtons = ({
 }: ChatInputActionButtonsProps): React.JSX.Element => {
   const { t } = useI18n();
   const sendShortcut = useShortcutLabel("sendMessage");
+  const { behavior } = useBusySendBehavior();
+  const modifier = navigator.userAgent.includes("Mac") ? "Cmd" : "Ctrl";
+  const sendTitle =
+    isStreaming || isAborting
+      ? t("chatInput.busySendHint", {
+          values: {
+            behavior: t(
+              behavior === "steer"
+                ? "settings.busySendSteer"
+                : "settings.busySendQueue",
+            ),
+            shortcut: sendKeyMode === "enter" ? "Enter" : `${modifier}+Enter`,
+            alternate:
+              sendKeyMode === "enter"
+                ? `${modifier}+Enter`
+                : `${modifier}+Shift+Enter`,
+          },
+        })
+      : sendShortcut
+        ? `Send (${sendShortcut})`
+        : "Send";
   const stopShortcut = useShortcutLabel("stopGeneration");
   const [isSendKeyMenuOpen, setIsSendKeyMenuOpen] = useState(false);
   const groupRef = useRef<HTMLDivElement>(null);
@@ -103,9 +125,9 @@ export const ChatInputActionButtons = ({
       <div className="send-key-group" ref={groupRef}>
         <button
           className="send-btn"
-          aria-label="Send"
-          title={sendShortcut ? `Send (${sendShortcut})` : "Send"}
-          onClick={handleSend}
+          aria-label={sendTitle}
+          title={sendTitle}
+          onClick={() => handleSend()}
           disabled={sendDisabled}
           type="button"
         >
@@ -127,6 +149,29 @@ export const ChatInputActionButtons = ({
         </button>
         {isSendKeyMenuOpen && (
           <div className="send-key-menu" role="menu">
+            {(isStreaming || isAborting) &&
+              (["queue", "steer"] as const).map((mode) => (
+                <button
+                  key={`delivery-${mode}`}
+                  className="send-key-menu-item"
+                  role="menuitem"
+                  disabled={sendDisabled}
+                  onClick={() => {
+                    handleSend(mode);
+                    setIsSendKeyMenuOpen(false);
+                  }}
+                  type="button"
+                >
+                  <span className="send-key-menu-check" aria-hidden="true">
+                    {mode === behavior ? <Check size={13} /> : null}
+                  </span>
+                  {t(
+                    mode === "steer"
+                      ? "settings.busySendSteer"
+                      : "settings.busySendQueue",
+                  )}
+                </button>
+              ))}
             {SEND_KEY_MODES.map((mode) => (
               <button
                 key={mode}

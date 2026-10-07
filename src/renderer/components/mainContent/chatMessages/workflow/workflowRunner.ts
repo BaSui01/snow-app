@@ -9,6 +9,18 @@ import type {
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
+import type { ChatInputSendOptions } from "../../chatInput/types";
+import {
+  demotePendingSteering,
+  hasPendingSteering,
+  refreshPendingMessages,
+  takeNextQueuedMessage,
+  takePendingSteering,
+} from "../utils/pendingInputs";
+import {
+  getResponsesFastModeFromConfig,
+  getThinkingValueFromConfig,
+} from "../../chatInput/configThinking";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import {
   createMessageId,
@@ -1617,7 +1629,8 @@ export function createWorkflowRunner(
     const parentConversationId = options.parentConversationId;
     const dirId = options.directoryId;
     const parentWorktreeMode =
-      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ?? false;
+      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ??
+      false;
     const conversationId = resume?.conversationId ?? createNodeConversationId();
     // 登记活跃节点：主会话中断/删除时据此级联停止本节点。
     let set = activeNodeSessions.get(parentConversationId);
@@ -1628,12 +1641,26 @@ export function createWorkflowRunner(
     set.add(conversationId);
     // 节点未单独选择配置时跟随父会话自身的配置（会话可独立改配置）；
     // 会话也没有时留空，由 Rust 端回落全局 active 配置。
-    const effectiveApiProfile =
+    const requestedApiProfile =
       node.apiProfile.trim() || options.sessionApiProfile?.trim() || "";
-    // 节点选了配置时空模型用该配置的高级模型，不回落父会话
-    const effectiveModel = node.apiProfile.trim()
-      ? node.model.trim()
-      : node.model.trim() || options.sessionModel?.trim() || "";
+    const apiSnapshot = await ctx.getActiveApiConfig(
+      requestedApiProfile || undefined,
+    );
+    const effectiveApiProfile =
+      requestedApiProfile || apiSnapshot?.profileName.trim() || "";
+    // Freeze defaults for the entire delegated task, including its steering.
+    const thinkingStrength = apiSnapshot
+      ? getThinkingValueFromConfig(apiSnapshot)
+      : undefined;
+    const responsesFastMode = apiSnapshot
+      ? getResponsesFastModeFromConfig(apiSnapshot)
+      : undefined;
+    const effectiveModel =
+      (node.apiProfile.trim()
+        ? node.model.trim()
+        : node.model.trim() || options.sessionModel?.trim()) ||
+      apiSnapshot?.advancedModel.trim() ||
+      "";
 
     // 节点会话是真实主会话：DB 记录 + bookkeeping 行一次建好。
     // flow_id = interactionId，多 flow 卡片的恢复数据按它隔离；
@@ -1722,31 +1749,79 @@ export function createWorkflowRunner(
       );
     };
 
-    // 消费本节点会话的 Pending 队列（用户在节点运行期间排队的消息）：全部合并
-    // 为一条 user 文本追加进会话；仅当节点会话是当前激活视图时清空待发面板
-    // （activePendingMessages 只镜像激活会话的队列）。队列空返回 null。
-    const consumeNodePendingQueue = (): string | null => {
-      const pendingItems =
-        ctx.pendingQueueRef.current.get(conversationId) ?? [];
-      if (pendingItems.length === 0) {
-        return null;
+    let activeCheckpointId: string | undefined;
+    let activeCheckpointWorkDir: string | undefined;
+    let runHadToolError = false;
+    const createPendingCheckpoint = async (): Promise<string | undefined> => {
+      const workDir = await resolveConversationWorkspacePath(
+        conversationId,
+        dirId,
+        directoryIdToPath(dirId) ?? ctx.directoryPath,
+      );
+      if (!workDir || isNodeCancelled()) return undefined;
+      activeCheckpointWorkDir = workDir;
+      return window.snow.createCheckpoint(workDir).catch(() => undefined);
+    };
+    const appendPendingUsers = (
+      texts: string[],
+      checkpointId?: string,
+    ): { role: "user"; content: string }[] => {
+      const messages = texts.map((content) => ({
+        role: "user" as const,
+        content,
+      }));
+      // Steering and queued follow-ups change the parent's approved constraints.
+      // Initial node prompts and compaction handoffs do not use this helper.
+      if (
+        texts.length &&
+        ctx.sessionsRefData.current.get(parentConversationId)?.planMode
+      ) {
+        planApprovedSessionKeysRef.current.delete(parentConversationId);
       }
-      ctx.pendingQueueRef.current.delete(conversationId);
-      const pendingText = pendingItems.map((item) => item.text).join("\n\n");
-      if (ctx.activeConversationIdRef.current === conversationId) {
-        ctx.setActivePendingMessages([]);
+      const ref = ctx.sessionsRefData.current.get(conversationId);
+      if (ref) {
+        ref.activeTaskMessages = [
+          ...(ref.activeTaskMessages ?? []),
+          ...messages,
+        ];
+        activeCheckpointId = checkpointId;
+        if (checkpointId) {
+          ref.checkpointIds.push(checkpointId);
+        }
       }
       ctx.updateSessionMessages(conversationId, (currentMessages) => [
         ...currentMessages,
-        {
+        ...messages.map((message) => ({
+          ...message,
           id: createMessageId("user"),
-          role: "user",
-          content: pendingText,
+          checkpointId,
           timestamp: formatMessageTime(),
-          status: "sent",
-        },
+          status: "sent" as const,
+        })),
       ]);
-      return pendingText;
+      return messages;
+    };
+    const consumeNodeSteering = async (): Promise<
+      { role: "user"; content: string }[]
+    > => {
+      if (
+        runHadToolError ||
+        !hasPendingSteering(ctx, conversationId) ||
+        isNodeCancelled()
+      )
+        return [];
+      const checkpointId = await createPendingCheckpoint();
+      const items = isNodeCancelled()
+        ? []
+        : takePendingSteering(ctx, conversationId);
+      if (!items.length) {
+        if (checkpointId) deleteCheckpoints([checkpointId]);
+        return [];
+      }
+      return appendPendingUsers(
+        items.map((item) => item.text),
+        checkpointId,
+      );
     };
 
     const finalizeMessage = (
@@ -1789,31 +1864,10 @@ export function createWorkflowRunner(
       );
     };
 
-    // 节点收尾时的 Pending 队列转交（与子代理 createForwardSubPendingQueue
-    // 同构）：节点结束后未消费的排队消息与强行发送暂存不能悬空丢失，转交
-    // 父会话 pending 队列，由父循环在 run 结束的冲刷点消费（或用户处理）。
+    // Preserve all unconsumed input in the node's own context on failure.
     const forwardNodePendingQueue = (): void => {
-      const forwardRef = ctx.sessionsRefData.current.get(conversationId);
-      const leftover = [
-        ...(ctx.pendingQueueRef.current.get(conversationId) ?? []),
-        ...(forwardRef?.forceSendMessages ?? []),
-      ];
-      if (leftover.length === 0) {
-        return;
-      }
-      ctx.pendingQueueRef.current.delete(conversationId);
-      if (forwardRef) {
-        forwardRef.forceSendMessages = undefined;
-      }
-      const parentQueue =
-        ctx.pendingQueueRef.current.get(parentConversationId) ?? [];
-      parentQueue.push(...leftover);
-      ctx.pendingQueueRef.current.set(parentConversationId, parentQueue);
-      if (ctx.activeConversationIdRef.current === parentConversationId) {
-        ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
-      } else if (ctx.activeConversationIdRef.current === conversationId) {
-        ctx.setActivePendingMessages([]);
-      }
+      demotePendingSteering(ctx, conversationId);
+      refreshPendingMessages(ctx, conversationId);
     };
 
     try {
@@ -1880,9 +1934,12 @@ export function createWorkflowRunner(
               // 增量消息：Rust 端按 conversationId 重建上下文并只持久化本批新消息。
               messages: requestMessages,
               conversationId,
+              checkpointId: activeCheckpointId,
               directoryId: dirId || undefined,
               apiProfile: effectiveApiProfile || undefined,
               model: effectiveModel || undefined,
+              thinkingStrength,
+              responsesFastMode,
               planMode: false,
               goalMode: false,
               worktreeMode: nodeWorktreeMode,
@@ -1992,8 +2049,7 @@ export function createWorkflowRunner(
         // 节点生效配置的阈值时压缩会话，再从压缩边界续跑；节点自然收尾
         // 时不触发，避免唤醒已完成的节点。
         const loopWillContinue =
-          toolCalls.length > 0 ||
-          (ctx.pendingQueueRef.current.get(conversationId)?.length ?? 0) > 0;
+          toolCalls.length > 0 || hasPendingSteering(ctx, conversationId);
         if (loopWillContinue && response.tokenUsage) {
           const apiConfig = await ctx.getActiveApiConfig(
             effectiveApiProfile || undefined,
@@ -2021,6 +2077,10 @@ export function createWorkflowRunner(
                   true,
                   undefined,
                   effectiveApiProfile || undefined,
+                  undefined,
+                  undefined,
+                  thinkingStrength,
+                  responsesFastMode,
                 );
 
                 if (compactionResult) {
@@ -2078,13 +2138,10 @@ export function createWorkflowRunner(
               error: "Workflow node was interrupted by the user",
             };
           }
-          // 自动发送：节点回合结束（无后续工具调用）时消费 Pending 队列——用户
-          // 在节点运行期间排队的消息作为新 user 回合在本节点会话处理，绝不悬空
-          // 在队列里（与主循环在无工具调用边界冲刷队列同语义）。
-          const finalPendingText = consumeNodePendingQueue();
-          if (finalPendingText) {
-            return runLoop([{ role: "user", content: finalPendingText }]);
-          }
+          // Only admitted steering belongs to this run. Ordinary follow-ups
+          // start after the complete runLoop returns to executeNode.
+          const steering = await consumeNodeSteering();
+          if (steering.length) return runLoop(steering);
           return { content: response.content || "", failed: false };
         }
 
@@ -2266,9 +2323,15 @@ export function createWorkflowRunner(
           // flow checkpoint 存在时必须同步传工作目录：checkpoint 捕获按
           // (checkpointIds, workDir) 定位，缺 workDir 会让文件工具直接
           // 报错、bash 类工具降级为无快照并刷"缺少工作目录"日志。
-          const flowCheckpointWorkDir = flowCheckpointId
-            ? directoryIdToPath(dirId)
-            : undefined;
+          const toolCheckpointIds = [
+            ...(flowCheckpointId ? [flowCheckpointId] : []),
+            ...(activeCheckpointId ? [activeCheckpointId] : []),
+          ];
+          const flowCheckpointWorkDir = activeCheckpointId
+            ? activeCheckpointWorkDir
+            : flowCheckpointId
+              ? directoryIdToPath(dirId)
+              : undefined;
           try {
             // 子代理工具必须走渲染进程异步运行时：Rust callMcpTool 端
             // 会拒绝并报 "must be executed through the asynchronous
@@ -2281,14 +2344,14 @@ export function createWorkflowRunner(
                 conversationId,
                 dirId,
                 toolCall.interactionId,
-                flowCheckpointId ? [flowCheckpointId] : [],
+                toolCheckpointIds,
               );
             } else if (SUB_AGENT_MAIN_TOOL_NAMES.has(toolCall.name)) {
               result = await executeSubAgentMainTool(
                 toolCall.name,
                 toolArgs,
                 conversationId,
-                flowCheckpointId ? [flowCheckpointId] : [],
+                toolCheckpointIds,
               );
             } else {
               // 第三参 projectId 必须传目录 id：工具执行的工作目录上下文。
@@ -2302,7 +2365,7 @@ export function createWorkflowRunner(
                 toolCall.name,
                 toolArgs,
                 dirId,
-                flowCheckpointId ? [flowCheckpointId] : [],
+                toolCheckpointIds,
                 flowCheckpointWorkDir,
                 sensitiveAuthorizationToken,
                 (chunk) => {
@@ -2350,13 +2413,15 @@ export function createWorkflowRunner(
                 },
                 toolCall.interactionId,
                 undefined,
-                false,
+                ctx.sessionsRefData.current.get(parentConversationId)
+                  ?.planMode ?? false,
                 planApprovedSessionKeysRef.current.has(parentConversationId),
                 // 会话溯源：节点内 memory-save 由 Rust 分发层注入节点会话 ID。
                 conversationId,
               );
             }
           } catch (error) {
+            runHadToolError = true;
             toolErrored = true;
             result = JSON.stringify({ error: getErrorMessage(error) });
           }
@@ -2399,22 +2464,47 @@ export function createWorkflowRunner(
           };
         }
 
-        // 自动发送：本回合工具执行完毕，消费 Pending 队列中用户排队的消息，与
-        // 工具结果一起进入下一轮（与子代理 subPendingForTools 同构：节点运行
-        // 期间插入的消息在回合边界切入本节点会话）。
-        const toolPendingText = consumeNodePendingQueue();
+        // Complete tool results always continue, even if all steering was
+        // withdrawn while awaiting its checkpoint.
+        const steering = await consumeNodeSteering();
         const toolRequest = {
           role: "tool" as const,
           content: formatToolResultsContent(structuredResults),
           toolResultsJson: JSON.stringify(structuredResults),
         };
-        return runLoop(
-          toolPendingText
-            ? [toolRequest, { role: "user" as const, content: toolPendingText }]
-            : [toolRequest],
-        );
+        return runLoop([toolRequest, ...steering]);
       };
 
+      const startTask = (content: string): void => {
+        const ref = ctx.sessionsRefData.current.get(conversationId);
+        if (!ref) return;
+        demotePendingSteering(ctx, conversationId);
+        ref.runId += 1;
+        ref.activeSendOptions = {
+          apiProfile: effectiveApiProfile || undefined,
+          model: effectiveModel || undefined,
+          thinkingStrength,
+          responsesFastMode,
+        };
+        ref.activeTaskMessages = [{ role: "user", content }];
+        runHadToolError = false;
+      };
+      const supportsQueuedOptions = (send: ChatInputSendOptions): boolean =>
+        (!send.apiProfile || send.apiProfile === effectiveApiProfile) &&
+        (!send.model || send.model === effectiveModel) &&
+        (send.thinkingStrength === undefined ||
+          send.thinkingStrength === thinkingStrength) &&
+        (send.responsesFastMode == null ||
+          send.responsesFastMode === responsesFastMode) &&
+        (send.conversationRuntimeConfigOverride?.thinkingStrength == null ||
+          send.conversationRuntimeConfigOverride.thinkingStrength ===
+            thinkingStrength) &&
+        (send.conversationRuntimeConfigOverride?.responsesFastMode == null ||
+          send.conversationRuntimeConfigOverride.responsesFastMode ===
+            responsesFastMode) &&
+        (!send.targetSessionKey || send.targetSessionKey === conversationId) &&
+        (!send.kind || send.kind === "chat");
+      startTask(prompt);
       let loopResult = await runLoop([{ role: "user", content: prompt }]);
       // 强行发送循环：用户在节点运行中点击"立即发送"（sendPendingMessageNow
       // 已把消息暂存到 forceSendMessages 并 handleAbort 中断当前回合）时，在
@@ -2424,8 +2514,61 @@ export function createWorkflowRunner(
       while (true) {
         const forceRef = ctx.sessionsRefData.current.get(conversationId);
         const forceSends = forceRef?.forceSendMessages;
-        if (!forceRef || !forceSends || forceSends.length === 0) {
-          break;
+        if (!forceRef) break;
+        if (!forceSends || forceSends.length === 0) {
+          if (loopResult.failed || runHadToolError) break;
+          if (isNodeCancelled()) {
+            loopResult = {
+              content: "",
+              failed: true,
+              error: "Workflow node was interrupted by the user",
+            };
+            break;
+          }
+          demotePendingSteering(ctx, conversationId);
+          const head = ctx.pendingQueueRef.current.get(conversationId)?.[0];
+          if (!head) break;
+          if (!supportsQueuedOptions(head.options)) {
+            const note =
+              "Queued message retained in this Workflow node: the requested configuration switch is not supported by this node runtime. Withdraw it or resume with compatible options.";
+            ctx.updateSessionMessages(conversationId, (currentMessages) => [
+              ...currentMessages,
+              {
+                id: createMessageId("assistant"),
+                role: "assistant",
+                content: note,
+                timestamp: formatMessageTime(),
+                status: "sent",
+              },
+            ]);
+            break;
+          }
+          const checkpointId = await createPendingCheckpoint();
+          const current = ctx.pendingQueueRef.current.get(conversationId)?.[0];
+          if (isNodeCancelled() || current !== head) {
+            if (checkpointId) deleteCheckpoints([checkpointId]);
+            if (isNodeCancelled()) {
+              if (isNodeForceSendAborted()) continue;
+              loopResult = {
+                content: "",
+                failed: true,
+                error: "Workflow node was interrupted by the user",
+              };
+              break;
+            }
+            continue;
+          }
+          const item = takeNextQueuedMessage(ctx, conversationId);
+          if (!item) {
+            if (checkpointId) deleteCheckpoints([checkpointId]);
+            break;
+          }
+          startTask(item.text);
+          const messages = appendPendingUsers([item.text], checkpointId);
+          // startTask already protects the original user instruction.
+          forceRef.activeTaskMessages = [{ role: "user", content: item.text }];
+          loopResult = await runLoop(messages);
+          continue;
         }
         forceRef.forceSendMessages = undefined;
         const forceText = forceSends.map((item) => item.text).join("\n\n");
@@ -2448,6 +2591,8 @@ export function createWorkflowRunner(
         resetRunStreamMetrics(ctx, conversationId);
         ctx.updateSessionField(conversationId, "streamStartedAt", Date.now());
         ctx.addStreamingId(conversationId);
+        startTask(forceText);
+        activeCheckpointId = undefined;
         loopResult = await runLoop([{ role: "user", content: forceText }]);
       }
       return {
@@ -2470,6 +2615,8 @@ export function createWorkflowRunner(
       if (ref) {
         ref.isSending = false;
         ref.isAbortRequested = false;
+        ref.activeSendOptions = undefined;
+        ref.activeTaskMessages = undefined;
         // 复位软中断标记：异常退出路径（如授权等待被 handleAbort reject 抛出）
         // 会残留 true，续跑复用本会话时会把真实停止误判为强行发送软中断。
         ref.forceSendAbort = false;
@@ -2477,7 +2624,7 @@ export function createWorkflowRunner(
       ctx.updateSessionField(conversationId, "isStreaming", false);
       ctx.updateSessionField(conversationId, "isAborting", false);
       ctx.removeStreamingId(conversationId);
-      // 节点收尾转交：未消费的排队消息与强行发送暂存交给父会话队列。
+      // 保留节点自己未消费的 queue/强行发送暂存，不转交父会话。
       forwardNodePendingQueue();
     }
   };

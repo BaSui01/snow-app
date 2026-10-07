@@ -30,6 +30,10 @@ import {
 import { markPluginDraftChanged } from "../../../plugins/pluginDraft";
 import { resolveAutoSendOptions } from "./autoSendOptions";
 import { useSendKeyMode } from "./useSendKeyMode";
+import {
+  useBusySendBehavior,
+  type BusySendBehavior,
+} from "../../../constants/busySendBehavior";
 import type {
   ChatInputActions,
   ChatInputSendOptions,
@@ -122,6 +126,7 @@ export const useChatInputController = ({
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const { sendKeyMode, setSendKeyMode } = useSendKeyMode();
+  const { behavior: busySendBehavior } = useBusySendBehavior();
   const [value, setInputValue] = useState("");
   const textareaRef = useRef<HTMLDivElement>(null);
   const setValue = useCallback((content: string): void => {
@@ -675,63 +680,74 @@ export const useChatInputController = ({
       ? responsesFastModeOverride
       : profileFastModeEnabled;
 
-  const handleSend = useCallback(() => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return;
-    }
+  const handleSend = useCallback(
+    (deliveryMode?: BusySendBehavior) => {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return;
+      }
 
-    // 未配置任何 API（初次安装）时阻止发送，避免直接落到后端报错；
-    // 引导提示由 ChatInputView 的空配置条展示。
-    if (apiConfigs.length === 0 || !runtimeApiConfig) {
-      return;
-    }
+      // 未配置任何 API（初次安装）时阻止发送，避免直接落到后端报错；
+      // 引导提示由 ChatInputView 的空配置条展示。
+      if (apiConfigs.length === 0 || !runtimeApiConfig) {
+        return;
+      }
 
-    // The selected profile is conversation-scoped: for a brand-new
-    // conversation it is carried on the request so the backend binds the
-    // created conversation to this provider; for existing conversations the
-    // binding is already persisted and the backend resolves it automatically.
-    onSend?.(trimmed, {
-      model: selectedModel || undefined,
-      apiProfile: selectedApiProfile || undefined,
-      // Manual sends carry effective values so the agent loop captures the
-      // exact settings used by this turn. The snapshot is separate: null means
-      // the conversation follows the current profile default.
-      thinkingStrength: effectiveThinkingValue,
-      responsesFastMode:
-        requestMethod === "responses" ? responsesFastModeEnabled : null,
-      conversationRuntimeConfigOverride: {
-        thinkingStrength: thinkingOverride === "" ? null : thinkingOverride,
-        responsesFastMode: responsesFastModeOverride,
-      },
-    });
-    setValue("");
-    // The message was handed off to the agent loop; the draft must not be
-    // restored when switching back to this conversation.
-    clearInputDraft?.(conversationId);
-
-    if (textareaRef.current) {
-      textareaRef.current.innerHTML = "";
-      textareaRef.current.dataset.empty = "true";
-      requestAnimationFrame(() => {
-        adjustHeight();
+      // The selected profile is conversation-scoped: for a brand-new
+      // conversation it is carried on the request so the backend binds the
+      // created conversation to this provider; for existing conversations the
+      // binding is already persisted and the backend resolves it automatically.
+      onSend?.(trimmed, {
+        deliveryMode:
+          isStreaming || isAborting
+            ? (deliveryMode ?? busySendBehavior)
+            : undefined,
+        model: selectedModel || undefined,
+        apiProfile: selectedApiProfile || undefined,
+        // Manual sends carry effective values so the agent loop captures the
+        // exact settings used by this turn. The snapshot is separate: null means
+        // the conversation follows the current profile default.
+        thinkingStrength: effectiveThinkingValue,
+        responsesFastMode:
+          requestMethod === "responses" ? responsesFastModeEnabled : null,
+        conversationRuntimeConfigOverride: {
+          thinkingStrength: thinkingOverride === "" ? null : thinkingOverride,
+          responsesFastMode: responsesFastModeOverride,
+        },
       });
-    }
-  }, [
-    adjustHeight,
-    apiConfigs.length,
-    clearInputDraft,
-    conversationId,
-    effectiveThinkingValue,
-    onSend,
-    requestMethod,
-    responsesFastModeEnabled,
-    responsesFastModeOverride,
-    selectedApiProfile,
-    selectedModel,
-    thinkingOverride,
-    value,
-  ]);
+      setValue("");
+      // The message was handed off to the agent loop; the draft must not be
+      // restored when switching back to this conversation.
+      clearInputDraft?.(conversationId);
+
+      if (textareaRef.current) {
+        textareaRef.current.innerHTML = "";
+        textareaRef.current.dataset.empty = "true";
+        requestAnimationFrame(() => {
+          adjustHeight();
+        });
+      }
+    },
+    [
+      adjustHeight,
+      apiConfigs.length,
+      clearInputDraft,
+      conversationId,
+      effectiveThinkingValue,
+      busySendBehavior,
+      isStreaming,
+      isAborting,
+      runtimeApiConfig,
+      onSend,
+      requestMethod,
+      responsesFastModeEnabled,
+      responsesFastModeOverride,
+      selectedApiProfile,
+      selectedModel,
+      thinkingOverride,
+      value,
+    ],
+  );
 
   const sendRef = useRef(handleSend);
 
@@ -756,7 +772,7 @@ export const useChatInputController = ({
         restoreContent(text);
       }
       window.setTimeout(() => {
-        sendRef.current();
+        sendRef.current("queue");
       }, 0);
     };
     window.addEventListener(PLUGIN_INSERT_INPUT_TEXT_EVENT, insertHandler);
@@ -773,19 +789,30 @@ export const useChatInputController = ({
         return;
       }
       const hasMod = event.ctrlKey || event.metaKey;
-      // 按当前快捷键模式判断本次回车是否为发送组合键。
       const isSendCombo =
-        sendKeyMode === "ctrlEnter"
-          ? hasMod && !event.shiftKey && !event.altKey
-          : !hasMod && !event.shiftKey && !event.altKey;
-      if (!isSendCombo) {
+        !event.altKey &&
+        (sendKeyMode === "ctrlEnter"
+          ? hasMod && !event.shiftKey
+          : !hasMod && !event.shiftKey);
+      const isAlternateCombo =
+        !event.altKey &&
+        hasMod &&
+        (sendKeyMode === "ctrlEnter" ? event.shiftKey : !event.shiftKey);
+      const busy = isStreaming || isAborting;
+      if (!isSendCombo && !(busy && isAlternateCombo)) {
         return;
       }
 
       event.preventDefault();
-      handleSend();
+      handleSend(
+        busy && isAlternateCombo
+          ? busySendBehavior === "queue"
+            ? "steer"
+            : "queue"
+          : undefined,
+      );
     },
-    [handleSend, sendKeyMode],
+    [handleSend, sendKeyMode, isStreaming, isAborting, busySendBehavior],
   );
 
   const handleSelectModel = useCallback(async (modelId: string) => {

@@ -27,6 +27,7 @@ export const ChatInput = ({
   getRuntimeInputState,
   loadOlderMessages,
   pendingMessages = [],
+  pendingMessageModes,
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
   onCompactConversation,
@@ -94,6 +95,7 @@ export const ChatInput = ({
       tokenUsage={tokenUsage}
       loadOlderMessages={loadOlderMessages}
       pendingMessages={pendingMessages}
+      pendingMessageModes={pendingMessageModes}
       onWithdrawPendingMessage={onWithdrawPendingMessage}
       onSendPendingMessageNow={onSendPendingMessageNow}
       onCompactConversation={onCompactConversation}

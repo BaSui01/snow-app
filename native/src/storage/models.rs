@@ -791,6 +791,19 @@ pub struct MemoCountSummary {
     pub done: i32,
 }
 
+/// Independent file review annotations, scoped by source_key + normalized file_path.
+#[napi(object)]
+pub struct FileReviewAnnotationRecord {
+    pub id: String,
+    pub annotation_id: String,
+    pub source_key: String,
+    pub file_path: String,
+    pub anchor_json: String,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// Diff 行内评论（diff_review_comments 表）。按 `directory_id` + `file_path`
 /// 隔离；`side` 为 old | new；`line_content` 为行内容快照，用于过期校验。
 #[napi(object)]

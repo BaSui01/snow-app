@@ -1,4 +1,19 @@
 export const en = {
+  "settings.busySendBehavior": "Send behavior while busy",
+  "settings.busySendBehaviorInfo":
+    "Queue waits for the current task to finish; steer is handled at the next available boundary. Use the alternate shortcut to switch for one send.",
+  "settings.busySendQueue": "Queue",
+  "settings.busySendSteer": "Steer",
+  "settings.busySendSaveError":
+    "Could not save. The previous send behavior remains active.",
+  "settings.busySendLoadError":
+    "Could not load the send preference. Using steer until successfully saved.",
+  "chatInput.busyQueue": "Wait for task to finish",
+  "chatInput.busySteer": "Wait for steer processing",
+  "chatInput.interruptAndSend": "Interrupt and send",
+  "chatInput.busySendHint":
+    "{{behavior}} ({{shortcut}}); alternate: {{alternate}}",
+
   "git.manageActions": "Manage branch…",
   "git.manageCreate": "Create branch from here…",
   "git.manageTrack": "Create local tracking branch…",
@@ -4436,6 +4451,37 @@ export const en = {
   "diffViewer.unifiedMode": "Unified view",
   "diffViewer.splitMode": "Split view",
   "diffViewer.wrapLines": "Wrap lines",
+  "fileReview.title": "Review annotations",
+  "fileReview.add": "Annotate selected text",
+  "fileReview.close": "Close annotations",
+  "fileReview.hint":
+    "Select text and right-click to annotate. Annotations stay in Snow; sending only fills the chat draft, never sends automatically.",
+  "fileReview.extractedHint":
+    "Anchors refer to extracted text, not Word pages or Excel cells. The original file is never modified.",
+  "fileReview.loading": "Loading annotations and checking the content version…",
+  "fileReview.empty":
+    "No annotations. Select up to 4096 characters in source/text view.",
+  "fileReview.lines": "Lines {{from}}–{{to}}",
+  "fileReview.source": "File text",
+  "fileReview.extracted": "Extracted text",
+  "fileReview.exact": "Original position",
+  "fileReview.relocated": "Relocated by unique context",
+  "fileReview.outdated": "Content changed; anchor not found",
+  "fileReview.ambiguous": "Multiple matches; re-anchoring needed",
+  "fileReview.invalid": "Invalid annotation anchor",
+  "fileReview.locate": "Locate and highlight the annotation",
+  "fileReview.sendAll": "Fill chat draft with all annotations",
+  "fileReview.confirmDelete": "Click again to delete",
+  "fileReview.messageHeader":
+    "Please review these Snow annotations for {{path}}:",
+  "fileReview.contentLimit":
+    "Annotation content must not exceed 8 KiB (UTF-8).",
+  "fileReview.selectionChanged":
+    "Selected content changed. Please select it again.",
+  "fileReview.inputUnavailable":
+    "The chat input is unavailable. Copy the annotation and paste it manually.",
+  "fileReview.selectHint":
+    "Select text first. Selections across folded or unrendered rows cannot be annotated.",
   "diffComments.sideOld": "old code",
   "diffComments.sideNew": "new code",
   "diffComments.placeholder": "Write a comment, Cmd/Ctrl + Enter to save",
@@ -4466,6 +4512,11 @@ export const en = {
   "rightPanel.svgCodeMode": "View as code",
   "rightPanel.fileViewerLoadError": "Failed to load file",
   "rightPanel.fileViewerEmpty": "No content to display",
+  "rightPanel.fileViewerReadOnlyPreview": "Read-only preview",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "Extracted document text can be searched and copied. Original layout is not preserved and the document cannot be overwritten.",
+  "rightPanel.fileViewerTextPreviewHint":
+    "This text can be read, searched and copied, but editing is disabled because its original encoding cannot be preserved losslessly.",
   "rightPanel.fileViewerEdit": "Edit file",
   "rightPanel.fileViewerExitEdit": "Exit edit mode (Esc)",
   "rightPanel.fileViewerSave": "Save",

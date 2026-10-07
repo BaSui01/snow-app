@@ -52,12 +52,16 @@ export type PluginPanelDefinition = {
   chatInput?: boolean;
   chatInputAction?: string;
   chatInputTitle?: PluginLocalizedMap;
+  /** Configuration gear only; independent from the action and plugin enablement. */
+  chatInputSettings?: { defaultVisible: boolean; storageKey: string };
 };
 
 export type PluginMessageFooterDefinition = {
   id: string;
   entry: string;
   exportName: string;
+  /** Opt in to immutable task-end history instead of the legacy latest slot. */
+  taskHistory?: boolean;
 };
 
 /** 渲染层使用的插件视图模型（PluginRecord 解析后的形态）。 */

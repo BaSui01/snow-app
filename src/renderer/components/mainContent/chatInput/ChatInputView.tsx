@@ -91,6 +91,7 @@ export const ChatInputView = ({
   tokenUsage,
   loadOlderMessages,
   pendingMessages,
+  pendingMessageModes,
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
   onCompactConversation,
@@ -693,7 +694,7 @@ export const ChatInputView = ({
       projectId: projectId ?? conversationDirectoryId ?? "",
       sessionKey: sessionViewKey ?? "",
       conversationId: activeConversationId ?? null,
-      blocked: isStreaming || isAborting || isCompacting,
+      blocked: isCompacting,
       restoreContent,
     });
   }, [
@@ -702,8 +703,6 @@ export const ChatInputView = ({
     conversationDirectoryId,
     sessionViewKey,
     activeConversationId,
-    isStreaming,
-    isAborting,
     isCompacting,
     restoreContent,
   ]);
@@ -781,6 +780,7 @@ export const ChatInputView = ({
         />
         <PendingMessages
           messages={pendingMessages}
+          modes={pendingMessageModes}
           onWithdraw={handleWithdrawPending}
           onSendNow={handleSendPendingNow}
         />

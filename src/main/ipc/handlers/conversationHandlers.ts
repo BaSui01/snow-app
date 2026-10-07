@@ -208,6 +208,38 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "chat-conversations:save-task-history",
+    async (
+      _event,
+      conversationId: unknown,
+      responseId: unknown,
+      manifest: unknown,
+    ) => {
+      if (
+        typeof conversationId !== "string" ||
+        !conversationId.trim() ||
+        typeof responseId !== "string" ||
+        !responseId.trim() ||
+        typeof manifest !== "string" ||
+        manifest.length > 2_000_000
+      )
+        throw new Error("Invalid task history request");
+      await native.saveTaskHistory(
+        conversationId.trim(),
+        responseId.trim(),
+        manifest,
+      );
+    },
+  );
+  ipcMain.handle(
+    "chat-conversations:list-task-history",
+    (_event, conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim())
+        throw new Error("Conversation ID is required");
+      return native.listTaskHistory(conversationId.trim());
+    },
+  );
+  ipcMain.handle(
     "chat-conversations:append-tool-message",
     async (_event, conversationId: unknown, content: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

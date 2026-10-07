@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { loadTaskSnapshots, type TaskSnapshot } from "../hooks/taskHistory";
 import type { Locale } from "../../../../../shared/locale";
 import { useI18n } from "../../../../i18n";
 import { loadPluginMessages } from "../../../../plugins/manifest";
@@ -29,6 +36,7 @@ const PluginMessageFooter = ({
   conversationId,
   messageId,
   directoryId,
+  task,
 }: {
   plugin: PluginView;
   footer: PluginMessageFooterDefinition;
@@ -38,6 +46,7 @@ const PluginMessageFooter = ({
   conversationId: string;
   messageId: string;
   directoryId: string | undefined;
+  task?: TaskSnapshot;
 }): React.JSX.Element => {
   const hostRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -87,6 +96,7 @@ const PluginMessageFooter = ({
       conversationId,
       messageId,
       directoryId,
+      ...(task ? { task } : {}),
     });
     void (async () => {
       try {
@@ -167,6 +177,7 @@ const PluginMessageFooter = ({
     conversationId,
     messageId,
     directoryId,
+    task,
   ]);
   return <div ref={hostRef} style={{ display: "contents" }} />;
 };
@@ -186,10 +197,50 @@ export const PluginMessageFooters = ({
   useEffect(() => {
     void pluginStore.ensureLoaded();
   }, []);
+  const message = conversation.messages.find((item) => item.id === messageId);
+  const [task, setTask] = useState<TaskSnapshot>();
+  const hasTaskFooters = plugins.some(
+    (plugin) =>
+      plugin.enabled &&
+      plugin.messageFooters.some((footer) => footer.taskHistory),
+  );
+  useEffect(() => {
+    if (!hasTaskFooters) return;
+    let disposed = false;
+    let generation = 0;
+    const refresh = (): void => {
+      const current = ++generation;
+      void loadTaskSnapshots(conversationId)
+        .then((snapshots) => {
+          if (disposed || current !== generation) return;
+          const next =
+            snapshots.get(`message:${messageId}`) ??
+            (message?.responseId
+              ? snapshots.get(`response:${message.responseId}`)
+              : undefined);
+          setTask((previous) => (previous?.id === next?.id ? previous : next));
+        })
+        .catch(() => {
+          // A failed refresh must not withdraw an already fixed historical task.
+          // Initial failures still have no snapshot and cannot show cumulative data.
+          if (!disposed && current === generation)
+            console.warn("Task history unavailable");
+        });
+    };
+    const changed = (event: Event): void => {
+      if ((event as CustomEvent<string>).detail === conversationId) refresh();
+    };
+    refresh();
+    window.addEventListener("agent-task-history-updated", changed);
+    return () => {
+      disposed = true;
+      window.removeEventListener("agent-task-history-updated", changed);
+    };
+  }, [conversationId, messageId, message?.responseId, hasTaskFooters]);
   const lastMessage = conversation.messages.findLast(
     (message) => message.role !== "tool",
   );
-  const eligible =
+  const legacyEligible =
     conversation.activeConversationId === conversationId &&
     !conversation.isStreaming &&
     !conversation.isPaused &&
@@ -202,9 +253,14 @@ export const PluginMessageFooters = ({
     conversationId,
     messageId,
     directoryId,
-    conversation.streamStartedAt,
+    task?.id,
     locale,
   ]);
+  const eligible =
+    conversation.activeConversationId === conversationId &&
+    message?.role === "assistant" &&
+    message.status !== "sending" &&
+    (!!task || legacyEligible);
   identityRef.current = eligible ? identity : null;
   if (!eligible) return null;
   const enabled = plugins.filter(
@@ -217,19 +273,24 @@ export const PluginMessageFooters = ({
   return (
     <>
       {enabled.flatMap((plugin) =>
-        plugin.messageFooters.map((footer) => (
-          <PluginMessageFooter
-            key={`${plugin.pluginId}:${footer.id}`}
-            plugin={plugin}
-            footer={footer}
-            locale={locale}
-            identity={identity}
-            identityRef={identityRef}
-            conversationId={conversationId}
-            messageId={messageId}
-            directoryId={directoryId}
-          />
-        )),
+        plugin.messageFooters
+          .filter((footer) =>
+            footer.taskHistory ? !!task || legacyEligible : legacyEligible,
+          )
+          .map((footer) => (
+            <PluginMessageFooter
+              key={`${plugin.pluginId}:${footer.id}`}
+              plugin={plugin}
+              footer={footer}
+              locale={locale}
+              identity={identity}
+              identityRef={identityRef}
+              conversationId={conversationId}
+              messageId={messageId}
+              directoryId={directoryId}
+              task={footer.taskHistory ? task : undefined}
+            />
+          )),
       )}
     </>
   );

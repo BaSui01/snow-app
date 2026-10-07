@@ -24,6 +24,7 @@ import { getFileTypeIcon } from "../../../utils/fileIcons";
 
 type PendingMessagesProps = {
   messages: string[];
+  modes?: ("queue" | "steer")[];
   onWithdraw?: (index: number) => string | null;
   onSendNow?: (index: number) => void;
 };
@@ -291,6 +292,7 @@ const renderSegments = (content: string): React.ReactNode => {
 
 export const PendingMessages = ({
   messages,
+  modes,
   onWithdraw,
   onSendNow,
 }: PendingMessagesProps): React.JSX.Element | null => {
@@ -327,13 +329,20 @@ export const PendingMessages = ({
         {messages.map((msg, index) => (
           <li key={index} className="pending-message-item">
             <span className="pending-message-text">{renderSegments(msg)}</span>
+            <span className="pending-message-mode">
+              {t(
+                modes?.[index] === "steer"
+                  ? "chatInput.busySteer"
+                  : "chatInput.busyQueue",
+              )}
+            </span>
             {onSendNow && (
               <button
                 type="button"
                 className="pending-message-send-now"
                 onClick={() => handleSendNow(index)}
-                aria-label={t("chatInput.sendNow")}
-                title={t("chatInput.sendNow")}
+                aria-label={t("chatInput.interruptAndSend")}
+                title={t("chatInput.interruptAndSend")}
               >
                 <ArrowUp size={12} />
               </button>

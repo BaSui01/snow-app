@@ -57,7 +57,7 @@ const tokens = new Map<string, DraftToken>();
 const TOKEN_LIMIT = 128;
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 
-/** Re-register on project/session/busy state changes; no stale snapshot writes. */
+/** Re-register on project/session/editability changes; streaming alone is not a draft change. */
 export const registerPluginDraftHost = (next: DraftHost): (() => void) => {
   host = next;
   tokens.clear();
@@ -89,7 +89,7 @@ const requireHost = (): DraftHost => {
     throw new Error("Chat input is not mounted or available");
   }
   if (host.blocked)
-    throw new Error("Chat input is busy (streaming, stopping or compacting)");
+    throw new Error("Chat input is not editable (compacting or unavailable)");
   return host;
 };
 

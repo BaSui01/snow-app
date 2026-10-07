@@ -1,4 +1,17 @@
 export const zhCN = {
+  "settings.busySendBehavior": "繁忙时的发送行为",
+  "settings.busySendBehaviorInfo":
+    "排队等待当前任务结束；插话等待下一个可处理边界。使用另一快捷键可仅为本次发送反选。",
+  "settings.busySendQueue": "排队发送",
+  "settings.busySendSteer": "插话发送",
+  "settings.busySendSaveError": "保存失败，已保留原发送行为。",
+  "settings.busySendLoadError": "读取发送偏好失败，成功保存前使用默认插话。",
+  "chatInput.busyQueue": "等待任务结束",
+  "chatInput.busySteer": "等待插话处理",
+  "chatInput.interruptAndSend": "中断并发送",
+  "chatInput.busySendHint":
+    "{{behavior}}（{{shortcut}}）；本次反选：{{alternate}}",
+
   "git.manageActions": "管理分支…",
   "git.manageCreate": "从此分支创建分支…",
   "git.manageTrack": "创建本地跟踪分支…",
@@ -4173,6 +4186,32 @@ export const zhCN = {
   "diffViewer.unifiedMode": "单列视图",
   "diffViewer.splitMode": "双列视图",
   "diffViewer.wrapLines": "自动换行",
+  "fileReview.title": "审阅标注",
+  "fileReview.add": "为选中文字添加标注",
+  "fileReview.close": "关闭标注面板",
+  "fileReview.hint":
+    "选中文字后右键添加标注。标注仅保存在 Snow；发送仅填入聊天输入框，不自动发送。",
+  "fileReview.extractedHint":
+    "标注针对提取后的正文，位置不是 Word 页码或 Excel 单元格；不会写入原文件。",
+  "fileReview.loading": "正在加载标注与校验内容版本…",
+  "fileReview.empty": "暂无标注。请在源码/文本视图选择最多 4096 字符的内容。",
+  "fileReview.lines": "第 {{from}}–{{to}} 行",
+  "fileReview.source": "文件文本",
+  "fileReview.extracted": "提取正文",
+  "fileReview.exact": "原位置",
+  "fileReview.relocated": "已按唯一上下文重新定位",
+  "fileReview.outdated": "内容已变更，无法定位",
+  "fileReview.ambiguous": "存在多个匹配，需重新定位",
+  "fileReview.invalid": "标注锚点无效",
+  "fileReview.locate": "定位并高亮标注位置",
+  "fileReview.sendAll": "将全部标注填入聊天输入框",
+  "fileReview.confirmDelete": "再次点击删除",
+  "fileReview.messageHeader": "请审阅文件 {{path}} 的以下 Snow 侧标注：",
+  "fileReview.contentLimit": "标注正文不能超过 8 KiB（UTF-8）。",
+  "fileReview.selectionChanged": "选区内容已变更，请重新选择。",
+  "fileReview.inputUnavailable": "聊天输入框暂不可用；可以复制标注后手动粘贴。",
+  "fileReview.selectHint":
+    "请先在文本视图选择内容；跨折叠或未渲染行的选区不支持标注。",
   "diffComments.sideOld": "旧代码",
   "diffComments.sideNew": "新代码",
   "diffComments.placeholder": "输入评论，Cmd/Ctrl + Enter 保存",
@@ -4201,6 +4240,11 @@ export const zhCN = {
   "rightPanel.svgCodeMode": "以代码查看",
   "rightPanel.fileViewerLoadError": "加载文件失败",
   "rightPanel.fileViewerEmpty": "没有可显示的内容",
+  "rightPanel.fileViewerReadOnlyPreview": "只读预览",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "显示提取后的文档文本，可搜索和复制；不保留原始排版，也不能覆盖保存原文档。",
+  "rightPanel.fileViewerTextPreviewHint":
+    "此文本可以阅读、搜索和复制，但当前无法无损保留原编码，已禁用编辑。",
   "rightPanel.fileViewerEdit": "编辑文件",
   "rightPanel.fileViewerExitEdit": "退出编辑模式（Esc）",
   "rightPanel.fileViewerSave": "保存",

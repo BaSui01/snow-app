@@ -10,6 +10,7 @@ import { gitApi } from "./modules/gitApi";
 import { teamApi } from "./modules/teamApi";
 import { systemApi, ptyApi, windowApi } from "./modules/systemApi";
 import { memoApi } from "./modules/memoApi";
+import { fileReviewAnnotationApi } from "./modules/fileReviewAnnotationApi";
 import { diffCommentApi } from "./modules/diffCommentApi";
 import { memoryApi } from "./modules/memoryApi";
 import { scheduledTaskApi } from "./modules/scheduledTaskApi";
@@ -40,6 +41,7 @@ const api = {
   ...windowApi,
   ...memoApi,
   ...diffCommentApi,
+  ...fileReviewAnnotationApi,
   ...memoryApi,
   ...scheduledTaskApi,
   ...personalizationApi,

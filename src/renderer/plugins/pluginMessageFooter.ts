@@ -1,14 +1,22 @@
+import type { TaskSnapshot } from "../components/mainContent/chatMessages/hooks/taskHistory";
 import type { MetadataSubscription } from "./metadata";
-import type { PluginMetadataApi, PluginRuntimeApi } from "./pluginApi";
+import type {
+  PluginMetadataApi,
+  PluginRuntimeApi,
+  PluginWriteApi,
+} from "./pluginApi";
+import type { PluginWriteResponse } from "./writes/types";
 
 export type PluginMessageFooterContext = Readonly<{
   slot: "message-footer";
   conversationId: string;
   messageId: string;
   directoryId: string | undefined;
+  /** Immutable file evidence for an opted-in task-end contribution; no chat body. */
+  task?: TaskSnapshot;
 }>;
 
-/** Footer v1 deliberately does not expose write, AI, network or storage APIs. */
+/** Footer exposes only file-reader and read-only diff navigation, never general write, AI, network or storage APIs. */
 export type PluginMessageFooterApi = Pick<
   PluginRuntimeApi,
   | "id"
@@ -20,7 +28,10 @@ export type PluginMessageFooterApi = Pick<
   | "assets"
   | "ui"
   | "log"
-> & { metadata: PluginMetadataApi };
+> & {
+  metadata: PluginMetadataApi;
+  write: Pick<PluginWriteApi, "domains" | "run">;
+};
 
 export type PluginMessageFooterMount = (
   container: HTMLElement,
@@ -100,6 +111,57 @@ export const scopePluginMessageFooterApi = (
         return result;
       },
     }),
+    write: Object.freeze({
+      domains: () => {
+        check();
+        return source.write.domains().flatMap((domain) => {
+          const actions = domain.actions.filter(
+            (action) =>
+              action.id === "panels.openFile" ||
+              action.id === "panels.openFileDiff",
+          );
+          return actions.length
+            ? [
+                {
+                  ...domain,
+                  granted: actions.every((action) => action.granted),
+                  actions,
+                },
+              ]
+            : [];
+        });
+      },
+      run: async (actionId, params): Promise<PluginWriteResponse> => {
+        if (!active()) {
+          return {
+            ok: false,
+            action: actionId,
+            error: "Footer context expired",
+          };
+        }
+        if (
+          actionId !== "panels.openFile" &&
+          actionId !== "panels.openFileDiff"
+        ) {
+          return {
+            ok: false,
+            action: actionId,
+            denied: { reason: "unsupported-runtime" },
+            error:
+              "Message footers only support 'panels.openFile' and 'panels.openFileDiff'",
+          };
+        }
+        const result = await source.write.run(actionId, params);
+        if (!active()) {
+          return {
+            ok: false,
+            action: actionId,
+            error: "Footer context expired",
+          };
+        }
+        return result;
+      },
+    } satisfies Pick<PluginWriteApi, "domains" | "run">),
     metadata: Object.freeze({
       domains: () => {
         check();

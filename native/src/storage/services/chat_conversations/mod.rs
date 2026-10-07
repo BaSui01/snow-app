@@ -314,7 +314,7 @@ pub fn store_chat_exchange(
                     0,
                     0,
                     "[]",
-                    None,
+                    context_usage,
                     0,
                 )?;
                 persisted_user_message_ids.push(message_id);

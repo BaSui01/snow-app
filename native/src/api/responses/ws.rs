@@ -78,9 +78,53 @@ type WsSocket = WebSocketStream<WsByteStream>;
 // 连接池
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
+struct WsResponseState {
+    completed_response_ids: std::collections::HashSet<String>,
+    active_response_id: Option<String>,
+}
+
+impl WsResponseState {
+    fn accept_event(&mut self, event: &Value) -> bool {
+        let response_id = event
+            .get("response")
+            .and_then(|response| response.get("id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .or_else(|| {
+                event
+                    .get("response_id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+            });
+        if let Some(response_id) = response_id {
+            if self.completed_response_ids.contains(response_id)
+                || self
+                    .active_response_id
+                    .as_deref()
+                    .is_some_and(|active_id| active_id != response_id)
+            {
+                return false;
+            }
+            self.active_response_id
+                .get_or_insert_with(|| response_id.to_string());
+        }
+        true
+    }
+
+    fn finish_response(&mut self) {
+        if let Some(response_id) = self.active_response_id.take() {
+            self.completed_response_ids.insert(response_id);
+        }
+    }
+}
+
 /// 池中的空闲连接（同一 endpoint 只保留一条）。
 struct PooledSocket {
     socket: WsSocket,
+    response_state: WsResponseState,
     /// 归还时的代次，用于让到期回收任务只回收自己那一份。
     generation: u64,
     /// 连接最初建立的时间：复用不会刷新它，避免连接无限续命。
@@ -121,18 +165,23 @@ fn build_pool_key(
 
 /// 取出一条可复用的空闲连接；不存在或已超过复用期限时返回 `None`
 /// （超期连接在此被丢弃，不会再被使用）。
-async fn take_pooled_socket(pool_key: &str) -> Option<(WsSocket, Instant)> {
+async fn take_pooled_socket(pool_key: &str) -> Option<PooledSocket> {
     let mut pool = pool().lock().await;
     let entry = pool.remove(pool_key)?;
     if entry.idle_since.elapsed() > POOL_IDLE_TTL || entry.created_at.elapsed() > POOL_MAX_AGE {
         return None;
     }
-    Some((entry.socket, entry.created_at))
+    Some(entry)
 }
 
 /// 把连接放回池中等待下一次复用；同一键上的旧空闲连接被直接丢弃。
 /// 同时派生一个到期回收任务，保证长时间不用时不会残留空闲连接。
-async fn return_socket(pool_key: String, socket: WsSocket, created_at: Instant) {
+async fn return_socket(
+    pool_key: String,
+    socket: WsSocket,
+    created_at: Instant,
+    response_state: WsResponseState,
+) {
     let generation = next_generation();
     let expiry_key = pool_key.clone();
     {
@@ -141,6 +190,7 @@ async fn return_socket(pool_key: String, socket: WsSocket, created_at: Instant) 
             pool_key,
             PooledSocket {
                 socket,
+                response_state,
                 generation,
                 created_at,
                 idle_since: Instant::now(),
@@ -167,6 +217,7 @@ async fn return_socket(pool_key: String, socket: WsSocket, created_at: Instant) 
 /// 一次尝试的开始阶段（连接就绪且 `response.create` 已发出）的产物。
 struct StartedAttempt {
     socket: WsSocket,
+    response_state: WsResponseState,
     /// 连接最初建立的时间（复用连接沿用首次建立时间，用于寿命上限判断）。
     created_at: Instant,
 }
@@ -201,10 +252,10 @@ async fn start_attempt(
     frame_json: &str,
     retry_options: &RetryOptions,
 ) -> std::result::Result<StartedAttempt, StartFailure> {
-    let (mut socket, reused, created_at) = match take_pooled_socket(pool_key).await {
-        Some((socket, created_at)) => (socket, true, created_at),
+    let (mut socket, reused, created_at, response_state) = match take_pooled_socket(pool_key).await {
+        Some(entry) => (entry.socket, true, entry.created_at, entry.response_state),
         None => match connect_socket(endpoint, api_key, custom_headers, retry_options).await {
-            Ok(socket) => (socket, false, Instant::now()),
+            Ok(socket) => (socket, false, Instant::now(), WsResponseState::default()),
             Err(failure) => {
                 return Err(StartFailure {
                     reused: false,
@@ -224,7 +275,11 @@ async fn start_attempt(
         });
     }
 
-    Ok(StartedAttempt { socket, created_at })
+    Ok(StartedAttempt {
+        socket,
+        response_state,
+        created_at,
+    })
 }
 
 /// 建立一条到 Responses 端点的 WebSocket 连接（可选经代理 CONNECT 隧道 + TLS）。
@@ -574,7 +629,7 @@ enum FrameOutcome {
     /// 该帧已处理完，继续读取。
     Continue,
     /// 已收到 Provider 终态事件。
-    Terminal,
+    Terminal { reusable: bool },
     /// 连接级协议错误：当前连接已不可用。
     ConnectionError { error: Error, retriable: bool },
 }
@@ -591,12 +646,16 @@ enum WsReadEnd {
 fn process_frame(
     frame: &str,
     attempt_state: &mut ResponsesAttemptState,
+    response_state: &mut WsResponseState,
     progress: &mut StreamProgress,
     on_chunk: &ResponsesApiStreamCallback,
 ) -> FrameOutcome {
     let Some(event) = parse_frame_event(frame) else {
         return FrameOutcome::Continue;
     };
+    if !response_state.accept_event(&event) {
+        return FrameOutcome::Continue;
+    }
 
     if event.get("type").and_then(Value::as_str) == Some("error") {
         // 已经流出内容的请求交给共享解析器按 failed 终态收尾，保留已显示的部分；
@@ -617,7 +676,9 @@ fn process_frame(
     progress.emit_tool_args(on_chunk, &tool_args_delta);
 
     if attempt_state.stream_completed_normally() {
-        FrameOutcome::Terminal
+        FrameOutcome::Terminal {
+            reusable: event.get("type").and_then(Value::as_str) != Some("error"),
+        }
     } else {
         FrameOutcome::Continue
     }
@@ -742,10 +803,15 @@ pub(super) async fn collect_streaming_response_ws(
                 continue 'attempt_loop;
             }
         };
-        let mut socket = started.socket;
+        let StartedAttempt {
+            mut socket,
+            mut response_state,
+            created_at,
+        } = started;
 
         // ---- 阶段 2：逐帧读取，直到终态或传输结束 ----
         let mut attempt_state = ResponsesAttemptState::default();
+        let mut reusable_socket = false;
         let read_end = loop {
             let message = match next_stream_item_with_idle(&mut socket, cancel_token, idle_timeout)
                 .await
@@ -789,9 +855,16 @@ pub(super) async fn collect_streaming_response_ws(
                 // 文本 / 二进制帧承载 JSON 事件（其余帧类型已在上方处理）。
                 incoming => {
                     let text = incoming.to_text().unwrap_or_default();
-                    match process_frame(text, &mut attempt_state, &mut progress, on_chunk) {
+                    match process_frame(
+                        text,
+                        &mut attempt_state,
+                        &mut response_state,
+                        &mut progress,
+                        on_chunk,
+                    ) {
                         FrameOutcome::Continue => {}
-                        FrameOutcome::Terminal => {
+                        FrameOutcome::Terminal { reusable } => {
+                            reusable_socket = reusable;
                             break WsReadEnd::Stream(SseStreamEnd::ProviderTerminal)
                         }
                         FrameOutcome::ConnectionError { error, retriable } => {
@@ -803,8 +876,9 @@ pub(super) async fn collect_streaming_response_ws(
         };
 
         // 拿到终态且连接本身健康的，归还连接池供后续请求复用；其余情况丢弃。
-        if matches!(read_end, WsReadEnd::Stream(SseStreamEnd::ProviderTerminal)) {
-            return_socket(pool_key.clone(), socket, started.created_at).await;
+        if reusable_socket && !cancel_token.is_cancelled() {
+            response_state.finish_response();
+            return_socket(pool_key.clone(), socket, created_at, response_state).await;
         }
 
         let stream_end = match read_end {

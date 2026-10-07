@@ -22,7 +22,7 @@ pub(crate) use crate::storage::{
     ConversationSearchResult, CustomCommandInput, CustomCommandRecord,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord,
     DatabaseOptimizeResult, DatabaseRepairResult,
-    DiffReviewCommentRecord,
+    DiffReviewCommentRecord, FileReviewAnnotationRecord,
     HookConfigInput, HookConfigRecord, LspServerConfigInput, LspServerConfigRecord,
     McpServerConfigInput, McpServerConfigRecord,
     MemoryOptimizeResult,
@@ -47,6 +47,7 @@ mod cleanup;
 mod conversations;
 mod custom_commands;
 mod diff_comments;
+mod file_review_annotations;
 mod hooks;
 mod logs;
 mod lsp;
@@ -66,7 +67,7 @@ mod userscripts;
 #[allow(unused_imports)]
 pub use {
     agents::*, api_configs::*, app::*, app_lock::*, cleanup::*, conversations::*, custom_commands::*,
-    diff_comments::*,
+    diff_comments::*, file_review_annotations::*,
     hooks::*, logs::*,
     lsp::*,
     mcp::*,

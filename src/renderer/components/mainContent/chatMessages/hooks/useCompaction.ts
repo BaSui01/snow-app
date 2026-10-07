@@ -12,6 +12,10 @@ import {
   resolveConversationWorkspacePath,
 } from "../utils/conversationHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
+import {
+  demotePendingSteering,
+  takeNextQueuedMessage,
+} from "../utils/pendingInputs";
 
 /**
  * 上下文压缩逻辑：手动 /compact 和自动阈值触发的压缩。
@@ -32,9 +36,12 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       responsesFastMode?: boolean | null,
     ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
+      const compactionRunId = sessionRef?.runId;
+      const wasSending = sessionRef?.isSending ?? false;
+      let completed = false;
       if (sessionRef) {
         sessionRef.isSending = true;
-        sessionRef.isAbortRequested = false;
+        if (!isAuto) sessionRef.isAbortRequested = false;
       }
       ctx.setCompactionPreview("");
       ctx.setCompactionError(null);
@@ -231,22 +238,23 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             outputTokens: response.tokenUsage?.outputTokens ?? null,
           }),
         });
-        // 保护消息：压缩边界会吞掉边界之前的全部历史（含最新任务指令），
-        // handoff 摘要由 AI 自由生成、可能丢失任务原文。提取压缩前最后一
-        // 条非压缩用户消息，随恢复请求重新注入，保证 AI 压缩后不忘记任务
-        // 与 TODO 状态。仅自动压缩注入（手动压缩后用户自己决定下一条消息）。
+        // Preserve the original task AND its consumed steers across compaction.
+        // Keeping only the latest user input would turn a correction into a task.
         const protectedMessages = isAuto
-          ? (ctx.sessionsRef.current?.[conversationId]?.messages ?? [])
-              .filter(
-                (message) =>
-                  message.role === "user" && !message.isContextCompaction,
-              )
-              .slice(-1)
-              .map((message) => ({
-                role: "user" as const,
-                content: message.content,
-              }))
+          ? sessionRef?.activeTaskMessages?.length
+            ? sessionRef.activeTaskMessages.map((message) => ({ ...message }))
+            : (ctx.sessionsRef.current?.[conversationId]?.messages ?? [])
+                .filter(
+                  (message) =>
+                    message.role === "user" && !message.isContextCompaction,
+                )
+                .slice(-1)
+                .map((message) => ({
+                  role: "user" as const,
+                  content: message.content,
+                }))
           : undefined;
+        completed = true;
         return { content, checkpointId, protectedMessages };
       } catch (error) {
         // Log failures for BOTH auto and manual compaction. Auto-compaction
@@ -292,8 +300,10 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         }
         return null;
       } finally {
-        if (sessionRef) {
-          sessionRef.isSending = false;
+        const ownsSession = sessionRef?.runId === compactionRunId;
+        if (sessionRef && ownsSession && !sessionRef.isAbortRequested) {
+          // Auto-compaction belongs to the active task; never briefly unlock it.
+          sessionRef.isSending = isAuto && wasSending;
           sessionRef.streamId = null;
         }
         ctx.setIsCompacting(false);
@@ -304,27 +314,19 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           current === conversationId ? null : current,
         );
 
-        // For manual compaction, flush pending messages after completion.
-        // Auto-compaction runs inside runAgentLoop so the loop itself
-        // continues — no pending flush needed.
-        if (!isAuto) {
-          const pendingQueue =
-            ctx.pendingQueueRef.current.get(conversationId) ?? [];
-          if (!sessionRef?.isAbortRequested && pendingQueue.length > 0) {
-            ctx.pendingQueueRef.current.delete(conversationId);
-            const combined = pendingQueue.map((item) => item.text).join("\n\n");
-            const lastOptions =
-              pendingQueue[pendingQueue.length - 1]?.options ?? {};
-            // 显示镜像只反映当前激活会话的队列（会话隔离）。
-            if (ctx.activeSessionKeyRef.current === conversationId) {
-              ctx.setActivePendingMessages([]);
+        // Manual compaction has no live task accepting steers. Preserve all
+        // messages and start only one FIFO follow-up after successful completion.
+        if (!isAuto && ownsSession) {
+          demotePendingSteering(ctx, conversationId);
+          if (completed && !sessionRef?.isAbortRequested) {
+            const next = takeNextQueuedMessage(ctx, conversationId);
+            if (next) {
+              ctx.handleSendMessageRef.current(next.text, {
+                ...next.options,
+                deliveryMode: "queue",
+                targetSessionKey: conversationId,
+              });
             }
-            // 显式指定目标会话：压缩期间用户可能已切到其他会话/新建会话
-            // 视图，排队消息必须发回压缩的会话，且不重置用户的新建意图。
-            ctx.handleSendMessageRef.current(combined, {
-              ...lastOptions,
-              targetSessionKey: conversationId,
-            });
           }
         }
       }

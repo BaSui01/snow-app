@@ -27,6 +27,13 @@ import {
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
 import {
+  demotePendingSteering,
+  hasPendingSteering,
+  refreshPendingMessages,
+  takeNextQueuedMessage,
+  takePendingSteering,
+} from "../utils/pendingInputs";
+import {
   appendHookExecutionToMessage,
   buildHookExecRecord,
   resolveHookOutcome,
@@ -272,14 +279,32 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return;
       }
       if (existingRef?.isSending) {
+        const running = existingRef.activeSendOptions;
+        // A steer cannot change the running provider/model/settings or turn kind.
+        // Manual compaction has no active task snapshot and only accepts follow-ups.
+        const canSteer =
+          capturedOptions.deliveryMode === "steer" &&
+          !!running &&
+          !existingRef.isAbortRequested &&
+          capturedOptions.kind !== "review" &&
+          (!capturedOptions.apiProfile ||
+            capturedOptions.apiProfile === running.apiProfile) &&
+          (!capturedOptions.model || capturedOptions.model === running.model) &&
+          (capturedOptions.thinkingStrength === undefined ||
+            capturedOptions.thinkingStrength === running.thinkingStrength) &&
+          (capturedOptions.responsesFastMode == null ||
+            capturedOptions.responsesFastMode === running.responsesFastMode);
         const queue = ctx.pendingQueueRef.current.get(sessionKey) ?? [];
-        queue.push({ text: trimmed, options: capturedOptions });
+        queue.push({
+          text: trimmed,
+          options: {
+            ...capturedOptions,
+            deliveryMode: canSteer ? "steer" : "queue",
+          },
+          ...(canSteer ? { steeringRunId: existingRef.runId } : {}),
+        });
         ctx.pendingQueueRef.current.set(sessionKey, queue);
-        // 显示镜像只反映当前激活会话的队列（会话隔离）：目标会话不是
-        // 当前视图时不更新镜像，切回该会话时再从队列重载。
-        if (sessionKey === ctx.activeSessionKeyRef.current) {
-          ctx.setActivePendingMessages(queue.map((item) => item.text));
-        }
+        refreshPendingMessages(ctx, sessionKey);
         return;
       }
 
@@ -364,6 +389,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
         sessionRef.runId = currentRunId;
+        sessionRef.activeSendOptions = capturedOptions;
+        sessionRef.activeTaskMessages = [{ role: "user", content: trimmed }];
       }
 
       // 宠物联动：本次 run 的唯一回合 id —— start/end 按 id 一一核销。
@@ -534,6 +561,60 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       };
 
       const awaitHookDecision = createAwaitHookDecision(ctx);
+
+      // Only steering inputs enter this run. Ordinary queue entries remain untouched
+      // until the outer run settles. Snapshot first, then atomically select inputs
+      // after the await so withdrawal cannot terminate normal tool continuation.
+      const consumeSteering = async (
+        key: string,
+        conversationId: string | undefined,
+      ): Promise<{
+        messages: { role: "user"; content: string }[];
+        checkpointId?: string;
+      }> => {
+        if (!hasPendingSteering(ctx, key) || isRunCancelled(key))
+          return { messages: [] };
+        const steeringRef = ctx.sessionsRefData.current.get(key);
+        const dirPath = await resolveConversationWorkspacePath(
+          conversationId ?? "",
+          sessionDirId,
+          directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+          steeringRef?.worktreeMode ?? false,
+          steeringRef?.worktreeId,
+        );
+        const steeringCheckpoint = await createFlushCheckpoint(key, dirPath);
+        if (isRunCancelled(key)) return { messages: [] };
+        const inputs = takePendingSteering(ctx, key);
+        if (!inputs.length) {
+          if (steeringCheckpoint) deleteCheckpoints([steeringCheckpoint]);
+          return { messages: [] };
+        }
+        const messages = inputs.map((item) => ({
+          role: "user" as const,
+          content: item.text,
+        }));
+        if (steeringRef) {
+          steeringRef.activeTaskMessages = [
+            ...(steeringRef.activeTaskMessages ?? []),
+            ...messages,
+          ];
+          // New constraints cannot inherit authorization for a broader changed plan.
+          if (steeringRef.planMode)
+            planApprovedSessionKeysRef.current.delete(key);
+        }
+        ctx.updateSessionMessages(key, (currentMessages) => [
+          ...currentMessages,
+          ...inputs.map((item) => ({
+            id: createMessageId("user"),
+            role: "user" as const,
+            content: item.text,
+            timestamp: formatMessageTime(),
+            status: "sent" as const,
+            checkpointId: steeringCheckpoint,
+          })),
+        ]);
+        return { messages, checkpointId: steeringCheckpoint };
+      };
 
       // A provider can resend a successful read with a fresh call ID. Keep
       // this state scoped to one agent run, so a later user message starts
@@ -727,10 +808,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }[],
         currentConversationId: string | undefined,
         checkpointId?: string,
-        // Internal auto-compaction resume: the compaction handoff is already
-        // persisted as the latest context_compaction boundary, so the Rust
-        // backend builds the request context from the database and treats
-        // requestMessages as a placeholder (never sent nor persisted).
+        // Internal auto-compaction resume: Rust loads the persisted handoff and
+        // skips only requestMessages[0] (the placeholder). Following protected
+        // task instructions and consumed steers are injected and persisted.
         resumeAfterCompaction?: boolean,
         // A one-shot recovery continuation preserves history and tool results,
         // but asks every provider to omit its outbound tools array.
@@ -1014,6 +1094,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // iteration. Rust owns transport retries, so the renderer only keeps
         // safe display data and must not parse tools, compact, or recurse.
         if (responseDisposition.kind === "incomplete") {
+          runFailed = true;
           ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
             currentMessages.map((currentMessage) =>
               currentMessage.id === currentAssistantMessageId
@@ -1049,8 +1130,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const visibleToolCalls = toolCalls;
 
         const loopWillContinue =
-          toolCalls.length > 0 ||
-          (ctx.pendingQueueRef.current.get(effectiveKey)?.length ?? 0) > 0;
+          toolCalls.length > 0 || hasPendingSteering(ctx, effectiveKey);
         if (
           loopWillContinue &&
           response.tokenUsage &&
@@ -1180,79 +1260,36 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         );
 
         if (responseFailed) {
+          runFailed = true;
           return;
         }
 
-        // If no tool calls, check for pending user messages before finishing.
-        // This injects messages queued during AI streaming without waiting for
-        // the entire outer handleSendMessage to complete.
+        // A model-only response ends the run unless a same-run steer is waiting.
+        // Follow-up queue entries must never extend this recursive loop.
         if (toolCalls.length === 0) {
-          const pendingQueueNoTools =
-            ctx.pendingQueueRef.current.get(effectiveKey) ?? [];
-          if (pendingQueueNoTools.length > 0) {
-            // 为待发消息创建专属 checkpoint：回滚到这条消息时能恢复到它
-            // 处理前的文件状态（此前刷新路径不建 checkpoint，回滚这类
-            // 消息永远显示"无文件变更"，且后续消息的变更还会错记到更早
-            // 的 checkpoint 上）。创建期间 run 被中止/顶替时 checkpoint
-            // 已由 createFlushCheckpoint 删除，此处直接放弃刷新，队列
-            // 保持原样交给后续 run 处理，避免消息悬空。
-            const flushDirPath = await resolveConversationWorkspacePath(
-              response.conversationId ?? currentConversationId ?? "",
-              sessionDirId,
-              directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
-              iterRef?.worktreeMode ?? false,
-              iterRef?.worktreeId,
-            );
-            const flushCheckpointId = await createFlushCheckpoint(
-              effectiveKey,
-              flushDirPath,
-            );
-            if (isRunCancelled(effectiveKey)) {
-              return;
-            }
-            if (pendingQueueNoTools.length === 0) {
-              // 创建期间用户撤回了全部待发消息：不刷新，丢弃 checkpoint。
-              if (flushCheckpointId) {
-                deleteCheckpoints([flushCheckpointId]);
-              }
-              return;
-            }
-            ctx.pendingQueueRef.current.delete(effectiveKey);
-            const pendingText = pendingQueueNoTools
-              .map((item) => item.text)
-              .join("\n\n");
-            // 显示镜像只反映当前激活会话的队列（会话隔离）。
-            if (ctx.activeSessionKeyRef.current === effectiveKey) {
-              ctx.setActivePendingMessages([]);
-            }
-
-            const pendingUserMsg: ChatConversationMessage = {
-              id: createMessageId("user"),
-              role: "user",
-              content: pendingText,
-              timestamp: formatMessageTime(),
-              status: "sent",
-              checkpointId: flushCheckpointId,
-            };
+          const steering = await consumeSteering(
+            effectiveKey,
+            response.conversationId,
+          );
+          if (isRunCancelled(effectiveKey)) return;
+          if (steering.messages.length > 0) {
             const nextAssistantId = createMessageId("assistant");
-            const nextPendingAssistant: ChatConversationMessage = {
-              id: nextAssistantId,
-              role: "assistant",
-              content: "",
-              timestamp: formatMessageTime(),
-              status: "sending",
-              model: capturedOptions.model,
-            };
             ctx.updateSessionMessages(effectiveKey, (currentMessages) => [
               ...currentMessages,
-              pendingUserMsg,
-              nextPendingAssistant,
+              {
+                id: nextAssistantId,
+                role: "assistant",
+                content: "",
+                timestamp: formatMessageTime(),
+                status: "sending",
+                model: capturedOptions.model,
+              },
             ]);
             await runAgentLoop(
               nextAssistantId,
-              [{ role: "user", content: pendingText }],
+              steering.messages,
               response.conversationId,
-              flushCheckpointId,
+              steering.checkpointId ?? checkpointId,
             );
           }
           return;
@@ -1294,11 +1331,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               ),
             );
           }
-          ctx.pendingQueueRef.current.delete(effectiveKey);
-          // 显示镜像只反映当前激活会话的队列（会话隔离）。
-          if (ctx.activeSessionKeyRef.current === effectiveKey) {
-            ctx.setActivePendingMessages([]);
-          }
+          runFailed = true;
           return;
         }
 
@@ -1471,11 +1504,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 : currentMessage,
             ),
           );
-          ctx.pendingQueueRef.current.delete(effectiveKey);
-          // 显示镜像只反映当前激活会话的队列（会话隔离）。
-          if (ctx.activeSessionKeyRef.current === effectiveKey) {
-            ctx.setActivePendingMessages([]);
-          }
+          // Queue survives terminal paths; it must not bypass a stopped or failed run.
+          runFailed = true;
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1519,11 +1549,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           executableToolCalls.length === 0
         ) {
           if (duplicateRecoveryAttempted) {
-            ctx.pendingQueueRef.current.delete(effectiveKey);
-            // 显示镜像只反映当前激活会话的队列（会话隔离）。
-            if (ctx.activeSessionKeyRef.current === effectiveKey) {
-              ctx.setActivePendingMessages([]);
-            }
+            runFailed = true;
             if (response.conversationId) {
               await window.snow.appendToolMessage(
                 response.conversationId,
@@ -1560,11 +1586,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         if (userQuestionCancelled) {
-          ctx.pendingQueueRef.current.delete(effectiveKey);
-          // 显示镜像只反映当前激活会话的队列（会话隔离）。
-          if (ctx.activeSessionKeyRef.current === effectiveKey) {
-            ctx.setActivePendingMessages([]);
-          }
+          runFailed = true;
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1578,11 +1600,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // 新一轮请求。若拒绝可续跑（用户填写理由 / 敏感命令被拒绝），则拒绝
         // 结果已在上方写入 toolResults，走正常续跑分支让 AI 继续处理。
         if (allToolsRejected && !hasContinuableRejection) {
-          ctx.pendingQueueRef.current.delete(effectiveKey);
-          // 显示镜像只反映当前激活会话的队列（会话隔离）。
-          if (ctx.activeSessionKeyRef.current === effectiveKey) {
-            ctx.setActivePendingMessages([]);
-          }
+          runFailed = true;
           if (response.conversationId) {
             await window.snow.appendToolMessage(
               response.conversationId,
@@ -1592,61 +1610,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           return;
         }
 
-        const pendingQueueForTools =
-          ctx.pendingQueueRef.current.get(effectiveKey) ?? [];
         const nextMessages: {
           role: "user" | "assistant" | "system" | "developer" | "tool";
           content: string;
           toolResultsJson?: string;
         }[] = [{ role: "tool", content: toolResultContent, toolResultsJson }];
-        let pendingFlushCheckpointId: string | undefined;
-        if (pendingQueueForTools.length > 0) {
-          // 与无工具刷新分支一致：先为待发消息建立专属 checkpoint，再
-          // 消费队列。否则回滚到这条消息永远没有文件变更，且后续消息
-          // 的变更会错记到更早的 checkpoint 上。
-          const flushDirPath = await resolveConversationWorkspacePath(
-            response.conversationId ?? currentConversationId ?? "",
-            sessionDirId,
-            directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
-            iterRef?.worktreeMode ?? false,
-            iterRef?.worktreeId,
-          );
-          pendingFlushCheckpointId = await createFlushCheckpoint(
-            effectiveKey,
-            flushDirPath,
-          );
-          if (isRunCancelled(effectiveKey)) {
-            return;
-          }
-          if (pendingQueueForTools.length === 0) {
-            // 创建期间用户撤回了全部待发消息：不刷新，丢弃 checkpoint。
-            if (pendingFlushCheckpointId) {
-              deleteCheckpoints([pendingFlushCheckpointId]);
-            }
-            return;
-          }
-          ctx.pendingQueueRef.current.delete(effectiveKey);
-          const pendingText = pendingQueueForTools
-            .map((item) => item.text)
-            .join("\n\n");
-          // 显示镜像只反映当前激活会话的队列（会话隔离）。
-          if (ctx.activeSessionKeyRef.current === effectiveKey) {
-            ctx.setActivePendingMessages([]);
-          }
-          const pendingUserMsgForTools: ChatConversationMessage = {
-            id: createMessageId("user"),
-            role: "user",
-            content: pendingText,
-            timestamp: formatMessageTime(),
-            status: "sent",
-            checkpointId: pendingFlushCheckpointId,
-          };
-          ctx.updateSessionMessages(effectiveKey, (currentMessages) => [
-            ...currentMessages,
-            pendingUserMsgForTools,
-          ]);
-          nextMessages.push({ role: "user", content: pendingText });
-        }
+        // All tool results are settled before steering is appended. Queue is
+        // intentionally not touched at this boundary.
+        const steering = await consumeSteering(
+          effectiveKey,
+          response.conversationId,
+        );
+        if (isRunCancelled(effectiveKey)) return;
+        nextMessages.push(...steering.messages);
+        const pendingFlushCheckpointId = steering.checkpointId;
 
         const newAssistantMessageId = createMessageId("assistant");
         const newPendingAssistant: ChatConversationMessage = {
@@ -1773,6 +1750,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         //   0 = pass (stdout injected as [Hook Context])
         //   1 = warn (warning text injected as [Hook Warning])
         //   2+ = abort (AI loop interrupted, error shown to user)
+        // Hooks may fail open as before, but a model/steering failure must never
+        // be mistaken for a hook error and replay the original task a second time.
+        let agentLoopStarted = false;
+        const startInitialLoop = async (content: string): Promise<void> => {
+          agentLoopStarted = true;
+          await runAgentLoop(
+            assistantMessageId,
+            [{ role: "user", content }],
+            isPendingSessionKey(sessionKey) ? undefined : sessionKey,
+            checkpointId,
+          );
+        };
         try {
           const hookContext = JSON.stringify({
             message: trimmed,
@@ -1804,6 +1793,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
 
           if (outcome.kind === "abort") {
+            runFailed = true;
             ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
               currentMessages.map((currentMessage) =>
                 currentMessage.id === assistantMessageId
@@ -1831,6 +1821,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }
 
             if (!userDecision) {
+              runFailed = true;
               ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
                 currentMessages.map((currentMessage) =>
                   currentMessage.id === assistantMessageId
@@ -1847,12 +1838,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               return;
             }
 
-            await runAgentLoop(
-              assistantMessageId,
-              [{ role: "user", content: trimmed }],
-              isPendingSessionKey(sessionKey) ? undefined : sessionKey,
-              checkpointId,
-            );
+            await startInitialLoop(trimmed);
             return;
           }
 
@@ -1863,49 +1849,114 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             effectiveMessage = `${trimmed}\n\n[Hook Context]\n${outcome.context}`;
           }
 
-          await runAgentLoop(
-            assistantMessageId,
-            [{ role: "user", content: effectiveMessage }],
-            isPendingSessionKey(sessionKey) ? undefined : sessionKey,
-            checkpointId,
-          );
+          await startInitialLoop(effectiveMessage);
         } catch (hookError) {
-          // If hook execution fails, fall back to sending the original message
-          await runAgentLoop(
-            assistantMessageId,
-            [{ role: "user", content: trimmed }],
-            isPendingSessionKey(sessionKey) ? undefined : sessionKey,
-            checkpointId,
-          );
+          if (agentLoopStarted) throw hookError;
+          // Only hook execution failures may fall back to the original input.
+          await startInitialLoop(trimmed);
         }
       };
 
       let runFailed = false;
+      const reportRunError = (error: unknown): void => {
+        runFailed = true;
+        if (isRunCancelled(finalSessionKey)) return;
+        const ref = ctx.sessionsRefData.current.get(finalSessionKey);
+        if (ref) ref.streamId = null;
+        ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
+          currentMessages.map((currentMessage) =>
+            currentMessage.status === "sending"
+              ? {
+                  ...currentMessage,
+                  content: getErrorMessage(error),
+                  timestamp: formatMessageTime(),
+                  status: "error",
+                  isRetrying: false,
+                }
+              : currentMessage,
+          ),
+        );
+      };
       void initCheckpointAndRun()
-        .catch((error: unknown) => {
-          runFailed = true;
-          ctx.updateSessionField(finalSessionKey, "isStreaming", false);
-          ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
+        .catch(reportRunError)
+        .finally(async () => {
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
-          if (ref) {
-            ref.streamId = null;
+          // Catch a steer arriving after the final response's boundary check.
+          // Closing admission synchronously after this loop makes inputs arriving
+          // during onStop ordinary follow-ups, not abandoned same-run steers.
+          try {
+            while (
+              !runFailed &&
+              !isRunCancelled(finalSessionKey) &&
+              hasPendingSteering(ctx, finalSessionKey)
+            ) {
+              const steering = await consumeSteering(
+                finalSessionKey,
+                isPendingSessionKey(finalSessionKey)
+                  ? undefined
+                  : finalSessionKey,
+              );
+              if (!steering.messages.length || isRunCancelled(finalSessionKey))
+                break;
+              const nextAssistantId = createMessageId("assistant");
+              ctx.updateSessionMessages(finalSessionKey, (currentMessages) => [
+                ...currentMessages,
+                {
+                  id: nextAssistantId,
+                  role: "assistant",
+                  content: "",
+                  timestamp: formatMessageTime(),
+                  status: "sending",
+                  model: capturedOptions.model,
+                },
+              ]);
+              await runAgentLoop(
+                nextAssistantId,
+                steering.messages,
+                isPendingSessionKey(finalSessionKey)
+                  ? undefined
+                  : finalSessionKey,
+                steering.checkpointId,
+              );
+            }
+          } catch (error) {
+            reportRunError(error);
           }
-          ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
-            currentMessages.map((currentMessage) =>
-              currentMessage.status === "sending"
-                ? {
-                    ...currentMessage,
-                    content: getErrorMessage(error),
-                    timestamp: formatMessageTime(),
-                    status: "error",
-                    isRetrying: false,
-                  }
-                : currentMessage,
-            ),
-          );
-        })
-        .finally(() => {
-          const ref = ctx.sessionsRefData.current.get(finalSessionKey);
+          if (!ref || ref.runId !== currentRunId) {
+            // Abort increments the generation. Keep its lifecycle hook, but never
+            // mutate the replacement run's counters, locks, or pending queue.
+            await runHook(
+              "onStop",
+              sessionDirId ?? undefined,
+              JSON.stringify({
+                conversationId: isPendingSessionKey(finalSessionKey)
+                  ? undefined
+                  : finalSessionKey,
+                cwd: directoryIdToPath(sessionDirId) ?? ctx.directoryPath ?? "",
+                reason: "aborted",
+              }),
+            )
+              .then((hookResult) => {
+                if (
+                  hookResult &&
+                  ctx.sessionsRefData.current.has(finalSessionKey)
+                ) {
+                  ctx.updateSessionMessages(finalSessionKey, (messages) =>
+                    appendHookExecutionToMessage(
+                      messages,
+                      toNonBlockingRecord(hookResult.record),
+                      assistantMessageId,
+                    ),
+                  );
+                }
+              })
+              .catch(() => {
+                // Hook failure must not resurrect a stopped run.
+              });
+            window.snow.notifyPetTurnEnded(petTurnId, true);
+            return;
+          }
+          ref.activeSendOptions = undefined;
 
           // AI 流程完全结束：把本次 run 的耗时与累计 token 累加进会话
           // 统计（内存 + DB 双向，展示的是整个会话的累计值）。耗时用
@@ -1941,10 +1992,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               });
           }
 
-          // Execute onStop hooks (fire-and-forget). This is the single
-          // convergence point for ALL stop scenarios: natural completion,
-          // user abort, error, and superseded by a newer run. The hook
-          // runs regardless of why the AI loop stopped.
+          // Keep the run locked through stop-hook cleanup before starting a follow-up.
           const stopDirId = ref?.directoryId ?? sessionDirId ?? ctx.directoryId;
           const onStopMessageId = ctx.sessionsRef.current[
             finalSessionKey
@@ -1956,7 +2004,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             cwd: directoryIdToPath(stopDirId) ?? ctx.directoryPath ?? "",
             reason: isRunCancelled(finalSessionKey) ? "aborted" : "completed",
           });
-          void runHook("onStop", stopDirId ?? undefined, onStopContext)
+          await runHook("onStop", stopDirId ?? undefined, onStopContext)
             .then((hookResult) => {
               if (hookResult) {
                 ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
@@ -1978,8 +2026,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           );
 
           const ownsSession = !!ref && ref.runId === currentRunId;
+          if (!ownsSession) return;
           if (ownsSession) {
             ref.isSending = false;
+            ref.activeTaskMessages = undefined;
+            demotePendingSteering(ctx, finalSessionKey);
             ctx.updateSessionField(finalSessionKey, "isStreaming", false);
             ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
             ctx.updateSessionField(finalSessionKey, "isAborting", false);
@@ -2006,24 +2057,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               });
           }
 
-          // Flush pending messages queued while this session was busy.
-          const pendingQueue =
-            ctx.pendingQueueRef.current.get(finalSessionKey) ?? [];
-          if (!isRunCancelled(finalSessionKey) && pendingQueue.length > 0) {
-            ctx.pendingQueueRef.current.delete(finalSessionKey);
-            const combined = pendingQueue.map((item) => item.text).join("\n\n");
-            const lastOptions =
-              pendingQueue[pendingQueue.length - 1]?.options ?? {};
-            // 显示镜像只反映当前激活会话的队列（会话隔离）。
-            if (ctx.activeSessionKeyRef.current === finalSessionKey) {
-              ctx.setActivePendingMessages([]);
+          // Only the owning, successfully completed run can start one FIFO task.
+          // Stops/errors keep the remaining queue visible and withdrawable.
+          if (ownsSession && !runFailed && !isRunCancelled(finalSessionKey)) {
+            const next = takeNextQueuedMessage(ctx, finalSessionKey);
+            if (next) {
+              ctx.handleSendMessageRef.current(next.text, {
+                ...next.options,
+                deliveryMode: "queue",
+                targetSessionKey: finalSessionKey,
+              });
+              return;
             }
-            // 显式指定目标会话：即使期间用户已切到其他会话/新建会话视图，
-            // 排队消息也必须发回队列所属的会话，且不重置用户的新建意图。
-            ctx.handleSendMessageRef.current(combined, {
-              ...lastOptions,
-              targetSessionKey: finalSessionKey,
-            });
           }
 
           // If this is a background conversation (not the active one),

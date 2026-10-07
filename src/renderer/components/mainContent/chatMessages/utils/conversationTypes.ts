@@ -335,6 +335,9 @@ export type ConversationSessionRef = {
    */
   summaryPromise: Promise<unknown> | null;
   isSending: boolean;
+  /** Captured configuration and user instructions belonging to the active run. */
+  activeSendOptions?: ChatInputSendOptions;
+  activeTaskMessages?: { role: "user"; content: string }[];
   isAbortRequested: boolean;
   /**
    * Generation counter incremented on every handleSendMessage and
@@ -549,6 +552,8 @@ export type UserQuestionTarget = {
 export type PendingQueueItem = {
   text: string;
   options: ChatInputSendOptions;
+  /** A steer belongs to this generation, never to a later replacement run. */
+  steeringRunId?: number;
 };
 
 export type ConversationNotificationContext = {
@@ -939,6 +944,7 @@ export type UseChatConversationResult = {
   loadOlderMessages: () => Promise<void>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
+  pendingMessageModes?: ("queue" | "steer")[];
   /** 撤回一条待发送消息。targetSessionKey 缺省为当前激活会话（桌面面板
    *  只操作激活会话）；远控等跨会话通道可指定“消息所属会话”，从该会话的
    *  队列移除（目标为后台会话时不更新显示镜像，切回时重载）。返回原文；

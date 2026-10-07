@@ -17,6 +17,8 @@ export type ConversationRuntimeConfigOverride = {
 };
 
 export type ChatInputSendOptions = {
+  /** Manual busy-send intent. Omitted programmatic sends always queue. */
+  deliveryMode?: "queue" | "steer";
   model?: string;
   apiProfile?: string;
   /** 回合类型：review 表示代码审查任务（桌面宠物播放 review 专属动画）。 */
@@ -82,6 +84,7 @@ export type ChatInputProps = {
    */
   loadOlderMessages: () => Promise<void>;
   pendingMessages?: string[];
+  pendingMessageModes?: ("queue" | "steer")[];
   onWithdrawPendingMessage?: (index: number) => string | null;
   onSendPendingMessageNow?: (index: number) => void;
   onCompactConversation?: (
@@ -196,7 +199,7 @@ export type ChatInputActions = {
   setManualValue: (value: string) => void;
   setIsManualMode: (value: boolean) => void;
   handleChange: (value: string) => void;
-  handleSend: () => void;
+  handleSend: (deliveryMode?: "queue" | "steer") => void;
   handleAbort: () => void;
   handleKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   handleSelectModel: (modelId: string) => Promise<void>;
@@ -230,6 +233,7 @@ export type ChatInputViewProps = ChatInputState &
     /** 加载更早一页历史消息（保留聊天视口锚点）。 */
     loadOlderMessages: () => Promise<void>;
     pendingMessages: string[];
+    pendingMessageModes?: ("queue" | "steer")[];
     onWithdrawPendingMessage?: (index: number) => string | null;
     onSendPendingMessageNow?: (index: number) => void;
     onCompactConversation?: (

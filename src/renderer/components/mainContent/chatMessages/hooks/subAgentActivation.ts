@@ -5,10 +5,19 @@ import type {
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
+import type { ChatInputSendOptions } from "../../chatInput/types";
+import {
+  demotePendingSteering,
+  hasPendingSteering,
+  refreshPendingMessages,
+  takeNextQueuedMessage,
+  takePendingSteering,
+} from "../utils/pendingInputs";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import type { ChatConversationRecord } from "../../../../../preload";
 import {
   createMessageId,
+  deleteCheckpoints,
   directoryIdToPath,
   formatMessageTime,
   formatMcpToolResultForModel,
@@ -137,6 +146,97 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
   const agentName = runtimeConfig.agentName;
   const subAgentToolsJson = runtimeConfig.toolsJson;
   const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
+  const sendOptions: ChatInputSendOptions = {
+    apiProfile: runtimeConfig.apiProfile,
+    model: runtimeConfig.model,
+    thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+    responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+  };
+  // Delegated sessions keep their configured tool set/prompt. A request to
+  // change that run's configuration stays queued, rather than being discarded
+  // or silently executed with a different configuration.
+  const supportsQueuedOptions = (options: ChatInputSendOptions): boolean =>
+    (!options.apiProfile || options.apiProfile === sendOptions.apiProfile) &&
+    (!options.model || options.model === sendOptions.model) &&
+    (options.thinkingStrength === undefined ||
+      options.thinkingStrength === sendOptions.thinkingStrength) &&
+    (options.responsesFastMode == null ||
+      options.responsesFastMode === sendOptions.responsesFastMode) &&
+    (!options.kind || options.kind === "chat") &&
+    (!options.targetSessionKey || options.targetSessionKey === subConvId) &&
+    (options.conversationRuntimeConfigOverride?.thinkingStrength == null ||
+      options.conversationRuntimeConfigOverride.thinkingStrength ===
+        sendOptions.thinkingStrength) &&
+    (options.conversationRuntimeConfigOverride?.responsesFastMode == null ||
+      options.conversationRuntimeConfigOverride.responsesFastMode ===
+        sendOptions.responsesFastMode);
+  let stopped = false;
+  let activeCheckpointId: string | undefined;
+  let activeCheckpointWorkDir = subCheckpointWorkDir;
+  const createPendingCheckpoint = async (): Promise<string | undefined> => {
+    const workDir = await resolveConversationWorkspacePath(
+      subConvId,
+      dirId,
+      subCheckpointWorkDir ?? directoryIdToPath(dirId) ?? ctx.directoryPath,
+    );
+    if (!workDir || isSubCancelled()) return undefined;
+    activeCheckpointWorkDir = workDir;
+    return window.snow.createCheckpoint(workDir).catch(() => undefined);
+  };
+  const appendPendingUsers = (
+    texts: string[],
+    checkpointId?: string,
+  ): { role: "user"; content: string }[] => {
+    const messages = texts.map((content) => ({
+      role: "user" as const,
+      content,
+    }));
+    // Only newly consumed pending input changes the approved constraints;
+    // the original delegated task never passes through this helper.
+    if (
+      texts.length &&
+      ctx.sessionsRefData.current.get(parentConversationId)?.planMode
+    ) {
+      planApprovedSessionKeysRef.current.delete(parentConversationId);
+    }
+    const ref = ctx.sessionsRefData.current.get(subConvId);
+    if (ref) {
+      ref.activeTaskMessages = [...(ref.activeTaskMessages ?? []), ...messages];
+      activeCheckpointId = checkpointId;
+      if (checkpointId) {
+        ref.checkpointIds.push(checkpointId);
+      }
+    }
+    ctx.updateSessionMessages(subConvId, (currentMessages) => [
+      ...currentMessages,
+      ...messages.map((message) => ({
+        ...message,
+        id: createMessageId("user"),
+        checkpointId,
+        timestamp: formatMessageTime(),
+        status: "sent" as const,
+      })),
+    ]);
+    return messages;
+  };
+  const consumeSteering = async (): Promise<
+    { role: "user"; content: string }[]
+  > => {
+    if (stopped || !hasPendingSteering(ctx, subConvId) || isSubCancelled())
+      return [];
+    // Await the checkpoint BEFORE selecting: a withdrawal during the await
+    // must not suppress the ordinary tool-results continuation.
+    const checkpointId = await createPendingCheckpoint();
+    const items = isSubCancelled() ? [] : takePendingSteering(ctx, subConvId);
+    if (!items.length) {
+      if (checkpointId) deleteCheckpoints([checkpointId]);
+      return [];
+    }
+    return appendPendingUsers(
+      items.map((item) => item.text),
+      checkpointId,
+    );
+  };
 
   // ---------------------------------------------------------------------
   // 子代理队友通信（sub-agents-listTeammates / sub-agents-sendMessage）
@@ -229,7 +329,11 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       // 消息自带发送方标识，目标子代理收到后可知来源。
       const queuedText = `[来自子代理 ${senderAgentName} (${senderConvId})]\n${message}`;
       const queue = ctx.pendingQueueRef.current.get(targetConvId) ?? [];
-      queue.push({ text: queuedText, options: {} });
+      queue.push({
+        text: queuedText,
+        options: { deliveryMode: "steer" },
+        steeringRunId: ctx.sessionsRefData.current.get(targetConvId)?.runId,
+      });
       ctx.pendingQueueRef.current.set(targetConvId, queue);
       // 目标会话若正处于激活状态，让 Pending 消息气泡实时可见。
       if (ctx.activeConversationIdRef.current === targetConvId) {
@@ -290,13 +394,14 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       {
         messages: subMessages,
         conversationId: subConvId,
+        checkpointId: activeCheckpointId,
         directoryId: dirId,
         apiProfile: runtimeConfig.apiProfile,
         model: runtimeConfig.model,
         // Use the resolved per-run snapshot so restore/compaction cannot
         // re-read a changed Profile default mid-run.
         thinkingStrength: runtimeConfig.effectiveThinkingStrength,
-        responsesFastMode: runtimeConfig.responsesFastMode,
+        responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
         resumeAfterCompaction,
         subAgentToolsJson,
         subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
@@ -412,6 +517,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     // loop. Keep display-safe content and metadata, but never parse,
     // authorize, execute, or return incomplete tool arguments.
     if (subResponseDisposition.kind === "incomplete") {
+      stopped = true;
       const currentSubAssistant = ctx.sessionsRef.current?.[
         subConvId
       ]?.messages.find((message) => message.id === subAssistantMessageId);
@@ -453,6 +559,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         : [];
 
     if (subResponseFailed) {
+      stopped = true;
       const failureContent =
         subResponse.content || "Sub-agent request failed. Please retry.";
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
@@ -540,7 +647,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
               runtimeConfig.toolsJson,
               runtimeConfig.systemPrompt || undefined,
               runtimeConfig.effectiveThinkingStrength,
-              runtimeConfig.responsesFastMode,
+              runtimeConfig.effectiveResponsesFastMode,
             );
 
             if (subCompactionResult) {
@@ -597,6 +704,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         ),
       );
 
+      const steering = await consumeSteering();
+      if (steering.length) return subAgentRunLoop(steering);
       return subResponse.content || "Sub-agent completed with no output.";
     }
 
@@ -771,8 +880,11 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
             subToolCall.name,
             subToolArgs,
             dirId,
-            parentCheckpointIdsRef.current,
-            subCheckpointWorkDir,
+            [
+              ...parentCheckpointIdsRef.current,
+              ...(activeCheckpointId ? [activeCheckpointId] : []),
+            ],
+            activeCheckpointWorkDir,
             subSensitiveAuthorizationToken,
             (chunk) => {
               if (!chunk.data) {
@@ -856,6 +968,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
           );
         }
       } catch (err) {
+        stopped = true;
         subToolErrored = true;
         const errorMessage = getErrorMessage(err);
 
@@ -980,20 +1093,17 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subToolResultMessage,
     ]);
 
-    // A sub-agent cannot obtain Plan approval. Stop immediately and return
-    // control to the main loop instead of feeding the denial back into a
-    // recursive sub-agent iteration that could repeatedly retry the write.
-    // Queued user insertions are left in place: the post-loop flush below
-    // carries them over to the parent conversation.
+    // A Plan denial must stop the delegated run, preserving its own queue.
     if (parentPlanApprovalRequired) {
+      stopped = true;
       return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
     }
 
     if (subAllToolsRejected && !subHasContinuableRejection) {
+      stopped = true;
       return subToolResults.join("\n\n");
     }
 
-    const subPendingForTools = ctx.pendingQueueRef.current.get(subConvId) ?? [];
     const subToolResultsJson = JSON.stringify(subStructuredResults);
     const subNextMessages: {
       role: "user" | "assistant" | "system" | "developer" | "tool";
@@ -1006,33 +1116,79 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         toolResultsJson: subToolResultsJson,
       },
     ];
-    if (subPendingForTools.length > 0) {
-      ctx.pendingQueueRef.current.delete(subConvId);
-      const subPendingText = subPendingForTools
-        .map((item) => item.text)
-        .join("\n\n");
-      // 显示镜像只反映当前激活会话的队列（会话隔离）。
-      if (ctx.activeConversationIdRef.current === subConvId) {
-        ctx.setActivePendingMessages([]);
-      }
-      const subPendingUserMsg: ChatConversationMessage = {
-        id: createMessageId("user"),
-        role: "user",
-        content: subPendingText,
-        timestamp: formatMessageTime(),
-        status: "sent",
-      };
-      ctx.updateSessionMessages(subConvId, (currentMessages) => [
-        ...currentMessages,
-        subPendingUserMsg,
-      ]);
-      subNextMessages.push({ role: "user", content: subPendingText });
-    }
+    subNextMessages.push(...(await consumeSteering()));
 
     return subAgentRunLoop(subNextMessages);
   };
 
-  return subAgentRunLoop;
+  // The recursive loop is one complete task; only this outer owner drains
+  // follow-ups, keeping isSending true until the terminal finalizer.
+  return async (messages, resumeAfterCompaction = false): Promise<string> => {
+    activeCheckpointId = undefined;
+    activeCheckpointWorkDir = subCheckpointWorkDir;
+    let nextMessages = messages;
+    let summary = "";
+    let resume = resumeAfterCompaction;
+    let prepared =
+      ctx.sessionsRefData.current.get(subConvId)?.activeTaskMessages ===
+      messages;
+    try {
+      while (true) {
+        const ref = ctx.sessionsRefData.current.get(subConvId);
+        if (!ref || isSubCancelled()) return summary;
+        if (!prepared) {
+          demotePendingSteering(ctx, subConvId);
+          ref.runId += 1;
+        }
+        prepared = false;
+        ref.activeSendOptions = { ...sendOptions };
+        ref.activeTaskMessages = nextMessages
+          .filter((message) => message.role === "user")
+          .map((message) => ({ role: "user", content: message.content }));
+        stopped = false;
+        summary = await subAgentRunLoop(nextMessages, resume);
+        resume = false;
+        if (stopped || isSubCancelled()) return summary;
+        demotePendingSteering(ctx, subConvId);
+        while (true) {
+          const head = ctx.pendingQueueRef.current.get(subConvId)?.[0];
+          if (!head) return summary;
+          if (!supportsQueuedOptions(head.options)) {
+            const note =
+              "Queued message retained in this sub-agent: its requested configuration is not supported by this delegated runtime. Withdraw it or resume with compatible options.";
+            ctx.updateSessionMessages(subConvId, (currentMessages) => [
+              ...currentMessages,
+              {
+                id: createMessageId("assistant"),
+                role: "assistant",
+                content: note,
+                timestamp: formatMessageTime(),
+                status: "sent",
+              },
+            ]);
+            return `${summary}\n\n${note}`;
+          }
+          const checkpointId = await createPendingCheckpoint();
+          const current = ctx.pendingQueueRef.current.get(subConvId)?.[0];
+          if (isSubCancelled() || current !== head) {
+            if (checkpointId) deleteCheckpoints([checkpointId]);
+            if (isSubCancelled()) return summary;
+            continue;
+          }
+          const item = takeNextQueuedMessage(ctx, subConvId);
+          if (!item) {
+            if (checkpointId) deleteCheckpoints([checkpointId]);
+            return summary;
+          }
+          ref.activeTaskMessages = [];
+          nextMessages = appendPendingUsers([item.text], checkpointId);
+          break;
+        }
+      }
+    } finally {
+      demotePendingSteering(ctx, subConvId);
+    }
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -1091,28 +1247,17 @@ const createRunForceSendLoop = (
   };
 };
 
-/** 子代理会话收尾时的 Pending 队列转交工厂：子代理会话只读后，运行期间
- * 用户插入的消息不能丢失 —— 转交到父会话的 pending 队列，由父循环在下一
- * 个迭代边界（或用户下次发送）消费。 */
+/** 子代理收尾时保留本会话的 Pending 队列，并将未消费 steer 降级为 queue。 */
 const createForwardSubPendingQueue = (
   ctx: ConversationContextValue,
   parentConversationId: string,
 ): ((finishedSubConvId: string) => void) => {
+  // Legacy factory name retained; pending tasks belong to the sub-session,
+  // including on abort/error. Never transfer their authority to the parent.
+  void parentConversationId;
   return (finishedSubConvId: string): void => {
-    const subQueue = ctx.pendingQueueRef.current.get(finishedSubConvId) ?? [];
-    if (subQueue.length === 0) {
-      return;
-    }
-    ctx.pendingQueueRef.current.delete(finishedSubConvId);
-    const parentQueue =
-      ctx.pendingQueueRef.current.get(parentConversationId) ?? [];
-    parentQueue.push(...subQueue);
-    ctx.pendingQueueRef.current.set(parentConversationId, parentQueue);
-    // 显示镜像只反映当前激活会话的队列（会话隔离）：父会话是当前视图时
-    // 刷新为转交后的队列，否则不动作，等切回父会话时再从队列重载。
-    if (ctx.activeConversationIdRef.current === parentConversationId) {
-      ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
-    }
+    demotePendingSteering(ctx, finishedSubConvId);
+    refreshPendingMessages(ctx, finishedSubConvId);
   };
 };
 
@@ -1136,7 +1281,7 @@ type SubAgentFinalizeFn = (
 ) => Promise<string>;
 
 /** 子代理回合统一收尾工厂：标记只读、清理运行状态、广播终止事件、持久化
- * 状态、转交 Pending 队列，最后执行 onSubAgentComplete hooks。激活与
+ * 状态、保留 Pending 队列，最后执行 onSubAgentComplete hooks。激活与
  * 重新激活（sub-agents-continue，含重启后恢复）共用，保证收尾行为一致。 */
 const createSubAgentFinalizer = (
   deps: SubAgentFinalizerDeps,
@@ -1157,7 +1302,7 @@ const createSubAgentFinalizer = (
   return async (convId, summary, status): Promise<string> => {
     const finalRef = ctx.sessionsRefData.current.get(convId);
     // 用户在子代理运行中点击"立即发送"：先消费暂存消息继续回合，
-    // 再统一走终止收尾（terminated + 状态广播 + 队列转交父会话）。
+    // 再统一走终止收尾（terminated + 状态广播 + 队列保留本会话）。
     if (finalRef?.forceSendMessages?.length) {
       try {
         const forceSendSummary = await runForceSendLoop();
@@ -1175,6 +1320,8 @@ const createSubAgentFinalizer = (
       // input box.
       finalRef.subAgentTerminated = true;
       finalRef.isSending = false;
+      finalRef.activeSendOptions = undefined;
+      finalRef.activeTaskMessages = undefined;
     }
     ctx.updateSessionField(convId, "isStreaming", false);
     // 固化本次 run 总耗时（置 0 前读取），累加进会话统计（内存 + DB）。
@@ -1237,11 +1384,8 @@ const createSubAgentFinalizer = (
       )
       .catch(() => {});
 
-    // Flush user messages queued while the sub-agent was busy (inserting
-    // messages mid-run is allowed). A finished sub-agent conversation no
-    // longer accepts messages, so carry them to the parent conversation.
-    // This also covers aborted runs: with the sub-conversation input
-    // hidden, the queue would otherwise be orphaned and silently lost.
+    // Preserve unconsumed tasks locally; a terminal/aborted delegated session
+    // must never grant the parent authority to execute those messages.
     forwardSubPendingQueue(convId);
 
     if (status === "failed") {
@@ -1308,6 +1452,7 @@ type SubAgentResumeDeps = {
   summary: string;
   getAgentName: () => string;
   subAgentRunLoop: SubAgentRunLoop;
+  runtimeConfig: SubAgentRuntimeConfig;
   finalizeSubAgentSession: SubAgentFinalizeFn;
   parentCheckpointIdsRef: CheckpointIdsRef;
 };
@@ -1327,6 +1472,7 @@ const createSubAgentResume = (
     summary: activationSummary,
     getAgentName,
     subAgentRunLoop,
+    runtimeConfig,
     finalizeSubAgentSession,
     parentCheckpointIdsRef,
   } = deps;
@@ -1335,9 +1481,6 @@ const createSubAgentResume = (
     messages: { role: "user"; content: string }[],
     checkpointIds?: string[],
   ): Promise<string> => {
-    if (checkpointIds) {
-      parentCheckpointIdsRef.current = checkpointIds;
-    }
     const resumeRef = ctx.sessionsRefData.current.get(subConvId);
     if (!resumeRef) {
       return JSON.stringify({
@@ -1348,7 +1491,13 @@ const createSubAgentResume = (
     // 运行中：消息进入 Pending 队列，目标回合结束时自动切入。
     if (resumeRef.isSending && !resumeRef.subAgentTerminated) {
       const queue = ctx.pendingQueueRef.current.get(subConvId) ?? [];
-      queue.push(...messages.map((m) => ({ text: m.content, options: {} })));
+      queue.push(
+        ...messages.map((m) => ({
+          text: m.content,
+          options: { deliveryMode: "steer" as const },
+          steeringRunId: resumeRef.runId,
+        })),
+      );
       ctx.pendingQueueRef.current.set(subConvId, queue);
       if (ctx.activeConversationIdRef.current === subConvId) {
         ctx.setActivePendingMessages(queue.map((item) => item.text));
@@ -1364,9 +1513,21 @@ const createSubAgentResume = (
     // handleAbort 与暂停检查才能正常工作；广播 running 事件让 UI 立即
     // 恢复实时状态，并持久化 running 状态（重启后恢复的子代理 DB 里
     // 还是终态）。
+    if (checkpointIds) parentCheckpointIdsRef.current = checkpointIds;
     resumeRef.subAgentTerminated = false;
     resumeRef.isSending = true;
     resumeRef.isAbortRequested = false;
+    demotePendingSteering(ctx, subConvId);
+    resumeRef.runId += 1;
+    resumeRef.activeSendOptions = {
+      apiProfile: runtimeConfig.apiProfile,
+      model: runtimeConfig.model,
+      thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+      responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+    };
+    // The wrapper recognizes this prepared task by identity; steers admitted
+    // during the running-status write must keep this generation.
+    resumeRef.activeTaskMessages = messages;
     ctx.updateSessionField(subConvId, "isStreaming", true);
     resetRunStreamMetrics(ctx, subConvId);
     ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
@@ -1396,8 +1557,16 @@ const createSubAgentResume = (
       resumeUserMsg,
     ]);
 
-    const resumeSummary = await subAgentRunLoop(messages);
-    return finalizeSubAgentSession(subConvId, resumeSummary, "completed");
+    try {
+      const resumeSummary = await subAgentRunLoop(messages);
+      return finalizeSubAgentSession(subConvId, resumeSummary, "completed");
+    } catch (error) {
+      return finalizeSubAgentSession(
+        subConvId,
+        getErrorMessage(error),
+        "failed",
+      );
+    }
   };
 };
 
@@ -1618,6 +1787,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           summary: activationSummary,
           getAgentName: () => subAgentName ?? agentId,
           subAgentRunLoop,
+          runtimeConfig,
           finalizeSubAgentSession: subAgentFinalizer,
           parentCheckpointIdsRef,
         }),
@@ -1913,6 +2083,7 @@ const restoreSubAgentResumer = async (
       summary: record.summary || record.title,
       getAgentName: () => agentName || agentId,
       subAgentRunLoop,
+      runtimeConfig,
       finalizeSubAgentSession,
       parentCheckpointIdsRef,
     }),

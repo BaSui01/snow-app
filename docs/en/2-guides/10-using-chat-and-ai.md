@@ -79,6 +79,29 @@ The sidebar **Conversations** section normally shows only the **current project'
 - Paste or drag one or more images into the input. If the main model has no vision support, the auxiliary vision model produces a text description while retaining a safe `upload/...` reference to the original for later image editing;
 - See [Image Generation](9-image-generation.md) for generation and reference-image rules.
 
+### 2.4 Send Behavior While Busy
+
+Open **General settings → Send behavior while busy** and choose **Steer** or **Queue**. The default is **Steer** when no valid preference is saved; an explicitly saved Queue preference is preserved. The preference is persisted and synchronized to mounted composers after a successful save. A failed save shows an error and keeps the previous behavior.
+
+- **Queue** keeps the message in the current conversation's pending queue until its complete Agent run finishes normally. In the main conversation, this includes tool execution and stop-hook cleanup. Follow-up tasks run one at a time in FIFO order; they are not injected between tools or merged into one prompt.
+- **Steer** binds the message to the active run and adds requirements at a safe boundary after a model response or a complete tool batch settles. It continues the current task without canceling running tools or starting a parallel Agent loop. Pending input is labeled **Wait for steer processing**; once submitted in a model request it appears as a user message, which does not prove that the instruction has been executed successfully.
+- **Interrupt and send** remains a separate arrow action on a pending-message card. It stops the current run and resubmits the selected input; it is not steering.
+
+A run finishing means that the current Agent execution ends, not that the conversation window is closed or that a business goal is guaranteed to have succeeded. For example, queue “After this, organize the settings page” as a separate next task; steer “Keep the current public interface unchanged” to amend the task in progress. Neither steering nor interrupting automatically rolls back completed actions.
+
+While busy, the send button and the preferred send key use the saved behavior. The menu beside the button can send one message as Queue or Steer without changing that preference:
+
+| Preferred send key | Saved behavior | Alternate behavior for this send |
+| ------------------ | -------------- | -------------------------------- |
+| Enter              | Enter          | Ctrl/Cmd+Enter                   |
+| Ctrl/Cmd+Enter     | Ctrl/Cmd+Enter | Ctrl/Cmd+Shift+Enter             |
+
+`Shift+Enter` still inserts a newline, and IME composition does not trigger sending. Idle conversations send normally. Programmatic messages from plugins or scheduled tasks do not inherit the manual Steer preference.
+
+Queues stay scoped to their owning conversation. A user stop, terminal failure, or non-continuable authorization rejection retains pending messages without automatically starting the next task; unconsumed steers become queued follow-ups. A steer requesting incompatible runtime settings, such as another model or API profile, also becomes a follow-up. Sub-agents and Workflow nodes retain unsupported configuration changes with an explanatory message rather than forwarding them to the parent. Consuming new requirements in Plan Mode conservatively resets the applicable approval, so changed writes require approval again.
+
+**Pending queues are in-memory state for the current app run, with no promise of restoration after closing or restarting the app.** Only the send-behavior preference is persisted. A queued or pending steer can be withdrawn to the composer before consumption; an already-consumed instruction must be corrected by another message.
+
 ## 3. Complete Slash Command List
 
 Type `/` to open the command palette. The current version has exactly eleven commands:

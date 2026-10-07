@@ -104,13 +104,37 @@ Choose **Details** from a workspace's ellipsis/context menu to open that workspa
 
 The right panel is a **multi-tab** file reader. It reads local files or remote files through an existing SSH session, and editable text can be changed and saved back to the corresponding local or remote path.
 
-| File type        | Support                                                                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Text/code        | Syntax highlighting, line numbers, open at a target line, editing and saving, and in-file search                                              |
-| Markdown (`.md`) | Rendered preview for headings/tables/code/math/diagrams plus source mode; relative file links open in another tab; editing switches to source |
-| Images           | Preview; SVG has image/code dual modes                                                                                                        |
-| Office documents | Extracted text from PDF / Word / Excel / CSV and related formats                                                                              |
-| Binary           | A **Binary file** placeholder, with no text editing                                                                                           |
+| File type        | Support                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text/code        | Includes `.sql` and CSV: syntax highlighting, line numbers, target-line navigation, and in-file search; editing/saving is available when the original bytes can round-trip losslessly |
+| Markdown (`.md`) | Rendered preview for headings/tables/code/math/diagrams plus source mode; relative file links open in another tab; editing switches to source                                         |
+| Images           | Preview; SVG has image/code dual modes                                                                                                                                                |
+| Local Office/PDF | `.docx`, `.doc`, `.xlsx`, `.xls`, `.xlsb`, `.xlsm`, `.ods`, `.pptx`, `.ppt`, `.pdf`: extracted text, read-only, searchable and copyable                                               |
+| Binary           | A **Binary file** placeholder, with no text editing                                                                                                                                   |
+
+### Local Document and SQL Preview Boundaries
+
+- Use **Open file** on a Git **Changes** entry to read the current working-directory file. This is not an Office diff of the index or a historical commit and does not change existing diff semantics.
+- Office/PDF previews show **Read-only preview**. They do not preserve Word layout, Excel styles/charts or PPT animations, recalculate Excel formulas, or provide OCR for scanned PDFs. Native OOXML text extraction does not run document macros; security behavior of system converters used for legacy formats depends on their local configuration.
+- Document input is limited to **20 MiB** and extracted text to **2 MiB**. Exceeding either limit produces an explicit error, not silent truncation. The text limit is checked after the existing extractor returns the full text; it is not a peak-memory bound during parsing.
+- Legacy `.doc/.ppt` uses the existing system-tool path (macOS textutil, installed LibreOffice) and UTF-16 text-scan fallback. Extraction may be incomplete; failures advise conversion to a modern format.
+- `.sql` and CSV remain ordinary text, not extracted Office documents. Reading reuses encoding detection. Saving first verifies that re-encoding the original text with its detected encoding/BOM reproduces the original bytes exactly, then saves with that encoding. Text that cannot round-trip (currently including UTF-16) is read-only; UTF-32 retains the binary placeholder.
+- This extension is **local only**. SSH files continue using the existing remote reader; remote Office extraction is not promised.
+
+### Open-Source Reuse and PR Disclosure
+
+This feature adds no dependency, upgrades no parser, and ports no external project source code. It connects the repository's existing file-tool parsers to the reader. PRs must distinguish **existing dependency reuse**, **new dependencies**, and **inspiration/code ports**; a researched but unadopted project must not be listed as used.
+
+| Existing project                                                                                            | Actual reuse in this feature                                                                  | License declaration                  |
+| ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ |
+| [calamine](https://github.com/tafia/calamine "Pure Rust Excel and OpenDocument spreadsheet reader")         | Read Excel/ODS cells sheet by sheet through the existing text extractor                       | MIT                                  |
+| [pdf-extract](https://github.com/jrmuizel/pdf-extract "Rust library for extracting PDF text")               | Extract PDF text, without page rendering or OCR                                               | MIT                                  |
+| [zip](https://github.com/zip-rs/zip2 "Rust ZIP archive reader and writer")                                  | Existing DOCX/PPTX OOXML container access; XML-tag-to-text conversion remains repository code | MIT                                  |
+| [chardetng](https://github.com/hsivonen/chardetng "Legacy text character-encoding detector")                | Detect ordinary text encodings                                                                | Apache-2.0 OR MIT                    |
+| [encoding_rs](https://github.com/hsivonen/encoding_rs "Rust implementation of the Encoding Standard")       | Decode text and write back the original encoding when lossless                                | (Apache-2.0 OR MIT) AND BSD-3-Clause |
+| [highlight.js](https://github.com/highlightjs/highlight.js "Multilanguage code highlighting including SQL") | Retain the file reader's existing SQL/code syntax highlighting                                | BSD-3-Clause                         |
+
+Resolved versions come from `native/Cargo.lock` and the frontend lockfiles. Distribution must retain upstream license and copyright notices. PRs should also state local/SSH, read-only/editable, and extracted-text/original-layout boundaries, actual validation results and coverage gaps.
 
 ### Snow-Side Review Annotations
 

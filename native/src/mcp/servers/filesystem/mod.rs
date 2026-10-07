@@ -17,8 +17,8 @@ mod file_lock;
 mod format;
 mod fuzzy_edit;
 mod io;
-mod office;
-mod text_codec;
+pub(crate) mod office;
+pub(crate) mod text_codec;
 
 use text_codec::{decode_text_bytes, encode_text, encode_text_back, encoding_for_label};
 

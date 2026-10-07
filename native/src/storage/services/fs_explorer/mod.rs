@@ -4,6 +4,16 @@ use std::path::Path;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
+use crate::mcp::servers::filesystem::office::{
+    extract_office_document_text, office_document_kind, OfficeDocKind,
+};
+use crate::mcp::servers::filesystem::text_codec::{
+    decode_text_bytes, encode_text_back, DecodedText,
+};
+
+const MAX_DOCUMENT_INPUT_BYTES: u64 = 20 * 1024 * 1024;
+const MAX_DOCUMENT_TEXT_BYTES: usize = 2 * 1024 * 1024;
+
 mod browse;
 mod mutate;
 mod search;
@@ -161,15 +171,144 @@ pub fn read_file_content(file_path: &str) -> Result<FileContentResult> {
         )));
     }
 
+    if let Some(kind) = preview_document_kind(path) {
+        let size = fs::metadata(path)
+            .map_err(|e| {
+                Error::from_reason(format!("Failed to inspect file '{}': {}", file_path, e))
+            })?
+            .len();
+        if size > MAX_DOCUMENT_INPUT_BYTES {
+            return Err(Error::from_reason(format!(
+                "Document exceeds the 20 MiB preview input limit: {} bytes",
+                size
+            )));
+        }
+        let content = extract_office_document_text(path, kind)?;
+        if content.len() > MAX_DOCUMENT_TEXT_BYTES {
+            return Err(Error::from_reason(format!(
+                "Extracted document text exceeds the 2 MiB preview limit: {} bytes",
+                content.len()
+            )));
+        }
+        return Ok(FileContentResult {
+            content,
+            is_binary: false,
+            is_image: false,
+            is_svg: false,
+            mime_type: "application/x-snow-document-text".to_string(),
+            encoding: "utf8".to_string(),
+            size: size as i64,
+        });
+    }
+
     let buffer = fs::read(path)
         .map_err(|e| Error::from_reason(format!("Failed to read file '{}': {}", file_path, e)))?;
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    if IMAGE_EXTENSIONS.contains(&ext.as_str()) && ext != "svg" {
+        return Ok(process_file_content(file_path, buffer));
+    }
+    let size = buffer.len() as i64;
+    match decode_local_text(&buffer) {
+        Ok(decoded) => {
+            let can_write_losslessly =
+                encode_text_back(&decoded.text, decoded.encoding, decoded.had_bom)
+                    .is_ok_and(|bytes| bytes == buffer);
+            Ok(FileContentResult {
+                content: decoded.text,
+                is_binary: false,
+                is_image: ext == "svg",
+                is_svg: ext == "svg",
+                mime_type: if ext == "svg" {
+                    "image/svg+xml"
+                } else if can_write_losslessly {
+                    "text/plain"
+                } else {
+                    "application/x-snow-text-preview"
+                }
+                .to_string(),
+                encoding: "utf8".to_string(),
+                size,
+            })
+        }
+        Err(_) => Ok(FileContentResult {
+            content: base64_encode(&buffer),
+            is_binary: true,
+            is_image: false,
+            is_svg: false,
+            mime_type: "application/octet-stream".to_string(),
+            encoding: "base64".to_string(),
+            size,
+        }),
+    }
+}
 
-    Ok(process_file_content(file_path, buffer))
+// CSV is editable text, not an extracted document in the local preview.
+fn preview_document_kind(path: &Path) -> Option<OfficeDocKind> {
+    office_document_kind(path).filter(|kind| !matches!(kind, OfficeDocKind::Csv))
+}
+
+fn decode_local_text(buffer: &[u8]) -> std::result::Result<DecodedText, String> {
+    // The shared codec's UTF-32 label lookup is unsupported by encoding_rs.
+    // Avoid its panic and preserve these files as binary/read-only.
+    if buffer.starts_with(&[0xFF, 0xFE, 0x00, 0x00])
+        || buffer.starts_with(&[0x00, 0x00, 0xFE, 0xFF])
+    {
+        return Err("UTF-32 is not supported by the text codec".to_string());
+    }
+    let decoded = decode_text_bytes(buffer)?;
+    // The shared codec skips binary statistics for short files. NUL is never
+    // valid preview text, including short binary payloads; UTF-16 is decoded first.
+    if decoded.text.contains('\0') {
+        return Err("Binary content detected".to_string());
+    }
+    Ok(decoded)
 }
 
 /// Write text content to a file, creating it (and parent directories) if missing.
 pub fn write_file_content(file_path: &str, content: &str) -> Result<()> {
     let path = Path::new(file_path);
+    let bytes = if path.exists() {
+        if preview_document_kind(path).is_some() {
+            return Err(Error::from_reason("Document previews are read-only"));
+        }
+        let original = fs::read(path).map_err(|e| {
+            Error::from_reason(format!(
+                "Failed to read existing file '{}': {}",
+                file_path, e
+            ))
+        })?;
+        let ext = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if IMAGE_EXTENSIONS.contains(&ext.as_str()) && ext != "svg" {
+            return Err(Error::from_reason("Binary image files are read-only"));
+        }
+        let decoded = decode_local_text(&original).map_err(|e| {
+            Error::from_reason(format!(
+                "Cannot overwrite non-text file '{}': {}",
+                file_path, e
+            ))
+        })?;
+        // Require a lossless round trip before overwriting. In particular,
+        // encoding_rs cannot encode UTF-16 back, so those files remain read-only.
+        let round_trip = encode_text_back(&decoded.text, decoded.encoding, decoded.had_bom)
+            .map_err(Error::from_reason)?;
+        if round_trip != original {
+            return Err(Error::from_reason(format!(
+                "File is read-only because its original {} encoding cannot be preserved losslessly",
+                decoded.encoding.name()
+            )));
+        }
+        encode_text_back(content, decoded.encoding, decoded.had_bom).map_err(Error::from_reason)?
+    } else {
+        content.as_bytes().to_vec()
+    };
 
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -182,6 +321,6 @@ pub fn write_file_content(file_path: &str, content: &str) -> Result<()> {
         }
     }
 
-    fs::write(path, content.as_bytes())
+    fs::write(path, bytes)
         .map_err(|e| Error::from_reason(format!("Failed to write file '{}': {}", file_path, e)))
 }

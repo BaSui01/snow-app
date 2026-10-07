@@ -28,7 +28,7 @@ The **Plugins** button at the bottom of the sidebar (with an installed-count bad
 | **Plugin market**    | Install or update panel plugins and client scripts in one click from the snow-plugin-store index; installation, updates, and the author publishing flow live in the plugin market section                                          |
 | **Metadata catalog** | The app metadata domains plugins can read together with the write actions and the network capability a plugin can use                                                                                                              |
 
-Under the **Panel plugins** sub-tab the toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`; clicking any amber tag opens the "Privacy scopes" dialog, which explains each scope in one line and lists the metadata domains it unlocks (field-level declarations name the exact fields) plus the writable capabilities aggregated per write domain, along with where it is declared (`privacy` in `plugin.json` / `@snow-privacy` in the script metadata header). The **Script plugins** sub-tab shows the script's `@snow-privacy` declarations as the same amber badges and opens the very same dialog. The **Metadata catalog** tab shows "Reading", "Writable" and "Network" sub-tabs: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search, while the Writable sub-tab lists every write action with its required `scope` and declaration state and the Network sub-tab lists the `api.net.fetch` external request capability (forwarded by the main process, no privacy declaration needed). The per-row "Metadata n/34" and "Write n/204" links mark that plugin's declared (readable/writable) and undeclared (denied) domains and actions, so users can audit the `privacy` declaration. The page is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
+Under the **Panel plugins** sub-tab the toolbar offers **Install from folder** and **Refresh**; each row shows the plugin version, author and render mode, and a plugin that declares privacy scopes lists every requested data domain as an amber tag (localized, e.g. "API keys", "Messages") followed by the manifest `note`; clicking any amber tag opens the "Privacy scopes" dialog, which explains each scope in one line and lists the metadata domains it unlocks (field-level declarations name the exact fields) plus the writable capabilities aggregated per write domain, along with where it is declared (`privacy` in `plugin.json` / `@snow-privacy` in the script metadata header). The **Script plugins** sub-tab shows the script's `@snow-privacy` declarations as the same amber badges and opens the very same dialog. The **Metadata catalog** tab shows "Reading", "Writable" and "Network" sub-tabs: it groups all 34 domains with a one-line summary, the required privacy declaration, live-versus-polled behavior and accepted parameters, with keyword search, while the Writable sub-tab lists every write action with its required `scope` and declaration state and the Network sub-tab lists the `api.net.fetch` external request capability (forwarded by the main process, no privacy declaration needed). The per-row "Metadata n/34" and "Write n/205" links mark that plugin's declared (readable/writable) and undeclared (denied) domains and actions, so users can audit the `privacy` declaration. The page is management-only; open panels from the plus menu's Plugins group in the top bar or the right-panel plugin entry.
 
 ## Script plugins (client UI scripts)
 
@@ -367,11 +367,11 @@ export function mountFooter(container, api, context, signal) {
 
 `mountFooter(container, api, context, signal)` returns `void`, a cleanup function, or `{ unmount() }`, not a Promise. The `container` is dedicated to this contribution; mount only inside it. The frozen `context` is `{ slot: "message-footer", conversationId, messageId, directoryId }` (unknown directory is `undefined`). It contains no message body, thinking or file records: obtain data through privacy-checked metadata on demand. The host does not compute file statistics or worktree data.
 
-The footer receives a **lifecycle-scoped read-only API subset**: plugin identity fields, `t`, `log`, `assets.resolve`, `ui` (including `React`, `icon`, `messageFooterVersion`), and `metadata.get / subscribe / domains`. There is no `write`, `ai`, `net` or `storage`. Metadata defaults include the mounted `conversationId` and known `directoryId`; explicit caller parameters still work, and no tracking root is invented. Existing `privacy` declarations and field redaction remain in effect. Expired reads reject with `AbortError`, logs stop, late `get` / asset results are discarded, and subscription callbacks stop.
+The footer receives a **lifecycle-scoped read API subset plus a single file-reader navigation capability**: plugin identity fields, `t`, `log`, `assets.resolve`, `ui` (including `React`, `icon`, `messageFooterVersion`), and `metadata.get / subscribe / domains`. A frozen `write: { domains, run }` is also available, but there are no general write-domain shortcuts, `ai`, `net` or `storage`. `write.domains()` lists only `panels.openFile` (parameters and response in section 8.5). Detect its `id` and `granted` before calling `write.run("panels.openFile", { filePath })` on a user click. All other actions return `{ ok: false, action, denied: { reason: "unsupported-runtime" }, error }` at the footer boundary without delegating to host writes. Calls check `signal` and current conversation/mount identity first; expired `run` calls return `{ ok: false, action, error: "Footer context expired" }`, and late results are discarded (already dispatched navigation is not rolled back). Metadata defaults include the mounted `conversationId` and known `directoryId`; explicit caller parameters still work, and no tracking root is invented. Existing `privacy` declarations and field redaction remain in effect. Expired reads and `write.domains()` reject with `AbortError`, logs stop, late `get` / asset results are discarded, and subscription callbacks stop.
 
 Mounting is limited to the focused conversation whose **last non-tool message is this completed assistant reply**, with streaming, pause and abort all inactive; a new user message hides the previous footer. Disable, uninstall, record replacement after refresh, conversation/reply switches, a new run, locale changes and component unmount abort `signal` and remove containers, styles and subscriptions. The host owns subscription promises as well as subscriptions: it unsubscribes even when the plugin supplies no cleanup or the promise resolves after unmount. Throwing cleanup does not prevent host-resource release. One plugin's failure does not break other footers or chat.
 
-> The read-only API and lifecycle cleanup are **not a sandbox guarantee**. Initial ESM execution still runs in the main renderer, and the existing `window.SnowAppPlugin` global loading mechanism is not isolated. Install only trusted plugins. Use the explicitly passed `api` and `container`, not a captured global API or DOM outside the container. Enable/disable uses existing plugin management and never automatically starts writes or AI.
+> The restricted API and lifecycle cleanup are **not a sandbox guarantee**. Initial ESM execution still runs in the main renderer, and the existing `window.SnowAppPlugin` global loading mechanism is not isolated. Install only trusted plugins. Use the explicitly passed `api` and `container`, not a captured global API or DOM outside the container. Enable/disable uses existing plugin management and never automatically starts writes or AI.
 
 ### 7. Available metadata domains and privacy declarations
 
@@ -441,7 +441,7 @@ Missing or mistyped parameters and backend failures produce only `ok: false` plu
 
 #### 8.3 Declaration rules and sensitive scopes
 
-- An action whose `scope` is `null` is **public** and callable without any declaration (63 of the 204 actions).
+- An action whose `scope` is `null` is **public** and callable without any declaration (64 of the 205 actions).
 - A sensitive write action shares its scope with reading that same area: writing a memo needs `memos`, writing a file needs `filesystem`, and calling an MCP tool needs `mcpSecrets`.
 - Six sensitive scopes exist purely for writes (the original 21 are unchanged, 27 scopes in total):
 
@@ -468,7 +468,24 @@ The full definition of all 27 sensitive scopes lives in the [plugin metadata dom
 | `projects`       | —                | `projects.create`, `projects.addDirectory`, `projects.activate`, `projects.reorder`, `projects.relink`, `projects.undoRelink`                                                                                                       | Create a project folder, add an existing one, activate, reorder, relink a moved path, undo a relink    |
 | `collections`    | —                | `collections.create`, `collections.rename`, `collections.remove`, `collections.moveMember`, `collections.removeMember`, `collections.reorderMembers`                                                                                | Create, rename, and delete groups plus move members in, out, and into order                            |
 
-#### 8.5 Write action cheat sheet: system and UI (12)
+#### 8.5 Write action cheat sheet: system and UI (13)
+
+`panels.openFile` is public UI navigation (`scope: null`). It emits the existing `open-file` event to the built-in right-panel reader. It does not read or return file contents, or grant sensitive `filesystem` / `ssh` metadata access. Call it in response to a user clicking a file.
+
+```js
+const result = await api.write.run("panels.openFile", {
+  filePath: "D:/project/src/main.ts",
+  focusLine: 12,
+});
+// { ok: true, action: "panels.openFile",
+//   data: { requested: true, filePath: "D:/project/src/main.ts", isSsh: false } }
+```
+
+- `filePath` is a required non-empty string. Local paths must be absolute Windows drive, UNC, or POSIX paths. Relative paths, `file://` / `ssh://` file URLs, and `:line` / `#Lline` suffix parsing are not supported.
+- Optional `focusLine` is a positive safe integer (1-based). The reader derives the filename and tab title from the path.
+- For SSH, pass a remote absolute POSIX path (e.g. `/home/user/project/main.ts`) and `sshWorkspacePath: "ssh://user@host/home/user/project"`; optional `sshWorkspaceId` binds existing remote drafts. Connections, credentials, workspace write boundaries and errors use the host reader's existing flow. Plugin-provided SSH session IDs, credentials, and file contents are not accepted.
+- `requested: true` means only that the event was emitted; it does **not guarantee existence, a mounted panel, SSH connection, or successful loading**. The reader handles asynchronous loading without returning its result to the plugin. Invalid parameters return the standard `{ ok: false, action, error }` response.
+- ESM may use `api.write.panels.openFile(params)`; iframe uses `api.write.run`. Check `api.write.domains()` to detect availability on older hosts.
 
 | Domain        | Declaration     | Action ids                                                                                             | Behavior                                                                                       |
 | ------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
@@ -478,6 +495,7 @@ The full definition of all 27 sensitive scopes lives in the [plugin metadata dom
 | `chatInput`   | —               | `chatInput.insertText`, `chatInput.captureDraft`, `chatInput.applyDraft`, `chatInput.restoreDraft`     | Append text, or safely capture, apply and restore drafts using single-use tokens (section 6.1) |
 | `chatInput`   | `conversations` | `chatInput.sendMessage`                                                                                | Send a message to the active conversation                                                      |
 | `pluginsSelf` | —               | `pluginsSelf.openPanel`                                                                                | Open one of this plugin's own panels                                                           |
+| `panels`      | —               | `panels.openFile`                                                                                      | Request the built-in file reader (contract above)                                              |
 
 #### 8.6 Write action cheat sheet: app configuration (62)
 
@@ -525,7 +543,7 @@ The full definition of all 27 sensitive scopes lives in the [plugin metadata dom
 
 #### 8.8 User-visible surfaces
 
-- The "Write X/Y" badge on every Plugins page row: X counts the write actions the plugin has declared, Y is the total (204); an action counts as writable as soon as its scope is declared.
+- The "Write X/Y" badge on every Plugins page row: X counts the write actions the plugin has declared, Y is the total (205); an action counts as writable as soon as its scope is declared.
 - The "Writable" sub-tab of the Metadata catalog tab: it lists each `domain.action` with its required `scope` ("Public" for scope-less actions) and declaration state ("Writable" / "Not declared"), with the same keyword search as the metadata section.
 - Both surfaces render the same `api.write.domains()` data, so a panel can use it to check its own declaration state.
 
@@ -666,7 +684,7 @@ Entry fields (the authoritative JSON Schema is `app/entry.schema.json` in the re
 - `src/renderer/plugins/pluginRuntime.ts`, `src/renderer/plugins/pluginApi.ts`, `src/renderer/plugins/pluginIframeBridge.js`: ESM and iframe runtime assembly plus the API
 - `src/renderer/plugins/metadata/domains.ts`, `src/renderer/plugins/metadata/index.ts`: metadata domains and privacy redaction
 - `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`, `::WRITE_ACTION_IDS`: write execution, privacy-declaration checks, and the action list
-- `src/renderer/plugins/writes/domains/content.ts`, `system.ts`, `draft.ts`, `config.ts`, `admin.ts`: the 204 write action definitions (including 3 safe-draft actions; grouped as sections 8.4 to 8.7 here)
+- `src/renderer/plugins/writes/domains/content.ts`, `system.ts`, `draft.ts`, `config.ts`, `admin.ts`: the 205 write action definitions (including 3 safe-draft actions; grouped as sections 8.4 to 8.7 here)
 - `src/renderer/components/sidebar/PluginsPanel.tsx`: the three top-level tabs (Plugin list / Plugin market / Metadata catalog), the list sub-tabs (Panel plugins / Script plugins), their counters, and the Panel plugins toolbar
 - `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the Metadata catalog tab (Reading / Writable) and the badge data
 - `src/renderer/plugins/privacy.ts`, `src/renderer/components/sidebar/PluginPrivacyBadges.tsx`, `src/renderer/components/sidebar/PluginPrivacyDialog.tsx`: the privacy-scope badges and the "Privacy scopes" dialog shared by panel plugins and script plugins

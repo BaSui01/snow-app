@@ -8,6 +8,7 @@ import {
   callSnow,
   dispatchAppEvent,
   l10n,
+  optionalNumber,
   optionalString,
   requireRecord,
   requireString,
@@ -124,6 +125,74 @@ export const SYSTEM_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       const text = requireString(params, "text");
       dispatchAppEvent(PLUGIN_SEND_INPUT_MESSAGE_EVENT, { text });
       return { length: text.length };
+    },
+  },
+
+  {
+    domain: "panels",
+    action: "openFile",
+    // UI navigation only: file contents and SSH credentials stay in the host.
+    scope: null,
+    summary: l10n(
+      "Open a file in the built-in right-panel reader",
+      "在内置右侧文件阅读器中打开文件",
+      "在內建右側檔案閱讀器中開啟檔案",
+    ),
+    invoke: async ({ params }) => {
+      const filePath = requireString(params, "filePath");
+      const focusLine = optionalNumber(params, "focusLine");
+      const sshWorkspacePath = optionalString(params, "sshWorkspacePath");
+      const sshWorkspaceId = optionalString(params, "sshWorkspaceId");
+      if (filePath.includes("\0")) {
+        throw new Error(
+          "Parameter 'filePath' must not contain a null character",
+        );
+      }
+      if (
+        focusLine !== undefined &&
+        (!Number.isSafeInteger(focusLine) || focusLine < 1)
+      ) {
+        throw new Error(
+          "Parameter 'focusLine' must be a positive safe integer",
+        );
+      }
+      const isSsh = sshWorkspacePath !== undefined;
+      if (isSsh) {
+        // The reader resolves credentials itself; plugins cannot inject sessions.
+        if (
+          !/^ssh:\/\/[^/\s]+(?:\/.*)?$/.test(sshWorkspacePath) ||
+          sshWorkspacePath.includes("\0")
+        ) {
+          throw new Error(
+            "Parameter 'sshWorkspacePath' must be an SSH workspace URL",
+          );
+        }
+        if (!filePath.startsWith("/") || filePath.startsWith("//")) {
+          throw new Error(
+            "SSH 'filePath' must be a remote absolute path, not an SSH URL",
+          );
+        }
+      } else {
+        if (sshWorkspaceId !== undefined) {
+          throw new Error(
+            "Parameter 'sshWorkspaceId' requires 'sshWorkspacePath'",
+          );
+        }
+        if (!/^(?:[a-zA-Z]:[\\/]|\/|\\\\)/.test(filePath)) {
+          throw new Error("Local 'filePath' must be an absolute path");
+        }
+      }
+      rightPanelEvents.emit("open-file", {
+        filePath,
+        focusLine,
+        isSsh,
+        sshWorkspacePath,
+        sshWorkspaceRoot: sshWorkspacePath,
+        sshWorkspaceId,
+      });
+      // Event handling and file loading are asynchronous; this is not a receipt
+      // for successful reading, nor does it expose file data to the plugin.
+      return { requested: true, filePath, isSsh };
     },
   },
 

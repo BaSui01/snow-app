@@ -142,17 +142,39 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
     );
 
     let dispatch_started = Instant::now();
+    let deadline = tokio::time::Instant::from_std(dispatch_started + cmd.timeout);
     session
         .io
         .lock_state()
         .begin_command(&token, Arc::clone(&cmd.on_chunk), dispatch_started);
-    if let Err(error) = session.stdin.write_all(payload.as_bytes()).await {
+
+    // 命令下发必须与截止期限、取消令牌同场竞速：会话若不再消费 stdin（管道写满、
+    // pwsh 卡在上一条命令里），write_all 会一直挂起——此时还没进入下面的等待循环，
+    // deadline 与 abort 都无人监听，命令会永远停在「执行中」。写入阶段的中止/失败
+    // 与等待循环一样收口：杀掉会话、保留已产出的输出，并给出 timed_out / cancelled /
+    // failed 状态。
+    let mut write_abort: Option<SessionStatus> = None;
+    tokio::select! {
+        biased;
+        _ = cmd.cancel_token.cancelled() => {
+            write_abort = Some(cancel_status(cmd.tool_execution_id));
+        }
+        _ = tokio::time::sleep_until(deadline) => {
+            write_abort = Some(SessionStatus::TimedOut { watchdog: false });
+        }
+        result = session.stdin.write_all(payload.as_bytes()) => {
+            if let Err(error) = result {
+                write_abort = Some(SessionStatus::Failed {
+                    error: format!("Failed to write to the terminal session: {error}"),
+                });
+            }
+        }
+    }
+    if let Some(status) = write_abort {
         let (stdout, stderr, first_output_ms) = session.take_output();
         session.kill().await;
         return SessionOutcome {
-            status: SessionStatus::Failed {
-                error: format!("Failed to write to the terminal session: {error}"),
-            },
+            status,
             stdout,
             stderr,
             first_output_ms,
@@ -163,7 +185,6 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
         };
     }
 
-    let deadline = tokio::time::Instant::from_std(dispatch_started + cmd.timeout);
     let status = loop {
         if let Some(exit_code) = session.io.lock_state().command_exit_code() {
             break SessionStatus::Completed { exit_code };
@@ -185,13 +206,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
         tokio::select! {
             biased;
             _ = cmd.cancel_token.cancelled() => {
-                let reason = crate::api::cancel::take_tool_cancel_reason(cmd.tool_execution_id)
-                    .unwrap_or_else(|| "user".to_string());
-                break if reason == "timeout" {
-                    SessionStatus::TimedOut { watchdog: true }
-                } else {
-                    SessionStatus::Cancelled { reason }
-                };
+                break cancel_status(cmd.tool_execution_id);
             }
             _ = tokio::time::sleep_until(deadline) => {
                 break SessionStatus::TimedOut { watchdog: false };
@@ -225,6 +240,18 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
 
 fn escape_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+/// 取消令牌触发的中止状态：渲染层倒计时（reason=timeout）与显式终止共用同一个
+/// 令牌，差别只在注册时记录的原因；没有记录原因时按用户终止处理。
+fn cancel_status(tool_execution_id: &str) -> SessionStatus {
+    let reason = crate::api::cancel::take_tool_cancel_reason(tool_execution_id)
+        .unwrap_or_else(|| "user".to_string());
+    if reason == "timeout" {
+        SessionStatus::TimedOut { watchdog: true }
+    } else {
+        SessionStatus::Cancelled { reason }
+    }
 }
 
 fn sessions() -> &'static tokio::sync::Mutex<HashMap<String, LiveSession>> {

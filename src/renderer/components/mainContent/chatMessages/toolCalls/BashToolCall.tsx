@@ -12,12 +12,22 @@ import {
 } from "lucide-react";
 import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
-import type { ToolCallInfo } from "../utils/conversationTypes";
+import { updateFirstMatchingToolCall } from "../utils/conversationHelpers";
+import type {
+  ConversationContextValue,
+  ToolCallInfo,
+} from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { AnsiOutput } from "./shared/AnsiOutput";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
+  /** 该调用所在会话的 id（看门狗本地收口时回写消息状态用）。 */
+  conversationId?: string;
+  /** 该调用所在助手消息的 id（同上）。 */
+  messageId?: string;
+  /** 会话消息更新函数（来自 ChatConversationProvider）。 */
+  updateSessionMessages?: ConversationContextValue["updateSessionMessages"];
 };
 
 type ParsedBashArgs = {
@@ -203,6 +213,9 @@ const getCommandSummary = (command: string): string =>
 
 export const BashToolCall = ({
   toolCall,
+  conversationId,
+  messageId,
+  updateSessionMessages,
 }: BashToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const parsedArgs = useMemo(
@@ -351,9 +364,72 @@ export const BashToolCall = ({
       document.removeEventListener("mousedown", handlePointerDown, true);
   }, [isKillConfirmArmed]);
 
+  // 本地收口：abort 未被后端接受（这次执行已结束或从未注册）或后端始终没下发
+  // toolExecutionId 时，真实结果可能永远不会回填这条调用（结果丢失、会话截断后
+  // 消息重建等），卡片会永久停在「命令执行中」。这里按已缓冲的流式输出就地把它
+  // 结算成 timed_out / cancelled，结构与后端结构化结果对齐；真实结果若已在回填
+  // 路上会先落地（状态已终止，这里的更新自然不命中）。
+  const settleToolExecutionLocally = useCallback(
+    (reason: "user" | "timeout"): void => {
+      if (!conversationId || !messageId || !updateSessionMessages) {
+        return;
+      }
+      updateSessionMessages(conversationId, (currentMessages) =>
+        currentMessages.map((message) =>
+          message.id !== messageId
+            ? message
+            : {
+                ...message,
+                toolCalls: updateFirstMatchingToolCall(
+                  message.toolCalls,
+                  toolCall,
+                  ["pending", "running"],
+                  (currentToolCall) => ({
+                    ...currentToolCall,
+                    status: "completed" as const,
+                    result: JSON.stringify({
+                      status: reason === "timeout" ? "timed_out" : "cancelled",
+                      reason:
+                        reason === "timeout" ? "watchdog_timeout" : "user",
+                      error:
+                        reason === "timeout"
+                          ? `Command timed out after ${timeoutMs}ms: ${command}`
+                          : `Command was stopped by the user: ${command}`,
+                      stdout: currentToolCall.streamingStdout ?? "",
+                      stderr: currentToolCall.streamingStderr ?? "",
+                      exitCode: null,
+                      command,
+                      interactive: isInteractive,
+                      elapsedMs: startedAt ? Date.now() - startedAt : undefined,
+                      timeoutMs,
+                      outputComplete: false,
+                    }),
+                  }),
+                ),
+              },
+        ),
+      );
+    },
+    [
+      command,
+      conversationId,
+      isInteractive,
+      messageId,
+      startedAt,
+      timeoutMs,
+      toolCall,
+      updateSessionMessages,
+    ],
+  );
+
   const handleKill = useCallback(
     async (reason: "user" | "timeout" = "user") => {
-      if (!toolExecutionId || isKillRequestedRef.current) {
+      if (!toolExecutionId) {
+        // 后端从未下发执行 id：没有可中止的目标，直接本地收口。
+        settleToolExecutionLocally(reason);
+        return;
+      }
+      if (isKillRequestedRef.current) {
         return;
       }
       isKillRequestedRef.current = true;
@@ -366,9 +442,11 @@ export const BashToolCall = ({
         if (!accepted) {
           // The execution may have completed between render and the click. Do
           // not leave the UI permanently stuck in "Stopping…" when there is no
-          // longer a cancellation token to signal.
+          // longer a cancellation token to signal — settle the call locally
+          // instead so the card never stays "running" forever.
           isKillRequestedRef.current = false;
           setIsKilling(false);
+          settleToolExecutionLocally(reason);
         }
       } catch {
         // IPC failure is retryable. The agent loop will still surface the actual
@@ -377,7 +455,7 @@ export const BashToolCall = ({
         setIsKilling(false);
       }
     },
-    [toolExecutionId],
+    [settleToolExecutionLocally, toolExecutionId],
   );
 
   // 按钮点击：未进入确认态时只展开确认 tooltip（命令继续运行），已进入确认
@@ -396,27 +474,22 @@ export const BashToolCall = ({
   // the countdown reaches zero. The backend records the reason, so a
   // watchdog-triggered abort is reported as a timeout — never as a user
   // cancellation — while covering a delayed/stalled backend timeout path
-  // without creating a second termination implementation.
+  // without creating a second termination implementation. When the abort
+  // cannot be delivered (no execution id was ever streamed, or the backend no
+  // longer holds this execution), the call is settled locally so the card can
+  // never stay "running" forever.
   useEffect(() => {
     if (
       !isRunning ||
       remainingMs !== 0 ||
       isInteractive ||
       parsedArgs?.detach ||
-      !toolExecutionId ||
       isKillRequestedRef.current
     ) {
       return;
     }
     void handleKill("timeout");
-  }, [
-    handleKill,
-    isInteractive,
-    isRunning,
-    parsedArgs?.detach,
-    remainingMs,
-    toolExecutionId,
-  ]);
+  }, [handleKill, isInteractive, isRunning, parsedArgs?.detach, remainingMs]);
 
   const output = useMemo(() => {
     if (parsedResult.type === "success") {

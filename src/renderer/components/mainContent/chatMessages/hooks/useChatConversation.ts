@@ -1027,6 +1027,7 @@ export const useChatConversation = (
     handleNewChat: conversationManagementApi.handleNewChat,
     refreshConversations: conversationManagementApi.refreshConversations,
     updateConversationSummary,
+    updateSessionMessages: sessionApi.updateSessionMessages,
     isStreaming: activeSession?.isStreaming ?? false,
     isAborting: activeSession?.isAborting ?? false,
     isPaused: activeSession?.isPaused ?? false,

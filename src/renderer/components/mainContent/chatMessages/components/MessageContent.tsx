@@ -6,6 +6,7 @@ import { UserMessage } from "./UserMessage";
 import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type {
   ChatConversationMessage,
+  ConversationContextValue,
   ToolCallInfo,
 } from "../utils/conversationTypes";
 
@@ -15,6 +16,9 @@ export type MessageContentProps = {
   isAborting: boolean;
   lastAssistantMessageId: string | undefined;
   activeConversationId: string | undefined;
+  /** 会话消息更新函数（来自 ChatConversationProvider）：透传给工具卡片做本地
+   *  收口（看门狗中止未被接受时结算自己所在的 tool call）。 */
+  updateSessionMessages: ConversationContextValue["updateSessionMessages"];
   canRollback: boolean;
   rollbackPreparingMessageId: string | null;
   pendingToolAuthorizations: ToolCallInfo[];
@@ -48,6 +52,7 @@ export const MessageContent = memo(
     isAborting,
     lastAssistantMessageId,
     activeConversationId,
+    updateSessionMessages,
     canRollback,
     rollbackPreparingMessageId,
     pendingToolAuthorizations,
@@ -167,7 +172,9 @@ export const MessageContent = memo(
           onApproveToolAuthorizationAlways={onApproveToolAuthorizationAlways}
           onRejectToolAuthorization={onRejectToolAuthorization}
           conversationId={activeConversationId}
+          messageId={message.id}
           responseId={message.responseId}
+          updateSessionMessages={updateSessionMessages}
           onFork={onFork}
         />
         {footerHookExecutions.length > 0 ? (

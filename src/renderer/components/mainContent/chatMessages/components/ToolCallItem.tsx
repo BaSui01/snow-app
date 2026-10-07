@@ -1,6 +1,9 @@
 import { memo } from "react";
-import type { ToolCallInfo } from "../utils/conversationTypes";
-import type { HookExecutionRecord } from "../utils/conversationTypes";
+import type {
+  ConversationContextValue,
+  HookExecutionRecord,
+  ToolCallInfo,
+} from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
   PlanModeApprovalToolCall,
@@ -37,6 +40,10 @@ type ToolCallItemProps = {
   toolCall: ToolCallInfo;
   /** Conversation this tool call belongs to (used by workflow renderer). */
   conversationId?: string;
+  /** 该工具调用所在助手消息的 id（bash 卡片本地收口时定位消息）。 */
+  messageId?: string;
+  /** 会话消息更新函数：透传给需要本地收口的工具卡片（见 BashToolCall）。 */
+  updateSessionMessages?: ConversationContextValue["updateSessionMessages"];
   /** Hook execution records bound to this tool call (matched by
    *  toolCallInteractionId).  Forwarded to the sub-agent card renderer;
    *  other tool renderers ignore it. */
@@ -47,6 +54,8 @@ export const ToolCallItem = memo(
   ({
     toolCall,
     conversationId,
+    messageId,
+    updateSessionMessages,
     hookExecutions,
   }: ToolCallItemProps): React.JSX.Element => {
     // Delegate to specialized renderers based on tool name
@@ -94,7 +103,14 @@ export const ToolCallItem = memo(
     }
 
     if (toolCall.name === "bash-terminal-execute") {
-      return <BashToolCall toolCall={toolCall} />;
+      return (
+        <BashToolCall
+          toolCall={toolCall}
+          conversationId={conversationId}
+          messageId={messageId}
+          updateSessionMessages={updateSessionMessages}
+        />
+      );
     }
 
     if (toolCall.name === "todo-todo-manage") {

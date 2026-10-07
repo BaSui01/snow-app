@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
-import type { HookExecutionRecord, ToolCallInfo } from "./conversationTypes";
+import type {
+  ConversationContextValue,
+  HookExecutionRecord,
+  ToolCallInfo,
+} from "./conversationTypes";
 import type {
   IncompleteVariant,
   NormalizedInterruptionReason,
@@ -66,6 +70,12 @@ export type AiResponseProps = {
     userProvidedReason?: boolean,
   ) => void;
   conversationId?: string;
+  /** 本条响应消息的 id：工具卡片在看门狗中止未被后端接受时据此把这次调用
+   *  本地结算为超时，避免卡片永久停在「执行中」。 */
+  messageId?: string;
   responseId?: string;
+  /** 会话消息更新函数（来自 ChatConversationProvider）：透传给工具卡片做本地
+   *  收口（超时/缺执行 id 时结算自己所在的 tool call）。 */
+  updateSessionMessages?: ConversationContextValue["updateSessionMessages"];
   onFork?: (conversationId: string, upToResponseId: string) => void;
 };

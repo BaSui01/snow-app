@@ -968,6 +968,9 @@ export type UseChatConversationResult = {
   refreshConversations: () => void;
   /** 同步更新内存中某会话的 summary（如重命名会话后让 TopBar 标题即时刷新）。 */
   updateConversationSummary: (conversationId: string, summary: string) => void;
+  /** 按会话 key 更新内存中的消息列表：工具卡片本地收口（见 BashToolCall）
+   *  等渲染层组件据此回写自己所在会话的消息状态。 */
+  updateSessionMessages: ConversationContextValue["updateSessionMessages"];
   updateRuntimeInputState: (
     conversationId: string | undefined,
     state: ConversationInputRuntimeState,

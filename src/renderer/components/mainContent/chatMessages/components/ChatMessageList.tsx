@@ -41,6 +41,7 @@ export const ChatMessageList = ({
     approveToolAuthorization,
     approveToolAuthorizationAlways,
     rejectToolAuthorization,
+    updateSessionMessages,
     visionAnalysis,
     triggeredByTask,
     conversationTokenUsage,
@@ -338,6 +339,7 @@ export const ChatMessageList = ({
         isAborting={isAborting}
         lastAssistantMessageId={lastAssistantMessageId}
         activeConversationId={activeConversationId}
+        updateSessionMessages={updateSessionMessages}
         canRollback={canRollback}
         rollbackPreparingMessageId={rollbackPreparingMessageId}
         pendingToolAuthorizations={pendingToolAuthorizations}

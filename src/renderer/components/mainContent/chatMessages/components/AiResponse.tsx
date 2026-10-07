@@ -104,7 +104,9 @@ export const AiResponse = memo(
     onApproveToolAuthorizationAlways,
     onRejectToolAuthorization,
     conversationId,
+    messageId,
     responseId,
+    updateSessionMessages,
     onFork,
   }: AiResponseProps): React.JSX.Element => {
     const { t } = useI18n();
@@ -263,6 +265,8 @@ export const AiResponse = memo(
                     key={item.key}
                     toolCall={item.toolCall}
                     conversationId={conversationId}
+                    messageId={messageId}
+                    updateSessionMessages={updateSessionMessages}
                     hookExecutions={hooksByInteractionId.get(
                       item.toolCall.interactionId,
                     )}

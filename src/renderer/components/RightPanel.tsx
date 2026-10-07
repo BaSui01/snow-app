@@ -753,13 +753,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const handleOpenFileDiffPreviewTab = useCallback(
       (payload: OpenFileDiffPreviewPayload) => {
         const tabId = `file-diff-preview:${payload.filePath}`;
-        const patch = generateComparePatch(
-          payload.fileName,
-          payload.oldContent,
-          payload.newContent,
-          payload.oldStartLine,
-          payload.newStartLine,
-        );
+        const patch =
+          typeof payload.patch === "string"
+            ? payload.patch
+            : generateComparePatch(
+                payload.fileName,
+                payload.oldContent,
+                payload.newContent,
+                payload.oldStartLine,
+                payload.newStartLine,
+              );
         const data: FileDiffPreviewTabData = {
           fileName: payload.fileName,
           filePath: payload.filePath,

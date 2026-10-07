@@ -15,20 +15,27 @@ export type OpenFileDiffPreviewPayload = {
   fileName: string;
   /** 完整文件路径,用于 tab title tooltip 与唯一性 */
   filePath: string;
-  /** 对比模式的旧内容(edit 场景为 searchContent) */
-  oldContent: string;
-  /** 对比模式的新内容(create 场景为 content,edit 场景为 replaceContent) */
-  newContent: string;
-  /**
-   * 旧内容在真实源文件中的起始行号(1-based)。
-   * 用于编辑工具调用时,让 diff 显示正确的源文件行号。
-   */
-  oldStartLine?: number;
-  /** 新内容在真实源文件中的起始行号(1-based)。 */
-  newStartLine?: number;
   /** 变更类型,用于 diff 预览的图标与语义。 */
   changeType: "added" | "modified" | "deleted";
-};
+} & (
+  | {
+      /** 已有真实 unified diff；不推造旧新全文或重生成 patch。 */
+      patch: string;
+      oldStartLine?: never;
+      newStartLine?: never;
+    }
+  | {
+      patch?: never;
+      /** 对比模式的旧内容(edit 场景为 searchContent) */
+      oldContent: string;
+      /** 对比模式的新内容(create 场景为 content,edit 场景为 replaceContent) */
+      newContent: string;
+      /** 旧内容在真实源文件中的起始行号(1-based)。 */
+      oldStartLine?: number;
+      /** 新内容在真实源文件中的起始行号(1-based)。 */
+      newStartLine?: number;
+    }
+);
 
 export type OpenBrowserTabPayload = {
   /** 在右侧面板新建浏览器 tab 并导航到的 URL */

@@ -197,6 +197,53 @@ export const SYSTEM_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
   },
 
   {
+    domain: "panels",
+    action: "openFileDiff",
+    // In-memory, read-only preview only: no disk access or command execution.
+    scope: null,
+    summary: l10n(
+      "Preview a supplied file diff in the built-in right panel",
+      "在内置右侧面板预览提供的文件差异",
+      "在內建右側面板預覽提供的檔案差異",
+    ),
+    invoke: async ({ params }) => {
+      const filePath = requireString(params, "filePath");
+      const patch = requireString(params, "patch");
+      const changeType = requireString(params, "changeType");
+      for (const [key, value] of Object.entries({
+        filePath,
+        patch,
+        changeType,
+      })) {
+        if (value.includes("\0")) {
+          throw new Error(
+            `Parameter '${key}' must not contain a null character`,
+          );
+        }
+      }
+      if (
+        changeType !== "added" &&
+        changeType !== "modified" &&
+        changeType !== "deleted"
+      ) {
+        throw new Error(
+          "Parameter 'changeType' must be added, modified or deleted",
+        );
+      }
+      const fileName =
+        filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath;
+      rightPanelEvents.emit("open-file-diff-preview", {
+        filePath,
+        fileName,
+        patch,
+        changeType,
+      });
+      // Only acknowledges dispatch, not rendering; never returns diff contents.
+      return { requested: true, filePath, changeType };
+    },
+  },
+
+  {
     domain: "pluginsSelf",
     action: "openPanel",
     scope: null,

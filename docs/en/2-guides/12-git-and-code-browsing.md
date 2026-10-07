@@ -112,6 +112,21 @@ The right panel is a **multi-tab** file reader. It reads local files or remote f
 | Office documents | Extracted text from PDF / Word / Excel / CSV and related formats                                                                              |
 | Binary           | A **Binary file** placeholder, with no text editing                                                                                           |
 
+### Snow-Side Review Annotations
+
+- Open a real file and select **Review annotations** in the reader toolbar. Markdown switches to source view. Selection annotations are unavailable in edit mode, images, and virtual script content.
+- Select text and choose **Annotate selected text** from its context menu, or use the toolbar add button. One selection is limited to **4096 UTF-16 code units**, and annotation content to **8 KiB UTF-8**. Selections across folded or virtualized-away rows are rejected rather than quoting unseen text.
+- Save, edit, copy, locate/highlight, or fill the chat draft with one or all annotations. Filling a draft does not send a message. Deletion requires a second click to confirm.
+- Annotations live in Snow's separate `file_review_annotations` table. They never modify the source file, write native DOCX/XLSX comments, or share Git diff old/new-side comment records.
+- Local scope uses normalized absolute file paths, keeping different worktrees separate. SSH scope uses a registered stable workspace ID and remote absolute path; no stable ID means no annotation entry. Late async results from an old file do not populate the new file's annotation list.
+- Anchors store selected text, surrounding context, and a SHA-256 of the displayed text. Unchanged content uses its original position. Changed content relocates only when the entire context matches uniquely, with an explicit status. Missing or ambiguous matches retain the annotation and disable navigation; no fuzzy guessing is performed.
+- For Office files already available as extracted text, annotations target that text view only: line numbers are not Word pages or Excel cells. This feature adds no Office parser. Structural anchors provided by future marketplace editing plugins are outside this release.
+- Builds containing the new native API require a full Snow process restart, not just a renderer reload. Normal application initialization runs an idempotent migration from schema **53 to 54**, adding the independent table and indexes without migrating or deleting existing Diff comments.
+- Even for SSH source files, annotations stay in the local Snow database and never write the remote file. Renaming, moving, or deleting a source file does not automatically transfer its annotations to another path.
+- Opening the panel never sends selected text to a model. Filling the chat input only creates a draft; it enters the ordinary chat request flow only when the user later sends it explicitly.
+
+Implementation anchors: `src/renderer/components/rightPanel/FileReviewPanel.tsx`, `src/renderer/components/rightPanel/fileViewer/fileReviewAnchors.ts`, `src/main/ipc/handlers/fileReviewAnnotationHandlers.ts`, `native/src/storage/services/file_review_annotations.rs`, and `native/src/storage/migrations.rs::migrate_file_review_annotations`.
+
 Editing and search shortcuts:
 
 - Enter edit mode with the edit button. `Ctrl/Cmd+S` saves and `Esc` exits; exiting with unsaved changes requires confirmation;

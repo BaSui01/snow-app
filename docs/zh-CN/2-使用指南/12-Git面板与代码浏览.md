@@ -112,6 +112,21 @@ Git WorkTree 允许同一个 Git 仓库在本地同时挂载多个独立的物�
 | Office 文档       | PDF / Word / Excel / CSV 等读取提取后的文本内容                                                |
 | 二进制            | 显示“二进制文件”占位，不提供文本编辑                                                           |
 
+### Snow 侧审阅标注
+
+- 打开实际文件，在阅读器工具栏点击“审阅标注”。Markdown 会切到源码视图；编辑模式、图片、虚拟脚本内容不提供选区标注。
+- 在文本视图选择内容，右键选择“为选中文字添加标注”，或点击工具栏的添加标注按钮。单个选区最多 **4096 个 UTF-16 单元**，正文最多 **8 KiB UTF-8**；不支持跨折叠或已被虚拟滚动卸载的行，以免引用用户没有实际选择的内容。
+- 标注支持保存、编辑、复制、定位高亮、单条或全部填入聊天输入框；填入草稿不等于发送消息。删除需再次点击确认。
+- 标注保存在 Snow 的独立 `file_review_annotations` 表，不改写源文件，不写入 DOCX/XLSX 原生批注，也不与 Git Diff 的左右侧评论混用。
+- 本地按归一化绝对文件路径隔离（因此不同工作树不会混用）；SSH 按已登记的稳定工作区 ID 与远程绝对路径隔离，缺少稳定 ID 时不提供入口。切换文件后旧异步结果不会写入新文件的标注列表。
+- 锚点保存选区、前后上下文和正文 SHA-256。内容未变时使用原位置；变更后只在完整上下文唯一匹配时重新定位，并明确标记。找不到或有多个匹配时保留标注、禁用定位，不进行模糊猜测。
+- 对于已能以提取正文呈现的 Office 文件，标注只针对该文本视图，显示的行号不是 Word 页码或 Excel 单元格；本功能不新增 Office 解析器。后续市场编辑插件的结构化锚点不在本期范围。
+- 使用包含新原生接口的构建时，需要完整重启 Snow 进程，不能只刷新前端。应用正常初始化时以幂等迁移将 schema 从 **53 升至 54**，新增独立表及索引，不迁移或删除原有 Diff 评论。
+- 即使源文件位于 SSH 工作区，标注也保存在本机 Snow 数据库，不写远程文件。文件重命名、移动或删除后，旧标注不会自动转移到新路径。
+- 打开标注面板不会把选区发送给模型；“填入聊天输入框”只生成草稿。只有用户之后主动发送，才进入普通聊天请求流程。
+
+实现锚点：`src/renderer/components/rightPanel/FileReviewPanel.tsx`、`src/renderer/components/rightPanel/fileViewer/fileReviewAnchors.ts`、`src/main/ipc/handlers/fileReviewAnnotationHandlers.ts`、`native/src/storage/services/file_review_annotations.rs`、`native/src/storage/migrations.rs::migrate_file_review_annotations`。
+
 编辑和搜索快捷方式：
 
 - 点击编辑按钮进入文本编辑；`Ctrl/Cmd+S` 保存，`Esc` 退出编辑。存在未保存改动时退出会要求确认；

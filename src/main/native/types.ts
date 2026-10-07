@@ -1132,6 +1132,12 @@ export type MemoCountSummary = {
   done: number;
 };
 
+export type {
+  FileReviewAnnotationRecord,
+  FileReviewTextAnchor,
+} from "../../preload/types/fileReviewAnnotation";
+import type { FileReviewAnnotationRecord } from "../../preload/types/fileReviewAnnotation";
+
 export type DiffCommentSide = "old" | "new";
 
 export type DiffReviewCommentRecord = {
@@ -2709,6 +2715,27 @@ export type NativeBridge = {
   updateMemoStatus: (memoId: string, status: string) => Promise<MemoRecord>;
   deleteMemo: (memoId: string) => Promise<void>;
   getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
+  listFileReviewAnnotations: (
+    sourceKey: string,
+    filePath: string,
+  ) => Promise<FileReviewAnnotationRecord[]>;
+  createFileReviewAnnotation: (
+    sourceKey: string,
+    filePath: string,
+    anchorJson: string,
+    content: string,
+  ) => Promise<FileReviewAnnotationRecord>;
+  updateFileReviewAnnotation: (
+    sourceKey: string,
+    filePath: string,
+    annotationId: string,
+    content: string,
+  ) => Promise<FileReviewAnnotationRecord>;
+  deleteFileReviewAnnotation: (
+    sourceKey: string,
+    filePath: string,
+    annotationId: string,
+  ) => Promise<void>;
   listDiffReviewComments: (
     directoryId: string,
     filePath: string,

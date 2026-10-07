@@ -2,7 +2,7 @@
    Modern edge-to-edge seamless workspace with streamlined, smooth airy curves.
    Design Essence: Fluid, boundless, pure studio minimalism, and zero island waste.
    Signature Feature: Aurora Dawn Horizon Stripe & Multi-tier porcelain/polar surfaces.
-   Motion & Dynamics: Fluid spring micro-interactions, aurora sweep, and organic feedback.
+   Motion & Dynamics: Stable control feedback, restrained card motion, and optional aurora sweep.
    Key Characteristics: Soft fluid micro-radii (6px-16px), arctic deep blue-gray,
    and borderless breathing room. */
 
@@ -25,16 +25,18 @@
   --compact-accent: #0284c7;
   --compact-accent-hover: #0369a1;
   --compact-accent-bg: rgba(2, 132, 199, 0.12);
-  --compact-accent-text: #0284c7;
+  --compact-accent-text: #0369a1;
+  --compact-button-bg: #0369a1;
+  --compact-button-hover: #075985;
   --accent: #0284c7;
   --accent-primary: #0284c7;
   --accent-color: #0284c7;
   --accent-blue: #0284c7;
   --accent-blue-hover: #0369a1;
   --accent-blue-bg: rgba(2, 132, 199, 0.12);
-  --accent-blue-text: #0284c7;
+  --accent-blue-text: #0369a1;
   --accent-primary-bg: rgba(2, 132, 199, 0.12);
-  --accent-primary-text: #0284c7;
+  --accent-primary-text: #0369a1;
 
   /* Pure surface contrast without heavy cast shadows */
   --island-shadow: none;
@@ -45,10 +47,32 @@
 
   /* Density & geometry controls */
   --compact-header-height: 52px;
+  --compact-control-transition:
+    background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease,
+    box-shadow 0.14s ease;
 }
 
 /* Light Mode: Studio Pure Porcelain & Gentle Mist */
 :root[data-theme-preset="compact"][data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-hover: #e8eef5;
+  --bg-active: #dbe5f0;
+  --surface-hover: var(--bg-hover);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #526277;
+  --text-muted: #64748b;
+  --border-light: #dce3ec;
+  --border-color: #cbd5e1;
+  --border-subtle: #b8c5d6;
+  --compact-control-border: #7b8ba1;
+  --compact-focus-color: #0369a1;
+  --compact-selected-bg: #dceefa;
+  --compact-danger-text: #b91c1c;
+  --compact-danger-solid: #b91c1c;
+  --compact-danger-hover: #991b1b;
   --surface-island: #ffffff;
   --surface-island-strong: #ffffff;
   --surface-island-muted: #f8fafc;
@@ -62,10 +86,35 @@
 
 /* Dark Mode: Arctic Midnight Charcoal & Polar Sky */
 :root[data-theme-preset="compact"][data-theme="dark"] {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #0d121c;
+  --bg-tertiary: #141d2b;
+  --bg-hover: #1c293b;
+  --bg-active: #26364b;
+  --surface-hover: var(--bg-hover);
+  --border-light: #263244;
+  --border-color: #35465e;
+  --border-subtle: #475b76;
+  --compact-control-border: #62748c;
+  --compact-focus-color: #38bdf8;
+  --compact-selected-bg: #12364d;
+  --compact-danger-text: #fca5a5;
+  --compact-danger-solid: #b91c1c;
+  --compact-danger-hover: #991b1b;
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.3);
+  --accent: #0ea5e9;
+  --accent-primary: #0ea5e9;
+  --accent-color: #0ea5e9;
+  --accent-primary-bg: rgba(14, 165, 233, 0.14);
   --compact-accent: #0ea5e9;
   --compact-accent-hover: #38bdf8;
   --compact-accent-bg: rgba(14, 165, 233, 0.14);
   --compact-accent-text: #38bdf8;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-muted: #94a3b8;
+  --accent-primary-text: #38bdf8;
   --accent-blue: #0ea5e9;
   --accent-blue-hover: #38bdf8;
   --accent-blue-bg: rgba(14, 165, 233, 0.14);
@@ -246,9 +295,9 @@
   border-radius: var(--radius-sm) !important;
   background: var(--compact-accent-bg) !important;
   color: var(--compact-accent-text) !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 550;
-  line-height: 14px;
+  line-height: 15px;
 }
 
 :root[data-theme-preset="compact"]
@@ -309,7 +358,7 @@
     .always-on-top-btn
   ) {
   border-radius: var(--radius-sm) !important;
-  transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -318,10 +367,10 @@
     .top-bar-todo-btn,
     .top-bar-codebase-sync,
     .always-on-top-btn
-  ):hover:not(:disabled) {
+  ):hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--surface-hover);
   color: var(--text-secondary);
-  transform: scale(1.04);
+  transform: none;
 }
 
 :root[data-theme-preset="compact"]
@@ -330,8 +379,8 @@
     .top-bar-todo-btn,
     .top-bar-codebase-sync,
     .always-on-top-btn
-  ):active:not(:disabled) {
-  transform: scale(0.94);
+  ):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none;
 }
 
 /* ==========================================================================
@@ -426,7 +475,7 @@
   border: 1px solid var(--border-light) !important;
   background: var(--bg-tertiary) !important;
   padding: 12px 14px !important;
-  transition: all 0.15s ease;
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"] .settings-item {
@@ -434,17 +483,18 @@
   border: 1px solid transparent !important;
   padding: 7px 12px !important;
   margin: 2px 0 !important;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"] .settings-item:hover {
   background: var(--bg-hover) !important;
-  transform: translateX(2px);
+  transform: none;
 }
 
 :root[data-theme-preset="compact"] .settings-item.active {
-  background: var(--compact-accent-bg) !important;
+  background: var(--compact-selected-bg) !important;
   border-color: transparent !important;
+  box-shadow: inset 3px 0 0 var(--compact-focus-color);
 }
 
 :root[data-theme-preset="compact"] .settings-item.active .settings-item-title {
@@ -481,13 +531,13 @@
     .mcp-editor-mode-btn.active,
     .send-btn
   ) {
-  background: var(--compact-accent) !important;
+  background: var(--compact-button-bg) !important;
   color: #ffffff !important;
   border: 1px solid transparent !important;
   border-radius: var(--radius-md) !important;
   font-weight: 500 !important;
   box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25) !important;
-  transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -510,14 +560,14 @@
     .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active,
     .send-btn
-  ):hover:not(:disabled) {
-  background: var(--compact-accent-hover) !important;
+  ):hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover) !important;
   color: #ffffff !important;
-  transform: translateY(-1px);
+  transform: none;
   box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35) !important;
 }
 
-/* 核心微动效：主按钮弹簧式微缩放点击反馈 */
+/* 主按钮以阴影反馈按压，保持点击区域稳定 */
 :root[data-theme-preset="compact"]
   :is(
     .api-settings-action-btn.primary,
@@ -538,10 +588,10 @@
     .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active,
     .send-btn
-  ):active:not(:disabled) {
-  transform: scale(0.965) !important;
+  ):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none !important;
   box-shadow: 0 1px 2px rgba(2, 132, 199, 0.2) !important;
-  transition: transform 0.06s ease !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -573,7 +623,7 @@
     .memory-editor-btn
   ) {
   border-radius: var(--radius-md) !important;
-  transition: all 0.14s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -601,14 +651,15 @@
     .scheduled-tasks-back-btn,
     .scheduled-tasks-cancel-btn,
     .confirm-dialog-btn.cancel,
-    .confirm-dialog-btn:not(.confirm):not(.danger),
-    .memory-editor-btn
-  ):hover:not(:disabled) {
-  background: var(--compact-accent-bg) !important;
+    .confirm-dialog-btn:not(.confirm):not(.danger)
+  ):hover:not(:disabled):not([aria-disabled="true"]):not(.active):not(
+    .selected
+  ) {
+  background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
 }
 
-/* 核心微动效：图标与次级按钮微缩放按压反馈 */
+/* 图标与次级按钮保持位置和尺寸稳定 */
 :root[data-theme-preset="compact"]
   :is(
     .icon-btn,
@@ -623,24 +674,24 @@
     .memo-icon-btn,
     .scheduled-task-action-btn,
     .confirm-dialog-btn.cancel
-  ):active:not(:disabled) {
-  transform: scale(0.94) !important;
-  transition: transform 0.06s ease !important;
+  ):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
-  :is(.nav-item, .list-item, .chat-item, .panel-tab).active {
+  :is(.nav-item, .list-item, .chat-item, .panel-tab, .panel-tab-btn).active {
   border-color: transparent !important;
-  background: var(--compact-accent-bg) !important;
+  background: var(--compact-selected-bg) !important;
   color: var(--compact-accent-text) !important;
-  box-shadow: none !important;
+  box-shadow: inset 3px 0 0 var(--compact-focus-color) !important;
 }
 
 /* 谷歌级语义设计：多态确认弹窗与操作 */
 :root[data-theme-preset="compact"]
   .confirm-dialog:not(.confirm-dialog-danger):not(.confirm-dialog-warning)
   .confirm-dialog-btn.confirm {
-  background: var(--compact-accent) !important;
+  background: var(--compact-button-bg) !important;
   color: #ffffff !important;
   border-radius: var(--radius-md) !important;
 }
@@ -649,14 +700,14 @@
   .confirm-dialog-warning
   .confirm-dialog-btn.confirm {
   background: #f59e0b !important;
-  color: #ffffff !important;
+  color: #1f2937 !important;
   border-radius: var(--radius-md) !important;
 }
 
 :root[data-theme-preset="compact"]
   .confirm-dialog-danger
   .confirm-dialog-btn.confirm {
-  background: var(--danger) !important;
+  background: var(--compact-danger-solid) !important;
   color: #ffffff !important;
   border-radius: var(--radius-md) !important;
 }
@@ -694,10 +745,15 @@
     .memory-multi-select-action-btn.danger
   ) {
   border-radius: var(--radius-md) !important;
-  background: color-mix(in srgb, var(--danger) 14%, transparent) !important;
-  color: var(--danger) !important;
-  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent) !important;
-  transition: all 0.14s ease !important;
+  background: color-mix(
+    in srgb,
+    var(--compact-danger-text) 14%,
+    transparent
+  ) !important;
+  color: var(--compact-danger-text) !important;
+  border: 1px solid
+    color-mix(in srgb, var(--compact-danger-text) 25%, transparent) !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -708,9 +764,13 @@
     .memo-icon-btn.danger,
     .memory-clear-btn,
     .memory-multi-select-action-btn.danger
-  ):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 24%, transparent) !important;
-  color: var(--danger) !important;
+  ):hover:not(:disabled):not([aria-disabled="true"]) {
+  background: color-mix(
+    in srgb,
+    var(--compact-danger-text) 24%,
+    transparent
+  ) !important;
+  color: var(--compact-danger-text) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -721,25 +781,34 @@
     .memo-icon-btn.danger,
     .memory-clear-btn,
     .memory-multi-select-action-btn.danger
-  ):active:not(:disabled) {
-  transform: scale(0.96) !important;
+  ):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none !important;
 }
 
 :root[data-theme-preset="compact"] .abort-btn {
-  background: color-mix(in srgb, var(--danger) 16%, transparent) !important;
-  color: var(--danger) !important;
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent) !important;
+  background: color-mix(
+    in srgb,
+    var(--compact-danger-text) 16%,
+    transparent
+  ) !important;
+  color: var(--compact-danger-text) !important;
+  border: 1px solid
+    color-mix(in srgb, var(--compact-danger-text) 30%, transparent) !important;
   border-radius: var(--radius-md) !important;
-  transition: all 0.14s ease !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"] .abort-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 26%, transparent) !important;
-  transform: translateY(-1px);
+  background: color-mix(
+    in srgb,
+    var(--compact-danger-text) 26%,
+    transparent
+  ) !important;
+  transform: none;
 }
 
 :root[data-theme-preset="compact"] .abort-btn:active:not(:disabled) {
-  transform: scale(0.95);
+  transform: none;
 }
 
 /* ==========================================================================
@@ -810,13 +879,12 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16) !important;
   border: 1px solid var(--border-light) !important;
   background: var(--bg-secondary) !important;
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  color: var(--text-secondary);
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"] .chat-float-island:hover {
-  transform: translateY(-1px);
+  transform: none;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2) !important;
 }
 
@@ -837,7 +905,7 @@
     .branch-create-input,
     .api-model-combobox-field
   ) {
-  border-color: var(--border-color);
+  border-color: var(--compact-control-border);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -859,7 +927,7 @@
     .branch-create-input,
     .api-model-combobox-field
   ):focus {
-  border-color: var(--accent-color);
+  border-color: var(--compact-focus-color);
   outline: none;
 }
 
@@ -879,7 +947,7 @@
 :root[data-theme-preset="compact"] .toggle-slider {
   border-color: var(--border-subtle);
   border-radius: var(--radius-pill);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"]
@@ -934,14 +1002,18 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .message-copy-menu-item
+    .message-copy-menu-item,
+    .send-key-menu-item
   ) {
+  --compact-menu-hover-bg: var(--compact-accent-bg);
+  --compact-menu-hover-color: var(--text-primary);
   border-radius: var(--radius-sm);
   transition:
     background 0.12s ease,
     color 0.12s ease;
 }
 
+/* Mouse hover, DOM focus and keyboard active-descendant highlights agree. */
 :root[data-theme-preset="compact"]
   :is(
     .top-bar-plus-dropdown-item,
@@ -956,19 +1028,77 @@
     .explorer-entry-context-menu-item,
     .context-menu-item,
     .api-model-combobox-option,
-    .message-copy-menu-item
-  ):hover {
-  background: var(--compact-accent-bg);
-  color: var(--text-primary);
+    .message-copy-menu-item,
+    .send-key-menu-item
+  ):is(:hover, :focus-visible, .highlighted):not(:disabled):not(.disabled):not(
+    [aria-disabled="true"]
+  ),
+:root[data-theme-preset="compact"]
+  :is(.chat-command-item.selected, .mention-entry.selected):not(:disabled):not(
+    .disabled
+  ):not([aria-disabled="true"]) {
+  background: var(--compact-menu-hover-bg);
+  color: var(--compact-menu-hover-color);
+}
+
+/* Persist actual selection without overwriting model-menu drag insertion shadows.
+   CustomSelect exposes selection through its existing direct-child check icon;
+   mention-entry.selected is keyboard navigation, while .checked is selection. */
+:root[data-theme-preset="compact"]
+  :is(
+    .model-dropdown-item.active,
+    .branch-dropdown-item.active,
+    .api-model-combobox-option.selected,
+    .custom-select-item:has(> .custom-select-check),
+    .mention-entry.checked,
+    .send-key-menu-item.is-active
+  ):not(:disabled):not(.disabled):not([aria-disabled="true"]) {
+  --compact-menu-hover-bg: var(--compact-selected-bg);
+  --compact-menu-hover-color: var(--compact-accent-text);
+  background: var(--compact-menu-hover-bg);
+  color: var(--compact-menu-hover-color);
+  font-weight: 600;
 }
 
 :root[data-theme-preset="compact"]
+  :is(.context-menu-item.danger, .explorer-entry-context-menu-item.danger):not(
+    :disabled
+  ):not(.disabled):not([aria-disabled="true"]) {
+  color: var(--compact-danger-text);
+}
+
+:root[data-theme-preset="compact"]
+  :is(.context-menu-item.danger, .explorer-entry-context-menu-item.danger):is(
+    :hover,
+    :focus-visible
+  ):not(:disabled):not(.disabled):not([aria-disabled="true"]) {
+  background: color-mix(in srgb, var(--compact-danger-text) 14%, transparent);
+  color: var(--compact-danger-text);
+}
+
+/* Disabled takes precedence over base-component hover and selected rules.
+   Do not suppress pointer events: tooltip and component behavior stay intact. */
+:root[data-theme-preset="compact"]
   :is(
-    .context-menu-item.danger,
-    .explorer-entry-context-menu-item.danger
-  ):hover {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
+    .top-bar-plus-dropdown-item,
+    .top-bar-todo-item,
+    .plus-menu-item,
+    .model-dropdown-item,
+    .custom-select-item,
+    .browser-menu-item,
+    .branch-dropdown-item,
+    .chat-command-item,
+    .mention-entry,
+    .explorer-entry-context-menu-item,
+    .context-menu-item,
+    .api-model-combobox-option,
+    .message-copy-menu-item,
+    .send-key-menu-item
+  ):is(:disabled, .disabled, [aria-disabled="true"]) {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  opacity: 0.6 !important;
+  cursor: not-allowed;
 }
 
 /* ==========================================================================
@@ -976,8 +1106,8 @@
    ========================================================================== */
 
 :root[data-theme-preset="compact"] .git-commit-split-btn {
-  border: 1px solid var(--compact-accent);
-  background: var(--compact-accent);
+  border: 1px solid var(--compact-button-bg);
+  background: var(--compact-button-bg);
   color: #ffffff;
   box-shadow: none;
   border-radius: var(--radius-md);
@@ -985,23 +1115,28 @@
 
 :root[data-theme-preset="compact"] .git-commit-split-btn .git-commit-btn {
   border-color: transparent;
-  background: transparent;
-  color: inherit;
+  border-radius: 0 !important;
+  background: var(--compact-button-bg) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"]
   .git-commit-split-btn
   .git-commit-mode-toggle {
-  border-left-color: color-mix(in srgb, #ffffff 28%, transparent);
-  color: inherit;
+  border-left-color: color-mix(in srgb, #ffffff 40%, transparent);
+  background: var(--compact-button-bg);
+  color: #ffffff;
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"]
   :is(
     .git-commit-split-btn .git-commit-btn,
     .git-commit-split-btn .git-commit-mode-toggle
-  ):hover:not(:disabled) {
-  background: color-mix(in srgb, #ffffff 12%, transparent);
+  ):hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .send-key-group {
@@ -1010,22 +1145,27 @@
 
 :root[data-theme-preset="compact"] .send-btn,
 :root[data-theme-preset="compact"] .send-key-menu-toggle {
-  background: var(--compact-accent);
+  background: var(--compact-button-bg);
   color: #ffffff;
 }
 
-:root[data-theme-preset="compact"] .send-btn {
-  box-shadow: none;
+:root[data-theme-preset="compact"] .send-key-group .send-btn {
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .send-key-menu-toggle {
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25);
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.4);
+  transition: var(--compact-control-transition);
 }
 
-:root[data-theme-preset="compact"] .send-btn:hover:not(:disabled),
-:root[data-theme-preset="compact"] .send-key-menu-toggle:hover,
-:root[data-theme-preset="compact"] .send-key-menu-toggle.is-open {
-  background: var(--compact-accent-hover);
+:root[data-theme-preset="compact"]
+  .send-btn:hover:not(:disabled):not([aria-disabled="true"]),
+:root[data-theme-preset="compact"]
+  .send-key-menu-toggle:hover:not(:disabled):not([aria-disabled="true"]),
+:root[data-theme-preset="compact"]
+  .send-key-menu-toggle.is-open:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover);
   opacity: 1;
 }
 
@@ -1038,19 +1178,10 @@
 
 :root[data-theme-preset="compact"] .send-key-menu-item {
   border-radius: var(--radius-md);
-  transition: all 0.12s ease;
+  transition: var(--compact-control-transition);
 }
 
-:root[data-theme-preset="compact"] .send-key-menu-item:hover,
-:root[data-theme-preset="compact"] .send-key-menu-item:focus-visible {
-  background: var(--compact-accent-bg);
-  color: var(--text-primary);
-}
-
-:root[data-theme-preset="compact"] .send-key-menu-item.is-active {
-  color: var(--compact-accent-text);
-  font-weight: 600;
-}
+/* Send-key menu states share the dropdown suite above. */
 
 /* ==========================================================================
    10. Thinking Process Collapsible Group (TCG 思考折叠条)
@@ -1062,19 +1193,19 @@
   border-radius: var(--radius-pill);
   background: var(--surface-island-muted);
   color: var(--text-tertiary);
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"] .tcg-toggle:hover {
   border-color: var(--border-color);
   background: var(--compact-accent-bg);
   color: var(--compact-accent-text);
-  transform: translateX(1px);
+  transform: none;
 }
 
 :root[data-theme-preset="compact"] .tcg-toggle:active {
   background: var(--bg-active);
-  transform: scale(0.98);
+  transform: none;
 }
 
 :root[data-theme-preset="compact"] .tcg-label {
@@ -1115,17 +1246,18 @@
 }
 
 :root[data-theme-preset="compact"] .pending-message-send-now {
-  background: var(--compact-accent);
+  background: var(--compact-button-bg);
   color: #ffffff;
 }
 
-:root[data-theme-preset="compact"] .pending-message-send-now:hover {
-  background: var(--compact-accent-hover);
+:root[data-theme-preset="compact"]
+  .pending-message-send-now:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover);
 }
 
 :root[data-theme-preset="compact"] .pending-message-withdraw:hover {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--compact-danger-text) 14%, transparent);
+  color: var(--compact-danger-text);
 }
 
 /* ==========================================================================
@@ -1170,8 +1302,14 @@
   background: color-mix(in srgb, #818cf8 6%, var(--surface-island-strong));
 }
 
-:root[data-theme-preset="compact"] .chat-empty-quick-card:hover:not(:disabled),
-:root[data-theme-preset="compact"] .chat-empty-quick-card:focus-visible {
+:root[data-theme-preset="compact"]
+  .chat-empty-quick-card:hover:not(:disabled):not(.disabled):not(
+    [aria-disabled="true"]
+  ),
+:root[data-theme-preset="compact"]
+  .chat-empty-quick-card:focus-visible:not(:disabled):not(.disabled):not(
+    [aria-disabled="true"]
+  ) {
   border-color: var(--compact-accent);
   background: var(--compact-accent-bg);
   transform: translateY(-2.5px) !important;
@@ -1179,8 +1317,19 @@
 }
 
 :root[data-theme-preset="compact"]
-  .chat-empty-quick-card:active:not(:disabled) {
+  .chat-empty-quick-card:active:not(:disabled):not(.disabled):not(
+    [aria-disabled="true"]
+  ) {
   transform: scale(0.98) !important;
+}
+
+/* Suppress base hover tint too, including ARIA- and class-disabled cards. */
+:root[data-theme-preset="compact"]
+  .chat-empty-quick-card:is(:disabled, .disabled, [aria-disabled="true"]) {
+  border-color: var(--border-light) !important;
+  background: var(--surface-island-strong) !important;
+  opacity: 0.6 !important;
+  cursor: not-allowed;
 }
 
 /* ==========================================================================
@@ -1211,7 +1360,7 @@
   border: 1px solid var(--border-light) !important;
   background: var(--bg-tertiary) !important;
   margin: 8px 0 !important;
-  transition: all 0.15s ease !important;
+  transition: var(--compact-control-transition) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -1387,7 +1536,12 @@
   background: var(--surface-island-strong);
   color: var(--text-primary);
   box-shadow: var(--shadow-md);
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transform: translate(-50%, calc(-100% - 6px));
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease !important;
 }
 
 :root[data-theme-preset="compact"] .chat-scroll-to-bottom:hover {
@@ -1399,11 +1553,11 @@
   );
   color: var(--compact-accent-text);
   box-shadow: 0 4px 16px rgba(2, 132, 199, 0.25);
-  transform: translateY(-1.5px);
+  transform: translate(-50%, calc(-100% - 6px));
 }
 
 :root[data-theme-preset="compact"] .chat-scroll-to-bottom:active {
-  transform: scale(0.94);
+  transform: translate(-50%, calc(-100% - 6px));
   box-shadow: none;
 }
 
@@ -1427,7 +1581,9 @@
   background: var(--surface-island-muted) !important;
   border-radius: var(--radius-lg) !important;
   overflow: hidden;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition:
+    var(--compact-control-transition),
+    transform 0.18s ease !important;
 }
 
 :root[data-theme-preset="compact"] .theme-preset-card-compact::before {
@@ -1518,8 +1674,9 @@
     .memo-gantt-row.selected
   ) {
   border-color: transparent;
-  background: var(--compact-accent-bg);
+  background: var(--compact-selected-bg);
   color: var(--compact-accent-text);
+  box-shadow: inset 3px 0 0 var(--compact-focus-color);
   font-weight: 600;
   border-radius: var(--radius-md);
 }
@@ -1537,7 +1694,7 @@
     .scheduled-tasks-pre-script-toggle
   ) {
   border-radius: var(--radius-md);
-  transition: all 0.14s ease;
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"]
@@ -1551,8 +1708,10 @@
     .scheduled-tasks-filter-tab,
     .scheduled-tasks-segmented-btn,
     .scheduled-tasks-pre-script-toggle
-  ):hover:not(:disabled) {
-  background: var(--compact-accent-bg);
+  ):hover:not(:disabled):not([aria-disabled="true"]):not(.active):not(
+    .selected
+  ) {
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
@@ -1562,7 +1721,7 @@
     .memo-sort-btn,
     .memory-multi-select-exit-btn,
     .memory-multi-select-action-btn:not(.danger)
-  ):hover:not(:disabled) {
+  ):hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--compact-accent-bg);
   color: var(--text-secondary);
 }
@@ -1580,11 +1739,11 @@
     .scheduled-tasks-back-btn,
     .scheduled-tasks-cancel-btn
   ) {
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--compact-control-border);
   border-radius: var(--radius-md);
   background: var(--surface-island-strong);
   color: var(--text-secondary);
-  transition: all 0.12s ease;
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"]
@@ -1599,14 +1758,21 @@
     .scheduled-task-edit-btn,
     .scheduled-tasks-back-btn,
     .scheduled-tasks-cancel-btn
-  ):active:not(:disabled) {
-  transform: scale(0.95);
+  ):active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none;
 }
 
 :root[data-theme-preset="compact"] .memory-editor-btn {
-  border-color: var(--compact-accent);
-  background: var(--compact-accent);
+  border-color: var(--compact-button-bg);
+  background: var(--compact-button-bg);
   color: #ffffff;
+}
+
+:root[data-theme-preset="compact"]
+  .memory-editor-btn:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover) !important;
+  color: #ffffff !important;
+  filter: none;
 }
 
 :root[data-theme-preset="compact"]
@@ -1621,7 +1787,7 @@
     .memo-schedule-field input[type="date"],
     .scheduled-tasks-field input:not([type="checkbox"]):not([type="range"])
   ) {
-  border-color: var(--border-color);
+  border-color: var(--compact-control-border);
   background: var(--surface-island-strong);
   border-radius: var(--radius-md);
 }
@@ -1634,7 +1800,7 @@
   border-color: var(--border-light);
   border-radius: var(--radius-pill);
   background: var(--surface-island-strong);
-  transition: all 0.15s ease;
+  transition: var(--compact-control-transition);
 }
 
 :root[data-theme-preset="compact"]
@@ -1718,4 +1884,203 @@
   background-color: var(--bg-primary);
   color: var(--text-tertiary);
   letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   20. Keyboard focus, disabled controls & compact-window ergonomics
+   ========================================================================== */
+
+/* Outline stays independent of selected-state inset markers and hover shadows. */
+:root[data-theme-preset="compact"]
+  :where(
+    button,
+    a[href],
+    input:not([type="hidden"]),
+    select,
+    textarea,
+    [role="button"],
+    [role="tab"],
+    [role="combobox"],
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
+  outline: 2px solid var(--compact-focus-color) !important;
+  outline-offset: 2px;
+}
+
+/* Split-button parents clip their children, so draw the focus ring inside. */
+:root[data-theme-preset="compact"]
+  :is(
+    .git-commit-split-btn .git-commit-btn,
+    .git-commit-split-btn .git-commit-mode-toggle,
+    .send-key-group .send-btn,
+    .send-key-menu-toggle
+  ):focus-visible {
+  outline-color: #ffffff !important;
+  outline-offset: -3px;
+}
+
+:root[data-theme-preset="compact"]
+  .toggle-switch
+  input:focus-visible
+  + .toggle-slider {
+  outline: 2px solid var(--compact-focus-color);
+  outline-offset: 2px;
+}
+
+/* Visual state only: native disabled / aria-disabled behavior remains component-owned. */
+:root[data-theme-preset="compact"]
+  :is(
+    button:disabled,
+    button[aria-disabled="true"],
+    [role="button"][aria-disabled="true"]
+  ) {
+  opacity: 0.6 !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  filter: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+:root[data-theme-preset="compact"]
+  :is(
+    .memo-icon-btn,
+    .memory-multi-select-exit-btn,
+    .browser-nav-btn,
+    .code-block-action-btn
+  ) {
+  min-width: 28px;
+  min-height: 28px;
+}
+
+:root[data-theme-preset="compact"]
+  .confirm-dialog:not(.confirm-dialog-danger):not(.confirm-dialog-warning)
+  .confirm-dialog-btn.confirm:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover) !important;
+}
+
+:root[data-theme-preset="compact"]
+  .confirm-dialog-danger
+  .confirm-dialog-btn.confirm:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-danger-hover) !important;
+}
+
+@media (max-width: 1100px) {
+  :root[data-theme-preset="compact"] .api-settings-page {
+    padding: 22px 24px 32px !important;
+  }
+
+  :root[data-theme-preset="compact"] .chat-messages-container {
+    padding: 12px 16px !important;
+  }
+
+  :root[data-theme-preset="compact"] .chat-input-wrapper {
+    padding: 0 16px 12px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  :root[data-theme-preset="compact"] .api-settings-page {
+    padding: 18px 16px 24px !important;
+  }
+
+  :root[data-theme-preset="compact"] .chat-messages-container {
+    padding: 10px 12px !important;
+  }
+
+  :root[data-theme-preset="compact"] .chat-input-wrapper {
+    padding: 0 12px 10px !important;
+  }
+
+  :root[data-theme-preset="compact"] .top-bar-main {
+    padding: 0 10px !important;
+    gap: 8px !important;
+  }
+}
+
+/* Disable decorative motion, not positioning transforms or component state. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme-preset="compact"] {
+    --compact-control-transition: none;
+  }
+
+  :root[data-theme-preset="compact"] .top-bar::before,
+  :root[data-theme-preset="compact"]
+    :is(
+      .chat-item-icon.streaming,
+      .tool-call-status-running,
+      .tool-call-browser-pending-running,
+      .tool-call-grep-pending-running,
+      .chat-scroll-to-bottom,
+      .chat-float-island
+    ),
+  :root[data-theme-preset="compact"]
+    .chat-scroll-to-bottom.is-streaming::before {
+    animation: none !important;
+  }
+
+  :root[data-theme-preset="compact"]
+    :is(
+      button,
+      input,
+      select,
+      textarea,
+      .settings-item,
+      .nav-item,
+      .list-item,
+      .chat-item,
+      .memo-list-item,
+      .memory-list-item,
+      .scheduled-task-item,
+      .memo-gantt-row,
+      .chat-float-island,
+      .theme-preset-card-compact
+    ) {
+    transition: none !important;
+  }
+
+  /* Menus may be non-button elements; reduce their visual transitions as well. */
+  :root[data-theme-preset="compact"]
+    :is(
+      .top-bar-plus-dropdown-item,
+      .top-bar-todo-item,
+      .plus-menu-item,
+      .model-dropdown-item,
+      .custom-select-item,
+      .browser-menu-item,
+      .branch-dropdown-item,
+      .chat-command-item,
+      .mention-entry,
+      .explorer-entry-context-menu-item,
+      .context-menu-item,
+      .api-model-combobox-option,
+      .message-copy-menu-item,
+      .send-key-menu-item
+    ),
+  :root[data-theme-preset="compact"] .tcg-chevron,
+  :root[data-theme-preset="compact"] .toggle-slider,
+  :root[data-theme-preset="compact"] .toggle-slider::after {
+    /* Keep final arrow orientation and checked-thumb position. */
+    transition: none !important;
+  }
+
+  :root[data-theme-preset="compact"] .theme-preset-card-compact:hover,
+  :root[data-theme-preset="compact"]
+    .chat-empty-quick-card:hover:not(:disabled):not(.disabled):not(
+      [aria-disabled="true"]
+    ),
+  :root[data-theme-preset="compact"]
+    .chat-empty-quick-card:focus-visible:not(:disabled):not(.disabled):not(
+      [aria-disabled="true"]
+    ),
+  :root[data-theme-preset="compact"]
+    .chat-empty-quick-card:active:not(:disabled):not(.disabled):not(
+      [aria-disabled="true"]
+    ) {
+    transform: none !important;
+  }
+
+  :root[data-theme-preset="compact"] :is(.chat-messages-container, .chat-area) {
+    scroll-behavior: auto !important;
+  }
 }

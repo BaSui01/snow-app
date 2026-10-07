@@ -11,6 +11,8 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  MessageSquare,
+  MessageSquarePlus,
   Pencil,
   Save,
   Search,
@@ -46,6 +48,12 @@ import {
 } from "./fileViewer/codeText";
 import { useVirtualRows } from "./fileViewer/useVirtualRows";
 import { rightPanelEvents } from "./rightPanelEvents";
+import { FileReviewPanel } from "./FileReviewPanel";
+import {
+  captureFileReviewSelection,
+  type FileReviewDraftAnchor,
+  type FileReviewLocation,
+} from "./fileViewer/fileReviewAnchors";
 import type { FileContentResult } from "./types";
 
 type FileViewerContentProps = {
@@ -525,6 +533,41 @@ export function FileViewerContent({
     !(isMarkdown && mdMode === "preview") &&
     !(content.isSvg && svgMode === "image");
 
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewSelection, setReviewSelection] =
+    useState<FileReviewDraftAnchor | null>(null);
+  const [reviewCandidate, setReviewCandidate] =
+    useState<FileReviewDraftAnchor | null>(null);
+  const [reviewFocus, setReviewFocus] = useState<FileReviewLocation | null>(
+    null,
+  );
+  const reviewSourceKey = virtualSource
+    ? ""
+    : isSsh
+      ? sshWorkspaceId
+        ? `ssh:${sshWorkspaceId}`
+        : ""
+      : "local";
+  const canReview = Boolean(
+    reviewSourceKey && content && !content.isBinary && !content.isImage,
+  );
+  const reviewRepresentation =
+    content?.mimeType === "application/x-snow-document-text"
+      ? ("extracted-text" as const)
+      : ("source" as const);
+
+  useEffect(() => {
+    setReviewOpen(false);
+    setReviewSelection(null);
+    setReviewCandidate(null);
+    setReviewFocus(null);
+  }, [filePath, reviewSourceKey]);
+  useEffect(() => {
+    setReviewSelection(null);
+    setReviewCandidate(null);
+    setReviewFocus(null);
+  }, [content?.content, editMode]);
+
   // 文本行模型：一次扫描得到行边界，行号、折叠、虚拟窗口与搜索定位共用。
   const lineIndex = useMemo(
     () =>
@@ -533,6 +576,25 @@ export function FileViewerContent({
         : null,
     [content, editMode, showCodeView],
   );
+  const reviewIndex = useMemo(
+    () =>
+      reviewOpen && canReview && content
+        ? (lineIndex ?? createLineIndex(content.content))
+        : null,
+    [reviewOpen, canReview, content, lineIndex],
+  );
+  const captureReview = (): FileReviewDraftAnchor | null => {
+    const root = codeContentRef.current;
+    return canReview && showCodeView && root && lineIndex
+      ? captureFileReviewSelection(root, lineIndex, reviewRepresentation)
+      : null;
+  };
+  const addReview = (anchor: FileReviewDraftAnchor | null): void => {
+    if (!anchor) return;
+    setReviewSelection(anchor);
+    setReviewOpen(true);
+    setContextMenu(null);
+  };
 
   // 单行行高与顶部内边距：虚拟滚动按行高换算滚动位置，测量一次即可。
   const [codeMetrics, setCodeMetrics] = useState({
@@ -696,6 +758,28 @@ export function FileViewerContent({
     [collapsedRegions],
   );
 
+  useEffect(() => {
+    if (!reviewFocus || !showCodeView || !lineIndex || editMode) return;
+    if (revealLine(reviewFocus.startLine)) return;
+    const scroll = codeScrollRef.current;
+    if (!scroll) return;
+    const top =
+      codeMetrics.paddingTop +
+      (lineMapping.toVisual(reviewFocus.startLine) - 1) *
+        codeMetrics.lineHeight;
+    scroll.scrollTop = Math.max(0, top - scroll.clientHeight / 3);
+    syncRange();
+  }, [
+    reviewFocus,
+    showCodeView,
+    lineIndex,
+    editMode,
+    revealLine,
+    lineMapping,
+    codeMetrics,
+    syncRange,
+  ]);
+
   // focusLine 变化时滚动到目标行并高亮。仅在非编辑、非二进制/图片、
   // 内容已加载且行号有效时生效。每次 focusLine 变化都会重新触发，
   // 即使是同一文件的不同行点击。
@@ -785,7 +869,7 @@ export function FileViewerContent({
           data-line={line}
           className={`file-viewer-code-line${
             folded ? " file-viewer-code-line--folded" : ""
-          }`}
+          }${reviewFocus && line >= reviewFocus.startLine && line <= reviewFocus.endLine ? " file-viewer-code-line--review-target" : ""}`}
           data-fold-label={
             folded && region
               ? t("rightPanel.fileFoldHiddenLines", {
@@ -807,6 +891,7 @@ export function FileViewerContent({
     lineMapping,
     renderEnd,
     rowRange.start,
+    reviewFocus,
     t,
   ]);
 
@@ -1854,6 +1939,15 @@ export function FileViewerContent({
 
   const buildMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
+    if (canReview && showCodeView && reviewCandidate) {
+      const anchor = reviewCandidate;
+      items.push({
+        id: "file-review-add",
+        label: t("fileReview.add"),
+        icon: <MessageSquarePlus size={13} strokeWidth={1.8} />,
+        onClick: () => addReview(anchor),
+      });
+    }
     const selected = getSelectedText().trim();
     if (selected) {
       items.push({
@@ -1912,7 +2006,12 @@ export function FileViewerContent({
       };
     }
     return (
-      <div className="file-viewer-code-scroll" ref={codeScrollRef}>
+      <div
+        className="file-viewer-code-scroll"
+        ref={codeScrollRef}
+        onMouseUp={() => setReviewCandidate(captureReview())}
+        onKeyUp={() => setReviewCandidate(captureReview())}
+      >
         <pre className="file-viewer-code">
           {highlightStyle ? (
             <span
@@ -2107,10 +2206,15 @@ export function FileViewerContent({
       onCopy={handleCodeCopy}
       onContextMenu={(e) => {
         // 编辑模式放行浏览器原生菜单（保留 textarea 的复制/粘贴/剪切）。
-        if (editMode) {
+        if (
+          editMode ||
+          (e.target instanceof Element &&
+            e.target.closest(".file-review-panel"))
+        ) {
           return;
         }
         e.preventDefault();
+        setReviewCandidate(captureReview());
         setContextMenu({ x: e.clientX, y: e.clientY });
       }}
     >
@@ -2224,6 +2328,40 @@ export function FileViewerContent({
             <Copy size={13} />
           </button>
         )}
+        {canReview && !editMode ? (
+          <>
+            <button
+              type="button"
+              className="file-viewer-action-btn"
+              title={t("fileReview.title")}
+              aria-label={t("fileReview.title")}
+              aria-pressed={reviewOpen}
+              onClick={() => {
+                setReviewOpen(!reviewOpen);
+                if (isMarkdown) setMdMode("code");
+                if (reviewOpen) {
+                  setReviewSelection(null);
+                  setReviewFocus(null);
+                }
+              }}
+            >
+              <MessageSquare size={13} />
+            </button>
+            <button
+              type="button"
+              className="file-viewer-action-btn"
+              title={t(
+                reviewCandidate ? "fileReview.add" : "fileReview.selectHint",
+              )}
+              aria-label={t("fileReview.add")}
+              disabled={!showCodeView || !reviewCandidate}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => addReview(reviewCandidate)}
+            >
+              <MessageSquarePlus size={13} />
+            </button>
+          </>
+        ) : null}
         {canEdit ? (
           editMode ? (
             <>
@@ -2389,55 +2527,80 @@ export function FileViewerContent({
           </button>
         </div>
       ) : null}
-      <div className="file-viewer-body">
-        {isImage && !isSvg && (
-          <div className="file-viewer-image-container">
-            <img
-              src={`data:${content.mimeType};base64,${content.content}`}
-              alt={fileName}
-              className="file-viewer-image"
-            />
-          </div>
-        )}
-        {isSvg && svgMode === "image" && (
-          <div className="file-viewer-image-container">
-            <img
-              src={`data:image/svg+xml;utf8,${encodeURIComponent(
-                content.content,
-              )}`}
-              alt={fileName}
-              className="file-viewer-image"
-            />
-          </div>
-        )}
-        {isSvg && svgMode === "code" && renderCodeBlock()}
-        {isBinary && (
-          <div className="file-viewer-binary">
-            <ImageIcon size={32} />
-            <span>
-              {t("rightPanel.binaryFile", {
-                defaultValue: "Binary file",
-              })}
-            </span>
-          </div>
-        )}
-        {!content.isBinary && !isImage && editMode && renderEditBlock()}
-        {!content.isBinary &&
-          !isImage &&
-          !editMode &&
-          isMarkdown &&
-          mdMode === "preview" && (
-            <MarkdownBlock
-              className="file-viewer-markdown ai-message"
-              content={content.content}
-              onFileLinkClick={handleFileLinkClick}
-            />
+      <div
+        className={`file-viewer-workspace${reviewOpen && canReview && !editMode ? " file-viewer-workspace--review" : ""}`}
+      >
+        <div className="file-viewer-body">
+          {isImage && !isSvg && (
+            <div className="file-viewer-image-container">
+              <img
+                src={`data:${content.mimeType};base64,${content.content}`}
+                alt={fileName}
+                className="file-viewer-image"
+              />
+            </div>
           )}
-        {!content.isBinary &&
-          !isImage &&
-          !editMode &&
-          !(isMarkdown && mdMode === "preview") &&
-          renderCodeBlock()}
+          {isSvg && svgMode === "image" && (
+            <div className="file-viewer-image-container">
+              <img
+                src={`data:image/svg+xml;utf8,${encodeURIComponent(
+                  content.content,
+                )}`}
+                alt={fileName}
+                className="file-viewer-image"
+              />
+            </div>
+          )}
+          {isSvg && svgMode === "code" && renderCodeBlock()}
+          {isBinary && (
+            <div className="file-viewer-binary">
+              <ImageIcon size={32} />
+              <span>
+                {t("rightPanel.binaryFile", {
+                  defaultValue: "Binary file",
+                })}
+              </span>
+            </div>
+          )}
+          {!content.isBinary && !isImage && editMode && renderEditBlock()}
+          {!content.isBinary &&
+            !isImage &&
+            !editMode &&
+            isMarkdown &&
+            mdMode === "preview" && (
+              <MarkdownBlock
+                className="file-viewer-markdown ai-message"
+                content={content.content}
+                onFileLinkClick={handleFileLinkClick}
+              />
+            )}
+          {!content.isBinary &&
+            !isImage &&
+            !editMode &&
+            !(isMarkdown && mdMode === "preview") &&
+            renderCodeBlock()}
+        </div>
+        {reviewOpen && canReview && reviewIndex && !editMode ? (
+          <FileReviewPanel
+            key={`${reviewSourceKey}:${filePath}`}
+            sourceKey={reviewSourceKey}
+            filePath={filePath}
+            index={reviewIndex}
+            representation={reviewRepresentation}
+            selection={reviewSelection}
+            onCancelSelection={() => setReviewSelection(null)}
+            onLocate={(location) => {
+              setMdMode("code");
+              setSearchOpen(false);
+              setReviewFocus(location);
+            }}
+            onClose={() => {
+              setReviewOpen(false);
+              setReviewSelection(null);
+              setReviewFocus(null);
+            }}
+          />
+        ) : null}
       </div>
       {contextMenu && (
         <ContextMenu

@@ -4357,6 +4357,11 @@ export const zhTW = {
   "rightPanel.svgCodeMode": "以程式碼檢視",
   "rightPanel.fileViewerLoadError": "載入檔案失敗",
   "rightPanel.fileViewerEmpty": "沒有可顯示的內容",
+  "rightPanel.fileViewerReadOnlyPreview": "唯讀預覽",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "顯示擷取後的文件文字，可搜尋和複製；不保留原始排版，也不能覆寫儲存原文件。",
+  "rightPanel.fileViewerTextPreviewHint":
+    "此文字可以閱讀、搜尋和複製，但目前無法無損保留原編碼，已停用編輯。",
   "rightPanel.fileViewerEdit": "編輯檔案",
   "rightPanel.fileViewerExitEdit": "退出編輯模式（Esc）",
   "rightPanel.fileViewerSave": "儲存",

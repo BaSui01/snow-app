@@ -4512,6 +4512,11 @@ export const en = {
   "rightPanel.svgCodeMode": "View as code",
   "rightPanel.fileViewerLoadError": "Failed to load file",
   "rightPanel.fileViewerEmpty": "No content to display",
+  "rightPanel.fileViewerReadOnlyPreview": "Read-only preview",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "Extracted document text can be searched and copied. Original layout is not preserved and the document cannot be overwritten.",
+  "rightPanel.fileViewerTextPreviewHint":
+    "This text can be read, searched and copied, but editing is disabled because its original encoding cannot be preserved losslessly.",
   "rightPanel.fileViewerEdit": "Edit file",
   "rightPanel.fileViewerExitEdit": "Exit edit mode (Esc)",
   "rightPanel.fileViewerSave": "Save",

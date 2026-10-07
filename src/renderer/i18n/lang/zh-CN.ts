@@ -4240,6 +4240,11 @@ export const zhCN = {
   "rightPanel.svgCodeMode": "以代码查看",
   "rightPanel.fileViewerLoadError": "加载文件失败",
   "rightPanel.fileViewerEmpty": "没有可显示的内容",
+  "rightPanel.fileViewerReadOnlyPreview": "只读预览",
+  "rightPanel.fileViewerDocumentPreviewHint":
+    "显示提取后的文档文本，可搜索和复制；不保留原始排版，也不能覆盖保存原文档。",
+  "rightPanel.fileViewerTextPreviewHint":
+    "此文本可以阅读、搜索和复制，但当前无法无损保留原编码，已禁用编辑。",
   "rightPanel.fileViewerEdit": "编辑文件",
   "rightPanel.fileViewerExitEdit": "退出编辑模式（Esc）",
   "rightPanel.fileViewerSave": "保存",

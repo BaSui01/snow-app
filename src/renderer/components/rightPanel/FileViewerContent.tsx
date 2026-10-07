@@ -223,8 +223,14 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+// Extracted documents and text that cannot round-trip to its original encoding
+// are searchable/copyable previews, never editable source files.
+const isReadOnlyPreview = (content: FileContentResult): boolean =>
+  content.mimeType === "application/x-snow-document-text" ||
+  content.mimeType === "application/x-snow-text-preview";
+
 const isEditable = (content: FileContentResult): boolean =>
-  !content.isBinary && !content.isImage;
+  !content.isBinary && !content.isImage && !isReadOnlyPreview(content);
 
 const serializeRemoteVersion = (
   version: FileContentResult["remoteVersion"] | undefined,
@@ -1257,7 +1263,7 @@ export function FileViewerContent({
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!dirty || saving) return;
+    if (!dirty || saving || !content || !isEditable(content)) return;
     setSaving(true);
     setSaveError(null);
     setSavedAt(false);
@@ -2225,6 +2231,18 @@ export function FileViewerContent({
         <span className="file-viewer-file-size">
           {formatSize(content.size)}
         </span>
+        {isReadOnlyPreview(content) ? (
+          <span
+            className="file-viewer-edit-status"
+            title={t(
+              content.mimeType === "application/x-snow-document-text"
+                ? "rightPanel.fileViewerDocumentPreviewHint"
+                : "rightPanel.fileViewerTextPreviewHint",
+            )}
+          >
+            {t("rightPanel.fileViewerReadOnlyPreview")}
+          </span>
+        ) : null}
         {editMode ? (
           <span
             className={`file-viewer-edit-status ${dirty ? "dirty" : ""} ${

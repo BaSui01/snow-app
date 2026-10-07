@@ -1,4 +1,10 @@
 import { useCallback } from "react";
+import {
+  startAgentTask,
+  bindAgentTask,
+  recordTaskResponse,
+  finishAgentTask,
+} from "./taskHistory";
 import { useI18n } from "../../../../i18n";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import { summarizeContentAsPlainText } from "../../chatInput/fileTagUtils";
@@ -385,6 +391,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // Capture the current runId so runAgentLoop can detect when a newer
       // send or abort has superseded this invocation.
       const currentRunId = (sessionRef?.runId ?? 0) + 1;
+      const taskHistory = startAgentTask(sessionKey);
+      const finalizeTaskHistory = async (): Promise<void> => {
+        try {
+          await finishAgentTask(taskHistory, finalSessionKey);
+        } catch {
+          console.warn("Task file history could not be persisted");
+        }
+      };
       if (sessionRef) {
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
@@ -819,6 +833,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // does not become a conversation message or persisted user content.
         internalRecoveryPrompt?: string,
       ): Promise<void> => {
+        taskHistory.endResponseId = "";
         const iterSessionKey = currentConversationId ?? sessionKey;
         let effectiveKey = iterSessionKey;
 
@@ -918,6 +933,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 残留的增量若晚到就会把内容追加到完整文本之上。
           chunkHandler.flush();
         }
+        taskHistory.endResponseId = response.id;
+        recordTaskResponse(
+          taskHistory,
+          response.conversationId || effectiveKey,
+          response.id,
+        );
+        if (response.conversationId)
+          bindAgentTask(response.conversationId, taskHistory);
         const responseDisposition = resolveResponseDisposition(response);
         const responseFailed = responseDisposition.kind === "error";
 
@@ -1923,6 +1946,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             reportRunError(error);
           }
           if (!ref || ref.runId !== currentRunId) {
+            await finalizeTaskHistory();
             // Abort increments the generation. Keep its lifecycle hook, but never
             // mutate the replacement run's counters, locks, or pending queue.
             await runHook(
@@ -2024,6 +2048,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             petTurnId,
             runFailed || isRunCancelled(finalSessionKey),
           );
+
+          await finalizeTaskHistory();
 
           const ownsSession = !!ref && ref.runId === currentRunId;
           if (!ownsSession) return;

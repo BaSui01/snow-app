@@ -2279,6 +2279,12 @@ export type NativeBridge = {
   restoreArchivedConversations: (conversationIds: string[]) => Promise<void>;
   /** 永久删除归档会话（含子代理级联）。 */
   deleteArchivedConversations: (conversationIds: string[]) => Promise<void>;
+  saveTaskHistory: (
+    conversationId: string,
+    responseId: string,
+    manifest: string,
+  ) => Promise<void>;
+  listTaskHistory: (conversationId: string) => Promise<string[]>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listUserMessages: (conversationId: string) => Promise<UserMessageSummary[]>;

@@ -10,6 +10,8 @@ use crate::api::conversation::tags::expand_display_tags_in_content;
 
 mod fork_truncate;
 mod messages;
+mod task_history;
+pub use self::task_history::*;
 mod query;
 mod sub_agent;
 mod workflow;

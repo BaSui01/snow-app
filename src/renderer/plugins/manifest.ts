@@ -158,9 +158,48 @@ const normalizeMessageFooters = (
     )
       continue;
     ids.add(id);
-    result.push({ id, entry, exportName });
+    result.push({
+      id,
+      entry,
+      exportName,
+      ...(value.taskHistory === true ? { taskHistory: true } : {}),
+    });
   }
   return result;
+};
+
+// Read renderer-only contributions from the saved manifest: older native panel
+// normalization deliberately keeps only its known fields. No native upgrade needed.
+const panelsWithSettings = (record: PluginRecord): PluginPanelDefinition[] => {
+  const panels = normalizePanels(parseJson(record.panels, []));
+  const manifest = parseJson<Record<string, unknown>>(record.manifestJson, {});
+  const rawPanels =
+    manifest && Array.isArray(manifest.panels) ? manifest.panels : [];
+  return panels.map((panel) => {
+    const raw = rawPanels.find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        typeof item.id === "string" &&
+        item.id.trim() === panel.id,
+    );
+    const settings = raw?.chatInputSettings;
+    if (
+      !settings ||
+      typeof settings !== "object" ||
+      Array.isArray(settings) ||
+      typeof settings.storageKey !== "string" ||
+      !settings.storageKey.trim()
+    )
+      return panel;
+    return {
+      ...panel,
+      chatInputSettings: {
+        defaultVisible: settings.defaultVisible !== false,
+        storageKey: settings.storageKey.trim(),
+      },
+    };
+  });
 };
 
 export const parsePluginRecord = (record: PluginRecord): PluginView => ({
@@ -176,7 +215,7 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
     ? "iframe"
     : "esm") as PluginRenderMode,
   entry: record.entry,
-  panels: normalizePanels(parseJson(record.panels, [])),
+  panels: panelsWithSettings(record),
   messageFooters: normalizeMessageFooters(record),
   locales: parseJson(record.locales, {}),
   styles: parseJson<string[]>(record.styles, []).filter(

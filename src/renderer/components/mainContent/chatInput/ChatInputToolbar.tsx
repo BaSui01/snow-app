@@ -257,7 +257,7 @@ export const ChatInputToolbar = ({
           ])}
           apiConfigIdentity={runtimeApiConfig}
           disabled={
-            isSessionRunning ||
+            isCompacting ||
             isLoadingApiConfig ||
             !runtimeApiConfig ||
             modelSelectorProps.apiConfigs.length === 0 ||

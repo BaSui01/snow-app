@@ -1,6 +1,7 @@
 import { Copy, Loader2, Settings, Undo2, X } from "lucide-react";
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -109,6 +110,53 @@ export const ChatInputPluginAction = ({
     resolveLocalized(panel.title, locale) ||
     panel.id;
   const panelTitle = resolveLocalized(panel.title, locale) || panel.id;
+  const { storageRevision = 0 } = useSyncExternalStore(
+    pluginStore.subscribe,
+    pluginStore.getState,
+    pluginStore.getState,
+  );
+  const [settingsVisibility, setSettingsVisibility] = useState<{
+    plugin: PluginView;
+    panel: PluginPanelDefinition;
+    visible: boolean;
+  } | null>(null);
+  const showSettings =
+    settingsVisibility?.plugin === plugin && settingsVisibility.panel === panel
+      ? settingsVisibility.visible
+      : (panel.chatInputSettings?.defaultVisible ?? true);
+  useEffect(() => {
+    let alive = true;
+    const contribution = panel.chatInputSettings;
+    if (!contribution) return;
+    void window.snow
+      .getPluginValues(plugin.pluginId)
+      .then((values) => {
+        let visible = contribution.defaultVisible;
+        const raw = values.find(
+          (item) => item.key === contribution.storageKey,
+        )?.value;
+        if (raw !== undefined) {
+          try {
+            const value: unknown = JSON.parse(raw);
+            if (typeof value === "boolean") visible = value;
+          } catch {
+            /* Invalid private preference falls back to the manifest. */
+          }
+        }
+        if (alive) setSettingsVisibility({ plugin, panel, visible });
+      })
+      .catch(() => {
+        if (alive)
+          setSettingsVisibility({
+            plugin,
+            panel,
+            visible: contribution.defaultVisible,
+          });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [plugin, panel, storageRevision]);
   const contextRevision = useSyncExternalStore(
     subscribePluginDraftContext,
     getPluginDraftContextRevision,
@@ -196,7 +244,6 @@ export const ChatInputPluginAction = ({
     setStatus(labels.cancelled);
   };
   const openConfiguration = (): void => {
-    if (runRef.current) cancel();
     rightPanelEvents.emit("open-plugin-panel", {
       pluginId: plugin.pluginId,
       panelId: panel.id,
@@ -425,16 +472,18 @@ export const ChatInputPluginAction = ({
           )}
         </button>
       </Tooltip>
-      <Tooltip content={`${labels.configure}: ${panelTitle}`}>
-        <button
-          className="toolbar-btn"
-          type="button"
-          aria-label={`${labels.configure}: ${panelTitle}`}
-          onClick={openConfiguration}
-        >
-          <Settings size={13} />
-        </button>
-      </Tooltip>
+      {showSettings && (
+        <Tooltip content={`${labels.configure}: ${panelTitle}`}>
+          <button
+            className="toolbar-btn"
+            type="button"
+            aria-label={`${labels.configure}: ${panelTitle}`}
+            onClick={openConfiguration}
+          >
+            <Settings size={13} />
+          </button>
+        </Tooltip>
+      )}
       {status && (
         <span
           role="status"

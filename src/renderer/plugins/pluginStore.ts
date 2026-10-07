@@ -12,6 +12,7 @@ export type PluginStoreState = {
   error: string | null;
   plugins: PluginView[];
   revision: number;
+  storageRevision?: number;
 };
 
 let state: PluginStoreState = {
@@ -60,6 +61,10 @@ export const pluginStore = {
     return () => {
       listeners.delete(listener);
     };
+  },
+  /** Refresh private preferences without replacing plugin/module identities. */
+  notifyStorageChanged(): void {
+    commit({ storageRevision: (state.storageRevision ?? 0) + 1 });
   },
   /** 首次访问时加载插件列表（并发调用共享同一次加载）。 */
   ensureLoaded(): Promise<void> {

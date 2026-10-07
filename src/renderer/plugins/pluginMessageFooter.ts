@@ -1,3 +1,4 @@
+import type { TaskSnapshot } from "../components/mainContent/chatMessages/hooks/taskHistory";
 import type { MetadataSubscription } from "./metadata";
 import type {
   PluginMetadataApi,
@@ -11,6 +12,8 @@ export type PluginMessageFooterContext = Readonly<{
   conversationId: string;
   messageId: string;
   directoryId: string | undefined;
+  /** Immutable file evidence for an opted-in task-end contribution; no chat body. */
+  task?: TaskSnapshot;
 }>;
 
 /** Footer exposes only file-reader and read-only diff navigation, never general write, AI, network or storage APIs. */

@@ -1,3 +1,8 @@
+import {
+  currentAgentTask,
+  bindAgentTask,
+  recordTaskResponse,
+} from "./taskHistory";
 import type {
   ChatConversationMessage,
   ConversationContextValue,
@@ -361,6 +366,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     subMessages,
     resumeAfterCompaction = false,
   ): Promise<string> => {
+    const taskHistory = currentAgentTask(parentConversationId);
+    if (taskHistory) bindAgentTask(subConvId, taskHistory);
     if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
       return "Sub-agent interrupted by user";
     }
@@ -426,6 +433,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     } finally {
       subChunkHandler.flush();
     }
+    recordTaskResponse(taskHistory, subConvId, subResponse.id, agentName);
     const subResponseDisposition = resolveResponseDisposition(subResponse);
     const subResponseFailed = subResponseDisposition.kind === "error";
 

@@ -10,6 +10,7 @@ import {
   type MetadataSubscription,
 } from "./metadata";
 import { createPluginAiApi, type PluginAiApi } from "./pluginAi";
+import { pluginStore } from "./pluginStore";
 import type { MetadataResponse, PluginView } from "./types";
 import { describeWriteDomains, executeWrite, WRITE_ACTION_IDS } from "./writes";
 import type {
@@ -154,12 +155,14 @@ export const createPluginApi = async (params: {
   const storage: PluginStorageApi = {
     get: async (key) => storageCache.get(key) ?? null,
     set: async (key, value) => {
-      storageCache.set(key, value);
       await window.snow.setPluginValue(plugin.pluginId, key, value);
+      storageCache.set(key, value);
+      pluginStore.notifyStorageChanged();
     },
     remove: async (key) => {
-      storageCache.delete(key);
       await window.snow.deletePluginValue(plugin.pluginId, key);
+      storageCache.delete(key);
+      pluginStore.notifyStorageChanged();
     },
     all: async () => Object.fromEntries(storageCache),
     getJson: async <T>(key: string, fallback: T): Promise<T> => {

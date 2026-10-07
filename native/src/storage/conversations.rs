@@ -472,6 +472,16 @@ pub fn delete_archived_conversations(conversation_ids: Vec<String>) -> Result<()
     services::archive::delete_archived_conversations(&archive_path, &conversation_ids)
 }
 
+pub fn save_task_history(conversation_id: String, response_id: String, manifest: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::save_task_history(&database_path, &conversation_id, &response_id, &manifest)
+}
+
+pub fn list_task_history(conversation_id: String) -> Result<Vec<String>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_task_history(&database_path, &conversation_id)
+}
+
 pub fn append_tool_message(conversation_id: String, content: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::append_tool_message(&database_path, &conversation_id, &content)

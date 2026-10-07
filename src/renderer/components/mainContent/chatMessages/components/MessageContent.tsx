@@ -146,9 +146,6 @@ export const MessageContent = memo(
           recoveryOutcome={message.recoveryOutcome}
           showActions={showActions}
           footerContent={
-            isLastAssistant &&
-            showActions &&
-            !isAborting &&
             activeConversationId ? (
               <PluginMessageFooters
                 key={`${activeConversationId}:${message.id}`}

@@ -36,20 +36,121 @@ flowchart LR
 - Rust provider 适配器负责请求格式、流解析和每轮模型交换落库。
 - `mcp/tools.rs` 负责工具发现、强制策略、路由、隐私掩码和 checkpoint 衔接。
 
+### 1.1 核心 Agent 链路执行全景（Master Lifecycle Architecture）
+
+从用户在 UI 发起输入到最终落库收敛，Agent Loop 的宏观全生命周期分为 5 大演进阶段：
+
+```mermaid
+flowchart TD
+    subgraph S1["第一阶段: 会话准备与域绑定"]
+        A1["用户输入 / 预设指令"] --> A2["resolveConversationWorkspacePath<br/>解析物理根目录与 Git 工作树"]
+        A2 --> A3["startAgentTask 初始化历史追踪<br/>创建初始磁盘 Checkpoint 快照"]
+    end
+
+    subgraph S2["第二阶段: 上下文装配与协议分派"]
+        A3 --> B1["动态提示词注入 (ROLE.md + 模式模板)"]
+        B1 --> B2["动态工具域与 Sub-Agent 清单注入"]
+        B2 --> B3["抽取高权重 Project Memory 与成对历史"]
+        B3 --> B4["多协议出站 (Chat/Responses/Anthropic/Gemini/Interactions)"]
+    end
+
+    subgraph S3["第三阶段: 双向流式与自愈网络"]
+        B4 --> C1["SSE 实时 Chunk 管道 (打字机渲染)"]
+        C1 -.->|遇网络断开/超时| C2["底层 9 类故障指数退避重试<br/>或 PartialThreshold 截断保护"]
+        C2 -.->|重试成功| C1
+        C1 --> C3["流结算: 解析 toolCalls 与最终文本"]
+    end
+
+    subgraph S4["第四阶段: 状态感知与工具调度"]
+        C3 --> D1{"是否存在工具调用?"}
+        D1 -- 否 --> D2{"中途是否有 Steering 追问?"}
+        D1 -- 是 --> D3["ReadonlyCallGuard 物理与 Git 探针比对"]
+        D3 --> D4["智能并发分流器 (toolExecution.ts)"]
+        D4 --> D5["单工具 8 步执行微管道 (Hook/脱敏/Diff)"]
+    end
+
+    subgraph S5["第五阶段: 历史递增与自递归收敛"]
+        D5 --> E1["打包 toolResultMessage 回灌会话历史"]
+        E1 --> E2["消耗并追加中途 Steering 消息"]
+        E2 --> E3["递归自调用 await runAgentLoop(...)"]
+        E3 --> B4
+        D2 -- 有追问 --> E2
+        D2 -- 无追问 --> E4["finishAgentTask 封板落库, 回到 Idle 终态"]
+    end
+
+    style S1 fill:#f0f7ff,stroke:#2b7fff,stroke-width:2px
+    style S2 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style S3 fill:#fffbe6,stroke:#faad14,stroke-width:2px
+    style S4 fill:#fff0f6,stroke:#eb2f96,stroke-width:2px
+    style S5 fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+```
+
+### 1.2 会话初始化与 Git 工作树隔离时序（Session & Worktree Isolation Flow）
+
+为保证多会话在不同分支或隔离工作树（WorkTree）下并行工作且写操作不发生竞态碰撞，会话执行域采用严格的事务锁与路径解析流水线：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 用户 (UI)
+    participant Selector as WorktreeSessionSelector
+    participant RustWT as native worktrees.rs
+    participant DB as SQLite (conversations)
+    participant Loop as useAgentLoop
+
+    User->>Selector: 切换会话绑定到独立分支/工作树 (worktreeId)
+    Selector->>RustWT: git:worktrees:set-conversation
+    Note over RustWT: 接入 with_write_lock 与 with_write_retry，杜绝 database locked
+    RustWT->>DB: 原子持久化绑定关系
+
+    User->>Loop: 点击发送消息
+    Loop->>Loop: resolveConversationWorkspacePath()
+    Note over Loop: 将相对路径解析为独立工作树真实物理路径 (如 /modules/tasks)
+    Loop->>Loop: 将 executionWorkspaceRoot 写入请求契约，Checkpoint 与工具物理锚定
+```
+
 ## 2. 模型适配层
 
-统一入口 `native/src/api/conversation/stream.rs::create_response_stream` 根据 `request_method` 分派：
+统一入口 `native/src/api/conversation/stream.rs::create_response_stream` 根据 `request_method` 分派五种流式协议：
 
-| request_method | 适配目录                    | 协议                    |
-| -------------- | --------------------------- | ----------------------- |
-| `chat`         | `native/src/api/chat/`      | OpenAI Chat Completions |
-| `responses`    | `native/src/api/responses/` | OpenAI Responses        |
-| `anthropic`    | `native/src/api/anthropic/` | Anthropic Messages      |
-| `gemini`       | `native/src/api/gemini/`    | Google Gemini           |
+| request_method | 适配目录                       | 协议与端点                      | 特性支持                                                                                 |
+| -------------- | ------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------- |
+| `chat`         | `native/src/api/chat/`         | OpenAI Chat Completions         | 基础多轮对话、Function Call、流式打字机                                                  |
+| `responses`    | `native/src/api/responses/`    | OpenAI Responses API            | 新一代 Responses 协议、Fast Mode、多模态、Reasoning 输出                                 |
+| `anthropic`    | `native/src/api/anthropic/`    | Anthropic Messages API          | Claude 3.x/3.7 系列、自适应 Thinking 思考块、Tool Use 规范                               |
+| `gemini`       | `native/src/api/gemini/`       | Google Gemini (GenerateContent) | 原生 Gemini 协议、系统指令注入、函数调用、Thinking 强度                                  |
+| `interactions` | `native/src/api/interactions/` | Google Interactions API         | Google 新一代交互流协议（`alt=sse`）、独立 Function 与内置检索工具分离、成对工具历史转换 |
 
-适配器共同负责 provider payload、规范化消息转换、SSE 或等价流解析、文本/thinking/tool calls/usage 累积及 `store_chat_exchange`。工具定义分别由 `tools_as_openai_chat_json`、`tools_as_openai_responses_json`、`tools_as_anthropic_json`、`tools_as_gemini_json` 生成；工具历史跨协议转换集中在 `api/conversation/tool_messages.rs`。
+适配器共同负责 provider payload、规范化消息转换、SSE 或等价流解析、文本/thinking/tool calls/usage 累积及 `store_chat_exchange`。工具定义分别由 `tools_as_openai_chat_json`、`tools_as_openai_responses_json`、`tools_as_anthropic_json`、`tools_as_gemini_json`、`tools_as_interactions_json` 生成；工具历史跨协议转换集中在 `api/conversation/tool_messages.rs`。各协议流中断时均由 `api/retry.rs` 提供统一的指数退避重试与 Partial 截断保留保护。
 
 API profile 解析优先考虑请求显式 profile、会话绑定 profile，再回退全局 active profile。子代理始终使用其配置 profile，并强制关闭主会话专属的 Plan/Goal Mode。
+
+### 2.1 动态上下文组装与系统提示词注入流水线
+
+在每一轮发起模型出站请求前，Rust 原生层（`native/src/api/conversation/context.rs`）会严格按照运行模式、工具可用性、项目记忆与历史消息完成多模态上下文的动态组装与校验：
+
+```mermaid
+flowchart TD
+    Req["ConversationContextRequest 调度进入"] --> ModeCheck{"当前会话模式判定"}
+    ModeCheck -->|Plan / Goal / Worktree / Workflow| ModePrompt["模式专属系统提示词模板<br/>(native/src/prompt/)"]
+    ModeCheck -->|普通对话| BasePrompt["基础系统提示词 + 用户个性化 ~/.snow/ROLE.md"]
+
+    ModePrompt --> InjectChapters["动态工具域指引章节按需注入"]
+    BasePrompt --> InjectChapters
+
+    subgraph PromptInjection["动态提示词注入流水线 (native/src/prompt/tool_hints.rs)"]
+        LSPCheck{"已发现 LSP 工具?"} -- 是 --> LSPPrompt["注入 ## Language Servers 章节与规范"]
+        ImgCheck{"生图渠道已启用?"} -- 是 --> ImgPrompt["注入 ## Image Generation 渠道指引"]
+        AgentCheck{"存在可用子代理?"} -- 是 --> AgentPrompt["注入项目优先的 Sub-Agents 清单"]
+        TeamCheck{"处于子代理会话?"} -- 是 --> TeamPrompt["注入 ## Teammate Communication 协作通信指引"]
+    end
+
+    InjectChapters --> PromptInjection
+    PromptInjection --> MemInject["SQLite 项目记忆持久化注入<br/>(抽取 importance >= 3 的 Project Memory)"]
+    MemInject --> HistoryLoad["加载会话历史 (SQLite chat_messages)"]
+    HistoryLoad --> ToolPair["成对工具校验与清洗 (ensure_tool_pairing)"]
+    ToolPair --> PayloadGen["生成对应 Provider Payload (OpenAI / Anthropic / Gemini / Interactions)"]
+```
 
 ## 3. 流式事件协议
 
@@ -81,6 +182,43 @@ sequenceDiagram
 
 这条链与 `src/main/app/sessionProxy.ts` 无关；后者是 Electron 网络代理配置。Rust 侧出站请求（含本链路的 provider 适配器）在 `api/http_client.rs` 统一应用同一份代理配置。
 
+### 3.1 流式重试机制与传输恢复（Transport Retry & Partial Recovery）
+
+Snow App 底层集成了高韧性的流式断线与异常自动重试引擎（`native/src/api/retry.rs`），覆盖 Provider 闪断、空闲超时（Idle Timeout）以及网络波动：
+
+```mermaid
+flowchart TD
+    A[流式传输发生异常/中断] --> B{分析错误分类与原因}
+    B -- 4xx 客户端错误/鉴权失败 --> C[标记 NonRetriable, 立即终止]
+    B -- 网络超时 / 5xx / 429 / 闪断 --> D{是否中途已产生大量文本?}
+
+    D -- 是: 用户可见文本 >= partial_retry_max_chars --> E[PartialThreshold 保护:<br/>截断保留已生成文本, 结束当前流,<br/>避免巨大 Token 从头重试浪费]
+    D -- 否: 文本较短或首字未出 --> F{attempt < max_retries?}
+
+    F -- 否 --> G[RetryExhausted: 触发重试耗尽, 标记 incomplete, UI 提供手动重试]
+    F -- 是 --> H[指数退避等待 wait_before_retry]
+
+    H --> I[Rust 向渲染进程推送特殊 Chunk:<br/>retrying=true, retryAttempt, retryError]
+    I --> J[Renderer createStreamChunkHandler 捕获<br/>挂载 StreamRetryNotice 展示旋转提示]
+    J --> K[发起新一轮底层连接尝试]
+    K -- 收到首个正常 Chunk --> L[清除重试状态, 无缝继续打字机输出]
+```
+
+1. **核心重试参数配置**（来源于 `api_configs` 档案与全局规则）：
+   - `max_retries`：每个请求最大自动重试次数（默认 3 次）。
+   - `retry_base_delay_ms`：指数退避基数（默认 1000ms），后续按 $base \times 2^{(attempt-1)}$ 递增退避。
+   - `stream_idle_timeout_sec`：流空闲心跳守护（默认 60s，若 Provider 超过该时间无任何新数据块，主动判定为 `idle_timeout` 并介入重试）。
+   - `partial_retry_max_chars`：中途保留阈值（默认 1000 字符）。
+2. **错误分类矩阵（`DEFAULT_RETRY_CATEGORIES`）**：
+   - 自动匹配 9 类高频网络与服务错误：`network`（连接重置/拒绝/DNS）、`serverError`（500/502/503/504）、`rateLimit`（429）、`overloaded`（529）、`idleTimeout`（流空闲悬挂）、`stream`（流提前异常终止）、`nonSse`、`unavailable`、`terminated`。
+   - 明确排除不可重试类型（如 401 密钥失效、400 格式错误），避免无谓消耗。
+3. **Mid-stream Partial 阈值保护（`StreamRecoveryOutcome::PartialThreshold`）**：
+   - 若流在已经输出了大段内容后意外断开，只要**用户可见的正文长度达到 `partial_retry_max_chars`**，系统会放弃重头重发，转而保留现有文本并平稳结算该轮次。这有效防止了长篇代码输出中断时，反复从头重试造成上下文爆棚与双倍计费。
+4. **渲染层流式重试交互感知（`StreamRetryNotice`）**：
+   - 当 Rust 层发起内部重试时，会通过 Chunk 管道向前端发射 `{ retrying: true, retryAttempt: N, retryError: string }`；
+   - 前端 `createStreamChunkHandler` 感知后，将当前 Assistant 消息打上 `isRetrying` 标记，并呼出 `StreamRetryNotice` 组件（展示旋转动画、当前重试轮次与可折叠的错误详情）；
+   - 新连接只要吐出第一个有效字符，重试标识自动抹去，界面无缝恢复流式输出。
+
 ## 4. Renderer 主循环
 
 每个会话具有独立 session state、`runId`、`streamId`、AbortController、暂停状态和排队输入，因此切换会话不会终止后台运行。
@@ -104,6 +242,219 @@ stateDiagram-v2
     Executing --> Aborted: abort propagated
     Completed --> Idle
     Aborted --> Idle
+```
+
+### 4.1 核心调用链路与执行时序
+
+主循环（Agent Loop）位于 `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`，是以自递归推进（`runAgentLoop`）为骨架、事件驱动的状态机。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 用户 (UI)
+    participant Loop as useAgentLoop (Renderer)
+    participant Guard as ReadonlyCallGuard
+    participant IPC as Electron IPC (Preload/Main)
+    participant Native as Rust 运行时
+    participant Model as LLM Provider
+    participant MCP as MCP 工具执行域
+
+    User->>Loop: handleSendMessage(message, options)
+    Note over Loop: 1. 初始化会话、文件快照 Checkpoint 与 TaskHistory
+    Loop->>Loop: 启动首轮递归 runAgentLoop()
+
+    loop 递归步进循环 (Agent Loop Iterations)
+        Loop->>IPC: window.snow.createResponseStream()
+        IPC->>Native: native.createResponseStreamWithContext()
+        Native->>Model: 发起流式请求 (SSE / HTTP Stream)
+
+        par 流式实时回传 (打字机效果)
+            Model-->>Native: 文本 / 思考 / 工具调用 Chunk
+            Native-->>IPC: chat:stream:chunk
+            IPC-->>Loop: createStreamChunkHandler() 实时更新 UI 状态
+        end
+
+        Model-->>Native: 响应流结束
+        Native-->>Loop: Promise resolve (包含完整 response 与 toolCalls)
+
+        alt 模式 A：模型返回终态回复 (无工具调用)
+            Loop->>Loop: 检查中途追问指令 consumeSteering()
+            alt 存在待消费 Steering
+                Loop->>Loop: 插入用户追问，自递归 runAgentLoop() 继续处理
+            else 无追问
+                Note over Loop: finishAgentTask()，退出 Loop，恢复 Idle
+            end
+
+        else 模式 B：模型发起工具调用 (toolCalls.length > 0)
+            Loop->>Guard: await readonlyGuard.filterToolCalls()
+            Note over Guard: 主动检测物理文件指纹与 Git 仓库变动！<br/>文件/Git 已变更则放行，全无变动才拦截去重
+
+            Loop->>Loop: requestToolAuthorizations() 权限判定 (YOLO/用户确认)
+            Loop->>MCP: toolExecutor() 调度执行工具
+            MCP-->>Loop: 返回结构化工具结果
+
+            Loop->>Guard: await readonlyGuard.recordToolExecutions()
+            Note over Guard: 捕获最新物理/Git快照；若执行写操作则失效只读缓存
+
+            Loop->>Loop: 格式化 toolResultMessage 并追加到会话历史
+            Loop->>Loop: 分配下一轮 Assistant 占位消息
+            Note over Loop: 递归步进：await runAgentLoop(nextAssistantId, ...)
+        end
+    end
+```
+
+完整执行流程拆解为 7 个阶段：
+
+1. **输入准备（`handleSendMessage`）**：校验输入文本、解析并注入上下文标签；绑定会话工作区执行根路径与分支；初始化当前轮次文件 Checkpoint 与任务追踪（`startAgentTask`）。
+2. **环境校验与流调度（`runAgentLoop`）**：检查 `isRunCancelled` 取消标志；接入 `pauseController` 支持运行中途暂停与恢复；通过 `createResponseStream` 向主进程和 Rust 层派发带上下文的统一请求。
+3. **双向流式回传**：Rust 层根据 Provider 协议解析 SSE 流块；主进程与 Preload 按 `streamId` 进行隔离过滤；`createStreamChunkHandler` 驱动界面以毫秒级刷新文本与思考内容。
+4. **响应结算与终态检测**：流结束后解析 `toolCalls`。若无工具调用，调用 `consumeSteering` 检查用户是否在 AI 思考期间追加了新消息；若有则追加并推进下一轮，若无则完成任务。
+5. **只读保护与变动感知（`ReadonlyCallGuard`）**：对工具列表进行过滤与探针检测，避免模型重复无意义读取导致死循环，同时杜绝误杀（详见 4.2 节）。
+6. **工具授权与执行**：按项目权限规则和 YOLO 模式完成授权；调度 MCP 服务、终端执行器或子代理，获得标准化结果。
+7. **历史追加与自递归步进**：打包 `role: "tool"` 消息，并携带 `toolResultsJson` 自递归进入下一轮 `runAgentLoop`，直至模型收敛完成。
+
+### 4.2 只读工具去重防护与 Git / 物理状态感知算法
+
+#### 4.2.1 背景与设计动机
+
+LLM 在执行复杂多步任务时，有时会因上下文注意力偏离或幻觉，连续多次以相同参数重复调用只读工具（如 `filesystem-read` 同一路径或 `grep-search` 同一关键词）。
+若不加约束，会导致无意义的 Token 消耗甚至无限请求死循环；然而，若仅依赖静态工具白名单或纯文本调用历史，一旦外部环境（外部编辑器保存、Git 分支切换、子代理执行、后台编译产物写入）修改了文件，系统会误判为“状态未改变”并强制拦截（抛出 `DUPLICATE_READONLY_TOOL_CALL` 错误甚至掐断 LLM 流）。
+
+为此，Snow App 设计了统一的 **`ReadonlyCallGuard`（`readonlyCallGuard.ts`）**，将防护策略升级为**真实客体变动感知驱动的自适应防护算法**：
+
+#### 4.2.2 双层探针检测机制
+
+当检测到参数完全相同的只读调用时，Guard 不立即报错，而是主动执行两层真实环境检测：
+
+```mermaid
+flowchart TD
+    A[只读工具调用到达] --> B{参数与历史已记录调用一致?}
+    B -- 否 --> C[放行执行]
+    B -- 是 --> D{工具类型判断}
+
+    D -- filesystem-read 文件类 --> E[第一层: 物理文件指纹比对<br/>exists / size / contentLength / preview]
+    E -- 物理指纹改变 --> C
+    E -- 物理指纹一致 --> F[第二层: Git 仓库状态检测<br/>gitStatus 文件修改/暂存/未跟踪状态]
+    F -- Git 状态改变 --> C
+    F -- Git 状态未改变 --> G[判定为真实无变动调用]
+
+    D -- grep-search 检索类 --> H[Git 仓库全局脏状态比对<br/>branch / ahead / behind / 脏文件列表摘要]
+    H -- 仓库有任何新增/修改/提交 --> C
+    H -- 仓库状态完全无变化 --> G
+
+    G --> I[生成去重错误提示, 隔离执行, 引导模型直接使用已有结果]
+```
+
+1. **单文件物理级检测（`captureFileSnapshot`）**：
+   - 记录文件的存在状态、字节大小（`size`）、字符长度（`contentLength`）以及首段内容哈希摘要（`preview`）；
+   - 只要任何一项与历史快照不一致（表明文件已被外部工具、进程或子代理修改），立即认定为发生变动，自动失效缓存并放行。
+2. **Git 仓库版本级检测（`captureGitSnapshot`）**：
+   - 通过 `window.snow.teamResolveRepo` 定位目标路径所属 Git 仓库；
+   - 调用 `window.snow.gitStatus` 获取当前仓库的最新状态快照；
+   - 对文件类调用：比对目标文件在 Git 脏文件列表中的具体状态（如是否 staged、modified、untracked）以及 commit 变动；
+   - 对项目检索类调用（`grep-search`, `codebase-search` 等）：比对仓库全局指纹（`currentBranch + ahead + behind + stagedCount + unstagedCount + untrackedCount + fileDigest`）。只要代码仓库存在任何文件变动，检索即视为有效变动并放行。
+
+#### 4.2.3 广义化副作用工具与缓存失效
+
+不仅包含内置文件写工具，还将以下工具广义化纳入变动源（`mayMutateWorkspace`）：
+
+- 文件创建、编辑与复制（`filesystem-create`, `filesystem-replace_edit`, `filesystem-copy`）；
+- 终端与命令行执行（`bash-terminal-execute`, `terminal-send`, `terminal-open`）；
+- 子代理与外部工作流（`sub-agents-activate`, `sub-agents-continue`, `workflow-generate`, `workflow-resume`）；
+- 语言服务器批量重命名（`lsp-rename`）；
+- 外部第三方写操作 MCP 工具。
+  任何上述工具执行成功后，均会自动清空工作区的文件与检索只读快照。
+
+#### 4.2.4 补救恢复协议与防流中断保障
+
+若当前轮次所有工具调用全部被确认为无变动的重复调用，触发一次请求级补救尝试（`disableTools: true`，带有 `internalRecoveryPrompt` 引导模型不再调用工具并直接进行文本总结）。
+若模型在该轮次仍违规返回 tool call 且未生成有效文本，系统提供友好的自动兜底收敛文案，彻底防止助手消息变为空白或导致响应流异常假死。
+
+### 4.3 中途动态干预（Steering 机制）
+
+用户在模型思考或工具执行耗时较长时，可以在输入框继续发送消息。
+主循环不直接粗暴杀死当前正在运行的流，而是将新输入记录为 **Steering 待处理项（`takePendingSteering`）**：
+
+1. 当前轮次的工具执行完毕后，执行 `consumeSteering`；
+2. 将用户中途插入的指令以标准 `user` 角色消息追加至 `nextMessages`；
+3. 随后一并交给下一轮 `runAgentLoop`，使 AI 能在知晓上一轮工具执行结果的同时，即时顺应用户的最新指令调整行动方向。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 用户 (UI)
+    participant Input as ChatInput
+    participant Loop as useAgentLoop
+    participant Tools as ToolExecutor
+    participant DB as SQLite 存储层
+
+    Note over Loop,Tools: AI 正在执行长耗时工具或命令...
+    User->>Input: 中途输入修正指令 (如 "别改 A 文件，改 B 文件")
+    Input->>Loop: 暂存至 pendingSteering 队列 (不粗暴强制杀掉正在执行的子进程)
+
+    Tools-->>Loop: 本轮工具执行完毕，产生 toolResultMessage
+
+    Loop->>Loop: consumeSteering(effectiveKey)
+    Note over Loop: 提取中途指令，以 role: "user" 消息紧随 tool 结果之后拼接
+
+    alt 仍需继续迭代
+        Loop->>Loop: 创建下一个 Assistant 占位卡片
+        Loop->>Loop: await runAgentLoop(nextAssistantId, nextMessages)
+        Note over Loop: AI 在下一轮中同时看到上一轮的工具结果与用户的最新修正！
+    else 达成终态 (模型给出最终答复且无工具调用)
+        Loop->>DB: store_chat_exchange (原子写入 assistant 消息与 token usage)
+        Loop->>DB: finishAgentTask (持久化该任务全部文件变更与指标)
+        Loop->>User: 界面完成态渲染，恢复输入区为就绪态
+    end
+```
+
+### 4.4 Agent 业务级重试与故障自愈
+
+区别于传输层（网络/超时）的底层重试，Agent 循环在业务与编排层设计了三级自愈机制：
+
+1. **授权拒绝携带理由续跑（Continuable Rejection）**：
+   - 当用户在授权弹窗中拒绝执行某工具并填写理由，或系统拦截了敏感命令（`sensitiveCommands`）时，`rejectionKeepsAiFlow` 判定为可继续；
+   - 拒绝原因包装在 `role: "tool"` 结果中回灌给模型，Loop 继续递归，让 AI 在知悉用户限制或安全边界的前提下，自主换用安全路径完成目标。
+2. **只读重复调用收敛补救（Duplicate-only Recovery Turn）**：
+   - 发生全重复无变动读取时，系统不会直接抛错终止会话，而是自动发起一次 `disableTools: true` 的恢复请求；
+   - 提示词注入 `internalRecoveryPrompt`，引导模型基于已有上下文直接总结并给出最终答复。
+3. **子代理与外部执行域失败闭环**：
+   - 子代理或工作流节点执行失败时，均以标准化结构体 `{ success: false, error }` 回传父会话，不会造成主会话崩溃；父会话模型据此进行重试重构或降级处理。
+
+### 4.5 并行工具调度与微执行管道（Parallel Tool Orchestration Pipeline）
+
+当模型在同一轮次中并发返回多个工具调用时，渲染进程工具执行器（`src/renderer/components/mainContent/chatMessages/hooks/toolExecution.ts`）通过智能并发分流器与单工具微管道协同调度：
+
+```mermaid
+flowchart TD
+    ToolBatch["本轮工具调用集合 (toolCalls)"] --> Partition{"智能并发分流器<br/>(toolExecution.ts)"}
+
+    Partition -- "只读工具 (filesystem-read / grep 等)" --> ParallelRead["并发执行管道: 多任务并行分派"]
+    Partition -- "子代理 (activate / continue)" --> ParallelSubAgent["并发预启动管道: 异步并行激活独立会话"]
+    Partition -- "生图工具 (imagegen-generate)" --> ImageQueue["并发限流队列: maxConcurrentImages 滑动窗口"]
+    Partition -- "多项问答 (askUserQuestion)" --> MergeDialog["交互合并管道: 聚合为一个弹窗由用户一次性确认"]
+    Partition -- "写/副作用工具 (edit / copy / rename)" --> SerialExec["串行保序管道: 顺序执行防止物理文件写竞态"]
+
+    subgraph MicroPipeline["单工具执行微管道 (Per-Tool Lifecycle)"]
+        Step1["1. 参数合法性校验 (validateToolCall)"]
+        Step2["2. beforeToolCall 阻塞/上下文注入 Hook 评估"]
+        Step3["3. 工具执行前 Checkpoint 磁盘快照捕获"]
+        Step4["4. 底层工具路由分派 (Rust Native / Bash / SSH / MCP)"]
+        Step5["5. 敏感信息与私密凭据正则脱敏 (privacy_mask.rs)"]
+        Step6["6. 磁盘变更比对与 Diff 补丁提取 (fileChangeTracking.ts)"]
+        Step7["7. afterToolCall 结果修饰 Hook 评估"]
+        Step8["8. 提交 Checkpoint 并生成最终标准结果 JSON"]
+
+        Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7 --> Step8
+    end
+
+    ParallelRead --> MicroPipeline
+    ParallelSubAgent --> MicroPipeline
+    ImageQueue --> MicroPipeline
+    MergeDialog --> MicroPipeline
+    SerialExec --> MicroPipeline
+
+    MicroPipeline --> MergeResult["聚合全部工具执行结果 -> 包装为 toolResultMessage 回灌下一轮 Loop"]
 ```
 
 一轮的核心步骤是：调用模型流、解析 `toolCallsJson`、按授权结果构造 executor、执行工具、生成结构化 `toolResultsJson`，再递归进入下一轮。没有工具调用时结束，或先消费已排队的用户消息。循环开始前创建本地文件 checkpoint；`onUserMessage` 在首轮前执行，`onStop` 在最终清理时执行。

@@ -148,6 +148,136 @@ pub fn load_proxy_config_sync() -> Result<ProxyConfig> {
     Ok(parse_proxy_config(&raw))
 }
 
+pub async fn resolve_transport_proxy_url(config: &ProxyConfig, secure: bool) -> Option<String> {
+    if let Some(url) = config.proxy_url() {
+        return Some(url);
+    }
+    tokio::task::spawn_blocking(move || system_proxy_url(secure))
+        .await
+        .ok()
+        .flatten()
+}
+
+fn system_proxy_url(secure: bool) -> Option<String> {
+    let keys = if secure {
+        ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+    } else {
+        ["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]
+    };
+    keys.iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .find_map(|value| normalize_http_proxy_url(&value))
+        .or_else(|| os_system_proxy_url(secure))
+}
+
+fn normalize_http_proxy_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    let authority = candidate.strip_prefix("http://")?;
+    if authority.trim().is_empty() {
+        return None;
+    }
+    Some(candidate)
+}
+
+#[cfg(target_os = "macos")]
+fn os_system_proxy_url(secure: bool) -> Option<String> {
+    use system_configuration::core_foundation::number::CFNumber;
+    use system_configuration::core_foundation::string::CFString;
+    use system_configuration::dynamic_store::SCDynamicStoreBuilder;
+    use system_configuration::sys::schema_definitions::{
+        kSCPropNetProxiesHTTPEnable, kSCPropNetProxiesHTTPPort, kSCPropNetProxiesHTTPProxy,
+        kSCPropNetProxiesHTTPSEnable, kSCPropNetProxiesHTTPSPort, kSCPropNetProxiesHTTPSProxy,
+    };
+
+    let proxies = SCDynamicStoreBuilder::new("snow-app").build()?.get_proxies()?;
+    let (enabled_key, host_key, port_key) = if secure {
+        (
+            unsafe { kSCPropNetProxiesHTTPSEnable },
+            unsafe { kSCPropNetProxiesHTTPSProxy },
+            unsafe { kSCPropNetProxiesHTTPSPort },
+        )
+    } else {
+        (
+            unsafe { kSCPropNetProxiesHTTPEnable },
+            unsafe { kSCPropNetProxiesHTTPProxy },
+            unsafe { kSCPropNetProxiesHTTPPort },
+        )
+    };
+
+    let enabled = proxies
+        .find(enabled_key)
+        .and_then(|flag| flag.downcast::<CFNumber>())
+        .and_then(|flag| flag.to_i32())
+        .unwrap_or(0)
+        == 1;
+    if !enabled {
+        return None;
+    }
+
+    let host = proxies
+        .find(host_key)
+        .and_then(|host| host.downcast::<CFString>())
+        .map(|host| host.to_string())?;
+    let authority = match proxies
+        .find(port_key)
+        .and_then(|port| port.downcast::<CFNumber>())
+        .and_then(|port| port.to_i32())
+    {
+        Some(port) => format!("{host}:{port}"),
+        None => host,
+    };
+    normalize_http_proxy_url(&authority)
+}
+
+#[cfg(target_os = "windows")]
+fn os_system_proxy_url(secure: bool) -> Option<String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    let key = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+            KEY_READ,
+        )
+        .ok()?;
+    let enabled: u32 = key.get_value("ProxyEnable").ok()?;
+    if enabled == 0 {
+        return None;
+    }
+    let server: String = key.get_value("ProxyServer").ok()?;
+    parse_windows_proxy_server(&server, secure)
+}
+
+#[cfg(target_os = "windows")]
+fn parse_windows_proxy_server(server: &str, secure: bool) -> Option<String> {
+    let trimmed = server.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !trimmed.contains('=') {
+        return normalize_http_proxy_url(trimmed);
+    }
+    let wanted = if secure { "https" } else { "http" };
+    trimmed
+        .split(';')
+        .filter_map(|entry| entry.split_once('='))
+        .find(|(scheme, _)| scheme.trim().eq_ignore_ascii_case(wanted))
+        .and_then(|(_, value)| normalize_http_proxy_url(value))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn os_system_proxy_url(_secure: bool) -> Option<String> {
+    None
+}
+
 /// 解析代理配置 JSON。
 fn parse_proxy_config(raw: &str) -> ProxyConfig {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {

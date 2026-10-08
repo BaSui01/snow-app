@@ -371,12 +371,14 @@ fn build_anthropic_headers(
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        HeaderValue::from_str(api_key).map_err(|error| {
-            Error::from_reason(format!("Invalid vision API key header value: {error}"))
-        })?,
-    );
+    if !crate::api::oauth::anthropic::is_oauth_access_token(api_key) {
+        headers.insert(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(api_key).map_err(|error| {
+                Error::from_reason(format!("Invalid vision API key header value: {error}"))
+            })?,
+        );
+    }
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {

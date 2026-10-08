@@ -236,15 +236,16 @@ pub async fn create_response_stream_with_context(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: ResponsesApiStreamCallback,
+    on_chunk: Option<ResponsesApiStreamCallback>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    let on_chunk = crate::api::common::StreamSink::new(on_chunk.as_ref());
     create_response_async(
         request,
         database_path,
         api_config,
         custom_headers,
-        &on_chunk,
+        on_chunk,
         cancel_token,
     )
     .await
@@ -255,9 +256,10 @@ async fn create_response_async(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     mut custom_headers: HashMap<String, String>,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: crate::api::common::StreamSink<'_>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    let api_config = crate::api::oauth::provider::refresh_if_needed(api_config).await?;
     if api_config.request_method != "responses" {
         return Err(Error::from_reason(
             "Only OpenAI Responses API is supported for chat right now. Please switch the active API request method to Responses.",
@@ -342,6 +344,7 @@ async fn create_response_async(
     // conversation this request is stored under.
     crate::api::common::expand_custom_header_session_id(&mut custom_headers, cache_key);
     let mut effective_headers = custom_headers;
+    crate::api::oauth::provider::apply_request_headers(&api_config, &mut effective_headers);
     if !cache_key.is_empty() {
         effective_headers.insert("conversation_id".to_string(), cache_key.to_string());
         effective_headers.insert("session_id".to_string(), cache_key.to_string());
@@ -355,7 +358,7 @@ async fn create_response_async(
         &api_config,
         &effective_headers,
         skip_context,
-        Some(on_chunk),
+        on_chunk.callback(),
         Some(&cancel_token),
     )
     .await?;

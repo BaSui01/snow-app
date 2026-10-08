@@ -41,6 +41,39 @@ export type ApiConfigInput = {
   source: string;
 };
 
+/** OAuth 登录服务商（后端 listOAuthProviders 返回；新增服务商只改后端 provider 注册）。 */
+export type OAuthProviderInfo = {
+  id: string;
+  displayName: string;
+  defaultModel: string;
+  defaultMaxContextTokens: number;
+};
+
+/** OAuth 登录会话（回调端口仅登录期间监听本机）。 */
+export type OAuthLoginStart = {
+  sessionId: string;
+  provider: string;
+  authUrl: string;
+  port: number;
+  /** 本机回调端口不可用时为 true，需要用户手动粘贴回调 URL。 */
+  manualMode: boolean;
+  defaultModel: string;
+};
+
+export type OAuthLoginStatus = {
+  provider: string;
+  /** pending | success | error | cancelled */
+  status: string;
+  error?: string;
+  profileName?: string;
+  displayName?: string;
+  email?: string;
+  planType?: string;
+  availableModels: string[];
+  authUrl: string;
+  manualMode: boolean;
+};
+
 export type ApiConfigRecord = ApiConfigInput & {
   id: string;
   updatedAt: string;
@@ -884,6 +917,8 @@ export type ApiModelsConfig = {
   apiKey: string;
   requestMethod: string;
   customHeaderSchemeId: string;
+  /** 渠道的原始 configJson：OAuth 渠道（codex 等）据此走订阅账号的模型列表接口。 */
+  configJson?: string;
 };
 
 export type ChatConversationRecord = {
@@ -1961,6 +1996,18 @@ export type NativeBridge = {
   getAlwaysApprovedTools: () => Promise<string[]>;
   setAlwaysApprovedTools: (tools: string[]) => Promise<void>;
   listReadonlyTools: () => Promise<string[]>;
+  listOAuthProviders: () => Promise<OAuthProviderInfo[]>;
+  startOAuthLogin: (
+    provider: string,
+    advancedModel?: string,
+    basicModel?: string,
+  ) => Promise<OAuthLoginStart>;
+  getOAuthLoginStatus: (sessionId: string) => Promise<OAuthLoginStatus | null>;
+  submitOAuthCallback: (
+    sessionId: string,
+    callbackUrl: string,
+  ) => Promise<OAuthLoginStatus>;
+  cancelOAuthLogin: (sessionId: string) => Promise<boolean>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   /** 重试错误分类默认关键词（JSON 字符串，单一来源在 Rust api::retry）。 */
   getRetryDefaults: () => Promise<string>;

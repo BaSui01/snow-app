@@ -7,6 +7,7 @@ mod git;
 mod ide;
 mod images;
 mod market;
+mod oauth;
 mod pets;
 mod prompt_optimization;
 pub(crate) mod pre_script;

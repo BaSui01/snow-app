@@ -35,8 +35,9 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
-use crate::api::http_client::{app_user_agent, load_proxy_config};
-use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
+use crate::api::http_client::{app_user_agent, load_proxy_config, resolve_transport_proxy_url};
+use crate::api::common::StreamSink;
+use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     decide_stream_recovery, is_retriable_error, next_stream_item_with_idle,
     should_retry_empty_response, stream_idle_timeout_error, wait_before_retry, RetryOptions,
@@ -300,7 +301,7 @@ async fn connect_socket(
         .unwrap_or(if url.scheme() == "wss" { 443 } else { 80 });
     let request = build_handshake_request(&url, api_key, custom_headers)?;
 
-    let tcp = connect_tcp(&host, port).await?;
+    let tcp = connect_tcp(&host, port, url.scheme() == "wss").await?;
     let stream = if url.scheme() == "wss" {
         Either::Right(tls_handshake(&host, tcp).await?)
     } else {
@@ -349,12 +350,17 @@ fn websocket_url(endpoint: &str) -> Result<Url> {
     Ok(url)
 }
 
-/// 建立到目标主机的 TCP 连接：启用代理且目标未被 `no_proxy` 排除时走 CONNECT 隧道。
-async fn connect_tcp(host: &str, port: u16) -> std::result::Result<TcpStream, StartFailure> {
+/// 建立到目标主机的 TCP 连接：应用内代理（或回退的系统/环境代理）启用且目标
+/// 未被 `no_proxy` 排除时走 CONNECT 隧道。
+async fn connect_tcp(
+    host: &str,
+    port: u16,
+    secure: bool,
+) -> std::result::Result<TcpStream, StartFailure> {
     let proxy = load_proxy_config()
         .await
         .map_err(|error| StartFailure::transport(format!("Failed to load proxy settings: {error}")))?;
-    let proxy_url = match proxy.proxy_url() {
+    let proxy_url = match resolve_transport_proxy_url(&proxy, secure).await {
         Some(proxy_url) if !host_bypasses_proxy(host, &proxy.no_proxy_list()) => Some(proxy_url),
         _ => None,
     };
@@ -569,7 +575,7 @@ impl StreamProgress {
     /// 推送内容 / 思考增量。
     fn emit_deltas(
         &mut self,
-        on_chunk: &ResponsesApiStreamCallback,
+        on_chunk: StreamSink<'_>,
         content_delta: String,
         thinking_delta: String,
     ) {
@@ -588,7 +594,7 @@ impl StreamProgress {
     }
 
     /// 推送工具参数增量（只刷新 token 探针，不进入消息正文）。
-    fn emit_tool_args(&mut self, on_chunk: &ResponsesApiStreamCallback, args_delta: &str) {
+    fn emit_tool_args(&mut self, on_chunk: StreamSink<'_>, args_delta: &str) {
         let elapsed_ms = self.elapsed_ms();
         let ttft_ms = self.ttft_ms;
         emit_tool_args_probe(
@@ -602,7 +608,7 @@ impl StreamProgress {
     }
 
     /// 推送一次「请求重试中」状态。
-    fn emit_retry(&self, on_chunk: &ResponsesApiStreamCallback, attempt: u32, retry_error: &str) {
+    fn emit_retry(&self, on_chunk: StreamSink<'_>, attempt: u32, retry_error: &str) {
         on_chunk.call(
             ResponsesApiStreamChunk {
                 content_delta: String::new(),
@@ -648,7 +654,7 @@ fn process_frame(
     attempt_state: &mut ResponsesAttemptState,
     response_state: &mut WsResponseState,
     progress: &mut StreamProgress,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
 ) -> FrameOutcome {
     let Some(event) = parse_frame_event(frame) else {
         return FrameOutcome::Continue;
@@ -756,7 +762,7 @@ pub(super) async fn collect_streaming_response_ws(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,

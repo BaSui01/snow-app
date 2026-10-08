@@ -13,6 +13,7 @@ import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import type { ApiConfigImportOutcome, ApiConfigRecord } from "../../../preload";
 import { ApiSettingsActions } from "./apiSettings/ApiSettingsActions";
+import { OAuthLoginDialog } from "./apiSettings/OAuthLoginDialog";
 import {
   ApiSettingsFormActions,
   ApiSettingsFormPanel,
@@ -68,6 +69,7 @@ export function ApiSettingsTreePanel({
   );
   const [pendingImport, setPendingImport] =
     useState<PendingApiConfigImport | null>(null);
+  const [showOAuthLogin, setShowOAuthLogin] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
@@ -615,6 +617,7 @@ export function ApiSettingsTreePanel({
             showAddForm={showAddForm}
             onImport={() => void handleImport()}
             onImportFile={() => void handleImportFile()}
+            onOAuthLogin={() => setShowOAuthLogin(true)}
             onToggleAddForm={toggleAddForm}
           />
 
@@ -776,6 +779,24 @@ export function ApiSettingsTreePanel({
           </ul>
         </div>
       </Modal>
+
+      <OAuthLoginDialog
+        open={showOAuthLogin}
+        onClose={() => setShowOAuthLogin(false)}
+        onCompleted={(result) => {
+          setError("");
+          setStatus(
+            t("settings.oauthCompleted", {
+              defaultValue:
+                "Signed in successfully. Channel {name} is now active.",
+            }).replace(
+              "{name}",
+              result.displayName || result.profileName || "OAuth",
+            ),
+          );
+          void load();
+        }}
+      />
 
       <ApiSettingsEditModal
         config={editingConfig}

@@ -258,9 +258,9 @@ pub async fn create_response_stream(
                 request,
                 context.database_path,
                 api_config,
-                context.custom_headers,
-                on_chunk,
-                cancel_token.clone(),
+            context.custom_headers,
+            Some(on_chunk),
+            cancel_token.clone(),
             )
             .await
         }
@@ -269,9 +269,9 @@ pub async fn create_response_stream(
                 request,
                 context.database_path,
                 api_config,
-                context.custom_headers,
-                on_chunk,
-                cancel_token.clone(),
+            context.custom_headers,
+            Some(on_chunk),
+            cancel_token.clone(),
             )
             .await
         }
@@ -280,9 +280,9 @@ pub async fn create_response_stream(
                 request,
                 context.database_path,
                 api_config,
-                context.custom_headers,
-                on_chunk,
-                cancel_token.clone(),
+            context.custom_headers,
+            Some(on_chunk),
+            cancel_token.clone(),
             )
             .await
         }
@@ -291,9 +291,9 @@ pub async fn create_response_stream(
                 request,
                 context.database_path,
                 api_config,
-                context.custom_headers,
-                on_chunk,
-                cancel_token.clone(),
+            context.custom_headers,
+            Some(on_chunk),
+            cancel_token.clone(),
             )
             .await
         }
@@ -302,9 +302,9 @@ pub async fn create_response_stream(
                 request,
                 context.database_path,
                 api_config,
-                context.custom_headers,
-                on_chunk,
-                cancel_token.clone(),
+            context.custom_headers,
+            Some(on_chunk),
+            cancel_token.clone(),
             )
             .await
         }

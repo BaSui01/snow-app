@@ -5,6 +5,7 @@
 //! persistence. Heavy logic lives in the sibling `payload`, `event`, and
 //! `stream` modules so that this file stays focused on orchestration.
 
+mod antigravity_schema;
 mod event;
 pub(crate) mod payload;
 mod stream;
@@ -113,15 +114,16 @@ pub async fn create_gemini_response_stream(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: ResponsesApiStreamCallback,
+    on_chunk: Option<ResponsesApiStreamCallback>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    let on_chunk = crate::api::common::StreamSink::new(on_chunk.as_ref());
     create_gemini_response_async(
         request,
         database_path,
         api_config,
         custom_headers,
-        &on_chunk,
+        on_chunk,
         cancel_token,
     )
     .await
@@ -132,9 +134,10 @@ async fn create_gemini_response_async(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     mut custom_headers: HashMap<String, String>,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: crate::api::common::StreamSink<'_>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    let api_config = crate::api::oauth::provider::refresh_if_needed(api_config).await?;
     if request.messages.is_empty() {
         return Err(Error::from_reason("At least one chat message is required"));
     }
@@ -212,6 +215,7 @@ async fn create_gemini_response_async(
         &mut custom_headers,
         &prepared_request.conversation_id,
     );
+    crate::api::oauth::provider::apply_request_headers(&api_config, &mut custom_headers);
 
     let client = crate::api::http_client::build_proxied_client()
         .await
@@ -224,7 +228,7 @@ async fn create_gemini_response_async(
         &api_config,
         &custom_headers,
         skip_context,
-        Some(on_chunk),
+        on_chunk.callback(),
         Some(&cancel_token),
     )
     .await?;
@@ -256,6 +260,11 @@ async fn create_gemini_response_async(
             ),
         )
         .await;
+    }
+    if let Some(metadata) =
+        crate::api::oauth::provider::antigravity_profile_metadata(&api_config.config_json)
+    {
+        payload = payload::wrap_antigravity_payload(payload, &model, metadata.account_id.trim());
     }
     let is_duplicate_recovery = request.disable_tools.unwrap_or(false);
     if is_duplicate_recovery {

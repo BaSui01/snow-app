@@ -180,6 +180,7 @@ export function SubAgentSettingsPanel({
         apiKey: apiConfig.apiKey,
         requestMethod: apiConfig.requestMethod,
         customHeaderSchemeId: apiConfig.customHeaderSchemeId,
+        configJson: apiConfig.configJson.trim() || undefined,
       })
       .then((models) => {
         if (modelCatalogGenerationRef.current === generation) {

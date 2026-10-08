@@ -76,6 +76,58 @@ const readImportFileContent = async (filePath: string): Promise<string> => {
 export const registerApiConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("api-configs:list", () => native.listApiConfigs());
   ipcMain.handle("api-configs:retry-defaults", () => native.getRetryDefaults());
+  // OAuth 登录：Rust 侧负责 PKCE、本机回调监听与 token 交换，主进程只做参数校验。
+  ipcMain.handle("api-configs:oauth-providers", () =>
+    native.listOAuthProviders(),
+  );
+  ipcMain.handle(
+    "api-configs:oauth-start",
+    async (
+      _event,
+      provider: unknown,
+      advancedModel: unknown,
+      basicModel: unknown,
+    ) => {
+      if (typeof provider !== "string" || !provider.trim()) {
+        throw new Error("OAuth provider is required");
+      }
+      return native.startOAuthLogin(
+        provider.trim(),
+        typeof advancedModel === "string" ? advancedModel : undefined,
+        typeof basicModel === "string" ? basicModel : undefined,
+      );
+    },
+  );
+  ipcMain.handle(
+    "api-configs:oauth-status",
+    async (_event, sessionId: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("OAuth session id is required");
+      }
+      return native.getOAuthLoginStatus(sessionId.trim());
+    },
+  );
+  ipcMain.handle(
+    "api-configs:oauth-callback",
+    async (_event, sessionId: unknown, callbackUrl: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("OAuth session id is required");
+      }
+      if (typeof callbackUrl !== "string" || !callbackUrl.trim()) {
+        throw new Error("OAuth callback URL is required");
+      }
+      return native.submitOAuthCallback(sessionId.trim(), callbackUrl.trim());
+    },
+  );
+  ipcMain.handle(
+    "api-configs:oauth-cancel",
+    async (_event, sessionId: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("OAuth session id is required");
+      }
+      return native.cancelOAuthLogin(sessionId.trim());
+    },
+  );
   ipcMain.handle("api-configs:upsert", async (_event, config: unknown) => {
     await native.upsertApiConfig(normalizeApiConfigInput(config));
     return native.listApiConfigs();
@@ -234,6 +286,11 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
           typeof source.customHeaderSchemeId === "string"
             ? source.customHeaderSchemeId
             : "",
+        // OAuth 渠道的 configJson 原样透传：Rust 据此识别 provider 并拉取订阅账号模型。
+        configJson:
+          typeof source.configJson === "string" && source.configJson.trim()
+            ? source.configJson
+            : undefined,
       };
 
       return native.fetchAvailableModelsForConfig(normalizedConfig);

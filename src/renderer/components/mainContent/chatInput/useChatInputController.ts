@@ -407,6 +407,7 @@ export const useChatInputController = ({
             apiKey: configAtRequest.apiKey,
             requestMethod: configAtRequest.requestMethod,
             customHeaderSchemeId: configAtRequest.customHeaderSchemeId,
+            configJson: configAtRequest.configJson.trim() || undefined,
           },
         );
         if (hydrationRequestTokenRef.current !== requestToken) {

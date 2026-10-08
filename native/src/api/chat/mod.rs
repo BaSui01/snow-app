@@ -42,15 +42,16 @@ pub async fn create_chat_completion_response_stream(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: ResponsesApiStreamCallback,
+    on_chunk: Option<ResponsesApiStreamCallback>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    let on_chunk = crate::api::common::StreamSink::new(on_chunk.as_ref());
     create_chat_completion_response_async(
         request,
         database_path,
         api_config,
         custom_headers,
-        &on_chunk,
+        on_chunk,
         cancel_token,
     )
     .await
@@ -61,7 +62,7 @@ async fn create_chat_completion_response_async(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     mut custom_headers: HashMap<String, String>,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: crate::api::common::StreamSink<'_>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
     if request.messages.is_empty() {
@@ -155,7 +156,7 @@ async fn create_chat_completion_response_async(
         &api_config,
         &custom_headers,
         skip_context,
-        Some(on_chunk),
+        on_chunk.callback(),
         Some(&cancel_token),
     )
     .await?;

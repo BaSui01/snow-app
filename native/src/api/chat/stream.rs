@@ -14,7 +14,8 @@ use crate::api::common::{
     emit_stream_chunk as emit_chat_completion_stream_chunk, emit_tool_args_probe,
     inject_custom_headers, truncate_utf8_safe, ThinkingStreamTracker,
 };
-use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
+use crate::api::common::StreamSink;
+use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
     stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
@@ -49,7 +50,7 @@ pub(super) async fn collect_chat_completions_stream(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,

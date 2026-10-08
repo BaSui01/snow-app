@@ -7,9 +7,13 @@
   container-type: inline-size;
 }
 
+/* 交叉轴定高：wrap 容器的 flex line 高度取子项的内容假想高度，body 不定高时
+   整行会被代码内容撑开，滚动容器随之失去可用高度（滚动条被推到视口外，
+   表现为滚动条消失且无法滚动）。 */
 .file-viewer-workspace > .file-viewer-body {
   flex: 1 1 0;
   min-width: 0;
+  height: 100%;
 }
 
 .file-review-panel {
@@ -20,6 +24,8 @@
   /* 容器变窄时兜底：即使拖拽宽度残留，正文区也至少保留 220px。 */
   max-width: calc(100% - 220px);
   min-height: 0;
+  /* 与 body 同理：面板内容（标注列表）不得决定 wrap 行高，否则正文区被一起撑开。 */
+  height: 100%;
   background: var(--bg-secondary);
   color: var(--text-primary);
   border-left: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);

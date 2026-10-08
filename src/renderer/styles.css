@@ -6449,6 +6449,19 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
+/* API 设置：四个操作按钮（OAuth 登录 / 同步 / 手动添加 / 导入）两行两列 */
+.api-settings-actions.api-settings-actions-quad {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.api-settings-actions.api-settings-actions-quad
+  .api-settings-action-btn
+  > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .api-settings-action-btn,
 .api-settings-form-btn {
   display: inline-flex;
@@ -38925,7 +38938,8 @@ body.ctrl-held [data-path] {
   overflow: hidden;
 }
 
-/* Cursor 式「添加到输入框」浮动按钮：选中终端文本后浮现 */
+/* Cursor 式「添加到输入框」浮动按钮：选中终端文本后出现在鼠标松开点附近；
+   上方坐标仅作兜底（键盘/菜单全选等无鼠标落点时使用），常规由组件内联定位。 */
 .terminal-toolbar-send {
   position: absolute;
   top: 40px;
@@ -53884,4 +53898,157 @@ img.plugin-icon {
   margin: 0;
   accent-color: var(--accent-color, #4a9eff);
   cursor: pointer;
+}
+/* OAuth 登录类型选择（首层弹窗） */
+.oauth-provider-picker {
+  width: min(560px, calc(100vw - 48px));
+}
+
+.oauth-provider-list {
+  display: grid;
+  gap: 10px;
+}
+
+.oauth-provider-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.oauth-provider-card:hover {
+  border-color: var(--accent-color);
+  background: var(--bg-hover);
+}
+
+.oauth-provider-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oauth-provider-card-head strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 640;
+}
+
+.oauth-provider-card-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+/* LobeHub 图标容器只输出 CSS 变量，官方样式表未引入，这里补齐居中规则。 */
+.oauth-provider-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.oauth-provider-icon > svg {
+  display: block;
+  flex: none;
+}
+
+/* OAuth 登录对话框（provider 可扩展） */
+.oauth-login-body {
+  display: grid;
+  gap: 12px;
+}
+
+.oauth-login-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.oauth-login-field {
+  display: grid;
+  gap: 6px;
+}
+
+.oauth-login-field > label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.oauth-login-field input,
+.oauth-login-field select,
+.oauth-login-link > input {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.oauth-login-field input,
+.oauth-login-field select {
+  width: 100%;
+}
+
+.oauth-login-field input:focus,
+.oauth-login-field select:focus,
+.oauth-login-link > input:focus {
+  border-color: var(--accent-color);
+}
+
+.oauth-login-field input:disabled,
+.oauth-login-field select:disabled,
+.oauth-login-link > input:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.oauth-login-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oauth-login-link > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.oauth-login-link > .api-settings-action-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.oauth-login-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.oauth-login-status.success {
+  color: var(--accent-green, var(--text-secondary));
+}
+
+.oauth-login-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--accent-red);
+  word-break: break-word;
 }

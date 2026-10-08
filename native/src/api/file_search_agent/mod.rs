@@ -168,6 +168,8 @@ pub async fn run_file_search_agent(
     // literal template.
     let mut custom_headers = context.custom_headers;
     crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
+    // OAuth 档案（如 Codex）的协议头与主流程保持一致，否则上游校验失败
+    crate::api::oauth::provider::apply_request_headers(&api_config, &mut custom_headers);
 
     let model = resolve_basic_model(None, &api_config.basic_model)?;
 

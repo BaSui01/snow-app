@@ -169,6 +169,7 @@ export function ApiSettingsFormFields({
         data.apiKey.trim(),
         data.requestMethod.trim(),
         data.customHeaderSchemeId.trim(),
+        data.configJson.trim(),
       ].join("\n");
 
       if (!force && loadedModelOptionsKey === configKey) {
@@ -194,6 +195,7 @@ export function ApiSettingsFormFields({
             apiKey: data.apiKey,
             requestMethod: data.requestMethod,
             customHeaderSchemeId: data.customHeaderSchemeId,
+            configJson: data.configJson.trim() || undefined,
           },
         );
         setModelOptions(availableModels);
@@ -215,6 +217,7 @@ export function ApiSettingsFormFields({
       data.apiKey,
       data.baseUrl,
       data.baseUrlMode,
+      data.configJson,
       data.customHeaderSchemeId,
       data.requestMethod,
       loadedModelOptionsKey,

@@ -15,7 +15,8 @@ use tokio_util::sync::CancellationToken;
 use crate::api::common::{
     emit_stream_chunk, emit_tool_args_probe, inject_custom_headers, ThinkingStreamTracker,
 };
-use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
+use crate::api::common::StreamSink;
+use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
     stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
@@ -150,7 +151,7 @@ pub(super) async fn collect_anthropic_stream(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,
@@ -542,12 +543,14 @@ pub(super) fn build_header_map(
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        HeaderValue::from_str(api_key).map_err(|error| {
-            Error::from_reason(format!("Invalid API key header value: {}", error))
-        })?,
-    );
+    if !crate::api::oauth::anthropic::is_oauth_access_token(api_key) {
+        headers.insert(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(api_key).map_err(|error| {
+                Error::from_reason(format!("Invalid API key header value: {}", error))
+            })?,
+        );
+    }
     headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {

@@ -233,7 +233,7 @@ pub async fn optimize_prompt_stream(
                     context.database_path,
                     config,
                     context.custom_headers,
-                    on_chunk,
+                    Some(on_chunk),
                     cancel.clone(),
                 )
                 .await
@@ -244,7 +244,7 @@ pub async fn optimize_prompt_stream(
                     context.database_path,
                     config,
                     context.custom_headers,
-                    on_chunk,
+                    Some(on_chunk),
                     cancel.clone(),
                 )
                 .await
@@ -255,7 +255,7 @@ pub async fn optimize_prompt_stream(
                     context.database_path,
                     config,
                     context.custom_headers,
-                    on_chunk,
+                    Some(on_chunk),
                     cancel.clone(),
                 )
                 .await
@@ -266,7 +266,7 @@ pub async fn optimize_prompt_stream(
                     context.database_path,
                     config,
                     context.custom_headers,
-                    on_chunk,
+                    Some(on_chunk),
                     cancel.clone(),
                 )
                 .await
@@ -277,7 +277,7 @@ pub async fn optimize_prompt_stream(
                     context.database_path,
                     config,
                     context.custom_headers,
-                    on_chunk,
+                    Some(on_chunk),
                     cancel.clone(),
                 )
                 .await

@@ -16,7 +16,8 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
-use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk};
+use crate::api::common::StreamSink;
+use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
     stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
@@ -295,7 +296,7 @@ pub(super) async fn collect_streaming_response(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     cancel_token: &CancellationToken,
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,

@@ -165,9 +165,9 @@ pub async fn generate_commit_message_stream(
                 request,
                 database_path,
                 api_config,
-                custom_headers,
-                on_chunk,
-                cancel_token,
+        custom_headers,
+        Some(on_chunk),
+        cancel_token,
             )
             .await
         }
@@ -176,9 +176,9 @@ pub async fn generate_commit_message_stream(
                 request,
                 database_path,
                 api_config,
-                custom_headers,
-                on_chunk,
-                cancel_token,
+        custom_headers,
+        Some(on_chunk),
+        cancel_token,
             )
             .await
         }
@@ -187,9 +187,9 @@ pub async fn generate_commit_message_stream(
                 request,
                 database_path,
                 api_config,
-                custom_headers,
-                on_chunk,
-                cancel_token,
+        custom_headers,
+        Some(on_chunk),
+        cancel_token,
             )
             .await
         }
@@ -198,9 +198,9 @@ pub async fn generate_commit_message_stream(
                 request,
                 database_path,
                 api_config,
-                custom_headers,
-                on_chunk,
-                cancel_token,
+        custom_headers,
+        Some(on_chunk),
+        cancel_token,
             )
             .await
         }
@@ -209,9 +209,9 @@ pub async fn generate_commit_message_stream(
                 request,
                 database_path,
                 api_config,
-                custom_headers,
-                on_chunk,
-                cancel_token,
+        custom_headers,
+        Some(on_chunk),
+        cancel_token,
             )
             .await
         }

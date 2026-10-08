@@ -14,6 +14,8 @@ use crate::api::conversation::tool_messages::{
     extract_tool_call_entries, parse_tool_results_with_images, remove_invalid_snow_tool_calls,
     ParsedToolResult,
 };
+use crate::api::oauth::antigravity as antigravity_oauth;
+use crate::api::oauth::provider::antigravity_profile_metadata;
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
 use crate::storage::ApiConfigRecord;
@@ -40,6 +42,15 @@ pub(crate) fn resolve_gemini_endpoint(
         resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
     };
 
+    if antigravity_profile_metadata(&api_config.config_json).is_some() {
+        let base = if resolved_base.trim().is_empty() {
+            antigravity_oauth::BACKEND_BASE_URL.to_string()
+        } else {
+            resolved_base
+        };
+        return format!("{base}/v1internal:streamGenerateContent?alt=sse");
+    }
+
     let clean_model = model.strip_prefix("models/").unwrap_or(model);
 
     let mut url = format!(
@@ -52,6 +63,66 @@ pub(crate) fn resolve_gemini_endpoint(
     }
 
     url
+}
+
+pub(crate) fn wrap_antigravity_payload(payload: Value, model: &str, project_id: &str) -> Value {
+    let clean_model = model.strip_prefix("models/").unwrap_or(model);
+    let project_id = project_id.trim();
+    let model_lower = clean_model.to_ascii_lowercase();
+    let is_claude = model_lower.contains("claude");
+    let require_placeholder =
+        is_claude || model_lower.contains("gemini-3-pro") || model_lower.contains("gemini-3.1-pro");
+    let mut payload = payload;
+    if let Some(tools) = payload.get_mut("tools") {
+        sanitize_antigravity_tools(tools, require_placeholder);
+    }
+    if is_claude {
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "toolConfig".to_string(),
+                json!({ "functionCallingConfig": { "mode": "VALIDATED" } }),
+            );
+        }
+    } else if let Some(generation_config) = payload
+        .get_mut("generationConfig")
+        .and_then(Value::as_object_mut)
+    {
+        generation_config.remove("maxOutputTokens");
+    }
+    let mut envelope = serde_json::Map::new();
+    if !project_id.is_empty() {
+        envelope.insert("project".to_string(), json!(project_id));
+    }
+    envelope.insert("model".to_string(), json!(clean_model));
+    envelope.insert("request".to_string(), payload);
+    envelope.insert("requestType".to_string(), json!("agent"));
+    envelope.insert("userAgent".to_string(), json!("antigravity"));
+    envelope.insert(
+        "requestId".to_string(),
+        json!(format!("agent-{}", uuid::Uuid::new_v4())),
+    );
+    Value::Object(envelope)
+}
+
+fn sanitize_antigravity_tools(tools: &mut Value, require_placeholder: bool) {
+    let Some(entries) = tools.as_array_mut() else {
+        return;
+    };
+    for tool in entries.iter_mut() {
+        for key in ["functionDeclarations", "function_declarations"] {
+            let Some(declarations) = tool.get_mut(key).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for declaration in declarations.iter_mut() {
+                let Some(parameters) = declaration.get_mut("parameters") else {
+                    continue;
+                };
+                let cleaned =
+                    super::antigravity_schema::clean_tool_schema(parameters, require_placeholder);
+                *parameters = cleaned;
+            }
+        }
+    }
 }
 
 /// 构建一条文本消息的 Gemini parts（文本块 + 图片 inlineData）。

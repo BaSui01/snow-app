@@ -1,9 +1,15 @@
 //! Bounded attribution at tool boundaries, not an OS write audit.
 //! This coordinator is deliberately independent of checkpoint/restore locks.
+//! 租约等待同样有界：终端命令窗口不被他人等待，长时间命令不阻塞其他会话。
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// 短窗口写者（文件工具 / 格式化）最多等待的时长，覆盖毫秒级的并发写窗口。
+pub(crate) const WRITER_LEASE_WAIT: Duration = Duration::from_secs(2);
+/// 终端命令窗口最多等短窗口写者让位的时间；被其他终端窗口占用立即降级。
+pub(crate) const TERMINAL_LEASE_WAIT: Duration = Duration::from_millis(500);
 
 use serde_json::{json, Value};
 use tokio::io::AsyncReadExt;
@@ -81,10 +87,18 @@ fn overlap(a: &str, b: &str) -> bool {
         || b.strip_prefix(a).is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// 租约类别：终端命令窗口覆盖整个命令执行期（可能数分钟），短窗口写者
+/// （文件工具 / 格式化）只有毫秒级。等待策略据此区分。
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LeaseClass {
+    Writer,
+    Terminal,
+}
+
 #[derive(Default)]
 struct Coordination {
     next: u64,
-    active: BTreeMap<u64, Vec<String>>,
+    active: BTreeMap<u64, (LeaseClass, Vec<String>)>,
 }
 static COORDINATION: OnceLock<Mutex<Coordination>> = OnceLock::new();
 static NOTIFY: OnceLock<Notify> = OnceLock::new();
@@ -94,18 +108,8 @@ fn coordination() -> std::sync::MutexGuard<'static, Coordination> {
         .lock()
         .unwrap_or_else(|error| error.into_inner())
 }
-/// Arc leases can be carried into blocking writes, so cancellation of the
-/// awaiting future cannot release the reservation while that write still runs.
-pub(crate) struct WriteLease {
-    id: u64,
-}
-impl Drop for WriteLease {
-    fn drop(&mut self) {
-        coordination().active.remove(&self.id);
-        NOTIFY.get_or_init(Notify::new).notify_waiters();
-    }
-}
-pub(crate) async fn coordinate(paths: &[String]) -> Arc<WriteLease> {
+
+fn lease_resources(paths: &[String]) -> Vec<String> {
     let mut resources = Vec::new();
     for path in paths {
         match physical_path(Path::new(path)) {
@@ -124,26 +128,75 @@ pub(crate) async fn coordinate(paths: &[String]) -> Arc<WriteLease> {
     }
     resources.sort();
     resources.dedup();
+    resources
+}
+
+/// 与本次请求冲突的持有者类别；Terminal 优先，决定调用方能否等待。
+fn conflict(state: &Coordination, resources: &[String]) -> Option<LeaseClass> {
+    let mut busy = None;
+    for (class, held) in state.active.values() {
+        // Physical repo roots are equality domains, not path prefixes:
+        // a nested independent worktree must not serialize its parent repo.
+        // Non-git or unresolved targets conservatively conflict with all.
+        if held
+            .iter()
+            .any(|a| resources.iter().any(|b| a == "*" || b == "*" || a == b))
+        {
+            if *class == LeaseClass::Terminal {
+                return Some(LeaseClass::Terminal);
+            }
+            busy = Some(LeaseClass::Writer);
+        }
+    }
+    busy
+}
+
+/// Arc leases can be carried into blocking writes, so cancellation of the
+/// awaiting future cannot release the reservation while that write still runs.
+pub(crate) struct WriteLease {
+    id: u64,
+}
+impl Drop for WriteLease {
+    fn drop(&mut self) {
+        coordination().active.remove(&self.id);
+        NOTIFY.get_or_init(Notify::new).notify_waiters();
+    }
+}
+
+/// 抢一个跟踪租约；被终端命令窗口占用或超时返回 None，等待只对短窗口写者生效。
+/// 调用方必须立即降级（跳过或标注 unavailable），绝不无限等待：一个会话里的
+/// 长时间命令（编译等）不得阻塞其他会话的工具。
+pub(crate) async fn coordinate(
+    paths: &[String],
+    class: LeaseClass,
+    wait: Duration,
+) -> Option<Arc<WriteLease>> {
+    let resources = lease_resources(paths);
+    let deadline = Instant::now() + wait;
     loop {
         let notified = NOTIFY.get_or_init(Notify::new).notified();
         tokio::pin!(notified);
         notified.as_mut().enable();
         {
             let mut state = coordination();
-            // Physical repo roots are equality domains, not path prefixes:
-            // a nested independent worktree must not serialize its parent repo.
-            // Non-git or unresolved targets conservatively conflict with all.
-            if !state.active.values().any(|held| {
-                held.iter()
-                    .any(|a| resources.iter().any(|b| a == "*" || b == "*" || a == b))
-            }) {
-                state.next = state.next.wrapping_add(1);
-                let id = state.next;
-                state.active.insert(id, resources.clone());
-                return Arc::new(WriteLease { id });
+            match conflict(&state, &resources) {
+                None => {
+                    state.next = state.next.wrapping_add(1);
+                    let id = state.next;
+                    state.active.insert(id, (class, resources));
+                    return Some(Arc::new(WriteLease { id }));
+                }
+                Some(LeaseClass::Terminal) => return None,
+                Some(LeaseClass::Writer) => {}
             }
         }
-        notified.await;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return None;
+        }
+        if tokio::time::timeout(remaining, notified).await.is_err() {
+            return None;
+        }
     }
 }
 
@@ -475,8 +528,15 @@ impl TerminalTracking {
         };
         if tracking.reason.is_none() {
             if let Some(root) = tracking.root.as_ref() {
-                tracking._lease = Some(coordinate(&[display(root)]).await);
-                tracking.before = bounded_scan(root, None).await;
+                // 同域已有终端窗口在跑（长时间命令）时立即降级：命令照常执行，
+                // 只是本次不做文件归属追踪，绝不等待。
+                tracking._lease =
+                    coordinate(&[display(root)], LeaseClass::Terminal, TERMINAL_LEASE_WAIT).await;
+                if tracking._lease.is_some() {
+                    tracking.before = bounded_scan(root, None).await;
+                } else {
+                    tracking.reason = Some("concurrent-execution");
+                }
             } else {
                 tracking.reason = Some("root-unavailable");
             }

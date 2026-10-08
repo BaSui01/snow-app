@@ -13,6 +13,12 @@ use crate::api::config::{
     get_active_api_request_context, normalize_base_url, resolve_models_endpoint,
     DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::oauth::anthropic as anthropic_oauth;
+use crate::api::oauth::antigravity as antigravity_oauth;
+use crate::api::oauth::codex as codex_oauth;
+use crate::api::oauth::provider::{
+    self as oauth_provider, OAuthProfileMetadata, OAuthProviderId,
+};
 use crate::api::retry::{with_retry_sync, RetryOptions};
 
 #[napi(object)]
@@ -343,6 +349,53 @@ pub struct ApiConfigForModels {
     pub api_key: String,
     pub request_method: String,
     pub custom_header_scheme_id: String,
+    pub config_json: Option<String>,
+}
+
+fn resolve_oauth_metadata(
+    config: &ApiConfigForModels,
+    base_url: &str,
+) -> Option<OAuthProfileMetadata> {
+    if let Some(metadata) = config
+        .config_json
+        .as_deref()
+        .and_then(OAuthProfileMetadata::from_config_json)
+    {
+        return Some(metadata);
+    }
+    oauth_provider::detect_provider_from_base_url(base_url).map(|provider| OAuthProfileMetadata {
+        provider,
+        refresh_token: String::new(),
+        account_id: String::new(),
+        email: String::new(),
+        plan_type: String::new(),
+        expires_at: 0,
+    })
+}
+
+fn fetch_oauth_models(
+    metadata: &OAuthProfileMetadata,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<Model>> {
+    let ids = match metadata.provider {
+        OAuthProviderId::Codex => {
+            codex_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
+        }
+        OAuthProviderId::Anthropic => anthropic_oauth::fetch_models_blocking(base_url, api_key)?,
+        OAuthProviderId::Antigravity => {
+            antigravity_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
+        }
+    };
+    Ok(ids
+        .into_iter()
+        .map(|id| Model {
+            id,
+            object: "model".to_string(),
+            created: 0,
+            owned_by: metadata.provider.as_str().to_string(),
+        })
+        .collect())
 }
 
 pub fn fetch_available_models(
@@ -362,6 +415,12 @@ pub fn fetch_available_models(
         return Err(Error::from_reason(
             "Base URL not configured. Please configure API settings first.",
         ));
+    }
+
+    if let Some(metadata) = resolve_oauth_metadata(config, &base_url) {
+        let mut models = fetch_oauth_models(&metadata, &base_url, &config.api_key)?;
+        models.sort_by(|a, b| a.id.cmp(&b.id));
+        return Ok(models);
     }
 
     let is_default_base_url = base_url == DEFAULT_OPENAI_BASE_URL;
@@ -409,6 +468,7 @@ pub fn fetch_available_models_for_active_config() -> Result<Vec<Model>> {
         api_key: context.api_config.api_key,
         request_method: context.api_config.request_method,
         custom_header_scheme_id: context.api_config.custom_header_scheme_id,
+        config_json: Some(context.api_config.config_json),
     };
 
     fetch_available_models(&config, &context.custom_headers)

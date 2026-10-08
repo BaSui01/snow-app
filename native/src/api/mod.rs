@@ -17,6 +17,7 @@ pub mod http_client;
 pub mod interactions;
 pub mod jev;
 pub mod models;
+pub mod oauth;
 pub mod reranking;
 pub mod responses;
 pub mod retry;

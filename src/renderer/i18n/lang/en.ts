@@ -2026,6 +2026,58 @@ export const en = {
   "settings.importFromSnowCli": "Sync Snow CLI API config",
   "settings.addManualApiConfig": "Add manually",
   "settings.cancelManualApiConfig": "Cancel add",
+  "settings.oauthLogin": "OAuth sign-in",
+  "settings.oauthLoginHint": "Sign in with a subscription account",
+  "settings.oauthPickTitle": "Choose sign-in type",
+  "settings.oauthPickDescription":
+    "Pick the subscription service to connect, then finish the authorization in your browser.",
+  "settings.oauthLoginTitle": "OAuth sign-in",
+  "settings.oauthLoginDescription":
+    "Connect a subscription account as a Snow App LLM channel.",
+  "settings.oauthLoginIntro":
+    "A browser window will open for the sign-in. The channel is created and activated automatically once it completes.",
+  "settings.oauthProviderLabel": "Provider",
+  "settings.oauthProvider.codex": "Codex (ChatGPT subscription)",
+  "settings.oauthProvider.anthropic": "Anthropic (Claude subscription)",
+  "settings.oauthProvider.antigravity": "Antigravity (Google subscription)",
+  "settings.oauthProviderDesc.codex":
+    "Sign in to Codex through the OAuth flow. The credential file is fetched and saved automatically.",
+  "settings.oauthProviderDesc.anthropic":
+    "Sign in to Anthropic (Claude) through the OAuth flow. The credential is fetched and saved automatically.",
+  "settings.oauthProviderDesc.antigravity":
+    "Sign in to Google Antigravity through the OAuth flow. The project, available models, and credential are fetched and saved automatically.",
+  "settings.oauthProviderDescFallback":
+    "Sign in to {{name}} through the OAuth flow. The credential file is fetched and saved automatically.",
+  "settings.oauthProviderMissing": "No OAuth provider is available.",
+  "settings.oauthLoadingProviders": "Loading available providers...",
+  "settings.oauthStarting": "Preparing the sign-in session...",
+  "settings.oauthWaiting": "Waiting for the browser sign-in to complete...",
+  "settings.oauthWaitingHint":
+    "The sign-in completes automatically once the browser flow finishes.",
+  "settings.oauthManualNotice":
+    "The local callback port is unavailable. After signing in, copy the address bar URL from the browser and paste it below.",
+  "settings.oauthOpenBrowser": "Open in browser",
+  "settings.oauthCopyLink": "Copy link",
+  "settings.oauthCopied": "Copied",
+  "settings.oauthCallbackLabel": "Callback URL",
+  "settings.oauthCallbackPlaceholder":
+    "Paste the callback URL (or authorization code) from the browser",
+  "settings.oauthCallbackSubmit": "Submit",
+  "settings.oauthSuccess": "Signed in successfully",
+  "settings.oauthSuccessDetail":
+    "The channel {name} was created and activated. It is ready to use right away.",
+  "settings.oauthAccount": "Account",
+  "settings.oauthFailed": "Sign-in failed. Please try again.",
+  "settings.oauthRetryHint":
+    "Start a new sign-in session to retry, or close this dialog.",
+  "settings.oauthRetry": "Try again",
+  "settings.oauthCancel": "Cancel sign-in",
+  "settings.oauthDone": "Done",
+  "settings.oauthBack": "Back",
+  "settings.oauthCancelled": "The sign-in session was cancelled.",
+  "settings.oauthStart": "Start sign-in",
+  "settings.oauthCompleted":
+    "Signed in successfully. Channel {name} is now active.",
   "settings.apiManualFormTitle": "Manual API profile",
   "settings.apiManualFormInfo":
     "Add a provider without importing Snow CLI profiles.",

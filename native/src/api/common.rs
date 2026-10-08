@@ -18,6 +18,28 @@ use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk}
 // Stream chunk emission
 // ---------------------------------------------------------------------------
 
+/// 流式回调的可选包装：没有 JS 回调的辅助请求（摘要、审查等）传 None，
+/// 所有 chunk 静默丢弃。
+#[derive(Clone, Copy)]
+pub(crate) struct StreamSink<'a>(Option<&'a ResponsesApiStreamCallback>);
+
+impl<'a> StreamSink<'a> {
+    pub(crate) fn new(callback: Option<&'a ResponsesApiStreamCallback>) -> Self {
+        Self(callback)
+    }
+
+    pub(crate) fn callback(&self) -> Option<&'a ResponsesApiStreamCallback> {
+        self.0
+    }
+
+    pub(crate) fn call(&self, chunk: ResponsesApiStreamChunk, mode: ThreadsafeFunctionCallMode) {
+        if let Some(callback) = self.0 {
+            callback.call(chunk, mode);
+        }
+    }
+}
+
+
 /// Per-iteration thinking stream statistics.
 ///
 /// Every provider's streaming loop owns one instance (alongside the
@@ -70,7 +92,7 @@ impl ThinkingStreamTracker {
 /// `thinking_tracker` is updated on every thinking delta so the chunk can
 /// carry the live thinking token count / duration alongside the totals.
 pub(crate) fn emit_stream_chunk(
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     content_delta: String,
     thinking_delta: String,
     stream_token_count: &mut usize,
@@ -154,7 +176,7 @@ pub(crate) fn emit_stream_chunk(
 /// in real time. The thinking tracker is forwarded read-only so the emitted
 /// chunk keeps reporting the latest thinking statistics.
 pub(crate) fn emit_tool_args_probe(
-    on_chunk: &ResponsesApiStreamCallback,
+    on_chunk: StreamSink<'_>,
     stream_token_count: &mut usize,
     thinking_tracker: &ThinkingStreamTracker,
     args_delta: &str,

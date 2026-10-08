@@ -107,6 +107,12 @@ const requiredExports = [
   "fetchPluginRegistry",
   "installPluginFromMarket",
   "installScriptFromMarket",
+  // OAuth 登录（API 设置 → LLM 模型 → OAuth 登录；provider 由后端注册，可扩展）
+  "listOAuthProviders",
+  "startOAuthLogin",
+  "getOAuthLoginStatus",
+  "submitOAuthCallback",
+  "cancelOAuthLogin",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

@@ -4032,6 +4032,7 @@ dependencies = [
  "sha1",
  "sha2",
  "similar",
+ "system-configuration",
  "tar",
  "tiktoken-rs",
  "tokio",

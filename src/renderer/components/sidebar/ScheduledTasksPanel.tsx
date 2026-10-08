@@ -1064,6 +1064,7 @@ export function ScheduledTasksPanel({
           apiKey: selectedConfig.apiKey,
           requestMethod: selectedConfig.requestMethod,
           customHeaderSchemeId: selectedConfig.customHeaderSchemeId,
+          configJson: selectedConfig.configJson.trim() || undefined,
         });
         if (modelRequestIdRef.current !== requestId) return;
         setModelOptions(available);

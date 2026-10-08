@@ -20,45 +20,28 @@
 //! *something* back.
 //!
 //! This module is fully async and never blocks the Node.js main thread.
-//! It reuses the same non-streaming chat/responses/anthropic/gemini
-//! dispatch pattern as `summary.rs`.
+//! It reuses the same chat/responses/anthropic/gemini dispatch pattern as
+//! `summary.rs`; the responses protocol is streamed and its text collected
+//! from the event stream.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use napi::bindgen_prelude::*;
-use reqwest::header::{
-    HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE,
-};
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use crate::api::chat::payload::build_chat_reasoning_effort;
 use crate::api::common::truncate_chars;
-use crate::api::config::{
-    get_active_api_request_context, normalize_base_url, resolve_basic_model,
-    resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL,
-    DEFAULT_OPENAI_BASE_URL,
-};
+use crate::api::config::{get_active_api_request_context, resolve_basic_model};
 use crate::api::jev::JevConfig;
-use crate::api::responses::payload::build_responses_reasoning;
-use crate::api::retry::{should_retry, RetryOptions};
-use crate::api::summary::{
-    extract_anthropic_content, extract_chat_content, extract_responses_content,
-};
+use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::services::codebase_index::SearchResult;
+use tokio_util::sync::CancellationToken;
 
 const REVIEW_SYSTEM_PROMPT: &str = "You are a code search relevance reviewer. Given a user's search query and a list of code search results, your job is to identify which results are actually relevant to the query and which are irrelevant noise.\n\nYou will receive the query and a numbered list of code snippets. Respond with ONLY a JSON object in this exact format:\n{\"relevant\": [1, 3, 5], \"refined_query\": \"optional better search query\"}\n\nRules:\n- \"relevant\" is an array of 1-based result indices that are genuinely relevant to the query.\n- \"refined_query\" should be a better search query ONLY if many results are irrelevant. If results are mostly relevant, set it to empty string \"\".\n- Do not include any explanation, only the JSON object.";
 
 const REFINE_QUERY_SYSTEM_PROMPT: &str = "You are a code search query rewriter. The developer's search query returned mostly irrelevant code search results. Write a better search query that is more likely to find the code they are actually looking for.\n\nRules:\n- Output ONLY the new search query on a single line: no quotes, no explanation, no markdown, no JSON.\n- Keep the same language as the original query.\n- Keep it short and specific: focus on the concrete identifiers, concepts or file names behind the original query.\n- If no better query exists, repeat the original query unchanged.";
 
 const MAX_REVIEW_ATTEMPTS: u32 = 3;
-
-/// Output-token budget used when the active API config leaves `maxTokens` unset
-/// and the backend requires an explicit limit — the Anthropic Messages API
-/// rejects a request without `max_tokens`.
-const DEFAULT_MAX_OUTPUT_TOKENS: i32 = 4096;
-
-/// Maximum characters of a raw review response echoed in an error message.
-const RAW_RESPONSE_PREVIEW_CHARS: usize = 500;
 
 /// Threshold: if the fraction of irrelevant results exceeds this value,
 /// a refined query is requested and the search is retried.
@@ -374,9 +357,14 @@ async fn log_review_fallback(query: &str, message: &str, reason: &str) {
 /// active API config, its custom headers (a review belongs to no conversation,
 /// so session-scoped header placeholders are dropped instead of sending the
 /// literal template) and the resolved basic model.
-fn resolve_review_llm_context(
-) -> Result<(crate::storage::ApiConfigRecord, HashMap<String, String>, String)> {
+fn resolve_review_llm_context() -> Result<(
+    PathBuf,
+    crate::storage::ApiConfigRecord,
+    HashMap<String, String>,
+    String,
+)> {
     let context = get_active_api_request_context()?;
+    let database_path = context.database_path;
     let api_config = context.api_config;
 
     if api_config.api_key.trim().is_empty() {
@@ -385,103 +373,132 @@ fn resolve_review_llm_context(
         ));
     }
 
-    let mut custom_headers = context.custom_headers;
-    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
-
     let model = resolve_basic_model(None, &api_config.basic_model)?;
 
-    Ok((api_config, custom_headers, model))
+    Ok((database_path, api_config, context.custom_headers, model))
 }
 
-/// Retry policy of the active API config, shared by every review request.
-fn retry_options_for(api_config: &crate::storage::ApiConfigRecord) -> RetryOptions {
-    RetryOptions::from_config(
-        api_config.max_retries,
-        api_config.retry_base_delay_ms,
-        api_config.partial_retry_max_chars,
-    )
-}
-
-/// Send a non-streaming request through the API method of the active config and
-/// return the assistant text.
+/// Send a review request through the active API config and return the
+/// assistant text.
 ///
 /// `system_prompt` is the only difference between the two LLM jobs of the
 /// review loop: judging the results, or writing a refined query.
 async fn request_review_text(
-    api_config: &crate::storage::ApiConfigRecord,
-    custom_headers: &HashMap<String, String>,
+    database_path: PathBuf,
+    api_config: crate::storage::ApiConfigRecord,
+    custom_headers: HashMap<String, String>,
     model: &str,
     system_prompt: &str,
     user_content: &str,
-    retry_options: &RetryOptions,
 ) -> Result<String> {
-    let api_key = api_config.api_key.trim();
+    let request = ResponsesApiRequest {
+        messages: vec![
+            ResponsesApiMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+                tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
+            },
+            ResponsesApiMessage {
+                role: "user".to_string(),
+                content: user_content.to_string(),
+                tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
+            },
+        ],
+        model: Some(model.to_string()),
+        api_profile: None,
+        conversation_id: None,
+        previous_response_id: None,
+        directory_id: None,
+        analysis_workspace_root: None,
+        checkpoint_id: None,
+        context_compaction: None,
+        resume_after_compaction: None,
+        sub_agent_tools_json: None,
+        sub_agent_system_prompt: None,
+        sub_agent_config_profile: None,
+        skip_context: Some(true),
+        disable_tools: Some(true),
+        internal_recovery_prompt: None,
+        plan_mode: None,
+        goal_mode: None,
+        worktree_mode: None,
+        workflow_mode: None,
+        thinking_strength: Some("none".to_string()),
+        responses_fast_mode: None,
+        remote_role_content: None,
+        remote_include_global_rules: None,
+        execution_workspace_root: None,
+        worktree_id: None,
+    };
 
-    match api_config.request_method.as_str() {
-        "responses" => {
-            review_via_responses(
+    let method = api_config.request_method.clone();
+    let cancel_token = CancellationToken::new();
+    let result = crate::api::ephemeral::run(request, move |request| async move {
+        match method.as_str() {
+            "responses" => crate::api::responses::create_response_stream_with_context(
+                request,
+                database_path,
                 api_config,
-                api_key,
                 custom_headers,
-                model,
-                system_prompt,
-                user_content,
-                retry_options,
+                None,
+                cancel_token,
             )
-            .await
-        }
-        "anthropic" => {
-            review_via_anthropic(
+            .await,
+            "anthropic" => crate::api::anthropic::create_anthropic_response_stream(
+                request,
+                database_path,
                 api_config,
-                api_key,
                 custom_headers,
-                model,
-                system_prompt,
-                user_content,
-                retry_options,
+                None,
+                cancel_token,
             )
-            .await
-        }
-        "gemini" | "interactions" => {
-            review_via_gemini(
+            .await,
+            "gemini" | "interactions" => crate::api::gemini::create_gemini_response_stream(
+                request,
+                database_path,
                 api_config,
-                api_key,
                 custom_headers,
-                model,
-                system_prompt,
-                user_content,
-                retry_options,
+                None,
+                cancel_token,
             )
-            .await
-        }
-        _ => {
-            review_via_chat(
+            .await,
+            _ => crate::api::chat::create_chat_completion_response_stream(
+                request,
+                database_path,
                 api_config,
-                api_key,
                 custom_headers,
-                model,
-                system_prompt,
-                user_content,
-                retry_options,
+                None,
+                cancel_token,
             )
-            .await
+            .await,
         }
+    })
+    .await?;
+
+    let text = result.content.trim().to_string();
+    if text.is_empty() {
+        return Err(Error::from_reason("Review backend returned no usable text."));
     }
+
+    Ok(text)
 }
 
 /// Send the current results to the basic model for relevance review.
 async fn review_via_llm(query: &str, results: &[SearchResult]) -> Result<ReviewOutcome> {
-    let (api_config, custom_headers, model) = resolve_review_llm_context()?;
-    let retry_options = retry_options_for(&api_config);
+    let (database_path, api_config, custom_headers, model) = resolve_review_llm_context()?;
     let user_content = build_review_user_content(query, results);
 
     let review_text = request_review_text(
-        &api_config,
-        &custom_headers,
+        database_path,
+        api_config,
+        custom_headers,
         &model,
         REVIEW_SYSTEM_PROMPT,
         &user_content,
-        &retry_options,
     )
     .await?;
 
@@ -494,17 +511,16 @@ async fn review_via_llm(query: &str, results: &[SearchResult]) -> Result<ReviewO
 /// a re-search this is the only job the LLM gets: writing the refined query. It
 /// never reviews the results a second time.
 async fn write_refined_query(query: &str, results: &[SearchResult]) -> Result<String> {
-    let (api_config, custom_headers, model) = resolve_review_llm_context()?;
-    let retry_options = retry_options_for(&api_config);
+    let (database_path, api_config, custom_headers, model) = resolve_review_llm_context()?;
     let user_content = build_review_user_content(query, results);
 
     let text = request_review_text(
-        &api_config,
-        &custom_headers,
+        database_path,
+        api_config,
+        custom_headers,
         &model,
         REFINE_QUERY_SYSTEM_PROMPT,
         &user_content,
-        &retry_options,
     )
     .await?;
 
@@ -543,276 +559,6 @@ fn build_review_user_content(query: &str, results: &[SearchResult]) -> String {
         ));
     }
     content
-}
-
-async fn review_via_chat(
-    api_config: &crate::storage::ApiConfigRecord,
-    api_key: &str,
-    custom_headers: &HashMap<String, String>,
-    model: &str,
-    system_prompt: &str,
-    user_content: &str,
-    retry_options: &RetryOptions,
-) -> Result<String> {
-    let endpoint = resolve_chat_endpoint(api_config);
-    if endpoint.is_empty() {
-        return Err(Error::from_reason(
-            "Base URL not configured. Please configure API settings first.",
-        ));
-    }
-
-    let mut payload = json!({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        "stream": false,
-    });
-
-    // max_tokens 遵循用户配置（留空时不传该参数，由服务端决定默认值），与主会话
-    // （api/chat/payload.rs）保持一致：写死的小额度会被推理模型的思考内容吃光，
-    // 正文就会变成空的。
-    if let Some(max_tokens) = api_config.max_tokens {
-        if max_tokens > 0 {
-            payload["max_tokens"] = json!(max_tokens);
-        }
-    }
-
-    // 审查与改写查询只需要一段文本：跟随用户 chatThinking 配置，关闭思考时不发送
-    // reasoning_effort，避免供应商 400。
-    if let Some(reasoning_effort) = build_chat_reasoning_effort(&api_config.config_json) {
-        payload["reasoning_effort"] = json!(reasoning_effort);
-    }
-
-    let client = crate::api::http_client::build_proxied_client().await?;
-
-    let body: Value = send_review_request_with_retry(
-        &client,
-        &endpoint,
-        build_header_map(api_key, custom_headers)?,
-        &payload,
-        retry_options,
-    )
-    .await?;
-
-    ensure_review_text(extract_chat_content(&body), &body)
-}
-
-async fn review_via_responses(
-    api_config: &crate::storage::ApiConfigRecord,
-    api_key: &str,
-    custom_headers: &HashMap<String, String>,
-    model: &str,
-    system_prompt: &str,
-    user_content: &str,
-    retry_options: &RetryOptions,
-) -> Result<String> {
-    let base_url = normalize_base_url(&api_config.base_url);
-    if base_url.is_empty() {
-        return Err(Error::from_reason(
-            "Base URL not configured. Please configure API settings first.",
-        ));
-    }
-
-    let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
-    let endpoint = format!("{}/responses", resolved_base);
-
-    let mut payload = json!({
-        "model": model,
-        "input": [
-            {"type": "message", "role": "system", "content": system_prompt},
-            {"type": "message", "role": "user", "content": user_content}
-        ],
-        "stream": false,
-    });
-
-    // max_output_tokens / reasoning 均遵循用户配置，与主流程
-    // （api/responses/payload.rs）保持一致。
-    if let Some(max_tokens) = api_config.max_tokens {
-        if max_tokens > 0 {
-            payload["max_output_tokens"] = json!(max_tokens);
-        }
-    }
-    if let Some(reasoning) = build_responses_reasoning(&api_config.config_json) {
-        payload["reasoning"] = reasoning;
-    }
-
-    let client = crate::api::http_client::build_proxied_client().await?;
-
-    let body: Value = send_review_request_with_retry(
-        &client,
-        &endpoint,
-        build_header_map(api_key, custom_headers)?,
-        &payload,
-        retry_options,
-    )
-    .await?;
-
-    ensure_review_text(extract_responses_content(&body), &body)
-}
-
-async fn review_via_anthropic(
-    api_config: &crate::storage::ApiConfigRecord,
-    api_key: &str,
-    custom_headers: &HashMap<String, String>,
-    model: &str,
-    system_prompt: &str,
-    user_content: &str,
-    retry_options: &RetryOptions,
-) -> Result<String> {
-    let endpoint = resolve_anthropic_endpoint(api_config);
-    if endpoint.is_empty() {
-        return Err(Error::from_reason(
-            "Base URL not configured. Please configure API settings first.",
-        ));
-    }
-
-    // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明：发送前剥离，
-    // 并附带 context-1m beta 头显式启用 1M 上下文（与主流程一致）。
-    // 生效条件：模型名带标记，或档案开关 snowcfg.enable1mContext 开启。
-    let enable_one_m_context = crate::api::anthropic::payload::has_one_m_context_marker(model)
-        || crate::api::anthropic::payload::config_json_enables_one_m_context(
-            &api_config.config_json,
-        );
-    let model = crate::api::anthropic::payload::strip_one_m_context_marker(model);
-
-    // Anthropic Messages API 要求 max_tokens 必填：用户未配置时回落到默认额度。
-    let max_tokens = api_config
-        .max_tokens
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
-
-    let payload = json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "stream": false,
-        // 审查不需要思考：显式关闭，避免思考内容吃掉正文额度（与标题生成一致）。
-        "thinking": {"type": "disabled"},
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": user_content}],
-    });
-
-    let client = crate::api::http_client::build_proxied_client().await?;
-
-    let body: Value = send_review_request_with_retry(
-        &client,
-        &endpoint,
-        build_anthropic_header_map(api_key, custom_headers, enable_one_m_context)?,
-        &payload,
-        retry_options,
-    )
-    .await?;
-
-    ensure_review_text(extract_anthropic_content(&body), &body)
-}
-
-async fn review_via_gemini(
-    api_config: &crate::storage::ApiConfigRecord,
-    api_key: &str,
-    custom_headers: &HashMap<String, String>,
-    model: &str,
-    system_prompt: &str,
-    user_content: &str,
-    retry_options: &RetryOptions,
-) -> Result<String> {
-    let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
-    if endpoint.is_empty() {
-        return Err(Error::from_reason(
-            "Base URL not configured. Please configure API settings first.",
-        ));
-    }
-
-    // maxOutputTokens 遵循用户配置（留空时由服务端决定默认值），与主流程
-    // （api/gemini/payload.rs）保持一致。
-    let mut generation_config = json!({});
-    if let Some(max_tokens) = api_config.max_tokens {
-        if max_tokens > 0 {
-            generation_config["maxOutputTokens"] = json!(max_tokens);
-        }
-    }
-
-    let payload = json!({
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}]
-        },
-        "contents": [{
-            "role": "user",
-            "parts": [{"text": user_content}]
-        }],
-        "generationConfig": generation_config
-    });
-
-    let client = crate::api::http_client::build_proxied_client().await?;
-
-    let body: Value = send_review_request_with_retry(
-        &client,
-        &endpoint,
-        build_gemini_header_map(custom_headers)?,
-        &payload,
-        retry_options,
-    )
-    .await?;
-
-    ensure_review_text(extract_gemini_content(&body), &body)
-}
-
-/// Send a non-streaming review request with retry logic.
-async fn send_review_request_with_retry(
-    client: &reqwest::Client,
-    endpoint: &str,
-    headers: reqwest::header::HeaderMap,
-    payload: &Value,
-    retry_options: &RetryOptions,
-) -> Result<Value> {
-    let mut attempt: u32 = 0;
-    loop {
-        let response = client
-            .post(endpoint)
-            .headers(headers.clone())
-            .json(payload)
-            .send()
-            .await
-            .map_err(|error| Error::from_reason(format!("Review request failed: {}", error)));
-
-        match response {
-            Ok(response) => {
-                let status = response.status();
-                if !status.is_success() {
-                    let error_body = response.text().await.unwrap_or_default();
-                    let error = Error::from_reason(format!(
-                        "Review request failed: {} {}",
-                        status, error_body
-                    ));
-
-                    if !should_retry(&error, attempt, retry_options) {
-                        return Err(error);
-                    }
-
-                    attempt += 1;
-                    let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
-                    tokio::time::sleep(delay).await;
-                    continue;
-                }
-
-                let body: Value = response.json().await.map_err(|error| {
-                    Error::from_reason(format!("Failed to parse review response: {}", error))
-                })?;
-
-                return Ok(body);
-            }
-            Err(error) => {
-                if !should_retry(&error, attempt, retry_options) {
-                    return Err(error);
-                }
-
-                attempt += 1;
-                let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
-                tokio::time::sleep(delay).await;
-                continue;
-            }
-        }
-    }
 }
 
 /// Parse the model's review response into a ReviewOutcome.
@@ -893,280 +639,3 @@ fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
     }
 }
 
-/// Extract the assistant text from a non-streaming Gemini response.
-///
-/// `thought: true` parts carry the model's internal reasoning and are skipped:
-/// only the main text is the review answer.
-fn extract_gemini_content(body: &Value) -> String {
-    let Some(parts) = body
-        .get("candidates")
-        .and_then(Value::as_array)
-        .and_then(|items| items.first())
-        .and_then(|item| item.get("content"))
-        .and_then(|content| content.get("parts"))
-        .and_then(Value::as_array)
-    else {
-        return String::new();
-    };
-
-    for part in parts {
-        if part
-            .get("thought")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        if let Some(text) = part.get("text").and_then(Value::as_str) {
-            if !text.trim().is_empty() {
-                return text.to_string();
-            }
-        }
-    }
-
-    String::new()
-}
-
-/// Reject an empty answer from a review backend.
-///
-/// Without this check an empty body reaches `serde_json` and surfaces as a
-/// meaningless "EOF while parsing a value" error; the response preview in the
-/// message tells what the backend actually returned instead.
-fn ensure_review_text(text: String, body: &Value) -> Result<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err(Error::from_reason(format!(
-            "Review backend returned no usable text. Response body: {}",
-            truncate_chars(&body.to_string(), RAW_RESPONSE_PREVIEW_CHARS)
-        )));
-    }
-
-    Ok(trimmed.to_string())
-}
-
-fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
-    let normalized_base_url = normalize_base_url(&api_config.base_url);
-    if normalized_base_url.is_empty() {
-        return String::new();
-    }
-
-    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
-        DEFAULT_ANTHROPIC_BASE_URL.to_string()
-    } else {
-        normalized_base_url
-    };
-
-    if api_config.base_url_mode == "endpoint" {
-        return base_url;
-    }
-
-    let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
-    format!("{}/messages", resolved_base)
-}
-
-fn resolve_gemini_endpoint(
-    api_config: &crate::storage::ApiConfigRecord,
-    model: &str,
-    api_key: &str,
-) -> String {
-    let normalized_base_url = normalize_base_url(&api_config.base_url);
-    if normalized_base_url.is_empty() {
-        return String::new();
-    }
-
-    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
-        DEFAULT_GEMINI_BASE_URL.to_string()
-    } else {
-        normalized_base_url
-    };
-
-    let resolved_base = if api_config.base_url_mode == "endpoint" {
-        base_url
-    } else {
-        resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
-    };
-
-    let clean_model = model.strip_prefix("models/").unwrap_or(model);
-
-    let mut url = format!("{}/models/{}:generateContent", resolved_base, clean_model);
-
-    if !api_key.is_empty() {
-        url.push_str(&format!("?key={}", api_key));
-    }
-
-    url
-}
-
-fn resolve_chat_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
-    let normalized_base_url = normalize_base_url(&api_config.base_url);
-    if normalized_base_url.is_empty() {
-        return String::new();
-    }
-
-    if api_config.base_url_mode == "endpoint" {
-        normalized_base_url
-    } else {
-        format!(
-            "{}/chat/completions",
-            resolve_sdk_api_base_url(&normalized_base_url, &api_config.base_url_mode)
-        )
-    }
-}
-
-fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
-            Error::from_reason(format!("Invalid authorization header value: {}", error))
-        })?,
-    );
-
-    for (key, value) in custom_headers {
-        let trimmed_key = key.trim();
-        let trimmed_value = value.trim();
-        if trimmed_key.is_empty() || trimmed_value.is_empty() {
-            continue;
-        }
-
-        if trimmed_key.eq_ignore_ascii_case("content-type")
-            || trimmed_key.eq_ignore_ascii_case("accept-encoding")
-            || trimmed_key.eq_ignore_ascii_case("authorization")
-        {
-            continue;
-        }
-
-        let header_name = trimmed_key.parse::<HeaderName>().map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header value for '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        headers.insert(header_name, header_value);
-    }
-
-    Ok(headers)
-}
-
-fn build_anthropic_header_map(
-    api_key: &str,
-    custom_headers: &HashMap<String, String>,
-    enable_one_m_context: bool,
-) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        HeaderValue::from_str(api_key).map_err(|error| {
-            Error::from_reason(format!("Invalid API key header value: {}", error))
-        })?,
-    );
-
-    // 1M 上下文：模型名带 `[1M]` 标记时注入 context-1m beta 头（与主流程
-    // api/anthropic/stream.rs 的 build_header_map 保持一致），并与用户
-    // 自定义的 anthropic-beta 头逗号合并，避免互相覆盖。
-    let mut reserved_keys: Vec<&str> = vec![
-        "content-type",
-        "accept-encoding",
-        "x-api-key",
-        "authorization",
-    ];
-    if enable_one_m_context {
-        reserved_keys.push("anthropic-beta");
-        let user_beta = custom_headers
-            .iter()
-            .find(|(key, _)| key.trim().eq_ignore_ascii_case("anthropic-beta"))
-            .map(|(_, value)| value.trim())
-            .filter(|value| !value.is_empty());
-        let beta_value = match user_beta {
-            Some(extra) => format!(
-                "{},{}",
-                crate::api::anthropic::payload::ANTHROPIC_ONE_M_CONTEXT_BETA,
-                extra
-            ),
-            None => crate::api::anthropic::payload::ANTHROPIC_ONE_M_CONTEXT_BETA.to_string(),
-        };
-        headers.insert(
-            HeaderName::from_static("anthropic-beta"),
-            HeaderValue::from_str(&beta_value).map_err(|error| {
-                Error::from_reason(format!("Invalid anthropic-beta header value: {}", error))
-            })?,
-        );
-    }
-
-    for (key, value) in custom_headers {
-        let trimmed_key = key.trim();
-        let trimmed_value = value.trim();
-        if trimmed_key.is_empty() || trimmed_value.is_empty() {
-            continue;
-        }
-
-        if reserved_keys
-            .iter()
-            .any(|reserved| trimmed_key.eq_ignore_ascii_case(reserved))
-        {
-            continue;
-        }
-
-        let header_name = trimmed_key.parse::<HeaderName>().map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header value for '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        headers.insert(header_name, header_value);
-    }
-
-    Ok(headers)
-}
-
-fn build_gemini_header_map(custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-
-    for (key, value) in custom_headers {
-        let trimmed_key = key.trim();
-        let trimmed_value = value.trim();
-        if trimmed_key.is_empty() || trimmed_value.is_empty() {
-            continue;
-        }
-
-        if trimmed_key.eq_ignore_ascii_case("content-type")
-            || trimmed_key.eq_ignore_ascii_case("accept-encoding")
-        {
-            continue;
-        }
-
-        let header_name = trimmed_key.parse::<HeaderName>().map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!(
-                "Invalid custom header value for '{}': {}",
-                trimmed_key, error
-            ))
-        })?;
-        headers.insert(header_name, header_value);
-    }
-
-    Ok(headers)
-}

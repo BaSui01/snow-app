@@ -7,6 +7,13 @@ use serde_json::Value;
 use crate::api::common::{read_first_i64, read_string};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
+fn unwrap_response_envelope(event: &Value) -> &Value {
+    event
+        .get("response")
+        .filter(|value| value.is_object())
+        .unwrap_or(event)
+}
+
 /// Process a raw SSE event block (text between two separators) for the
 /// Gemini streaming protocol. Each `data:` line is parsed independently.
 #[allow(clippy::too_many_arguments)]
@@ -49,9 +56,10 @@ pub(super) fn process_gemini_sse_event_block(
                 continue;
             }
         };
+        let event = unwrap_response_envelope(&event);
 
         if let Err(process_error) = process_gemini_event(
-            &event,
+            event,
             content_chunks,
             thinking_chunks,
             tool_calls,
@@ -98,8 +106,9 @@ pub(super) fn process_gemini_sse_event_block(
             return;
         }
         if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
+            let event = unwrap_response_envelope(&event);
             if let Err(process_error) = process_gemini_event(
-                &event,
+                event,
                 content_chunks,
                 thinking_chunks,
                 tool_calls,

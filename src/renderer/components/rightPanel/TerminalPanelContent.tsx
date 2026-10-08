@@ -12,7 +12,13 @@ import {
   ListChecks,
   Send,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTerminalSettings } from "./useTerminalSettings";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
@@ -136,6 +142,11 @@ const DEFAULT_FONT_FAMILY = [
   "monospace",
 ].join(", ");
 
+// 「添加到输入框」浮动按钮：相对鼠标松开点的偏移，以及面板四边的最小留白。
+const SEND_BUTTON_OFFSET_X = 12;
+const SEND_BUTTON_OFFSET_Y = 18;
+const SEND_BUTTON_EDGE_GAP = 8;
+
 export const TerminalPanelContent = ({
   tabId,
   cwd,
@@ -178,6 +189,17 @@ export const TerminalPanelContent = ({
 
   /** 终端当前是否有选中文本（驱动 Cursor 式「添加到输入框」浮动按钮） */
   const [hasSelection, setHasSelection] = useState(false);
+  /** 选区结束（鼠标左键松开）位置，面板坐标系；null 时按钮用默认右上角位。 */
+  const [selectionAnchor, setSelectionAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  /** 浮动按钮最终坐标（面板坐标系，已按面板边界收拢）。 */
+  const [sendButtonPos, setSendButtonPos] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const sendButtonRef = useRef<HTMLButtonElement>(null);
   const [isPathDragOver, setIsPathDragOver] = useState(false);
   const pathDragOverRef = useRef(false);
   /** 尚未遇到换行的输出残段（跨 data 分片的行拼接） */
@@ -736,6 +758,60 @@ export const TerminalPanelContent = ({
       document.removeEventListener("mousedown", handlePointerDown, true);
   }, []);
 
+  // 浮动按钮跟随鼠标落点：拖拽选择/双击选词结束后记录左键松开处的位置
+  // （面板坐标系），按钮据此定位，而不是固定停在右上角。
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+    const handleMouseUp = (event: MouseEvent): void => {
+      if (event.button !== 0) {
+        return;
+      }
+      const rect = panel.getBoundingClientRect();
+      setSelectionAnchor({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    };
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, []);
+
+  // 按面板边界收拢按钮坐标，避免鼠标落点靠近右/下边缘时按钮溢出被裁掉；
+  // 在布局阶段测量真实尺寸，绘制前定位完成，不会出现先出角再跳动。
+  useLayoutEffect(() => {
+    if (!hasSelection || !selectionAnchor) {
+      setSendButtonPos(null);
+      return;
+    }
+    const panel = panelRef.current;
+    const button = sendButtonRef.current;
+    if (!panel || !button) {
+      return;
+    }
+    const maxLeft = Math.max(
+      SEND_BUTTON_EDGE_GAP,
+      panel.clientWidth - button.offsetWidth - SEND_BUTTON_EDGE_GAP,
+    );
+    const maxTop = Math.max(
+      SEND_BUTTON_EDGE_GAP,
+      panel.clientHeight - button.offsetHeight - SEND_BUTTON_EDGE_GAP,
+    );
+    const left = Math.min(
+      Math.max(selectionAnchor.x + SEND_BUTTON_OFFSET_X, SEND_BUTTON_EDGE_GAP),
+      maxLeft,
+    );
+    const top = Math.min(
+      Math.max(selectionAnchor.y + SEND_BUTTON_OFFSET_Y, SEND_BUTTON_EDGE_GAP),
+      maxTop,
+    );
+    setSendButtonPos((prev) =>
+      prev && prev.left === left && prev.top === top ? prev : { left, top },
+    );
+  }, [hasSelection, selectionAnchor]);
+
   const buildMenuItems = (): ContextMenuItem[] => {
     const term = termRef.current;
     const items: ContextMenuItem[] = [];
@@ -844,11 +920,21 @@ export const TerminalPanelContent = ({
 
   return (
     <div ref={panelRef} className="terminal-panel">
-      {/* Cursor 式：选中终端文本后浮动「添加到输入框」按钮 */}
+      {/* Cursor 式：选中终端文本后在鼠标落点附近浮动「添加到输入框」按钮 */}
       {hasSelection ? (
         <button
+          ref={sendButtonRef}
           type="button"
           className="terminal-toolbar-send"
+          style={
+            sendButtonPos
+              ? {
+                  left: sendButtonPos.left,
+                  top: sendButtonPos.top,
+                  right: "auto",
+                }
+              : undefined
+          }
           onClick={insertToComposer}
           title="将选中的日志添加到输入框"
         >

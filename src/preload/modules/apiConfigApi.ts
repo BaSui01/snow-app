@@ -16,6 +16,9 @@ import type {
   KeyboardShortcutsSettings,
   Model,
   ModelUsageBreakdown,
+  OAuthLoginStart,
+  OAuthLoginStatus,
+  OAuthProviderInfo,
   PrivacySettings,
   ProxyBrowserSettings,
   ResponsesApiRequest,
@@ -266,6 +269,28 @@ export const apiConfigApi = {
     ipcRenderer.invoke("permissions:list-readonly-tools"),
   listApiConfigs: (): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:list"),
+  listOAuthProviders: (): Promise<OAuthProviderInfo[]> =>
+    ipcRenderer.invoke("api-configs:oauth-providers"),
+  startOAuthLogin: (
+    provider: string,
+    advancedModel?: string,
+    basicModel?: string,
+  ): Promise<OAuthLoginStart> =>
+    ipcRenderer.invoke(
+      "api-configs:oauth-start",
+      provider,
+      advancedModel,
+      basicModel,
+    ),
+  getOAuthLoginStatus: (sessionId: string): Promise<OAuthLoginStatus | null> =>
+    ipcRenderer.invoke("api-configs:oauth-status", sessionId),
+  submitOAuthCallback: (
+    sessionId: string,
+    callbackUrl: string,
+  ): Promise<OAuthLoginStatus> =>
+    ipcRenderer.invoke("api-configs:oauth-callback", sessionId, callbackUrl),
+  cancelOAuthLogin: (sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke("api-configs:oauth-cancel", sessionId),
   getRetryDefaults: (): Promise<string> =>
     ipcRenderer.invoke("api-configs:retry-defaults"),
   upsertApiConfig: (config: ApiConfigInput): Promise<ApiConfigRecord[]> =>

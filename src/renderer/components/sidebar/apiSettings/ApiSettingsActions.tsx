@@ -1,4 +1,4 @@
-import { Download, Loader2, Plus, X } from "lucide-react";
+import { Download, KeyRound, Loader2, Plus, X } from "lucide-react";
 import { useI18n } from "../../../i18n";
 
 type ApiSettingsActionsProps = {
@@ -8,6 +8,7 @@ type ApiSettingsActionsProps = {
   showAddForm: boolean;
   onImport: () => void;
   onImportFile: () => void;
+  onOAuthLogin: () => void;
   onToggleAddForm: () => void;
 };
 
@@ -18,12 +19,27 @@ export function ApiSettingsActions({
   showAddForm,
   onImport,
   onImportFile,
+  onOAuthLogin,
   onToggleAddForm,
 }: ApiSettingsActionsProps): React.JSX.Element {
   const { t } = useI18n();
 
   return (
-    <div className="api-settings-actions api-settings-actions-trio">
+    <div className="api-settings-actions api-settings-actions-quad">
+      <button
+        className="api-settings-action-btn primary"
+        onClick={onOAuthLogin}
+        type="button"
+        disabled={isBusy}
+        title={t("settings.oauthLoginHint", {
+          defaultValue: "Sign in with a subscription account",
+        })}
+      >
+        <KeyRound size={15} />
+        <span>
+          {t("settings.oauthLogin", { defaultValue: "OAuth sign-in" })}
+        </span>
+      </button>
       <button
         className="api-settings-action-btn primary"
         onClick={onImport}

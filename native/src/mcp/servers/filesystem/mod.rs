@@ -246,10 +246,17 @@ impl FilesystemService {
         // 剪切会同时改写源文件与目标文件，两把锁按路径排序后依次获取，
         // 避免两次交叉剪切互相等待。
         let write_paths = write_target_paths(tool_name, args, file_path.as_deref());
+        // 抢不到跟踪租约（同项目正有长时间命令在跑）时照常写入，只把本次文件
+        // 归属标为 unavailable，绝不被长命令挡住。
         let tracking_lease = if write_paths.is_empty() {
             None
         } else {
-            Some(crate::mcp::tools::file_tracking::coordinate(&write_paths).await)
+            crate::mcp::tools::file_tracking::coordinate(
+                &write_paths,
+                crate::mcp::tools::file_tracking::LeaseClass::Writer,
+                crate::mcp::tools::file_tracking::WRITER_LEASE_WAIT,
+            )
+            .await
         };
         let mut _in_flight_writes = Vec::with_capacity(write_paths.len());
         let mut _write_permits = Vec::with_capacity(write_paths.len());
@@ -286,8 +293,13 @@ impl FilesystemService {
         let tracking_paths = write_paths.to_vec();
         let blocking_lease = tracking_lease.clone();
         let mut result = tokio::task::spawn_blocking(move || {
+            let reserved = blocking_lease.is_some();
             let _lease = blocking_lease;
-            let before = crate::mcp::tools::file_tracking::filesystem_before(&tracking_paths);
+            let before = if reserved {
+                crate::mcp::tools::file_tracking::filesystem_before(&tracking_paths)
+            } else {
+                Vec::new()
+            };
             let mut result = FilesystemService::new().execute(&tool_name_owned, &args_owned)?;
             if matches!(tool_name_owned.as_str(), "create" | "replace_edit" | "copy") {
                 // Keep legacy path fields, but make their values agree with the
@@ -309,11 +321,18 @@ impl FilesystemService {
                 if tool_name_owned == "copy" {
                     result["filePath"] = result["targetFilePath"].clone();
                 }
-                result["fileTracking"] = crate::mcp::tools::file_tracking::filesystem_after(
-                    before,
-                    &result,
-                    tracking_paths.len(),
-                );
+                result["fileTracking"] = if reserved {
+                    crate::mcp::tools::file_tracking::filesystem_after(
+                        before,
+                        &result,
+                        tracking_paths.len(),
+                    )
+                } else {
+                    crate::mcp::tools::file_tracking::unavailable(
+                        "filesystem",
+                        "concurrent-execution",
+                    )
+                };
             }
             Ok::<_, napi::Error>(result)
         })

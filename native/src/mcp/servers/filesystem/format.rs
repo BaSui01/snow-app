@@ -170,9 +170,14 @@ fn take_ready() -> Vec<String> {
 
 /// 对单个文件执行一次格式化。
 async fn format_file(file_path: &str) {
-    // Always take the independent tracking reservation before the file lock.
-    let tracking_lease =
-        crate::mcp::tools::file_tracking::coordinate(&[file_path.to_string()]).await;
+    // 跟踪租约尽力而为：被长时间命令占用时不等（格式化本身由文件锁与写工具
+    // 串行），避免读取观察点被自动格式化拖住。
+    let tracking_lease = crate::mcp::tools::file_tracking::coordinate(
+        &[file_path.to_string()],
+        crate::mcp::tools::file_tracking::LeaseClass::Writer,
+        crate::mcp::tools::file_tracking::WRITER_LEASE_WAIT,
+    )
+    .await;
     // 与编辑工具共用同一把文件锁：格式化永远排在正在进行的编辑之后，也不会
     // 和编辑的「读取 -> 计算 -> 写盘」交错。
     let write_lock = file_lock::file_write_lock(file_path);

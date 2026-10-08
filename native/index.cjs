@@ -103,6 +103,10 @@ const requiredExports = [
   "browserHistoryList",
   "browserHistoryDelete",
   "browserHistoryClear",
+  // 系统日志自动清理（保留期设置与按保留期清理）
+  "getAppLogsRetentionDays",
+  "setAppLogsRetentionDays",
+  "pruneAppLogs",
   // 插件市场（索引拉取 / 从市场安装插件与脚本）
   "fetchPluginRegistry",
   "installPluginFromMarket",

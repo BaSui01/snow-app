@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
+import { CustomSelect } from "../../common/CustomSelect";
 import { Modal } from "../../common/Modal";
 import { RangeSlider } from "../../common/RangeSlider";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
@@ -28,6 +29,15 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const DURATION_MIN = 1;
 const DURATION_MAX = 30;
 const DURATION_PRESETS = [1, 5, 10, 15, 30];
+
+// 系统日志保留期（天）：0 表示不清理；默认保留近 7 天。
+const RETENTION_OPTIONS: { days: number; labelKey: string }[] = [
+  { days: 7, labelKey: "settings.systemLogsRetention7Days" },
+  { days: 30, labelKey: "settings.systemLogsRetention30Days" },
+  { days: 90, labelKey: "settings.systemLogsRetention90Days" },
+  { days: 0, labelKey: "settings.systemLogsRetentionNever" },
+];
+const DEFAULT_RETENTION_DAYS = 7;
 
 const formatCountdown = (ms: number): string => {
   const totalSeconds = Math.ceil(ms / 1000);
@@ -174,6 +184,7 @@ export function SystemLogsPanel(): React.JSX.Element {
     useState(false);
   const [durationMinutes, setDurationMinutes] = useState(5);
   const [loggingExpiresAt, setLoggingExpiresAt] = useState<number | null>(null);
+  const [retentionDays, setRetentionDays] = useState(DEFAULT_RETENTION_DAYS);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [copiedRowLabel, setCopiedRowLabel] = useState<string | null>(null);
   const copyResetTimerRef = useRef<number | null>(null);
@@ -295,6 +306,24 @@ export function SystemLogsPanel(): React.JSX.Element {
     };
   }, []);
 
+  // 挂载时读取日志保留期设置；读取失败保持默认（近 7 天）。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const days = await window.snow.getAppLogsRetentionDays();
+        if (!cancelled && Number.isFinite(days)) {
+          setRetentionDays(Math.max(0, Math.trunc(days)));
+        }
+      } catch {
+        /* 读取失败保持默认保留期 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const disableRequestLogging = useCallback(
     async (expired: boolean) => {
       setRequestLoggingEnabled(false);
@@ -374,6 +403,49 @@ export function SystemLogsPanel(): React.JSX.Element {
       );
     }
   }, [durationMinutes, t]);
+
+  const retentionOptions = useMemo(
+    () =>
+      RETENTION_OPTIONS.map((option) => ({
+        value: String(option.days),
+        label: t(option.labelKey),
+      })),
+    [t],
+  );
+
+  const handleRetentionChange = useCallback(
+    async (days: number) => {
+      const previousDays = retentionDays;
+      if (days === previousDays) return;
+      setRetentionDays(days);
+      try {
+        await window.snow.setAppLogsRetentionDays(days);
+        const deleted = await window.snow.pruneAppLogs();
+        setNotice(
+          deleted > 0
+            ? t("settings.systemLogsRetentionPruned", {
+                defaultValue:
+                  "Log retention updated. {{count}} expired entries deleted.",
+                values: { count: deleted.toLocaleString() },
+              })
+            : t("settings.systemLogsRetentionUpdated", {
+                defaultValue: "Log retention updated.",
+              }),
+        );
+        void loadLogs(0, levelFilter);
+      } catch (e) {
+        setRetentionDays(previousDays);
+        setError(
+          e instanceof Error
+            ? e.message
+            : t("settings.systemLogsRetentionError", {
+                defaultValue: "Failed to update log retention.",
+              }),
+        );
+      }
+    },
+    [retentionDays, levelFilter, loadLogs, t],
+  );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -592,6 +664,25 @@ export function SystemLogsPanel(): React.JSX.Element {
           {t("settings.systemLogsRequestLoggingDescription", {
             defaultValue:
               "Record the full raw request JSON of every API call. Very high disk usage.",
+          })}
+        </span>
+      </div>
+
+      <div className="system-logs-filter-row">
+        <span className="system-logs-request-logging-label">
+          {t("settings.systemLogsRetention", { defaultValue: "Log retention" })}
+        </span>
+        <div className="system-logs-retention-select">
+          <CustomSelect
+            value={String(retentionDays)}
+            options={retentionOptions}
+            onChange={(value) => void handleRetentionChange(Number(value))}
+          />
+        </div>
+        <span className="settings-item-description">
+          {t("settings.systemLogsRetentionDescription", {
+            defaultValue:
+              "Logs older than the retention window are deleted automatically.",
           })}
         </span>
       </div>

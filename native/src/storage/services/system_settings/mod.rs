@@ -73,6 +73,12 @@ const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_NAME: &str = "Request logging expir
 const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE: &str = "request_logging_expires_at";
 const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_VALUE: &str = "0";
 
+// 系统日志保留期（天）：0 表示不清理，未配置时默认保留近 7 天。
+// 清理动作由主进程启动时与定时任务触发，Rust 侧只按该值删除过期行。
+const DEFAULT_APP_LOGS_RETENTION_SETTING_NAME: &str = "App logs retention";
+const DEFAULT_APP_LOGS_RETENTION_SETTING_CODE: &str = "app_logs_retention_days";
+const DEFAULT_APP_LOGS_RETENTION_DAYS: i32 = 7;
+
 const DEFAULT_IMAGE_LIBRARY_DIR_SETTING_NAME: &str = "Image library directory";
 const DEFAULT_IMAGE_LIBRARY_DIR_SETTING_CODE: &str = "image_library_dir";
 const DEFAULT_IMAGE_LIBRARY_DIR_SETTING_VALUE: &str = "";
@@ -492,6 +498,32 @@ pub fn set_request_logging_expiry(database_path: &Path, expires_at_ms: i64) -> R
         DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_NAME,
         DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE,
         &expires_at_ms.to_string(),
+    )
+}
+
+/// 读取系统日志保留天数；未配置时默认 7 天，0 表示不清理。
+pub fn get_app_logs_retention_days(database_path: &Path) -> Result<i32> {
+    let Some(value) =
+        get_system_setting_value(database_path, DEFAULT_APP_LOGS_RETENTION_SETTING_CODE)?
+    else {
+        return Ok(DEFAULT_APP_LOGS_RETENTION_DAYS);
+    };
+
+    value.parse::<i32>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse App logs retention setting: {error}"),
+        )
+    })
+}
+
+/// 写入系统日志保留天数（负数按 0 处理，即不清理）。
+pub fn set_app_logs_retention_days(database_path: &Path, days: i32) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_APP_LOGS_RETENTION_SETTING_NAME,
+        DEFAULT_APP_LOGS_RETENTION_SETTING_CODE,
+        &days.max(0).to_string(),
     )
 }
 

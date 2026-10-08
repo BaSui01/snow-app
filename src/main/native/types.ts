@@ -2743,6 +2743,11 @@ export type NativeBridge = {
     offset: number,
   ) => Promise<AppLogPage>;
   clearAppLogs: () => Promise<number>;
+  /** 系统日志保留天数：0 = 不清理，未配置时默认 7 天。 */
+  getAppLogsRetentionDays: () => Promise<number>;
+  setAppLogsRetentionDays: (days: number) => Promise<void>;
+  /** 按当前保留期清理过期系统日志，返回删除条数。 */
+  pruneAppLogs: () => Promise<number>;
   exportConversation: (
     conversationId: string,
     format: string,

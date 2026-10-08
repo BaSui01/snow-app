@@ -32,3 +32,20 @@ pub fn clear_app_logs() -> Result<u32> {
     let database_path = ensure_database_file()?;
     services::app_logs::clear_app_logs(&database_path)
 }
+
+pub fn get_app_logs_retention_days() -> Result<i32> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::get_app_logs_retention_days(&database_path)
+}
+
+pub fn set_app_logs_retention_days(days: i32) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_app_logs_retention_days(&database_path, days)
+}
+
+/// 按当前保留期设置清理过期系统日志，返回删除行数。
+pub fn prune_app_logs() -> Result<u32> {
+    let database_path = ensure_database_file()?;
+    let retention_days = services::system_settings::get_app_logs_retention_days(&database_path)?;
+    services::app_logs::prune_app_logs(&database_path, retention_days)
+}

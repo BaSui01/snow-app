@@ -1413,6 +1413,23 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("logs:clear", () => native.clearAppLogs());
+
+  ipcMain.handle("settings:get-app-logs-retention-days", () =>
+    native.getAppLogsRetentionDays(),
+  );
+
+  ipcMain.handle(
+    "settings:set-app-logs-retention-days",
+    (_event, days: unknown) => {
+      const safeDays =
+        typeof days === "number" && Number.isFinite(days)
+          ? Math.max(0, Math.trunc(days))
+          : 7;
+      return native.setAppLogsRetentionDays(safeDays);
+    },
+  );
+
+  ipcMain.handle("logs:prune", () => native.pruneAppLogs());
 };
 
 /**

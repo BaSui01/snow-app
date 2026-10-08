@@ -105,3 +105,24 @@ pub async fn clear_app_logs() -> napi::Result<u32> {
         .await
         .map_err(map_spawn_error)?
 }
+
+#[napi]
+pub async fn get_app_logs_retention_days() -> napi::Result<i32> {
+    tokio::task::spawn_blocking(crate::storage::get_app_logs_retention_days)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_app_logs_retention_days(days: i32) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_app_logs_retention_days(days))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn prune_app_logs() -> napi::Result<u32> {
+    tokio::task::spawn_blocking(crate::storage::prune_app_logs)
+        .await
+        .map_err(map_spawn_error)?
+}

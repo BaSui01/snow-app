@@ -438,6 +438,11 @@ export const apiConfigApi = {
   ): Promise<AppLogPage> =>
     ipcRenderer.invoke("logs:list", level, module, since, until, limit, offset),
   clearAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:clear"),
+  getAppLogsRetentionDays: (): Promise<number> =>
+    ipcRenderer.invoke("settings:get-app-logs-retention-days"),
+  setAppLogsRetentionDays: (days: number): Promise<void> =>
+    ipcRenderer.invoke("settings:set-app-logs-retention-days", days),
+  pruneAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:prune"),
 
   getKeyboardShortcutsSettings: (): Promise<KeyboardShortcutsSettings> =>
     ipcRenderer.invoke("settings:get-keyboard-shortcuts"),

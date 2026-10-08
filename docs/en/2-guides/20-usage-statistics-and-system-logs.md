@@ -68,6 +68,10 @@ The System Logs page reads the SQLite `app_logs` table, 50 rows per page. It can
 
 Fields may include `level`, `module`, `func`, `line`, `message`, `input`, `output`, `duration`, `context`, `error`, `source`, and `created_at`. Logs come from both main and renderer processes. Renderer entries written through IPC are forced to use `source: "renderer"`. Detail fields can be copied.
 
+### Automatic Cleanup (Retention)
+
+System logs keep the last 7 days by default. The page offers a log-retention choice: last 7 days, last 30 days, last 90 days, or keep everything; the value is stored as `app_logs_retention_days` in SQLite `system_settings` (0 means no cleanup). The app prunes expired logs once at startup and re-checks every 6 hours while running; switching the retention option on the page prunes immediately and reports how many entries were deleted. Pruning deletes only rows whose `created_at` is older than the retention window.
+
 ### Clear Behavior
 
 The clear button uses two-step confirmation: the first click enters a confirmation state, and the second click must occur within three seconds. The native operation runs `DELETE FROM app_logs`.
@@ -135,12 +139,12 @@ Before sharing logs, screenshots, or a database, remove at least:
 
 ## Lifecycle and Deletion Boundaries
 
-| Data source             | Storage location          | Lifecycle                                                                                                                     | Deletion boundary                                                          |
-| ----------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Usage records           | SQLite `usage_records`    | No automatic retention period is defined in source; retained until database migration, recovery, or a future explicit cleanup | The current Usage page has no clear action                                 |
-| System and request logs | SQLite `app_logs`         | No automatic rotation is defined; grows until the user clears it or the database is replaced                                  | UI clear deletes all log rows; filters do not limit deletion               |
-| Request-logging switch  | SQLite `system_settings`  | Automatically turns off and resets at expiry                                                                                  | Turning off the switch does not delete payloads already written            |
-| Snow CLI file logs      | `~/.snow/log/`            | Independent CLI files; Snow App does not read/delete them                                                                     | Managed by Snow CLI                                                        |
-| Background-task logs    | `<workspace>/.snow/logs/` | Retained with workspace files                                                                                                 | Not affected by the System Logs UI; workspace files are managed separately |
+| Data source             | Storage location          | Lifecycle                                                                                                                       | Deletion boundary                                                          |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Usage records           | SQLite `usage_records`    | No automatic retention period is defined in source; retained until database migration, recovery, or a future explicit cleanup   | The current Usage page has no clear action                                 |
+| System and request logs | SQLite `app_logs`         | Pruned by the retention window (last 7 days by default; 30/90 days or keep-all selectable): once at startup, then every 6 hours | UI clear deletes all log rows; filters do not limit deletion               |
+| Request-logging switch  | SQLite `system_settings`  | Automatically turns off and resets at expiry                                                                                    | Turning off the switch does not delete payloads already written            |
+| Snow CLI file logs      | `~/.snow/log/`            | Independent CLI files; Snow App does not read/delete them                                                                       | Managed by Snow CLI                                                        |
+| Background-task logs    | `<workspace>/.snow/logs/` | Retained with workspace files                                                                                                   | Not affected by the System Logs UI; workspace files are managed separately |
 
 For complete backup and storage boundaries, see [Data Storage Locations](../3-reference/4-data-storage-locations.md).

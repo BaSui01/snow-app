@@ -5131,6 +5131,17 @@ export const en = {
     "Request logging will auto-disable when the timer ends",
   "settings.systemLogsRequestLoggingExpired":
     "Request logging auto-disabled (timer expired).",
+  "settings.systemLogsRetention": "Log retention",
+  "settings.systemLogsRetention7Days": "Last 7 days",
+  "settings.systemLogsRetention30Days": "Last 30 days",
+  "settings.systemLogsRetention90Days": "Last 90 days",
+  "settings.systemLogsRetentionNever": "Keep all",
+  "settings.systemLogsRetentionDescription":
+    "Logs older than the retention window are deleted automatically.",
+  "settings.systemLogsRetentionUpdated": "Log retention updated.",
+  "settings.systemLogsRetentionPruned":
+    "Log retention updated. {{count}} expired entries deleted.",
+  "settings.systemLogsRetentionError": "Failed to update log retention.",
   "settings.close": "Close",
   "settings.closePanel": "Close",
   "settings.loadingModels": "Loading models...",

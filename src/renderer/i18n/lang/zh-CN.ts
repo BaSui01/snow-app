@@ -4823,6 +4823,16 @@ export const zhCN = {
   "settings.systemLogsRequestLoggingCountdownTitle":
     "请求日志将在计时结束后自动关闭",
   "settings.systemLogsRequestLoggingExpired": "请求日志已到时自动关闭。",
+  "settings.systemLogsRetention": "日志保留",
+  "settings.systemLogsRetention7Days": "近 7 天",
+  "settings.systemLogsRetention30Days": "近 30 天",
+  "settings.systemLogsRetention90Days": "近 90 天",
+  "settings.systemLogsRetentionNever": "不清理",
+  "settings.systemLogsRetentionDescription": "超出保留期的日志会被自动删除。",
+  "settings.systemLogsRetentionUpdated": "日志保留期已更新。",
+  "settings.systemLogsRetentionPruned":
+    "日志保留期已更新，已删除 {{count}} 条过期日志。",
+  "settings.systemLogsRetentionError": "更新日志保留期失败。",
   "settings.close": "关闭",
   "settings.closePanel": "关闭面板",
   "settings.loadingModels": "正在加载模型...",

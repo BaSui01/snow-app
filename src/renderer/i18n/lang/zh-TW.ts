@@ -4776,6 +4776,16 @@ export const zhTW = {
   "settings.systemLogsRequestLoggingCountdownTitle":
     "請求日誌將在計時結束後自動關閉",
   "settings.systemLogsRequestLoggingExpired": "請求日誌已到時自動關閉。",
+  "settings.systemLogsRetention": "日誌保留",
+  "settings.systemLogsRetention7Days": "近 7 天",
+  "settings.systemLogsRetention30Days": "近 30 天",
+  "settings.systemLogsRetention90Days": "近 90 天",
+  "settings.systemLogsRetentionNever": "不清理",
+  "settings.systemLogsRetentionDescription": "超出保留期的日誌會被自動刪除。",
+  "settings.systemLogsRetentionUpdated": "日誌保留期已更新。",
+  "settings.systemLogsRetentionPruned":
+    "日誌保留期已更新，已刪除 {{count}} 筆過期日誌。",
+  "settings.systemLogsRetentionError": "更新日誌保留期失敗。",
   "settings.close": "關閉",
   "settings.closePanel": "關閉面板",
   "settings.loadingModels": "正在載入模型...",

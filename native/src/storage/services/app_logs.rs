@@ -157,6 +157,24 @@ pub fn clear_app_logs(database_path: &Path) -> Result<u32> {
         .map(|count| count as u32)
 }
 
+/// 按保留天数删除过期系统日志（0 或负数表示不清理），返回删除行数。
+/// `created_at` 由写入路径以本地时间写入，比较同样使用本地时间。
+pub fn prune_app_logs(database_path: &Path, retention_days: i32) -> Result<u32> {
+    if retention_days <= 0 {
+        return Ok(0);
+    }
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "DELETE FROM app_logs WHERE created_at < datetime('now', 'localtime', ?1)",
+                params![format!("-{retention_days} days")],
+            )
+        })
+        .map_err(|error| database::database_error(database_path, "prune app logs", error))
+        .map(|count| count as u32)
+}
+
 /// Write an API-layer warning log (tool JSON parse failure, empty response, etc.).
 /// The SQLite insert is offloaded to `spawn_blocking` so the async API path is
 /// never blocked by database I/O. Failures are silently ignored to avoid

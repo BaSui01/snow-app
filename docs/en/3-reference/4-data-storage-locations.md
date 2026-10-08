@@ -51,7 +51,7 @@ Representative tables include:
 | `usage_records`                                     | Token usage, status, model, and project associations                                                                                                                                                                          |
 | `userscripts` / `userscript_values`                 | Built-in browser Tampermonkey-compatible userscript metadata and `GM_*` persistent values; script source files are stored separately under `~/.snowapp/browser-script/`, not sensitive but may hold credential-like GM values |
 | `app_plugins` / `app_plugin_values`                 | Plugin registry (manifest fields, enabled state, install and source paths) and plugin-private persisted values; plugin folders live under `~/.snowapp/plugins/<pluginId>/`                                                    |
-| `app_logs`                                          | System logs and optional API request/normalized response bodies (sensitive fields redacted)                                                                                                                                                                             |
+| `app_logs`                                          | System logs and optional API request/normalized response bodies (sensitive fields redacted)                                                                                                                                   |
 | `image_library`                                     | Image-library index; files live in the default or custom root                                                                                                                                                                 |
 | `codebase_embed_sessions` / `codebase_embeddings_*` | Codebase embedding state and dynamically created per-project vector tables                                                                                                                                                    |
 
@@ -217,10 +217,10 @@ This directory is shared with Snow CLI and the `config` tool. Main entries inclu
 
 ## 7. Do Not Confuse the Three Log Sources
 
-| Log source           | Location          | Cleanup behavior                                                             |
-| -------------------- | ----------------- | ---------------------------------------------------------------------------- |
-| Settings System Logs | SQLite `app_logs` | Two-step UI confirmation deletes all log rows                                |
-| Snow CLI file logs   | `~/.snow/log/`    | Independent files managed by Snow CLI; Snow App does not read or delete them |
+| Log source           | Location          | Cleanup behavior                                                                         |
+| -------------------- | ----------------- | ---------------------------------------------------------------------------------------- |
+| Settings System Logs | SQLite `app_logs` | Two-step UI confirmation deletes all log rows; expired rows are also pruned by retention |
+| Snow CLI file logs   | `~/.snow/log/`    | Independent files managed by Snow CLI; Snow App does not read or delete them             |
 
 | Background-task logs | `<workspace>/.snow/logs/` | Independent workspace files unaffected by the other two |
 
@@ -228,16 +228,16 @@ Time-limited request logging writes request and normalized response bodies to th
 
 ## 8. Lifecycle and Deletion Boundaries
 
-| Data                              | Default lifecycle                                                        | Key deletion/recovery boundary                                                            |
-| --------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| SQLite business data              | Retained until a UI action, migration, recovery, or database replacement | In WAL mode, do not copy or replace only the DB file while the app is running             |
-| `usage_records`                   | No automatic retention period is defined                                 | The current Usage page has no clear action                                                |
-| `app_logs`                        | No automatic rotation is defined                                         | Clear removes all SQLite logs regardless of active filters                                |
-| Uploaded and library images       | Retained with resource directories                                       | Database index and physical files must stay consistent; conversation deletion may cascade |
-| Theme resources                   | Managed copies persist                                                   | Removing originals does not affect copies; removing copies breaks references              |
-| Password vault and browser states | Retained until user deletion or directory replacement                    | Encryption is OS-user-bound, so cross-machine copies may be unrecoverable                 |
-| Update cache                      | Managed by update flow/library                                           | Platform location and cleanup policy differ                                               |
-| Config backups                    | Temporary safety net during config writes                                | Not a long-term backup strategy                                                           |
+| Data                              | Default lifecycle                                                                                                        | Key deletion/recovery boundary                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| SQLite business data              | Retained until a UI action, migration, recovery, or database replacement                                                 | In WAL mode, do not copy or replace only the DB file while the app is running             |
+| `usage_records`                   | No automatic retention period is defined                                                                                 | The current Usage page has no clear action                                                |
+| `app_logs`                        | Pruned by the retention window (last 7 days by default; 30/90 days or keep-all selectable; at startup and every 6 hours) | Clear removes all SQLite logs regardless of active filters                                |
+| Uploaded and library images       | Retained with resource directories                                                                                       | Database index and physical files must stay consistent; conversation deletion may cascade |
+| Theme resources                   | Managed copies persist                                                                                                   | Removing originals does not affect copies; removing copies breaks references              |
+| Password vault and browser states | Retained until user deletion or directory replacement                                                                    | Encryption is OS-user-bound, so cross-machine copies may be unrecoverable                 |
+| Update cache                      | Managed by update flow/library                                                                                           | Platform location and cleanup policy differ                                               |
+| Config backups                    | Temporary safety net during config writes                                                                                | Not a long-term backup strategy                                                           |
 
 ## 9. Security Boundaries
 

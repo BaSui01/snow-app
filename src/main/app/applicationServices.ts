@@ -2,6 +2,7 @@ import type { AppStorageInfo, NativeBridge } from "../native/types";
 import { markStorageReady, markStorageFailed } from "./storageReady";
 import { snowLog } from "../../utils/snowLogger";
 import { broadcastWorkspaceDirectoryListChanged } from "../utils/workspaceDirectoryBroadcast";
+import { startAppLogRetention } from "./appLogRetention";
 
 const ensureDefaultWorkspaceDirectory = async (
   native: NativeBridge,
@@ -67,6 +68,8 @@ export const initializeApplicationServices = async (
     // 每次启动强制关闭请求日志，避免用户忘记手动关闭导致大量日志写入损伤硬盘。
     await native.setRequestLogging(false);
     await native.setRequestLoggingExpiry(0);
+    // 系统日志自动清理：启动即清理一次，之后由定时任务按保留期继续。
+    startAppLogRetention(native);
     if (cancelledSubAgentCount > 0) {
       console.info(
         `Cancelled ${cancelledSubAgentCount} interrupted sub-agent session(s)`,

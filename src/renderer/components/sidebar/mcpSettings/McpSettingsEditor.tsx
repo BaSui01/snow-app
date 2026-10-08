@@ -17,7 +17,7 @@ import { McpKeyValueEditor } from "./McpKeyValueEditor";
 import { McpStringListEditor } from "./McpStringListEditor";
 import {
   draftToJson,
-  formatJsonParseError,
+  formatMcpJsonError,
   formatMcpJsonText,
   parseDraftJson,
 } from "./mcpSettingsUtils";
@@ -59,9 +59,11 @@ type McpSettingsEditorProps = {
   draft: McpServerDraft;
   isBusy: boolean;
   isSaving: boolean;
+  errorMessage?: string;
   tools?: McpServerTool[];
   isFetchingTools?: boolean;
   onFetchTools?: () => void;
+  onDismissError?: () => void;
   onDraftChange: (patch: Partial<McpServerDraft>) => void;
   onUpdatePair: (
     field: "env" | "headers",
@@ -75,16 +77,18 @@ type McpSettingsEditorProps = {
   onAddArg: () => void;
   onRemoveArg: (argId: string) => void;
   onCancel: () => void;
-  onSave: () => void;
+  onSave: (overrideDraft?: McpServerDraft) => void;
 };
 
 export function McpSettingsEditor({
   draft,
   isBusy,
   isSaving,
+  errorMessage,
   tools,
   isFetchingTools,
   onFetchTools,
+  onDismissError,
   onDraftChange,
   onUpdatePair,
   onAddPair,
@@ -115,22 +119,27 @@ export function McpSettingsEditor({
     );
   }, [tools, toolFilter]);
 
-  // 与保存行为保持一致的实时校验：能被容错解析为服务器配置即视为有效
+  // 与保存行为保持一致的实时校验：能被容错解析为服务器配置即视为有效；
+  // 新建服务未填名称的初始默认 JSON 模板视为空态，避免一打开就弹红字报错。
   const jsonStatus = useMemo<JsonValidationStatus>(() => {
-    if (!jsonText.trim()) {
+    if (
+      !jsonText.trim() ||
+      (!draft.name.trim() && jsonText.trim() === draftToJson(draft).trim())
+    ) {
       return { kind: "empty" };
     }
     try {
       parseDraftJson(jsonText, draft);
       return { kind: "valid" };
     } catch (error) {
-      return { kind: "invalid", message: formatJsonParseError(error) };
+      return { kind: "invalid", message: formatMcpJsonError(error, t) };
     }
-  }, [jsonText, draft]);
+  }, [jsonText, draft, t]);
 
   const switchToJson = (): void => {
     setJsonText(draftToJson(draft));
     setJsonError("");
+    onDismissError?.();
     setEditMode("json");
   };
 
@@ -144,12 +153,14 @@ export function McpSettingsEditor({
       // 忽略无法解析的 JSON 编辑内容，保留当前表单数据
     }
     setJsonError("");
+    onDismissError?.();
     setEditMode("form");
   };
 
   const handleJsonTextChange = (value: string): void => {
     setJsonText(value);
     setJsonError("");
+    onDismissError?.();
   };
 
   // 粘贴自动格式化：粘贴的内容若能容错解析为配置对象（自动剥离 markdown 围栏、
@@ -170,6 +181,7 @@ export function McpSettingsEditor({
     pasteCaretToEndRef.current = true;
     setJsonText(formatted);
     setJsonError("");
+    onDismissError?.();
   };
 
   // 整体替换后把光标移到文本末尾（库会恢复替换前的旧光标位置）
@@ -194,17 +206,13 @@ export function McpSettingsEditor({
         const parsed = parseDraftJson(jsonText, draft);
         onDraftChange(parsed);
         setJsonError("");
+        onSave(parsed);
       } catch (error) {
-        setJsonError(
-          formatJsonParseError(error) ||
-            t("settings.mcpJsonInvalid", {
-              defaultValue: "Invalid JSON",
-            }),
-        );
-        return;
+        setJsonError(formatMcpJsonError(error, t));
       }
+      return;
     }
-    onSave();
+    onSave(draft);
   };
 
   return (
@@ -277,9 +285,12 @@ export function McpSettingsEditor({
             )}
           </div>
           <AutoDismissNotice
-            message={jsonError}
+            message={jsonError || errorMessage || ""}
             tone="error"
-            onDismiss={() => setJsonError("")}
+            onDismiss={() => {
+              setJsonError("");
+              onDismissError?.();
+            }}
           />
           <div className="mcp-editor-json-hint">
             {t("settings.mcpJsonHint", {
@@ -294,6 +305,11 @@ export function McpSettingsEditor({
 
       {editMode === "form" && (
         <>
+          <AutoDismissNotice
+            message={errorMessage || ""}
+            tone="error"
+            onDismiss={() => onDismissError?.()}
+          />
           <div className="api-settings-form-grid">
             <label className="api-settings-field">
               <span>

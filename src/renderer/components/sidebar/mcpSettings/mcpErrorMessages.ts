@@ -8,12 +8,12 @@
  * 便于用户向开发者反馈。
  */
 
-type McpTranslate = (
+export type McpTranslate = (
   key: string,
   options?: {
     defaultValue?: string;
     values?: Record<string, string | number>;
-  }
+  },
 ) => string;
 
 const extractDetail = (message: string, prefix: string): string => {
@@ -29,7 +29,11 @@ const extractDetail = (message: string, prefix: string): string => {
  */
 export const formatMcpError = (error: unknown, t: McpTranslate): string => {
   const message =
-    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
 
   if (!message) {
     return t("settings.mcpFetchToolsError", {
@@ -48,9 +52,13 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
 
   // stdio 子进程无法启动（命令不存在、路径错误、权限不足等）。
   if (message.includes("Failed to start external MCP server")) {
-    const detail = extractDetail(message, "Failed to start external MCP server");
+    const detail = extractDetail(
+      message,
+      "Failed to start external MCP server",
+    );
     return t("settings.mcpErrorStartFailed", {
-      defaultValue: "Failed to start the MCP server process. Check the command and arguments.",
+      defaultValue:
+        "Failed to start the MCP server process. Check the command and arguments.",
       values: detail ? { detail } : undefined,
     });
   }
@@ -59,7 +67,7 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
   if (message.includes("Failed to initialize external MCP stdio server")) {
     const detail = extractDetail(
       message,
-      "Failed to initialize external MCP stdio server"
+      "Failed to initialize external MCP stdio server",
     );
     return t("settings.mcpErrorInitializeFailed", {
       defaultValue:
@@ -70,9 +78,13 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
 
   // HTTP 传输连接失败。
   if (message.includes("Failed to connect external MCP HTTP server")) {
-    const detail = extractDetail(message, "Failed to connect external MCP HTTP server");
+    const detail = extractDetail(
+      message,
+      "Failed to connect external MCP HTTP server",
+    );
     return t("settings.mcpErrorHttpConnectFailed", {
-      defaultValue: "Failed to connect to the MCP HTTP server. Check the URL and network.",
+      defaultValue:
+        "Failed to connect to the MCP HTTP server. Check the URL and network.",
       values: detail ? { detail } : undefined,
     });
   }
@@ -92,7 +104,8 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
   // 配置已被删除或不再存在。
   if (message.includes("is no longer configured")) {
     return t("settings.mcpErrorNotConfigured", {
-      defaultValue: "This MCP server is no longer configured. Re-add it to continue.",
+      defaultValue:
+        "This MCP server is no longer configured. Re-add it to continue.",
     });
   }
 
@@ -107,7 +120,10 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
 
   // 配置加载失败（数据库读取错误）。
   if (message.includes("Failed to load external MCP server configs")) {
-    const detail = extractDetail(message, "Failed to load external MCP server configs");
+    const detail = extractDetail(
+      message,
+      "Failed to load external MCP server configs",
+    );
     return t("settings.mcpErrorLoadConfigsFailed", {
       defaultValue: "Failed to load MCP server configurations.",
       values: detail ? { detail } : undefined,
@@ -117,7 +133,51 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
   // 配置 JSON 格式非法。
   if (message.includes("Invalid external MCP")) {
     return t("settings.mcpErrorInvalidConfigJson", {
-      defaultValue: "The MCP server configuration contains invalid JSON values.",
+      defaultValue:
+        "The MCP server configuration contains invalid JSON values.",
+    });
+  }
+
+  // 保存与字段校验类错误。
+  if (
+    message.includes("MCP server name is required") ||
+    message === "name is required"
+  ) {
+    return t("settings.mcpNameRequired", {
+      defaultValue: "MCP server name is required.",
+    });
+  }
+  if (message.includes("HTTP MCP server URL is required")) {
+    return t("settings.mcpUrlRequired", {
+      defaultValue: "URL is required.",
+    });
+  }
+  if (message.includes("Stdio MCP server command is required")) {
+    return t("settings.mcpCommandRequired", {
+      defaultValue: "Command is required.",
+    });
+  }
+  if (message.includes("MCP server timeout must be a positive integer")) {
+    return t("settings.mcpTimeoutInvalid", {
+      defaultValue: "Timeout must be a positive integer.",
+    });
+  }
+  if (
+    message.includes("Project MCP server id conflicts with a global server")
+  ) {
+    return t("settings.mcpErrorIdConflictGlobal", {
+      defaultValue: "Project MCP server ID conflicts with a global server.",
+    });
+  }
+  if (message.includes("MCP server name already exists in this project")) {
+    return t("settings.mcpErrorNameExistsInProject", {
+      defaultValue:
+        "An MCP server with this name already exists in this project.",
+    });
+  }
+  if (message.includes("timed out after")) {
+    return t("settings.mcpErrorTimeout", {
+      defaultValue: "MCP server connection timed out.",
     });
   }
 
@@ -126,4 +186,67 @@ export const formatMcpError = (error: unknown, t: McpTranslate): string => {
     defaultValue: "Failed to fetch MCP tools: {{detail}}",
     values: { detail: message },
   });
+};
+
+/**
+ * 将保存/更新 MCP 服务器时的异常转换为本地化错误提示。
+ */
+export const formatMcpSaveError = (error: unknown, t: McpTranslate): string => {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+
+  if (!message) {
+    return t("settings.mcpSaveError", {
+      defaultValue: "Failed to save MCP server",
+    });
+  }
+
+  if (
+    message.includes("MCP server name is required") ||
+    message === "name is required"
+  ) {
+    return t("settings.mcpNameRequired", {
+      defaultValue: "MCP server name is required.",
+    });
+  }
+  if (message.includes("HTTP MCP server URL is required")) {
+    return t("settings.mcpUrlRequired", {
+      defaultValue: "URL is required.",
+    });
+  }
+  if (message.includes("Stdio MCP server command is required")) {
+    return t("settings.mcpCommandRequired", {
+      defaultValue: "Command is required.",
+    });
+  }
+  if (message.includes("MCP server timeout must be a positive integer")) {
+    return t("settings.mcpTimeoutInvalid", {
+      defaultValue: "Timeout must be a positive integer.",
+    });
+  }
+  if (
+    message.includes("Project MCP server id conflicts with a global server")
+  ) {
+    return t("settings.mcpErrorIdConflictGlobal", {
+      defaultValue: "Project MCP server ID conflicts with a global server.",
+    });
+  }
+  if (message.includes("MCP server name already exists in this project")) {
+    return t("settings.mcpErrorNameExistsInProject", {
+      defaultValue:
+        "An MCP server with this name already exists in this project.",
+    });
+  }
+  if (message.includes("Invalid external MCP")) {
+    return t("settings.mcpErrorInvalidConfigJson", {
+      defaultValue:
+        "The MCP server configuration contains invalid JSON values.",
+    });
+  }
+
+  return message;
 };

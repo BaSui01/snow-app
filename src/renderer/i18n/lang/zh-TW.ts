@@ -2571,9 +2571,17 @@ export const zhTW = {
   "settings.mcpErrorListToolsFailed": "從 MCP 伺服器取得工具清單失敗。",
   "settings.mcpErrorLoadConfigsFailed": "載入 MCP 伺服器設定失敗。",
   "settings.mcpErrorInvalidConfigJson": "MCP 伺服器設定包含無效的 JSON 值。",
+  "settings.mcpErrorIdConflictGlobal": "專案 MCP 服務 ID 與全域服務衝突。",
+  "settings.mcpErrorNameExistsInProject": "目前專案中已存在同名的 MCP 服務。",
+  "settings.mcpErrorTimeout": "MCP 伺服器連線逾時。",
   "settings.mcpFetchToolsErrorDetail": "取得 MCP 工具失敗：{{detail}}",
   "settings.mcpEditForm": "表單",
   "settings.mcpJsonInvalid": "JSON 無效",
+  "settings.mcpJsonSyntaxError": "JSON 語法錯誤：{{detail}}",
+  "settings.mcpJsonMustBeObject": "JSON 設定必須是一個物件。",
+  "settings.mcpJsonEmptyServers": "servers 中至少需要包含一個 MCP 服務。",
+  "settings.mcpJsonInvalidStructure":
+    'JSON 必須是單個服務設定物件，或形如 { "context7": { ... } } 的單條目映射。',
   "settings.mcpJsonEditorLabel": "MCP 伺服器 JSON 設定",
   "settings.mcpJsonHint":
     '以 JSON 形式編輯伺服器設定，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。貼上內容自動相容：Markdown 程式碼區塊、mcpServers/servers 包裝、註解、尾隨逗號與全形空格均可識別。未填寫 type（http/stdio）時會根據 url 或 command 自動推斷。',

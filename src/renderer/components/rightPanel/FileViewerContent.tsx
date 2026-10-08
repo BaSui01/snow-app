@@ -106,8 +106,8 @@ const FOLD_MAX_LINES = 200000;
 /** 超过该行数时把折叠计算延后到空闲时段，避免拖慢首屏。 */
 const FOLD_IDLE_MIN_LINES = 20000;
 /** 超过该行数或字符数时，编辑模式降级为原生 textarea（不做语法高亮）。 */
-const PLAIN_EDITOR_MIN_LINES = 3000;
-const PLAIN_EDITOR_MIN_CHARS = 300000;
+const PLAIN_EDITOR_MIN_LINES = 1500;
+const PLAIN_EDITOR_MIN_CHARS = 150000;
 /** 降级编辑模式行号列的视口外预渲染行数。 */
 const PLAIN_GUTTER_OVERSCAN = 32;
 
@@ -1716,11 +1716,11 @@ export function FileViewerContent({
   }, [canSearch, content, editMode, editedContent]);
 
   // 不区分大小写的折叠文本按内容缓存：超大文件下每次输入都折叠会明显卡顿，
-  // 因此仅在搜索打开时才生成（关闭搜索时保留原文本，匹配集本就为空）。
+  // 仅在搜索打开且存在非空查询词时才按需生成，避免打开搜索框瞬间克隆大字符串。
   const searchHaystack = useMemo(() => {
-    if (!searchOpen) return searchTarget;
+    if (!searchOpen || searchQuery.length === 0) return "";
     return searchCaseSensitive ? searchTarget : searchTarget.toLowerCase();
-  }, [searchCaseSensitive, searchOpen, searchTarget]);
+  }, [searchCaseSensitive, searchOpen, searchQuery.length, searchTarget]);
 
   const searchMatches = useMemo<SearchMatch[]>(() => {
     if (!searchOpen || searchQuery.length === 0 || searchTarget.length === 0) {
@@ -1731,6 +1731,38 @@ export function FileViewerContent({
       : searchQuery.toLowerCase();
     const matches: SearchMatch[] = [];
     let from = 0;
+
+    const activeIndex = editMode ? (plainIndex ?? lineIndex) : lineIndex;
+    if (activeIndex && activeIndex.total > 0) {
+      const { starts, total } = activeIndex;
+      while (matches.length < SEARCH_MATCH_LIMIT) {
+        const found = searchHaystack.indexOf(needle, from);
+        if (found === -1) break;
+        // 在 starts 上二分查找所在行号及行首位置：O(log N) 代替 O(N) 线性扫描
+        let lo = 1;
+        let hi = total;
+        let line = 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (starts[mid - 1] <= found) {
+            line = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        const lineStart = starts[line - 1];
+        matches.push({
+          start: found,
+          end: found + needle.length,
+          line,
+          lineStart,
+        });
+        from = found + needle.length;
+      }
+      return matches;
+    }
+
     let lineStart = 0;
     let line = 1;
     let newline = searchTarget.indexOf("\n", lineStart);
@@ -1752,6 +1784,9 @@ export function FileViewerContent({
     }
     return matches;
   }, [
+    editMode,
+    lineIndex,
+    plainIndex,
     searchCaseSensitive,
     searchHaystack,
     searchOpen,
@@ -1994,74 +2029,85 @@ export function FileViewerContent({
 
   // 查看模式匹配高亮层：只测量可视窗口内的行（虚拟滚动下每帧至多几十行），
   // 行元素按 data-line 取用，矩形换算为相对 .file-viewer-code 的坐标；
-  // 横向滚动由外层 .file-viewer-code-scroll 承担，高亮层随 pre 同步滚动。
-  useLayoutEffect(() => {
-    if (editMode || !searchOpen) {
+  // 改用 requestAnimationFrame 调度，消除同步 useLayoutEffect 触发的强制同步回流与级联重渲染。
+  useEffect(() => {
+    if (editMode || !searchOpen || searchMatches.length === 0) {
       setSearchMarkRects([]);
       return;
     }
-    const layer = marksLayerRef.current;
-    const contentEl = codeContentRef.current;
-    if (!layer || !contentEl || searchMatches.length === 0) {
-      setSearchMarkRects([]);
-      return;
-    }
-    const preEl = contentEl.closest(".file-viewer-code");
-    if (!preEl) return;
-    const preRect = preEl.getBoundingClientRect();
-    const current =
-      searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
-    if (!current) {
-      setSearchMarkRects([]);
-      return;
-    }
-    const rows = new Map<number, HTMLElement>();
-    for (const child of Array.from(contentEl.children)) {
-      if (!(child instanceof HTMLElement)) continue;
-      const line = Number(child.dataset.line);
-      if (line > 0) rows.set(line, child);
-    }
-    const firstLine = lineMapping.toSource(rowRange.start + 1);
-    const lastLine = lineMapping.toSource(rowRange.end);
-    let from = searchMatches.length;
-    let lo = 0;
-    let hi = searchMatches.length - 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (searchMatches[mid].line >= firstLine) {
-        from = mid;
-        hi = mid - 1;
-      } else {
-        lo = mid + 1;
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const layer = marksLayerRef.current;
+      const contentEl = codeContentRef.current;
+      if (!layer || !contentEl || searchMatches.length === 0) {
+        setSearchMarkRects([]);
+        return;
       }
-    }
-    const rects: SearchMarkRect[] = [];
-    for (let i = from; i < searchMatches.length; i += 1) {
-      const match = searchMatches[i];
-      if (match.line > lastLine) break;
-      if (rects.length >= SEARCH_MARK_RENDER_LIMIT && match !== current) break;
-      const row = rows.get(match.line);
-      if (!row) continue;
-      const range = makeRowRange(
-        row,
-        match.start - match.lineStart,
-        match.end - match.lineStart,
-      );
-      if (!range) continue;
-      const clientRects = range.getClientRects();
-      for (let j = 0; j < clientRects.length; j += 1) {
-        const rect = clientRects[j];
-        if (rect.width <= 0 && rect.height <= 0) continue;
-        rects.push({
-          left: rect.left - preRect.left,
-          top: rect.top - preRect.top,
-          width: rect.width,
-          height: rect.height,
-          isCurrent: match === current,
-        });
+      const preEl = contentEl.closest(".file-viewer-code");
+      if (!preEl) return;
+      const preRect = preEl.getBoundingClientRect();
+      const current =
+        searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
+      if (!current) {
+        setSearchMarkRects([]);
+        return;
       }
-    }
-    setSearchMarkRects(rects);
+      const rows = new Map<number, HTMLElement>();
+      for (const child of Array.from(contentEl.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        const line = Number(child.dataset.line);
+        if (line > 0) rows.set(line, child);
+      }
+      const firstLine = lineMapping.toSource(rowRange.start + 1);
+      const lastLine = lineMapping.toSource(rowRange.end);
+      let from = searchMatches.length;
+      let lo = 0;
+      let hi = searchMatches.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (searchMatches[mid].line >= firstLine) {
+          from = mid;
+          hi = mid - 1;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      const rects: SearchMarkRect[] = [];
+      for (let i = from; i < searchMatches.length; i += 1) {
+        const match = searchMatches[i];
+        if (match.line > lastLine) break;
+        if (rects.length >= SEARCH_MARK_RENDER_LIMIT && match !== current)
+          continue;
+        const row = rows.get(match.line);
+        if (!row) continue;
+        const range = makeRowRange(
+          row,
+          match.start - match.lineStart,
+          match.end - match.lineStart,
+        );
+        if (!range) continue;
+        const clientRects = range.getClientRects();
+        for (let j = 0; j < clientRects.length; j += 1) {
+          const rect = clientRects[j];
+          if (rect.width <= 0 && rect.height <= 0) continue;
+          rects.push({
+            left: rect.left - preRect.left,
+            top: rect.top - preRect.top,
+            width: rect.width,
+            height: rect.height,
+            isCurrent: match === current,
+          });
+        }
+      }
+      if (!cancelled) {
+        setSearchMarkRects(rects);
+      }
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+    };
   }, [
     editMode,
     lineMapping,

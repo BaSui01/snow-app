@@ -36,20 +36,121 @@ Responsibility boundaries:
 - Rust provider adapters own request formats, stream parsing, and persistence of each model exchange.
 - `mcp/tools.rs` owns discovery, mandatory policy, routing, privacy masking, and checkpoint integration.
 
+### 1.1 Master Agent Lifecycle Architecture
+
+From user input dispatch in UI to final persistence and convergence, the macro lifecycle of the Agent Loop progresses across 5 distinct phases:
+
+```mermaid
+flowchart TD
+    subgraph S1["Phase 1: Session Setup & Domain Binding"]
+        A1["User input / preset command"] --> A2["resolveConversationWorkspacePath<br/>Resolve physical root & Git worktree"]
+        A2 --> A3["startAgentTask history tracking<br/>Create initial disk Checkpoint snapshot"]
+    end
+
+    subgraph S2["Phase 2: Context Assembly & Protocol Dispatch"]
+        A3 --> B1["Dynamic prompt injection (ROLE.md + Mode templates)"]
+        B1 --> B2["Inject dynamic tool chapters & Sub-Agent lists"]
+        B2 --> B3["Extract high-importance Project Memories & paired history"]
+        B3 --> B4["Outbound dispatch (Chat/Responses/Anthropic/Gemini/Interactions)"]
+    end
+
+    subgraph S3["Phase 3: Bi-directional Streaming & Self-healing Network"]
+        B4 --> C1["Real-time SSE chunk pipe (Typewriter rendering)"]
+        C1 -.->|On network disconnect / timeout| C2["Native 9-category exponential backoff retry<br/>or PartialThreshold content preservation"]
+        C2 -.->|Retry successful| C1
+        C1 --> C3["Stream settlement: parse toolCalls & final response"]
+    end
+
+    subgraph S4["Phase 4: Mutation Sensing & Tool Orchestration"]
+        C3 --> D1{"Tool calls requested?"}
+        D1 -- No --> D2{"Pending mid-flight Steering inputs?"}
+        D1 -- Yes --> D3["ReadonlyCallGuard physical & Git probe verification"]
+        D3 --> D4["Concurrent Partitioner (toolExecution.ts)"]
+        D4 --> D5["8-step Tool Execution Micro-Pipeline (Hooks/Sanitization/Diffs)"]
+    end
+
+    subgraph S5["Phase 5: History Appending & Self-Recursive Convergence"]
+        D5 --> E1["Package toolResultMessage into conversation history"]
+        E1 --> E2["Consume and append pending Steering messages"]
+        E2 --> E3["Recursive self-invocation await runAgentLoop(...)"]
+        E3 --> B4
+        D2 -- Yes --> E2
+        D2 -- No --> E4["finishAgentTask finalizes session, returns to Idle state"]
+    end
+
+    style S1 fill:#f0f7ff,stroke:#2b7fff,stroke-width:2px
+    style S2 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style S3 fill:#fffbe6,stroke:#faad14,stroke-width:2px
+    style S4 fill:#fff0f6,stroke:#eb2f96,stroke-width:2px
+    style S5 fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+```
+
+### 1.2 Session Initialization and Git Worktree Isolation Flow
+
+To ensure parallel conversations across different branches or isolated worktrees operate without disk write collisions, session execution domains enforce strict transaction locks and path resolution:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (UI)
+    participant Selector as WorktreeSessionSelector
+    participant RustWT as native worktrees.rs
+    participant DB as SQLite (conversations)
+    participant Loop as useAgentLoop
+
+    User->>Selector: Switch session binding to isolated worktree (worktreeId)
+    Selector->>RustWT: git:worktrees:set-conversation
+    Note over RustWT: Uses with_write_lock & with_write_retry to prevent database locked
+    RustWT->>DB: Atomically persist binding
+
+    User->>Loop: Submit message
+    Loop->>Loop: resolveConversationWorkspacePath()
+    Note over Loop: Resolves relative paths to physical worktree root (e.g. /modules/tasks)
+    Loop->>Loop: Injects executionWorkspaceRoot into request contract, anchoring tools & checkpoints
+```
+
 ## 2. Model Adapter Layer
 
-The unified entry `native/src/api/conversation/stream.rs::create_response_stream` dispatches by `request_method`:
+The unified entry `native/src/api/conversation/stream.rs::create_response_stream` dispatches five streaming protocols by `request_method`:
 
-| request_method | Adapter directory           | Protocol                |
-| -------------- | --------------------------- | ----------------------- |
-| `chat`         | `native/src/api/chat/`      | OpenAI Chat Completions |
-| `responses`    | `native/src/api/responses/` | OpenAI Responses        |
-| `anthropic`    | `native/src/api/anthropic/` | Anthropic Messages      |
-| `gemini`       | `native/src/api/gemini/`    | Google Gemini           |
+| request_method | Adapter directory              | Protocol & Endpoint             | Key Capabilities                                                                                           |
+| -------------- | ------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `chat`         | `native/src/api/chat/`         | OpenAI Chat Completions         | Multi-turn conversation, function calls, typewriter streaming                                              |
+| `responses`    | `native/src/api/responses/`    | OpenAI Responses API            | Responses protocol, Fast Mode override, multimodal & reasoning                                             |
+| `anthropic`    | `native/src/api/anthropic/`    | Anthropic Messages API          | Claude 3.x/3.7 series, adaptive thinking blocks, tool use                                                  |
+| `gemini`       | `native/src/api/gemini/`       | Google Gemini (GenerateContent) | Native Gemini protocol, system instructions, function calls                                                |
+| `interactions` | `native/src/api/interactions/` | Google Interactions API         | Next-gen Google Interactions protocol (`alt=sse`), server-side search tool separation, paired tool history |
 
-Adapters share responsibility for provider payloads, normalized-message conversion, SSE or equivalent stream parsing, text/thinking/tool-call/usage accumulation, and `store_chat_exchange`. Tool definitions are generated by `tools_as_openai_chat_json`, `tools_as_openai_responses_json`, `tools_as_anthropic_json`, and `tools_as_gemini_json`; cross-protocol tool-history conversion is centralized in `api/conversation/tool_messages.rs`.
+Adapters share responsibility for provider payloads, normalized-message conversion, SSE or equivalent stream parsing, text/thinking/tool-call/usage accumulation, and `store_chat_exchange`. Tool definitions are generated by `tools_as_openai_chat_json`, `tools_as_openai_responses_json`, `tools_as_anthropic_json`, `tools_as_gemini_json`, and `tools_as_interactions_json`; cross-protocol tool-history conversion is centralized in `api/conversation/tool_messages.rs`. All protocol streams share unified exponential-backoff retries and partial-text recovery via `api/retry.rs`.
 
 API profile resolution prefers an explicit request profile, then the persisted conversation binding, then the globally active profile. A sub-agent always resolves its configured profile and has main-conversation-only Plan/Goal Mode forcibly disabled.
+
+### 2.1 Dynamic Context Assembly and System Prompt Injection Pipeline
+
+Before dispatching each model stream request, the native Rust layer (`native/src/api/conversation/context.rs`) dynamically constructs and validates multimodal context according to session mode, tool availability, project memory, and conversation history:
+
+```mermaid
+flowchart TD
+    Req["ConversationContextRequest arrives"] --> ModeCheck{"Evaluate active session mode"}
+    ModeCheck -->|Plan / Goal / Worktree / Workflow| ModePrompt["Mode-specific system prompt template<br/>(native/src/prompt/)"]
+    ModeCheck -->|Normal Chat| BasePrompt["Base system prompt + user ~/.snow/ROLE.md"]
+
+    ModePrompt --> InjectChapters["Inject dynamic tool guideline chapters"]
+    BasePrompt --> InjectChapters
+
+    subgraph PromptInjection["Prompt Injection Pipeline (native/src/prompt/tool_hints.rs)"]
+        LSPCheck{"Discovered LSP tools?"} -- Yes --> LSPPrompt["Inject ## Language Servers section"]
+        ImgCheck{"Imagegen channels enabled?"} -- Yes --> ImgPrompt["Inject ## Image Generation section"]
+        AgentCheck{"Usable sub-agents available?"} -- Yes --> AgentPrompt["Inject project-prioritized Sub-Agents list"]
+        TeamCheck{"In a sub-agent session?"} -- Yes --> TeamPrompt["Inject ## Teammate Communication guidelines"]
+    end
+
+    InjectChapters --> PromptInjection
+    PromptInjection --> MemInject["SQLite Project Memory injection<br/>(extract importance >= 3 Project Memories)"]
+    MemInject --> HistoryLoad["Load conversation history (SQLite chat_messages)"]
+    HistoryLoad --> ToolPair["Enforce paired tool calls & results (ensure_tool_pairing)"]
+    ToolPair --> PayloadGen["Generate provider payload (OpenAI / Anthropic / Gemini / Interactions)"]
+```
 
 ## 3. Streaming Event Protocol
 
@@ -81,6 +182,43 @@ sequenceDiagram
 
 This chain is unrelated to `src/main/app/sessionProxy.ts`, which configures Electron network proxies. Rust-side outbound requests (including the provider adapters on this chain) apply the same proxy configuration centrally in `api/http_client.rs`.
 
+### 3.1 Transport Retry and Partial Content Recovery
+
+Snow App integrates a resilient streaming retry engine at the native Rust layer (`native/src/api/retry.rs`), defending against upstream provider hiccups, network drops, and idle timeouts:
+
+```mermaid
+flowchart TD
+    A[Streaming exception or transport interruption] --> B{Classify error reason}
+    B -- 4xx Client error / Bad credentials --> C[Mark NonRetriable, terminate immediately]
+    B -- Network timeout / 5xx / 429 / Socket reset --> D{Has significant content been generated?}
+
+    D -- Yes: User-visible text >= partial_retry_max_chars --> E[PartialThreshold recovery:<br/>Preserve accumulated content, finalize turn,<br/>prevent re-streaming massive token output]
+    D -- No: Output is brief or zero tokens --> F{attempt < max_retries?}
+
+    F -- No --> G[RetryExhausted: Mark incomplete, prompt manual retry in UI]
+    F -- Yes --> H[Exponential backoff wait_before_retry]
+
+    H --> I[Rust pushes retry notification chunk to Renderer:<br/>retrying=true, retryAttempt, retryError]
+    I --> J[Renderer createStreamChunkHandler mounts StreamRetryNotice<br/>displaying spinning indicator & error details]
+    J --> K[Initiate new connection attempt]
+    K -- Receives first normal content chunk --> L[Clear retry state, resume smooth typewriter streaming]
+```
+
+1. **Retry Configuration Parameters** (derived from `api_configs` profiles):
+   - `max_retries`: Maximum automated retry attempts per stream request (default 3).
+   - `retry_base_delay_ms`: Base exponential backoff delay (default 1000ms), backing off by $base \times 2^{(attempt-1)}$.
+   - `stream_idle_timeout_sec`: Streaming idle watchdog (default 60s; if the upstream provider ceases sending data chunks for this duration, `idle_timeout` triggers and invokes retry).
+   - `partial_retry_max_chars`: Mid-stream partial preservation threshold (default 1000 characters).
+2. **Error Classification Matrix (`DEFAULT_RETRY_CATEGORIES`)**:
+   - Covers 9 categories: `network` (connection reset/refused, DNS failure), `serverError` (500/502/503/504), `rateLimit` (429), `overloaded` (529), `idleTimeout` (stream idle stall), `stream` (unexpected EOF, truncated chunk), `nonSse`, `unavailable`, and `terminated`.
+   - Explicitly rejects retrying unrecoverable 4xx errors (e.g., invalid API key, malformed request) to avoid futile loops.
+3. **Mid-stream Partial Threshold Protection (`StreamRecoveryOutcome::PartialThreshold`)**:
+   - If an in-flight stream disconnects after emitting substantial content, and **user-visible content reaches `partial_retry_max_chars`**, Snow App preserves the generated partial text as the final turn response rather than restarting from zero. This protects against double billing and runaway context expansion on long outputs.
+4. **Renderer UI Retry Awareness (`StreamRetryNotice`)**:
+   - When Rust enters a retry attempt, it dispatches `{ retrying: true, retryAttempt: N, retryError: string }` chunks;
+   - `createStreamChunkHandler` flags the message as `isRetrying` and renders the `StreamRetryNotice` component (with spinner, attempt counter, and collapsible error details);
+   - Once the new connection streams its first payload chunk, the retry banner smoothly disappears and normal typing resumes.
+
 ## 4. Renderer Main Loop
 
 Each conversation has independent session state, `runId`, `streamId`, AbortController, pause state, and queued input, so switching conversations does not stop background runs.
@@ -104,6 +242,204 @@ stateDiagram-v2
     Executing --> Aborted: abort propagated
     Completed --> Idle
     Aborted --> Idle
+```
+
+### 4.1 Core Invocation Chain and Execution Sequence
+
+The Agent Loop is located at `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`, structured as an event-driven, self-recursing state machine (`runAgentLoop`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (UI)
+    participant Loop as useAgentLoop (Renderer)
+    participant Guard as ReadonlyCallGuard
+    participant IPC as Electron IPC (Preload/Main)
+    participant Native as Rust Runtime
+    participant Model as LLM Provider
+    participant MCP as MCP Tool Runtime
+
+    User->>Loop: handleSendMessage(message, options)
+    Note over Loop: 1. Initialize session, file checkpoint, and TaskHistory
+    Loop->>Loop: Launch initial recursion runAgentLoop()
+
+    loop Recursive Agent Loop Iterations
+        Loop->>IPC: window.snow.createResponseStream()
+        IPC->>Native: native.createResponseStreamWithContext()
+        Native->>Model: Outbound streaming request (SSE / HTTP stream)
+
+        par Real-time streaming chunks
+            Model-->>Native: Text / thinking / tool call chunks
+            Native-->>IPC: chat:stream:chunk
+            IPC-->>Loop: createStreamChunkHandler() updates UI state
+        end
+
+        Model-->>Native: Stream finished
+        Native-->>Loop: Promise resolve (full response & toolCalls)
+
+        alt Branch A: Model returns final content (no tool calls)
+            Loop->>Loop: Check pending mid-flight inputs via consumeSteering()
+            alt Steering inputs pending
+                Loop->>Loop: Append user steering message, recurse runAgentLoop()
+            else No steering
+                Note over Loop: finishAgentTask(), exit loop, return to Idle
+            end
+
+        else Branch B: Model invokes tools (toolCalls.length > 0)
+            Loop->>Guard: await readonlyGuard.filterToolCalls()
+            Note over Guard: Actively inspects physical file fingerprints & Git status!<br/>Allows call if modified; deduplicates only when fully unchanged
+
+            Loop->>Loop: requestToolAuthorizations() (YOLO / user prompt)
+            Loop->>MCP: toolExecutor() executes tools
+            MCP-->>Loop: Structured tool results
+
+            Loop->>Guard: await readonlyGuard.recordToolExecutions()
+            Note over Guard: Capture physical/Git snapshots; invalidate read cache on mutating calls
+
+            Loop->>Loop: Format toolResultMessage and append to session history
+            Loop->>Loop: Allocate next Assistant placeholder message
+            Note over Loop: Self-recurse: await runAgentLoop(nextAssistantId, ...)
+        end
+    end
+```
+
+The execution flow comprises 7 key stages:
+
+1. **Input Preparation (`handleSendMessage`)**: Validates text, parses tags, binds workspace root and worktree/branch, creates initial file checkpoint, and begins task history (`startAgentTask`).
+2. **Environment & Stream Dispatch (`runAgentLoop`)**: Checks `isRunCancelled`, connects to `pauseController` for interactive pauses, and sends outbound request via `createResponseStream`.
+3. **Bi-directional Streaming**: Rust parses SSE chunks per provider, IPC routes chunks by `streamId`, and `createStreamChunkHandler` renders streaming text and reasoning.
+4. **Response Disposition & Steering**: Resolves final response. If no tools are called, checks `consumeSteering` for pending mid-flight messages; if none, concludes the run.
+5. **Readonly Guard & Mutation Sensing (`ReadonlyCallGuard`)**: Prevents unbounded repetitive read loops while eliminating false positives through physical and Git status inspection (see Section 4.2).
+6. **Tool Authorization & Execution**: Evaluates permissions (YOLO mode / user approval dialog) and executes MCP tools, terminals, or sub-agents.
+7. **History Appending & Self-Recursion**: Formats `role: "tool"` messages and recurses into `runAgentLoop` with `toolResultsJson` until convergence.
+
+### 4.2 Readonly Call Guard and Mutation Perception Algorithm
+
+#### 4.2.1 Motivation
+
+LLMs executing multi-step tasks can occasionally hallucinate or enter repetitive read loops with identical arguments (e.g., repeatedly reading the same unchanged file).
+However, a rigid tool-name whitelist or call-history check fails whenever external factors (external editor edits, Git checkouts, sub-agent modifications, or compiler outputs) change files on disk without explicit parent tool calls, causing false positive `DUPLICATE_READONLY_TOOL_CALL` errors and abrupt stream terminations.
+
+Snow App addresses this via **`ReadonlyCallGuard` (`readonlyCallGuard.ts`)**, providing adaptive mutation perception:
+
+#### 4.2.2 Dual-layer Inspection Mechanism
+
+When an identical read-only call is detected, the guard actively checks environmental state:
+
+```mermaid
+flowchart TD
+    A[Read-only tool call received] --> B{Matches recorded call arguments?}
+    B -- No --> C[Allow execution]
+    B -- Yes --> D{Tool category}
+
+    D -- filesystem-read (file) --> E[Layer 1: Physical file fingerprint<br/>exists / size / contentLength / preview]
+    E -- Fingerprint changed --> C
+    E -- Fingerprint identical --> F[Layer 2: Git status inspection<br/>gitStatus file staged/modified/untracked]
+    F -- Git status changed --> C
+    F -- Git status unchanged --> G[Verified genuine duplicate]
+
+    D -- grep-search / codebase-search (repo) --> H[Git repository dirty state inspection<br/>branch / ahead / behind / dirty file digest]
+    H -- Repository modified/committed --> C
+    H -- Repository completely unchanged --> G
+
+    G --> I[Return deduplication warning, isolate call, guide model to use existing results]
+```
+
+1. **Physical File Inspection (`captureFileSnapshot`)**:
+   - Inspects file existence, byte `size`, character `contentLength`, and content prefix `preview`;
+   - Any difference between current state and snapshot immediately invalidates the cached read and allows execution.
+2. **Git Repository Status Inspection (`captureGitSnapshot`)**:
+   - Locates Git repository via `window.snow.teamResolveRepo` and queries `window.snow.gitStatus`;
+   - For file reads: verifies whether the specific file is modified, staged, or untracked in Git;
+   - For search tools (`grep-search`, `codebase-search`): verifies overall repository dirty digest and commit/branch changes.
+3. **Broadened Mutating Tools**:
+   - Expands `mayMutateWorkspace` beyond basic file writes to include `terminal-send`, `terminal-open`, `sub-agents-activate`, `sub-agents-continue`, `lsp-rename`, `workflow-generate`, and external MCP write tools.
+4. **Resilient Recovery Protocol**:
+   - In duplicate recovery rounds (`disableTools: true`), provides a graceful text fallback if the model produces no text, eliminating abrupt stream cutoffs.
+
+### 4.3 Mid-flight Steering
+
+When users send additional messages while the agent is streaming or executing tools, the main loop does not abort the in-progress run. Instead, inputs are queued as **Steering items (`takePendingSteering`)**:
+
+1. After the current tool execution turn settles, `consumeSteering` extracts pending inputs;
+2. Appends user instructions to `nextMessages`;
+3. Passes them into the next recursive `runAgentLoop` invocation, allowing the agent to adapt dynamically to user guidance without losing prior tool results.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (UI)
+    participant Input as ChatInput
+    participant Loop as useAgentLoop
+    participant Tools as ToolExecutor
+    participant DB as SQLite Storage
+
+    Note over Loop,Tools: Agent executing long-running tools or commands...
+    User->>Input: Submit steering correction (e.g. "Don't edit file A, edit B instead")
+    Input->>Loop: Queue in pendingSteering (does not abort in-flight process)
+
+    Tools-->>Loop: Turn tools complete, generate toolResultMessage
+
+    Loop->>Loop: consumeSteering(effectiveKey)
+    Note over Loop: Extract steering inputs, append as role: "user" right after tool results
+
+    alt Needs further recursion
+        Loop->>Loop: Allocate next Assistant placeholder card
+        Loop->>Loop: await runAgentLoop(nextAssistantId, nextMessages)
+        Note over Loop: Model perceives both previous tool results and fresh user corrections!
+    else Reached final answer (model produces text without tool calls)
+        Loop->>DB: store_chat_exchange (atomically save assistant message & token usage)
+        Loop->>DB: finishAgentTask (finalize task changes and metrics)
+        Loop->>User: Render completed state, return input box to ready
+    end
+```
+
+### 4.4 Agent Business-level Retries and Self-Healing
+
+Beyond transport-level network and timeout retries, the Agent Loop supports three tiers of business-level self-healing:
+
+1. **Continuable Authorization Rejection (`rejectionKeepsAiFlow`)**:
+   - When a user rejects a sensitive tool execution but provides feedback, or when security policies block sensitive commands;
+   - The refusal reasoning is embedded as a `role: "tool"` response. The loop continues, enabling the model to adapt its strategy and choose an approved path.
+2. **Duplicate-only Recovery Turn**:
+   - When a batch consists entirely of unchanged read-only duplicates, the system issues a request with `disableTools: true` and an `internalRecoveryPrompt`, instructing the model to summarize existing findings rather than repeating calls.
+3. **Sub-agent and Workflow Execution Recovery**:
+   - Sub-agent or workflow node failures return structured `{ success: false, error }` summaries rather than crashing the primary session, allowing the parent agent to formulate alternative approaches.
+
+### 4.5 Parallel Tool Orchestration and Execution Pipeline
+
+When the model returns multiple concurrent tool calls within a single round, the renderer-side tool executor (`src/renderer/components/mainContent/chatMessages/hooks/toolExecution.ts`) routes them through a concurrent partitioner and per-tool lifecycle pipeline:
+
+```mermaid
+flowchart TD
+    ToolBatch["Turn tool calls (toolCalls)"] --> Partition{"Concurrent Partitioner<br/>(toolExecution.ts)"}
+
+    Partition -- "Read-only tools (filesystem-read, grep)" --> ParallelRead["Concurrent Pipeline: Parallel multi-task execution"]
+    Partition -- "Sub-agents (activate / continue)" --> ParallelSubAgent["Async Pre-start: Concurrent independent sessions"]
+    Partition -- "Image generation (imagegen-generate)" --> ImageQueue["Concurrency Queue: maxConcurrentImages sliding window"]
+    Partition -- "Multiple questions (askUserQuestion)" --> MergeDialog["Interactive Merging: Aggregate into single prompt dialog"]
+    Partition -- "Mutating tools (edit / copy / rename)" --> SerialExec["Serial Pipeline: Ordered execution prevents write races"]
+
+    subgraph MicroPipeline["Per-Tool Execution Micro-Pipeline"]
+        Step1["1. Argument validation (validateToolCall)"]
+        Step2["2. beforeToolCall hook evaluation"]
+        Step3["3. Pre-execution Checkpoint disk capture"]
+        Step4["4. Tool dispatch (Rust Native / Bash / SSH / MCP)"]
+        Step5["5. Credential & key sanitization (privacy_mask.rs)"]
+        Step6["6. File diff extraction (fileChangeTracking.ts)"]
+        Step7["7. afterToolCall hook evaluation"]
+        Step8["8. Commit Checkpoint & generate structured JSON"]
+
+        Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7 --> Step8
+    end
+
+    ParallelRead --> MicroPipeline
+    ParallelSubAgent --> MicroPipeline
+    ImageQueue --> MicroPipeline
+    MergeDialog --> MicroPipeline
+    SerialExec --> MicroPipeline
+
+    MicroPipeline --> MergeResult["Aggregate all tool results -> toolResultMessage into next loop turn"]
 ```
 
 A round streams the model, parses `toolCallsJson`, creates an executor from the authorization result, executes tools, builds structured `toolResultsJson`, and recurses into the next round. It stops when no tool call remains or first consumes queued user input. A local file checkpoint is created before the loop; `onUserMessage` runs before the first round and `onStop` runs during final cleanup.

@@ -1,4 +1,5 @@
 import type { McpServerConfigInput } from "../../../../preload";
+import type { McpTranslate } from "./mcpErrorMessages";
 import type {
   McpKeyValuePair,
   McpServerConfigLike,
@@ -390,6 +391,49 @@ export const formatJsonParseError = (error: unknown): string => {
   const message = error instanceof Error ? error.message : String(error);
   const quoteIndex = message.indexOf(', "');
   return quoteIndex > 0 ? message.slice(0, quoteIndex) : message;
+};
+
+/**
+ * 将 JSON 编辑模式下的解析/结构校验错误转换为国际化提示文案。
+ */
+export const formatMcpJsonError = (error: unknown, t: McpTranslate): string => {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+
+  if (rawMessage === "name is required") {
+    return t("settings.mcpNameRequired", {
+      defaultValue: "MCP server name is required.",
+    });
+  }
+  if (rawMessage === "JSON must be an object") {
+    return t("settings.mcpJsonMustBeObject", {
+      defaultValue: "JSON configuration must be an object.",
+    });
+  }
+  if (rawMessage === "servers must contain at least one server") {
+    return t("settings.mcpJsonEmptyServers", {
+      defaultValue: "servers must contain at least one MCP server.",
+    });
+  }
+  if (
+    rawMessage ===
+    'JSON must be a server config object or a single-entry map like { "context7": { ... } }'
+  ) {
+    return t("settings.mcpJsonInvalidStructure", {
+      defaultValue:
+        'JSON must be a server config object or a single-entry map like { "context7": { ... } }.',
+    });
+  }
+
+  const detail = formatJsonParseError(error).trim();
+  if (!detail) {
+    return t("settings.mcpJsonInvalid", {
+      defaultValue: "Invalid JSON",
+    });
+  }
+  return t("settings.mcpJsonSyntaxError", {
+    defaultValue: "Invalid JSON: {{detail}}",
+    values: { detail },
+  });
 };
 
 /**

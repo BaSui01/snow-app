@@ -13,6 +13,7 @@ use crate::mcp::servers::filesystem::text_codec::{
 
 const MAX_DOCUMENT_INPUT_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_DOCUMENT_TEXT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_RAW_TEXT_READ_BYTES: u64 = 64 * 1024 * 1024;
 
 mod browse;
 mod mutate;
@@ -201,6 +202,15 @@ pub fn read_file_content(file_path: &str) -> Result<FileContentResult> {
         });
     }
 
+    let metadata = fs::metadata(path)
+        .map_err(|e| Error::from_reason(format!("Failed to inspect file '{}': {}", file_path, e)))?;
+    if metadata.len() > MAX_RAW_TEXT_READ_BYTES {
+        return Err(Error::from_reason(format!(
+            "File exceeds the 64 MiB text preview limit: {} bytes",
+            metadata.len()
+        )));
+    }
+
     let buffer = fs::read(path)
         .map_err(|e| Error::from_reason(format!("Failed to read file '{}': {}", file_path, e)))?;
     let ext = path
@@ -214,9 +224,18 @@ pub fn read_file_content(file_path: &str) -> Result<FileContentResult> {
     let size = buffer.len() as i64;
     match decode_local_text(&buffer) {
         Ok(decoded) => {
-            let can_write_losslessly =
+            // 对占 99% 的 UTF-8 文本直接进行切片比对，避免大文件全量重新编码与内存放大
+            let can_write_losslessly = if decoded.encoding == encoding_rs::UTF_8 {
+                if decoded.had_bom {
+                    buffer.starts_with(&[0xEF, 0xBB, 0xBF])
+                        && decoded.text.as_bytes() == &buffer[3..]
+                } else {
+                    decoded.text.as_bytes() == buffer.as_slice()
+                }
+            } else {
                 encode_text_back(&decoded.text, decoded.encoding, decoded.had_bom)
-                    .is_ok_and(|bytes| bytes == buffer);
+                    .is_ok_and(|bytes| bytes == buffer)
+            };
             Ok(FileContentResult {
                 content: decoded.text,
                 is_binary: false,

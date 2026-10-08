@@ -2570,9 +2570,17 @@ export const zhCN = {
   "settings.mcpErrorListToolsFailed": "从 MCP 服务器获取工具列表失败。",
   "settings.mcpErrorLoadConfigsFailed": "加载 MCP 服务器配置失败。",
   "settings.mcpErrorInvalidConfigJson": "MCP 服务器配置包含无效的 JSON 值。",
+  "settings.mcpErrorIdConflictGlobal": "项目 MCP 服务 ID 与全局服务冲突。",
+  "settings.mcpErrorNameExistsInProject": "当前项目中已存在同名的 MCP 服务。",
+  "settings.mcpErrorTimeout": "MCP 服务器连接超时。",
   "settings.mcpFetchToolsErrorDetail": "获取 MCP 工具失败：{{detail}}",
   "settings.mcpEditForm": "表单",
   "settings.mcpJsonInvalid": "JSON 无效",
+  "settings.mcpJsonSyntaxError": "JSON 语法错误：{{detail}}",
+  "settings.mcpJsonMustBeObject": "JSON 配置必须是一个对象。",
+  "settings.mcpJsonEmptyServers": "servers 中至少需要包含一个 MCP 服务。",
+  "settings.mcpJsonInvalidStructure":
+    'JSON 必须是单个服务配置对象，或形如 { "context7": { ... } } 的单条目映射。',
   "settings.mcpJsonEditorLabel": "MCP 服务器 JSON 配置",
   "settings.mcpJsonHint":
     '以 JSON 形式编辑服务器配置，例如 {"context7": {"url": "https://mcp.context7.com/mcp"}}。粘贴内容自动兼容：Markdown 代码块、mcpServers/servers 包装、注释、尾随逗号与全角空格均可识别。未填写 type（http/stdio）时会根据 url 或 command 自动推断。',

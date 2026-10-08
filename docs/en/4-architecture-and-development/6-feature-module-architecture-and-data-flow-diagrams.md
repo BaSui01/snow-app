@@ -12,15 +12,39 @@ flowchart LR
     loop --> preload["Preload createResponseStream"]
     preload --> ipc["Main chatHandlers"]
     ipc --> stream["Rust conversation stream"]
-    stream --> provider["Chat Responses Anthropic Gemini"]
+    stream --> provider["Chat Responses Anthropic Gemini Interactions"]
     provider --> db["chat_conversations chat_messages usage_records"]
     stream -. "streamId chunks" .-> loop
     loop --> view["Message rendering and run metrics"]
 ```
 
-**Maintenance**: Do not draw `sessionProxy.ts` into the AI stream. Renderer builds `toolResultsJson`, which enters the next model round.
+**Agent Iteration and Mutation-Sensing Data Flow**:
 
-**Source anchors**: `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`, `src/preload/modules/apiConfigApi.ts`, `src/main/ipc/handlers/chatHandlers.ts`, `native/src/api/conversation/stream.rs`, `native/src/storage/services/chat_conversations.rs`.
+```mermaid
+flowchart TD
+    UserMsg["User input / Mid-flight Steering"] --> AgentLoop["useAgentLoop scheduler"]
+    AgentLoop --> StreamReq["createResponseStream (IPC / Rust)"]
+    StreamReq --> Model["Provider (Chat / Responses / Anthropic / Gemini / Interactions)"]
+    Model -. "SSE Chunks (with StreamRetryNotice)" .-> AgentLoop
+    Model --> ResSettled["Response settlement: parse toolCalls"]
+    ResSettled -- "No tool calls" --> SteeringCheck{"Pending steering inputs?"}
+    SteeringCheck -- Yes --> AgentLoop
+    SteeringCheck -- No --> TaskDone["finishAgentTask concludes run"]
+
+    ResSettled -- "Tool calls present" --> Guard["ReadonlyCallGuard"]
+    Guard --> Probe{"Physical file & Git status probe"}
+    Probe -- "Modified / First call" --> Auth["Tool authorization (YOLO / Dialog)"]
+    Probe -- "Unchanged duplicate read" --> Dedupe["Deduplication notice, isolate tool"]
+    Auth --> Exec["Tool execution (MCP / Terminal / Sub-agent / LSP)"]
+    Exec --> CacheUpdate["Guard snapshot update (Mutating invalidates / Read caches)"]
+    Dedupe --> LoopNext["Append toolResultMessage"]
+    CacheUpdate --> LoopNext
+    LoopNext --> AgentLoop
+```
+
+**Maintenance**: Do not draw `sessionProxy.ts` into the AI stream. Renderer builds `toolResultsJson`, which enters the next model round. Read-only tool calls are filtered by `ReadonlyCallGuard` using active physical and Git repository probes.
+
+**Source anchors**: `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`, `src/renderer/components/mainContent/chatMessages/hooks/readonlyCallGuard.ts`, `src/preload/modules/apiConfigApi.ts`, `src/main/ipc/handlers/chatHandlers.ts`, `native/src/api/conversation/stream.rs`, `native/src/api/interactions/`, `native/src/storage/services/chat_conversations.rs`.
 
 ## 2. MCP Tool Discovery and Calls
 
@@ -174,6 +198,28 @@ flowchart LR
 
 **Source anchors**: `src/main/ipc/handlers/gitHandlers.ts`, `src/main/ssh/remoteGit.ts`, `native/src/exports/git.rs`, `native/src/exports/codebase.rs`, `native/src/mcp/servers/codebase.rs`, `native/src/mcp/servers/codelens/`, `native/src/storage/services/codebase_embed_sessions.rs`.
 
+## 9. Git Worktrees and Session Execution Isolation
+
+**Purpose and boundary**: Enables running parallel conversations on separate branches or isolated worktrees within the same Git repository. The front-end selector binds session execution domains, the storage layer uses SQLite write locks for concurrency safety, and the request contract forwards `executionWorkspaceRoot` and `worktreeId` to tools and file checkpoints.
+
+```mermaid
+flowchart TD
+    UI["WorktreeSessionSelector (UI)"] --> BindIPC["git:worktrees:set-conversation"]
+    BindIPC --> RustStorage["native worktrees.rs storage service"]
+    RustStorage --> WriteLock["with_write_lock & with_write_retry"]
+    WriteLock --> DB[("SQLite conversations table")]
+
+    AgentRun["useAgentLoop dispatches request"] --> PathResolver["resolveConversationWorkspacePath"]
+    PathResolver --> RequestContract["Request Payload:\nexecutionWorkspaceRoot & worktreeId"]
+    RequestContract --> NativeStream["native create_response_stream"]
+    NativeStream --> ToolContext["MCP tool routing & Checkpoint directory binding"]
+    ToolContext --> IsolatedDir["Isolated worktree physical root (e.g. /modules/tasks)"]
+```
+
+**Maintenance**: When in worktree mode, the working directory in system prompts must strictly match `executionWorkspaceRoot`. The file change panel and checkpoint rollback directory (`manifest.work_dir`) must remain 100% symmetric with physical execution roots.
+
+**Source anchors**: `native/src/storage/services/git/worktrees.rs`, `src/renderer/components/mainContent/chatInput/WorktreeSessionSelector.tsx`, `src/renderer/components/mainContent/chatMessages/utils/conversationHelpers.ts`, `src/main/ipc/handlers/gitHandlers.ts`.
+
 ## 10. Configuration
 
 **Purpose and boundary**: Configuration spans file-backed, DB-backed, global, and project scopes. Renderer uses config APIs and the model can use config MCP tools; Rust centralizes validation, masking, backup, and writes.
@@ -216,3 +262,46 @@ stateDiagram-v2
 **Maintenance**: Non-macOS disables automatic download and install-on-quit; state must retain user-triggered download and install. macOS download cache is under the relevant userData updates directory. Both default session and updater partition receive `applySessionProxy`.
 
 **Source anchors**: `src/main/updater/autoUpdater.ts`, `electronUpdater.ts`, `macUpdater.ts`, `updateStatus.ts`, `src/main/app/mainWindow.ts`, `src/main/app/sessionProxy.ts`.
+
+## 12. LSP Language Servers and Semantic Code Intelligence
+
+**Purpose and boundary**: Manages multi-language server processes (Rust `rust-analyzer`, TypeScript `typescript-language-server`, Go `gopls`, etc.), definition navigation, hover docs, reference tracking, and batch diagnostics; push-based diagnostics cache provides sub-millisecond responses to models and UI.
+
+```mermaid
+flowchart LR
+    AgentTools["Agent LSP Tools\n(goto / hover / references / symbols)"] --> LspServer["mcp/servers/lsp/"]
+    LspServer --> ClientMgr["LspClient process manager"]
+    ClientMgr --> Subprocess["Language Server subprocess\n(rust-analyzer / node / gopls)"]
+    Subprocess -. "JSON-RPC (stdio)" .-> ClientMgr
+    Subprocess -. "textDocument/publishDiagnostics" .-> PushCache["Push Diagnostic Cache"]
+    PushCache --> DiagTools["lsp-diagnostics / workspace-diagnostics"]
+    DiagTools --> AgentContext["Model context feedback & verification"]
+```
+
+**Maintenance**: LSP tools dynamically register based on server readiness and language coverage. If an LSP server enters backoff or is uninstalled, requests fall back to CodeLens or grep. Diagnostic tools require `filePaths` array arguments.
+
+**Source anchors**: `native/src/mcp/servers/lsp/`, `native/src/mcp/servers/lsp/client.rs`, `native/src/mcp/servers/lsp/prompt_context.rs`, `src/renderer/components/mainContent/chatInput/LspStatusBadge.tsx`.
+
+## 13. Scheduled Tasks and Visual Workflow Engine
+
+**Purpose and boundary**: Scheduled tasks provide headless agent execution with cron/interval timers. The visual workflow engine decomposes complex pipelines into directed acyclic graphs (DAGs), supporting user review, manual resume, and step-by-step node execution.
+
+```mermaid
+flowchart TD
+    ScheduleTimer["Renderer Task Scheduler (Cron / Interval)"] --> TaskRun["app-control-createScheduledTask"]
+    TaskRun --> TaskStore[("SQLite scheduled_tasks table")]
+    TaskRun --> HookTrigger["Lifecycle Hook (onSessionStart)"]
+    HookTrigger --> HeadlessLoop["Headless useAgentLoop automated session"]
+
+    WorkflowCall["Model invokes workflow-generate\n(outputs DAG node graph JSON)"] --> WFRunner["WorkflowRunner (workflowRunner.ts)"]
+    WFRunner --> DAGCheck["parseWorkflowGraph dependency validation"]
+    DAGCheck --> UINotify["UI graph render & user confirmation"]
+    UINotify --> NodeExec["Sub-agent & tool execution per node"]
+    NodeExec --> NodeStatus{"Node execution succeeded?"}
+    NodeStatus -- Success --> NextNodes["Unlock downstream dependencies"]
+    NodeStatus -- Failure --> PauseFlow["Pause flow, await user edits or workflow-resume"]
+```
+
+**Maintenance**: Scheduled tasks run on persistent timers in the renderer but record complete execution history in SQLite. Workflow graphs validate against cyclic dependencies; failure recovery links previous context via `workflow-resume`.
+
+**Source anchors**: `src/renderer/components/mainContent/chatMessages/workflow/workflowRunner.ts`, `src/renderer/components/mainContent/chatMessages/toolCalls/WorkflowToolCall.tsx`, `src/preload/modules/scheduledTaskApi.ts`, `native/src/storage/services/scheduled_tasks.rs`.

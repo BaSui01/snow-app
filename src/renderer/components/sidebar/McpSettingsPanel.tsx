@@ -25,7 +25,10 @@ import {
   type McpSettingsListItem,
 } from "./mcpSettings/McpSettingsList";
 import { McpSettingsSummary } from "./mcpSettings/McpSettingsSummary";
-import { formatMcpError } from "./mcpSettings/mcpErrorMessages";
+import {
+  formatMcpError,
+  formatMcpSaveError,
+} from "./mcpSettings/mcpErrorMessages";
 import { builtinServerDescriptionKey } from "./mcpSettings/builtinServerDescriptions";
 import {
   EMPTY_MCP_SERVER_DRAFT,
@@ -346,6 +349,7 @@ export function McpSettingsPanel({
 
   const patchDraft = (patch: Partial<McpServerDraft>) => {
     setDraft((previous) => (previous ? { ...previous, ...patch } : null));
+    setError("");
   };
 
   const updatePair = (
@@ -364,6 +368,7 @@ export function McpSettingsPanel({
           }
         : null,
     );
+    setError("");
   };
 
   const addPair = (group: "env" | "headers") => {
@@ -372,6 +377,7 @@ export function McpSettingsPanel({
         ? { ...previous, [group]: [...previous[group], createMcpPair()] }
         : null,
     );
+    setError("");
   };
 
   const removePair = (group: "env" | "headers", pairId: string) => {
@@ -383,6 +389,7 @@ export function McpSettingsPanel({
           }
         : null,
     );
+    setError("");
   };
 
   const updateArg = (argId: string, value: string) => {
@@ -396,6 +403,7 @@ export function McpSettingsPanel({
           }
         : null,
     );
+    setError("");
   };
 
   const addArg = () => {
@@ -404,6 +412,7 @@ export function McpSettingsPanel({
         ? { ...previous, args: [...previous.args, createMcpStringItem()] }
         : null,
     );
+    setError("");
   };
 
   const removeArg = (argId: string) => {
@@ -412,12 +421,14 @@ export function McpSettingsPanel({
         ? { ...previous, args: previous.args.filter((arg) => arg.id !== argId) }
         : null,
     );
+    setError("");
   };
 
-  const saveDraft = async () => {
-    if (!draft) return;
+  const saveDraft = async (overrideDraft?: McpServerDraft) => {
+    const currentDraft = overrideDraft ?? draft;
+    if (!currentDraft) return;
 
-    if (!draft.name.trim()) {
+    if (!currentDraft.name.trim()) {
       setError(
         t("settings.mcpNameRequired", {
           defaultValue: "MCP server name is required.",
@@ -427,7 +438,7 @@ export function McpSettingsPanel({
       return;
     }
 
-    if (draft.transportType === "http" && !draft.url.trim()) {
+    if (currentDraft.transportType === "http" && !currentDraft.url.trim()) {
       setError(
         t("settings.mcpUrlRequired", { defaultValue: "URL is required." }),
       );
@@ -435,7 +446,10 @@ export function McpSettingsPanel({
       return;
     }
 
-    if (draft.transportType === "stdio" && !draft.command.trim()) {
+    if (
+      currentDraft.transportType === "stdio" &&
+      !currentDraft.command.trim()
+    ) {
       setError(
         t("settings.mcpCommandRequired", {
           defaultValue: "Command is required.",
@@ -445,7 +459,10 @@ export function McpSettingsPanel({
       return;
     }
 
-    if (hasDuplicatePairKey(draft.env) || hasDuplicatePairKey(draft.headers)) {
+    if (
+      hasDuplicatePairKey(currentDraft.env) ||
+      hasDuplicatePairKey(currentDraft.headers)
+    ) {
       setError(
         t("settings.mcpDuplicateKey", {
           defaultValue: "Environment and header names must be unique.",
@@ -455,7 +472,9 @@ export function McpSettingsPanel({
       return;
     }
 
-    const timeoutMs = draft.timeoutMs.trim() ? Number(draft.timeoutMs) : null;
+    const timeoutMs = currentDraft.timeoutMs.trim()
+      ? Number(currentDraft.timeoutMs)
+      : null;
     if (
       timeoutMs !== null &&
       (!Number.isInteger(timeoutMs) || timeoutMs <= 0)
@@ -491,7 +510,7 @@ export function McpSettingsPanel({
           -1,
         );
         const items = await window.snow.upsertMcpServerConfig(
-          toInput(draft, maxSortOrder + 1),
+          toInput(currentDraft, maxSortOrder + 1),
         );
         setServers(items);
       } else if (operationProjectId) {
@@ -501,7 +520,7 @@ export function McpSettingsPanel({
         );
         const items = await window.snow.upsertProjectMcpServerConfig(
           operationProjectId,
-          toProjectInput(draft, maxSortOrder + 1),
+          toProjectInput(currentDraft, maxSortOrder + 1),
         );
         if (loadGenerationRef.current !== generation) {
           return;
@@ -513,7 +532,7 @@ export function McpSettingsPanel({
 
       setDraft(null);
       setStatus(
-        draft.serverId
+        currentDraft.serverId
           ? t("settings.mcpSaveSuccess", {
               defaultValue: "Saved MCP server.",
             })
@@ -526,13 +545,7 @@ export function McpSettingsPanel({
         operationScope === "global" ||
         loadGenerationRef.current === generation
       ) {
-        setError(
-          e instanceof Error
-            ? e.message
-            : t("settings.mcpSaveError", {
-                defaultValue: "Failed to save MCP server",
-              }),
-        );
+        setError(formatMcpSaveError(e, t));
       }
     } finally {
       if (
@@ -565,13 +578,7 @@ export function McpSettingsPanel({
       });
       setServers(items);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.mcpSaveError", {
-              defaultValue: "Failed to update MCP server",
-            }),
-      );
+      setError(formatMcpSaveError(e, t));
     }
   };
 
@@ -877,13 +884,7 @@ export function McpSettingsPanel({
       await refreshProjectServers(operationProjectId, generation);
     } catch (updateError) {
       if (loadGenerationRef.current === generation) {
-        setError(
-          updateError instanceof Error
-            ? updateError.message
-            : t("settings.mcpSaveError", {
-                defaultValue: "Failed to update MCP server",
-              }),
-        );
+        setError(formatMcpSaveError(updateError, t));
       }
     } finally {
       if (loadGenerationRef.current === generation) {
@@ -1252,6 +1253,8 @@ export function McpSettingsPanel({
             draft={draft}
             isBusy={isBusy}
             isSaving={isSaving}
+            errorMessage={error}
+            onDismissError={() => setError("")}
             tools={
               draft.serverId
                 ? toolsByServerId[
@@ -1292,7 +1295,7 @@ export function McpSettingsPanel({
             onAddArg={addArg}
             onRemoveArg={removeArg}
             onCancel={cancelDraft}
-            onSave={() => void saveDraft()}
+            onSave={(overrideDraft) => void saveDraft(overrideDraft)}
           />
         )}
       </Modal>

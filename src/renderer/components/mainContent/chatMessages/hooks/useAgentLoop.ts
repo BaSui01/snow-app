@@ -69,21 +69,9 @@ import {
   registerWorkflowRunner,
 } from "../workflow/workflowRunner";
 import { createToolExecutor } from "./toolExecution";
+import { ReadonlyCallGuard } from "./readonlyCallGuard";
 
 type CapturedChatInputSendOptions = ChatInputSendOptions;
-
-// A completed read can only become stale when a tool may have changed the
-// workspace. Session bookkeeping (for example todo updates) must not make a
-// previously completed filesystem read executable again.
-const WORKSPACE_MUTATING_TOOL_NAMES = new Set([
-  "filesystem-create",
-  "filesystem-replace_edit",
-  "filesystem-copy",
-  "bash-terminal-execute",
-]);
-
-const mayMutateWorkspace = (toolCall: ToolCallInfo): boolean =>
-  WORKSPACE_MUTATING_TOOL_NAMES.has(toolCall.name);
 
 const captureChatInputSendOptions = (
   options: ChatInputSendOptions,
@@ -157,79 +145,6 @@ const persistConversationSelection = async (
     }
   } catch (error) {
     recordFailure(error);
-  }
-};
-
-const normalizeWorkspacePath = (
-  filePath: string,
-  workspacePath?: string,
-): string => {
-  const normalizedPath =
-    filePath.replace(/\\/g, "/").replace(/\/+$/, "") || ".";
-  const normalizedWorkspace = workspacePath
-    ?.replace(/\\/g, "/")
-    .replace(/\/+$/, "");
-  if (!normalizedWorkspace) {
-    return normalizedPath;
-  }
-
-  const isWindowsPath = /^[a-z]:\//i.test(normalizedWorkspace);
-  const comparablePath = isWindowsPath
-    ? normalizedPath.toLowerCase()
-    : normalizedPath;
-  const comparableWorkspace = isWindowsPath
-    ? normalizedWorkspace.toLowerCase()
-    : normalizedWorkspace;
-  if (normalizedPath === ".") {
-    return "<workspace>";
-  }
-  if (normalizedPath.startsWith("./")) {
-    return `<workspace>/${normalizedPath.slice(2)}`;
-  }
-  if (comparablePath === comparableWorkspace) {
-    return "<workspace>";
-  }
-  if (comparablePath.startsWith(`${comparableWorkspace}/`)) {
-    return `<workspace>/${normalizedPath.slice(normalizedWorkspace.length + 1)}`;
-  }
-  return normalizedPath;
-};
-
-const canonicalizeToolArguments = (
-  argumentsJson: string,
-  toolName?: string,
-  workspacePath?: string,
-): string | null => {
-  try {
-    const sortJson = (value: unknown): unknown => {
-      if (Array.isArray(value)) {
-        return value.map(sortJson);
-      }
-      if (value && typeof value === "object") {
-        return Object.fromEntries(
-          Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, child]) => [key, sortJson(child)]),
-        );
-      }
-      return value;
-    };
-    const parsed = JSON.parse(argumentsJson || "{}") as Record<string, unknown>;
-    if (toolName === "filesystem-read" && typeof parsed.filePath === "string") {
-      parsed.filePath = normalizeWorkspacePath(parsed.filePath, workspacePath);
-    }
-    return JSON.stringify(sortJson(parsed));
-  } catch {
-    return null;
-  }
-};
-
-const isFailedToolResult = (result: string): boolean => {
-  try {
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    return parsed.success === false || typeof parsed.error === "string";
-  } catch {
-    return false;
   }
 };
 
@@ -630,13 +545,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return { messages, checkpointId: steeringCheckpoint };
       };
 
-      // A provider can resend a successful read with a fresh call ID. Keep
-      // this state scoped to one agent run, so a later user message starts
-      // clean while a write within this run deliberately permits a re-read.
-      const completedReadonlyCalls = new Set<string>();
-      let duplicateRecoveryAttempted = false;
       const workspacePath =
         directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+      // ReadonlyCallGuard: 统一抽象只读工具调用保护与物理/Git 状态感知
+      const readonlyGuard = new ReadonlyCallGuard({
+        workspacePath,
+      });
       let readonlyToolNamesPromise: Promise<Set<string>> | undefined;
       const getReadonlyToolNames = (): Promise<Set<string>> => {
         readonlyToolNamesPromise ??= window.snow
@@ -644,35 +558,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           .then((names) => new Set(names))
           .catch(() => new Set<string>());
         return readonlyToolNamesPromise;
-      };
-      const isReadonlyCall = (
-        toolCall: ToolCallInfo,
-        readonlyToolNames: Set<string>,
-      ): boolean => {
-        if (!readonlyToolNames.has(toolCall.name)) {
-          return false;
-        }
-        if (toolCall.name !== "todo-todo-manage") {
-          return true;
-        }
-        try {
-          return (
-            (JSON.parse(toolCall.arguments || "{}") as { action?: unknown })
-              .action === "get"
-          );
-        } catch {
-          return false;
-        }
-      };
-      const readonlyCallKey = (toolCall: ToolCallInfo): string | null => {
-        const argumentsJson = canonicalizeToolArguments(
-          toolCall.arguments,
-          toolCall.name,
-          workspacePath,
-        );
-        return argumentsJson === null
-          ? null
-          : `${toolCall.name}:${argumentsJson}`;
       };
 
       const executeSubAgentActivation = createSubAgentActivation({
@@ -838,7 +723,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         let effectiveKey = iterSessionKey;
 
         if (resumeAfterCompaction) {
-          completedReadonlyCalls.clear();
+          readonlyGuard.clearAll();
         }
 
         if (isRunCancelled(effectiveKey)) {
@@ -1333,6 +1218,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               currentMessage.id === currentAssistantMessageId
                 ? {
                     ...currentMessage,
+                    content:
+                      currentMessage.content ||
+                      response.content ||
+                      "（已基于此前读取的内容分析完毕，请参见上方工具结果与回答）",
                     toolCalls: toolCalls.map((toolCall) => ({
                       ...toolCall,
                       status: "completed" as const,
@@ -1364,27 +1253,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // sending them back to a provider that already ignored the prior result
         // would only create an unbounded request loop.
         const readonlyToolNames = await getReadonlyToolNames();
-        const duplicateReadonlyResults = new Map<ToolCallInfo, string>();
-        const executableToolCalls = toolCalls.filter((toolCall) => {
-          const key = readonlyCallKey(toolCall);
-          if (
-            key === null ||
-            !isReadonlyCall(toolCall, readonlyToolNames) ||
-            !completedReadonlyCalls.has(key)
-          ) {
-            return true;
-          }
-
-          const result = JSON.stringify({
-            success: false,
-            error: "DUPLICATE_READONLY_TOOL_CALL",
-            message:
-              "This read-only tool call already completed with identical arguments during this agent run, and no mutating tool has executed since. Use the prior tool result and finish the task without repeating the call.",
-            toolName: toolCall.name,
-          });
-          duplicateReadonlyResults.set(toolCall, result);
-          return false;
-        });
+        const { executableToolCalls, duplicateReadonlyResults } =
+          await readonlyGuard.filterToolCalls(toolCalls, readonlyToolNames);
 
         // Keep the duplicate visible as a completed tool card while ensuring
         // it never reaches the MCP bridge.
@@ -1493,22 +1363,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // Only successful read results are cacheable. Any approved non-read
         // tool is conservatively treated as a potential state change, which
         // permits the model to read the same path again after that boundary.
-        for (let index = 0; index < executableToolCalls.length; index++) {
-          const toolCall = executableToolCalls[index];
-          const decision = authorizationDecisions[index];
-          const result = executedToolResults[index]?.result;
-          if (decision?.status !== "approved") {
-            continue;
-          }
-          if (mayMutateWorkspace(toolCall)) {
-            completedReadonlyCalls.clear();
-            continue;
-          }
-          const key = readonlyCallKey(toolCall);
-          if (key && result && !isFailedToolResult(result)) {
-            completedReadonlyCalls.add(key);
-          }
-        }
+        await readonlyGuard.recordToolExecutions(
+          executableToolCalls,
+          authorizationDecisions,
+          executedToolResults,
+          readonlyToolNames,
+        );
 
         // Hook abort (exit code 2+): fully interrupt the AI loop and surface
         // the hook's error message. No tool results are sent to the model.
@@ -1571,7 +1431,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           duplicateReadonlyResults.size > 0 &&
           executableToolCalls.length === 0
         ) {
-          if (duplicateRecoveryAttempted) {
+          if (readonlyGuard.getDuplicateRecoveryAttempted()) {
             runFailed = true;
             if (response.conversationId) {
               await window.snow.appendToolMessage(
@@ -1581,7 +1441,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }
             return;
           }
-          duplicateRecoveryAttempted = true;
+          readonlyGuard.setDuplicateRecoveryAttempted(true);
           const recoveryInstruction =
             "The requested read-only calls have already completed and their results are in the conversation. Do not call tools in this turn. Use the existing results to provide the best final answer.";
           const recoveryAssistantMessageId = createMessageId("assistant");

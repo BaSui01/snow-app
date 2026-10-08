@@ -2699,9 +2699,20 @@ export const en = {
     "Failed to load MCP server configurations.",
   "settings.mcpErrorInvalidConfigJson":
     "The MCP server configuration contains invalid JSON values.",
+  "settings.mcpErrorIdConflictGlobal":
+    "Project MCP server ID conflicts with a global server.",
+  "settings.mcpErrorNameExistsInProject":
+    "An MCP server with this name already exists in this project.",
+  "settings.mcpErrorTimeout": "MCP server connection timed out.",
   "settings.mcpFetchToolsErrorDetail": "Failed to fetch MCP tools: {{detail}}",
   "settings.mcpEditForm": "Form",
   "settings.mcpJsonInvalid": "Invalid JSON",
+  "settings.mcpJsonSyntaxError": "Invalid JSON: {{detail}}",
+  "settings.mcpJsonMustBeObject": "JSON configuration must be an object.",
+  "settings.mcpJsonEmptyServers":
+    "servers must contain at least one MCP server.",
+  "settings.mcpJsonInvalidStructure":
+    'JSON must be a server config object or a single-entry map like { "context7": { ... } }.',
   "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
   "settings.mcpJsonHint":
     'Edit the server configuration as JSON, e.g. {"context7": {"url": "https://mcp.context7.com/mcp"}}. Pasted configs with markdown fences, mcpServers/servers wrappers, comments, trailing commas or full-width spaces are tolerated. type (http/stdio) is inferred from url or command when omitted.',

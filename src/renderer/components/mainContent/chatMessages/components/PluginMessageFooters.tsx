@@ -204,6 +204,11 @@ export const PluginMessageFooters = ({
       plugin.enabled &&
       plugin.messageFooters.some((footer) => footer.taskHistory),
   );
+  const hasLegacyFooters = plugins.some(
+    (plugin) =>
+      plugin.enabled &&
+      plugin.messageFooters.some((footer) => !footer.taskHistory),
+  );
   useEffect(() => {
     if (!hasTaskFooters) return;
     let disposed = false;
@@ -260,7 +265,7 @@ export const PluginMessageFooters = ({
     conversation.activeConversationId === conversationId &&
     message?.role === "assistant" &&
     message.status !== "sending" &&
-    (!!task || legacyEligible);
+    ((hasTaskFooters && !!task) || (hasLegacyFooters && legacyEligible));
   identityRef.current = eligible ? identity : null;
   if (!eligible) return null;
   const enabled = plugins.filter(
@@ -274,9 +279,7 @@ export const PluginMessageFooters = ({
     <>
       {enabled.flatMap((plugin) =>
         plugin.messageFooters
-          .filter((footer) =>
-            footer.taskHistory ? !!task || legacyEligible : legacyEligible,
-          )
+          .filter((footer) => (footer.taskHistory ? !!task : legacyEligible))
           .map((footer) => (
             <PluginMessageFooter
               key={`${plugin.pluginId}:${footer.id}`}

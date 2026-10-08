@@ -1,13 +1,28 @@
 # Release Notes
 
-## Unreleased Source Changes
+## v0.4.17
 
-> These additions describe local source changes, not released v0.4.16 / v0.4.17 support. They require the accompanying host build (including the native module for task history); installing a plugin does not upgrade Snow App. Real UI and restart recovery have not yet been accepted.
+## New Features
 
-- **Persistent task-end plugin cards**: `contributions.messageFooters` may opt into `taskHistory: true`. Stable task IDs associate original assistant/tool record references with the persisted end reply; reopening reconstructs read-only file snapshots rather than borrowing cumulative conversation changes or current disk contents. Earlier cards remain during the next task; plugins own statistics and inline diff rendering. Legacy history without reliable ownership is not guessed or cumulatively migrated, and missing records or failed persistence provide no restoration guarantee.
-- **Manual draft optimization while the Agent runs**: editable drafts can be optimized during streaming or stopping; compaction still blocks execution. Single-use draft tokens retain revision, original-content and input/project/session identity checks. Optimization cancellation remains independent of ordinary chat, and results never send automatically or rewrite pending entries; Queue / Steer behavior is unchanged.
-- **Independent settings-gear visibility**: generic `panels[].chatInputSettings` supports `defaultVisible` and a private `storageKey`. Prompt Optimizer hides the gear initially while retaining its wand; the right-panel switch saves a JSON boolean through `api.storage` independently of unsaved strategy edits. Hiding the gear does not disable the plugin, and opening it does not cancel optimization. Contributions without this setting retain the visible gear.
-- The pending-message area now scrolls within `min(144px, 20vh)`, without changing queue lifecycle or send policy.
+- **OAuth Subscription Sign-In**: API settings gain an OAuth sign-in entry that turns a subscription account directly into an LLM channel — Codex (ChatGPT subscription), Anthropic (Claude subscription), Antigravity (Google subscription) and xAI (Grok subscription) are supported; authorization happens in the browser and the local callback returns automatically (pasting the callback URL by hand also works), the channel is created and enabled for you, models are fetched from the provider's own endpoint, and tokens refresh before they expire.
+- **File Review Annotations**: The file reader gains a review panel — annotate the selected text from the toolbar or the context menu, then save, edit, copy, highlight-locate or delete (with confirmation) an annotation, and send one or all of them into the chat draft without sending automatically; annotations persist independently of the source file (SSH annotations stay local), anchored by UTF-16 offset, selected text, surrounding context and a body SHA-256, so they relocate only on a unique context match after edits and remain listed but unlocatable otherwise.
+- **Selections and Annotations as Conversation References**: "Add to conversation" in the file reader encodes the selected text together with its file path and line range as a reference tag, and the explorer's "Add to input" context action accepts files and folders (Ctrl / Shift multi-select); on send the tags expand into readable "file:lines + quoted text + annotation body" content, so the model sees exactly what the user selected instead of re-reading whole lines; the mobile remote control renders the same references.
+- **Local Document Text Preview**: The file reader can extract and show the body text of PDF, Word, Excel / ODS and PPT files (20 MiB input and 2 MiB text limits, with explicit errors when exceeded); the original encoding and BOM round-trip is verified on read, and documents plus text that cannot be written back losslessly are marked as read-only previews, re-checked on save so a preview can never overwrite the source file.
+- **Plugin Reader Navigation and Task-History Slot**: Plugins gain the `panels.openFile` and `panels.openFileDiff` navigation actions, and message footers receive lifecycle-scoped reader and read-only diff navigation; `contributions.messageFooters` may declare `taskHistory`, associating a persisted task-end reply with its original assistant / tool records so reopening the conversation rebuilds a read-only snapshot while earlier cards stay during the next task.
+- **Busy Send: Task Queueing and Safe Steering**: While an Agent runs, sends are split into queueing (handled FIFO once the whole run finishes) and steering (appended at a safe boundary without interrupting tools or starting a parallel loop); general settings choose the default (steering), the send menu and a shortcut override it for a single message, and the pending area scrolls within a capped height.
+
+## Improvements
+
+- The streaming request path is unified: conversation summaries and codebase review reuse the main conversation's Responses path, OAuth profile protocol headers now apply to helper requests such as summary generation, and transport proxy resolution covers environment variables and the system proxy.
+- The terminal's floating "Add to input" button follows the mouse release point and is clamped to the panel edges instead of staying pinned in a corner.
+- File-change tracking lease waits are bounded: a terminal command window is never waited on by other sessions, so long-running commands no longer stall another session's capture.
+- Compact theme contrast and interaction states were improved (#183).
+- Plugins can declare `panels[].chatInputSettings` to control the settings gear's default visibility and store the right-panel switch under their own key.
+
+## Bug Fixes
+
+- Fixed Responses WebSocket connection-multiplexing crosstalk: late events belonging to another response on a reused connection are dropped instead of leaking into the current stream, and the context usage snapshot is now persisted on user messages so it can be restored when a conversation is reopened.
+- Fixed terminal tool cards permanently stuck in "executing": the command-write stage now races the deadline and the cancellation token like the wait loop, so a full pipe or a stuck previous command resolves as timed out / cancelled / failed and terminates the session.
 
 ## v0.4.16
 

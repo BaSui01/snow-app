@@ -8,6 +8,7 @@ import {
   Globe,
   Link2,
   MessageSquareQuote,
+  MessageSquareText,
   MousePointer2,
   ScanSearch,
   Undo2,
@@ -16,6 +17,8 @@ import {
 import { useI18n } from "../../../i18n";
 import {
   extractUrlHost,
+  formatAnnotationLabel,
+  formatFileLinesLabel,
   formatLinesStr,
   parseContentSegments,
   type ContentSegment,
@@ -266,6 +269,47 @@ const renderSegments = (content: string): React.ReactNode => {
           />
           <span className="user-message-file-chip-name">
             {segment.tag.name}
+          </span>
+        </span>
+      );
+    }
+
+    if (segment.type === "annotation") {
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip annotation-chip"
+          title={segment.tag.content}
+        >
+          <MessageSquareText
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "#8b5cf6" }}
+          />
+          <span className="user-message-file-chip-name">
+            {formatAnnotationLabel(segment.tag)}
+          </span>
+        </span>
+      );
+    }
+
+    if (segment.type === "file-selection") {
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip file-selection-chip"
+          title={segment.tag.path}
+        >
+          {getFileTypeIcon(segment.tag.name, false, false, {
+            size: 12,
+            className: "user-message-file-chip-icon",
+          })}
+          <span className="user-message-file-chip-name">
+            {formatFileLinesLabel(
+              segment.tag.path,
+              segment.tag.startLine,
+              segment.tag.endLine,
+            )}
           </span>
         </span>
       );

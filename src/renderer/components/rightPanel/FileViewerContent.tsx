@@ -7,7 +7,9 @@ import {
   ChevronUp,
   Code2,
   Copy,
+  CopySlash,
   Eye,
+  FileInput,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -35,6 +37,11 @@ import { keyToDisplay } from "../../utils/shortcutUtils";
 import { useI18n } from "../../i18n";
 import { MarkdownBlock } from "../mainContent/chatMessages/components/markdownRenderer";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
+import type {
+  FileSelectionTag,
+  FileTag,
+} from "../mainContent/chatInput/fileTagUtils";
+import { INSERT_FILE_TAGS_EVENT } from "../mainContent/chatInput/fileTagUtils";
 import { createCodeHighlighter } from "./fileViewer/codeHighlight";
 import {
   computeFoldRegions,
@@ -48,9 +55,14 @@ import {
 } from "./fileViewer/codeText";
 import { useVirtualRows } from "./fileViewer/useVirtualRows";
 import { rightPanelEvents } from "./rightPanelEvents";
-import { FileReviewPanel } from "./FileReviewPanel";
 import {
-  captureFileReviewSelection,
+  FileReviewPanel,
+  FILE_REVIEW_HIGHLIGHT_COLOR_COUNT,
+  type FileReviewHighlight,
+} from "./FileReviewPanel";
+import {
+  captureFileTextSelection,
+  FILE_REVIEW_MAX_SELECTION_CHARS,
   type FileReviewDraftAnchor,
   type FileReviewLocation,
 } from "./fileViewer/fileReviewAnchors";
@@ -544,9 +556,20 @@ export function FileViewerContent({
     useState<FileReviewDraftAnchor | null>(null);
   const [reviewCandidate, setReviewCandidate] =
     useState<FileReviewDraftAnchor | null>(null);
-  const [reviewFocus, setReviewFocus] = useState<FileReviewLocation | null>(
-    null,
-  );
+  // 右键那一刻的选区锚点（不限长度）：供「添加到会话」整段带走选中原文。
+  const [selectionAnchor, setSelectionAnchor] =
+    useState<FileReviewDraftAnchor | null>(null);
+  const [reviewHighlights, setReviewHighlights] = useState<
+    Record<string, FileReviewHighlight>
+  >({});
+  const [reviewScroll, setReviewScroll] = useState<{
+    location: FileReviewLocation;
+    seq: number;
+  } | null>(null);
+  // 左右模式的审阅面板宽度（px，拖拽分隔条实时更新；null 表示用样式默认值）。
+  const [reviewPanelWidth, setReviewPanelWidth] = useState<number | null>(null);
+  const [reviewResizing, setReviewResizing] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const reviewSourceKey = virtualSource
     ? ""
     : isSsh
@@ -566,12 +589,16 @@ export function FileViewerContent({
     setReviewOpen(false);
     setReviewSelection(null);
     setReviewCandidate(null);
-    setReviewFocus(null);
+    setSelectionAnchor(null);
+    setReviewHighlights({});
+    setReviewScroll(null);
   }, [filePath, reviewSourceKey]);
   useEffect(() => {
     setReviewSelection(null);
     setReviewCandidate(null);
-    setReviewFocus(null);
+    setSelectionAnchor(null);
+    setReviewHighlights({});
+    setReviewScroll(null);
   }, [content?.content, editMode]);
 
   // 文本行模型：一次扫描得到行边界，行号、折叠、虚拟窗口与搜索定位共用。
@@ -589,18 +616,111 @@ export function FileViewerContent({
         : null,
     [reviewOpen, canReview, content, lineIndex],
   );
-  const captureReview = (): FileReviewDraftAnchor | null => {
+  const captureSelection = (maxChars: number): FileReviewDraftAnchor | null => {
     const root = codeContentRef.current;
     return canReview && showCodeView && root && lineIndex
-      ? captureFileReviewSelection(root, lineIndex, reviewRepresentation)
+      ? captureFileTextSelection(
+          root,
+          lineIndex,
+          reviewRepresentation,
+          maxChars,
+        )
       : null;
   };
+  const captureReview = (): FileReviewDraftAnchor | null =>
+    captureSelection(FILE_REVIEW_MAX_SELECTION_CHARS);
+  const captureSessionSelection = (): FileReviewDraftAnchor | null =>
+    captureSelection(Number.POSITIVE_INFINITY);
   const addReview = (anchor: FileReviewDraftAnchor | null): void => {
     if (!anchor) return;
     setReviewSelection(anchor);
     setReviewOpen(true);
     setContextMenu(null);
   };
+  // 右键菜单「添加到会话」：选区连同文件路径与行号编码为一个 file-selection chip
+  // （只给行号时 AI 需自行读取整行，与用户实际选中的词不对应）；无选区时退回文件 chip。
+  const addFileToSession = (): void => {
+    setContextMenu(null);
+    if (virtualSource) return;
+    const anchor = selectionAnchor;
+    const tags: (FileTag | FileSelectionTag)[] = anchor
+      ? [
+          {
+            path: filePath,
+            name: fileName,
+            startLine: anchor.startLine,
+            endLine: anchor.endLine,
+            content: anchor.quote,
+            representation: anchor.representation,
+          },
+        ]
+      : [{ path: filePath, name: fileName, isDirectory: false }];
+    window.dispatchEvent(
+      new CustomEvent<(FileTag | FileSelectionTag)[]>(INSERT_FILE_TAGS_EVENT, {
+        detail: tags,
+      }),
+    );
+  };
+  const toggleReviewHighlight = (
+    id: string,
+    location: FileReviewLocation,
+  ): void => {
+    if (reviewHighlights[id]) {
+      setReviewHighlights((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    setReviewHighlights((prev) => {
+      const used = new Set(Object.values(prev).map((item) => item.colorIndex));
+      let colorIndex = 0;
+      while (
+        colorIndex < FILE_REVIEW_HIGHLIGHT_COLOR_COUNT &&
+        used.has(colorIndex)
+      ) {
+        colorIndex += 1;
+      }
+      if (colorIndex >= FILE_REVIEW_HIGHLIGHT_COLOR_COUNT) {
+        colorIndex =
+          Object.keys(prev).length % FILE_REVIEW_HIGHLIGHT_COLOR_COUNT;
+      }
+      return { ...prev, [id]: { location, colorIndex } };
+    });
+    setReviewScroll((prev) => ({ location, seq: (prev?.seq ?? 0) + 1 }));
+  };
+
+  /**
+   * 拖拽左右模式的分隔条调整审阅面板宽度：宽度取「工作区右缘 - 指针」，
+   * 下限保留正文可用宽度（左侧至少 240px）。
+   */
+  const handleReviewResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const workspace = workspaceRef.current;
+      if (!workspace || event.button !== 0) return;
+      event.preventDefault();
+      const rect = workspace.getBoundingClientRect();
+      const minWidth = 220;
+      const maxWidth = Math.max(minWidth, rect.width - 240);
+      setReviewResizing(true);
+      const handleMove = (moveEvent: PointerEvent): void => {
+        const next = Math.min(
+          maxWidth,
+          Math.max(minWidth, rect.right - moveEvent.clientX),
+        );
+        setReviewPanelWidth(Math.round(next));
+      };
+      const handleEnd = (): void => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        setReviewResizing(false);
+      };
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+    },
+    [],
+  );
 
   // 单行行高与顶部内边距：虚拟滚动按行高换算滚动位置，测量一次即可。
   const [codeMetrics, setCodeMetrics] = useState({
@@ -765,18 +885,18 @@ export function FileViewerContent({
   );
 
   useEffect(() => {
-    if (!reviewFocus || !showCodeView || !lineIndex || editMode) return;
-    if (revealLine(reviewFocus.startLine)) return;
+    if (!reviewScroll || !showCodeView || !lineIndex || editMode) return;
+    if (revealLine(reviewScroll.location.startLine)) return;
     const scroll = codeScrollRef.current;
     if (!scroll) return;
     const top =
       codeMetrics.paddingTop +
-      (lineMapping.toVisual(reviewFocus.startLine) - 1) *
+      (lineMapping.toVisual(reviewScroll.location.startLine) - 1) *
         codeMetrics.lineHeight;
     scroll.scrollTop = Math.max(0, top - scroll.clientHeight / 3);
     syncRange();
   }, [
-    reviewFocus,
+    reviewScroll,
     showCodeView,
     lineIndex,
     editMode,
@@ -865,17 +985,26 @@ export function FileViewerContent({
   const codeRows = useMemo(() => {
     const rows: React.JSX.Element[] = [];
     if (!lineIndex || !codeHighlighter) return rows;
+    const highlights = Object.values(reviewHighlights).reverse();
     for (let visual = rowRange.start + 1; visual <= renderEnd; visual += 1) {
       const line = lineMapping.toSource(visual);
       const region = foldByStart.get(line);
       const folded = region != null && foldedStarts.has(line);
+      const highlight = highlights.find(
+        (item) =>
+          line >= item.location.startLine && line <= item.location.endLine,
+      );
       rows.push(
         <span
           key={line}
           data-line={line}
           className={`file-viewer-code-line${
             folded ? " file-viewer-code-line--folded" : ""
-          }${reviewFocus && line >= reviewFocus.startLine && line <= reviewFocus.endLine ? " file-viewer-code-line--review-target" : ""}`}
+          }${
+            highlight
+              ? ` file-viewer-code-line--review-target file-review-hl-${highlight.colorIndex}`
+              : ""
+          }`}
           data-fold-label={
             folded && region
               ? t("rightPanel.fileFoldHiddenLines", {
@@ -897,7 +1026,7 @@ export function FileViewerContent({
     lineMapping,
     renderEnd,
     rowRange.start,
-    reviewFocus,
+    reviewHighlights,
     t,
   ]);
 
@@ -1945,6 +2074,16 @@ export function FileViewerContent({
 
   const buildMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
+    if (!virtualSource) {
+      items.push({
+        id: "add-to-session",
+        label: t("rightPanel.addToConversation", {
+          defaultValue: "Add to conversation",
+        }),
+        icon: <FileInput size={13} strokeWidth={1.8} />,
+        onClick: addFileToSession,
+      });
+    }
     if (canReview && showCodeView && reviewCandidate) {
       const anchor = reviewCandidate;
       items.push({
@@ -1971,7 +2110,7 @@ export function FileViewerContent({
     items.push({
       id: "copy-path",
       label: t("rightPanel.copyPath", { defaultValue: "Copy Path" }),
-      icon: <Copy size={13} strokeWidth={1.8} />,
+      icon: <CopySlash size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
         void window.snow.writeClipboardText(filePath).catch(() => {
@@ -2221,6 +2360,7 @@ export function FileViewerContent({
         }
         e.preventDefault();
         setReviewCandidate(captureReview());
+        setSelectionAnchor(captureSessionSelection());
         setContextMenu({ x: e.clientX, y: e.clientY });
       }}
     >
@@ -2359,7 +2499,8 @@ export function FileViewerContent({
                 if (isMarkdown) setMdMode("code");
                 if (reviewOpen) {
                   setReviewSelection(null);
-                  setReviewFocus(null);
+                  setReviewHighlights({});
+                  setReviewScroll(null);
                 }
               }}
             >
@@ -2546,7 +2687,15 @@ export function FileViewerContent({
         </div>
       ) : null}
       <div
-        className={`file-viewer-workspace${reviewOpen && canReview && !editMode ? " file-viewer-workspace--review" : ""}`}
+        className={`file-viewer-workspace${reviewOpen && canReview && !editMode ? " file-viewer-workspace--review" : ""}${reviewResizing ? " file-viewer-workspace--resizing" : ""}`}
+        ref={workspaceRef}
+        style={
+          reviewPanelWidth != null
+            ? ({
+                "--file-review-panel-width": `${reviewPanelWidth}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
       >
         <div className="file-viewer-body">
           {isImage && !isSvg && (
@@ -2599,25 +2748,35 @@ export function FileViewerContent({
             renderCodeBlock()}
         </div>
         {reviewOpen && canReview && reviewIndex && !editMode ? (
-          <FileReviewPanel
-            key={`${reviewSourceKey}:${filePath}`}
-            sourceKey={reviewSourceKey}
-            filePath={filePath}
-            index={reviewIndex}
-            representation={reviewRepresentation}
-            selection={reviewSelection}
-            onCancelSelection={() => setReviewSelection(null)}
-            onLocate={(location) => {
-              setMdMode("code");
-              setSearchOpen(false);
-              setReviewFocus(location);
-            }}
-            onClose={() => {
-              setReviewOpen(false);
-              setReviewSelection(null);
-              setReviewFocus(null);
-            }}
-          />
+          <>
+            <div
+              className={`file-review-resizer${reviewResizing ? " dragging" : ""}`}
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={handleReviewResizeStart}
+            />
+            <FileReviewPanel
+              key={`${reviewSourceKey}:${filePath}`}
+              sourceKey={reviewSourceKey}
+              filePath={filePath}
+              index={reviewIndex}
+              representation={reviewRepresentation}
+              selection={reviewSelection}
+              highlights={reviewHighlights}
+              onCancelSelection={() => setReviewSelection(null)}
+              onToggleLocate={(id, location) => {
+                setMdMode("code");
+                setSearchOpen(false);
+                toggleReviewHighlight(id, location);
+              }}
+              onClose={() => {
+                setReviewOpen(false);
+                setReviewSelection(null);
+                setReviewHighlights({});
+                setReviewScroll(null);
+              }}
+            />
+          </>
         ) : null}
       </div>
       {contextMenu && (

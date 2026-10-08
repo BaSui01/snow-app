@@ -15,6 +15,14 @@ import type {
 } from "../../../preload";
 import { useI18n } from "../../i18n";
 import { writeBackToChatInput } from "../mainContent/chatInput/chatInputDraftBridge";
+import {
+  encodeAnnotationTag,
+  type AnnotationTag,
+} from "../mainContent/chatInput/fileTagUtils";
+import {
+  GitConfirmBubble,
+  type GitConfirmAnchor,
+} from "./git/GitConfirmBubble";
 import { useFileReviewAnnotations } from "./useFileReviewAnnotations";
 import {
   hashFileReviewText,
@@ -32,6 +40,13 @@ type ResolvedReview = {
   anchor: FileReviewTextAnchor | null;
   location: FileReviewLocation | null;
 };
+
+export type FileReviewHighlight = {
+  location: FileReviewLocation;
+  colorIndex: number;
+};
+
+export const FILE_REVIEW_HIGHLIGHT_COLOR_COUNT = 6;
 
 const messageFor = (
   filePath: string,
@@ -64,25 +79,50 @@ const messageFor = (
   return `${where} · ${representation} · ${status}\n${quote}\n${item.record.content}`;
 };
 
+/**
+ * 单条标注编码为专用 annotation 标签：行号取「已定位/已重定位」的位置，
+ * 未定位时退回锚点；标注正文与引用原文随标签一起发送给 AI。
+ */
+const annotationTagFor = (filePath: string, item: ResolvedReview): string => {
+  const lines =
+    item.location &&
+    (item.location.status === "exact" || item.location.status === "relocated")
+      ? item.location
+      : item.anchor;
+  const tag: AnnotationTag = {
+    filePath,
+    startLine: lines?.startLine ?? 0,
+    endLine: lines?.endLine ?? 0,
+    quote: item.anchor?.quote ?? "",
+    content: item.record.content,
+    representation: item.anchor?.representation ?? "source",
+  };
+  return encodeAnnotationTag(tag);
+};
+
 function FileReviewCard({
   item,
   pending,
   filePath,
-  onLocate,
+  highlightColorIndex,
+  onToggleLocate,
   onUpdate,
   onDelete,
 }: {
   item: ResolvedReview;
   pending: boolean;
   filePath: string;
-  onLocate: (location: FileReviewLocation) => void;
+  highlightColorIndex: number | null;
+  onToggleLocate: (id: string, location: FileReviewLocation) => void;
   onUpdate: (id: string, content: string) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.record.content);
-  const [armed, setArmed] = useState(false);
+  const [deleteAnchor, setDeleteAnchor] = useState<GitConfirmAnchor | null>(
+    null,
+  );
   const [copied, setCopied] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -90,16 +130,15 @@ function FileReviewCard({
   const canLocate =
     location?.status === "exact" || location?.status === "relocated";
   const lines = canLocate ? location : item.anchor;
+  const locateLabel = t(
+    highlightColorIndex != null ? "fileReview.unlocate" : "fileReview.locate",
+  );
   const byteLength = new TextEncoder().encode(draft.trim()).length;
   const text = `${t("fileReview.messageHeader", { values: { path: filePath } })}\n\n${messageFor(filePath, item, t)}`;
   useEffect(() => {
     setDraft(item.record.content);
   }, [item.record.content]);
-  useEffect(() => {
-    if (!armed) return;
-    const timer = window.setTimeout(() => setArmed(false), 4000);
-    return () => window.clearTimeout(timer);
-  }, [armed]);
+
   const save = async (): Promise<void> => {
     if (!draft.trim() || byteLength > 8192 || pending) return;
     if (await onUpdate(item.record.annotationId, draft)) setEditing(false);
@@ -124,13 +163,20 @@ function FileReviewCard({
         </span>
         <span className="diff-comment-card-actions">
           <button
-            className="diff-comment-icon-btn"
+            className={`diff-comment-icon-btn${
+              highlightColorIndex != null
+                ? ` file-review-hl-${highlightColorIndex} is-active`
+                : ""
+            }`}
             type="button"
-            title={t("fileReview.locate")}
-            aria-label={t("fileReview.locate")}
+            title={locateLabel}
+            aria-label={locateLabel}
+            aria-pressed={highlightColorIndex != null}
             disabled={!canLocate}
             onClick={() => {
-              if (location && canLocate) onLocate(location);
+              if (location && canLocate) {
+                onToggleLocate(item.record.annotationId, location);
+              }
             }}
           >
             <LocateFixed size={12} />
@@ -155,7 +201,9 @@ function FileReviewCard({
             title={t("diffComments.send")}
             aria-label={t("diffComments.send")}
             onClick={() => {
-              const written = writeBackToChatInput(text);
+              const written = writeBackToChatInput(
+                annotationTagFor(filePath, item),
+              );
               setSent(written);
               if (!written) setError(t("fileReview.inputUnavailable"));
             }}
@@ -175,23 +223,19 @@ function FileReviewCard({
           <button
             className="diff-comment-icon-btn danger"
             type="button"
-            title={t(
-              armed ? "fileReview.confirmDelete" : "diffComments.delete",
-            )}
-            aria-label={t(
-              armed ? "fileReview.confirmDelete" : "diffComments.delete",
-            )}
+            title={t("diffComments.delete")}
+            aria-label={t("diffComments.delete")}
             disabled={pending}
-            onClick={() => {
-              if (!armed) {
-                setArmed(true);
-                return;
-              }
-              void onDelete(item.record.annotationId);
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setDeleteAnchor({
+                left: rect.left,
+                right: rect.right,
+                bottom: rect.bottom,
+              });
             }}
           >
             <Trash2 size={12} />
-            {armed ? t("fileReview.confirmDelete") : null}
           </button>
         </span>
       </div>
@@ -254,6 +298,20 @@ function FileReviewCard({
           {error}
         </p>
       ) : null}
+      {deleteAnchor ? (
+        <GitConfirmBubble
+          anchor={deleteAnchor}
+          message={t("fileReview.confirmDelete")}
+          confirmLabel={t("common.delete")}
+          cancelLabel={t("common.cancel")}
+          confirmDisabled={pending}
+          onConfirm={() => {
+            setDeleteAnchor(null);
+            void onDelete(item.record.annotationId);
+          }}
+          onCancel={() => setDeleteAnchor(null)}
+        />
+      ) : null}
     </article>
   );
 }
@@ -264,8 +322,9 @@ export function FileReviewPanel({
   index,
   representation,
   selection,
+  highlights,
   onCancelSelection,
-  onLocate,
+  onToggleLocate,
   onClose,
 }: {
   sourceKey: string;
@@ -273,8 +332,9 @@ export function FileReviewPanel({
   index: LineIndex;
   representation: FileReviewTextAnchor["representation"];
   selection: FileReviewDraftAnchor | null;
+  highlights: Record<string, FileReviewHighlight>;
   onCancelSelection: () => void;
-  onLocate: (location: FileReviewLocation) => void;
+  onToggleLocate: (id: string, location: FileReviewLocation) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -379,8 +439,12 @@ export function FileReviewPanel({
             aria-label={t("fileReview.sendAll")}
             disabled={review.loading || !sourceHash || resolved.length === 0}
             onClick={() => {
-              const text = `${t("fileReview.messageHeader", { values: { path: filePath } })}\n\n${resolved.map((item) => messageFor(filePath, item, t)).join("\n\n")}`;
-              const written = writeBackToChatInput(text);
+              // 每条标注一个专用标签：输入框中呈现为多个 chip，发送时由后端
+              // 展开为「文件:行号 + 引用原文 + 标注正文」的可读文本。
+              const encoded = resolved
+                .map((item) => annotationTagFor(filePath, item))
+                .join("\n");
+              const written = writeBackToChatInput(encoded);
               setSent(written);
               if (!written) setLocalError(t("fileReview.inputUnavailable"));
             }}
@@ -494,7 +558,10 @@ export function FileReviewPanel({
               item={item}
               pending={review.pending}
               filePath={filePath}
-              onLocate={onLocate}
+              highlightColorIndex={
+                highlights[item.record.annotationId]?.colorIndex ?? null
+              }
+              onToggleLocate={onToggleLocate}
               onUpdate={review.update}
               onDelete={review.remove}
             />

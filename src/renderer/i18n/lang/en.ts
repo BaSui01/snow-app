@@ -359,6 +359,8 @@ export const en = {
   "sidebar.explorerCopyPath": "Copy Path",
   "sidebar.explorerMultiSelectCount": "{{count}} selected",
   "sidebar.explorerMultiSelectCopyPaths": "Copy {{count}} paths",
+  "sidebar.explorerMultiSelectAddToConversation":
+    "Add {{count}} items to conversation",
   "sidebar.explorerMultiSelectDelete": "Delete {{count}} items",
   "sidebar.explorerMultiSelectDeleteConfirm":
     "Delete {{count}} selected items? This cannot be undone.",
@@ -4470,8 +4472,9 @@ export const en = {
   "fileReview.ambiguous": "Multiple matches; re-anchoring needed",
   "fileReview.invalid": "Invalid annotation anchor",
   "fileReview.locate": "Locate and highlight the annotation",
+  "fileReview.unlocate": "Remove the annotation highlight",
   "fileReview.sendAll": "Fill chat draft with all annotations",
-  "fileReview.confirmDelete": "Click again to delete",
+  "fileReview.confirmDelete": "Delete this annotation?",
   "fileReview.messageHeader":
     "Please review these Snow annotations for {{path}}:",
   "fileReview.contentLimit":
@@ -4503,6 +4506,7 @@ export const en = {
   "diffComments.messageHeader":
     "Please update {{path}} based on these review comments:",
   "diffComments.messageItem": "- Line {{line}} ({{side}}): {{content}}",
+  "rightPanel.addToConversation": "Add to conversation",
   "rightPanel.copy": "Copy",
   "rightPanel.copyPath": "Copy Path",
   "rightPanel.openInTerminal": "Open in Terminal",

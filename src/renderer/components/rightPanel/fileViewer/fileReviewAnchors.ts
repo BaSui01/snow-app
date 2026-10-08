@@ -21,11 +21,18 @@ export const reviewLineAt = (index: LineIndex, offset: number): number => {
   return lo + 1;
 };
 
-/** Only accept selection endpoints inside real rendered source rows. */
-export const captureFileReviewSelection = (
+/** 审阅标注的选区字符数上限（其余场景如「添加到会话」不设限）。 */
+export const FILE_REVIEW_MAX_SELECTION_CHARS = 4096;
+
+/**
+ * 捕获代码区当前选区为文本锚点（起止行号 + 原文）。
+ * Only accept selection endpoints inside real rendered source rows.
+ */
+export const captureFileTextSelection = (
   root: HTMLElement,
   index: LineIndex,
   representation: FileReviewTextAnchor["representation"],
+  maxChars: number = FILE_REVIEW_MAX_SELECTION_CHARS,
 ): FileReviewDraftAnchor | null => {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount !== 1)
@@ -48,7 +55,7 @@ export const captureFileReviewSelection = (
   };
   const start = endpoint(range.startContainer, range.startOffset);
   const end = endpoint(range.endContainer, range.endOffset);
-  if (start === null || end === null || end <= start || end - start > 4096)
+  if (start === null || end === null || end <= start || end - start > maxChars)
     return null;
   const startLine = reviewLineAt(index, start);
   const endLine = reviewLineAt(index, end - 1);

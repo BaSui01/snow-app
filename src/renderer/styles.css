@@ -26099,6 +26099,26 @@ body.is-panel-resizing * {
   color: var(--accent-color, #4a9eff);
 }
 
+/* ===== Annotation Chip（文件审阅标注） ===== */
+.annotation-chip {
+  cursor: pointer;
+}
+
+.annotation-chip:hover {
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+}
+
+/* ===== File Selection Chip（文件选区引用：路径 + 行号 + 选中原文） ===== */
+.file-selection-chip {
+  cursor: pointer;
+}
+
+.file-selection-chip:hover {
+  border-color: var(--accent-color, #4a9eff);
+  color: var(--accent-color, #4a9eff);
+}
+
 /* ===== Command Chip（自定义指令 prompt） ===== */
 .command-chip:hover {
   border-color: #0891b2;
@@ -36401,9 +36421,20 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: var(--text-secondary);
 }
 
+/* 删除类图标按钮：常态即红色系，悬停加深底色。 */
+.diff-comment-icon-btn.danger {
+  color: var(--accent-red);
+}
+
 .diff-comment-icon-btn.danger:hover {
   background: var(--accent-red-bg);
   color: var(--accent-red-text);
+}
+
+/* 禁用态（如请求进行中）：整体降透明度，避免看起来可点。 */
+.diff-comment-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .diff-comment-card-body {
@@ -36425,7 +36456,6 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
-  border-left: 2px solid var(--accent-color);
   background: var(--bg-secondary);
   font-family: var(--font-sans);
 }

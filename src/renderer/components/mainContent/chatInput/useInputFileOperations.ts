@@ -4,10 +4,12 @@ import type { RefObject } from "react";
 import { useI18n } from "../../../i18n";
 import {
   INSERT_ELEMENT_TAG_EVENT,
+  INSERT_FILE_TAGS_EVENT,
   INSERT_QUOTE_TAG_EVENT,
   buildTextSnippetSummary,
   createChipHtml,
   createElementChipHtml,
+  createFileSelectionChipHtml,
   createImageChipHtml,
   createQuoteChipHtml,
   createSkillChipHtml,
@@ -18,6 +20,7 @@ import {
   readEditableContent,
   renumberImageChips as renumberImageChipsFn,
   type ElementTag,
+  type FileSelectionTag,
   type FileTag,
   type ImageTag,
   type QuoteTag,
@@ -52,7 +55,7 @@ type WebTagInsertOptions = {
 export type InputFileOperationsResult = {
   syncContent: () => void;
   insertFileTag: (tag: FileTag | SkillTag) => void;
-  insertFileTags: (tags: (FileTag | SkillTag)[]) => void;
+  insertFileTags: (tags: (FileTag | SkillTag | FileSelectionTag)[]) => void;
   insertElementTag: (tag: ElementTag) => void;
   insertImageFromFile: (file: File) => void;
   insertImageFiles: (files: File[]) => void;
@@ -168,15 +171,21 @@ export const useInputFileOperations = ({
   );
 
   const insertFileTags = useCallback(
-    (tags: (FileTag | SkillTag)[]) => {
+    (tags: (FileTag | SkillTag | FileSelectionTag)[]) => {
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
       insertHtmlAtSelection(
         tags
-          .map((tag) =>
-            "skillId" in tag ? createSkillChipHtml(tag) : createChipHtml(tag),
-          )
+          .map((tag) => {
+            if ("skillId" in tag) {
+              return createSkillChipHtml(tag);
+            }
+            if ("content" in tag) {
+              return createFileSelectionChipHtml(tag);
+            }
+            return createChipHtml(tag);
+          })
           .join(" "),
       );
       syncContent();
@@ -257,6 +266,33 @@ export const useInputFileOperations = ({
       window.removeEventListener(INSERT_QUOTE_TAG_EVENT, handleInsertQuoteTag);
     };
   }, [insertQuoteTag]);
+
+  // 资源管理器 / 文件查看器右键菜单「添加到输入框」「添加到会话」：与拖拽条目
+  // 到输入框走同一条插入路径（insertFileTags），因此 chip 形态与后续序列化完全一致。
+  useEffect(() => {
+    const handleInsertFileTags = (event: Event): void => {
+      const detail = (event as CustomEvent<(FileTag | FileSelectionTag)[]>)
+        .detail;
+      const tags = Array.isArray(detail)
+        ? detail.filter(
+            (tag) =>
+              tag &&
+              typeof tag.path === "string" &&
+              typeof tag.name === "string",
+          )
+        : [];
+      if (tags.length === 0) {
+        return;
+      }
+      textareaRef.current?.focus();
+      restoreCaret();
+      insertFileTags(tags);
+    };
+    window.addEventListener(INSERT_FILE_TAGS_EVENT, handleInsertFileTags);
+    return () => {
+      window.removeEventListener(INSERT_FILE_TAGS_EVENT, handleInsertFileTags);
+    };
+  }, [insertFileTags, restoreCaret, textareaRef]);
 
   useEffect(() => {
     return window.snow.onElementTagInserted((tag) => {

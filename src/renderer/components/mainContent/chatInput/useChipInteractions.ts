@@ -388,7 +388,7 @@ export const useChipInteractions = ({
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       const chip = target.closest(
-        "[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true'],[data-command-tag='true']",
+        "[data-file-selection-tag='true'],[data-file-tag='true'],[data-commit-tag='true'],[data-change-tag='true'],[data-review-tag='true'],[data-element-tag='true'],[data-web-tag='true'],[data-command-tag='true'],[data-annotation-tag='true']",
       ) as HTMLElement | null;
       const clear = (): void => {
         if (chipDetailsTimerRef.current) {
@@ -405,7 +405,68 @@ export const useChipInteractions = ({
       let content: string | undefined;
       let copyText: string | undefined;
       try {
-        if (chip.dataset.fileTag === "true") {
+        if (chip.dataset.annotationTag === "true") {
+          const data = JSON.parse(chip.dataset.annotationData ?? "{}") as {
+            filePath?: string;
+            startLine?: number;
+            endLine?: number;
+            quote?: string;
+            content?: string;
+          };
+          if (data.filePath) {
+            rows.push({
+              label: t("chatInput.chipDetailsFile"),
+              value: data.filePath,
+            });
+          }
+          if (typeof data.startLine === "number" && data.startLine > 0) {
+            rows.push({
+              label: t("chatInput.chipDetailsLines"),
+              value:
+                typeof data.endLine === "number" &&
+                data.endLine > data.startLine
+                  ? `L${data.startLine}-L${data.endLine}`
+                  : `L${data.startLine}`,
+            });
+          }
+          const annotationContent = data.content
+            ? base64ToUtf8(data.content)
+            : "";
+          if (annotationContent.trim()) {
+            content = annotationContent;
+            copyText = annotationContent;
+          }
+        } else if (chip.dataset.fileSelectionTag === "true") {
+          const data = JSON.parse(chip.dataset.fileSelectionData ?? "{}") as {
+            path?: string;
+            startLine?: number;
+            endLine?: number;
+            content?: string;
+          };
+          if (data.path) {
+            rows.push({
+              label: t("chatInput.chipDetailsFile"),
+              value: data.path,
+            });
+          }
+          if (typeof data.startLine === "number" && data.startLine > 0) {
+            rows.push({
+              label: t("chatInput.chipDetailsLines"),
+              value:
+                typeof data.endLine === "number" &&
+                data.endLine > data.startLine
+                  ? `L${data.startLine}-L${data.endLine}`
+                  : `L${data.startLine}`,
+            });
+          }
+          const selectionContent = data.content
+            ? base64ToUtf8(data.content)
+            : "";
+          if (selectionContent.trim()) {
+            content = selectionContent;
+            copyText = selectionContent;
+          }
+        } else if (chip.dataset.fileTag === "true") {
           const path = chip.dataset.filePath ?? "";
           const isDir = chip.dataset.fileIsDir === "true";
           const lines = chip.dataset.fileLines;

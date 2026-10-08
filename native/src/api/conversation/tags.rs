@@ -26,12 +26,16 @@ pub fn parse_chat_message_content(
     const COMMAND_TAG_PREFIX: &str = "@@command:";
     const ELEMENT_TAG_PREFIX: &str = "@@element:";
     const CONVERSATION_TAG_PREFIX: &str = "@@conversation:";
-    const TAG_PREFIXES: [&str; 5] = [
+    const ANNOTATION_TAG_PREFIX: &str = "@@annotation:";
+    const FILE_SELECTION_TAG_PREFIX: &str = "@@file-selection:";
+    const TAG_PREFIXES: [&str; 7] = [
         IMAGE_TAG_PREFIX,
         REVIEW_TAG_PREFIX,
         COMMAND_TAG_PREFIX,
         ELEMENT_TAG_PREFIX,
         CONVERSATION_TAG_PREFIX,
+        ANNOTATION_TAG_PREFIX,
+        FILE_SELECTION_TAG_PREFIX,
     ];
 
     let mut parsed = ParsedChatMessageContent::default();
@@ -41,8 +45,8 @@ pub fn parse_chat_message_content(
     let mut attach_budgets: Option<(usize, usize)> = None;
     let mut attach_used_chars: usize = 0;
 
-    // 同时识别 image / review / element / conversation 四种标签，
-    // 取最先出现的那个处理。
+    // 同时识别 image / review / command / element / conversation /
+    // annotation / file-selection 标签，取最先出现的那个处理。
     while let Some(tag_start) = find_earliest_tag(remaining, &TAG_PREFIXES) {
         parsed.text.push_str(&remaining[..tag_start]);
 
@@ -101,6 +105,22 @@ pub fn parse_chat_message_content(
                 None => {
                     parsed.text.push_str(&remaining[tag_start..full_tag_end]);
                 }
+            }
+        } else if prefix == ANNOTATION_TAG_PREFIX {
+            // annotation 标签：将文件审阅标注展开为「文件:行号 + 引用原文 +
+            // 标注正文」的可读文本，使 AI 直接理解用户标注了哪段文字。
+            if let Some(text) = try_expand_annotation_tag(value) {
+                parsed.text.push_str(&text);
+            } else {
+                parsed.text.push_str(&remaining[tag_start..full_tag_end]);
+            }
+        } else if prefix == FILE_SELECTION_TAG_PREFIX {
+            // file-selection 标签：将文件选区引用展开为「文件:行号 + 选中原文」
+            // 的可读文本，使 AI 直接看到用户选中的内容，而不是自行读取整行。
+            if let Some(text) = try_expand_file_selection_tag(value) {
+                parsed.text.push_str(&text);
+            } else {
+                parsed.text.push_str(&remaining[tag_start..full_tag_end]);
             }
         } else if let Some(svg_text) = try_extract_svg_source(value, database_path) {
             // SVG is XML text — most AI models cannot interpret it as a raster
@@ -233,8 +253,100 @@ fn try_expand_conversation_tag(
     Some(rendered.trim().to_string())
 }
 
+/// 尝试将 `@@annotation:{"filePath":"...","startLine":9,"endLine":13,
+/// "quote":"<base64>","content":"<base64>","representation":"source"}@@` 标签
+/// 展开为「文件:行号 + 引用原文 + 标注正文」的可读文本（语义与前端标注面板
+/// 的「填入输入框」一致）。
+///
+/// quote / content 为自由文本，前端以 base64 承载（可能含 `@@` 破坏标签
+/// 终止符）；行号缺失（0）时只输出文件与口径。非法 JSON 或 base64 解码
+/// 失败时返回 None，调用方保留原始标签、不破坏消息内容。
+fn try_expand_annotation_tag(value: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
+    let file_path = json_text(&parsed, "filePath");
+    if file_path.trim().is_empty() {
+        return None;
+    }
+    let start_line = json_u64(&parsed, "startLine");
+    let end_line = json_u64(&parsed, "endLine");
+    let quote = json_base64_text(&parsed, "quote");
+    let content = json_base64_text(&parsed, "content");
+    let location = anchor_location(start_line, end_line);
+    let representation = anchor_representation(&parsed);
+    let mut text =
+        format!("请审阅文件 {file_path} 的以下 Snow 侧标注：\n{location} · {representation}");
+    if !quote.trim().is_empty() {
+        let quoted = quote
+            .lines()
+            .map(|line| format!("> {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        text.push('\n');
+        text.push_str(&quoted);
+    }
+    if !content.trim().is_empty() {
+        text.push('\n');
+        text.push_str(&content);
+    }
+    Some(text)
+}
+
+/// 锚点位置描述：`第 9–13 行` / `第 9 行` / `位置未知`（行号 0 表示未知）。
+fn anchor_location(start_line: u64, end_line: u64) -> String {
+    if start_line == 0 {
+        "位置未知".to_string()
+    } else if end_line > start_line {
+        format!("第 {start_line}–{end_line} 行")
+    } else {
+        format!("第 {start_line} 行")
+    }
+}
+
+/// 行号口径：源码文件文本 / 文档提取正文。
+fn anchor_representation(parsed: &serde_json::Value) -> &'static str {
+    if json_text(parsed, "representation") == "extracted-text" {
+        "提取正文"
+    } else {
+        "文件文本"
+    }
+}
+
+/// 尝试将 `@@file-selection:{"path":"...","name":"...","startLine":9,"endLine":13,
+/// "content":"<base64>","representation":"source"}@@` 标签展开为「文件:行号 +
+/// 选中原文」的可读文本。
+///
+/// content 为自由文本（可能含 `@@`），前端以 base64 承载；行号缺失（0）时只输出
+/// 文件与口径。非法 JSON 或 base64 解码失败时返回 None，调用方保留原始标签、不破坏
+/// 消息内容。
+fn try_expand_file_selection_tag(value: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
+    let path = json_text(&parsed, "path");
+    if path.trim().is_empty() {
+        return None;
+    }
+    let start_line = json_u64(&parsed, "startLine");
+    let end_line = json_u64(&parsed, "endLine");
+    let content = json_base64_text(&parsed, "content");
+    let mut text = format!(
+        "用户选中了文件 {path} 的以下内容（{} · {}）：",
+        anchor_location(start_line, end_line),
+        anchor_representation(&parsed)
+    );
+    if !content.trim().is_empty() {
+        let quoted = content
+            .lines()
+            .map(|line| format!("> {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        text.push('\n');
+        text.push_str(&quoted);
+    }
+    Some(text)
+}
+
 /// 展示型 chip 标签前缀（与前端 fileTagUtils 的 encode* 编码格式一一对应）。
-const DISPLAY_TAG_PREFIXES: [&str; 13] = [
+const DISPLAY_TAG_PREFIXES: [&str; 15] = [
+    "@@file-selection:",
     "@@file:",
     "@@dir:",
     "@@image:",
@@ -248,6 +360,7 @@ const DISPLAY_TAG_PREFIXES: [&str; 13] = [
     "@@quote:",
     "@@command:",
     "@@skill:",
+    "@@annotation:",
 ];
 
 /// 把消息内容里的所有 chip 标签折叠为人类可读文本，用于会话标题、单行预览等
@@ -348,6 +461,8 @@ fn display_text_for_tag(prefix: &str, value: &str) -> Option<String> {
             }
             Some(skill_id)
         }
+        "@@annotation:" => display_annotation_reference(&parsed),
+        "@@file-selection:" => display_file_selection_reference(&parsed),
         _ => None,
     }
 }
@@ -463,6 +578,53 @@ fn display_element_reference(parsed: &serde_json::Value) -> String {
     } else {
         format!("{display}: {note}")
     }
+}
+
+/// 文件标注引用的展示文本：`文件名:L9-L13`（单行取 `文件名:L9`，行号未知时
+/// 仅文件名，与前端 `formatAnnotationLabel` 一致）。
+fn display_annotation_reference(parsed: &serde_json::Value) -> Option<String> {
+    let file_path = json_text(parsed, "filePath");
+    if file_path.trim().is_empty() {
+        return None;
+    }
+    let name = file_name_of_path(&file_path);
+    let start_line = json_u64(parsed, "startLine");
+    if start_line == 0 {
+        return Some(name);
+    }
+    let end_line = json_u64(parsed, "endLine");
+    Some(if end_line > start_line {
+        format!("{name}:L{start_line}-L{end_line}")
+    } else {
+        format!("{name}:L{start_line}")
+    })
+}
+
+/// 文件选区引用的展示文本：`名称` 或 `名称:L9-L13`。
+fn display_file_selection_reference(parsed: &serde_json::Value) -> Option<String> {
+    let path = json_text(parsed, "path");
+    if path.trim().is_empty() {
+        return None;
+    }
+    let name = file_name_of_path(&path);
+    let start_line = json_u64(parsed, "startLine");
+    if start_line == 0 {
+        return Some(name);
+    }
+    let end_line = json_u64(parsed, "endLine");
+    Some(if end_line > start_line {
+        format!("{name}:L{start_line}-L{end_line}")
+    } else {
+        format!("{name}:L{start_line}")
+    })
+}
+
+/// 读取标签 JSON 的无符号整数字段，缺失或非数字时返回 0。
+fn json_u64(parsed: &serde_json::Value, key: &str) -> u64 {
+    parsed
+        .get(key)
+        .and_then(|field| field.as_u64())
+        .unwrap_or(0)
 }
 
 /// 读取标签 JSON 的字符串字段，缺失或非字符串时返回空串。

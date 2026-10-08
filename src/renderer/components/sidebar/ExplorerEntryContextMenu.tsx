@@ -5,6 +5,7 @@ import {
   Copy,
   FolderOpen,
   Loader2,
+  MessageSquarePlus,
   Pencil,
   Terminal,
   Trash2,
@@ -32,6 +33,8 @@ type ExplorerEntryContextMenuProps = {
   onDeleteSelected?: () => Promise<void>;
   /** 批量复制选中路径（selectedCount > 1 时使用）。 */
   onCopySelectedPaths?: () => void;
+  /** 将当前条目（多选时为整个选中集合）添加到聊天输入框。 */
+  onAddToInput: () => void;
   onOpenTerminal?: (cwd: string) => void;
   onRename: (newName: string) => Promise<void>;
   position: { x: number; y: number };
@@ -49,6 +52,7 @@ export function ExplorerEntryContextMenu({
   onDelete,
   onDeleteSelected,
   onCopySelectedPaths,
+  onAddToInput,
   onOpenTerminal,
   onRename,
   position,
@@ -140,7 +144,7 @@ export function ExplorerEntryContextMenu({
             ? error.message
             : t("sidebar.openWithError", {
                 defaultValue: "Failed to detect installed IDEs",
-              })
+              }),
         );
       })
       .finally(() => setIsLoadingIdes(false));
@@ -171,7 +175,7 @@ export function ExplorerEntryContextMenu({
         window.clearTimeout(openWithCloseTimerRef.current);
       }
     },
-    []
+    [],
   );
 
   const { position: openWithPosition } = useMenuPosition({
@@ -182,7 +186,7 @@ export function ExplorerEntryContextMenu({
   });
 
   const handleRenameSubmit = async (
-    event: React.FormEvent<HTMLFormElement>
+    event: React.FormEvent<HTMLFormElement>,
   ): Promise<void> => {
     event.preventDefault();
     const trimmedName = newName.trim();
@@ -233,7 +237,7 @@ export function ExplorerEntryContextMenu({
     if (!isDirectory) {
       const lastSep = Math.max(
         entryPath.lastIndexOf("/"),
-        entryPath.lastIndexOf("\\")
+        entryPath.lastIndexOf("\\"),
       );
       cwd = lastSep === -1 ? entryPath : entryPath.slice(0, lastSep);
     }
@@ -259,6 +263,11 @@ export function ExplorerEntryContextMenu({
     onCopySelectedPaths?.();
   };
 
+  const handleAddToInput = (): void => {
+    onClose();
+    onAddToInput();
+  };
+
   const handleOpenInIde = (ide: IdeInfo): void => {
     // 先收起二级菜单；打开成功才关闭整个菜单，失败时保留菜单并
     // 重新展开二级菜单展示错误，避免错误信息一闪而过。
@@ -272,7 +281,7 @@ export function ExplorerEntryContextMenu({
             ? error.message
             : t("sidebar.openInIdeError", {
                 defaultValue: "Failed to open project in IDE",
-              })
+              }),
         );
         setIsOpenWithOpen(true);
       });
@@ -347,6 +356,20 @@ export function ExplorerEntryContextMenu({
             </div>
             <button
               className="explorer-entry-context-menu-item"
+              onClick={handleAddToInput}
+              role="menuitem"
+              type="button"
+            >
+              <MessageSquarePlus size={13} />
+              <span>
+                {t("sidebar.explorerMultiSelectAddToConversation", {
+                  defaultValue: "Add {{count}} items to conversation",
+                  values: { count: selectedCount },
+                })}
+              </span>
+            </button>
+            <button
+              className="explorer-entry-context-menu-item"
               onClick={handleCopySelectedPaths}
               role="menuitem"
               type="button"
@@ -377,6 +400,19 @@ export function ExplorerEntryContextMenu({
           </>
         ) : (
           <>
+            <button
+              className="explorer-entry-context-menu-item"
+              onClick={handleAddToInput}
+              role="menuitem"
+              type="button"
+            >
+              <MessageSquarePlus size={13} />
+              <span>
+                {t("rightPanel.addToConversation", {
+                  defaultValue: "Add to conversation",
+                })}
+              </span>
+            </button>
             <button
               className="explorer-entry-context-menu-item"
               onClick={handleOpenTerminalClick}
@@ -470,7 +506,7 @@ export function ExplorerEntryContextMenu({
                       >
                         {renderOpenWithItems()}
                       </div>,
-                      document.body
+                      document.body,
                     )
                   : null}
               </span>
@@ -483,7 +519,9 @@ export function ExplorerEntryContextMenu({
               type="button"
             >
               <Pencil size={13} />
-              <span>{t("sidebar.explorerRename", { defaultValue: "Rename" })}</span>
+              <span>
+                {t("sidebar.explorerRename", { defaultValue: "Rename" })}
+              </span>
             </button>
             <button
               className="explorer-entry-context-menu-item danger"
@@ -492,12 +530,17 @@ export function ExplorerEntryContextMenu({
               type="button"
             >
               <Trash2 size={13} />
-              <span>{t("sidebar.explorerDelete", { defaultValue: "Delete" })}</span>
+              <span>
+                {t("sidebar.explorerDelete", { defaultValue: "Delete" })}
+              </span>
             </button>
           </>
         )
       ) : mode === "rename" ? (
-        <form className="explorer-entry-context-menu-form" onSubmit={handleRenameSubmit}>
+        <form
+          className="explorer-entry-context-menu-form"
+          onSubmit={handleRenameSubmit}
+        >
           <label htmlFor="explorer-entry-rename-input">
             {t("sidebar.explorerRename", { defaultValue: "Rename" })}
           </label>
@@ -562,6 +605,6 @@ export function ExplorerEntryContextMenu({
         </div>
       )}
     </div>,
-    document.body
+    document.body,
   );
 }

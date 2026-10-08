@@ -126,6 +126,36 @@ export type QuoteTag = {
   charCount: number;
 };
 
+export type AnnotationTag = {
+  /** 被标注文件路径 */
+  filePath: string;
+  /** 标注起始行（0 表示行号未知） */
+  startLine: number;
+  /** 标注结束行 */
+  endLine: number;
+  /** 被标注的原文片段 */
+  quote: string;
+  /** 标注正文 */
+  content: string;
+  /** 行号口径：源码文件 / 文档提取正文 */
+  representation: "source" | "extracted-text";
+};
+
+export type FileSelectionTag = {
+  /** 选区所在文件路径 */
+  path: string;
+  /** 文件名（chip 显示与图标） */
+  name: string;
+  /** 选区起始行（0 表示行号未知） */
+  startLine: number;
+  /** 选区结束行 */
+  endLine: number;
+  /** 选中原文（随消息发送给 AI） */
+  content: string;
+  /** 行号口径：源码文件 / 文档提取正文 */
+  representation: "source" | "extracted-text";
+};
+
 /**
  * 浏览器面板元素选择器完成选取后，通过该全局事件将 ElementTag 派发给
  * 聊天输入框（ChatInputView）插入为 element chip。
@@ -137,6 +167,13 @@ export const INSERT_ELEMENT_TAG_EVENT = "snow:insert-element-tag";
  * 聊天输入框插入为 quote chip。
  */
 export const INSERT_QUOTE_TAG_EVENT = "snow:insert-quote-tag";
+
+/**
+ * 资源管理器右键菜单「添加到输入框」通过该全局事件将选中条目（支持
+ * ctrl/shift 多选，文件与文件夹均支持）派发给聊天输入框插入为 file chip，
+ * 效果与拖拽条目到输入框一致。
+ */
+export const INSERT_FILE_TAGS_EVENT = "snow:insert-file-tags";
 
 /**
  * 自定义剪贴板 MIME 类型：应用内复制/剪切选区时携带编辑区的完整
@@ -158,7 +195,9 @@ export type ContentSegment =
   | { type: "conversation"; tag: ConversationTag }
   | { type: "quote"; tag: QuoteTag }
   | { type: "command"; tag: CommandTag }
-  | { type: "skill"; tag: SkillTag };
+  | { type: "skill"; tag: SkillTag }
+  | { type: "annotation"; tag: AnnotationTag }
+  | { type: "file-selection"; tag: FileSelectionTag };
 
 /**
  * 将行号数组格式化为紧凑的字符串表示，连续区间合并为范围。
@@ -220,6 +259,28 @@ export const parseLinesStr = (str: string): number[] => {
   }
   return result;
 };
+
+/**
+ * 文件 + 行号区间的显示文本：`文件名:L9-L13`（单行取 `文件名:L9`，行号未知时
+ * 仅文件名），与文件 chip 的行号写法保持一致。
+ */
+export const formatFileLinesLabel = (
+  filePath: string,
+  startLine: number,
+  endLine: number,
+): string => {
+  const name = filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
+  if (startLine <= 0) {
+    return name;
+  }
+  return endLine > startLine
+    ? `${name}:L${startLine}-L${endLine}`
+    : `${name}:L${startLine}`;
+};
+
+/** 标注 chip 的显示文本（复用文件 + 行号标签）。 */
+export const formatAnnotationLabel = (tag: AnnotationTag): string =>
+  formatFileLinesLabel(tag.filePath, tag.startLine, tag.endLine);
 
 export const encodeFileTag = (tag: FileTag): string => {
   const kind = tag.isDirectory ? "dir" : "file";
@@ -346,6 +407,38 @@ export const encodeQuoteTag = (tag: QuoteTag): string =>
   })}@@`;
 
 /**
+ * 将文件标注（审阅标注）编码为 annotation 标签。
+ *
+ * 后端展开为可读文本时按「文件:行号 + 引用原文 + 标注正文」呈现，因此这里
+ * 只携带结构化字段；quote / content 为自由文本（可能含 `@@`），以 base64 承载。
+ */
+export const encodeAnnotationTag = (tag: AnnotationTag): string =>
+  `@@annotation:${JSON.stringify({
+    filePath: tag.filePath,
+    startLine: tag.startLine,
+    endLine: tag.endLine,
+    quote: utf8ToBase64(tag.quote),
+    content: utf8ToBase64(tag.content),
+    representation: tag.representation,
+  })}@@`;
+
+/**
+ * 将文件选区引用编码为 file-selection 标签。
+ *
+ * 同时承载文件路径、行号区间与选中原文：只给行号时 AI 必须自行读取整行，
+ * 与用户实际选中的词不对应；选中原文为自由文本（可能含 `@@`），以 base64 承载。
+ */
+export const encodeFileSelectionTag = (tag: FileSelectionTag): string =>
+  `@@file-selection:${JSON.stringify({
+    path: tag.path,
+    name: tag.name,
+    startLine: tag.startLine,
+    endLine: tag.endLine,
+    content: utf8ToBase64(tag.content),
+    representation: tag.representation,
+  })}@@`;
+
+/**
  * 将浏览器元素选择器选取的元素编码为 element 标签。
  * text / note / domTree 为自由文本（可能含 `@@`），以 base64 承载，
  * 避免破坏标签终止符；url / tag / label 为结构化字段，直接 JSON 内嵌。
@@ -427,7 +520,7 @@ export const buildTextSnippetSummary = (text: string, maxLen = 30): string => {
 };
 
 const contentTagPattern =
-  /@@(file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill):(.+?)@@/g;
+  /@@(file-selection|file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill|annotation):(.+?)@@/g;
 
 /** Treat chips as opaque encoded spans: no attachment loading or re-encoding. */
 export const splitDraftText = (
@@ -636,6 +729,59 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
       } catch {
         segments.push({ type: "text", content: match[0] });
       }
+    } else if (kind === "file-selection") {
+      try {
+        const data = JSON.parse(value) as Partial<FileSelectionTag>;
+        const path = typeof data.path === "string" ? data.path : "";
+        if (!path.trim()) {
+          segments.push({ type: "text", content: match[0] });
+        } else {
+          segments.push({
+            type: "file-selection",
+            tag: {
+              path,
+              name:
+                data.name || path.split(/[\\/]/).filter(Boolean).pop() || path,
+              startLine:
+                typeof data.startLine === "number" ? data.startLine : 0,
+              endLine: typeof data.endLine === "number" ? data.endLine : 0,
+              content: data.content ? base64ToUtf8(data.content) : "",
+              representation:
+                data.representation === "extracted-text"
+                  ? "extracted-text"
+                  : "source",
+            },
+          });
+        }
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "annotation") {
+      try {
+        const data = JSON.parse(value) as Partial<AnnotationTag>;
+        const filePath = typeof data.filePath === "string" ? data.filePath : "";
+        if (!filePath.trim()) {
+          segments.push({ type: "text", content: match[0] });
+        } else {
+          segments.push({
+            type: "annotation",
+            tag: {
+              filePath,
+              startLine:
+                typeof data.startLine === "number" ? data.startLine : 0,
+              endLine: typeof data.endLine === "number" ? data.endLine : 0,
+              quote: data.quote ? base64ToUtf8(data.quote) : "",
+              content: data.content ? base64ToUtf8(data.content) : "",
+              representation:
+                data.representation === "extracted-text"
+                  ? "extracted-text"
+                  : "source",
+            },
+          });
+        }
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
     } else if (kind === "commit") {
       try {
         const data = JSON.parse(value) as Partial<CommitTag>;
@@ -770,6 +916,16 @@ export const summarizeContentAsPlainText = (content: string): string => {
           ? `${segment.tag.title} ${segment.tag.url}`
           : segment.tag.url,
       );
+    } else if (segment.type === "annotation") {
+      parts.push(formatAnnotationLabel(segment.tag));
+    } else if (segment.type === "file-selection") {
+      parts.push(
+        formatFileLinesLabel(
+          segment.tag.path,
+          segment.tag.startLine,
+          segment.tag.endLine,
+        ),
+      );
     } else if (segment.type === "conversation") {
       parts.push(segment.tag.title);
     } else if (segment.type === "skill") {
@@ -833,6 +989,14 @@ export const getChipDisplayLabel = (segment: ChipSegment): string => {
       return segment.tag.name;
     case "command":
       return `/${segment.tag.name}`;
+    case "annotation":
+      return formatAnnotationLabel(segment.tag);
+    case "file-selection":
+      return formatFileLinesLabel(
+        segment.tag.path,
+        segment.tag.startLine,
+        segment.tag.endLine,
+      );
     default: {
       const { tag } = segment;
       const linesStr =
@@ -1076,6 +1240,59 @@ export const createQuoteChipHtml = (tag: QuoteTag): string => {
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
+const ANNOTATION_ICON_SVG =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg>';
+
+/**
+ * 生成文件标注（审阅标注）chip HTML。显示「文件名:行号」，悬停提示标注正文；
+ * 完整标注信息存放在 data-annotation-data 中，供序列化与剪贴板还原使用。
+ */
+export const createAnnotationChipHtml = (tag: AnnotationTag): string => {
+  const annotationData = escapeHtml(
+    JSON.stringify({
+      filePath: tag.filePath,
+      startLine: tag.startLine,
+      endLine: tag.endLine,
+      quote: utf8ToBase64(tag.quote),
+      content: utf8ToBase64(tag.content),
+      representation: tag.representation,
+    }),
+  );
+  const label = formatAnnotationLabel(tag);
+  const title = tag.content.trim() ? `${label} - ${tag.content}` : label;
+  return `<span class="file-chip annotation-chip" contenteditable="false" data-annotation-tag="true" data-annotation-data="${annotationData}" title="${escapeHtml(
+    title,
+  )}"><span class="file-chip-icon">${ANNOTATION_ICON_SVG}</span><span class="file-chip-name">${escapeHtml(
+    label,
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
+/**
+ * 生成文件选区引用 chip HTML。显示「文件名:行号」，悬停提示选中内容的摘要；
+ * 完整选区信息存放在 data-file-selection-data 中，供序列化（发送给 AI）、
+ * 悬停详情预览与剪贴板复制/粘贴还原使用。
+ */
+export const createFileSelectionChipHtml = (tag: FileSelectionTag): string => {
+  const selectionData = escapeHtml(
+    JSON.stringify({
+      path: tag.path,
+      name: tag.name,
+      startLine: tag.startLine,
+      endLine: tag.endLine,
+      content: utf8ToBase64(tag.content),
+      representation: tag.representation,
+    }),
+  );
+  const label = formatFileLinesLabel(tag.path, tag.startLine, tag.endLine);
+  const summary = buildTextSnippetSummary(tag.content, 60);
+  const icon = getFileTypeIconHtml(tag.name, false, false, 12);
+  return `<span class="file-chip file-selection-chip" contenteditable="false" data-file-selection-tag="true" data-file-selection-data="${selectionData}" title="${escapeHtml(
+    `${label} · ${summary}`,
+  )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
+    label,
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
 /**
  * 将内容片段列表渲染为可插入编辑区的 HTML：纯文本做 HTML 转义
  * （换行转为 <br>），各类标签转换为对应 chip。用于剪贴板粘贴、
@@ -1120,6 +1337,12 @@ export const buildSegmentsHtml = (segments: ContentSegment[]): string =>
       if (segment.type === "skill") {
         return createSkillChipHtml(segment.tag);
       }
+      if (segment.type === "annotation") {
+        return createAnnotationChipHtml(segment.tag);
+      }
+      if (segment.type === "file-selection") {
+        return createFileSelectionChipHtml(segment.tag);
+      }
       return createChipHtml(segment.tag);
     })
     .join("");
@@ -1137,6 +1360,8 @@ type ChipSerializers = {
   quote: (tag: QuoteTag) => string;
   command: (tag: CommandTag) => string;
   skill: (tag: SkillTag) => string;
+  annotation: (tag: AnnotationTag) => string;
+  fileSelection: (tag: FileSelectionTag) => string;
 };
 
 const readEditableContentWith = (
@@ -1347,6 +1572,54 @@ const readEditableContentWith = (
         } catch {
           // Ignore malformed skill data
         }
+      } else if (elem.dataset.annotationTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.annotationData || "{}",
+          ) as Partial<AnnotationTag>;
+          const filePath =
+            typeof data.filePath === "string" ? data.filePath : "";
+          if (filePath.trim()) {
+            result += serializers.annotation({
+              filePath,
+              startLine:
+                typeof data.startLine === "number" ? data.startLine : 0,
+              endLine: typeof data.endLine === "number" ? data.endLine : 0,
+              quote: data.quote ? base64ToUtf8(data.quote) : "",
+              content: data.content ? base64ToUtf8(data.content) : "",
+              representation:
+                data.representation === "extracted-text"
+                  ? "extracted-text"
+                  : "source",
+            });
+          }
+        } catch {
+          // Ignore malformed annotation data
+        }
+      } else if (elem.dataset.fileSelectionTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.fileSelectionData || "{}",
+          ) as Partial<FileSelectionTag>;
+          const path = typeof data.path === "string" ? data.path : "";
+          if (path.trim()) {
+            result += serializers.fileSelection({
+              path,
+              name:
+                data.name || path.split(/[\\/]/).filter(Boolean).pop() || path,
+              startLine:
+                typeof data.startLine === "number" ? data.startLine : 0,
+              endLine: typeof data.endLine === "number" ? data.endLine : 0,
+              content: data.content ? base64ToUtf8(data.content) : "",
+              representation:
+                data.representation === "extracted-text"
+                  ? "extracted-text"
+                  : "source",
+            });
+          }
+        } catch {
+          // Ignore malformed file-selection data
+        }
       } else if (elem.tagName === "BR") {
         result += "\n";
       } else {
@@ -1380,6 +1653,8 @@ export const readEditableContent = (el: HTMLElement): string =>
     quote: encodeQuoteTag,
     command: encodeCommandTag,
     skill: encodeSkillTag,
+    annotation: encodeAnnotationTag,
+    fileSelection: encodeFileSelectionTag,
   });
 
 /**
@@ -1431,6 +1706,14 @@ export const readEditableContentAsPlainText = (el: HTMLElement): string =>
     quote: (tag) => tag.content,
     command: (tag) => tag.prompt,
     skill: (tag) => tag.name,
+    annotation: (tag) =>
+      tag.content.trim()
+        ? `${formatAnnotationLabel(tag)}\n${tag.content}`
+        : formatAnnotationLabel(tag),
+    fileSelection: (tag) => {
+      const label = formatFileLinesLabel(tag.path, tag.startLine, tag.endLine);
+      return tag.content.trim() ? `${label}\n${tag.content}` : label;
+    },
   });
 
 export const insertHtmlAtSelection = (html: string): void => {

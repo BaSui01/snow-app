@@ -17,6 +17,7 @@ import {
   Globe,
   Link2,
   MessageSquareQuote,
+  MessageSquareText,
   MousePointer2,
   ScanSearch,
   Wand2,
@@ -27,6 +28,8 @@ import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type { UserMessageProps } from "../utils/types";
 import {
   extractUrlHost,
+  formatAnnotationLabel,
+  formatFileLinesLabel,
   formatLinesStr,
   parseContentSegments,
 } from "../../chatInput/fileTagUtils";
@@ -507,6 +510,58 @@ export const UserMessage = memo(
                     />
                     <span className="user-message-file-chip-name">
                       {segment.tag.name}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "annotation") {
+                const label = formatAnnotationLabel(segment.tag);
+                const annotationTitle = segment.tag.content.trim()
+                  ? `${label} - ${segment.tag.content}`
+                  : label;
+                return (
+                  <span
+                    className="user-message-file-chip annotation-chip"
+                    key={index}
+                    title={annotationTitle}
+                    onMouseMove={(event) =>
+                      handleTextSnippetChipMouseMove(event, segment.tag.content)
+                    }
+                    onMouseLeave={scheduleHideTextSnippetPreview}
+                  >
+                    <MessageSquareText
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "#8b5cf6" }}
+                    />
+                    <span className="user-message-file-chip-name">{label}</span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "file-selection") {
+                const selectionLabel = formatFileLinesLabel(
+                  segment.tag.path,
+                  segment.tag.startLine,
+                  segment.tag.endLine,
+                );
+                return (
+                  <span
+                    className="user-message-file-chip file-selection-chip"
+                    key={index}
+                    title={segment.tag.path}
+                    onMouseMove={(event) =>
+                      handleTextSnippetChipMouseMove(event, segment.tag.content)
+                    }
+                    onMouseLeave={scheduleHideTextSnippetPreview}
+                  >
+                    {getFileTypeIcon(segment.tag.name, false, false, {
+                      size: 12,
+                      className: "user-message-file-chip-icon",
+                    })}
+                    <span className="user-message-file-chip-name">
+                      {selectionLabel}
                     </span>
                   </span>
                 );

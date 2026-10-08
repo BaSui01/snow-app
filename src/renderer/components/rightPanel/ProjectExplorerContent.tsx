@@ -37,6 +37,7 @@ const FileEditModal = lazy(() =>
   })),
 );
 import type { FileTag } from "../mainContent/chatInput/fileTagUtils";
+import { INSERT_FILE_TAGS_EVENT } from "../mainContent/chatInput/fileTagUtils";
 import { buildSshConnectParams } from "../sidebar/personalization/roleFileUtils";
 import { explorerPlacementStore } from "../common/explorerPlacementStore";
 import { rightPanelEvents } from "./rightPanelEvents";
@@ -1218,6 +1219,45 @@ export function ProjectExplorerContent({
     return tags;
   }, [searchResults, selectedLines]);
 
+  // 右键菜单「添加到输入框」：与拖拽条目到输入框完全等效——搜索结果里已选中
+  // 行号时携带行号，否则派发当前选中条目（含 ctrl/shift 多选的文件与文件夹）。
+  const handleAddSelectedToInput = useCallback((): void => {
+    let tags = buildSelectedFileTags();
+    if (tags.length === 0) {
+      const known = new Map<string, { name: string; isDirectory: boolean }>();
+      const collectLoaded = (nodes: TreeNode[]): void => {
+        for (const node of nodes) {
+          known.set(node.path, {
+            name: node.name,
+            isDirectory: node.isDirectory,
+          });
+          if (node.children) {
+            collectLoaded(node.children);
+          }
+        }
+      };
+      collectLoaded(tree);
+      for (const result of searchResults) {
+        if (!known.has(result.path)) {
+          known.set(result.path, { name: result.name, isDirectory: false });
+        }
+      }
+      tags = [];
+      for (const path of selectedPaths) {
+        const info = known.get(path);
+        if (info) {
+          tags.push({ path, name: info.name, isDirectory: info.isDirectory });
+        }
+      }
+    }
+    if (tags.length === 0) {
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent<FileTag[]>(INSERT_FILE_TAGS_EVENT, { detail: tags }),
+    );
+  }, [buildSelectedFileTags, searchResults, selectedPaths, tree]);
+
   // 点击文件名：清空行选择，打开文件（不带行号）。双击序列中的第二次
   // 点击不重复打开 tab，交由 onDoubleClick 打开快速编辑弹窗。
   const handleSearchFileNameClick = useCallback(
@@ -1641,6 +1681,7 @@ export function ProjectExplorerContent({
           onDelete={() => handleDeleteEntry(entryContextMenu.path)}
           onDeleteSelected={() => handleDeleteSelected()}
           onCopySelectedPaths={() => handleCopySelectedPaths()}
+          onAddToInput={() => handleAddSelectedToInput()}
           onOpenTerminal={onOpenTerminal}
           onRename={(newName) =>
             handleRenameEntry(entryContextMenu.path, newName)

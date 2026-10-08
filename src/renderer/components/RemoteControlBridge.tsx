@@ -36,7 +36,11 @@ import {
   runRemoteWorkflow,
   type WorkflowRemoteContext,
 } from "./remoteControlWorkflow";
-import { parseContentSegments } from "./mainContent/chatInput/fileTagUtils";
+import {
+  formatAnnotationLabel,
+  formatFileLinesLabel,
+  parseContentSegments,
+} from "./mainContent/chatInput/fileTagUtils";
 import type {
   SnowRemoteChatInputState,
   SnowRemoteContentBlock,
@@ -234,7 +238,15 @@ const toRemoteContentBlocks = (
                         ? segment.tag.summary || "引用"
                         : segment.type === "command"
                           ? `/${segment.tag.name}`
-                          : segment.tag.name || "Skill";
+                          : segment.type === "annotation"
+                            ? formatAnnotationLabel(segment.tag)
+                            : segment.type === "file-selection"
+                              ? formatFileLinesLabel(
+                                  segment.tag.path,
+                                  segment.tag.startLine,
+                                  segment.tag.endLine,
+                                )
+                              : segment.tag.name || "Skill";
       const detail =
         segment.type === "text-snippet" ||
         segment.type === "quote" ||
@@ -244,7 +256,11 @@ const toRemoteContentBlocks = (
             ? segment.tag.url
             : segment.type === "skill"
               ? segment.tag.description
-              : undefined;
+              : segment.type === "annotation"
+                ? segment.tag.content
+                : segment.type === "file-selection"
+                  ? segment.tag.content
+                  : undefined;
       return [
         {
           type: "reference",
@@ -285,6 +301,16 @@ const toRemotePreview = (content: string | undefined): string => {
       if (segment.type === "review") return `[代码审查 ${segment.tag.summary}]`;
       if (segment.type === "quote") return `[引用 ${segment.tag.summary}]`;
       if (segment.type === "command") return `[指令 /${segment.tag.name}]`;
+      if (segment.type === "annotation") {
+        return `[标注 ${formatAnnotationLabel(segment.tag)}]`;
+      }
+      if (segment.type === "file-selection") {
+        return `[文件选区 ${formatFileLinesLabel(
+          segment.tag.path,
+          segment.tag.startLine,
+          segment.tag.endLine,
+        )}]`;
+      }
       return `[文本片段 ${segment.tag.summary}]`;
     })
     .join("")

@@ -6,6 +6,7 @@ import {
   Globe,
   Link2,
   MessageSquareQuote,
+  MessageSquareText,
   MousePointer2,
   ScanSearch,
   Wand2,
@@ -262,6 +263,43 @@ export const ContentChips = ({
               className="user-message-file-chip-icon"
               style={{ color: "#a855f7" }}
             />
+            <span className="user-message-file-chip-name">
+              {getChipDisplayLabel(segment)}
+            </span>
+          </span>
+        );
+      }
+
+      if (segment.type === "annotation") {
+        return (
+          <span
+            key={index}
+            className="user-message-file-chip annotation-chip"
+            title={segment.tag.content}
+          >
+            <MessageSquareText
+              size={12}
+              className="user-message-file-chip-icon"
+              style={{ color: "#8b5cf6" }}
+            />
+            <span className="user-message-file-chip-name">
+              {getChipDisplayLabel(segment)}
+            </span>
+          </span>
+        );
+      }
+
+      if (segment.type === "file-selection") {
+        return (
+          <span
+            key={index}
+            className="user-message-file-chip file-selection-chip"
+            title={segment.tag.path}
+          >
+            {getFileTypeIcon(segment.tag.name, false, false, {
+              size: 12,
+              className: "user-message-file-chip-icon",
+            })}
             <span className="user-message-file-chip-name">
               {getChipDisplayLabel(segment)}
             </span>

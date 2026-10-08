@@ -625,7 +625,8 @@ export const UserMessageRail = memo(
                   const summary = summarizeContentAsPlainText(msg.content);
                   const hasChips =
                     !msg.isContextCompaction &&
-                    (msg.content.includes("@@file:") ||
+                    (msg.content.includes("@@file-selection:") ||
+                      msg.content.includes("@@file:") ||
                       msg.content.includes("@@dir:") ||
                       msg.content.includes("@@image:") ||
                       msg.content.includes("@@commit:") ||
@@ -636,6 +637,7 @@ export const UserMessageRail = memo(
                       msg.content.includes("@@web:") ||
                       msg.content.includes("@@conversation:") ||
                       msg.content.includes("@@command:") ||
+                      msg.content.includes("@@annotation:") ||
                       msg.content.includes("@@skill:"));
                   const isVisible = visibleUserIndices.has(index);
                   const itemLabel = msg.isContextCompaction

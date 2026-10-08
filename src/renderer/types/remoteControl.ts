@@ -97,7 +97,9 @@ export type SnowRemoteContentBlock =
         | "conversation"
         | "quote"
         | "command"
-        | "skill";
+        | "skill"
+        | "annotation"
+        | "file-selection";
       label: string;
       detail?: string;
     };

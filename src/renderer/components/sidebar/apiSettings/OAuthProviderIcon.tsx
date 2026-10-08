@@ -1,4 +1,4 @@
-import { Anthropic, Antigravity, Codex, Kimi } from "@lobehub/icons";
+import { Anthropic, Antigravity, Codex, Grok, Kimi } from "@lobehub/icons";
 import { KeyRound } from "lucide-react";
 
 type OAuthProviderIconProps = {
@@ -21,6 +21,9 @@ export function OAuthProviderIcon({
     case "kimi":
     case "moonshot":
       return <Kimi.Color size={size} />;
+    case "xai":
+    case "grok":
+      return <Grok size={size} />;
     default:
       return <KeyRound size={size} strokeWidth={1.8} />;
   }

@@ -7,7 +7,7 @@ use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{anthropic, antigravity, codex};
+use super::{anthropic, antigravity, codex, xai};
 use crate::storage::services::api_configs as api_configs_service;
 use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::{ensure_database_file, ApiConfigInput, ApiConfigRecord};
@@ -22,6 +22,7 @@ pub enum OAuthProviderId {
     Codex,
     Anthropic,
     Antigravity,
+    Xai,
 }
 
 impl OAuthProviderId {
@@ -30,6 +31,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex,
             OAuthProviderId::Anthropic,
             OAuthProviderId::Antigravity,
+            OAuthProviderId::Xai,
         ]
     }
 
@@ -38,6 +40,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => "codex",
             OAuthProviderId::Anthropic => "anthropic",
             OAuthProviderId::Antigravity => "antigravity",
+            OAuthProviderId::Xai => "xai",
         }
     }
 
@@ -54,6 +57,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => "ChatGPT Codex",
             OAuthProviderId::Anthropic => "Anthropic (Claude)",
             OAuthProviderId::Antigravity => "Antigravity (Google)",
+            OAuthProviderId::Xai => "xAI (Grok)",
         }
     }
 
@@ -62,6 +66,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => codex::DEFAULT_MODEL,
             OAuthProviderId::Anthropic => anthropic::DEFAULT_MODEL,
             OAuthProviderId::Antigravity => antigravity::DEFAULT_MODEL,
+            OAuthProviderId::Xai => xai::DEFAULT_MODEL,
         }
     }
 
@@ -70,6 +75,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => 400_000,
             OAuthProviderId::Anthropic => 200_000,
             OAuthProviderId::Antigravity => 1_000_000,
+            OAuthProviderId::Xai => 500_000,
         }
     }
 
@@ -78,6 +84,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => codex::BACKEND_BASE_URL,
             OAuthProviderId::Anthropic => anthropic::BACKEND_BASE_URL,
             OAuthProviderId::Antigravity => antigravity::BACKEND_BASE_URL,
+            OAuthProviderId::Xai => xai::BACKEND_BASE_URL,
         }
     }
 
@@ -86,6 +93,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => "responses",
             OAuthProviderId::Anthropic => "anthropic",
             OAuthProviderId::Antigravity => "gemini",
+            OAuthProviderId::Xai => "responses",
         }
     }
 
@@ -94,6 +102,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => true,
             OAuthProviderId::Anthropic => true,
             OAuthProviderId::Antigravity => true,
+            OAuthProviderId::Xai => true,
         }
     }
 
@@ -106,6 +115,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => codex::CALLBACK_PATH,
             OAuthProviderId::Anthropic => anthropic::CALLBACK_PATH,
             OAuthProviderId::Antigravity => antigravity::CALLBACK_PATH,
+            OAuthProviderId::Xai => xai::CALLBACK_PATH,
         }
     }
 
@@ -114,6 +124,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => codex::CALLBACK_PORTS,
             OAuthProviderId::Anthropic => anthropic::CALLBACK_PORTS,
             OAuthProviderId::Antigravity => antigravity::CALLBACK_PORTS,
+            OAuthProviderId::Xai => xai::CALLBACK_PORTS,
         }
     }
 
@@ -122,6 +133,7 @@ impl OAuthProviderId {
             OAuthProviderId::Codex => "127.0.0.1",
             OAuthProviderId::Anthropic => "localhost",
             OAuthProviderId::Antigravity => "localhost",
+            OAuthProviderId::Xai => "127.0.0.1",
         }
     }
 }
@@ -137,6 +149,9 @@ pub fn detect_provider_from_base_url(base_url: &str) -> Option<OAuthProviderId> 
     if normalized.contains(codex::BACKEND_BASE_URL_MARKER) {
         return Some(OAuthProviderId::Codex);
     }
+    if normalized.contains(xai::BACKEND_BASE_URL_MARKER) {
+        return Some(OAuthProviderId::Xai);
+    }
     None
 }
 
@@ -145,6 +160,14 @@ pub fn now_epoch_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
+}
+
+pub fn decode_jwt_payload(jwt: &str) -> Option<Value> {
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn random_base64_url(bytes_len: usize) -> Result<String> {
@@ -277,6 +300,7 @@ pub fn build_authorize_url(
         OAuthProviderId::Antigravity => {
             antigravity::build_authorize_url(redirect_uri, &pkce.challenge, state)
         }
+        OAuthProviderId::Xai => xai::build_authorize_url(redirect_uri, &pkce.challenge, state),
     }
 }
 
@@ -295,6 +319,7 @@ pub async fn exchange_code(
         OAuthProviderId::Antigravity => {
             antigravity::exchange_code(code, redirect_uri, code_verifier).await
         }
+        OAuthProviderId::Xai => xai::exchange_code(code, redirect_uri, code_verifier).await,
     }
 }
 
@@ -306,6 +331,7 @@ pub async fn refresh_tokens(
         OAuthProviderId::Codex => codex::refresh_tokens(refresh_token).await,
         OAuthProviderId::Anthropic => anthropic::refresh_tokens(refresh_token).await,
         OAuthProviderId::Antigravity => antigravity::refresh_tokens(refresh_token).await,
+        OAuthProviderId::Xai => xai::refresh_tokens(refresh_token).await,
     }
 }
 
@@ -318,6 +344,7 @@ pub async fn fetch_models(
         OAuthProviderId::Codex => codex::fetch_models(access_token, account_id).await,
         OAuthProviderId::Anthropic => anthropic::fetch_models(access_token).await,
         OAuthProviderId::Antigravity => antigravity::fetch_models(access_token, account_id).await,
+        OAuthProviderId::Xai => xai::fetch_models(access_token).await,
     }
 }
 
@@ -334,6 +361,7 @@ pub fn apply_request_headers(
         OAuthProviderId::Antigravity => {
             antigravity::apply_request_headers(&config.api_key, headers)
         }
+        OAuthProviderId::Xai => {}
     }
 }
 
@@ -492,6 +520,7 @@ pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigR
         OAuthProviderId::Codex => codex::parse_claims(&tokens.id_token),
         OAuthProviderId::Anthropic => anthropic::parse_claims(&tokens),
         OAuthProviderId::Antigravity => antigravity::parse_claims(&tokens),
+        OAuthProviderId::Xai => xai::parse_claims(&tokens.id_token),
     };
 
     let updated_metadata = OAuthProfileMetadata {

@@ -2040,12 +2040,15 @@ export const en = {
   "settings.oauthProvider.codex": "Codex (ChatGPT subscription)",
   "settings.oauthProvider.anthropic": "Anthropic (Claude subscription)",
   "settings.oauthProvider.antigravity": "Antigravity (Google subscription)",
+  "settings.oauthProvider.xai": "xAI (Grok subscription)",
   "settings.oauthProviderDesc.codex":
     "Sign in to Codex through the OAuth flow. The credential file is fetched and saved automatically.",
   "settings.oauthProviderDesc.anthropic":
     "Sign in to Anthropic (Claude) through the OAuth flow. The credential is fetched and saved automatically.",
   "settings.oauthProviderDesc.antigravity":
     "Sign in to Google Antigravity through the OAuth flow. The project, available models, and credential are fetched and saved automatically.",
+  "settings.oauthProviderDesc.xai":
+    "Sign in to xAI (Grok) through the OAuth flow. The available models and credential are fetched and saved automatically.",
   "settings.oauthProviderDescFallback":
     "Sign in to {{name}} through the OAuth flow. The credential file is fetched and saved automatically.",
   "settings.oauthProviderMissing": "No OAuth provider is available.",

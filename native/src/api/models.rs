@@ -19,6 +19,7 @@ use crate::api::oauth::codex as codex_oauth;
 use crate::api::oauth::provider::{
     self as oauth_provider, OAuthProfileMetadata, OAuthProviderId,
 };
+use crate::api::oauth::xai as xai_oauth;
 use crate::api::retry::{with_retry_sync, RetryOptions};
 
 #[napi(object)]
@@ -386,6 +387,7 @@ fn fetch_oauth_models(
         OAuthProviderId::Antigravity => {
             antigravity_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
         }
+        OAuthProviderId::Xai => xai_oauth::fetch_models_blocking(base_url, api_key)?,
     };
     Ok(ids
         .into_iter()

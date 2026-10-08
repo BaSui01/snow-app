@@ -5,7 +5,7 @@ use std::time::Duration;
 use napi::bindgen_prelude::*;
 use tokio::sync::oneshot;
 
-use super::{anthropic, antigravity, codex};
+use super::{anthropic, antigravity, codex, xai};
 use super::provider::{self, OAuthProfileMetadata, OAuthProviderId};
 use crate::storage::ensure_database_file;
 
@@ -380,6 +380,7 @@ async fn perform_login(session: &OAuthLoginSession, code: &str) -> Result<OAuthL
         OAuthProviderId::Codex => codex::parse_claims(&tokens.id_token),
         OAuthProviderId::Anthropic => anthropic::parse_claims(&tokens),
         OAuthProviderId::Antigravity => antigravity::parse_claims(&tokens),
+        OAuthProviderId::Xai => xai::parse_claims(&tokens.id_token),
     };
     let metadata = OAuthProfileMetadata {
         provider,

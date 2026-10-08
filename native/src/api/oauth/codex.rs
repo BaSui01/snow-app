@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use base64::Engine;
 use napi::bindgen_prelude::*;
 use serde_json::Value;
 
-use super::provider::{now_epoch_secs, OAuthClaims, OAuthProfileMetadata, OAuthTokenSet};
+use super::provider::{
+    decode_jwt_payload, now_epoch_secs, OAuthClaims, OAuthProfileMetadata, OAuthTokenSet,
+};
 use crate::api::http_client::{build_proxied_client_with_timeout, load_proxy_config_sync};
 
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -267,14 +268,6 @@ pub fn fetch_models_blocking(
     }
 
     parse_models_payload(&body)
-}
-
-fn decode_jwt_payload(jwt: &str) -> Option<Value> {
-    let payload = jwt.split('.').nth(1)?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload)
-        .ok()?;
-    serde_json::from_slice(&bytes).ok()
 }
 
 fn jwt_expiry(jwt: &str) -> Option<i64> {

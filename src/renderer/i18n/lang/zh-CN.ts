@@ -1942,12 +1942,15 @@ export const zhCN = {
   "settings.oauthProvider.codex": "Codex（ChatGPT 订阅）",
   "settings.oauthProvider.anthropic": "Anthropic（Claude 订阅）",
   "settings.oauthProvider.antigravity": "Antigravity（Google 订阅）",
+  "settings.oauthProvider.xai": "xAI（Grok 订阅）",
   "settings.oauthProviderDesc.codex":
     "通过 OAuth 流程登录 Codex 服务，自动获取并保存认证文件。",
   "settings.oauthProviderDesc.anthropic":
     "通过 OAuth 流程登录 Anthropic（Claude）订阅账号，自动获取并保存认证信息。",
   "settings.oauthProviderDesc.antigravity":
     "通过 OAuth 流程登录 Google Antigravity 账号，自动获取项目与可用模型并保存认证信息。",
+  "settings.oauthProviderDesc.xai":
+    "通过 OAuth 流程登录 xAI（Grok）订阅账号，自动获取可用模型并保存认证信息。",
   "settings.oauthProviderDescFallback":
     "通过 OAuth 流程登录 {{name}} 服务，自动获取并保存认证文件。",
   "settings.oauthProviderMissing": "当前没有可用的 OAuth 服务商。",

@@ -1943,12 +1943,15 @@ export const zhTW = {
   "settings.oauthProvider.codex": "Codex（ChatGPT 訂閱）",
   "settings.oauthProvider.anthropic": "Anthropic（Claude 訂閱）",
   "settings.oauthProvider.antigravity": "Antigravity（Google 訂閱）",
+  "settings.oauthProvider.xai": "xAI（Grok 訂閱）",
   "settings.oauthProviderDesc.codex":
     "透過 OAuth 流程登入 Codex 服務，自動取得並儲存認證檔案。",
   "settings.oauthProviderDesc.anthropic":
     "透過 OAuth 流程登入 Anthropic（Claude）訂閱帳號，自動取得並儲存認證資訊。",
   "settings.oauthProviderDesc.antigravity":
     "透過 OAuth 流程登入 Google Antigravity 帳號，自動取得專案與可用模型並儲存認證資訊。",
+  "settings.oauthProviderDesc.xai":
+    "透過 OAuth 流程登入 xAI（Grok）訂閱帳號，自動取得可用模型並儲存認證資訊。",
   "settings.oauthProviderDescFallback":
     "透過 OAuth 流程登入 {{name}} 服務，自動取得並儲存認證檔案。",
   "settings.oauthProviderMissing": "目前沒有可用的 OAuth 服務商。",

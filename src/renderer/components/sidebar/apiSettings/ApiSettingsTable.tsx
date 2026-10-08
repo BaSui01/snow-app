@@ -244,13 +244,13 @@ export function ApiSettingsTable({
                     })}
                   />
                 </th>
+                <th>{t("settings.tableStatus", { defaultValue: "Status" })}</th>
                 <th>{t("settings.tableName", { defaultValue: "Name" })}</th>
                 <th>
                   {t("settings.tableBaseUrl", { defaultValue: "Base URL" })}
                 </th>
                 <th>{t("settings.tableModel", { defaultValue: "Model" })}</th>
                 <th>{t("settings.tableMethod", { defaultValue: "Method" })}</th>
-                <th>{t("settings.tableStatus", { defaultValue: "Status" })}</th>
                 <th className="api-settings-table-actions-col">
                   {t("settings.tableActions", { defaultValue: "Actions" })}
                 </th>
@@ -315,6 +315,22 @@ export function ApiSettingsTable({
                         }).replace("{name}", config.displayName)}
                       />
                     </td>
+                    <td>
+                      <label
+                        className="toggle-switch api-settings-table-switch"
+                        title={activeActionLabel}
+                        aria-label={activeActionLabel}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={config.isActive}
+                          onChange={() => onToggleActive(config)}
+                          disabled={config.isActive}
+                        />
+                        <span className="toggle-slider" />
+                        <span>{activeStateLabel}</span>
+                      </label>
+                    </td>
                     <td className="cell-name">
                       <button
                         className="cell-name-button"
@@ -337,22 +353,6 @@ export function ApiSettingsTable({
                       <span className="badge method">
                         {config.requestMethod}
                       </span>
-                    </td>
-                    <td>
-                      <label
-                        className="toggle-switch api-settings-table-switch"
-                        title={activeActionLabel}
-                        aria-label={activeActionLabel}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={config.isActive}
-                          onChange={() => onToggleActive(config)}
-                          disabled={config.isActive}
-                        />
-                        <span className="toggle-slider" />
-                        <span>{activeStateLabel}</span>
-                      </label>
                     </td>
                     <td className="api-settings-table-actions-col">
                       <div className="api-settings-table-actions">

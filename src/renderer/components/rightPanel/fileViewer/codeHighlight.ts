@@ -3,13 +3,14 @@ import hljs from "highlight.js";
 import {
   escapeHtml,
   splitHighlightedHtmlLines,
+  truncateLongLine,
   type LineIndex,
 } from "./codeText";
 
 const CHUNK_LINES = 128;
 const CONTEXT_LINES = 12;
 const MAX_CHUNK_CHARS = 65536;
-const MAX_CACHED_CHUNKS = 48;
+const MAX_CACHED_CHUNKS = 128;
 
 type ChunkEntry = { prefix: string; lines: string[] | null };
 
@@ -46,7 +47,12 @@ const readChunk = (
   prefixLines: number,
 ): string[] | null => {
   const cached = chunkCache.get(chunkText);
-  if (cached && cached.prefix === prefixText) return cached.lines;
+  if (cached && cached.prefix === prefixText) {
+    // 命中缓存时刷新 LRU 顺序
+    chunkCache.delete(chunkText);
+    chunkCache.set(chunkText, cached);
+    return cached.lines;
+  }
   let lines: string[] | null = null;
   const text =
     prefixText.length > 0 ? `${prefixText}\n${chunkText}` : chunkText;
@@ -99,11 +105,20 @@ export const createCodeHighlighter = (
   return {
     enabled,
     lineHtml: (line) => {
-      const text = index.getLine(line);
-      if (!enabled) return escapeHtml(text);
-      const chunk = Math.floor((line - 1) / CHUNK_LINES);
-      const lines = computeChunk(chunk);
-      return lines?.[line - 1 - chunk * CHUNK_LINES] ?? escapeHtml(text);
+      const rawText = index.getLine(line);
+      const { text, truncated, totalChars } = truncateLongLine(rawText);
+      let html = "";
+      if (!enabled || truncated) {
+        html = escapeHtml(text);
+      } else {
+        const chunk = Math.floor((line - 1) / CHUNK_LINES);
+        const lines = computeChunk(chunk);
+        html = lines?.[line - 1 - chunk * CHUNK_LINES] ?? escapeHtml(text);
+      }
+      if (truncated) {
+        html += `<span class="file-viewer-truncated-badge" title="Line truncated for performance: ${totalChars} characters total"> ⋯ [Truncated: ${totalChars} chars]</span>`;
+      }
+      return html;
     },
     prefetch: (line) => {
       if (!enabled) return;

@@ -41951,6 +41951,24 @@ pre.file-viewer-code {
   min-height: 1lh;
 }
 
+.file-viewer-truncated-badge {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--accent-orange, #f59e0b);
+  background: color-mix(
+    in srgb,
+    var(--accent-orange, #f59e0b) 12%,
+    transparent
+  );
+  border: 1px solid
+    color-mix(in srgb, var(--accent-orange, #f59e0b) 25%, transparent);
+  border-radius: var(--radius-xs, 3px);
+  padding: 0 4px;
+  font-size: 10px;
+  user-select: none;
+  vertical-align: middle;
+}
+
 /* 行号槽逐行渲染：折叠箭头固定在左侧列，行号靠右对齐 */
 .file-viewer-gutter-line {
   position: relative;

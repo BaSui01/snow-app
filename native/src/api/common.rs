@@ -6,6 +6,8 @@
 //! consistent behaviour (token counting, JSON traversal, chunk emission).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
@@ -21,21 +23,78 @@ use crate::api::responses::{ResponsesApiStreamCallback, ResponsesApiStreamChunk}
 /// 流式回调的可选包装：没有 JS 回调的辅助请求（摘要、审查等）传 None，
 /// 所有 chunk 静默丢弃。
 #[derive(Clone, Copy)]
-pub(crate) struct StreamSink<'a>(Option<&'a ResponsesApiStreamCallback>);
+pub(crate) struct StreamSink<'a> {
+    callback: Option<&'a ResponsesApiStreamCallback>,
+    retry_probe: Option<&'a RetryProbe>,
+}
 
 impl<'a> StreamSink<'a> {
     pub(crate) fn new(callback: Option<&'a ResponsesApiStreamCallback>) -> Self {
-        Self(callback)
+        Self {
+            callback,
+            retry_probe: None,
+        }
+    }
+
+    /// 附带重试探针：所有 `retrying: true` 分片会被记入探针（见 `RetryProbe`），
+    /// provider 入口在流结束后读取它，与消息一起落库。
+    pub(crate) fn with_retry_probe(mut self, probe: &'a RetryProbe) -> Self {
+        self.retry_probe = Some(probe);
+        self
     }
 
     pub(crate) fn callback(&self) -> Option<&'a ResponsesApiStreamCallback> {
-        self.0
+        self.callback
     }
 
     pub(crate) fn call(&self, chunk: ResponsesApiStreamChunk, mode: ThreadsafeFunctionCallMode) {
-        if let Some(callback) = self.0 {
+        if chunk.retrying {
+            if let Some(probe) = self.retry_probe {
+                probe.record(chunk.retry_attempt, chunk.retry_error.as_deref());
+            }
+        }
+        if let Some(callback) = self.callback {
             callback.call(chunk, mode);
         }
+    }
+}
+
+/// 记录「最近一次自动重试」的探针（传输重试与空响应重试共用同一条重试分片通道）。
+///
+/// 重试次数与最后一次的上游错误此前只存在于流式分片里，一旦本轮结束就再也拿不到；
+/// 探针在 `StreamSink::call` 这一唯一出口顺带留存，provider 入口据此把
+/// `retry_attempts` / `retry_error` 写进消息行，重载后仍能说明
+/// 「重试了几次、上游报了什么」。
+#[derive(Default)]
+pub(crate) struct RetryProbe {
+    attempts: AtomicU32,
+    last_error: Mutex<String>,
+}
+
+impl RetryProbe {
+    fn record(&self, attempt: Option<i32>, error: Option<&str>) {
+        if let Some(attempt) = attempt.filter(|value| *value > 0) {
+            self.attempts.fetch_max(attempt as u32, Ordering::Relaxed);
+        }
+        if let Some(error) = error.filter(|value| !value.is_empty()) {
+            if let Ok(mut slot) = self.last_error.lock() {
+                slot.clear();
+                slot.push_str(error);
+            }
+        }
+    }
+
+    /// 本轮出现过的最大重试尝试序号（0 表示未重试）。
+    pub(crate) fn attempts(&self) -> i64 {
+        i64::from(self.attempts.load(Ordering::Relaxed))
+    }
+
+    /// 最后一次重试的上游错误文本（未重试为空串）。
+    pub(crate) fn last_error(&self) -> String {
+        self.last_error
+            .lock()
+            .map(|slot| slot.clone())
+            .unwrap_or_default()
     }
 }
 

@@ -93,6 +93,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_messages_thinking_stats(connection)?;
     migrate_chat_messages_token_usage(connection)?;
     migrate_chat_messages_retry_metadata(connection)?;
+    migrate_chat_messages_cancelled_terminal_cleanup(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
     migrate_project_collections(connection)?;
@@ -713,6 +714,28 @@ fn migrate_chat_messages_retry_metadata(connection: &Connection) -> rusqlite::Re
         }
     }
 
+    Ok(())
+}
+
+/// 清理历史误标：用户主动取消（`status='cancelled'`）的回复曾被补上
+/// `empty_response` / `retry_exhausted` 终态，重载后前端据此渲染「重试已耗尽」
+/// 告警。取消是用户意图而非上游返回空（见 `api/retry.rs` 的
+/// `resolve_empty_response_terminal`），这里把该组合清空。
+///
+/// 幂等：只命中「cancelled 且仍带中断原因」的行；修复后的版本不再产生这种组合，
+/// 重复执行是安全 no-op。重试元数据（`retry_attempts` / `retry_error`）是
+/// 「取消前确实重试过」的真实事实，保持原样。
+fn migrate_chat_messages_cancelled_terminal_cleanup(
+    connection: &Connection,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE chat_messages
+            SET interruption_reason = '',
+                recovery_outcome = ''
+          WHERE status IN ('cancelled', 'canceled')
+            AND interruption_reason <> ''",
+        [],
+    )?;
     Ok(())
 }
 

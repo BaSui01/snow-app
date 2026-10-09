@@ -1602,7 +1602,9 @@ export const BranchSelector = ({
           title={t("git.removeWorktreeTitle", { defaultValue: "删除工作树" })}
           message={t("git.removeWorktreeConfirmMsg", {
             values: {
-              path: removeWorktreeTarget.worktreePath,
+              // {{path}} 传目录名而非完整路径：文案改由 i18n 词条提供，避免弹窗里
+              // 出现一长串绝对路径（与旧 defaultValue 的展示保持一致）。
+              path: getFolderName(removeWorktreeTarget.worktreePath),
               branch: removeWorktreeTarget.branchName || "",
             },
             defaultValue: `确定要移除工作树 ${getFolderName(removeWorktreeTarget.worktreePath)} 吗？本地磁盘目录和未暂存修改将被清理。`,

@@ -10,6 +10,9 @@ export const en = {
     "Could not load the send preference. Using steer until successfully saved.",
   "chatInput.busyQueue": "Wait for task to finish",
   "chatInput.busySteer": "Wait for steer processing",
+  "chatInput.sendKeyMode": "Send shortcut",
+  "chatInput.sendWithEnter": "Press Enter to send",
+  "chatInput.sendWithCtrlEnter": "Press Ctrl + Enter to send",
   "chatInput.interruptAndSend": "Interrupt and send",
   "chatInput.busySendHint":
     "{{behavior}} ({{shortcut}}); alternate: {{alternate}}",
@@ -832,6 +835,8 @@ export const en = {
   "chat.incomplete.reason.explicitIncomplete":
     "The provider explicitly marked the response as incomplete.",
   "chat.incomplete.reason.outputLimit": "The model reached its output limit.",
+  "chat.incomplete.reason.emptyResponse":
+    "The upstream kept returning empty responses (no content, thinking or tool calls) and automatic retries were exhausted.",
   "chat.incomplete.outcome.partialThreshold":
     "The visible partial response met the safe retention threshold.",
   "chat.incomplete.outcome.retryExhausted":
@@ -4553,6 +4558,9 @@ export const en = {
   "common.copy": "Copy",
   "common.copyPath": "Copy path",
   "common.filterTable": "Filter table...",
+  "common.create": "Create",
+  "common.expand": "Expand worktrees",
+  "common.collapse": "Collapse worktrees",
   "rightPanel.gitTab": "Git",
   "rightPanel.terminalTab": "Terminal",
   "rightPanel.browserTab": "Browser",
@@ -5045,6 +5053,28 @@ export const en = {
   "git.operationFailedGeneric":
     "Git returned no detailed output. Check your network connection and repository configuration.",
   "git.copyPath": "Copy Path",
+  "git.branchShort": "Branch",
+  "git.worktreeShort": "Worktree",
+  "git.mainDirectory": "Main directory",
+  "git.mainWorktreeTooltip": "Main working directory",
+  "git.worktreeDirtyTooltip": "This worktree has uncommitted changes",
+  "git.worktreesCountTooltip": "{{count}} active worktrees",
+  "git.searchBranchesOrWorktrees": "Search branches or worktrees...",
+  "git.openTerminal": "Open a terminal in this worktree",
+  "git.createBranchTitle": "New local branch",
+  "git.createWorktree": "New worktree",
+  "git.createWorktreeTitle": "New isolated worktree",
+  "git.createWorktreeSubmit": "Create and check out worktree",
+  "git.creatingWorktree": "Creating...",
+  "git.removeWorktree": "Remove this worktree",
+  "git.removeWorktreeTitle": "Remove worktree",
+  "git.removeWorktreeConfirmMsg":
+    "Remove the worktree {{path}}? Its local directory and unstaged changes will be deleted.",
+  "git.cannotRemoveCurrentWorktree":
+    "This worktree is currently checked out; switch to another branch or worktree first.",
+  "git.cannotRemoveRunningWorktree":
+    "A session is still running in this worktree, so it cannot be removed yet.",
+  "git.worktreeDefaultMain": "Run in the main project root",
   "git.copyRelativePath": "Copy Relative Path",
   "git.copyAbsolutePath": "Copy Absolute Path",
   "git.copyBranchName": "Copy Branch Name",
@@ -5979,4 +6009,16 @@ export const en = {
   "settings.customCommandArgumentsHint":
     "Text typed after the command name is passed in as arguments: $ARGUMENTS is replaced in place, otherwise the text is appended.",
   "settings.saveCustomCommand": "Save command",
+  "memo.resizeSidebar": "Resize list panel",
+  "memory.resizeSidebar": "Resize list panel",
+  "scheduledTask.resizeSidebar": "Resize list panel",
+  "plugins.scripts.badgeFailed": "Errors {{count}}",
+  "settings.noTokenPresetMatch": "No matching presets",
+  "settings.teamCollaboration": "Team collaboration",
+  "settings.teamCollaborationEnabled": "Enable team collaboration",
+  "settings.teamCollaborationInfo":
+    "Git-based shared data plane: teammates maintain tasks, reviews and notes together with no backend service. Off by default.",
+  "team.reviews.deleteComment": "Delete comment",
+  "topBar.alwaysOnTop": "Always on top",
+  "topBar.disableAlwaysOnTop": "Disable always on top",
 } satisfies Record<string, string>;

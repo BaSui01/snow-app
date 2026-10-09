@@ -1736,7 +1736,8 @@ fn build_result(
 
     let mut summary = format!(
         "Success: generated {generated} image(s) with {model} ({provider}). \
-         The image(s) are already displayed to the user via the built-in image UI component — do NOT render them again with Markdown image syntax (![...](...)) or repeat the file paths; just reply naturally."
+         The image(s) are already displayed to the user via the built-in image UI component — do NOT render them again with Markdown image syntax (![...](...)) or repeat the file paths; just reply naturally. \
+         To look at a generated image again (filesystem-read / imagegen-image-describe) or reuse it as a reference image for imagegen-generate, use the \"absolutePath\" field of each content block — the \"path\" field is a library-relative path that file tools cannot resolve."
     );
     if !remote_urls.is_empty() {
         summary.push_str(&format!(" Remote URLs: {}", remote_urls.join(", ")));

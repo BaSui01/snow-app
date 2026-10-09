@@ -194,9 +194,11 @@ pub(crate) fn probe_dimensions(bytes: &[u8], mime_type: &str) -> (Option<i64>, O
 }
 
 /// 将结果 content 中的 base64 图片块落盘并写入索引。
-/// 成功块改写为 `{"type":"image","path":"image/YYYY-MM-DD/xxx.png","mimeType":...}`
-/// （消息里不再携带大体积 base64）；任何一块失败都保留原 data 字段（容错）。
-/// 返回成功落盘的相对路径列表。
+/// 成功块改写为
+/// `{"type":"image","path":"image/YYYY-MM-DD/xxx.png","absolutePath":"<磁盘绝对路径>","mimeType":...}`
+/// （消息里不再携带大体积 base64；`path` 供应用内部解析图库文件，
+/// `absolutePath` 供模型后续读图或复用为参考图）；任何一块失败都保留原
+/// data 字段（容错）。返回成功落盘的相对路径列表。
 pub fn persist_generated_images(
     database_path: &Path,
     prompt: &str,
@@ -286,10 +288,14 @@ pub fn persist_generated_images(
             eprintln!("[image-library] failed to index image '{relative_path}': {error}");
         }
 
-        // 改写块：去掉 base64，保留 path 引用
+        // 改写块：去掉 base64，保留图库相对路径，并附带磁盘绝对路径
         let mut rewritten = serde_json::Map::new();
         rewritten.insert("type".to_string(), Value::String("image".to_string()));
         rewritten.insert("path".to_string(), Value::String(relative_path.clone()));
+        rewritten.insert(
+            "absolutePath".to_string(),
+            Value::String(abs_path.to_string_lossy().replace('\\', "/")),
+        );
         rewritten.insert("mimeType".to_string(), Value::String(mime_type));
         *block = Value::Object(rewritten);
         stored.push(relative_path);

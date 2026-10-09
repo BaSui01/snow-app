@@ -314,10 +314,11 @@ fn ensure_team_worktree(repo_path: &str) -> Result<PathBuf> {
 /// 1. 从给定路径向上查找最近的 `.git`（工作区是仓库根或其子目录时命中）；
 /// 2. 否则扫描直接子目录（父目录包含仓库的场景，与 Git 面板一致）；
 /// 3. 都找不到则返回空串（渲染层据此提示"不是 Git 仓库"）。
+///
+/// 纯路径定位查询，不读写团队数据平面，故不受团队协作总开关约束
+/// （只读工具守卫依赖它做 Git 变动感知，与团队功能是否启用无关）；
+/// 所有团队数据操作入口各自检查开关。
 pub fn resolve_team_repo(path: &str) -> Result<String> {
-    if !is_team_enabled() {
-        return Err(team_disabled_err());
-    }
     let mut current = PathBuf::from(path);
     loop {
         if current.join(".git").exists() {

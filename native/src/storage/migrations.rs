@@ -92,6 +92,8 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_messages_interruption_metadata(connection)?;
     migrate_chat_messages_thinking_stats(connection)?;
     migrate_chat_messages_token_usage(connection)?;
+    migrate_chat_messages_retry_metadata(connection)?;
+    migrate_chat_messages_cancelled_terminal_cleanup(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
     migrate_project_collections(connection)?;
@@ -679,6 +681,61 @@ fn migrate_chat_messages_token_usage(connection: &Connection) -> rusqlite::Resul
         }
     }
 
+    Ok(())
+}
+
+/// Adds the automatic-retry metadata columns to `chat_messages` for databases
+/// created before the retry-exhausted notice became persistent.
+///
+/// A response that ends with no content/thinking/tool calls after the empty
+/// response retry budget was exhausted records how many retries were attempted
+/// and the upstream error of the last one, so the chat UI can still explain the
+/// failure (「重试已耗尽 (N)」+ 错误详情) after a reload. Existing rows keep
+/// `0` / `''` and therefore render exactly as before.
+///
+/// Idempotent: each column is checked independently so partially migrated and
+/// repeatedly migrated databases are both safe (fresh databases get the columns
+/// from the `CREATE TABLE` statement in `create_schema`).
+fn migrate_chat_messages_retry_metadata(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for (name, definition) in [
+        ("retry_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("retry_error", "TEXT NOT NULL DEFAULT ''"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            connection.execute(
+                &format!("ALTER TABLE chat_messages ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+/// 清理历史误标：用户主动取消（`status='cancelled'`）的回复曾被补上
+/// `empty_response` / `retry_exhausted` 终态，重载后前端据此渲染「重试已耗尽」
+/// 告警。取消是用户意图而非上游返回空（见 `api/retry.rs` 的
+/// `resolve_empty_response_terminal`），这里把该组合清空。
+///
+/// 幂等：只命中「cancelled 且仍带中断原因」的行；修复后的版本不再产生这种组合，
+/// 重复执行是安全 no-op。重试元数据（`retry_attempts` / `retry_error`）是
+/// 「取消前确实重试过」的真实事实，保持原样。
+fn migrate_chat_messages_cancelled_terminal_cleanup(
+    connection: &Connection,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE chat_messages
+            SET interruption_reason = '',
+                recovery_outcome = ''
+          WHERE status IN ('cancelled', 'canceled')
+            AND interruption_reason <> ''",
+        [],
+    )?;
     Ok(())
 }
 

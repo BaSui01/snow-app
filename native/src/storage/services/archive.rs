@@ -33,7 +33,9 @@ const MAX_VARIABLES: usize = 400;
 /// 归档库 schema 版本。首次创建或旧版本归档库会执行完整初始化
 /// （建表 + 列迁移）并写入该版本号；已达到该版本的归档库走快路径。
 /// v2：在 v1（历史版本号）基础上引入 user_version 快路径。
-const ARCHIVE_SCHEMA_VERSION: i64 = 2;
+/// v3：chat_messages 补齐运行库的空响应重试元数据列
+/// （retry_attempts / retry_error），避免归档静默丢列、还原时列不齐。
+const ARCHIVE_SCHEMA_VERSION: i64 = 3;
 
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
 /// 必须与运行库 create_schema 的 chat_conversations 列保持同步——
@@ -43,7 +45,7 @@ const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_me
 /// 与运行库 chat_messages 完全一致的列。
 /// 必须与运行库 create_schema 的 chat_messages 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
-const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, created_at";
+const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, retry_attempts, retry_error, created_at";
 
 const TODO_COLUMNS: &str = "id, session_id, content, status, response_id, created_at, updated_at, parent_id";
 
@@ -166,8 +168,10 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
             input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
-            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+             cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+             retry_attempts INTEGER NOT NULL DEFAULT 0,
+             retry_error TEXT NOT NULL DEFAULT '',
+             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
          );
          CREATE INDEX IF NOT EXISTS idx_archive_messages_conversation_id
@@ -299,6 +303,8 @@ fn migrate_archive_chat_conversations(connection: &Connection) -> rusqlite::Resu
 /// lacks the columns would fail the restore — patch them here on open.
 /// The same applies to the stream-interruption columns (v31+ in the runtime
 /// schema): without them, archiving silently drops the interruption state.
+/// The empty-response retry metadata columns (v55+ in the runtime schema)
+/// follow the same rule: archiving would silently drop the retry state.
 fn migrate_archive_chat_messages(connection: &Connection) -> rusqlite::Result<()> {
     let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
     let columns: Vec<String> = statement
@@ -317,6 +323,8 @@ fn migrate_archive_chat_messages(connection: &Connection) -> rusqlite::Result<()
             "INTEGER NOT NULL DEFAULT 0",
         ),
         ("cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        ("retry_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("retry_error", "TEXT NOT NULL DEFAULT ''"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(

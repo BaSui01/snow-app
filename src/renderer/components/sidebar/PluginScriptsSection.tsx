@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { UserscriptRecord } from "../../../preload/types/userscripts";
-import { useI18n } from "../../i18n";
+import { useI18n, type Locale } from "../../i18n";
 import {
   hasMarketUpdate,
   isMarketEntryTooNew,
@@ -38,8 +38,60 @@ import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
 import type { PluginPrivacyTarget } from "./PluginPrivacyDialog";
 
-/** 新建脚本时的最小模板：声明客户端作用域并给出锚点 / 插槽用法示例。 */
-const CLIENT_SCRIPT_TEMPLATE = `// ==UserScript==
+/**
+ * 新建客户端脚本时的最小模板文案：声明客户端作用域并给出锚点 / 插槽用法示例。
+ * 模板会原样写进用户脚本文件，因此按语言分别提供，避免英文界面下生成中文示例。
+ */
+const CLIENT_SCRIPT_STRINGS: Record<
+  Locale,
+  {
+    anchorsNote: string;
+    addButtonNote: string;
+    buttonLabel: string;
+    insertText: string;
+    decorateNote: string;
+  }
+> = {
+  en: {
+    anchorsNote: `// Anchors: data-snow-anchor (app.root / topbar / sidebar / sidebar.nav / sidebar.footer /
+//   main.view / chat.messages / chat.message / chat.input / rightPanel / rightPanel.tabs / rightPanel.content)
+// Slots: data-snow-slot (topbar.actions / sidebar.nav.actions / sidebar.footer.actions /
+//   chat.input.actions / chat.message.actions)
+// Scripts share the DOM with the page: use the native DOM API to customize any position
+// (re-attach with a MutationObserver when React rebuilds a node)`,
+    addButtonNote: `// Add a "Continue" button to the chat input slot`,
+    buttonLabel: "Continue",
+    insertText: "Continue",
+    decorateNote: `// Tag every AI message: virtualized scrolling rebuilds nodes, so re-attach via MutationObserver`,
+  },
+  "zh-CN": {
+    anchorsNote: `// 锚点：data-snow-anchor（app.root / topbar / sidebar / sidebar.nav / sidebar.footer /
+//   main.view / chat.messages / chat.message / chat.input / rightPanel / rightPanel.tabs / rightPanel.content）
+// 插槽：data-snow-slot（topbar.actions / sidebar.nav.actions / sidebar.footer.actions /
+//   chat.input.actions / chat.message.actions）
+// 脚本与页面共享 DOM：直接用原生 DOM API 定制任意位置（React 重建节点时用 MutationObserver 重挂）`,
+    addButtonNote: `// 往输入区插槽加一个「续写」按钮`,
+    buttonLabel: "续写",
+    insertText: "继续",
+    decorateNote: `// 给每条 AI 消息加标记：虚拟化滚动会重建节点，用 MutationObserver 自动重挂`,
+  },
+  "zh-TW": {
+    anchorsNote: `// 錨點：data-snow-anchor（app.root / topbar / sidebar / sidebar.nav / sidebar.footer /
+//   main.view / chat.messages / chat.message / chat.input / rightPanel / rightPanel.tabs / rightPanel.content）
+// 插槽：data-snow-slot（topbar.actions / sidebar.nav.actions / sidebar.footer.actions /
+//   chat.input.actions / chat.message.actions）
+// 腳本與頁面共享 DOM：直接用原生 DOM API 客製任意位置（React 重建節點時用 MutationObserver 重掛）`,
+    addButtonNote: `// 往輸入區插槽加一個「續寫」按鈕`,
+    buttonLabel: "續寫",
+    insertText: "繼續",
+    decorateNote: `// 給每條 AI 訊息加標記：虛擬化捲動會重建節點，用 MutationObserver 自動重掛`,
+  },
+};
+
+/** 按当前 App 语言生成新建客户端脚本模板。 */
+const buildClientScriptTemplate = (locale: Locale): string => {
+  const strings = CLIENT_SCRIPT_STRINGS[locale];
+  return `// ==UserScript==
 // @name         My Client Script
 // @namespace    snow-app
 // @version      1.0.0
@@ -50,27 +102,23 @@ const CLIENT_SCRIPT_TEMPLATE = `// ==UserScript==
 // @grant        GM_addStyle
 // ==/UserScript==
 
-// 锚点：data-snow-anchor（app.root / topbar / sidebar / sidebar.nav / sidebar.footer /
-//   main.view / chat.messages / chat.message / chat.input / rightPanel / rightPanel.tabs / rightPanel.content）
-// 插槽：data-snow-slot（topbar.actions / sidebar.nav.actions / sidebar.footer.actions /
-//   chat.input.actions / chat.message.actions）
-// 脚本与页面共享 DOM：直接用原生 DOM API 定制任意位置（React 重建节点时用 MutationObserver 重挂）
+${strings.anchorsNote}
 GM_addStyle(\`
   /* [data-snow-anchor="rightPanel.tabs"] { display: none !important; } */
 \`);
 
-// 往输入区插槽加一个「续写」按钮
+${strings.addButtonNote}
 const slot = document.querySelector('[data-snow-slot="chat.input.actions"]');
 if (slot) {
   const button = document.createElement("button");
   button.className = "plugin-script-command";
-  button.textContent = "续写";
-  button.onclick = () => snow.client.insertInputText("继续");
+  button.textContent = ${JSON.stringify(strings.buttonLabel)};
+  button.onclick = () => snow.client.insertInputText(${JSON.stringify(strings.insertText)});
   slot.append(button);
   snow.onCleanup(() => button.remove());
 }
 
-// 给每条 AI 消息加标记：虚拟化滚动会重建节点，用 MutationObserver 自动重挂
+${strings.decorateNote}
 const decorateMessages = () => {
   document
     .querySelectorAll('[data-snow-anchor="chat.message"]')
@@ -88,7 +136,8 @@ const observer = new MutationObserver(decorateMessages);
 observer.observe(document.body, { childList: true, subtree: true });
 decorateMessages();
 snow.onCleanup(() => observer.disconnect());
-`;
+  `;
+};
 
 type PluginScriptsSectionProps = {
   onClose: () => void;
@@ -100,7 +149,7 @@ export const PluginScriptsSection = ({
   onClose,
   onOpenPrivacy,
 }: PluginScriptsSectionProps): React.JSX.Element => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const state = useClientScriptStore();
   const market = useMarketStore();
   const { buildFromContent } = useChatConversationContext();
@@ -139,9 +188,9 @@ export const PluginScriptsSection = ({
     scriptEditorStore.openNew("client", {
       fileName: "client-script.user.js",
       title: t("plugins.scripts.newTitle", { defaultValue: "New script" }),
-      content: CLIENT_SCRIPT_TEMPLATE,
+      content: buildClientScriptTemplate(locale),
     });
-  }, [t]);
+  }, [locale, t]);
 
   const handleCreateWithAi = useCallback(() => {
     const requirement = createRequest.trim();

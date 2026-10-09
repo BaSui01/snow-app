@@ -41,7 +41,7 @@ export const TeamTopBarActions = ({
       : team.lastSyncAt
         ? t("team.header.lastSync", {
             defaultValue: "同步于 {{time}}",
-            values: { time: timeAgo(team.lastSyncAt) },
+            values: { time: timeAgo(team.lastSyncAt, t) },
           })
         : "";
   const syncDelta =

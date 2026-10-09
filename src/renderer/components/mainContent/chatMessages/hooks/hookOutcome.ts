@@ -1,4 +1,5 @@
 import type { HookExecuteResult } from "../../../../../preload";
+import { tGlobal } from "../../../../i18n";
 import type {
   ChatConversationMessage,
   HookExecutionRecord,
@@ -20,21 +21,25 @@ export type HookOutcome =
   | { kind: "abort"; message: string }
   | { kind: "needsDecision"; message: string };
 
-const UNKNOWN_WARNING = "Hooks有未知警告";
-const UNKNOWN_BLOCK = "Hook blocked the action";
+/**
+ * Hook 未给出具体文案时的兜底提示。按当前 App 语言在调用时求值（而不是
+ * 模块加载时），因此语言切换后新产生的提示即时跟随。
+ */
+const unknownWarning = (): string => tGlobal("chat.hook.unknownWarning");
+const unknownBlock = (): string => tGlobal("chat.hook.unknownBlock");
 
 export const resolveHookOutcome = (result: HookExecuteResult): HookOutcome => {
   if (result.blocked) {
     return {
       kind: "abort",
-      message: result.blockMessage || UNKNOWN_BLOCK,
+      message: result.blockMessage || unknownBlock(),
     };
   }
 
   if (result.requiresDecision) {
     return {
       kind: "needsDecision",
-      message: result.decisionMessage || UNKNOWN_WARNING,
+      message: result.decisionMessage || unknownWarning(),
     };
   }
 
@@ -46,7 +51,7 @@ export const resolveHookOutcome = (result: HookExecuteResult): HookOutcome => {
       .trim();
     return {
       kind: "warn",
-      message: warning || UNKNOWN_WARNING,
+      message: warning || unknownWarning(),
     };
   }
 
@@ -76,7 +81,7 @@ export const resolveHookOutcome = (result: HookExecuteResult): HookOutcome => {
 export const buildHookExecRecord = (
   hookType: string,
   result: HookExecuteResult,
-  outcome: HookOutcome
+  outcome: HookOutcome,
 ): HookExecutionRecord => ({
   hookType,
   status: outcome.kind,
@@ -92,7 +97,7 @@ export const buildHookExecRecord = (
 export const appendHookExecutionToMessage = (
   messages: ChatConversationMessage[],
   record: HookExecutionRecord,
-  messageId?: string
+  messageId?: string,
 ): ChatConversationMessage[] => {
   const targetIndex = messageId
     ? messages.findIndex((message) => message.id === messageId)
@@ -108,7 +113,7 @@ export const appendHookExecutionToMessage = (
           ...message,
           hookExecutions: [...(message.hookExecutions ?? []), record],
         }
-      : message
+      : message,
   );
 };
 
@@ -120,7 +125,7 @@ export const appendHookExecutionToMessage = (
  * it stays visible in the expanded detail, but no interactive decision is shown.
  */
 export const toNonBlockingRecord = (
-  record: HookExecutionRecord
+  record: HookExecutionRecord,
 ): HookExecutionRecord => {
   if (!record.pendingDecision) {
     return record;
@@ -146,7 +151,7 @@ export const toNonBlockingRecord = (
 export const runHook = async (
   hookType: string,
   projectId: string | undefined,
-  contextJson: string
+  contextJson: string,
 ): Promise<{
   result: HookExecuteResult;
   outcome: HookOutcome;

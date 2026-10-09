@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, Copy, Check, Filter } from "lucide-react";
+import { useI18n } from "../../../../../i18n";
 
 type AnsiOutputProps = {
   text: string;
@@ -111,6 +112,7 @@ export const AnsiOutput = ({
   className = "",
   defaultFilterErrors = false,
 }: AnsiOutputProps): React.JSX.Element => {
+  const { t } = useI18n();
   const [filterMode, setFilterMode] = useState<"all" | "errors">(
     defaultFilterErrors ? "errors" : "all",
   );
@@ -155,7 +157,9 @@ export const AnsiOutput = ({
                 setFilterMode("all");
               }}
             >
-              全部 ({lines.length})
+              {t("toolCall.common.filterAll", {
+                values: { count: lines.length },
+              })}
             </button>
             <button
               type="button"
@@ -168,7 +172,7 @@ export const AnsiOutput = ({
               }}
             >
               <AlertCircle size={10} aria-hidden="true" />
-              仅报错
+              {t("toolCall.common.filterErrorsOnly")}
             </button>
           </div>
         </div>
@@ -204,7 +208,7 @@ export const AnsiOutput = ({
           type="button"
           className="tool-call-ansi-copy-btn"
           onClick={handleCopy}
-          title="复制终端输出内容"
+          title={t("toolCall.common.copyOutput")}
         >
           {copied ? (
             <Check size={11} aria-hidden="true" />

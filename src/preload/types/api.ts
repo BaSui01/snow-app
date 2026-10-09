@@ -186,12 +186,32 @@ export type ResponsesApiRequest = {
   responsesFastMode?: string | null;
 };
 
+/**
+ * 后端 `ResponsesApiResult.status` 的已知取值（各 provider 共用同一套字符串
+ * 约定：chat / anthropic / gemini / interactions / responses）。
+ *
+ * 判定入口见 renderer 的 `responseDisposition.ts`：`completed` 才可能是「正常
+ * 收尾但零载荷」（empty_response）；`cancelled` 是用户主动停止，静默收尾；
+ * `failed` / `error` 走错误分支；`incomplete` / `length` / `max_tokens` 是未
+ * 完成；未列出的取值不再被静默当作「正常完成」——零载荷时按未完成兜底提示。
+ */
+export type ResponseStatus =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "canceled"
+  | "incomplete"
+  | "length"
+  | "max_tokens"
+  | "in_progress";
+
 export type StreamInterruptionReason =
   | "unexpected_eof"
   | "read_error"
   | "idle_timeout"
   | "explicit_incomplete"
-  | "output_limit";
+  | "output_limit"
+  | "empty_response";
 
 export type StreamRecoveryOutcome =
   "partial_threshold" | "retry_exhausted" | "non_retriable";
@@ -209,7 +229,9 @@ export type ResponsesApiResult = {
   content: string;
   thinking: string;
   model: string;
-  status: string;
+  /** 已知取值见 `ResponseStatus`；`(string & {})` 保留对未知取值的容错，
+   *  由前端判定层兜底而不是静默当成成功。 */
+  status: ResponseStatus | (string & {});
   toolCallsJson: string;
   tokenUsage: TokenUsage;
   persistedUserMessageIds: string[];

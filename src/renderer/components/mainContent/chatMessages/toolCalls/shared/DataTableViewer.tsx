@@ -120,8 +120,15 @@ export const DataTableViewer = ({
           <div className="data-table-toolbar-right">
             <span className="data-table-row-counter">
               {processedRows.length === rows.length
-                ? `${rows.length} 行`
-                : `${processedRows.length} / ${rows.length} 行`}
+                ? t("toolCall.common.lineCount", {
+                    values: { count: rows.length },
+                  })
+                : t("toolCall.common.lineCountFiltered", {
+                    values: {
+                      shown: processedRows.length,
+                      total: rows.length,
+                    },
+                  })}
             </span>
 
             {enableExport && (
@@ -129,14 +136,18 @@ export const DataTableViewer = ({
                 type="button"
                 className="data-table-export-btn"
                 onClick={handleExportCsv}
-                title="导出为 CSV 文本到剪贴板"
+                title={t("toolCall.common.exportCsv")}
               >
                 {csvCopied ? (
                   <Check size={11} aria-hidden="true" />
                 ) : (
                   <Download size={11} aria-hidden="true" />
                 )}
-                <span>{csvCopied ? "已复制 CSV" : "导出 CSV"}</span>
+                <span>
+                  {csvCopied
+                    ? t("toolCall.common.csvCopied")
+                    : t("toolCall.common.exportCsvShort")}
+                </span>
               </button>
             )}
           </div>
@@ -152,7 +163,9 @@ export const DataTableViewer = ({
               {columns.map((col, i) => (
                 <th
                   key={i}
-                  title={`点击排序: ${col}`}
+                  title={t("toolCall.common.sortBy", {
+                    values: { column: col },
+                  })}
                   className="data-table-th-sortable"
                   onClick={() => {
                     if (sortCol === i) {
@@ -215,15 +228,24 @@ export const DataTableViewer = ({
         <div className="data-table-pagination-bar">
           <span>
             {showAllRows
-              ? `已显示全部 ${processedRows.length} 条记录`
-              : `已显示前 ${maxInitialRows} 条（共 ${processedRows.length} 条）`}
+              ? t("toolCall.common.rowsShownAll", {
+                  values: { count: processedRows.length },
+                })
+              : t("toolCall.common.rowsShownPartial", {
+                  values: {
+                    limit: maxInitialRows,
+                    total: processedRows.length,
+                  },
+                })}
           </span>
           <button
             type="button"
             className="data-table-toggle-rows-btn"
             onClick={() => setShowAllRows((v) => !v)}
           >
-            {showAllRows ? "收起部分" : "展开全部"}
+            {showAllRows
+              ? t("toolCall.common.showFewer")
+              : t("toolCall.common.showAll")}
           </button>
         </div>
       )}

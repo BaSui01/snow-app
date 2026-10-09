@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatMessageTime } from "../utils/conversationHelpers";
 
 export type ChatConversationMessage = {
   id: string;
@@ -11,12 +12,6 @@ type UseMockChatConversationResult = {
   messages: ChatConversationMessage[];
   handleSendMessage: (message: string) => void;
 };
-
-const formatMessageTime = (): string =>
-  new Date().toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 
 const createMessageId = (role: ChatConversationMessage["role"]): string =>
   `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

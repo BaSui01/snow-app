@@ -12,7 +12,7 @@ import {
   Strikethrough,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useI18n } from "../../../i18n";
+import { tGlobal, useI18n } from "../../../i18n";
 import { MarkdownBlock } from "../chatMessages/components/markdownRenderer";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -214,17 +214,17 @@ export const TeamMarkdownEditor = ({
     {
       icon: Bold,
       title: t("team.notes.mdBold", { defaultValue: "加粗" }),
-      run: () => applyWrap("**", "**", "加粗文本"),
+      run: () => applyWrap("**", "**", t("team.md.boldText")),
     },
     {
       icon: Italic,
       title: t("team.notes.mdItalic", { defaultValue: "斜体" }),
-      run: () => applyWrap("*", "*", "斜体文本"),
+      run: () => applyWrap("*", "*", t("team.md.italicText")),
     },
     {
       icon: Strikethrough,
       title: t("team.notes.mdStrike", { defaultValue: "删除线" }),
-      run: () => applyWrap("~~", "~~", "删除线"),
+      run: () => applyWrap("~~", "~~", t("team.md.strikeText")),
     },
     {
       icon: Heading1,
@@ -254,12 +254,12 @@ export const TeamMarkdownEditor = ({
     {
       icon: Code2,
       title: t("team.notes.mdCode", { defaultValue: "代码块" }),
-      run: () => applyWrap("```\n", "\n```", "代码"),
+      run: () => applyWrap("```\n", "\n```", t("team.md.codeText")),
     },
     {
       icon: Link,
       title: t("team.notes.mdLink", { defaultValue: "链接" }),
-      run: () => applyWrap("[", "](https://)", "链接文字"),
+      run: () => applyWrap("[", "](https://)", t("team.md.linkText")),
     },
     {
       icon: ImagePlus,
@@ -390,9 +390,9 @@ export const TeamNoteMarkdown = ({
 // 供列表摘要等场景把 Markdown 源文本转为纯文本
 export const mdToPlain = (md: string): string =>
   md
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "[图片]")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, tGlobal("team.md.plainImage"))
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/```[\s\S]*?```/g, "代码块")
+    .replace(/```[\s\S]*?```/g, tGlobal("team.md.plainCodeBlock"))
     .replace(/`([^`]+)`/g, "$1")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")

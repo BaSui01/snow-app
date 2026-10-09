@@ -16,6 +16,7 @@ import {
 } from "./constants";
 import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
 import { getActivePtyCount } from "../pty/ptyManager";
+import { onMainLocaleChange, refreshMainLocale, tMain } from "../i18n/mainI18n";
 import { snowLog } from "../../utils/snowLogger";
 
 /**
@@ -798,11 +799,13 @@ const applyTooltip = (): void => {
   // 托盘 tooltip 是主进程原生纯文本，无法渲染 lucide 图标，保持简洁文本。
   const lines = [
     "Snow App",
-    `会话进行中 ${stats.activeSessions}`,
-    `活跃终端 ${stats.activeTerminals}`,
-    `项目 ${stats.projects}`,
-    `待办备忘录 ${stats.pendingMemos}`,
-    `今日用量 ${formatTokens(stats.todayTokens)}`,
+    tMain("tray.tooltip.activeSessions", { count: stats.activeSessions }),
+    tMain("tray.tooltip.activeTerminals", { count: stats.activeTerminals }),
+    tMain("tray.tooltip.projects", { count: stats.projects }),
+    tMain("tray.tooltip.pendingMemos", { count: stats.pendingMemos }),
+    tMain("tray.tooltip.todayTokens", {
+      value: formatTokens(stats.todayTokens),
+    }),
   ];
   tray.setToolTip(lines.join("\n"));
 };
@@ -876,16 +879,30 @@ export const refreshTrayStats = (): void => {
 
 const buildContextMenu = (): Menu => {
   return Menu.buildFromTemplate([
-    { label: "打开 Snow App", click: showMainWindow },
+    { label: tMain("tray.openApp"), click: showMainWindow },
     { type: "separator" },
     {
-      label: "退出",
+      label: tMain("tray.quit"),
       click: () => {
         markCloseConfirmed();
         app.quit();
       },
     },
   ]);
+};
+
+/**
+ * 语言变化后重建托盘菜单。
+ *
+ * Windows/Linux 的托盘菜单在 setContextMenu 时固化，语言切换后必须重新
+ * 设置才会生效；macOS 每次右键即时构建（见 initTray 的 right-click 分支），
+ * 无需处理。
+ */
+const applyContextMenu = (): void => {
+  if (!tray || process.platform === "darwin") {
+    return;
+  }
+  tray.setContextMenu(buildContextMenu());
 };
 
 export const initTray = (native: NativeBridge): void => {
@@ -907,6 +924,16 @@ export const initTray = (native: NativeBridge): void => {
       // Windows/Linux：右键默认弹出菜单。
       tray.setContextMenu(buildContextMenu());
     }
+
+    // 原生菜单与 tooltip 文案跟随桌面语言：启动时读一次，之后语言变更即时重建。
+    void refreshMainLocale().then(() => {
+      applyContextMenu();
+      applyTooltip();
+    });
+    onMainLocaleChange(() => {
+      applyContextMenu();
+      applyTooltip();
+    });
 
     // 渲染进程推送进行中会话数（渲染层是流式状态的唯一持有者）。
     ipcMain.handle("tray:set-active-sessions", (_event, count: unknown) => {

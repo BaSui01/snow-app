@@ -62,7 +62,7 @@ export function LspStatusBadge({
   projectId?: string;
   onOpenSettings?: () => void;
 }): React.JSX.Element | null {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const lspEnabled = useLspServerEnabled(projectId);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [open, setOpen] = useState(false);
@@ -211,7 +211,9 @@ export function LspStatusBadge({
               <p className="lsp-status-popover-empty">
                 {t("chatInput.lspBadgeUpdated", {
                   values: {
-                    time: new Date(current.updatedAt).toLocaleTimeString(),
+                    time: new Date(current.updatedAt).toLocaleTimeString(
+                      locale,
+                    ),
                   },
                 })}
               </p>

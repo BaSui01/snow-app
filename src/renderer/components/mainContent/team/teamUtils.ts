@@ -75,9 +75,16 @@ export const avatarColor = (seed: string): string => {
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 };
 
-/** 相对时间描述（x 秒/分钟/小时前，超过 1 天显示日期）。 */
+/** i18n 翻译函数签名（与 useI18n 返回的 t 兼容），让纯函数模块不依赖 React 上下文。 */
+export type TranslateFn = (
+  key: string,
+  options?: { defaultValue?: string; values?: Record<string, string | number> },
+) => string;
+
+/** 相对时间描述（x 秒/分钟/小时前，超过 30 天显示日期）。文案由调用方传入 t 本地化。 */
 export const timeAgo = (
   at: string | number,
+  t: TranslateFn,
   now: number = Date.now(),
 ): string => {
   const parsed = new Date(at).getTime();
@@ -87,22 +94,22 @@ export const timeAgo = (
   const diff = Math.max(0, now - parsed);
   const sec = Math.floor(diff / 1000);
   if (sec < 10) {
-    return "刚刚";
+    return t("team.relativeTime.justNow");
   }
   if (sec < 60) {
-    return `${sec} 秒前`;
+    return t("team.relativeTime.secondsAgo", { values: { count: sec } });
   }
   const min = Math.floor(sec / 60);
   if (min < 60) {
-    return `${min} 分钟前`;
+    return t("team.relativeTime.minutesAgo", { values: { count: min } });
   }
   const hour = Math.floor(min / 60);
   if (hour < 24) {
-    return `${hour} 小时前`;
+    return t("team.relativeTime.hoursAgo", { values: { count: hour } });
   }
   const day = Math.floor(hour / 24);
   if (day < 30) {
-    return `${day} 天前`;
+    return t("team.relativeTime.daysAgo", { values: { count: day } });
   }
   return new Date(at).toLocaleDateString();
 };

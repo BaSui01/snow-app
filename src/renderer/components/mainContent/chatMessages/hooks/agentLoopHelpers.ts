@@ -347,12 +347,10 @@ export const applyStreamChunkToMessage = (
     };
   }
 
-  const {
-    isRetrying: _isRetrying,
-    retryAttempt: _retryAttempt,
-    retryError: _retryError,
-    ...ordinaryStreamingMessage
-  } = currentMessage;
+  // 只清「重试进行中」标记：最近一次重试的 attempt/error 记录继续留在消息上，
+  // 供空响应终态复用重试提示渲染（见 AiResponse 的 status="exhausted" 分支）。
+  const { isRetrying: _isRetrying, ...ordinaryStreamingMessage } =
+    currentMessage;
 
   const existingContent = ordinaryStreamingMessage.content;
   const nextContent =

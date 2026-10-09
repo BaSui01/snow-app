@@ -25,7 +25,9 @@ export const TeamEntry = ({
   const effIdentity = identity !== undefined ? identity : summary.identity;
   const effPendingCount = pendingCount ?? summary.pendingCount;
   const displayName =
-    effIdentity?.name || memberName([], effIdentity?.email ?? "") || "团队";
+    effIdentity?.name ||
+    memberName([], effIdentity?.email ?? "") ||
+    t("team.nameFallback");
 
   return (
     <button

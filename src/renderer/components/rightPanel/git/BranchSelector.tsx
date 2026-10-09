@@ -787,7 +787,13 @@ export const BranchSelector = ({
           setBranchItemContextMenu(null);
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
-        title={`${currentBranch}${worktrees.length > 0 ? ` · ${worktrees.length} 个工作树` : ""}`}
+        title={`${currentBranch}${
+          worktrees.length > 0
+            ? ` · ${t("git.worktreeCountSuffix", {
+                values: { count: worktrees.length },
+              })}`
+            : ""
+        }`}
       >
         <GitBranch
           size={13}
@@ -1018,7 +1024,9 @@ export const BranchSelector = ({
                         type="button"
                         className="branch-prefix-chip"
                         onClick={() => handleApplyPrefix(prefix)}
-                        title={`填入前缀 ${prefix}`}
+                        title={t("git.worktreeBranchPrefixTooltip", {
+                          values: { prefix },
+                        })}
                       >
                         {prefix}
                       </button>
@@ -1029,7 +1037,7 @@ export const BranchSelector = ({
                     ref={worktreeInputRef}
                     type="text"
                     className="branch-create-input"
-                    placeholder="例如: feature/chat-redesign"
+                    placeholder={t("git.worktreeBranchNamePlaceholder")}
                     value={worktreeBranchName}
                     onChange={(e) => {
                       setWorktreeBranchName(e.target.value);
@@ -1602,7 +1610,9 @@ export const BranchSelector = ({
           title={t("git.removeWorktreeTitle", { defaultValue: "删除工作树" })}
           message={t("git.removeWorktreeConfirmMsg", {
             values: {
-              path: removeWorktreeTarget.worktreePath,
+              // {{path}} 传目录名而非完整路径：文案改由 i18n 词条提供，避免弹窗里
+              // 出现一长串绝对路径（与旧 defaultValue 的展示保持一致）。
+              path: getFolderName(removeWorktreeTarget.worktreePath),
               branch: removeWorktreeTarget.branchName || "",
             },
             defaultValue: `确定要移除工作树 ${getFolderName(removeWorktreeTarget.worktreePath)} 吗？本地磁盘目录和未暂存修改将被清理。`,

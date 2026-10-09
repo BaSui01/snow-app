@@ -39,6 +39,10 @@ import {
 } from "../userQuestionBroker";
 import { refreshUserscriptSyncStore } from "../../app/userscriptSyncStore";
 import {
+  MAIN_LANGUAGE_SETTING_CODE,
+  refreshMainLocale,
+} from "../../i18n/mainI18n";
+import {
   dispatchAppControl,
   resolveAppControl,
   APP_CONTROL_RESPONSE_CHANNEL,
@@ -124,7 +128,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       settingName: string,
       settingCode: string,
       settingValue: string,
-    ) => native.setSystemSetting(settingName, settingCode, settingValue),
+    ) => {
+      const result = await native.setSystemSetting(
+        settingName,
+        settingCode,
+        settingValue,
+      );
+      // 语言设置变化后刷新主进程文案缓存（托盘等原生菜单随之重建）。
+      if (settingCode === MAIN_LANGUAGE_SETTING_CODE) {
+        await refreshMainLocale();
+      }
+      return result;
+    },
   );
   ipcMain.handle("settings:get-yolo-mode", () => native.getYoloMode());
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>

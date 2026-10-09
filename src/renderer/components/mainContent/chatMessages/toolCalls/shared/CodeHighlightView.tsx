@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import hljs from "highlight.js";
 import { getFileTypeIcon } from "../../../../../utils/fileIcons";
+import { useI18n } from "../../../../../i18n";
 
 type CodeHighlightViewProps = {
   code: string;
@@ -87,6 +88,7 @@ export const CodeHighlightView = ({
   maxHeight,
   className = "",
 }: CodeHighlightViewProps): React.JSX.Element => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const MAX_INITIAL_LINES = 300;
@@ -148,7 +150,9 @@ export const CodeHighlightView = ({
               <span className="tool-call-code-lines-tag">
                 {startLine !== undefined
                   ? `L${startLine}-L${startLine + highlightedLines.length - 1} / ${totalLines}`
-                  : `${totalLines} 行`}
+                  : t("toolCall.common.lineCount", {
+                      values: { count: totalLines },
+                    })}
               </span>
             )}
           </div>
@@ -157,14 +161,14 @@ export const CodeHighlightView = ({
             type="button"
             className="tool-call-code-copy-btn"
             onClick={handleCopy}
-            title="复制代码内容"
+            title={t("toolCall.common.copyCode")}
           >
             {copied ? (
               <Check size={11} aria-hidden="true" />
             ) : (
               <Copy size={11} aria-hidden="true" />
             )}
-            <span>{copied ? "已复制" : "复制"}</span>
+            <span>{copied ? t("common.copied") : t("common.copy")}</span>
           </button>
         </div>
       )}
@@ -197,15 +201,24 @@ export const CodeHighlightView = ({
         <div className="tool-call-code-expand-bar">
           <span>
             {showAll
-              ? `已展示全部 ${highlightedLines.length} 行`
-              : `已显示前 ${MAX_INITIAL_LINES} 行（共 ${highlightedLines.length} 行）`}
+              ? t("toolCall.common.linesShownAll", {
+                  values: { count: highlightedLines.length },
+                })
+              : t("toolCall.common.linesShownPartial", {
+                  values: {
+                    limit: MAX_INITIAL_LINES,
+                    total: highlightedLines.length,
+                  },
+                })}
           </span>
           <button
             type="button"
             className="tool-call-code-expand-btn"
             onClick={() => setShowAll((v) => !v)}
           >
-            {showAll ? "收起" : "展开全部高亮"}
+            {showAll
+              ? t("toolCall.common.collapse")
+              : t("toolCall.common.showAllHighlights")}
           </button>
         </div>
       )}

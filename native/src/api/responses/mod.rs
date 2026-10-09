@@ -25,7 +25,8 @@ use crate::api::conversation::{
     prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
 };
 use crate::api::retry::{
-    classify_final_stream_warning, resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition,
+    classify_final_stream_warning, resolve_empty_response_terminal, resolve_stream_idle_timeout_sec,
+    FinalStreamWarningDisposition,
     RetryOptions,
 };
 use crate::storage::services::app_logs::{
@@ -260,6 +261,9 @@ async fn create_response_async(
     on_chunk: crate::api::common::StreamSink<'_>,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
+    // 重试探针：记录本轮出现过的最大重试序号与最后一次上游错误，随消息落库。
+    let retry_probe = crate::api::common::RetryProbe::default();
+    let on_chunk = on_chunk.with_retry_probe(&retry_probe);
     let api_config = crate::api::oauth::provider::refresh_if_needed(api_config).await?;
     if api_config.request_method != "responses" {
         return Err(Error::from_reason(
@@ -478,12 +482,21 @@ async fn create_response_async(
     let transport_interruption_reason = streamed_response
         .interruption_reason
         .filter(|reason| reason.is_transport());
-    let interruption_reason = streamed_response
-        .interruption_reason
-        .map(|reason| reason.as_code().to_string());
-    let recovery_outcome = streamed_response
-        .recovery_outcome
-        .map(|outcome| outcome.as_code().to_string());
+
+    let has_response_payload = !streamed_response.content.is_empty()
+        || !streamed_response.thinking.is_empty()
+        || streamed_response.tool_calls_json != "[]"
+        || streamed_response.reasoning_items_json != "[]";
+    // 空响应重试预算耗尽：把「正常收尾但零载荷」显式标记为 empty_response /
+    // retry_exhausted，避免落库后与正常完成同形（前端与日志都无从分辨）。
+    let (terminal_reason, terminal_outcome) = resolve_empty_response_terminal(
+        &streamed_response.status,
+        streamed_response.interruption_reason,
+        streamed_response.recovery_outcome,
+        has_response_payload,
+    );
+    let interruption_reason = terminal_reason.map(|reason| reason.as_code().to_string());
+    let recovery_outcome = terminal_outcome.map(|outcome| outcome.as_code().to_string());
 
     if transport_interruption_reason.is_none() {
         for parse_error in &streamed_response.tool_parse_errors {
@@ -497,10 +510,6 @@ async fn create_response_async(
         }
     }
 
-    let has_response_payload = !streamed_response.content.is_empty()
-        || !streamed_response.thinking.is_empty()
-        || streamed_response.tool_calls_json != "[]"
-        || streamed_response.reasoning_items_json != "[]";
     match classify_final_stream_warning(
         &streamed_response.status,
         streamed_response.interruption_reason,
@@ -555,6 +564,8 @@ async fn create_response_async(
                 status: &streamed_response.status,
                 interruption_reason: interruption_reason.as_deref(),
                 recovery_outcome: recovery_outcome.as_deref(),
+                retry_attempts: retry_probe.attempts(),
+                retry_error: &retry_probe.last_error(),
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,

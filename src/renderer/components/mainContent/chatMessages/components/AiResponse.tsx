@@ -128,8 +128,12 @@ export const AiResponse = memo(
             : incompleteVariant === "empty"
               ? t("chat.incomplete.variant.empty")
               : null;
-    const incompleteReasonMessage =
-      interruptionReason === "unexpected_eof"
+    // 空响应终态（Rust 标记 empty_response / 前端「completed 且完全无载荷」兜底）
+    // 由下方重试提示以终态形态承载，原因与结果文案不再重复一行。
+    const isRetryExhaustedTerminal = interruptionReason === "empty_response";
+    const incompleteReasonMessage = isRetryExhaustedTerminal
+      ? null
+      : interruptionReason === "unexpected_eof"
         ? t("chat.incomplete.reason.unexpectedEof")
         : interruptionReason === "read_error"
           ? t("chat.incomplete.reason.readError")
@@ -141,13 +145,16 @@ export const AiResponse = memo(
                 ? t("chat.incomplete.reason.outputLimit")
                 : null;
     const recoveryOutcomeMessage =
-      recoveryOutcome === "partial_threshold"
-        ? t("chat.incomplete.outcome.partialThreshold")
-        : recoveryOutcome === "retry_exhausted"
-          ? t("chat.incomplete.outcome.retryExhausted")
-          : recoveryOutcome === "non_retriable"
-            ? t("chat.incomplete.outcome.nonRetriable")
-            : null;
+      // 「重试已耗尽」已由重试提示标题承载，避免同一件事说两遍。
+      isRetryExhaustedTerminal && recoveryOutcome === "retry_exhausted"
+        ? null
+        : recoveryOutcome === "partial_threshold"
+          ? t("chat.incomplete.outcome.partialThreshold")
+          : recoveryOutcome === "retry_exhausted"
+            ? t("chat.incomplete.outcome.retryExhausted")
+            : recoveryOutcome === "non_retriable"
+              ? t("chat.incomplete.outcome.nonRetriable")
+              : null;
 
     const sensitiveCommandAuthorizations = useMemo(
       () =>
@@ -215,7 +222,16 @@ export const AiResponse = memo(
 
           {/* 2. Body / Summary — 错误消息以异常卡片呈现，而非渲染原始文本 */}
           {isError && !showRawMarkdown ? (
-            <AiErrorNotice message={normalizedSummary} />
+            <AiErrorNotice
+              message={
+                normalizedSummary ||
+                // 错误终态但没有可展示文本（例如 failed 且零载荷）：给一句兜底
+                // 说明，避免渲染一张只有「错误」标题的空卡片。
+                t("chat.responseFailedFallback", {
+                  defaultValue: "The request failed. Please try again.",
+                })
+              }
+            />
           ) : normalizedSummary ? (
             showRawMarkdown ? (
               <pre className="ai-message-raw">{normalizedSummary}</pre>
@@ -306,8 +322,22 @@ export const AiResponse = memo(
             <StreamCursor />
           ) : null}
 
-          {/* 6. Persisted incomplete notice */}
-          {incompleteVariantMessage ? (
+          {/* 5b. 重试预算耗尽的终态：复用同一条重试提示（静态告警图标 +
+              「重试已耗尽 (N)」+ 错误详情 + 复制），让「上游连续返回空响应」
+              与重试过程共享同一处可观测 UI；重载后按落库的 empty_response
+              原因同样渲染（此时仅缺尝试序号与上游原文，回退到通用说明）。 */}
+          {!isRetrying && isRetryExhaustedTerminal ? (
+            <StreamRetryNotice
+              attempt={retryAttempt}
+              error={retryError ?? t("chat.incomplete.reason.emptyResponse")}
+              status="exhausted"
+            />
+          ) : null}
+
+          {/* 6. Persisted incomplete notice —— 空响应终态已由上方重试提示
+              （status="exhausted"，含「重试已耗尽 (N)」与上游错误原文）完整
+              承载，这里不再叠加第二张卡片重复说明同一件事。 */}
+          {incompleteVariantMessage && !isRetryExhaustedTerminal ? (
             <div className="response-incomplete-notice" role="status">
               <TriangleAlert
                 aria-hidden="true"

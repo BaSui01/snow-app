@@ -3,6 +3,7 @@ import type {
   ToolCallInfo,
 } from "./conversationTypes";
 import type { ChatMessageRecord } from "../../../../../preload";
+import { getActiveLocale, tGlobal } from "../../../../i18n";
 import { resolveResponseDisposition } from "./responseDisposition";
 
 export const deleteCheckpoints = (checkpointIds: string[]): void => {
@@ -162,7 +163,7 @@ export const killRunningToolExecutions = (
 };
 
 export const formatMessageTime = (): string =>
-  new Date().toLocaleTimeString("zh-CN", {
+  new Date().toLocaleTimeString(getActiveLocale(), {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -179,7 +180,9 @@ export const createMessageId = (
  */
 export const getErrorMessage = (error: unknown): string => {
   const message =
-    error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
+    error instanceof Error
+      ? error.message
+      : tGlobal("chat.responseFailedFallback");
   return message.replace(
     /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,
     "",
@@ -622,6 +625,14 @@ export const buildConversationMessages = (
         model: record.model || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         isContextCompaction: record.status === "context_compaction",
+        // 自动重试元数据：空响应终态重载后仍能显示「重试已耗尽 (N)」与上游
+        // 错误原文，而不是只剩一条通用说明。
+        ...(record.retryAttempts > 0
+          ? {
+              retryAttempt: record.retryAttempts,
+              retryError: record.retryError || undefined,
+            }
+          : {}),
         ...(assistantDisposition?.kind === "incomplete"
           ? {
               incompleteVariant: assistantDisposition.variant,

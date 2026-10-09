@@ -32,6 +32,7 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
+import { settleInterruptedMessages } from "../utils/messageSettlement";
 import {
   demotePendingSteering,
   hasPendingSteering,
@@ -728,6 +729,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         if (isRunCancelled(effectiveKey)) {
+          // 取消可能落在「消息已创建、请求尚未发出」的间隙（steering / 队列
+          // 新回合刚挂上一条 sending 消息）：同样需要幂等收尾，否则该消息会
+          // 一直停在发送中。
+          ctx.updateSessionMessages(effectiveKey, settleInterruptedMessages);
           return;
         }
 
@@ -1021,8 +1026,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     model: response.model || capturedOptions.model,
                     toolCalls: undefined,
                     isRetrying: false,
-                    retryAttempt: undefined,
-                    retryError: undefined,
+                    // 空响应终态保留最近一次重试的尝试序号与上游错误文本，
+                    // 供重试提示以终态形态渲染；其余终态一律清空。
+                    retryAttempt:
+                      responseDisposition.reason === "empty_response"
+                        ? currentMessage.retryAttempt
+                        : undefined,
+                    retryError:
+                      responseDisposition.reason === "empty_response"
+                        ? currentMessage.retryError
+                        : undefined,
                   }
                 : currentMessage,
             ),
@@ -1141,6 +1154,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         if (isRunCancelled(effectiveKey)) {
+          // 取消：handleAbort 已同步收尾过一次，这里再跑一次幂等收尾，兜住
+          // 未经 handleAbort 的取消路径（例如本 run 被新的 run 取代），避免
+          // 消息残留「发送中 / 重试中」。
+          ctx.updateSessionMessages(effectiveKey, settleInterruptedMessages);
           return;
         }
 
@@ -2014,9 +2031,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
           // If this is a background conversation (not the active one),
           // mark it as completed so the sidebar shows a dot indicator.
+          // 用户主动停止（abort）不算「后台会话跑完」：与下方 notifyAiComplete
+          // 保持同一口径，避免手动打断后侧栏仍亮「有新内容 / 已完成」圆点。
           if (
             !isPendingSessionKey(finalSessionKey) &&
-            finalSessionKey !== ctx.activeConversationIdRef.current
+            finalSessionKey !== ctx.activeConversationIdRef.current &&
+            !isRunCancelled(finalSessionKey)
           ) {
             ctx.updateSessionField(finalSessionKey, "hasNewContent", true);
             ctx.setCompletedConversationIds((prev: Set<string>) => {

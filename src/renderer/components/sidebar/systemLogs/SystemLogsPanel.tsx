@@ -14,7 +14,7 @@ import { CustomSelect } from "../../common/CustomSelect";
 import { Modal } from "../../common/Modal";
 import { RangeSlider } from "../../common/RangeSlider";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
-import { useI18n } from "../../../i18n";
+import { getActiveLocale, useI18n } from "../../../i18n";
 import {
   usePublishSettingsPageActions,
   type SettingsPageAction,
@@ -125,7 +125,7 @@ const formatTime = (value: string): string => {
   if (!value) return "";
   const date = new Date(value.replace(" ", "T"));
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString([], {
+  return date.toLocaleTimeString(getActiveLocale(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -136,7 +136,7 @@ const formatDate = (value: string): string => {
   if (!value) return "";
   const date = new Date(value.replace(" ", "T"));
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString([], {
+  return date.toLocaleDateString(getActiveLocale(), {
     month: "short",
     day: "numeric",
   });

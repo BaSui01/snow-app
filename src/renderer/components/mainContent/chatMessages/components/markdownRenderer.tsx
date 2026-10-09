@@ -243,10 +243,28 @@ const findLastNonEmptyTextNodeIn = (nodes: readonly Node[]): Text | null => {
   return null;
 };
 
+/**
+ * 表格下载按钮的 tooltip 文案。worker 生成的 HTML 里不含该文案（worker 拿不到
+ * i18n 上下文），由 MarkdownBlock 在解析块 HTML 时按当前语言补写；语言切换时
+ * 同一个 effect 会对已提交的块重新应用。模块级持有是为了不把 t 透传进性能
+ * 敏感的提交路径。
+ */
+let tableDownloadTitle = "";
+
+/** 由 MarkdownBlock 在语言变化时调用，保证随后新解析的块也用新语言。 */
+const setMarkdownTableDownloadTitle = (title: string): void => {
+  tableDownloadTitle = title;
+};
+
 /** 解析单块 HTML：只解析该块片段，不再对整篇内容做 DOM 级解析。 */
 const parseChunkNodes = (html: string): Node[] => {
   const template = document.createElement("template");
   template.innerHTML = html;
+  if (tableDownloadTitle) {
+    template.content
+      .querySelectorAll<HTMLElement>("[data-table-action='download']")
+      .forEach((button) => button.setAttribute("title", tableDownloadTitle));
+  }
   return Array.from(template.content.childNodes);
 };
 
@@ -682,6 +700,20 @@ export const MarkdownBlock = memo(
       minIntervalMs: minRenderIntervalMs,
     });
 
+    // 表格下载按钮的 tooltip：worker 生成的 HTML 不含文案，这里按当前语言补写；
+    // t 随语言变化而变，因此语言切换时也会对已提交的块重新应用一次。
+    useEffect(() => {
+      const title = t("markdown.downloadTable");
+      setMarkdownTableDownloadTitle(title);
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+      container
+        .querySelectorAll<HTMLElement>("[data-table-action='download']")
+        .forEach((button) => button.setAttribute("title", title));
+    }, [t]);
+
     // Markdown 图片灯箱：点击图片在放大视图中查看（复用生图工具灯箱样式）。
     const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
@@ -1004,17 +1036,17 @@ export const MarkdownBlock = memo(
                         console.error("[markdown] save image failed:", error);
                       });
                     }}
-                    title="下载"
-                    aria-label="下载"
+                    title={t("markdown.download")}
+                    aria-label={t("markdown.download")}
                   >
                     <Download size={13} aria-hidden="true" />
-                    下载
+                    {t("markdown.download")}
                   </button>
                   <button
                     type="button"
                     className="tool-call-imagegen-lightbox-close"
                     onClick={() => setLightboxSrc(null)}
-                    aria-label="关闭"
+                    aria-label={t("common.close")}
                   >
                     ✕
                   </button>

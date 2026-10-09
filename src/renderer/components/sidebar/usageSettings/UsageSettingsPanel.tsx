@@ -13,7 +13,7 @@ import { CustomSelect } from "../../common/CustomSelect";
 import { DailyTrendChart } from "./DailyTrendChart";
 import { ModelDonutChart } from "./ModelDonutChart";
 import { UsageDateFilter } from "./UsageDateFilter";
-import { useI18n } from "../../../i18n";
+import { getActiveLocale, useI18n } from "../../../i18n";
 import {
   usePublishSettingsPageActions,
   type SettingsPageAction,
@@ -104,7 +104,7 @@ const formatDateTime = (value: string): string => {
   if (!value) return "";
   const date = new Date(value.replace(" ", "T"));
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return date.toLocaleString(getActiveLocale());
 };
 
 const formatTokens = (value: number): string => {

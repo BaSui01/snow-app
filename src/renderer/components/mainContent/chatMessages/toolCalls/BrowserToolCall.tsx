@@ -1292,10 +1292,10 @@ const ScreenshotView = ({
                   a.download = `browser-screenshot-${Date.now()}.png`;
                   a.click();
                 }}
-                title="保存截图到本地"
+                title={t("toolCall.browser.saveScreenshot")}
               >
                 <Download size={13} aria-hidden="true" />
-                <span>保存</span>
+                <span>{t("common.save")}</span>
               </button>
               <button
                 type="button"

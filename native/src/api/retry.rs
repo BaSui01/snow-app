@@ -251,6 +251,10 @@ pub enum StreamInterruptionReason {
     IdleTimeout,
     ExplicitIncomplete,
     OutputLimit,
+    /// Provider 以 `completed`/`failed` 正常收尾，但正文、思考与工具调用全为空，
+    /// 且空响应重试预算已耗尽（见 `should_retry_empty_response`）。
+    /// 非 transport：不参与传输中断判定，也不触发传输恢复重试。
+    EmptyResponse,
 }
 
 impl StreamInterruptionReason {
@@ -261,6 +265,7 @@ impl StreamInterruptionReason {
             Self::IdleTimeout => "idle_timeout",
             Self::ExplicitIncomplete => "explicit_incomplete",
             Self::OutputLimit => "output_limit",
+            Self::EmptyResponse => "empty_response",
         }
     }
 
@@ -295,6 +300,48 @@ pub fn classify_final_stream_warning(
         _ if !has_response_payload => FinalStreamWarningDisposition::EmptyResponse,
         _ => FinalStreamWarningDisposition::None,
     }
+}
+
+/// 空响应重试预算耗尽后的终态标记。
+///
+/// Provider 以 `completed`/`failed` 正常收尾、但正文、思考、工具调用与 reasoning
+/// 全为空时，落库结果与「正常完成」完全同形（`status=completed` 且
+/// `interruption_reason`/`recovery_outcome` 均为空），前端只能看到一个空白气泡，
+/// 日志里也只剩一条 WARN。这里把该终态显式化：补上 `empty_response` 原因与
+/// `retry_exhausted` 结果，让日志、DB 与前端提示都能区分「上游返回空」与「正常完成」。
+///
+/// 只在「原本没有任何中断原因」时改写：真实传输中断 / 服务商明确未完成
+/// （`incomplete`）等既有终态一律原样透传，不改变它们的语义与恢复结果。
+///
+/// 只有 Provider 正常收尾（`final_status == "completed"`）才可能被判定为
+/// 「空响应」：
+/// - `cancelled`：用户主动停止。取消路径会清空中断原因与工具调用，零载荷本
+///   就是预期结果；补标记会让前端把用户自己的打断渲染成「重试已耗尽 / 响应
+///   未完整结束」告警（与 `classify_final_stream_warning` 的 cancelled 豁免
+///   口径保持一致）。
+/// - `failed`：服务商明确失败，语义已由 `status` 与错误内容承载；补
+///   `empty_response` 会让落库标记与前端展示（error 分支优先）分叉。
+pub fn resolve_empty_response_terminal(
+    final_status: &str,
+    interruption_reason: Option<StreamInterruptionReason>,
+    recovery_outcome: Option<StreamRecoveryOutcome>,
+    has_response_payload: bool,
+) -> (
+    Option<StreamInterruptionReason>,
+    Option<StreamRecoveryOutcome>,
+) {
+    if final_status != "completed" {
+        return (interruption_reason, recovery_outcome);
+    }
+
+    if interruption_reason.is_none() && !has_response_payload {
+        return (
+            Some(StreamInterruptionReason::EmptyResponse),
+            Some(StreamRecoveryOutcome::RetryExhausted),
+        );
+    }
+
+    (interruption_reason, recovery_outcome)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

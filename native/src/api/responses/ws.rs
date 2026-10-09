@@ -916,6 +916,7 @@ pub(super) async fn collect_streaming_response_ws(
                 && should_retry_empty_response(attempt, retry_options, attempt_state.has_payload())
             {
                 progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
+                log_empty_retry(&database_path, attempt, endpoint).await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
                 continue 'attempt_loop;
@@ -959,6 +960,7 @@ pub(super) async fn collect_streaming_response_ws(
                     )
                 {
                     progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
+                    log_empty_retry(&database_path, attempt, endpoint).await;
                     wait_before_retry(retry_options, cancel_token, attempt).await?;
                     attempt += 1;
                     continue 'attempt_loop;
@@ -1011,6 +1013,21 @@ async fn log_retry(
         "Responses API WebSocket request retrying",
         &format!(
             "transport=websocket attempt={} cause={cause} endpoint={endpoint} error={error}",
+            attempt + 1
+        ),
+    )
+    .await;
+}
+
+/// 记录一次「空响应」重试（WebSocket 传输）。与传输重试同样留痕：即使后续
+/// 重试成功或预算耗尽，也能从日志对账重试次数与上游的空响应行为。
+async fn log_empty_retry(database_path: &Path, attempt: u32, endpoint: &str) {
+    log_api_warning(
+        database_path,
+        "create_response_stream_with_context",
+        "AI response stream retrying",
+        &format!(
+            "provider=openai, request_method=responses, transport=websocket, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
             attempt + 1
         ),
     )

@@ -306,7 +306,9 @@ export function WorktreeManager({
                       type="button"
                       className="branch-prefix-chip"
                       onClick={() => handleApplyPrefix(prefix)}
-                      title={`填入前缀 ${prefix}`}
+                      title={t("git.worktreeBranchPrefixTooltip", {
+                        values: { prefix },
+                      })}
                     >
                       {prefix}
                     </button>
@@ -317,9 +319,7 @@ export function WorktreeManager({
                   ref={branchInputRef}
                   type="text"
                   aria-label={t("git.worktreeBranchName")}
-                  placeholder={
-                    t("git.worktreeBranchName") + " (如 feature/new-task)"
-                  }
+                  placeholder={t("git.worktreeBranchNamePlaceholder")}
                   value={branchName}
                   onChange={(event) => setBranchName(event.target.value)}
                   onKeyDown={(e) => {

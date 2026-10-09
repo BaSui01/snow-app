@@ -2,6 +2,7 @@
 //! loop, idle-timeout reconnection, and SSE event dispatch.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -23,6 +24,7 @@ use crate::api::retry::{
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
+use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
 pub(super) struct ChatCompletionStreamResult {
@@ -46,6 +48,7 @@ pub(super) struct ChatCompletionStreamResult {
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn collect_chat_completions_stream(
     client: &reqwest::Client,
+    database_path: PathBuf,
     endpoint: &str,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -106,6 +109,22 @@ pub(super) async fn collect_chat_completions_stream(
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
+
+            // 空响应重试此前完全不落库（该 provider 连传输重试都不写日志），
+            // 事后无法对账「是否重试过、重试了几次」。这里补一条 WARN。
+            {
+                let db_path = database_path.clone();
+                log_api_warning(
+                    &db_path,
+                    "create_chat_completion_response_stream",
+                    "AI response stream retrying",
+                    &format!(
+                        "provider=chat_completions, request_method=chat, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
+                        attempt + 1
+                    ),
+                )
+                .await;
+            }
 
             wait_before_retry(retry_options, cancel_token, attempt).await?;
             attempt += 1;

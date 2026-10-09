@@ -218,6 +218,10 @@ flowchart TD
    - 当 Rust 层发起内部重试时，会通过 Chunk 管道向前端发射 `{ retrying: true, retryAttempt: N, retryError: string }`；
    - 前端 `createStreamChunkHandler` 感知后，将当前 Assistant 消息打上 `isRetrying` 标记，并呼出 `StreamRetryNotice` 组件（展示旋转动画、当前重试轮次与可折叠的错误详情）；
    - 新连接只要吐出第一个有效字符，重试标识自动抹去，界面无缝恢复流式输出。
+5. **终态判定与取消语义（Terminal Disposition & Cancellation）**：
+   - 只有 Provider 正常收尾（`status=completed`）且零载荷时，才会补 `empty_response` / `retry_exhausted` 终态；`cancelled`（用户主动停止）与 `failed`（服务商明确失败）一律原样透传，语义由 `status` 承载（与 `classify_final_stream_warning` 的 cancelled 豁免口径一致）。
+   - `src/renderer/components/mainContent/chatMessages/utils/responseDisposition.ts` 是实时响应与落库回读的**唯一**判定入口：`error` / `failed` 走错误分支，`cancelled` 静默收尾，`incomplete` / `length` / `max_tokens` 显示中断提示，未知取值在零载荷时按未完成兜底（不会静默成一个没有任何提示的空白气泡）。
+   - 取消收尾幂等（`utils/messageSettlement.ts::settleInterruptedMessages`）：用户点停止、级联中止子代理与工作流节点、agent loop 的取消分支共用同一实现，避免消息残留「发送中 / 重试中」。
 
 ## 4. Renderer 主循环
 

@@ -218,6 +218,10 @@ flowchart TD
    - When Rust enters a retry attempt, it dispatches `{ retrying: true, retryAttempt: N, retryError: string }` chunks;
    - `createStreamChunkHandler` flags the message as `isRetrying` and renders the `StreamRetryNotice` component (with spinner, attempt counter, and collapsible error details);
    - Once the new connection streams its first payload chunk, the retry banner smoothly disappears and normal typing resumes.
+5. **Terminal Disposition and Cancellation**:
+   - The `empty_response` / `retry_exhausted` terminal is only attached when the provider finished normally (`status=completed`) with zero payload; `cancelled` (user stop) and `failed` (explicit provider failure) pass through unchanged, with `status` carrying the meaning (the same rule as the cancelled exemption in `classify_final_stream_warning`).
+   - `src/renderer/components/mainContent/chatMessages/utils/responseDisposition.ts` is the single disposition entry point for both live responses and reloaded rows: `error` / `failed` take the error branch, `cancelled` settles silently, `incomplete` / `length` / `max_tokens` show the interruption notice, and unknown values with zero payload fall back to incomplete (never a silent blank bubble).
+   - Cancellation settlement is idempotent (`utils/messageSettlement.ts::settleInterruptedMessages`): the stop button, cascading sub-agent / workflow-node aborts and the agent loop's cancellation branches share one implementation, so a message never stays stuck in "sending" / "retrying".
 
 ## 4. Renderer Main Loop
 

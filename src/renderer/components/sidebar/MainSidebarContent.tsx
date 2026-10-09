@@ -1,4 +1,10 @@
-import { Download, LoaderCircle, Settings } from "lucide-react";
+import {
+  ChevronDown,
+  Download,
+  Ellipsis,
+  LoaderCircle,
+  Settings,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
@@ -69,6 +75,7 @@ export function MainSidebarContent({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isChatsCollapsed, setIsChatsCollapsed] = useState(false);
+  const [isMoreExpanded, setIsMoreExpanded] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
@@ -233,6 +240,14 @@ export function MainSidebarContent({
     [activeMainView, onSelectMainView],
   );
 
+  // 独立页面入口收纳在「更多」折叠区内：页面打开时自动展开，
+  // 保证当前页面的入口可见、选中态可被看到。
+  useEffect(() => {
+    if (isFeaturePageView(activeMainView)) {
+      setIsMoreExpanded(true);
+    }
+  }, [activeMainView]);
+
   // 新建会话前收回独立页面：新会话在聊天视图里创建，页面不应继续占用主区域。
   const handleNewChatFromSidebar = useCallback((): void => {
     if (isFeaturePageView(activeMainView)) {
@@ -342,71 +357,103 @@ export function MainSidebarContent({
           <ShortcutHint action="newChat" />
         </button>
         <button
-          className={`nav-item sidebar-memo-btn${
-            activeMainView === "memo" ? " active" : ""
-          }`}
-          disabled={!activeDirectoryId}
-          onClick={() => toggleFeaturePage("memo")}
-          title={t("memo.sidebarEntry", { defaultValue: "Memos" })}
+          className={`nav-item sidebar-more-btn${
+            isMoreExpanded ? " expanded" : ""
+          }${isFeaturePageView(activeMainView) ? " active" : ""}`}
+          aria-expanded={isMoreExpanded}
+          onClick={() => setIsMoreExpanded((prev) => !prev)}
+          title={t("sidebar.more", { defaultValue: "More" })}
           type="button"
         >
-          <AnimatedMemoIcon size={16} strokeWidth={1.8} />
-          <span>{t("memo.sidebarEntry", { defaultValue: "Memos" })}</span>
-          {pendingMemoCount > 0 && (
-            <span className="sidebar-memo-badge">{pendingMemoCount}</span>
-          )}
+          <Ellipsis size={16} strokeWidth={1.8} />
+          <span>{t("sidebar.more", { defaultValue: "More" })}</span>
+          <ChevronDown
+            className="sidebar-more-chevron"
+            size={14}
+            strokeWidth={1.8}
+          />
         </button>
-        <button
-          className={`nav-item sidebar-memory-btn${
-            activeMainView === "memory" ? " active" : ""
-          }`}
-          disabled={!activeDirectoryId}
-          onClick={() => toggleFeaturePage("memory")}
-          title={t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
-          type="button"
+        <div
+          aria-hidden={!isMoreExpanded}
+          className={`sidebar-more-items${isMoreExpanded ? " expanded" : ""}`}
         >
-          <AnimatedProjectMemoryIcon size={16} strokeWidth={1.8} />
-          <span>
-            {t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
-          </span>
-          {memoryCount > 0 && (
-            <span className="sidebar-memory-badge">{memoryCount}</span>
-          )}
-        </button>
-        <button
-          className={`nav-item sidebar-scheduled-tasks-btn${
-            activeMainView === "scheduled-tasks" ? " active" : ""
-          }`}
-          onClick={() => toggleFeaturePage("scheduled-tasks")}
-          title={t("scheduledTask.sidebarEntry", {
-            defaultValue: "Scheduled Tasks",
-          })}
-          type="button"
-        >
-          <AnimatedScheduledTasksIcon size={16} strokeWidth={1.8} />
-          <span>
-            {t("scheduledTask.sidebarEntry", {
-              defaultValue: "Scheduled Tasks",
-            })}
-          </span>
-          {scheduledTasks.length > 0 && (
-            <span className="sidebar-memo-badge">{scheduledTasks.length}</span>
-          )}
-        </button>
-        <button
-          className={`nav-item sidebar-plugins-btn${
-            activeMainView === "plugins" ? " active" : ""
-          }`}
-          onClick={() => toggleFeaturePage("plugins")}
-          title={t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
-          type="button"
-        >
-          <AnimatedPluginsIcon size={16} strokeWidth={1.8} />
-          <span>{t("plugins.sidebarEntry", { defaultValue: "Plugins" })}</span>
-          {enabledPluginCount > 0 && (
-            <span className="sidebar-memory-badge">{enabledPluginCount}</span>
-          )}
-        </button>
+          <div className="sidebar-more-items-inner">
+            <button
+              className={`nav-item sidebar-memo-btn${
+                activeMainView === "memo" ? " active" : ""
+              }`}
+              disabled={!activeDirectoryId}
+              onClick={() => toggleFeaturePage("memo")}
+              title={t("memo.sidebarEntry", { defaultValue: "Memos" })}
+              type="button"
+            >
+              <AnimatedMemoIcon size={16} strokeWidth={1.8} />
+              <span>{t("memo.sidebarEntry", { defaultValue: "Memos" })}</span>
+              {pendingMemoCount > 0 && (
+                <span className="sidebar-memo-badge">{pendingMemoCount}</span>
+              )}
+            </button>
+            <button
+              className={`nav-item sidebar-memory-btn${
+                activeMainView === "memory" ? " active" : ""
+              }`}
+              disabled={!activeDirectoryId}
+              onClick={() => toggleFeaturePage("memory")}
+              title={t("memory.sidebarEntry", {
+                defaultValue: "Project Memory",
+              })}
+              type="button"
+            >
+              <AnimatedProjectMemoryIcon size={16} strokeWidth={1.8} />
+              <span>
+                {t("memory.sidebarEntry", { defaultValue: "Project Memory" })}
+              </span>
+              {memoryCount > 0 && (
+                <span className="sidebar-memory-badge">{memoryCount}</span>
+              )}
+            </button>
+            <button
+              className={`nav-item sidebar-scheduled-tasks-btn${
+                activeMainView === "scheduled-tasks" ? " active" : ""
+              }`}
+              onClick={() => toggleFeaturePage("scheduled-tasks")}
+              title={t("scheduledTask.sidebarEntry", {
+                defaultValue: "Scheduled Tasks",
+              })}
+              type="button"
+            >
+              <AnimatedScheduledTasksIcon size={16} strokeWidth={1.8} />
+              <span>
+                {t("scheduledTask.sidebarEntry", {
+                  defaultValue: "Scheduled Tasks",
+                })}
+              </span>
+              {scheduledTasks.length > 0 && (
+                <span className="sidebar-memo-badge">
+                  {scheduledTasks.length}
+                </span>
+              )}
+            </button>
+            <button
+              className={`nav-item sidebar-plugins-btn${
+                activeMainView === "plugins" ? " active" : ""
+              }`}
+              onClick={() => toggleFeaturePage("plugins")}
+              title={t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
+              type="button"
+            >
+              <AnimatedPluginsIcon size={16} strokeWidth={1.8} />
+              <span>
+                {t("plugins.sidebarEntry", { defaultValue: "Plugins" })}
+              </span>
+              {enabledPluginCount > 0 && (
+                <span className="sidebar-memory-badge">
+                  {enabledPluginCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
         <div
           className="snow-client-slot"
           data-snow-slot="sidebar.nav.actions"

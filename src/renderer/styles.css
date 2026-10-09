@@ -22321,6 +22321,62 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 
+.sidebar-more-btn {
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sidebar-more-btn:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-more-chevron {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.sidebar-more-btn.expanded .sidebar-more-chevron {
+  transform: rotate(180deg);
+}
+
+.sidebar-more-items {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.16s ease,
+    visibility 0s linear 0.22s;
+}
+
+.sidebar-more-items.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.16s ease 0.04s,
+    visibility 0s;
+}
+
+.sidebar-more-items-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: hidden;
+  margin-left: 12px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-light);
+}
+
+.sidebar-more-items .nav-item {
+  font-size: 12.5px;
+}
+
 /* ===== Search Modal ===== */
 .search-modal {
   height: min(560px, calc(100vh - 48px));
@@ -23920,6 +23976,117 @@ body.is-panel-resizing * {
 .memo-new-btn.compact {
   padding: 5px 7px;
   flex-shrink: 0;
+}
+
+/* 多选删除：header 工具条 + 条目勾选框（交互与记忆面板一致） */
+.memo-multi-select-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.memo-multi-select-exit-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.memo-multi-select-exit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.memo-multi-select-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.memo-multi-select-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.memo-multi-select-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.memo-multi-select-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.memo-multi-select-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.memo-multi-select-action-btn.danger {
+  color: var(--accent-red);
+}
+
+.memo-multi-select-action-btn.danger:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+}
+
+.memo-list-item.multi-select {
+  align-items: flex-start;
+}
+
+.memo-list-item.multi-select.checked {
+  background: var(--bg-active);
+}
+
+.memo-item-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+  color: var(--on-solid);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.memo-item-checkbox:hover {
+  border-color: var(--accent-color);
+}
+
+.memo-item-checkbox.checked {
+  background: var(--accent-color);
+  border-color: color-mix(in srgb, var(--accent-color) 60%, transparent);
 }
 
 .memo-sort-btn {

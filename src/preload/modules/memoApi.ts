@@ -35,6 +35,8 @@ export const memoApi = {
     ipcRenderer.invoke("memos:update-status", memoId, status),
   deleteMemo: (memoId: string): Promise<void> =>
     ipcRenderer.invoke("memos:delete", memoId),
+  deleteMemos: (memoIds: string[]): Promise<number> =>
+    ipcRenderer.invoke("memos:delete-many", memoIds),
   getMemoCountSummary: (directoryId: string): Promise<MemoCountSummary> =>
     ipcRenderer.invoke("memos:count-summary", directoryId),
 };

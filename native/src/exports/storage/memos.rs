@@ -61,6 +61,13 @@ pub async fn delete_memo(memo_id: String) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn delete_memos(memo_ids: Vec<String>) -> napi::Result<i32> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_memos(memo_ids))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_memo_count_summary(directory_id: String) -> napi::Result<MemoCountSummary> {
     tokio::task::spawn_blocking(move || crate::storage::get_memo_count_summary(directory_id))
         .await

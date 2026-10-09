@@ -2772,6 +2772,8 @@ export type NativeBridge = {
   updateMemoContent: (memoId: string, content: string) => Promise<MemoRecord>;
   updateMemoStatus: (memoId: string, status: string) => Promise<MemoRecord>;
   deleteMemo: (memoId: string) => Promise<void>;
+  /** 按 memo_id 批量删除备忘，单事务原子执行，返回实际删除条数。 */
+  deleteMemos: (memoIds: string[]) => Promise<number>;
   getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
   listFileReviewAnnotations: (
     sourceKey: string,

@@ -3,7 +3,9 @@ import {
   ArrowUpNarrowWide,
   Check,
   CheckCircle2,
+  CheckSquare,
   Circle,
+  ListChecks,
   Loader2,
   Plus,
   Search,
@@ -224,6 +226,13 @@ export function MemoPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MemoRecord | null>(null);
   const [buildTarget, setBuildTarget] = useState<MemoRecord | null>(null);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedMemoIds, setSelectedMemoIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [isBatchDeleteConfirmOpen, setIsBatchDeleteConfirmOpen] =
+    useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   // @ 引用面板：查询文本以 @ 之后的输入为准
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -405,6 +414,8 @@ export function MemoPanel({
     setSearchInput("");
     setSearchKeyword("");
     setEditorContent("");
+    setIsMultiSelectMode(false);
+    setSelectedMemoIds(new Set());
     lastSavedContentRef.current = "";
     closeMention();
     editorRangeRef.current = null;
@@ -502,6 +513,15 @@ export function MemoPanel({
     }
     if (buildTarget) {
       setBuildTarget(null);
+      return;
+    }
+    if (isBatchDeleteConfirmOpen) {
+      setIsBatchDeleteConfirmOpen(false);
+      return;
+    }
+    if (isMultiSelectMode) {
+      setIsMultiSelectMode(false);
+      setSelectedMemoIds(new Set());
       return;
     }
     if (searchInput !== "") {
@@ -804,6 +824,68 @@ export function MemoPanel({
     }
   };
 
+  const handleEnterMultiSelect = () => {
+    setIsMultiSelectMode(true);
+    setSelectedMemoIds(new Set());
+  };
+
+  const handleExitMultiSelect = () => {
+    setIsMultiSelectMode(false);
+    setSelectedMemoIds(new Set());
+  };
+
+  const handleToggleSelect = (memoId: string) => {
+    setSelectedMemoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(memoId)) {
+        next.delete(memoId);
+      } else {
+        next.add(memoId);
+      }
+      return next;
+    });
+  };
+
+  // 全选只覆盖当前已加载条目，滚动加载的新条目需再次点击纳入选择。
+  const isAllSelected =
+    memos.length > 0 && memos.every((memo) => selectedMemoIds.has(memo.memoId));
+
+  const handleToggleSelectAll = () => {
+    setSelectedMemoIds(
+      isAllSelected ? new Set() : new Set(memos.map((memo) => memo.memoId)),
+    );
+  };
+
+  const confirmBatchDelete = async () => {
+    setIsBatchDeleteConfirmOpen(false);
+    if (isBatchDeleting || selectedMemoIds.size === 0) return;
+    const ids = [...selectedMemoIds];
+    const removed = new Set(ids);
+    setIsBatchDeleting(true);
+    try {
+      // 先落库并清掉待触发的自动保存，避免删除后旧内容写回新选中的备忘。
+      await flushSave();
+      await window.snow.deleteMemos(ids);
+      const remaining = memosRef.current.filter(
+        (memo) => !removed.has(memo.memoId),
+      );
+      setMemos(remaining);
+      setTotalCount((prev) =>
+        Math.max(0, prev - (memosRef.current.length - remaining.length)),
+      );
+      setSelectedMemoIds(new Set());
+      setIsMultiSelectMode(false);
+      if (selectedMemoIdRef.current && removed.has(selectedMemoIdRef.current)) {
+        setSelectedMemoId(remaining[0]?.memoId ?? null);
+      }
+      notifyMemosChanged();
+    } catch {
+      // Ignore
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
   const handleSelectMemo = async (memo: MemoRecord) => {
     if (memo.memoId === selectedMemoId) return;
     await flushSave();
@@ -900,6 +982,7 @@ export function MemoPanel({
 
   const renderMemoItem = (memo: MemoRecord) => {
     const isSelected = memo.memoId === selectedMemoId;
+    const isChecked = selectedMemoIds.has(memo.memoId);
     const preview = buildLocalPreview(memo.content, searchKeyword);
     const parsedDate = parseDbTimestamp(memo.updatedAt || memo.createdAt);
     const timeLabel = formatTimeLabel(parsedDate, new Date(), t);
@@ -910,11 +993,22 @@ export function MemoPanel({
         key={memo.memoId}
         className={`memo-list-item${isSelected ? " selected" : ""}${
           isDone ? " done" : ""
+        }${isMultiSelectMode ? " multi-select" : ""}${
+          isMultiSelectMode && isChecked ? " checked" : ""
         }`}
-        onClick={() => void handleSelectMemo(memo)}
+        onClick={
+          isMultiSelectMode
+            ? () => handleToggleSelect(memo.memoId)
+            : () => void handleSelectMemo(memo)
+        }
         role="button"
         tabIndex={0}
       >
+        {isMultiSelectMode && (
+          <span className={`memo-item-checkbox${isChecked ? " checked" : ""}`}>
+            {isChecked ? <Check size={11} strokeWidth={3} /> : null}
+          </span>
+        )}
         <div className="memo-list-item-main">
           <div className="memo-list-item-preview">
             {preview ? (
@@ -932,36 +1026,40 @@ export function MemoPanel({
             )}
           </div>
         </div>
-        <div className="memo-list-item-actions">
-          <button
-            aria-label={isDone ? t("memo.togglePending") : t("memo.toggleDone")}
-            className={`memo-icon-btn${isDone ? " done-toggle" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleToggleStatus(memo);
-            }}
-            title={isDone ? t("memo.togglePending") : t("memo.toggleDone")}
-            type="button"
-          >
-            {isDone ? (
-              <CheckCircle2 size={15} strokeWidth={2} />
-            ) : (
-              <Circle size={15} strokeWidth={1.8} />
-            )}
-          </button>
-          <button
-            aria-label={t("memo.delete")}
-            className="memo-icon-btn danger"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleDelete(memo);
-            }}
-            title={t("memo.delete")}
-            type="button"
-          >
-            <Trash2 size={14} strokeWidth={2} />
-          </button>
-        </div>
+        {!isMultiSelectMode && (
+          <div className="memo-list-item-actions">
+            <button
+              aria-label={
+                isDone ? t("memo.togglePending") : t("memo.toggleDone")
+              }
+              className={`memo-icon-btn${isDone ? " done-toggle" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleToggleStatus(memo);
+              }}
+              title={isDone ? t("memo.togglePending") : t("memo.toggleDone")}
+              type="button"
+            >
+              {isDone ? (
+                <CheckCircle2 size={15} strokeWidth={2} />
+              ) : (
+                <Circle size={15} strokeWidth={1.8} />
+              )}
+            </button>
+            <button
+              aria-label={t("memo.delete")}
+              className="memo-icon-btn danger"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleDelete(memo);
+              }}
+              title={t("memo.delete")}
+              type="button"
+            >
+              <Trash2 size={14} strokeWidth={2} />
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -1133,33 +1231,114 @@ export function MemoPanel({
       >
         <div className="memo-sidebar">
           <div className="memo-sidebar-header">
-            <div className="memo-filter-tabs">
-              {(["all", "pending", "done"] as const).map((key) => (
+            {isMultiSelectMode ? (
+              <>
                 <button
-                  className={`memo-filter-tab${
-                    filter === key ? " active" : ""
-                  }`}
-                  key={key}
-                  onClick={() => setFilter(key)}
+                  className="memo-multi-select-exit-btn"
+                  disabled={isBatchDeleting}
+                  onClick={handleExitMultiSelect}
+                  title={t("memo.multiSelectExit", {
+                    defaultValue: "Exit multi-select",
+                  })}
                   type="button"
                 >
-                  {key === "all"
-                    ? t("memo.filterAll")
-                    : key === "pending"
-                      ? t("memo.filterPending")
-                      : t("memo.filterDone")}
+                  <X size={14} strokeWidth={2} />
                 </button>
-              ))}
-            </div>
-            <button
-              className="memo-new-btn compact"
-              disabled={isCreating}
-              onClick={() => void handleCreate()}
-              title={t("memo.newMemo")}
-              type="button"
-            >
-              <Plus size={15} strokeWidth={2.2} />
-            </button>
+                <span className="memo-multi-select-count">
+                  {t("memo.multiSelectCount", {
+                    defaultValue: "{{count}} selected",
+                    values: { count: selectedMemoIds.size },
+                  })}
+                </span>
+                <div className="memo-multi-select-actions">
+                  <button
+                    className="memo-multi-select-action-btn"
+                    disabled={isBatchDeleting}
+                    onClick={handleToggleSelectAll}
+                    title={t("memo.multiSelectAll", {
+                      defaultValue: "Select all",
+                    })}
+                    type="button"
+                  >
+                    <CheckSquare size={13} />
+                    <span>
+                      {isAllSelected
+                        ? t("memo.multiSelectDeselectAll", {
+                            defaultValue: "Deselect all",
+                          })
+                        : t("memo.multiSelectAll", {
+                            defaultValue: "Select all",
+                          })}
+                    </span>
+                  </button>
+                  <button
+                    className="memo-multi-select-action-btn danger"
+                    disabled={isBatchDeleting || selectedMemoIds.size === 0}
+                    onClick={() => setIsBatchDeleteConfirmOpen(true)}
+                    title={t("memo.multiSelectDelete", {
+                      defaultValue: "Delete selected",
+                    })}
+                    type="button"
+                  >
+                    {isBatchDeleting ? (
+                      <Loader2 className="spin" size={13} />
+                    ) : (
+                      <Trash2 size={13} />
+                    )}
+                    <span>
+                      {isBatchDeleting
+                        ? t("memo.multiSelectDeleting", {
+                            defaultValue: "Deleting...",
+                          })
+                        : t("memo.multiSelectDelete", {
+                            defaultValue: "Delete selected",
+                          })}
+                    </span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="memo-filter-tabs">
+                  {(["all", "pending", "done"] as const).map((key) => (
+                    <button
+                      className={`memo-filter-tab${
+                        filter === key ? " active" : ""
+                      }`}
+                      key={key}
+                      onClick={() => setFilter(key)}
+                      type="button"
+                    >
+                      {key === "all"
+                        ? t("memo.filterAll")
+                        : key === "pending"
+                          ? t("memo.filterPending")
+                          : t("memo.filterDone")}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="memo-new-btn compact"
+                  disabled={memos.length === 0}
+                  onClick={handleEnterMultiSelect}
+                  title={t("memo.multiSelectEnter", {
+                    defaultValue: "Select multiple",
+                  })}
+                  type="button"
+                >
+                  <ListChecks size={15} strokeWidth={2.2} />
+                </button>
+                <button
+                  className="memo-new-btn compact"
+                  disabled={isCreating}
+                  onClick={() => void handleCreate()}
+                  title={t("memo.newMemo")}
+                  type="button"
+                >
+                  <Plus size={15} strokeWidth={2.2} />
+                </button>
+              </>
+            )}
           </div>
           <div className="memo-search-row">
             <Search
@@ -1299,6 +1478,22 @@ export function MemoPanel({
         open={buildTarget !== null}
         title={t("memo.buildTitle", { defaultValue: "Build from memo" })}
         variant="default"
+      />
+      <ConfirmDialog
+        cancelLabel={t("memo.cancelDelete", { defaultValue: "Cancel" })}
+        confirmLabel={t("memo.multiSelectDelete", {
+          defaultValue: "Delete selected",
+        })}
+        message={t("memo.multiSelectDeleteConfirm", {
+          defaultValue:
+            "Permanently delete the {{count}} selected memos? This cannot be undone.",
+          values: { count: selectedMemoIds.size },
+        })}
+        onCancel={() => setIsBatchDeleteConfirmOpen(false)}
+        onConfirm={() => void confirmBatchDelete()}
+        open={isBatchDeleteConfirmOpen}
+        title={t("memo.delete", { defaultValue: "Delete" })}
+        variant="danger"
       />
     </div>
   );

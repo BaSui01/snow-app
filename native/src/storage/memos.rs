@@ -48,6 +48,11 @@ pub fn delete_memo(memo_id: String) -> Result<()> {
     services::memos::delete_memo(&database_path, &memo_id)
 }
 
+pub fn delete_memos(memo_ids: Vec<String>) -> Result<i32> {
+    let database_path = ensure_database_file()?;
+    services::memos::delete_memos_by_ids(&database_path, &memo_ids)
+}
+
 pub fn get_memo_count_summary(directory_id: String) -> Result<MemoCountSummary> {
     let database_path = ensure_database_file()?;
     services::memos::get_memo_count_summary(&database_path, &directory_id)

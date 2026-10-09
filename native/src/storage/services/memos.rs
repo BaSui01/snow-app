@@ -1,10 +1,13 @@
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, Row, TransactionBehavior};
 
 use super::super::database;
 use super::super::{MemoCountSummary, MemoPage, MemoRecord};
+
+/// SQLite 绑定变量上限保护：IN 子句按 900 一批分块执行。
+const MEMO_SQL_CHUNK: usize = 900;
 
 /// Creates a new memo from the given rich-text content. The content is
 /// stored verbatim; the caller (frontend) is responsible for sanitising
@@ -83,6 +86,50 @@ pub fn delete_memo(database_path: &Path, memo_id: &str) -> Result<()> {
             Ok(())
         })
         .map_err(|error| database::database_error(database_path, "delete memo", error))
+}
+
+/// 按 memo_id 批量删除备忘。单个 IMMEDIATE 事务保证原子性，返回删除条数；
+/// 不存在的 id 静默跳过。
+pub fn delete_memos_by_ids(database_path: &Path, memo_ids: &[String]) -> Result<i32> {
+    let ids: Vec<String> = memo_ids
+        .iter()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect();
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "delete memos by ids", error))?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "delete memos by ids", error))?;
+    let deleted = delete_memos_by_ids_with_connection(&transaction, &ids)
+        .map_err(|error| database::database_error(database_path, "delete memos by ids", error))?;
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "delete memos by ids", error))?;
+    Ok(deleted)
+}
+
+fn delete_memos_by_ids_with_connection(
+    connection: &Connection,
+    memo_ids: &[String],
+) -> rusqlite::Result<i32> {
+    let mut deleted = 0i32;
+    for chunk in memo_ids.chunks(MEMO_SQL_CHUNK) {
+        let placeholders = chunk
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("?{}", index + 1))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut statement =
+            connection.prepare(&format!("DELETE FROM memos WHERE memo_id IN ({placeholders})"))?;
+        deleted += statement.execute(rusqlite::params_from_iter(chunk.iter().cloned()))? as i32;
+    }
+    Ok(deleted)
 }
 
 /// Returns total / pending / done memo counts for the sidebar badge,

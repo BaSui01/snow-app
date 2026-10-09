@@ -114,6 +114,17 @@ export const registerMemoHandlers = (native: NativeBridge): void => {
     return native.deleteMemo(requireMemoId(memoId));
   });
 
+  ipcMain.handle("memos:delete-many", async (_event, memoIds: unknown) => {
+    const safeIds = Array.isArray(memoIds)
+      ? memoIds
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id !== "")
+      : [];
+    if (safeIds.length === 0) return 0;
+    return native.deleteMemos(safeIds);
+  });
+
   ipcMain.handle("memos:count-summary", (_event, directoryId: unknown) => {
     return native.getMemoCountSummary(requireDirectoryId(directoryId));
   });

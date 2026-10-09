@@ -222,7 +222,16 @@ export const AiResponse = memo(
 
           {/* 2. Body / Summary — 错误消息以异常卡片呈现，而非渲染原始文本 */}
           {isError && !showRawMarkdown ? (
-            <AiErrorNotice message={normalizedSummary} />
+            <AiErrorNotice
+              message={
+                normalizedSummary ||
+                // 错误终态但没有可展示文本（例如 failed 且零载荷）：给一句兜底
+                // 说明，避免渲染一张只有「错误」标题的空卡片。
+                t("chat.responseFailedFallback", {
+                  defaultValue: "The request failed. Please try again.",
+                })
+              }
+            />
           ) : normalizedSummary ? (
             showRawMarkdown ? (
               <pre className="ai-message-raw">{normalizedSummary}</pre>
@@ -325,8 +334,10 @@ export const AiResponse = memo(
             />
           ) : null}
 
-          {/* 6. Persisted incomplete notice */}
-          {incompleteVariantMessage ? (
+          {/* 6. Persisted incomplete notice —— 空响应终态已由上方重试提示
+              （status="exhausted"，含「重试已耗尽 (N)」与上游错误原文）完整
+              承载，这里不再叠加第二张卡片重复说明同一件事。 */}
+          {incompleteVariantMessage && !isRetryExhaustedTerminal ? (
             <div className="response-incomplete-notice" role="status">
               <TriangleAlert
                 aria-hidden="true"

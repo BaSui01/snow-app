@@ -15,6 +15,7 @@ import {
   directoryIdToPath,
   killRunningToolExecutions,
 } from "../utils/conversationHelpers";
+import { settleInterruptedMessages } from "../utils/messageSettlement";
 import { extractFileTrackingFromRecords } from "./fileChangeTracking";
 import {
   appendHookExecutionToMessage,
@@ -874,22 +875,7 @@ export const useConversationManagement = (
         ctx.sessionsRef.current?.[subKey]?.messages ?? [],
       );
 
-      ctx.updateSessionMessages(subKey, (currentMessages) =>
-        currentMessages.map((message) => ({
-          ...message,
-          status: message.status === "sending" ? "sent" : message.status,
-          isRetrying: message.status === "sending" ? false : message.isRetrying,
-          toolCalls: message.toolCalls?.map((toolCall) =>
-            toolCall.status === "running" || toolCall.status === "pending"
-              ? {
-                  ...toolCall,
-                  status: "error",
-                  result: toolCall.result ?? "Interrupted by user",
-                }
-              : toolCall,
-          ),
-        })),
-      );
+      ctx.updateSessionMessages(subKey, settleInterruptedMessages);
       ctx.updateSessionField(subKey, "isStreaming", false);
       ctx.updateSessionField(subKey, "streamStartedAt", 0);
       ctx.updateSessionField(subKey, "isAborting", false);
@@ -984,25 +970,7 @@ export const useConversationManagement = (
       ref.activeSendOptions = undefined;
       ref.activeTaskMessages = undefined;
       demotePendingSteering(ctx, key);
-      ctx.updateSessionMessages(key, (currentMessages) =>
-        currentMessages.map((message) => {
-          return {
-            ...message,
-            status: message.status === "sending" ? "sent" : message.status,
-            isRetrying:
-              message.status === "sending" ? false : message.isRetrying,
-            toolCalls: message.toolCalls?.map((toolCall) =>
-              toolCall.status === "running" || toolCall.status === "pending"
-                ? {
-                    ...toolCall,
-                    status: "error",
-                    result: toolCall.result ?? "Interrupted by user",
-                  }
-                : toolCall,
-            ),
-          };
-        }),
-      );
+      ctx.updateSessionMessages(key, settleInterruptedMessages);
       // Kill every in-flight bash subprocess of this session so the OS
       // process does not keep running until its timeout.
       killRunningToolExecutions(ctx.sessionsRef.current?.[key]?.messages ?? []);

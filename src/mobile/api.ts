@@ -325,10 +325,10 @@ export const setThinking = (value: string): Promise<{ ok: true }> =>
     body: JSON.stringify({ thinkingStrength: value }),
   });
 
-export const setResponsesFastMode = (enabled: boolean): Promise<{ ok: true }> =>
+export const setResponsesFastMode = (tier: string): Promise<{ ok: true }> =>
   request("/api/model", {
     method: "POST",
-    body: JSON.stringify({ responsesFastMode: enabled }),
+    body: JSON.stringify({ responsesFastMode: tier }),
   });
 
 export const runCommand = (commandId: string): Promise<{ ok: true }> =>

@@ -97,8 +97,8 @@ fn apply_thinking_strength_override(
 /// Applies a per-request Responses Fast Mode override onto a profile's
 /// config_json (in-memory only — the stored profile is never mutated).
 /// `None` preserves the resolved profile configuration unchanged.
-fn apply_responses_fast_mode_override(config_json: &str, fast_mode: Option<bool>) -> String {
-    let Some(fast_mode) = fast_mode else {
+fn apply_responses_fast_mode_override(config_json: &str, fast_mode: Option<&str>) -> String {
+    let Some(fast_mode) = fast_mode.map(str::trim).filter(|value| !value.is_empty()) else {
         return config_json.to_string();
     };
 
@@ -114,7 +114,7 @@ fn apply_responses_fast_mode_override(config_json: &str, fast_mode: Option<bool>
     if let Some(snowcfg) = parsed["snowcfg"].as_object_mut() {
         snowcfg.insert(
             "responsesFastMode".to_string(),
-            serde_json::Value::Bool(fast_mode),
+            serde_json::Value::String(fast_mode.to_string()),
         );
     }
 
@@ -242,8 +242,10 @@ pub async fn create_response_stream(
     // overlay them onto the resolved profile's config_json in memory so the
     // provider payload builders pick them up. The stored profile is untouched.
     let mut api_config = context.api_config;
-    api_config.config_json =
-        apply_responses_fast_mode_override(&api_config.config_json, request.responses_fast_mode);
+    api_config.config_json = apply_responses_fast_mode_override(
+        &api_config.config_json,
+        request.responses_fast_mode.as_deref(),
+    );
     if let Some(strength) = normalize_non_empty(request.thinking_strength.as_deref()) {
         api_config.config_json = apply_thinking_strength_override(
             &api_config.config_json,

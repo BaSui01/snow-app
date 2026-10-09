@@ -689,7 +689,9 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
           ? thinkingStrength.trim()
           : null;
       const capturedResponsesFastMode =
-        typeof responsesFastMode === "boolean" ? responsesFastMode : null;
+        typeof responsesFastMode === "string" && responsesFastMode.trim()
+          ? responsesFastMode.trim()
+          : null;
 
       const sessionContext = `agent=${agentName.trim()} conversation=${conversationId.trim()} parent=${parentConversationId.trim()}`;
       try {

@@ -103,8 +103,8 @@ export type SubAgentActivationDeps = {
   ) => Promise<ToolAuthorizationDecision[]>;
   parentApiProfile: string | undefined;
   parentModel: string | undefined;
-  /** Effective Fast Mode captured by the parent run; explicit false is valid. */
-  parentResponsesFastMode?: boolean | null;
+  /** Effective Fast Mode captured by the parent run; an explicit tier is valid. */
+  parentResponsesFastMode?: string | null;
   planApprovedSessionKeysRef: { current: Set<string> };
 };
 
@@ -1903,7 +1903,7 @@ const restoreSubAgentResumer = async (
   ctx: ConversationContextValue,
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"],
   planApprovedSessionKeysRef: { current: Set<string> },
-  parentResponsesFastMode: boolean | null | undefined,
+  parentResponsesFastMode: string | null | undefined,
   parentConversationId: string,
   targetConvId: string,
   activeCheckpointIds: string[],
@@ -2109,7 +2109,7 @@ export const createSubAgentMainToolExecutor = (
     SubAgentActivationDeps,
     "requestToolAuthorizations" | "planApprovedSessionKeysRef"
   > & {
-    parentResponsesFastMode?: boolean | null;
+    parentResponsesFastMode?: string | null;
   },
 ) => {
   const {

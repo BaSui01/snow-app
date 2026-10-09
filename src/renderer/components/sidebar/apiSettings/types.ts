@@ -39,7 +39,8 @@ export type ApiConfigFormData = {
    *  开启后所有 anthropic 请求都会携带 context-1m beta 头，不依赖模型名标记。 */
   oneMContext: boolean;
   responsesVerbosity: string;
-  responsesFastMode: boolean;
+  /** Responses Fast Mode 档位："" = 关闭，"fast" = priority，"ultrafast"。 */
+  responsesServiceTier: string;
   /** Responses WebSocket 开关（snowcfg.responsesWebSocket）。开启后 Responses
    *  请求改用 WebSocket 传输，并在多轮之间复用同一条连接。 */
   responsesWebSocket: boolean;

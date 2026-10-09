@@ -7,12 +7,12 @@ import type { ChatInputSendOptions } from "./types";
 
 type AutoSendChatInputSendOptions = ChatInputSendOptions & {
   /** One-shot effective Fast Mode resolved from the scheduled profile. */
-  responsesFastMode?: boolean | null;
+  responsesFastMode?: string | null;
 };
 
 type AutoSendRunOverride = ScheduledTaskRunOptions & {
   /** Optional future/bridge-provided one-shot Fast Mode override. */
-  responsesFastMode?: boolean | null;
+  responsesFastMode?: string | null;
 };
 
 type AutoSendApiConfig = Pick<
@@ -49,7 +49,7 @@ export const resolveAutoSendOptions = ({
   if (!model) {
     if (taskApiProfile) {
       const taskApiConfig = apiConfigs.find(
-        (config) => config.profileName.trim() === taskApiProfile
+        (config) => config.profileName.trim() === taskApiProfile,
       );
       model = nonEmpty(taskApiConfig?.advancedModel);
     } else {
@@ -60,7 +60,7 @@ export const resolveAutoSendOptions = ({
   const apiProfile = taskApiProfile ?? nonEmpty(selectedApiProfile);
   const selectedProfileConfig = apiProfile
     ? apiConfigs.find((config) => config.profileName.trim() === apiProfile)
-    : apiConfigs.find((config) => config.isActive) ?? apiConfigs[0];
+    : (apiConfigs.find((config) => config.isActive) ?? apiConfigs[0]);
   const explicitFastMode = (autoSendOverride as AutoSendRunOverride | null)
     ?.responsesFastMode;
   // Scheduled sends keep an empty thinkingStrength as "follow this profile".
@@ -68,11 +68,11 @@ export const resolveAutoSendOptions = ({
   // when present, otherwise read the selected profile's current config now;
   // neither path creates a durable conversation override.
   const responsesFastMode =
-    typeof explicitFastMode === "boolean"
+    typeof explicitFastMode === "string"
       ? explicitFastMode
       : typeof selectedProfileConfig?.configJson === "string"
         ? getResponsesFastModeFromConfig(
-            selectedProfileConfig as ApiConfigRecord
+            selectedProfileConfig as ApiConfigRecord,
           )
         : undefined;
   const basicModel = nonEmpty(autoSendOverride?.basicModel);

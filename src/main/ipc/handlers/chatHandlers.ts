@@ -148,12 +148,12 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
         : undefined,
     // napi-rs reads #[napi(object)] Option fields via Object::get, which
     // only treats `undefined` as absent; an explicit `null` reaches
-    // `bool::from_napi_value` and throws BooleanExpected. Chat requests
+    // `String::from_napi_value` and throws. Chat requests
     // (requestMethod != "responses") carry `responsesFastMode: null`, so
     // collapse null to undefined — Rust maps both to None ("follow the
     // profile default").
     responsesFastMode:
-      typeof source.responsesFastMode === "boolean"
+      typeof source.responsesFastMode === "string"
         ? source.responsesFastMode
         : undefined,
   };

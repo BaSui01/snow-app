@@ -71,9 +71,13 @@ export const extractResponsesVerbosityFromConfigJson = (
   return value === "low" || value === "medium" || value === "high" ? value : "";
 };
 
-export const extractResponsesFastModeFromConfigJson = (
+export const extractResponsesServiceTierFromConfigJson = (
   configJson: string,
-): boolean => readSnowcfg(configJson).responsesFastMode === true;
+): string => {
+  const value = readSnowcfg(configJson).responsesFastMode;
+  if (value === "fast" || value === "ultrafast") return value;
+  return value === true ? "fast" : "";
+};
 
 /** 读取 Responses WebSocket 开关（snowcfg.responsesWebSocket，默认关闭） */
 export const extractResponsesWebSocketFromConfigJson = (
@@ -307,7 +311,7 @@ export function apiConfigToForm(config: ApiConfigRecord): ApiConfigFormData {
     responsesVerbosity: extractResponsesVerbosityFromConfigJson(
       config.configJson,
     ),
-    responsesFastMode: extractResponsesFastModeFromConfigJson(
+    responsesServiceTier: extractResponsesServiceTierFromConfigJson(
       config.configJson,
     ),
     responsesWebSocket: extractResponsesWebSocketFromConfigJson(
@@ -409,7 +413,7 @@ export const emptyApiConfigForm = (
   thinkingValue: DEFAULT_THINKING_VALUE,
   oneMContext: false,
   responsesVerbosity: "",
-  responsesFastMode: false,
+  responsesServiceTier: "",
   responsesWebSocket: false,
   googleSearch: false,
   visionGoogleSearch: false,
@@ -467,7 +471,7 @@ export function toApiConfigPayload(
         data.toolResultTokenLimit,
       ),
       responsesVerbosity: data.responsesVerbosity || undefined,
-      responsesFastMode: data.responsesFastMode,
+      responsesFastMode: data.responsesServiceTier || undefined,
       responsesWebSocket: data.responsesWebSocket,
       googleSearch: data.googleSearch,
       enable1mContext: data.oneMContext,

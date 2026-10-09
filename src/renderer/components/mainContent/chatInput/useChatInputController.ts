@@ -160,7 +160,7 @@ export const useChatInputController = ({
   const [thinkingOverride, setThinkingOverride] = useState("");
   const [thinkingError, setThinkingError] = useState<string | null>(null);
   const [responsesFastModeOverride, setResponsesFastModeOverride] = useState<
-    boolean | null
+    string | null
   >(null);
   const [fastModeError, setFastModeError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -671,15 +671,15 @@ export const useChatInputController = ({
   );
   const thinkingDefaultLabel =
     profileThinkingOption?.label ?? profileThinkingValue;
-  const profileFastModeEnabled = runtimeApiConfig
+  const profileResponsesFastMode = runtimeApiConfig
     ? getResponsesFastModeFromConfig(runtimeApiConfig)
-    : false;
-  // Do not use truthy fallback here: `false` is an explicit conversation
-  // override and must remain distinct from `null` (inherit profile default).
-  const responsesFastModeEnabled =
+    : "off";
+  // Do not use truthy fallback here: an explicit conversation override must
+  // remain distinct from `null` (inherit profile default).
+  const responsesFastMode =
     responsesFastModeOverride !== null
       ? responsesFastModeOverride
-      : profileFastModeEnabled;
+      : profileResponsesFastMode;
 
   const handleSend = useCallback(
     (deliveryMode?: BusySendBehavior) => {
@@ -710,7 +710,7 @@ export const useChatInputController = ({
         // the conversation follows the current profile default.
         thinkingStrength: effectiveThinkingValue,
         responsesFastMode:
-          requestMethod === "responses" ? responsesFastModeEnabled : null,
+          requestMethod === "responses" ? responsesFastMode : null,
         conversationRuntimeConfigOverride: {
           thinkingStrength: thinkingOverride === "" ? null : thinkingOverride,
           responsesFastMode: responsesFastModeOverride,
@@ -741,7 +741,7 @@ export const useChatInputController = ({
       runtimeApiConfig,
       onSend,
       requestMethod,
-      responsesFastModeEnabled,
+      responsesFastMode,
       responsesFastModeOverride,
       selectedApiProfile,
       selectedModel,
@@ -1005,28 +1005,25 @@ export const useChatInputController = ({
     [runtimeApiConfig],
   );
 
-  const handleToggleResponsesFastMode = useCallback((): void => {
-    if (
-      !runtimeApiConfig ||
-      requestMethod !== "responses" ||
-      isStreaming ||
-      isSubAgentConversation
-    ) {
-      return;
-    }
+  const handleSelectResponsesFastMode = useCallback(
+    (tier: string): void => {
+      if (
+        !runtimeApiConfig ||
+        requestMethod !== "responses" ||
+        isStreaming ||
+        isSubAgentConversation
+      ) {
+        return;
+      }
 
-    // Toggle from the effective value, then keep an explicit boolean in
-    // memory. In particular, turning Fast Mode off must stay `false`, not
-    // inherit the profile default. The value is persisted on the next send.
-    setResponsesFastModeOverride(!responsesFastModeEnabled);
-    setFastModeError(null);
-  }, [
-    isStreaming,
-    isSubAgentConversation,
-    requestMethod,
-    responsesFastModeEnabled,
-    runtimeApiConfig,
-  ]);
+      // Selection is always an explicit tier override (including "off"), so it
+      // never silently inherits the profile default. Persisted on the next send.
+      setResponsesFastModeOverride(tier);
+      setFastModeError(null);
+      setIsModelMenuOpen(false);
+    },
+    [isStreaming, isSubAgentConversation, requestMethod, runtimeApiConfig],
+  );
 
   useLayoutEffect(() => {
     adjustHeight();
@@ -1060,7 +1057,7 @@ export const useChatInputController = ({
     ActiveThinkingIcon: activeThinkingOption.icon,
     isLoadingApiConfig,
     thinkingError,
-    responsesFastModeEnabled,
+    responsesFastMode,
     responsesFastModeOverride,
     fastModeError,
     labels,
@@ -1084,7 +1081,7 @@ export const useChatInputController = ({
     handleOpenApiProfileMenu,
     handleSelectApiProfile,
     handleSelectThinking,
-    handleToggleResponsesFastMode,
+    handleSelectResponsesFastMode,
     setSendKeyMode,
     restoreContent,
   };

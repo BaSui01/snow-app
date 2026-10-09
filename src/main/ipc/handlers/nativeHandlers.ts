@@ -174,7 +174,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       _event,
       conversationId: string,
       thinkingStrength: string | null,
-      responsesFastMode: boolean | null,
+      responsesFastMode: string | null,
     ) =>
       native.setConversationRuntimeConfig(
         conversationId,

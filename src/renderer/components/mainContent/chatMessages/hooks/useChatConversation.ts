@@ -351,7 +351,7 @@ export const useChatConversation = (
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null,
+      responsesFastMode?: string | null,
     ) => Promise<CompactionResult | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);

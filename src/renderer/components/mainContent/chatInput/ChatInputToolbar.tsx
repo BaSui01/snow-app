@@ -253,7 +253,7 @@ export const ChatInputToolbar = ({
             modelSelectorProps.selectedApiProfile,
             modelSelectorProps.selectedModel,
             modelSelectorProps.thinkingValue,
-            modelSelectorProps.responsesFastModeEnabled,
+            modelSelectorProps.responsesFastMode,
           ])}
           apiConfigIdentity={runtimeApiConfig}
           disabled={

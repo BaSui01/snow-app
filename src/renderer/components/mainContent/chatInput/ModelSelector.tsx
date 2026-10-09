@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CircleOff,
   GripVertical,
   Keyboard,
   Loader2,
@@ -15,6 +16,7 @@ import {
   Zap,
 } from "lucide-react";
 import { ModelBrandIcon } from "../../common/ModelBrandIcon";
+import { DoubleZapIcon } from "../../common/DoubleZapIcon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useI18n } from "../../../i18n";
@@ -51,7 +53,7 @@ type ModelSelectorProps = Pick<
   | "ActiveThinkingIcon"
   | "isLoadingApiConfig"
   | "thinkingError"
-  | "responsesFastModeEnabled"
+  | "responsesFastMode"
   | "fastModeError"
   | "labels"
   | "isStreaming"
@@ -70,7 +72,7 @@ type ModelSelectorProps = Pick<
     | "handleToggleModelMenu"
     | "handleSelectApiProfile"
     | "handleSelectThinking"
-    | "handleToggleResponsesFastMode"
+    | "handleSelectResponsesFastMode"
   > & {
     dropdownRef: RefObject<HTMLDivElement | null>;
     onNavigateToView?: (view: MainContentView) => void;
@@ -97,7 +99,7 @@ export const ModelSelector = ({
   ActiveThinkingIcon,
   isLoadingApiConfig,
   thinkingError,
-  responsesFastModeEnabled,
+  responsesFastMode,
   fastModeError,
   labels,
   isStreaming,
@@ -114,7 +116,7 @@ export const ModelSelector = ({
   handleToggleModelMenu,
   handleSelectApiProfile,
   handleSelectThinking,
-  handleToggleResponsesFastMode,
+  handleSelectResponsesFastMode,
   onNavigateToView,
 }: ModelSelectorProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -358,6 +360,24 @@ export const ModelSelector = ({
     filteredApiConfigs,
   ]);
 
+  const fastModeOptions = useMemo(
+    () => [
+      { value: "off", label: t("chat.fastModeOff"), icon: CircleOff },
+      { value: "fast", label: t("chat.fastModeFast"), icon: Zap },
+      {
+        value: "ultrafast",
+        label: t("chat.fastModeUltrafast"),
+        icon: DoubleZapIcon,
+      },
+    ],
+    [t],
+  );
+  const activeFastModeOption = fastModeOptions.find(
+    (option) => option.value === responsesFastMode,
+  );
+  const activeFastModeLabel = activeFastModeOption?.label ?? responsesFastMode;
+  const ActiveFastModeIcon = activeFastModeOption?.icon ?? Zap;
+
   return (
     <div className="model-selector" ref={dropdownRef}>
       <button
@@ -410,13 +430,18 @@ export const ModelSelector = ({
           )}
           <span className="model-trigger-thinking-label">{thinkingLabel}</span>
         </span>
-        {requestMethod === "responses" && responsesFastModeEnabled && (
+        {requestMethod === "responses" && responsesFastMode !== "off" && (
           <span
             className="model-trigger-fast"
-            title={fastModeError ?? t("chat.fastModeEnabled")}
+            title={
+              fastModeError ??
+              t("chat.fastModeActive", {
+                values: { tier: activeFastModeLabel },
+              })
+            }
           >
-            <Zap size={12} />
-            <span>Fast</span>
+            <ActiveFastModeIcon size={12} />
+            <span>{activeFastModeLabel}</span>
           </span>
         )}
         <ChevronDown size={12} />
@@ -469,18 +494,14 @@ export const ModelSelector = ({
               </button>
               {requestMethod === "responses" && (
                 <button
-                  className={`model-dropdown-item model-fast-mode-toggle ${
-                    responsesFastModeEnabled ? "active" : ""
-                  }`}
-                  role="switch"
-                  aria-checked={responsesFastModeEnabled}
+                  className="model-dropdown-item"
                   disabled={
                     !runtimeApiConfig ||
                     isLoadingApiConfig ||
                     isStreaming ||
                     isSubAgentConversation
                   }
-                  onClick={() => void handleToggleResponsesFastMode()}
+                  onClick={() => setModelMenuView("fastMode")}
                   type="button"
                   title={fastModeError ?? t("chat.fastModeHint")}
                 >
@@ -490,12 +511,9 @@ export const ModelSelector = ({
                   </span>
                   <span className="model-menu-value">
                     <span className="model-menu-value-text">
-                      {t(
-                        responsesFastModeEnabled
-                          ? "chat.fastModeOn"
-                          : "chat.fastModeOff",
-                      )}
+                      {activeFastModeLabel}
                     </span>
+                    <ChevronRight size={12} />
                   </span>
                 </button>
               )}
@@ -837,6 +855,50 @@ export const ModelSelector = ({
               onBack={() => setModelMenuView("root")}
               onSelect={(value) => void handleSelectThinking(value)}
             />
+          )}
+          {displayView === "fastMode" && (
+            <>
+              <div className="model-menu-header">
+                <button
+                  aria-label={t("common.back")}
+                  className="model-menu-back"
+                  onClick={() => setModelMenuView("root")}
+                  type="button"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span>{t("chat.fastMode")}</span>
+              </div>
+              <div className="model-dropdown-list">
+                {fastModeOptions.map((option) => {
+                  const FastModeOptionIcon = option.icon;
+
+                  return (
+                    <button
+                      key={option.value}
+                      className={`model-dropdown-item ${
+                        responsesFastMode === option.value ? "active" : ""
+                      }`}
+                      onClick={() =>
+                        void handleSelectResponsesFastMode(option.value)
+                      }
+                      type="button"
+                    >
+                      <span className="model-dropdown-item-name with-icon">
+                        <FastModeOptionIcon
+                          size={14}
+                          className="thinking-option-icon"
+                        />
+                        <span>{option.label}</span>
+                      </span>
+                      {responsesFastMode === option.value && (
+                        <Check size={14} className="model-dropdown-check" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}

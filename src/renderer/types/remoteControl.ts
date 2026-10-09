@@ -303,7 +303,8 @@ export type SnowRemoteChatInputState = {
   /** 会话生效的思考强度值（会话覆盖已解析，回退 Profile 默认）。 */
   effectiveThinkingValue: string;
   thinkingOptions: SnowRemoteThinkingOption[];
-  responsesFastModeEnabled: boolean;
+  /** 会话生效的 Fast Mode 档位（"off" | "fast" | "ultrafast"）。 */
+  responsesFastMode: string;
   maxContextTokens: number | null;
   /** 真实 Token Usage（来自当前会话 session，未在 Renderer 重新计算）。 */
   tokenUsage: SnowRemoteTokenUsage | null;
@@ -607,10 +608,11 @@ export type SnowRemoteControlApi = {
   /** 复用真实 handleSelectThinking setter 链；"" = 继承 Profile 默认。 */
   setThinking: (value: string) => Promise<{ ok: true }>;
   /**
-   * 复用真实 handleToggleResponsesFastMode setter 链。
-   * desired 为布尔时按目标状态幂等处理（已一致则不再翻转）。
+   * 复用真实 handleSelectResponsesFastMode setter 链。
+   * desired 为 "off" | "fast" | "ultrafast" 时按目标档位幂等处理
+   * （已一致则不再切换）。
    */
-  toggleResponsesFastMode: (desired?: boolean) => Promise<{ ok: true }>;
+  toggleResponsesFastMode: (desired: string) => Promise<{ ok: true }>;
   /** 按真实 createChatCommands 产物执行指令（含禁用状态校验）。 */
   runCommand: (id: string) => Promise<{ ok: true }>;
 };

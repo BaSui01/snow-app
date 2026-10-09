@@ -45,7 +45,7 @@ pub fn fork_conversation(
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
                     row.get::<_, Option<String>>(7)?,
-                    row.get::<_, Option<i64>>(8)?.map(|value| value != 0),
+                    row.get::<_, Option<i64>>(8)?,
                 ))
             },
         )

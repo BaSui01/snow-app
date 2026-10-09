@@ -262,7 +262,7 @@ export const conversationApi = {
     model: string,
     title: string,
     thinkingStrength?: string | null,
-    responsesFastMode?: boolean | null,
+    responsesFastMode?: string | null,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "chat-conversations:create-sub-agent-session",

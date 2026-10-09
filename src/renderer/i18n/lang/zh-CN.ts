@@ -739,10 +739,12 @@ export const zhCN = {
   "chat.customThinkingPlaceholder": "例如 ultra",
   "chat.customThinking": "自定义...",
   "chat.fastMode": "Fast Mode",
-  "chat.fastModeEnabled": "Fast Mode 已启用",
-  "chat.fastModeHint": "使用 OpenAI 优先服务层降低延迟",
-  "chat.fastModeOn": "开启",
+  "chat.fastModeActive": "Fast Mode：{{tier}}",
+  "chat.fastModeHint":
+    "使用 OpenAI 服务层级降低延迟（Fast=priority，UltraFast=ultrafast）",
   "chat.fastModeOff": "关闭",
+  "chat.fastModeFast": "Fast",
+  "chat.fastModeUltrafast": "UltraFast",
   "chat.fastModeFollowProfile": "跟随 Profile 默认值",
   "chat.thinkingProcess": "思考过程",
   "chat.thinkingContent": "思考内容",
@@ -2005,8 +2007,11 @@ export const zhCN = {
   "settings.apiResponsesVerbosityHint":
     "映射到 text.verbosity，仅适用于 Responses API。",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
+  "settings.apiResponsesFastModeOff": "关闭（不发送）",
+  "settings.apiResponsesFastModeFast": "Fast（priority）",
+  "settings.apiResponsesFastModeUltrafast": "UltraFast（ultrafast）",
   "settings.apiResponsesFastModeHint":
-    "启用后发送 service_tier: priority，可在聊天输入区即时切换。",
+    "关闭时不发送 service_tier；Fast 发送 priority，UltraFast 发送 ultrafast。",
   "settings.apiResponsesWebSocket": "Responses WebSocket 模式",
   "settings.apiResponsesWebSocketHint":
     "改用 WebSocket 传输（wss://.../responses）而非 SSE，并在多轮之间复用同一条连接以节省握手延迟。",

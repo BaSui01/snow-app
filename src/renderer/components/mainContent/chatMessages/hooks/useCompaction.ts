@@ -33,7 +33,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null,
+      responsesFastMode?: string | null,
     ): Promise<CompactionResult | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
       const compactionRunId = sessionRef?.runId;

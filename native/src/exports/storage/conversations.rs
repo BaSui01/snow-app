@@ -26,7 +26,7 @@ pub struct ConversationModesResult {
 #[napi(object)]
 pub struct ConversationRuntimeConfigResult {
     pub thinking_strength: Option<String>,
-    pub responses_fast_mode: Option<bool>,
+    pub responses_fast_mode: Option<String>,
 }
 
 #[napi]
@@ -91,7 +91,7 @@ pub async fn get_conversation_runtime_config(
 pub async fn set_conversation_runtime_config(
     conversation_id: String,
     thinking_strength: Option<String>,
-    responses_fast_mode: Option<bool>,
+    responses_fast_mode: Option<String>,
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::set_conversation_runtime_config(
@@ -305,7 +305,7 @@ pub async fn create_sub_agent_session(
     model: String,
     title: String,
     thinking_strength: Option<String>,
-    responses_fast_mode: Option<bool>,
+    responses_fast_mode: Option<String>,
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::create_sub_agent_session(

@@ -275,7 +275,7 @@ export type ConversationModesResult = {
 
 export type ConversationRuntimeConfig = {
   thinkingStrength: string | null;
-  responsesFastMode: boolean | null;
+  responsesFastMode: string | null;
 };
 
 export type WorkflowNodeSessionRecord = {
@@ -1326,10 +1326,10 @@ export type ResponsesApiRequest = {
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
   thinkingStrength?: string;
-  /** Per-request Responses Fast Mode override; omitted follows the profile
-   *  default. Must never be `null`: napi-rs object fields only treat
-   *  `undefined` as absent — an explicit `null` throws BooleanExpected. */
-  responsesFastMode?: boolean;
+  /** Per-request Responses Fast Mode tier ("off" | "fast" | "ultrafast");
+   *  omitted follows the profile default. Must never be `null`: napi-rs object
+   *  fields only treat `undefined` as absent. */
+  responsesFastMode?: string;
   /**
    * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
    * main process via SSH (mirrors RoleEditorPanel's access path). Absent for
@@ -1898,7 +1898,7 @@ export type NativeBridge = {
   setConversationRuntimeConfig: (
     conversationId: string,
     thinkingStrength: string | null,
-    responsesFastMode: boolean | null,
+    responsesFastMode: string | null,
   ) => Promise<void>;
   setConversationRunStats: (
     conversationId: string,
@@ -2283,7 +2283,7 @@ export type NativeBridge = {
     model: string,
     title: string,
     thinkingStrength?: string | null,
-    responsesFastMode?: boolean | null,
+    responsesFastMode?: string | null,
   ) => Promise<void>;
   updateSubAgentSessionStatus: (
     conversationId: string,

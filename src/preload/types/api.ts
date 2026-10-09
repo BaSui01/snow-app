@@ -181,8 +181,9 @@ export type ResponsesApiRequest = {
    *  "high" | custom). Applied in-memory over the resolved profile's
    *  config_json; never mutates the stored profile. */
   thinkingStrength?: string | null;
-  /** Per-request Responses Fast Mode override; null/omitted follows the profile default. */
-  responsesFastMode?: boolean | null;
+  /** Per-request Responses Fast Mode tier ("off" | "fast" | "ultrafast");
+   *  null/omitted follows the profile default. */
+  responsesFastMode?: string | null;
 };
 
 export type StreamInterruptionReason =

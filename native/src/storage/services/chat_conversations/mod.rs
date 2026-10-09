@@ -877,7 +877,27 @@ pub(crate) fn create_chat_id(prefix: &str) -> String {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ConversationRuntimeConfig {
     pub thinking_strength: Option<String>,
-    pub responses_fast_mode: Option<bool>,
+    pub responses_fast_mode: Option<String>,
+}
+
+/// Fast Mode tier codes stored in `chat_conversations.responses_fast_mode`:
+/// NULL follows the API profile, 0 = off, 1 = fast (priority), 2 = ultrafast.
+pub(crate) fn encode_responses_fast_mode(value: Option<&str>) -> Option<i64> {
+    match value.map(str::trim) {
+        Some("off") => Some(0),
+        Some("fast") => Some(1),
+        Some("ultrafast") => Some(2),
+        _ => None,
+    }
+}
+
+pub(crate) fn decode_responses_fast_mode(value: Option<i64>) -> Option<String> {
+    match value {
+        Some(0) => Some("off".to_string()),
+        Some(1) => Some("fast".to_string()),
+        Some(2) => Some("ultrafast".to_string()),
+        _ => None,
+    }
 }
 
 /// Replace both nullable runtime override columns as one complete snapshot.
@@ -887,12 +907,13 @@ pub fn set_conversation_runtime_config(
     database_path: &Path,
     conversation_id: &str,
     thinking_strength: Option<String>,
-    responses_fast_mode: Option<bool>,
+    responses_fast_mode: Option<String>,
 ) -> Result<()> {
     let normalized_thinking_strength = thinking_strength.and_then(|value| {
         let trimmed = value.trim().to_string();
         (!trimmed.is_empty()).then_some(trimmed)
     });
+    let encoded_responses_fast_mode = encode_responses_fast_mode(responses_fast_mode.as_deref());
 
     database::open_connection(database_path)
         .and_then(|connection| {
@@ -908,7 +929,7 @@ pub fn set_conversation_runtime_config(
                     database::create_snowflake_id(),
                     conversation_id,
                     normalized_thinking_strength,
-                    responses_fast_mode.map(|value| if value { 1_i64 } else { 0_i64 }),
+                    encoded_responses_fast_mode,
                 ],
             )?;
             Ok(())

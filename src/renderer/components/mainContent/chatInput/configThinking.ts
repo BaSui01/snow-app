@@ -24,7 +24,7 @@ const parseConfigJson = (configJson: string): Record<string, unknown> => {
 
 const readNestedString = (
   source: Record<string, unknown>,
-  key: string
+  key: string,
 ): string | undefined => {
   const value = source[key];
   return typeof value === "string" ? value : undefined;
@@ -32,7 +32,7 @@ const readNestedString = (
 
 const readNestedBoolean = (
   source: Record<string, unknown>,
-  key: string
+  key: string,
 ): boolean | undefined => {
   const value = source[key];
   return typeof value === "boolean" ? value : undefined;
@@ -40,7 +40,7 @@ const readNestedBoolean = (
 
 const resolveThinkingValue = (
   thinkingConfig: Record<string, unknown>,
-  valueKey: string
+  valueKey: string,
 ): string => {
   if (readNestedBoolean(thinkingConfig, "enabled") === false) {
     return "none";
@@ -54,7 +54,7 @@ export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
   const parsedConfig = parseConfigJson(config.configJson);
   const snowcfg = isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {};
   const requestMethod = normalizeRequestMethod(
-    config.requestMethod || snowcfg.requestMethod
+    config.requestMethod || snowcfg.requestMethod,
   );
   if (requestMethod === "anthropic") {
     const thinking = isRecord(snowcfg.thinking) ? snowcfg.thinking : {};
@@ -82,21 +82,23 @@ export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
 };
 
 export const getResponsesFastModeFromConfig = (
-  config: ApiConfigRecord
-): boolean => {
+  config: ApiConfigRecord,
+): string => {
   const parsedConfig = parseConfigJson(config.configJson);
   const snowcfg = isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {};
-  return snowcfg.responsesFastMode === true;
+  const value = snowcfg.responsesFastMode;
+  if (value === "fast" || value === "ultrafast") return value;
+  return value === true ? "fast" : "off";
 };
 
 const buildConfigJsonWithResponsesFastMode = (
   config: ApiConfigRecord,
-  enabled: boolean
+  tier: string,
 ): string => {
   const parsedConfig = parseConfigJson(config.configJson);
   const snowcfg = {
     ...(isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {}),
-    responsesFastMode: enabled,
+    responsesFastMode: tier || undefined,
   };
 
   return JSON.stringify({
@@ -107,25 +109,25 @@ const buildConfigJsonWithResponsesFastMode = (
 
 export const toResponsesFastModeUpdatePayload = (
   config: ApiConfigRecord,
-  enabled: boolean
+  tier: string,
 ): ApiConfigRecord => ({
   ...config,
   apiKey: "",
   visionApiKey: "",
   visionBaseUrlMode: config.visionBaseUrlMode || "auto",
-  configJson: buildConfigJsonWithResponsesFastMode(config, enabled),
+  configJson: buildConfigJsonWithResponsesFastMode(config, tier),
 });
 
 const buildConfigJsonWithThinking = (
   config: ApiConfigRecord,
-  thinkingValue: string
+  thinkingValue: string,
 ): string => {
   const parsedConfig = parseConfigJson(config.configJson);
   const snowcfg = {
     ...(isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {}),
   };
   const requestMethod = normalizeRequestMethod(
-    config.requestMethod || snowcfg.requestMethod
+    config.requestMethod || snowcfg.requestMethod,
   );
   const isThinkingEnabled = thinkingValue !== "none";
 
@@ -162,7 +164,7 @@ const buildConfigJsonWithThinking = (
 
 export const toConfigUpdatePayload = (
   config: ApiConfigRecord,
-  thinkingValue: string
+  thinkingValue: string,
 ): ApiConfigRecord => ({
   ...config,
   apiKey: "",
@@ -173,7 +175,7 @@ export const toConfigUpdatePayload = (
 
 const buildConfigJsonWithModel = (
   config: ApiConfigRecord,
-  modelId: string
+  modelId: string,
 ): string => {
   const parsedConfig = parseConfigJson(config.configJson);
   const snowcfg = {
@@ -189,7 +191,7 @@ const buildConfigJsonWithModel = (
 
 export const toModelUpdatePayload = (
   config: ApiConfigRecord,
-  modelId: string
+  modelId: string,
 ): ApiConfigRecord => ({
   ...config,
   apiKey: "",

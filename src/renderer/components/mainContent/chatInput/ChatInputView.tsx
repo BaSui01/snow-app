@@ -80,7 +80,7 @@ export const ChatInputView = ({
   ActiveThinkingIcon,
   isLoadingApiConfig,
   thinkingError,
-  responsesFastModeEnabled,
+  responsesFastMode,
   responsesFastModeOverride,
   fastModeError,
   labels,
@@ -143,7 +143,7 @@ export const ChatInputView = ({
   handleToggleModelMenu,
   handleSelectApiProfile,
   handleSelectThinking,
-  handleToggleResponsesFastMode,
+  handleSelectResponsesFastMode,
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -486,7 +486,7 @@ export const ChatInputView = ({
         value,
         label,
       })),
-      responsesFastModeEnabled,
+      responsesFastMode,
       responsesFastModeOverride,
       maxContextTokens: runtimeApiConfig?.maxContextTokens ?? null,
       commands,
@@ -494,7 +494,7 @@ export const ChatInputView = ({
         handleSelectModel,
         handleSelectApiProfile,
         handleSelectThinking,
-        handleToggleResponsesFastMode,
+        handleSelectResponsesFastMode,
       },
     };
     publishRemoteControlChatInput(snapshot);
@@ -959,7 +959,7 @@ export const ChatInputView = ({
             ActiveThinkingIcon={ActiveThinkingIcon}
             isLoadingApiConfig={isLoadingApiConfig}
             thinkingError={thinkingError}
-            responsesFastModeEnabled={responsesFastModeEnabled}
+            responsesFastMode={responsesFastMode}
             fastModeError={fastModeError}
             labels={labels}
             isStreaming={isStreaming}
@@ -977,7 +977,7 @@ export const ChatInputView = ({
             handleToggleModelMenu={handleToggleModelMenu}
             handleSelectApiProfile={handleSelectApiProfile}
             handleSelectThinking={handleSelectThinking}
-            handleToggleResponsesFastMode={handleToggleResponsesFastMode}
+            handleSelectResponsesFastMode={handleSelectResponsesFastMode}
           />
         </div>
       </div>

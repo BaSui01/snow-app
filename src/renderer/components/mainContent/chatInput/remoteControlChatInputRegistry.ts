@@ -22,7 +22,7 @@ export type SnowRemoteChatInputActions = {
   handleSelectModel: (modelId: string) => void | Promise<void>;
   handleSelectApiProfile: (profileName: string) => void | Promise<void>;
   handleSelectThinking: (value: string) => void | Promise<void>;
-  handleToggleResponsesFastMode: () => void | Promise<void>;
+  handleSelectResponsesFastMode: (tier: string) => void | Promise<void>;
 };
 
 export type SnowRemoteChatInputPublication = {
@@ -40,8 +40,8 @@ export type SnowRemoteChatInputPublication = {
   effectiveThinkingValue: string;
   thinkingOverride: string;
   thinkingOptions: Array<{ value: string; label: string }>;
-  responsesFastModeEnabled: boolean;
-  responsesFastModeOverride: boolean | null;
+  responsesFastMode: string;
+  responsesFastModeOverride: string | null;
   maxContextTokens: number | null;
   /** 真实 createChatCommands 产物：携带真实 execute 回调与禁用状态。 */
   commands: ChatCommand[];

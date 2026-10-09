@@ -1950,13 +1950,19 @@ async fn handle_api(
                 return Ok(json_response(StatusCode::OK, &value, Vec::new()));
             }
             _ => {
-                let Some(fast_mode) = payload.get("responsesFastMode").and_then(Value::as_bool)
-                else {
-                    return Ok(json_response(
-                        StatusCode::BAD_REQUEST,
-                        &json!({ "error": "responsesFastMode 必须是布尔值" }),
-                        Vec::new(),
-                    ));
+                let fast_mode = match payload.get("responsesFastMode") {
+                    Some(Value::String(text))
+                        if matches!(text.trim(), "off" | "fast" | "ultrafast") =>
+                    {
+                        Value::String(text.trim().to_string())
+                    }
+                    _ => {
+                        return Ok(json_response(
+                            StatusCode::BAD_REQUEST,
+                            &json!({ "error": "responsesFastMode 必须是 off / fast / ultrafast" }),
+                            Vec::new(),
+                        ));
+                    }
                 };
                 let value = bridge_call("toggleResponsesFastMode", json!([fast_mode])).await?;
                 return Ok(json_response(StatusCode::OK, &value, Vec::new()));

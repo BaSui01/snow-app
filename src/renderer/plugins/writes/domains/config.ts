@@ -875,7 +875,7 @@ export const CONFIG_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       const thinkingStrength =
         optionalString(params, "thinkingStrength") ?? null;
       const responsesFastMode =
-        optionalBoolean(params, "responsesFastMode") ?? null;
+        optionalString(params, "responsesFastMode") ?? null;
       await callSnow(
         "setConversationRuntimeConfig",
         conversationId,

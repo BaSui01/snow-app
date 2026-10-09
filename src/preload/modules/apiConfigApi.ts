@@ -162,7 +162,7 @@ export const apiConfigApi = {
   setConversationRuntimeConfig: (
     conversationId: string,
     thinkingStrength: string | null,
-    responsesFastMode: boolean | null,
+    responsesFastMode: string | null,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "settings:set-conversation-runtime-config",

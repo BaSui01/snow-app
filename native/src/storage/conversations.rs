@@ -193,7 +193,7 @@ pub fn get_conversation_runtime_config(
 pub fn set_conversation_runtime_config(
     conversation_id: &str,
     thinking_strength: Option<String>,
-    responses_fast_mode: Option<bool>,
+    responses_fast_mode: Option<String>,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::set_conversation_runtime_config(
@@ -338,7 +338,7 @@ pub fn create_sub_agent_session(
     model: String,
     title: String,
     thinking_strength: Option<String>,
-    responses_fast_mode: Option<bool>,
+    responses_fast_mode: Option<String>,
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::create_sub_agent_session(

@@ -483,29 +483,31 @@ export function ApiSettingsFormFields({
                   {t("settings.apiResponsesVerbosityHint")}
                 </small>
               </label>
-              <div className="api-settings-field">
+              <label className="api-settings-field">
                 <span>{t("settings.apiResponsesFastMode")}</span>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={data.responsesFastMode}
-                    onChange={changeField("responsesFastMode")}
-                    disabled={disabled}
-                    hidden
-                  />
-                  <span className="toggle-slider" />
-                  <span>
-                    {t(
-                      data.responsesFastMode
-                        ? "settings.enabled"
-                        : "settings.disabled",
-                    )}
-                  </span>
-                </label>
+                <CustomSelect
+                  value={data.responsesServiceTier}
+                  options={[
+                    {
+                      value: "",
+                      label: t("settings.apiResponsesFastModeOff"),
+                    },
+                    {
+                      value: "fast",
+                      label: t("settings.apiResponsesFastModeFast"),
+                    },
+                    {
+                      value: "ultrafast",
+                      label: t("settings.apiResponsesFastModeUltrafast"),
+                    },
+                  ]}
+                  onChange={(value) => onChange("responsesServiceTier", value)}
+                  disabled={disabled}
+                />
                 <small className="api-settings-hint-text">
                   {t("settings.apiResponsesFastModeHint")}
                 </small>
-              </div>
+              </label>
               <div className="api-settings-field">
                 <span>{t("settings.apiResponsesWebSocket")}</span>
                 <label className="toggle-switch">

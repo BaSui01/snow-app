@@ -4,12 +4,12 @@ Snow App manages model provider access through **API profiles**, supporting mult
 
 ## 1. Configuration Entries
 
-| Entry | Description |
-| --- | --- |
-| Settings → API Settings (settings page id: `api-settings`) | GUI: create / edit / switch API profiles |
-| `api_configs` table in the app database | **Authoritative store for all profiles**; one row per profile (`profile_name` is the unique identifier) |
-| `activeProfile` field in `~/.snow/active-profile.json` | Records the **currently active profile name**; the active config = that profile's row in `api_configs` |
-| `snowcfg` field in `~/.snow/config.json` | CLI compatibility layer / snapshot shared with Snow CLI, **not** the authoritative source |
+| Entry                                                      | Description                                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Settings → API Settings (settings page id: `api-settings`) | GUI: create / edit / switch API profiles                                                                |
+| `api_configs` table in the app database                    | **Authoritative store for all profiles**; one row per profile (`profile_name` is the unique identifier) |
+| `activeProfile` field in `~/.snow/active-profile.json`     | Records the **currently active profile name**; the active config = that profile's row in `api_configs`  |
+| `snowcfg` field in `~/.snow/config.json`                   | CLI compatibility layer / snapshot shared with Snow CLI, **not** the authoritative source               |
 
 > **Storage at a glance**: profiles live in the `api_configs` table of the app
 > database; the active profile is chosen via `activeProfile`. The `config` tool
@@ -20,17 +20,17 @@ Snow App manages model provider access through **API profiles**, supporting mult
 
 Open **Settings → API Settings** to create multiple profiles. When creating a profile, fill in:
 
-| Field | Required | Description |
-| --- | --- | --- |
-| Profile name | Yes | Unique identifier for the profile, e.g. `openai` |
-| Display name | No | Name shown in the UI; defaults to the profile name if omitted |
-| Base URL | Yes | Service endpoint URL |
-| Base URL mode | Yes | `auto` automatic / `custom` manual |
-| API Key | No (can be added later) | Provider key, e.g. `sk-...` |
-| Request method | Yes | e.g. `chat` |
+| Field          | Required                                                       | Description                                                                                  |
+| -------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Profile name   | Yes                                                            | Unique identifier for the profile, e.g. `openai`                                             |
+| Display name   | No                                                             | Name shown in the UI; defaults to the profile name if omitted                                |
+| Base URL       | Yes                                                            | Service endpoint URL                                                                         |
+| Base URL mode  | Yes                                                            | `auto` automatic / `custom` manual                                                           |
+| API Key        | No (can be added later)                                        | Provider key, e.g. `sk-...`                                                                  |
+| Request method | Yes                                                            | e.g. `chat`                                                                                  |
 | Advanced model | Active profile: yes (non-empty after trim); inactive draft: no | This profile's default advanced model; ordinary conversations still use their selected model |
-| Basic model | Active profile: yes (non-empty after trim); inactive draft: no | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review |
-| Vision model | No | Image understanding model, can be configured separately |
+| Basic model    | Active profile: yes (non-empty after trim); inactive draft: no | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review        |
+| Vision model   | No                                                             | Image understanding model, can be configured separately                                      |
 
 When a profile has `isActive: true`—whether it is saved as active or activated later—
 Snow trims `advancedModel` and `basicModel` and requires both to be non-empty. An
@@ -57,7 +57,7 @@ When the main model does not support vision, turn off the **Supports vision** sw
 - **Auto-compress**: when `enableAutoCompress` is on, history messages are automatically compressed when context usage reaches the threshold `autoCompressThreshold` (percentage);
 - **1M context (Anthropic)**: when the request method is `anthropic`, the **1M context** switch makes all Anthropic requests send the `anthropic-beta: context-1m-2025-08-07` header to declare 1M-token context support, recognized by the Anthropic API and gateways/proxies that require explicitly enabling 1M context; no model-name marker is needed (a Claude Code ecosystem `[1M]` suffix on the model name is also stripped and honored, staying compatible with tools like cc-switch);
 - **Google search (Gemini)**: when `googleSearch` is enabled, Gemini chat requests inject the Google Search tool for real-time web grounding; the separate vision-model section has its own `visionGoogleSearch` switch for vision requests;
-- **Responses Fast Mode**: when the request method is `responses`, you can enable `responsesFastMode` so the server processes Responses requests in fast mode.
+- **Responses Fast Mode**: when the request method is `responses`, `responsesFastMode` selects the service tier — off (no `service_tier`), Fast (`service_tier: priority`), or UltraFast (`service_tier: ultrafast`).
 
 The form validates fields per request method: switching methods resets or skips fields that do not apply (such as reasoning effort or Responses-only options), preventing invalid combinations from being submitted.
 
@@ -71,16 +71,16 @@ Toggle the **Enable profile** switch in API Settings to switch the currently act
 
 Some advanced parameters can be configured in the Runtime area of the UI (such as max context, max generation tokens, stream idle timeout, retry count and delay); the rest can be edited directly in the `snowcfg` field of `~/.snow/config.json`:
 
-| Field | Description |
-| --- | --- |
-| `maxContextTokens` | Max context tokens |
-| `maxTokens` | Max tokens per generation |
-| `streamIdleTimeoutSec` | Stream response idle timeout (seconds) |
-| `maxRetries` | Max request retries |
-| `retryDelayMs` | Retry interval (milliseconds) |
-| `showThinking` | Whether to show the thinking process |
-| `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`) |
-| `toolResultTokenLimit` | Maximum percentage of the model context available to each tool result |
+| Field                           | Description                                                           |
+| ------------------------------- | --------------------------------------------------------------------- |
+| `maxContextTokens`              | Max context tokens                                                    |
+| `maxTokens`                     | Max tokens per generation                                             |
+| `streamIdleTimeoutSec`          | Stream response idle timeout (seconds)                                |
+| `maxRetries`                    | Max request retries                                                   |
+| `retryDelayMs`                  | Retry interval (milliseconds)                                         |
+| `showThinking`                  | Whether to show the thinking process                                  |
+| `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`)                                         |
+| `toolResultTokenLimit`          | Maximum percentage of the model context available to each tool result |
 
 > **Tip**: after editing `config.json` directly, restart the app for the changes to take effect.
 
@@ -91,15 +91,15 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 Snow App ships a built-in `config` tool; AI agents can read/write the same
 config that the UI uses. API-profile related tools:
 
-| Tool | Purpose |
-| --- | --- |
-| `config-list scope=snowcfg` | List the full config of the currently active profile |
-| `config-get scope=snowcfg key=baseUrl` | Read a single key (`apiKey` is always masked, e.g. `sk-****abcd`) |
-| `config-set scope=snowcfg key=baseUrl value="..."` | Write a single key (whitelist + type check + auto backup + atomic write) |
-| `config-list scope=apiProfiles` | List **all profiles** (keys masked), with usage guidance |
-| `config-get scope=apiProfiles key=<profile-name>` | Read one profile (keys masked; null when missing) |
+| Tool                                                          | Purpose                                                                                     |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `config-list scope=snowcfg`                                   | List the full config of the currently active profile                                        |
+| `config-get scope=snowcfg key=baseUrl`                        | Read a single key (`apiKey` is always masked, e.g. `sk-****abcd`)                           |
+| `config-set scope=snowcfg key=baseUrl value="..."`            | Write a single key (whitelist + type check + auto backup + atomic write)                    |
+| `config-list scope=apiProfiles`                               | List **all profiles** (keys masked), with usage guidance                                    |
+| `config-get scope=apiProfiles key=<profile-name>`             | Read one profile (keys masked; null when missing)                                           |
 | `config-set scope=apiProfiles key=<profile-name> value={...}` | Create/update a profile (writes the app database, same as the UI; takes effect immediately) |
-| `config-delete scope=apiProfiles key=<profile-name>` | Delete a profile (destructive — ask the user first, then call with `confirmed: true`) |
+| `config-delete scope=apiProfiles key=<profile-name>`          | Delete a profile (destructive — ask the user first, then call with `confirmed: true`)       |
 
 ```mermaid
 flowchart LR
@@ -201,12 +201,12 @@ default one if necessary).
 
 ## 6. FAQ
 
-| Symptom | Cause & fix |
-| --- | --- |
-| Requests return 401/403 | Check whether `apiKey` and `baseUrl` are correct and whether the key has expired |
-| The model doesn't support thinking | Turn off `showThinking` or adjust `chatThinking.reasoning_effort` |
-| Vision model unavailable | Configure `visionBaseUrl`, `visionApiKey`, `visionModel` separately |
-| Profile switch has no effect | Switch with `config-set scope=apiProfiles key=profile-name value={"isActive":true}` (writes the DB, takes effect immediately); `active-profile.json` is only the CLI compatibility layer |
+| Symptom                            | Cause & fix                                                                                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requests return 401/403            | Check whether `apiKey` and `baseUrl` are correct and whether the key has expired                                                                                                         |
+| The model doesn't support thinking | Turn off `showThinking` or adjust `chatThinking.reasoning_effort`                                                                                                                        |
+| Vision model unavailable           | Configure `visionBaseUrl`, `visionApiKey`, `visionModel` separately                                                                                                                      |
+| Profile switch has no effect       | Switch with `config-set scope=apiProfiles key=profile-name value={"isActive":true}` (writes the DB, takes effect immediately); `active-profile.json` is only the CLI compatibility layer |
 
 ## 6. Reference
 

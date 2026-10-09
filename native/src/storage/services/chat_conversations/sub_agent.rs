@@ -149,7 +149,7 @@ pub fn create_sub_agent_session(
     model: &str,
     title: &str,
     captured_thinking_strength: Option<String>,
-    captured_responses_fast_mode: Option<bool>,
+    captured_responses_fast_mode: Option<String>,
 ) -> Result<()> {
     database::with_write_lock(|| {
         database::with_write_retry(
@@ -157,7 +157,7 @@ pub fn create_sub_agent_session(
                 database::open_connection(database_path).and_then(|mut connection| {
                     let transaction = connection
                         .transaction_with_behavior(TransactionBehavior::Immediate)?;
-                    let parent_runtime: (Option<String>, Option<bool>) = transaction
+                    let parent_runtime: (Option<String>, Option<i64>) = transaction
                         .query_row(
                             "SELECT thinking_strength, responses_fast_mode
                                FROM chat_conversations
@@ -167,7 +167,7 @@ pub fn create_sub_agent_session(
                             |row| {
                                 Ok((
                                     row.get::<_, Option<String>>(0)?,
-                                    row.get::<_, Option<i64>>(1)?.map(|value| value != 0),
+                                    row.get::<_, Option<i64>>(1)?,
                                 ))
                             },
                         )
@@ -183,7 +183,8 @@ pub fn create_sub_agent_session(
                     let effective_thinking_strength =
                         captured_thinking_strength.or(parent_runtime.0);
                     let effective_responses_fast_mode =
-                        captured_responses_fast_mode.or(parent_runtime.1);
+                        super::encode_responses_fast_mode(captured_responses_fast_mode.as_deref())
+                            .or(parent_runtime.1);
                     transaction.execute(
                         "INSERT INTO chat_conversations (
                            id,

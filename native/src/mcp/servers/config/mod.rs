@@ -442,7 +442,7 @@ const SNOWCFG_SCOPE_KEYS: &[KeySpec] = &[
     },
     KeySpec {
         key: "responsesFastMode",
-        value_type: ValueType::Bool,
+        value_type: ValueType::String,
         sensitive: false,
     },
     KeySpec {

@@ -786,10 +786,12 @@ export const en = {
   "chat.customThinkingPlaceholder": "e.g. ultra",
   "chat.customThinking": "Custom...",
   "chat.fastMode": "Fast Mode",
-  "chat.fastModeEnabled": "Fast Mode enabled",
-  "chat.fastModeHint": "Use the OpenAI priority service tier for lower latency",
-  "chat.fastModeOn": "On",
+  "chat.fastModeActive": "Fast Mode: {{tier}}",
+  "chat.fastModeHint":
+    "Use the OpenAI service tier for lower latency (Fast=priority, UltraFast=ultrafast)",
   "chat.fastModeOff": "Off",
+  "chat.fastModeFast": "Fast",
+  "chat.fastModeUltrafast": "UltraFast",
   "chat.fastModeFollowProfile": "Follow Profile default",
   "chat.thinkingProcess": "Thinking process",
   "chat.thinkingContent": "Thinking content",
@@ -2109,8 +2111,11 @@ export const en = {
   "settings.apiResponsesVerbosityHint":
     "Maps to text.verbosity and only applies to the Responses API.",
   "settings.apiResponsesFastMode": "Responses Fast Mode",
+  "settings.apiResponsesFastModeOff": "Off (omit)",
+  "settings.apiResponsesFastModeFast": "Fast (priority)",
+  "settings.apiResponsesFastModeUltrafast": "UltraFast (ultrafast)",
   "settings.apiResponsesFastModeHint":
-    "Sends service_tier: priority when enabled and can be toggled from the chat input.",
+    "Off omits service_tier; Fast sends priority and UltraFast sends ultrafast.",
   "settings.apiResponsesWebSocket": "Responses WebSocket mode",
   "settings.apiResponsesWebSocketHint":
     "Uses the WebSocket transport (wss://.../responses) instead of SSE and keeps the connection alive between turns to save handshake latency.",

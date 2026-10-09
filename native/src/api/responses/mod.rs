@@ -119,9 +119,10 @@ pub struct ResponsesApiRequest {
     /// "high" | custom). Applied in-memory over the resolved profile's
     /// config_json; never mutates the stored profile.
     pub thinking_strength: Option<String>,
-    /// Per-request Responses Fast Mode override. Applied in-memory over the
-    /// resolved profile's config_json; never mutates the stored profile.
-    pub responses_fast_mode: Option<bool>,
+    /// Per-request Responses Fast Mode override ("off" | "fast" |
+    /// "ultrafast"). Applied in-memory over the resolved profile's
+    /// config_json; never mutates the stored profile.
+    pub responses_fast_mode: Option<String>,
     /// Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
     /// Electron main process over SSH (mirrors RoleEditorPanel's access path).
     /// Absent for local workspaces — Rust reads the file itself.

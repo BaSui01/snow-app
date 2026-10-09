@@ -93,7 +93,7 @@ export type WorkflowGraphValidationResult = {
 
 export type ConversationRuntimeConfig = {
   thinkingStrength: string | null;
-  responsesFastMode: boolean | null;
+  responsesFastMode: string | null;
 };
 
 export type ThemeMode = "system" | "light" | "dark";

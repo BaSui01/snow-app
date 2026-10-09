@@ -8,12 +8,12 @@ export type ConversationInputRuntimeState = {
   model: string;
   apiProfile: string;
   thinkingStrength: string | null;
-  responsesFastMode: boolean | null;
+  responsesFastMode: string | null;
 };
 
 export type ConversationRuntimeConfigOverride = {
   thinkingStrength: string | null;
-  responsesFastMode: boolean | null;
+  responsesFastMode: string | null;
 };
 
 export type ChatInputSendOptions = {
@@ -29,9 +29,10 @@ export type ChatInputSendOptions = {
   /** Effective thinking strength for this request ("none" | "low" | "medium" |
    *  "high" | custom). Applied in-memory; never mutates the profile config. */
   thinkingStrength?: string;
-  /** Per-request Responses Fast Mode value. `null` means use the profile
-   *  default and is ignored by non-Responses request methods. */
-  responsesFastMode?: boolean | null;
+  /** Per-request Responses Fast Mode tier ("off" | "fast" | "ultrafast").
+   *  `null` means use the profile default and is ignored by non-Responses
+   *  request methods. */
+  responsesFastMode?: string | null;
   /** Snapshot of the conversation-level overrides to persist after a pending
    *  session receives its first real conversation id. `null` means inherit the
    *  selected profile default for that field. */
@@ -132,7 +133,8 @@ export type RequestMethod =
 export type SendKeyMode = "enter" | "ctrlEnter";
 
 /** 模型选择菜单的二级视图。 */
-export type ModelMenuView = "root" | "model" | "thinking" | "apiProfile";
+export type ModelMenuView =
+  "root" | "model" | "thinking" | "fastMode" | "apiProfile";
 
 export type ThinkingOption = {
   value: string;
@@ -167,8 +169,9 @@ export type ChatInputState = {
   ActiveThinkingIcon: LucideIcon;
   isLoadingApiConfig: boolean;
   thinkingError: string | null;
-  responsesFastModeEnabled: boolean;
-  responsesFastModeOverride: boolean | null;
+  /** 会话生效的 Fast Mode 档位（"off" | "fast" | "ultrafast"）。 */
+  responsesFastMode: string;
+  responsesFastModeOverride: string | null;
   fastModeError: string | null;
   labels: ChatInputLabels;
   isStreaming: boolean;
@@ -217,7 +220,7 @@ export type ChatInputActions = {
   handleOpenApiProfileMenu: () => void;
   handleSelectApiProfile: (profileName: string) => void;
   handleSelectThinking: (nextValue: string) => void;
-  handleToggleResponsesFastMode: () => void;
+  handleSelectResponsesFastMode: (tier: string) => void;
   setSendKeyMode: (mode: SendKeyMode) => void;
   restoreContent: (content: string) => void;
 };

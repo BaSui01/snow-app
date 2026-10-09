@@ -731,7 +731,7 @@ export type ConversationContextValue = {
       subAgentToolsJson?: string,
       subAgentSystemPrompt?: string,
       thinkingStrength?: string,
-      responsesFastMode?: boolean | null,
+      responsesFastMode?: string | null,
     ) => Promise<CompactionResult | null>
   >;
   yoloModeRef: RefValue<boolean>;

@@ -430,9 +430,17 @@ fn build_responses_text_config(config_json: &str) -> Option<Value> {
 
 fn build_responses_service_tier(config_json: &str) -> Option<&'static str> {
     let parsed = serde_json::from_str::<Value>(config_json).ok()?;
-    let enabled = parsed.get("snowcfg")?.get("responsesFastMode")?.as_bool()?;
+    let tier = match parsed.get("snowcfg")?.get("responsesFastMode")? {
+        Value::Bool(true) => "fast",
+        Value::String(text) => text.trim(),
+        _ => return None,
+    };
 
-    enabled.then_some("priority")
+    match tier {
+        "fast" => Some("priority"),
+        "ultrafast" => Some("ultrafast"),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------

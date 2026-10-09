@@ -18,7 +18,18 @@ import type { AppContext } from "./types";
  * 子视图提供搜索与选中列表；由输入区上方的模型 chip 直接打开
  * （不再从 Plus 菜单进入）。
  */
-type ModelPanelView = "root" | "model" | "thinking" | "apiProfile";
+type ModelPanelView = "root" | "model" | "thinking" | "fastMode" | "apiProfile";
+
+const FAST_MODE_OPTIONS: Array<{ value: string; labelKey: string }> = [
+  { value: "off", labelKey: "remote.model.fastModeOff" },
+  { value: "fast", labelKey: "remote.model.fastModeFast" },
+  { value: "ultrafast", labelKey: "remote.model.fastModeUltrafast" },
+];
+
+const fastModeLabel = (tier: string | undefined): string => {
+  const option = FAST_MODE_OPTIONS.find((item) => item.value === tier);
+  return option ? t(option.labelKey) : t("remote.model.fastModeOff");
+};
 
 let view: ModelPanelView = "root";
 let modelQuery = "";
@@ -30,6 +41,7 @@ const isView = (value: string | undefined): value is ModelPanelView =>
   value === "root" ||
   value === "model" ||
   value === "thinking" ||
+  value === "fastMode" ||
   value === "apiProfile";
 
 /** 输入区的模型 chip 打开面板前调用：回到 root 视图并清空搜索。 */
@@ -68,6 +80,16 @@ const listHtml = (): string => {
         )
         .join("") || emptyState("remote.model.noMatches")
     );
+  }
+  if (view === "fastMode") {
+    const active = input.responsesFastMode ?? "off";
+    return FAST_MODE_OPTIONS.map((option) =>
+      itemHtml(
+        t(option.labelKey),
+        `data-fast-mode="${option.value}"`,
+        option.value === active,
+      ),
+    ).join("");
   }
   if (view === "apiProfile") {
     const names = input.apiProfileNames || [];
@@ -134,11 +156,10 @@ const rootHtml = (): string => {
       `</button>`,
   ];
   if (input?.requestMethod === "responses") {
-    const enabled = Boolean(input?.responsesFastModeEnabled);
     rows.push(
-      `<button class="model-menu-row" type="button" data-fast="${!enabled}" role="switch" aria-checked="${enabled}" aria-label="${escapeHtml(t("remote.model.fastModeToggle"))}">` +
+      `<button class="model-menu-row" type="button" data-model-view="fastMode">` +
         `<span class="model-menu-label">${t("remote.model.fastMode")}</span>` +
-        `<span class="remote-toggle${enabled ? " on" : ""}" aria-hidden="true"></span>` +
+        `<span class="model-menu-value"><span class="model-menu-value-text">${escapeHtml(fastModeLabel(input?.responsesFastMode))}</span>${iconMarkup("chevron-right")}</span>` +
         `</button>`,
     );
   }
@@ -163,7 +184,7 @@ const buildSignature = (input: SnowRemoteChatInputState | null): string => {
     input.apiProfileNames.join(","),
     input.effectiveThinkingValue,
     (input.thinkingOptions || []).map((option) => option.value).join(","),
-    String(input.responsesFastModeEnabled),
+    input.responsesFastMode,
     input.requestMethod,
   ].join("|");
 };
@@ -193,9 +214,11 @@ export const renderModelPanel = (
         ? t("remote.model.menuModel")
         : view === "thinking"
           ? t("remote.model.thinking")
-          : t("remote.model.menuProfile"),
+          : view === "fastMode"
+            ? t("remote.model.fastMode")
+            : t("remote.model.menuProfile"),
     ) +
-    (view === "thinking" ? "" : searchHtml()) +
+    (view === "thinking" || view === "fastMode" ? "" : searchHtml()) +
     `<div class="model-menu-list" id="modelMenuList">${listHtml()}</div>`;
 };
 
@@ -251,9 +274,9 @@ const handleAction = async (
     await ctx.refresh(false);
     return;
   }
-  const fastRow = target.closest<HTMLElement>("[data-fast]");
-  if (fastRow) {
-    await setResponsesFastMode(fastRow.dataset.fast === "true");
+  const fastModeItem = target.closest<HTMLElement>("[data-fast-mode]");
+  if (fastModeItem) {
+    await setResponsesFastMode(fastModeItem.dataset.fastMode ?? "off");
     showNotice(t("remote.notice.settingsUpdated"));
     await ctx.refresh(false);
   }

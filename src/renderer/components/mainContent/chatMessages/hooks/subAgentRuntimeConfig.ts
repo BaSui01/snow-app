@@ -14,14 +14,14 @@ export type SubAgentRuntimeConfig = {
   apiProfile: string;
   model: string;
   /** Inherited from the parent conversation's captured request. Undefined =
-   *  let the selected profile use its own default. Explicit false is retained. */
-  responsesFastMode?: boolean;
+   *  let the selected profile use its own default. An explicit tier is kept. */
+  responsesFastMode?: string;
   /** Effective thinking snapshot captured at sub-agent creation. Resolved
    *  from the thinking configured on the resolved API profile; the parent
    *  run's per-send override never applies. Not a Profile write. */
   effectiveThinkingStrength: string;
   /** Effective Fast Mode snapshot captured at sub-agent creation. */
-  effectiveResponsesFastMode: boolean;
+  effectiveResponsesFastMode: string;
   systemPrompt: string;
   toolsJson: string;
 };
@@ -31,8 +31,8 @@ export type ResolveSubAgentRuntimeConfigInput = {
   apiConfigs: readonly ApiConfigRecord[];
   parentApiProfile?: string;
   parentModel?: string;
-  /** Effective Fast Mode captured by the parent run; false is meaningful. */
-  parentResponsesFastMode?: boolean | null;
+  /** Effective Fast Mode captured by the parent run; an explicit tier is meaningful. */
+  parentResponsesFastMode?: string | null;
 };
 
 const normalizeNonEmpty = (value: string | undefined): string =>

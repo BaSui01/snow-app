@@ -592,9 +592,9 @@ pub fn get_conversation_runtime_config(
                     |row| {
                         Ok(ConversationRuntimeConfig {
                             thinking_strength: row.get::<_, Option<String>>(0)?,
-                            responses_fast_mode: row
-                                .get::<_, Option<i64>>(1)?
-                                .map(|value| value != 0),
+                            responses_fast_mode: super::decode_responses_fast_mode(
+                                row.get::<_, Option<i64>>(1)?,
+                            ),
                         })
                     },
                 )

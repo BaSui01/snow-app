@@ -6,12 +6,12 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 
 ## 1. 认识配置入口
 
-| 入口 | 说明 |
-| --- | --- |
-| 设置 → API 设置（设置页 id：`api-settings`） | 图形界面：新建/编辑/切换 API 档案 |
-| 应用数据库 `api_configs` 表 | **多档案的权威存储**，每行一个档案（`profile_name` 唯一标识） |
-| `~/.snow/active-profile.json` 的 `activeProfile` 字段 | 记录**当前生效的档案名**；生效配置 = `api_configs` 中该档案 |
-| `~/.snow/config.json` 的 `snowcfg` 字段 | 与 Snow CLI 共享的兼容层/快照，**不是**档案的权威来源 |
+| 入口                                                  | 说明                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------- |
+| 设置 → API 设置（设置页 id：`api-settings`）          | 图形界面：新建/编辑/切换 API 档案                             |
+| 应用数据库 `api_configs` 表                           | **多档案的权威存储**，每行一个档案（`profile_name` 唯一标识） |
+| `~/.snow/active-profile.json` 的 `activeProfile` 字段 | 记录**当前生效的档案名**；生效配置 = `api_configs` 中该档案   |
+| `~/.snow/config.json` 的 `snowcfg` 字段               | 与 Snow CLI 共享的兼容层/快照，**不是**档案的权威来源         |
 
 > **存储机制速记**：多档案列表存在应用数据库 `api_configs` 表，当前生效档案由
 > `activeProfile` 指定。`config` 工具与 UI 读写的是**当前生效档案**；
@@ -21,17 +21,17 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 
 打开 **设置 → API 设置**，可以新建多个档案。新建档案需填写：
 
-| 字段 | 必填 | 说明 |
-| --- | --- | --- |
-| 档案名（Profile name） | 是 | 档案的唯一标识，如 `openai` |
-| 显示名（Display name） | 否 | 界面中展示的名称，缺省取档案名 |
-| Base URL | 是 | 服务端点地址 |
-| Base URL 模式 | 是 | `auto` 自动 / `custom` 手动 |
-| API Key | 否（可后补） | 服务商密钥，如 `sk-...` |
-| 请求方法（Request method） | 是 | 如 `chat` |
-| 高级模型（Advanced model） | 生效档案是（trim 后非空）；inactive 草稿否 | 该 Profile 的默认高级模型；普通会话仍使用会话选定模型 |
-| 基础模型（Basic model） | 生效档案是（trim 后非空）；inactive 草稿否 | 会话标题、AI Commit、`@?` 文件搜索和代码库 Agent Review 使用的模型 |
-| 视觉模型（Vision model） | 否 | 图像理解模型，可单独配置 |
+| 字段                       | 必填                                       | 说明                                                               |
+| -------------------------- | ------------------------------------------ | ------------------------------------------------------------------ |
+| 档案名（Profile name）     | 是                                         | 档案的唯一标识，如 `openai`                                        |
+| 显示名（Display name）     | 否                                         | 界面中展示的名称，缺省取档案名                                     |
+| Base URL                   | 是                                         | 服务端点地址                                                       |
+| Base URL 模式              | 是                                         | `auto` 自动 / `custom` 手动                                        |
+| API Key                    | 否（可后补）                               | 服务商密钥，如 `sk-...`                                            |
+| 请求方法（Request method） | 是                                         | 如 `chat`                                                          |
+| 高级模型（Advanced model） | 生效档案是（trim 后非空）；inactive 草稿否 | 该 Profile 的默认高级模型；普通会话仍使用会话选定模型              |
+| 基础模型（Basic model）    | 生效档案是（trim 后非空）；inactive 草稿否 | 会话标题、AI Commit、`@?` 文件搜索和代码库 Agent Review 使用的模型 |
+| 视觉模型（Vision model）   | 否                                         | 图像理解模型，可单独配置                                           |
 
 当档案的 `isActive` 为 `true`（包括保存为生效档案或之后激活）时，
 `advancedModel` 和 `basicModel` 在 trim 后必须都非空。inactive 档案可作为草稿保存，
@@ -71,8 +71,9 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 - **Google 搜索（Gemini）**：开启 `googleSearch` 后，Gemini 聊天请求会注入
   Google Search 工具实现实时联网接地（Grounding with Google Search）；
   视觉模型独立配置区另有 `visionGoogleSearch` 开关，可单独控制视觉请求；
-- **Responses Fast Mode**：当请求方法为 `responses` 时，可开启
-  `responsesFastMode` 快速模式，让服务端以快速模式处理响应式请求。
+- **Responses Fast Mode**：当请求方法为 `responses` 时，可选择
+  `responsesFastMode` 档位——关闭（不发送 `service_tier`）、Fast（发送
+  `service_tier: priority`）或 UltraFast（发送 `service_tier: ultrafast`）。
 
 表单会按请求方法校验字段：切换请求方法时，不适用于该方法的字段会被
 重置或跳过（如思考强度、Responses 专属选项），避免提交无效组合。
@@ -92,16 +93,16 @@ Agent 也可用 config 工具直接切换（见 [5.1 ④](#51-常用操作速查
 token、流式空闲超时、重试次数与延迟），其余参数可直接编辑
 `~/.snow/config.json` 的 `snowcfg` 字段：
 
-| 字段 | 说明 |
-| --- | --- |
-| `maxContextTokens` | 最大上下文 token 数 |
-| `maxTokens` | 单次生成最大 token 数 |
-| `streamIdleTimeoutSec` | 流式响应空闲超时（秒） |
-| `maxRetries` | 请求最大重试次数 |
-| `retryDelayMs` | 重试间隔（毫秒） |
-| `showThinking` | 是否展示思考过程 |
-| `chatThinking.reasoning_effort` | 思考强度（如 `max`） |
-| `toolResultTokenLimit` | 工具结果最多占模型上下文的百分比 |
+| 字段                            | 说明                             |
+| ------------------------------- | -------------------------------- |
+| `maxContextTokens`              | 最大上下文 token 数              |
+| `maxTokens`                     | 单次生成最大 token 数            |
+| `streamIdleTimeoutSec`          | 流式响应空闲超时（秒）           |
+| `maxRetries`                    | 请求最大重试次数                 |
+| `retryDelayMs`                  | 重试间隔（毫秒）                 |
+| `showThinking`                  | 是否展示思考过程                 |
+| `chatThinking.reasoning_effort` | 思考强度（如 `max`）             |
+| `toolResultTokenLimit`          | 工具结果最多占模型上下文的百分比 |
 
 > **提示**：直接编辑 `config.json` 后需重启应用使改动生效。
 
@@ -111,15 +112,15 @@ token、流式空闲超时、重试次数与延迟），其余参数可直接编
 
 Snow App 内置 `config` 工具，AI Agent 可读写与 UI 同源的配置。API 档案相关：
 
-| 工具 | 用途 |
-| --- | --- |
-| `config-list scope=snowcfg` | 查看当前生效档案的全部配置与键 |
-| `config-get scope=snowcfg key=baseUrl` | 读取单个键（`apiKey` 自动脱敏，如 `sk-****abcd`） |
-| `config-set scope=snowcfg key=baseUrl value="..."` | 写入单个键（白名单 + 类型校验 + 自动备份 + 原子写） |
-| `config-list scope=apiProfiles` | 列出**全部档案**（密钥脱敏），含使用引导 |
-| `config-get scope=apiProfiles key=<档案名>` | 读取单个档案（密钥脱敏，不存在返回 null） |
-| `config-set scope=apiProfiles key=<档案名> value={...}` | 新建/更新档案（写应用数据库，与 UI 同源、立即生效） |
-| `config-delete scope=apiProfiles key=<档案名>` | 删除档案（破坏性操作，须先经用户确认再带 `confirmed: true`） |
+| 工具                                                    | 用途                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------ |
+| `config-list scope=snowcfg`                             | 查看当前生效档案的全部配置与键                               |
+| `config-get scope=snowcfg key=baseUrl`                  | 读取单个键（`apiKey` 自动脱敏，如 `sk-****abcd`）            |
+| `config-set scope=snowcfg key=baseUrl value="..."`      | 写入单个键（白名单 + 类型校验 + 自动备份 + 原子写）          |
+| `config-list scope=apiProfiles`                         | 列出**全部档案**（密钥脱敏），含使用引导                     |
+| `config-get scope=apiProfiles key=<档案名>`             | 读取单个档案（密钥脱敏，不存在返回 null）                    |
+| `config-set scope=apiProfiles key=<档案名> value={...}` | 新建/更新档案（写应用数据库，与 UI 同源、立即生效）          |
+| `config-delete scope=apiProfiles key=<档案名>`          | 删除档案（破坏性操作，须先经用户确认再带 `confirmed: true`） |
 
 ```mermaid
 flowchart LR
@@ -212,12 +213,12 @@ config-delete scope=apiProfiles key=档案名 confirmed=true
 
 ## 6. 常见问题
 
-| 症状 | 原因与处理 |
-| --- | --- |
-| 请求返回 401/403 | 检查 `apiKey` 与 `baseUrl` 是否正确、密钥是否过期 |
-| 模型不支持思考 | 关闭 `showThinking` 或调整 `chatThinking.reasoning_effort` |
-| 视觉模型不可用 | 单独配置 `visionBaseUrl`、`visionApiKey`、`visionModel` |
-| 切换档案不生效 | 用 `config-set scope=apiProfiles key=档案名 value={"isActive":true}` 切换（写 DB 立即生效）；`active-profile.json` 仅为 CLI 兼容层 |
+| 症状             | 原因与处理                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 请求返回 401/403 | 检查 `apiKey` 与 `baseUrl` 是否正确、密钥是否过期                                                                                  |
+| 模型不支持思考   | 关闭 `showThinking` 或调整 `chatThinking.reasoning_effort`                                                                         |
+| 视觉模型不可用   | 单独配置 `visionBaseUrl`、`visionApiKey`、`visionModel`                                                                            |
+| 切换档案不生效   | 用 `config-set scope=apiProfiles key=档案名 value={"isActive":true}` 切换（写 DB 立即生效）；`active-profile.json` 仅为 CLI 兼容层 |
 
 ## 6. 参考
 

@@ -707,7 +707,7 @@ export const RemoteControlBridge = ({
         value: truncateTo(option.value, MAX_THINKING_LENGTH) ?? "",
         label: truncateTo(option.label, MAX_THINKING_LENGTH) ?? "",
       })),
-    responsesFastModeEnabled: publication.responsesFastModeEnabled,
+    responsesFastMode: publication.responsesFastMode,
     maxContextTokens:
       typeof publication.maxContextTokens === "number" &&
       Number.isFinite(publication.maxContextTokens) &&
@@ -2062,7 +2062,7 @@ export const RemoteControlBridge = ({
           sendOptions.thinkingStrength =
             chatInput.effectiveThinkingValue || undefined;
           if (chatInput.requestMethod === "responses") {
-            sendOptions.responsesFastMode = chatInput.responsesFastModeEnabled;
+            sendOptions.responsesFastMode = chatInput.responsesFastMode;
           }
           sendOptions.conversationRuntimeConfigOverride = {
             thinkingStrength: chatInput.thinkingOverride || null,
@@ -2230,21 +2230,21 @@ export const RemoteControlBridge = ({
         return { ok: true };
       },
 
-      // 复用真实 handleToggleResponsesFastMode setter 链。
-      // desired 为布尔时做幂等处理：与当前状态一致则直接返回，
-      // 避免手机端与桌面端并发点击造成来回翻转。
-      toggleResponsesFastMode: async (desired?): Promise<{ ok: true }> => {
+      // 复用真实 handleSelectResponsesFastMode setter 链。
+      // desired 与当前档位一致时做幂等处理，避免手机端与桌面端并发点击。
+      toggleResponsesFastMode: async (desired): Promise<{ ok: true }> => {
         const publication = await ensureChatInputForMutation();
         if (publication.requestMethod !== "responses") {
           throw new Error("当前请求方式不支持 Responses Fast Mode");
         }
-        if (
-          typeof desired === "boolean" &&
-          desired === publication.responsesFastModeEnabled
-        ) {
+        const tier = typeof desired === "string" ? desired.trim() : "";
+        if (tier !== "off" && tier !== "fast" && tier !== "ultrafast") {
+          throw new Error("Fast Mode 档位必须是 off / fast / ultrafast");
+        }
+        if (tier === publication.responsesFastMode) {
           return { ok: true };
         }
-        await publication.actions.handleToggleResponsesFastMode();
+        await publication.actions.handleSelectResponsesFastMode(tier);
         return { ok: true };
       },
 

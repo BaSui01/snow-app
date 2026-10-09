@@ -692,6 +692,8 @@ export const zhTW = {
   "chat.float.island.filesChanged": "已變更 {{count}} 個檔案",
   "chat.float.island.tokens": "{{count}} tokens",
   "chat.userMessageRail.title": "使用者訊息",
+  "chat.agentLoop.duplicateRecoveryFallback":
+    "（已根據先前讀取的內容分析完畢，請參閱上方的工具結果與回答）",
   "chat.subAgentModelFixed": "子代理使用啟動時確定的 API 配置和模型",
   "chat.subAgentFinished.completed": "該子代理已完成，會話僅供檢視。",
   "chat.subAgentFinished.failed": "該子代理執行失敗，會話僅供檢視。",
@@ -1643,6 +1645,10 @@ export const zhTW = {
   "toolNames.computer-use-key-button": "鍵盤按鍵",
   "toolNames.computer-use-type-text": "輸入文字",
   "toolNames.computer-use-perform-actions": "連續動作",
+  "toolCall.duplicateReadonlyProtection.duplicateCall":
+    "重複讀取保護：此唯讀呼叫與本次執行中已完成的呼叫參數完全相同，且檔案與 Git 狀態皆未變更，已直接沿用先前的結果，未重複執行。",
+  "toolCall.duplicateReadonlyProtection.toolsDisabled":
+    "重複讀取保護：本輪為恢復請求已停用工具，但模型仍要求呼叫工具，因此未執行任何工具。",
   "toolCall.common.arguments": "參數",
   "toolCall.common.result": "結果",
   "toolCall.common.charCount": "{{count}} 字元",

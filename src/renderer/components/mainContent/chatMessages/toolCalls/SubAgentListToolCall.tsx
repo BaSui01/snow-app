@@ -1,15 +1,10 @@
 import { useMemo } from "react";
-import {
-  AlertCircle,
-  ArrowRight,
-  Bot,
-  CircleDot,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, ArrowRight, Bot, CircleDot, Loader2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../components/ChatConversationContext";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type SubAgentListToolCallProps = {
   toolCall: ToolCallInfo;
@@ -75,7 +70,7 @@ export const SubAgentListToolCall = ({
 
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const isRunning = toolCall.status === "running";
@@ -134,10 +129,14 @@ export const SubAgentListToolCall = ({
             {parsedResult.subAgents.length > 0 ? (
               <ul className="tool-call-sub-agent-list-items">
                 {parsedResult.subAgents.map((agent) => {
-                  const isActive = activeConversationId === agent.conversationId;
+                  const isActive =
+                    activeConversationId === agent.conversationId;
                   const displayName = agent.agentName || agent.agentId || "-";
                   return (
-                    <li key={agent.conversationId} className="tool-call-sub-agent-list-item">
+                    <li
+                      key={agent.conversationId}
+                      className="tool-call-sub-agent-list-item"
+                    >
                       <Bot size={12} aria-hidden="true" />
                       <span
                         className="tool-call-sub-agent-list-item-name"
@@ -192,7 +191,7 @@ export const SubAgentListToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

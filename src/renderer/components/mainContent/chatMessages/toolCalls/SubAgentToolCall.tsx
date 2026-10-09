@@ -14,6 +14,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { HookExecutionUI } from "./HookExecutionUI";
 
 type SubAgentToolCallProps = {
@@ -585,7 +586,7 @@ export const SubAgentToolCall = ({
               {isEmptyResultError
                 ? t("toolCall.subAgent.activationFailed")
                 : parsedResult.type === "error"
-                  ? parsedResult.message
+                  ? localizeToolError(t, parsedResult.message)
                   : t("toolCall.subAgent.activationFailed")}
             </span>
           </div>

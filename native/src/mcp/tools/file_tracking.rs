@@ -15,6 +15,8 @@ use serde_json::{json, Value};
 use tokio::io::AsyncReadExt;
 use tokio::sync::Notify;
 
+const MAX_GIT_BYTES: usize = 1024 * 1024;
+const READ_CHUNK_BYTES: usize = 4096;
 const MAX_FILES: usize = 2048;
 const MAX_ENTRIES: usize = 8192;
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -307,14 +309,25 @@ async fn git_paths(root: &Path) -> Result<Vec<PathBuf>, &'static str> {
     command.creation_flags(0x08000000);
     let mut child = command.spawn().map_err(|_| "git-list-unavailable")?;
     let mut bytes = Vec::new();
-    let stdout = child.stdout.take().ok_or("git-list-unavailable")?;
-    stdout
-        .take(1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|_| "git-list-unavailable")?;
-    if bytes.len() > 1024 * 1024 {
-        return Err("git-list-byte-limit");
+    let mut stdout = child.stdout.take().ok_or("git-list-unavailable")?;
+    let mut buffer = [0_u8; READ_CHUNK_BYTES];
+    loop {
+        let read_limit = buffer.len().min(MAX_GIT_BYTES - bytes.len() + 1);
+        let read = stdout
+            .read(&mut buffer[..read_limit])
+            .await
+            .map_err(|_| "git-list-unavailable")?;
+        if read == 0 {
+            break;
+        }
+        if read > MAX_GIT_BYTES - bytes.len() {
+            return Err("git-list-byte-limit");
+        }
+        // Tracking is optional: allocation failure must degrade coverage, not abort the app.
+        bytes
+            .try_reserve(read)
+            .map_err(|_| "git-list-allocation-failed")?;
+        bytes.extend_from_slice(&buffer[..read]);
     }
     if !child
         .wait()
@@ -465,31 +478,44 @@ async fn scan(root: &Path, previous: Option<&Snapshot>) -> Snapshot {
             snapshot.reasons.insert("content-byte-limit".into());
             continue;
         }
-        let Ok(input) = tokio::fs::File::open(&physical).await else {
+        let Ok(mut input) = tokio::fs::File::open(&physical).await else {
             snapshot.complete = false;
             snapshot.reasons.insert("file-read-failed".into());
             continue;
         };
-        let mut bytes = Vec::new();
-        if input
-            .take(MAX_FILE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .await
-            .is_err()
-        {
-            snapshot.complete = false;
-            snapshot.reasons.insert("file-read-failed".into());
-            continue;
+        // Only the fingerprint is needed; never allocate a buffer the size of the file.
+        let mut hasher = blake3::Hasher::new();
+        let mut buffer = [0_u8; READ_CHUNK_BYTES];
+        let mut file_bytes = 0_u64;
+        let hash = loop {
+            // Probe one byte beyond either budget, including when a file grows after metadata.
+            let read_limit = (buffer.len() as u64)
+                .min(MAX_FILE_BYTES - file_bytes + 1)
+                .min(MAX_BYTES.saturating_sub(total) + 1) as usize;
+            let read = match input.read(&mut buffer[..read_limit]).await {
+                Ok(0) => break Some(hasher.finalize()),
+                Ok(read) => read,
+                Err(_) => {
+                    snapshot.complete = false;
+                    snapshot.reasons.insert("file-read-failed".into());
+                    break None;
+                }
+            };
+            file_bytes += read as u64;
+            // Failed/over-limit files still consume the scan's actual I/O budget.
+            total += read as u64;
+            if file_bytes > MAX_FILE_BYTES || total > MAX_BYTES {
+                snapshot.complete = false;
+                snapshot.reasons.insert("content-byte-limit".into());
+                break None;
+            }
+            hasher.update(&buffer[..read]);
+        };
+        if let Some(hash) = hash {
+            snapshot
+                .entries
+                .insert(key(&physical), (physical, Some(hash)));
         }
-        total += bytes.len() as u64;
-        if bytes.len() as u64 > MAX_FILE_BYTES || total > MAX_BYTES {
-            snapshot.complete = false;
-            snapshot.reasons.insert("content-byte-limit".into());
-            continue;
-        }
-        snapshot
-            .entries
-            .insert(key(&physical), (physical, Some(blake3::hash(&bytes))));
     }
     snapshot
 }

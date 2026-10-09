@@ -19,6 +19,7 @@ import type {
 } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { AnsiOutput } from "./shared/AnsiOutput";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
@@ -635,19 +636,19 @@ export const BashToolCall = ({
         {parsedResult.type === "timeout" ? (
           <div className="tool-call-error tool-call-bash-timeout-notice">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
         {parsedResult.type === "cancelled" ? (
           <div className="tool-call-error tool-call-bash-timeout-notice">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

@@ -3168,6 +3168,17 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 
+.form-dialog-input[readonly] {
+  cursor: default;
+}
+
+.form-dialog-input[readonly]:focus,
+.form-dialog-input[readonly]:focus-visible {
+  border-color: var(--border-color);
+  outline: none;
+  box-shadow: none;
+}
+
 .form-dialog-description {
   margin: 0;
   color: var(--text-tertiary);
@@ -3430,8 +3441,15 @@ body.is-panel-resizing * {
 }
 
 .form-dialog-button:disabled {
-  cursor: default;
+  cursor: not-allowed;
   opacity: 0.55;
+}
+
+.form-dialog-button.confirm:disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border-color: transparent;
+  opacity: 0.6;
 }
 
 .form-dialog-spinner {

@@ -1221,7 +1221,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     content:
                       currentMessage.content ||
                       response.content ||
-                      "（已基于此前读取的内容分析完毕，请参见上方工具结果与回答）",
+                      t("chat.agentLoop.duplicateRecoveryFallback", {
+                        defaultValue:
+                          "（已基于此前读取的内容分析完毕，请参见上方工具结果与回答）",
+                      }),
                     toolCalls: toolCalls.map((toolCall) => ({
                       ...toolCall,
                       status: "completed" as const,

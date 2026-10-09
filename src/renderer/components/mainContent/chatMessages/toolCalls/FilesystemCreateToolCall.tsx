@@ -3,6 +3,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import {
   rightPanelEvents,
@@ -168,7 +169,7 @@ export const FilesystemCreateToolCall = ({
         )}
         {hasError ? (
           <div className="tool-call-error">
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

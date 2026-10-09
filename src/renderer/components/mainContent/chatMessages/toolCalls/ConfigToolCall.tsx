@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, FileX2, ListChecks } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { decodeEscapedNewlines, JsonTreeView } from "./shared/JsonTreeView";
 
 type ConfigToolCallProps = {
@@ -57,7 +58,7 @@ const extractEntries = (data: Record<string, unknown>): unknown[] => {
 };
 
 const extractConfigValue = (
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
 ): { present: boolean; value: unknown } => {
   if ("value" in data) {
     return { present: true, value: data.value };
@@ -69,7 +70,11 @@ const extractConfigValue = (
 };
 
 /** get / set 成功后对 value 字段的美化展示（字符串转义解码见 shared/JsonTreeView）。 */
-const ValuePreview = ({ value }: { value: unknown }): React.JSX.Element | null => {
+const ValuePreview = ({
+  value,
+}: {
+  value: unknown;
+}): React.JSX.Element | null => {
   const { t } = useI18n();
   if (value === null || value === undefined) {
     return null;
@@ -144,11 +149,11 @@ export const ConfigToolCall = ({
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const scope = asString(parsedArgs?.scope);
@@ -161,10 +166,10 @@ export const ConfigToolCall = ({
     operation === "list"
       ? (scope ?? t("toolCall.config.allScopes"))
       : scope
-      ? key
-        ? `${scope}/${key}`
-        : scope
-      : key;
+        ? key
+          ? `${scope}/${key}`
+          : scope
+        : key;
 
   /* 折叠态 meta 摘要。 */
   let meta: ReactNode = null;
@@ -176,7 +181,9 @@ export const ConfigToolCall = ({
         meta = (
           <span className="tool-call-config-meta tool-call-config-meta-ok">
             <ListChecks size={10} aria-hidden="true" />
-            {t("toolCall.config.entryCount", { values: { count: entries.length } })}
+            {t("toolCall.config.entryCount", {
+              values: { count: entries.length },
+            })}
           </span>
         );
       }
@@ -224,10 +231,7 @@ export const ConfigToolCall = ({
           .filter((label): label is string => label !== undefined)
       : [];
 
-  const resultText =
-    parsedResult.type === "raw"
-      ? parsedResult.text
-      : "";
+  const resultText = parsedResult.type === "raw" ? parsedResult.text : "";
   const configValue =
     parsedResult.type === "success" &&
     (operation === "set" || operation === "get")
@@ -269,7 +273,7 @@ export const ConfigToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

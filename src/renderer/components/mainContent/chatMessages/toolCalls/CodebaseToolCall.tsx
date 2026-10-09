@@ -15,6 +15,7 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type CodebaseToolCallProps = {
   toolCall: ToolCallInfo;
@@ -508,7 +509,9 @@ export const CodebaseToolCall = ({
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
             <span>
-              {parsedResult.type === "error" ? parsedResult.message : ""}
+              {parsedResult.type === "error"
+                ? localizeToolError(t, parsedResult.message)
+                : ""}
             </span>
           </div>
         ) : null}

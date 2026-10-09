@@ -88,26 +88,7 @@ const previewPrompt = (prompt: string): string => {
   return `${plain.slice(0, PREVIEW_MAX_LEN)}…`;
 };
 
-/** Formats an ISO timestamp (or epoch ms) into a localized relative/absolute label. */
-const formatRunTime = (iso: string | undefined): string => {
-  if (!iso) return "";
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return "";
-  const date = new Date(ms);
-  const now = Date.now();
-  const diffMs = ms - now;
-  const absMin = Math.abs(Math.round(diffMs / 60000));
-  if (absMin < 1) return date.toLocaleTimeString();
-  if (absMin < 60) {
-    return diffMs >= 0 ? `in ${absMin}m` : `${absMin}m ago`;
-  }
-  const absHr = Math.round(absMin / 60);
-  if (absHr < 24) {
-    return diffMs >= 0 ? `in ${absHr}h` : `${absHr}h ago`;
-  }
-  return date.toLocaleString();
-};
-
+/** 解析 ISO 时间戳或 epoch 毫秒；无效时返回 null。 */
 const parseTimestamp = (value: string | undefined): Date | null => {
   if (!value) return null;
   const timestamp = Date.parse(value);
@@ -1471,7 +1452,8 @@ export function ScheduledTasksPanel({
             <span className="scheduled-task-item-meta sub">
               {task.lastRunAt && (
                 <span className="scheduled-task-item-last">
-                  {t("scheduledTask.lastRun")}: {formatRunTime(task.lastRunAt)}
+                  {t("scheduledTask.lastRun")}:{" "}
+                  {formatRelativeTime(task.lastRunAt, locale) ?? task.lastRunAt}
                 </span>
               )}
               {task.runCount > 0 && (

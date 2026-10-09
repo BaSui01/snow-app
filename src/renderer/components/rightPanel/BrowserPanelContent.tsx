@@ -30,6 +30,7 @@ import {
   recordMainFrameNavigationSuccess,
 } from "./browser/browserMcpOperations";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
+import { useI18n } from "../../i18n";
 import {
   WEB_SNAPSHOT_REQUEST_EVENT,
   WEB_SNAPSHOT_RESULT_EVENT,
@@ -234,6 +235,7 @@ export const BrowserPanelContent = ({
   onOpenNewTab,
   detached = false,
 }: BrowserPanelContentProps): React.JSX.Element => {
+  const { t } = useI18n();
   // onTitleChange / onUrlChange / onOpenNewTab 由 RightPanel 内联传入,每次
   // 父组件 render 都是新引用。通过 ref 持有,事件监听 effect 只需依赖
   // instanceId,监听器只绑定一次,避免每次父组件重渲染都反复卸载/重建
@@ -667,7 +669,7 @@ export const BrowserPanelContent = ({
       async (operation, args) => {
         const webview = webviewRef.current;
         if (!webview) {
-          throw new Error("浏览器当前没有可操作的页面");
+          throw new Error(t("browser.noPageToOperate"));
         }
         if (operation === "get_tab_content") {
           return window.snow.browserFrameOperation(

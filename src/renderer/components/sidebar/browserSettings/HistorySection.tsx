@@ -20,7 +20,7 @@ const displayUrl = (url: string): string =>
   url.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 
 export function HistorySection(): React.JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<BrowserHistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -214,7 +214,7 @@ export function HistorySection(): React.JSX.Element {
                             </button>
                           </td>
                           <td className="browser-history-time-cell">
-                            {new Date(entry.lastVisitAt).toLocaleString()}
+                            {new Date(entry.lastVisitAt).toLocaleString(locale)}
                             <span className="browser-history-visits">
                               {` · ${t("settings.browserHistoryVisitCount", {
                                 values: { count: entry.visitCount },

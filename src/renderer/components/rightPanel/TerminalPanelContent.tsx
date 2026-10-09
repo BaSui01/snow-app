@@ -20,6 +20,7 @@ import {
   useState,
 } from "react";
 import { useTerminalSettings } from "./useTerminalSettings";
+import { useI18n } from "../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 import { detectAwaitingInput } from "./terminal/terminalInputDetector";
@@ -158,6 +159,7 @@ export const TerminalPanelContent = ({
   onOpenLink,
   onProcessExit,
 }: TerminalPanelContentProps): React.JSX.Element => {
+  const { t } = useI18n();
   const settings = useTerminalSettings();
   const shellPath = shellPathProp?.trim() || settings.shellPath;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -818,7 +820,7 @@ export const TerminalPanelContent = ({
     if (term?.hasSelection()) {
       items.push({
         id: "copy",
-        label: "复制",
+        label: t("common.copy"),
         icon: <Copy size={13} strokeWidth={1.8} />,
         onClick: () => {
           setContextMenu(null);
@@ -828,7 +830,7 @@ export const TerminalPanelContent = ({
     }
     items.push({
       id: "paste",
-      label: "粘贴",
+      label: t("common.paste"),
       icon: <ClipboardPaste size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
@@ -837,7 +839,7 @@ export const TerminalPanelContent = ({
     });
     items.push({
       id: "select-all",
-      label: "全选",
+      label: t("common.selectAll"),
       icon: <ListChecks size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
@@ -936,10 +938,10 @@ export const TerminalPanelContent = ({
               : undefined
           }
           onClick={insertToComposer}
-          title="将选中的日志添加到输入框"
+          title={t("terminal.addSelectionToInput")}
         >
           <Send size={12} strokeWidth={2} aria-hidden="true" />
-          添加到输入框
+          {t("terminal.addToInput")}
         </button>
       ) : null}
       <div
@@ -964,7 +966,7 @@ export const TerminalPanelContent = ({
       {isPathDragOver ? (
         <div className="terminal-drop-overlay" aria-hidden="true">
           <FolderInput size={13} strokeWidth={1.8} />
-          释放以插入路径
+          {t("terminal.dropToInsertPath")}
         </div>
       ) : null}
       {/* 终端等待输入提示条：程序/shell 正在等待用户输入时显示，
@@ -973,7 +975,9 @@ export const TerminalPanelContent = ({
         <div className="terminal-waiting-banner" role="status">
           <span className="terminal-waiting-dot" aria-hidden="true" />
           <Keyboard size={12} strokeWidth={1.8} aria-hidden="true" />
-          <span className="terminal-waiting-label">终端等待输入</span>
+          <span className="terminal-waiting-label">
+            {t("terminal.awaitingInput")}
+          </span>
           <code className="terminal-waiting-hint">{awaitingInput}</code>
         </div>
       ) : null}
@@ -985,7 +989,7 @@ export const TerminalPanelContent = ({
           footerItems={[
             {
               id: "clear",
-              label: "清屏",
+              label: t("terminal.contextMenu.clear"),
               icon: <Eraser size={13} strokeWidth={1.8} />,
               onClick: () => {
                 setContextMenu(null);

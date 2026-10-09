@@ -787,7 +787,13 @@ export const BranchSelector = ({
           setBranchItemContextMenu(null);
           setContextMenu({ x: e.clientX, y: e.clientY });
         }}
-        title={`${currentBranch}${worktrees.length > 0 ? ` · ${worktrees.length} 个工作树` : ""}`}
+        title={`${currentBranch}${
+          worktrees.length > 0
+            ? ` · ${t("git.worktreeCountSuffix", {
+                values: { count: worktrees.length },
+              })}`
+            : ""
+        }`}
       >
         <GitBranch
           size={13}
@@ -1018,7 +1024,9 @@ export const BranchSelector = ({
                         type="button"
                         className="branch-prefix-chip"
                         onClick={() => handleApplyPrefix(prefix)}
-                        title={`填入前缀 ${prefix}`}
+                        title={t("git.worktreeBranchPrefixTooltip", {
+                          values: { prefix },
+                        })}
                       >
                         {prefix}
                       </button>
@@ -1029,7 +1037,7 @@ export const BranchSelector = ({
                     ref={worktreeInputRef}
                     type="text"
                     className="branch-create-input"
-                    placeholder="例如: feature/chat-redesign"
+                    placeholder={t("git.worktreeBranchNamePlaceholder")}
                     value={worktreeBranchName}
                     onChange={(e) => {
                       setWorktreeBranchName(e.target.value);

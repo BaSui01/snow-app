@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { useI18n } from "../../../i18n";
 
 export type BrowserFindResult = {
   activeMatchOrdinal: number;
@@ -17,7 +18,7 @@ export type BrowserFindBarProps = {
 
 const formatMatchCount = (
   value: string,
-  result: BrowserFindResult | null
+  result: BrowserFindResult | null,
 ): string => {
   if (!value || !result) {
     return "";
@@ -44,6 +45,7 @@ export const BrowserFindBar = ({
   onPrev,
   onClose,
 }: BrowserFindBarProps): React.JSX.Element => {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -79,12 +81,10 @@ export const BrowserFindBar = ({
         value={value}
         onChange={(e) => onSearch(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="查找"
+        placeholder={t("browserFind.search")}
         spellCheck={false}
       />
-      <span
-        className={`browser-find-count${hasNoMatches ? " is-empty" : ""}`}
-      >
+      <span className={`browser-find-count${hasNoMatches ? " is-empty" : ""}`}>
         {matchCount}
       </span>
       <button
@@ -92,8 +92,8 @@ export const BrowserFindBar = ({
         className="browser-find-btn"
         onClick={onPrev}
         disabled={!value}
-        aria-label="上一个"
-        title="上一个"
+        aria-label={t("browserFind.previous")}
+        title={t("browserFind.previous")}
       >
         <ChevronUp size={14} strokeWidth={1.8} />
       </button>
@@ -102,8 +102,8 @@ export const BrowserFindBar = ({
         className="browser-find-btn"
         onClick={onNext}
         disabled={!value}
-        aria-label="下一个"
-        title="下一个"
+        aria-label={t("browserFind.next")}
+        title={t("browserFind.next")}
       >
         <ChevronDown size={14} strokeWidth={1.8} />
       </button>
@@ -111,8 +111,8 @@ export const BrowserFindBar = ({
         type="button"
         className="browser-find-btn"
         onClick={onClose}
-        aria-label="关闭查找"
-        title="关闭"
+        aria-label={t("browserFind.close")}
+        title={t("common.close")}
       >
         <X size={14} strokeWidth={1.8} />
       </button>

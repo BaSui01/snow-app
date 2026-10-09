@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { tGlobal } from "../../../i18n";
 import {
   INSERT_ELEMENT_TAG_EVENT,
   type ElementTag,
@@ -32,8 +33,14 @@ export type PickedElement = {
  *
  * 选择期间通过注入的 !important 样式把整页光标强制为醒目的自定义鼠标指针
  * （白色描边箭头 + 十字准星方框），因此光标不随页面自身的悬停样式变化。
+ *
+ * DOM 层级树里的标注文案在脚本执行时按当前 App 语言写入（tGlobal），
+ * 因此语言切换后重新选取即得到新语言的标注。
  */
-const ELEMENT_PICKER_SCRIPT = `(() => {
+const buildElementPickerScript = (): string => {
+  const selectedElementLabel = tGlobal("browser.elementPicker.selectedElement");
+  const childrenSummaryLabel = tGlobal("browser.elementPicker.childrenSummary");
+  return `(() => {
   window.__snowElementPickerActive = true;
   // 清除上一次选择残留的高亮框与元素引用（若有）。
   window.__snowClearPickerOverlay && window.__snowClearPickerOverlay();
@@ -187,7 +194,7 @@ const ELEMENT_PICKER_SCRIPT = `(() => {
           );
         });
         if (lines.length > 0) {
-          lines[lines.length - 1] += "  ← 选中元素";
+          lines[lines.length - 1] += ${JSON.stringify(selectedElementLabel)};
         }
         const children = Array.prototype.slice.call(root.children || []);
         if (children.length > 0) {
@@ -195,7 +202,7 @@ const ELEMENT_PICKER_SCRIPT = `(() => {
           if (children.length > listed.length) {
             listed.push("…(+" + (children.length - listed.length) + ")");
           }
-          lines.push("子元素: " + listed.join(", "));
+          lines.push(${JSON.stringify(childrenSummaryLabel)} + listed.join(", "));
         }
         return lines.join("\\n").slice(0, 1600);
       };
@@ -283,6 +290,7 @@ const ELEMENT_PICKER_SCRIPT = `(() => {
     document.addEventListener("keydown", onKeyDown, true);
   });
 })()`;
+};
 
 type PickResult = {
   tag?: string;
@@ -462,7 +470,7 @@ export const useWebviewElementPicker = (
     };
 
     webview
-      .executeJavaScript(ELEMENT_PICKER_SCRIPT)
+      .executeJavaScript(buildElementPickerScript())
       .then((result) => {
         settle();
         if (generationRef.current !== generation) {

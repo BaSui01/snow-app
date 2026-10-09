@@ -622,6 +622,14 @@ export const buildConversationMessages = (
         model: record.model || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         isContextCompaction: record.status === "context_compaction",
+        // 自动重试元数据：空响应终态重载后仍能显示「重试已耗尽 (N)」与上游
+        // 错误原文，而不是只剩一条通用说明。
+        ...(record.retryAttempts > 0
+          ? {
+              retryAttempt: record.retryAttempts,
+              retryError: record.retryError || undefined,
+            }
+          : {}),
         ...(assistantDisposition?.kind === "incomplete"
           ? {
               incompleteVariant: assistantDisposition.variant,

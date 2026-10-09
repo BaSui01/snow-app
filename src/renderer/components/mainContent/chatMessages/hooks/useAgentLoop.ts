@@ -1020,8 +1020,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     model: response.model || capturedOptions.model,
                     toolCalls: undefined,
                     isRetrying: false,
-                    retryAttempt: undefined,
-                    retryError: undefined,
+                    // 空响应终态保留最近一次重试的尝试序号与上游错误文本，
+                    // 供重试提示以终态形态渲染；其余终态一律清空。
+                    retryAttempt:
+                      responseDisposition.reason === "empty_response"
+                        ? currentMessage.retryAttempt
+                        : undefined,
+                    retryError:
+                      responseDisposition.reason === "empty_response"
+                        ? currentMessage.retryError
+                        : undefined,
                   }
                 : currentMessage,
             ),

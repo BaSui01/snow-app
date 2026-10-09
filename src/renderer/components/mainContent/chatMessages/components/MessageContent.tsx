@@ -119,12 +119,17 @@ export const MessageContent = memo(
     // - All assistant messages without tool calls (1-on-1 conversations)
     // - The last assistant message when it has tool calls (AI Loop ending)
     // - Never on a message that is currently streaming
-    // - Never while the conversation-level streaming is active (AI Loop in
-    //   progress). Without this guard, a message that finishes streaming
-    //   but precedes a tool-call round would briefly show actions that
-    //   vanish when the next assistant turn starts — causing a flash.
+    // - 会话级流式进行中时只屏蔽「当前 run 的最后一条 assistant 消息」：
+    //   已经定稿的历史回答（例如上一轮的结果）在发送新提示词后保持操作
+    //   按钮可见。若按会话级 isStreaming 屏蔽整段历史，用户一发新消息，
+    //   历史回答的复制 / 派生分支按钮就会集体消失。
+    //   这条屏蔽本身仍然必要：一条刚流完、后面还要接工具轮的 assistant
+    //   消息此刻也是 last，不屏蔽会在下一轮开始前闪现按钮再消失。
+    const isActiveRunTail = isLastAssistant && isStreaming;
     const showActions =
-      !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
+      !isMessageStreaming &&
+      !isActiveRunTail &&
+      (!hasToolCalls || isLastAssistant);
 
     return (
       <div className="chat-message-hook-container">

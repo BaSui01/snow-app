@@ -22,6 +22,7 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { readLspResultMeta, type LspResultMeta } from "./lspResultMeta";
 import {
   readLspDiagnostics,
@@ -2259,7 +2260,7 @@ function LspToolBody({
       {hasError ? (
         <div className="tool-call-error">
           <AlertCircle size={12} aria-hidden="true" />
-          <span>{parsedResult.message}</span>
+          <span>{localizeToolError(t, parsedResult.message)}</span>
         </div>
       ) : null}
 
@@ -2271,7 +2272,7 @@ function LspToolBody({
               <div className="tool-call-lsp-ambiguous-block">
                 <div className="tool-call-lsp-ambiguous-banner">
                   <AlertCircle size={13} aria-hidden="true" />
-                  <span>{parsedResult.message}</span>
+                  <span>{localizeToolError(t, parsedResult.message)}</span>
                 </div>
                 {parsedResult.candidates.length > 0 ? (
                   <div className="tool-call-lsp-ambiguous-list">

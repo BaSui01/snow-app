@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type LogRecord = Record<string, unknown>;
 type Props = { toolCall: ToolCallInfo };
@@ -90,7 +91,7 @@ export const AppLogsToolCall = ({ toolCall }: Props): React.JSX.Element => {
         {failure ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{failure}</span>
+            <span>{localizeToolError(t, failure)}</span>
           </div>
         ) : null}
 

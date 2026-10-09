@@ -15,15 +15,13 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type CodeLensToolCallProps = {
   toolCall: ToolCallInfo;
 };
 
-type CodelensOperation =
-  | "find_definition"
-  | "find_references"
-  | "file_outline";
+type CodelensOperation = "find_definition" | "find_references" | "file_outline";
 
 // ---- Args types ----
 
@@ -116,19 +114,19 @@ const getOperation = (toolName: string): CodelensOperation | null => {
 
 const parseString = (
   record: Record<string, unknown>,
-  key: string
+  key: string,
 ): string | undefined =>
   typeof record[key] === "string" ? (record[key] as string) : undefined;
 
 const parseNumber = (
   record: Record<string, unknown>,
-  key: string
+  key: string,
 ): number | undefined =>
   typeof record[key] === "number" ? (record[key] as number) : undefined;
 
 const parseBoolean = (
   record: Record<string, unknown>,
-  key: string
+  key: string,
 ): boolean | undefined =>
   typeof record[key] === "boolean" ? (record[key] as boolean) : undefined;
 
@@ -150,10 +148,7 @@ const parseLocation = (value: unknown): SymbolLocation | null => {
   };
 };
 
-const parseArgs = (
-  args: string,
-  operation: CodelensOperation
-): ParsedArgs => {
+const parseArgs = (args: string, operation: CodelensOperation): ParsedArgs => {
   try {
     const parsed: unknown = JSON.parse(args);
     if (!isRecord(parsed)) return null;
@@ -177,7 +172,7 @@ const parseArgs = (
 
 const parseResult = (
   result: string | undefined,
-  operation: CodelensOperation
+  operation: CodelensOperation,
 ): ParsedResult => {
   if (!result) return { type: "empty" };
 
@@ -189,10 +184,7 @@ const parseResult = (
     const errorStr = parseString(parsed, "error");
     if (errorStr) return { type: "error", message: errorStr };
 
-    if (
-      operation === "find_definition" &&
-      typeof parsed.found === "boolean"
-    ) {
+    if (operation === "find_definition" && typeof parsed.found === "boolean") {
       if (parsed.found) {
         return {
           type: "definition",
@@ -215,10 +207,7 @@ const parseResult = (
       };
     }
 
-    if (
-      operation === "find_references" &&
-      typeof parsed.found === "boolean"
-    ) {
+    if (operation === "find_references" && typeof parsed.found === "boolean") {
       if (parsed.found) {
         const references: ReferenceItem[] = Array.isArray(parsed.references)
           ? parsed.references.filter(isRecord).map((r) => {
@@ -297,14 +286,14 @@ export const CodeLensToolCall = ({
 
   const parsedArgs = useMemo(
     () => (operation ? parseArgs(toolCall.arguments, operation) : null),
-    [toolCall.arguments, operation]
+    [toolCall.arguments, operation],
   );
   const parsedResult = useMemo(
     () =>
       operation
         ? parseResult(toolCall.result, operation)
         : ({ type: "empty" } as ParsedResult),
-    [toolCall.result, operation]
+    [toolCall.result, operation],
   );
 
   const isRunning = toolCall.status === "running";
@@ -336,7 +325,7 @@ export const CodeLensToolCall = ({
       groups.set(key, existing);
     }
     return Array.from(groups.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0])
+      a[0].localeCompare(b[0]),
     );
   }, [parsedResult]);
 
@@ -359,7 +348,7 @@ export const CodeLensToolCall = ({
     }
     if (parsedResult.type === "references") {
       const count = parsedResult.found
-        ? parsedResult.totalReferences ?? 0
+        ? (parsedResult.totalReferences ?? 0)
         : 0;
       return (
         <span
@@ -410,10 +399,7 @@ export const CodeLensToolCall = ({
               <span className="tool-call-codelens-param-label">
                 {t("toolCall.codelens.filePath")}
               </span>
-              <span
-                className="tool-call-codelens-param-value"
-                title={filePath}
-              >
+              <span className="tool-call-codelens-param-value" title={filePath}>
                 {filePath}
               </span>
             </div>
@@ -435,7 +421,7 @@ export const CodeLensToolCall = ({
         {hasError ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 
@@ -484,8 +470,7 @@ export const CodeLensToolCall = ({
                     title={parsedResult.location.filePath}
                   >
                     {parsedResult.location.filePath}:
-                    {parsedResult.location.line}:
-                    {parsedResult.location.column}
+                    {parsedResult.location.line}:{parsedResult.location.column}
                   </span>
                 </div>
               ) : null}
@@ -504,7 +489,7 @@ export const CodeLensToolCall = ({
             <div className="tool-call-codelens-no-results">
               <XCircle size={14} aria-hidden="true" />
               <span>
-                {parsedResult.message ??
+                {localizeToolError(t, parsedResult.message) ||
                   t("toolCall.codelens.noSymbolFound")}
               </span>
             </div>
@@ -556,55 +541,53 @@ export const CodeLensToolCall = ({
                   <span className="tool-call-codelens-section-label">
                     {t("toolCall.codelens.references")}
                   </span>
-                  {groupedReferences.map(
-                    ([refFilePath, refs], groupIdx) => (
+                  {groupedReferences.map(([refFilePath, refs], groupIdx) => (
+                    <div
+                      key={`${refFilePath}-${groupIdx}`}
+                      className="tool-call-codelens-ref-group"
+                    >
                       <div
-                        key={`${refFilePath}-${groupIdx}`}
-                        className="tool-call-codelens-ref-group"
+                        className="tool-call-codelens-ref-file-header"
+                        title={refFilePath}
+                        data-path={refFilePath}
                       >
-                        <div
-                          className="tool-call-codelens-ref-file-header"
-                          title={refFilePath}
+                        <FileCode size={12} aria-hidden="true" />
+                        <span
+                          className="tool-call-codelens-ref-file-name"
                           data-path={refFilePath}
                         >
-                          <FileCode size={12} aria-hidden="true" />
-                          <span
-                            className="tool-call-codelens-ref-file-name"
-                            data-path={refFilePath}
-                          >
-                            {getFileName(refFilePath)}
-                          </span>
-                          <span
-                            className="tool-call-codelens-ref-file-path"
-                            data-path={refFilePath}
-                          >
-                            {refFilePath}
-                          </span>
-                          <span className="tool-call-codelens-ref-file-count">
-                            {refs.length}
-                          </span>
-                        </div>
-                        <div className="tool-call-codelens-ref-match-list">
-                          {refs.map((ref, refIdx) => (
-                            <div
-                              key={`${ref.location.line}-${refIdx}`}
-                              className="tool-call-codelens-ref-match"
-                              data-path={refFilePath}
-                              data-line={ref.location.line}
-                            >
-                              <span className="tool-call-codelens-ref-loc">
-                                <Hash size={9} aria-hidden="true" />
-                                {ref.location.line}:{ref.location.column}
-                              </span>
-                              <span className="tool-call-codelens-ref-access">
-                                {ref.access}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                          {getFileName(refFilePath)}
+                        </span>
+                        <span
+                          className="tool-call-codelens-ref-file-path"
+                          data-path={refFilePath}
+                        >
+                          {refFilePath}
+                        </span>
+                        <span className="tool-call-codelens-ref-file-count">
+                          {refs.length}
+                        </span>
                       </div>
-                    )
-                  )}
+                      <div className="tool-call-codelens-ref-match-list">
+                        {refs.map((ref, refIdx) => (
+                          <div
+                            key={`${ref.location.line}-${refIdx}`}
+                            className="tool-call-codelens-ref-match"
+                            data-path={refFilePath}
+                            data-line={ref.location.line}
+                          >
+                            <span className="tool-call-codelens-ref-loc">
+                              <Hash size={9} aria-hidden="true" />
+                              {ref.location.line}:{ref.location.column}
+                            </span>
+                            <span className="tool-call-codelens-ref-access">
+                              {ref.access}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="tool-call-codelens-no-results">
@@ -617,7 +600,7 @@ export const CodeLensToolCall = ({
             <div className="tool-call-codelens-no-results">
               <XCircle size={14} aria-hidden="true" />
               <span>
-                {parsedResult.message ??
+                {localizeToolError(t, parsedResult.message) ||
                   t("toolCall.codelens.noSymbolFound")}
               </span>
             </div>

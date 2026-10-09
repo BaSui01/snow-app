@@ -10,6 +10,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileName, pathsReferToSameFile } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type FilesystemCopyToolCallProps = {
   toolCall: ToolCallInfo;
@@ -339,7 +340,7 @@ export const FilesystemCopyToolCall = ({
         </div>
         {hasError ? (
           <div className="tool-call-error">
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

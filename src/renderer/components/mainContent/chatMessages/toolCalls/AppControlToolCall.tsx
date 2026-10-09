@@ -13,6 +13,7 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type AppControlToolCallProps = {
   toolCall: ToolCallInfo;
@@ -65,8 +66,8 @@ const formatSchedule = (
   schedule: Record<string, unknown> | null | undefined,
   t: (
     key: string,
-    options?: { values?: Record<string, string | number> }
-  ) => string
+    options?: { values?: Record<string, string | number> },
+  ) => string,
 ): string => {
   if (!isRecord(schedule)) {
     return "";
@@ -89,7 +90,8 @@ const formatSchedule = (
       },
     });
   }
-  const intervalMs = typeof schedule.intervalMs === "number" ? schedule.intervalMs : 0;
+  const intervalMs =
+    typeof schedule.intervalMs === "number" ? schedule.intervalMs : 0;
   return t("toolCall.appControl.schedule.interval", {
     values: { interval: formatInterval(intervalMs) },
   });
@@ -117,11 +119,11 @@ export const AppControlToolCall = ({
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const effectiveStatus =
@@ -135,29 +137,29 @@ export const AppControlToolCall = ({
     case "createMemo": {
       const content = asString(parsedArgs?.content);
       displayName = content ? truncate(content) : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.created")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.created")}
+          </span>
+        ) : null;
       break;
     }
     case "getBlockedPatterns": {
       const count =
-        parsedResult.type === "success"
-          ? parsedResult.data.count
-          : undefined;
+        parsedResult.type === "success" ? parsedResult.data.count : undefined;
       const countNumber = typeof count === "number" ? count : 0;
       displayName = t("toolCall.appControl.blockedPatternsCount", {
         values: { count: countNumber },
       });
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.blockedPatternsRead")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.blockedPatternsRead")}
+          </span>
+        ) : null;
       break;
     }
     case "updateBlockedPatterns": {
@@ -167,12 +169,13 @@ export const AppControlToolCall = ({
             defaultValue: operationName,
           })
         : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.blockedPatternsUpdated")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.blockedPatternsUpdated")}
+          </span>
+        ) : null;
       break;
     }
     case "setMode": {
@@ -183,23 +186,25 @@ export const AppControlToolCall = ({
           ? t("toolCall.appControl.modeEnabled", { values: { mode } })
           : t("toolCall.appControl.modeDisabled", { values: { mode } })
         : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.applied")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.applied")}
+          </span>
+        ) : null;
       break;
     }
     case "openSettings": {
       const page = asString(parsedArgs?.page);
       displayName = page;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.opened")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.opened")}
+          </span>
+        ) : null;
       break;
     }
     case "createScheduledTask": {
@@ -207,7 +212,7 @@ export const AppControlToolCall = ({
       displayName = name ? truncate(name) : undefined;
       const scheduleText = formatSchedule(
         isRecord(parsedArgs?.schedule) ? parsedArgs.schedule : null,
-        t
+        t,
       );
       meta = scheduleText ? (
         <span className="tool-call-app-meta">
@@ -220,61 +225,63 @@ export const AppControlToolCall = ({
     case "createProject": {
       const name = asString(parsedArgs?.name);
       displayName = name ? truncate(name) : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.created")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.created")}
+          </span>
+        ) : null;
       break;
     }
     case "listMemos": {
       const count =
-        parsedResult.type === "success"
-          ? parsedResult.data.total
-          : undefined;
+        parsedResult.type === "success" ? parsedResult.data.total : undefined;
       const countNumber = typeof count === "number" ? count : 0;
       displayName = t("toolCall.appControl.memoListed", {
         values: { count: countNumber },
       });
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.memoListed", {
-            values: { count: countNumber },
-          })}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.memoListed", {
+              values: { count: countNumber },
+            })}
+          </span>
+        ) : null;
       break;
     }
     case "getMemo": {
       const memoId = asString(parsedArgs?.memoId);
       displayName = memoId ? truncate(memoId) : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.memoRead")}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.memoRead")}
+          </span>
+        ) : null;
       break;
     }
     case "updateMemoStatus": {
       const memoId = asString(parsedArgs?.memoId);
       const status = asString(parsedArgs?.status);
       displayName = memoId ? truncate(memoId) : undefined;
-      meta = parsedResult.type === "success" ? (
-        <span className="tool-call-app-meta tool-call-app-meta-ok">
-          <CheckCircle2 size={10} aria-hidden="true" />
-          {t("toolCall.appControl.memoStatusUpdated", {
-            values: {
-              status:
-                status === "done"
-                  ? t("toolCall.appControl.memoStatusDone")
-                  : t("toolCall.appControl.memoStatusPending"),
-            },
-          })}
-        </span>
-      ) : null;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.memoStatusUpdated", {
+              values: {
+                status:
+                  status === "done"
+                    ? t("toolCall.appControl.memoStatusDone")
+                    : t("toolCall.appControl.memoStatusPending"),
+              },
+            })}
+          </span>
+        ) : null;
       break;
     }
   }
@@ -283,8 +290,8 @@ export const AppControlToolCall = ({
     parsedResult.type === "success"
       ? JSON.stringify(parsedResult.data, null, 2)
       : parsedResult.type === "raw"
-      ? parsedResult.text
-      : "";
+        ? parsedResult.text
+        : "";
 
   /* 展开后 body：操作专属信息行 + 结果 JSON。 */
   const renderDetail = (): ReactNode => {
@@ -300,9 +307,7 @@ export const AppControlToolCall = ({
       }
       case "getBlockedPatterns": {
         const count =
-          parsedResult.type === "success"
-            ? parsedResult.data.count
-            : undefined;
+          parsedResult.type === "success" ? parsedResult.data.count : undefined;
         const countNumber = typeof count === "number" ? count : 0;
         return (
           <div className="tool-call-app-detail">
@@ -319,7 +324,7 @@ export const AppControlToolCall = ({
         const operationName = asString(parsedArgs?.operation);
         const patterns = Array.isArray(parsedArgs?.patterns)
           ? parsedArgs.patterns.filter(
-              (value): value is string => typeof value === "string"
+              (value): value is string => typeof value === "string",
             )
           : [];
         return (
@@ -330,7 +335,7 @@ export const AppControlToolCall = ({
                 <span>
                   {t(
                     `toolCall.appControl.blockedPatternsOperation.${operationName}`,
-                    { defaultValue: operationName }
+                    { defaultValue: operationName },
                   )}
                 </span>
               </div>
@@ -343,7 +348,7 @@ export const AppControlToolCall = ({
           </div>
         );
       }
-    case "setMode": {
+      case "setMode": {
         const mode = asString(parsedArgs?.mode);
         const enabled = parsedArgs?.enabled === true;
         return mode ? (
@@ -370,7 +375,7 @@ export const AppControlToolCall = ({
         const name = asString(parsedArgs?.name);
         const scheduleText = formatSchedule(
           isRecord(parsedArgs?.schedule) ? parsedArgs.schedule : null,
-          t
+          t,
         );
         const preScript = asString(parsedArgs?.preScript);
         return (
@@ -401,7 +406,9 @@ export const AppControlToolCall = ({
       case "createProject": {
         const name = asString(parsedArgs?.name);
         const parentPath = asString(parsedArgs?.parentPath);
-        const resultPath = asString(parsedResult.type === "success" ? parsedResult.data.path : undefined);
+        const resultPath = asString(
+          parsedResult.type === "success" ? parsedResult.data.path : undefined,
+        );
         const path = resultPath ?? parentPath;
         return (
           <div className="tool-call-app-detail tool-call-app-detail-col">
@@ -471,7 +478,7 @@ export const AppControlToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

@@ -13,6 +13,7 @@ import {
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { getToolCategory, type ToolCategory } from "./shared/ToolNameBadge";
 import { JsonTreeView } from "./shared/JsonTreeView";
 import { DataTableViewer } from "./shared/DataTableViewer";
@@ -328,17 +329,21 @@ export const GenericToolCall = ({
     if (toolCall.status === "running") return null;
 
     if (hasError) {
-      const errMsg =
+      const rawErrorCode =
         isRecord(parsedResult) && typeof parsedResult.error === "string"
           ? parsedResult.error
           : undefined;
+      // 内部错误码（如重复读取保护）在展示层本地化，工具结果 JSON 原文保持英文。
+      const errMsg = rawErrorCode
+        ? localizeToolError(t, rawErrorCode)
+        : t("toolCall.common.error", { defaultValue: "执行异常" });
       return (
-        <span className="tool-call-codelens-count tool-call-codelens-count-error">
+        <span
+          className="tool-call-codelens-count tool-call-codelens-count-error"
+          title={errMsg}
+        >
           <AlertCircle size={10} aria-hidden="true" />
-          {truncate(
-            errMsg || t("toolCall.common.error", { defaultValue: "执行异常" }),
-            24,
-          )}
+          {truncate(errMsg, 24)}
         </span>
       );
     }

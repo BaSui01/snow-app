@@ -3,6 +3,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 import { getCompareDiffStats } from "../../../../utils/generateComparePatch";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import {
@@ -211,7 +212,7 @@ export const FilesystemEditToolCall = ({
         </div>
         {hasError ? (
           <div className="tool-call-error">
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
             {closestMatch && (
               <div className="tool-call-edit-closest-hint">
                 <div className="tool-call-edit-closest-title">

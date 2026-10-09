@@ -691,6 +691,8 @@ export const zhCN = {
   "chat.float.island.filesChanged": "已变更 {{count}} 个文件",
   "chat.float.island.tokens": "{{count}} tokens",
   "chat.userMessageRail.title": "用户消息",
+  "chat.agentLoop.duplicateRecoveryFallback":
+    "（已基于此前读取的内容分析完毕，请参见上方工具结果与回答）",
   "chat.subAgentModelFixed": "子代理使用启动时确定的 API 配置和模型",
   "chat.subAgentFinished.completed": "该子代理已完成，会话仅供查看。",
   "chat.subAgentFinished.failed": "该子代理执行失败，会话仅供查看。",
@@ -1642,6 +1644,10 @@ export const zhCN = {
   "toolNames.computer-use-key-button": "键盘按键",
   "toolNames.computer-use-type-text": "输入文本",
   "toolNames.computer-use-perform-actions": "连续动作",
+  "toolCall.duplicateReadonlyProtection.duplicateCall":
+    "重复读取保护：该只读调用与本次运行中已完成的调用参数完全相同，且文件与 Git 状态均未变化，已直接复用此前结果，未重复执行。",
+  "toolCall.duplicateReadonlyProtection.toolsDisabled":
+    "重复读取保护：本轮为恢复请求已禁用工具，但模型仍请求调用工具，因此未执行任何工具。",
   "toolCall.common.arguments": "参数",
   "toolCall.common.result": "结果",
   "toolCall.common.charCount": "{{count}} 字符",

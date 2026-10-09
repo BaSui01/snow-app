@@ -4,6 +4,7 @@ import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { decodeEscapedNewlines } from "./shared/formatters";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type SkillToolCallProps = {
   toolCall: ToolCallInfo;
@@ -205,7 +206,7 @@ export const SkillToolCall = ({
         {parsed.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsed.message}</span>
+            <span>{localizeToolError(t, parsed.message)}</span>
           </div>
         ) : null}
 

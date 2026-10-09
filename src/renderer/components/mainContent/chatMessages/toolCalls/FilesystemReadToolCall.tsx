@@ -2,8 +2,10 @@ import { useMemo } from "react";
 import { AlertCircle, Hash } from "lucide-react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import { useI18n } from "../../../../i18n";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { CodeHighlightView } from "./shared/CodeHighlightView";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type ParsedPathItem = {
   path: string;
@@ -361,6 +363,7 @@ type FilesystemReadToolCallProps = {
 export const FilesystemReadToolCall = ({
   toolCall,
 }: FilesystemReadToolCallProps): React.JSX.Element => {
+  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments],
@@ -430,7 +433,7 @@ export const FilesystemReadToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : parsedResult.type === "multi" ? (
           <div className="tool-call-multi-files">

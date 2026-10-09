@@ -12,6 +12,7 @@ import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { isRecord, truncateLabel } from "./imagegenUtils";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type ImageDescribeToolCallProps = {
   toolCall: ToolCallInfo;
@@ -157,7 +158,7 @@ export const ImageDescribeToolCall = ({
 
   const errorMessage =
     parsedResult.type === "error"
-      ? parsedResult.message
+      ? localizeToolError(t, parsedResult.message)
       : isFailed && parsedResult.type === "raw"
         ? parsedResult.text
         : "";

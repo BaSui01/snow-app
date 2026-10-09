@@ -29,6 +29,7 @@ import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { DataTableViewer } from "./shared/DataTableViewer";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type DbxToolCallProps = {
   toolCall: ToolCallInfo;
@@ -496,7 +497,7 @@ export const DbxToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

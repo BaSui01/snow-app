@@ -728,6 +728,8 @@ export const en = {
   "chat.float.island.filesChanged": "{{count}} files changed",
   "chat.float.island.tokens": "{{count}} tokens",
   "chat.userMessageRail.title": "User messages",
+  "chat.agentLoop.duplicateRecoveryFallback":
+    "(Analysis finished based on the content read earlier — see the tool results and answer above)",
   "chat.subAgentModelFixed":
     "Sub-agent uses the API profile and model resolved when it started",
   "chat.subAgentFinished.completed":
@@ -1727,6 +1729,10 @@ export const en = {
   "toolNames.computer-use-key-button": "Key button",
   "toolNames.computer-use-type-text": "Type text",
   "toolNames.computer-use-perform-actions": "Perform actions",
+  "toolCall.duplicateReadonlyProtection.duplicateCall":
+    "Duplicate-read protection: this read-only call repeated an already completed call with identical arguments and unchanged file/Git state, so the earlier result was reused instead of running again.",
+  "toolCall.duplicateReadonlyProtection.toolsDisabled":
+    "Duplicate-read protection: tools were disabled for this recovery round, but the model still requested a tool call, so nothing was executed.",
   "toolCall.common.arguments": "Arguments",
   "toolCall.common.result": "Result",
   "toolCall.common.charCount": "{{count}} characters",

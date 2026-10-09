@@ -14,6 +14,7 @@ import { useI18n } from "../../../../i18n";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type WebSearchToolCallProps = {
   toolCall: ToolCallInfo;
@@ -142,7 +143,7 @@ const parseSearchResult = (result: string | undefined): ParsedSearchResult => {
             typeof r.displayUrl === "string" ? (r.displayUrl as string) : "",
         }));
 
-return {
+      return {
         type: "success",
         query: typeof parsed.query === "string" ? parsed.query : "",
         results,
@@ -156,7 +157,7 @@ return {
           ? parsed.blockedResults
               .filter(isRecord)
               .filter(
-                (r) => typeof r.title === "string" && typeof r.url === "string"
+                (r) => typeof r.title === "string" && typeof r.url === "string",
               )
               .map((r) => ({
                 title: r.title as string,
@@ -171,7 +172,7 @@ return {
           : undefined,
         blockedPatterns: Array.isArray(parsed.blockedPatterns)
           ? parsed.blockedPatterns.filter(
-              (p): p is string => typeof p === "string"
+              (p): p is string => typeof p === "string",
             )
           : undefined,
         blockNote:
@@ -224,7 +225,10 @@ const parseFetchResult = (result: string | undefined): ParsedFetchResult => {
           typeof block.data === "string" &&
           typeof block.mimeType === "string"
         ) {
-          image = { data: block.data as string, mimeType: block.mimeType as string };
+          image = {
+            data: block.data as string,
+            mimeType: block.mimeType as string,
+          };
         }
       }
     }
@@ -277,11 +281,11 @@ const SearchToolCall = ({
   const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseSearchArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseSearchResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const isRunning = toolCall.status === "running";
@@ -354,7 +358,7 @@ const SearchToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 
@@ -409,7 +413,7 @@ const SearchToolCall = ({
           </div>
         ) : null}
 
-{/* 无结果 */}
+        {/* 无结果 */}
         {parsedResult.type === "success" && !hasResults ? (
           <div className="tool-call-websearch-empty">
             <Search size={14} aria-hidden="true" />
@@ -502,11 +506,11 @@ const FetchToolCall = ({
   const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseFetchArgs(toolCall.arguments),
-    [toolCall.arguments]
+    [toolCall.arguments],
   );
   const parsedResult = useMemo(
     () => parseFetchResult(toolCall.result),
-    [toolCall.result]
+    [toolCall.result],
   );
 
   const isRunning = toolCall.status === "running";
@@ -577,7 +581,7 @@ const FetchToolCall = ({
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{parsedResult.message}</span>
+            <span>{localizeToolError(t, parsedResult.message)}</span>
           </div>
         ) : null}
 

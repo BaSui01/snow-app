@@ -30,7 +30,7 @@ export function AddLocalDirectoryDialog({
   onConfirm,
 }: AddLocalDirectoryDialogProps): React.JSX.Element {
   const { t } = useI18n();
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectFolderButtonRef = useRef<HTMLButtonElement | null>(null);
 
   return (
     <FormDialog
@@ -38,7 +38,7 @@ export function AddLocalDirectoryDialog({
       closeLabel={t("sidebar.close", { defaultValue: "Close" })}
       confirmDisabled={!path.trim()}
       confirmLabel={t("sidebar.add", { defaultValue: "Add" })}
-      initialFocusRef={inputRef}
+      initialFocusRef={selectFolderButtonRef}
       isSubmitting={isSubmitting}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -96,15 +96,16 @@ export function AddLocalDirectoryDialog({
         </span>
         <div className="form-dialog-input-row">
           <input
-            ref={inputRef}
             className="form-dialog-input"
             placeholder={t("sidebar.localDirectoryPathPlaceholder", {
               defaultValue: "No folder selected",
             })}
             readOnly
+            tabIndex={-1}
             value={path}
           />
           <button
+            ref={selectFolderButtonRef}
             className="form-dialog-button cancel form-dialog-browse-button"
             disabled={isSubmitting}
             onClick={onSelectFolder}

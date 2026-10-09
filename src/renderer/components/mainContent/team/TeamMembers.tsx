@@ -34,7 +34,9 @@ export const TeamMembers = ({
         <span className="team-tab-title">
           {t("team.members.title", { defaultValue: "成员" })}
           <span className="team-task-group-count">{team.members.length}</span>
-          <span className="team-members-online">{onlineCount} 在线</span>
+          <span className="team-members-online">
+            {t("team.members.onlineCount", { values: { count: onlineCount } })}
+          </span>
         </span>
       </div>
 
@@ -62,7 +64,9 @@ export const TeamMembers = ({
                 <div className="team-member-info">
                   <div className="team-member-name">
                     {member.name}
-                    {isMe ? <span className="team-me-tag">我</span> : null}
+                    {isMe ? (
+                      <span className="team-me-tag">{t("team.me")}</span>
+                    ) : null}
                     {online ? (
                       <span className="team-online-tag">
                         {t("team.members.online", { defaultValue: "在线" })}

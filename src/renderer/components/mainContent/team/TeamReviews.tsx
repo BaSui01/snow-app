@@ -22,11 +22,11 @@ import {
   REVIEW_STATUSES,
 } from "./teamUtils";
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "待评审",
-  approved: "已批准",
-  rejected: "已驳回",
-  merged: "已合并",
+const STATUS_LABEL_KEY: Record<string, string> = {
+  pending: "team.reviews.status.pending",
+  approved: "team.reviews.status.approved",
+  rejected: "team.reviews.status.rejected",
+  merged: "team.reviews.status.merged",
 };
 
 const REVIEW_FLOW = ["pending", "approved", "rejected", "merged"] as const;
@@ -59,6 +59,11 @@ export const TeamReviews = ({
   onPresetTaskConsumed: () => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
+  /** 评审状态标签：映射表存 i18n key，渲染时再取当前语言文案。 */
+  const statusLabel = (value: string): string => {
+    const key = STATUS_LABEL_KEY[value];
+    return key ? t(key) : value;
+  };
   const [creating, setCreating] = useState(false);
   const [detail, setDetail] = useState<TeamReview | null>(null);
   const [draft, setDraft] = useState<ReviewDraft>(EMPTY_DRAFT);
@@ -74,7 +79,9 @@ export const TeamReviews = ({
     if (presetTask) {
       setDraft({
         ...EMPTY_DRAFT,
-        title: `评审：${presetTask.title}`,
+        title: t("team.reviews.defaultTitle", {
+          values: { title: presetTask.title },
+        }),
         taskId: presetTask.id,
         reviewerEmail: myEmail,
       });
@@ -90,7 +97,9 @@ export const TeamReviews = ({
   ): void => {
     setDraft({
       ...EMPTY_DRAFT,
-      title: preset ? `评审：${preset.title}` : "",
+      title: preset
+        ? t("team.reviews.defaultTitle", { values: { title: preset.title } })
+        : "",
       taskId: preset?.id ?? "",
       reviewerEmail: myEmail,
       branch:
@@ -287,7 +296,7 @@ export const TeamReviews = ({
         </span>
         <span className="team-task-card-title">{review.title}</span>
         <span className={`team-status is-${review.status}`}>
-          {STATUS_LABEL[review.status] ?? review.status}
+          {statusLabel(review.status)}
         </span>
       </div>
       <div className="team-review-meta">
@@ -305,7 +314,9 @@ export const TeamReviews = ({
           currentEmail={myEmail}
         />
         <span className="team-comment-count">
-          {review.comments.length} 条评论
+          {t("team.reviews.commentCount", {
+            values: { count: review.comments.length },
+          })}
         </span>
       </div>
     </button>
@@ -564,7 +575,7 @@ export const TeamReviews = ({
                     ) : (
                       <GitPullRequest size={13} />
                     )}
-                    {STATUS_LABEL[status] ?? status}
+                    {statusLabel(status)}
                   </button>
                 );
               })}

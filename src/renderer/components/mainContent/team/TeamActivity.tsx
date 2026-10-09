@@ -523,7 +523,7 @@ export const TeamActivity = ({
                           : null}
                         <span className="team-feed-author">{authorName}</span>
                         <span className="team-feed-time">
-                          {timeAgo(event.at, now)}
+                          {timeAgo(event.at, t, now)}
                         </span>
                       </div>
                       <div className="team-feed-bubble-row">
@@ -577,7 +577,7 @@ export const TeamActivity = ({
                       {eventText(event)}
                     </span>
                     <span className="team-feed-time">
-                      {timeAgo(event.at, now)}
+                      {timeAgo(event.at, t, now)}
                     </span>
                     {isMine && event.type !== "member" ? deleteButton : null}
                   </div>

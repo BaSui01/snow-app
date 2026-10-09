@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { TeamMember } from "../../../../preload";
+import { useI18n } from "../../../i18n";
 import { avatarColor, initials, isOnline, memberName } from "./teamUtils";
 
 export type TeamAvatarProps = {
@@ -40,13 +41,14 @@ export const TeamMemberChip = ({
   currentEmail?: string;
   size?: number;
 }): React.JSX.Element => {
+  const { t } = useI18n();
   const member = members.find((m) => m.email === email);
   const displayName = memberName(members, email);
   const isMe = currentEmail !== undefined && email === currentEmail;
   return (
     <span
       className="team-member-chip"
-      title={`${email}${isMe ? "（我）" : ""}`}
+      title={`${email}${isMe ? t("team.meInParens") : ""}`}
     >
       <TeamAvatar
         name={displayName}
@@ -55,7 +57,7 @@ export const TeamMemberChip = ({
         online={member ? isOnline(member) : false}
       />
       <span>{displayName}</span>
-      {isMe ? <span className="team-me-tag">我</span> : null}
+      {isMe ? <span className="team-me-tag">{t("team.me")}</span> : null}
     </span>
   );
 };

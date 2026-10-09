@@ -166,7 +166,7 @@ export const TeamNotes = ({ team }: { team: TeamData }): React.JSX.Element => {
                   size={20}
                 />
                 <span className="team-feed-time">
-                  {timeAgo(note.updatedAt)}
+                  {timeAgo(note.updatedAt, t)}
                 </span>
               </div>
               {note.tags.length > 0 ? (

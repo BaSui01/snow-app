@@ -33,28 +33,32 @@ import { AVATAR_COLORS, isCustomAvatarColor, memberName } from "./teamUtils";
 
 type TeamTab = "activity" | "tasks" | "reviews" | "notes" | "members";
 
-const TABS: { id: TeamTab; icon: React.JSX.Element; label: string }[] = [
+const TABS: { id: TeamTab; icon: React.JSX.Element; labelKey: string }[] = [
   {
     id: "activity",
     icon: <MessageSquare size={15} strokeWidth={1.8} />,
-    label: "动态",
+    labelKey: "team.tabs.activity",
   },
   {
     id: "tasks",
     icon: <ListTodo size={15} strokeWidth={1.8} />,
-    label: "任务",
+    labelKey: "team.tabs.tasks",
   },
   {
     id: "reviews",
     icon: <GitPullRequest size={15} strokeWidth={1.8} />,
-    label: "评审",
+    labelKey: "team.tabs.reviews",
   },
   {
     id: "notes",
     icon: <BookOpen size={15} strokeWidth={1.8} />,
-    label: "知识",
+    labelKey: "team.tabs.notes",
   },
-  { id: "members", icon: <Users size={15} strokeWidth={1.8} />, label: "成员" },
+  {
+    id: "members",
+    icon: <Users size={15} strokeWidth={1.8} />,
+    labelKey: "team.tabs.members",
+  },
 ];
 
 export const TeamPanel = ({
@@ -265,9 +269,7 @@ export const TeamPanel = ({
                 onClick={() => setTab(item.id)}
               >
                 {item.icon}
-                <span>
-                  {t(`team.tabs.${item.id}`, { defaultValue: item.label })}
-                </span>
+                <span>{t(item.labelKey)}</span>
                 {count > 0 ? (
                   <span className="team-tab-badge">{count}</span>
                 ) : null}

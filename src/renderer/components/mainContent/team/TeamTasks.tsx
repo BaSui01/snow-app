@@ -28,24 +28,20 @@ import {
   TASK_STATUSES,
 } from "./teamUtils";
 
-const STATUS_LABEL: Record<string, string> = {
-  todo: "待处理",
-  in_progress: "进行中",
-  review: "评审中",
-  done: "已完成",
+const STATUS_LABEL_KEY: Record<string, string> = {
+  todo: "team.tasks.status.todo",
+  in_progress: "team.tasks.status.in_progress",
+  review: "team.tasks.status.review",
+  done: "team.tasks.status.done",
 };
 
-const PRIORITY_LABEL: Record<string, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
+const PRIORITY_LABEL_KEY: Record<string, string> = {
+  low: "team.tasks.priority.low",
+  medium: "team.tasks.priority.medium",
+  high: "team.tasks.priority.high",
 };
 
-const PRIORITY_OPTIONS: CustomSelectOption[] = [
-  { value: "low", label: PRIORITY_LABEL.low },
-  { value: "medium", label: PRIORITY_LABEL.medium },
-  { value: "high", label: PRIORITY_LABEL.high },
-];
+const PRIORITY_VALUES = ["low", "medium", "high"] as const;
 
 type TaskDraft = {
   title: string;
@@ -83,6 +79,21 @@ export const TeamTasks = ({
   onRequestReview: (task: TeamTask) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
+  /** 状态 / 优先级标签：映射表存 i18n key，渲染时再取当前语言文案。 */
+  const statusLabel = (value: string): string => {
+    const key = STATUS_LABEL_KEY[value];
+    return key ? t(key) : value;
+  };
+  const priorityLabel = (value: string): string => {
+    const key = PRIORITY_LABEL_KEY[value];
+    return key ? t(key) : value;
+  };
+  const priorityOptions: CustomSelectOption[] = PRIORITY_VALUES.map(
+    (value) => ({
+      value,
+      label: priorityLabel(value),
+    }),
+  );
   const { handleNewChat, handleSendMessage } = useChatConversationContext();
   const [creating, setCreating] = useState(false);
   const [detail, setDetail] = useState<TeamTask | null>(null);
@@ -235,7 +246,7 @@ export const TeamTasks = ({
               at: now,
               by: myEmail,
               action: "ai_started",
-              detail: "AI 开始执行",
+              detail: t("team.tasks.activityAiStarted"),
             },
           ],
         };
@@ -294,13 +305,15 @@ export const TeamTasks = ({
       <div className="team-task-card-top">
         <span
           className={`team-priority is-${task.priority}`}
-          title={`优先级：${PRIORITY_LABEL[task.priority] ?? task.priority}`}
+          title={t("team.priorityTooltip", {
+            values: { priority: priorityLabel(task.priority) },
+          })}
         >
           <Flag size={12} />
         </span>
         <span className="team-task-card-title">{task.title}</span>
         <span className={`team-status is-${task.status}`}>
-          {STATUS_LABEL[task.status] ?? task.status}
+          {statusLabel(task.status)}
         </span>
       </div>
       {task.description ? (
@@ -356,7 +369,7 @@ export const TeamTasks = ({
               <div key={status} className="team-task-group">
                 <div className="team-task-group-title">
                   <span className={`team-status-dot is-${status}`} />
-                  {STATUS_LABEL[status] ?? status}
+                  {statusLabel(status)}
                   <span className="team-task-group-count">{items.length}</span>
                 </div>
                 <div className="team-task-group-list">
@@ -430,7 +443,7 @@ export const TeamTasks = ({
               {t("team.tasks.priority", { defaultValue: "优先级" })}
               <CustomSelect
                 value={draft.priority}
-                options={PRIORITY_OPTIONS}
+                options={priorityOptions}
                 onChange={(v) => setDraft({ ...draft, priority: v })}
                 portal
               />
@@ -528,7 +541,7 @@ export const TeamTasks = ({
               />
               <span className="team-detail-meta-item">
                 <Flag size={12} />
-                {PRIORITY_LABEL[detail.priority] ?? detail.priority}
+                {priorityLabel(detail.priority)}
               </span>
               <span className="team-detail-meta-item">
                 {formatTime(detail.updatedAt)}
@@ -559,7 +572,7 @@ export const TeamTasks = ({
                     ) : (
                       <CircleDot size={13} />
                     )}
-                    {STATUS_LABEL[status] ?? status}
+                    {statusLabel(status)}
                   </button>
                 );
               })}

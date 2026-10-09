@@ -7,21 +7,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { setActiveLocale } from "./activeLocale";
 import {
   DEFAULT_LOCALE,
   LOCALE_STORAGE_KEY,
   SUPPORTED_LOCALES,
   normalizeLocale,
-  resources,
   type Locale,
 } from "./locales";
-
-type TranslationValues = Record<string, string | number>;
-
-type TranslateOptions = {
-  defaultValue?: string;
-  values?: TranslationValues;
-};
+import { translate, type TranslateOptions } from "./translate";
 
 type I18nContextValue = {
   locale: Locale;
@@ -44,17 +38,6 @@ const LANGUAGE_SETTING_CODE = "language";
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-const interpolate = (template: string, values?: TranslationValues): string => {
-  if (!values) {
-    return template;
-  }
-
-  return template.replace(/{{\s*(\w+)\s*}}/g, (match, key: string) => {
-    const value = values[key];
-    return value === undefined ? match : String(value);
-  });
-};
-
 const cacheLocale = (locale: Locale): void => {
   if (typeof window === "undefined") {
     return;
@@ -74,7 +57,7 @@ const readInitialLocaleState = (): LocaleState => {
 
   try {
     const storedLocale = normalizeLocale(
-      window.localStorage.getItem(LOCALE_STORAGE_KEY)
+      window.localStorage.getItem(LOCALE_STORAGE_KEY),
     );
 
     if (storedLocale) {
@@ -106,9 +89,15 @@ export const I18nProvider = ({
   children,
 }: I18nProviderProps): React.JSX.Element => {
   const [localeState, setLocaleState] = useState<LocaleState>(
-    readInitialLocaleState
+    readInitialLocaleState,
   );
   const { locale, hasBrowserCache } = localeState;
+
+  // 同步给模块级工具函数（如 formatMessageTime 的 Intl 格式化），
+  // 这些函数拿不到 Hook，只能读这份快照。
+  useEffect(() => {
+    setActiveLocale(locale);
+  }, [locale]);
 
   useEffect(() => {
     if (hasBrowserCache) {
@@ -159,16 +148,9 @@ export const I18nProvider = ({
   }, []);
 
   const t = useCallback(
-    (key: string, options?: TranslateOptions) => {
-      const template =
-        resources[locale][key] ??
-        resources[DEFAULT_LOCALE][key] ??
-        options?.defaultValue ??
-        key;
-
-      return interpolate(template, options?.values);
-    },
-    [locale]
+    (key: string, options?: TranslateOptions) =>
+      translate(locale, key, options),
+    [locale],
   );
 
   const value = useMemo<I18nContextValue>(
@@ -178,7 +160,7 @@ export const I18nProvider = ({
       supportedLocales: SUPPORTED_LOCALES,
       t,
     }),
-    [locale, setLocale, t]
+    [locale, setLocale, t],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

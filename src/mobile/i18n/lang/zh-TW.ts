@@ -174,6 +174,7 @@ export const zhTW: Record<string, string> = {
   "remote.notice.settingsUpdated": "設定已更新",
   "remote.notice.themeUpdated": "外觀已更新",
   "remote.notice.skillEnabled": "Skill 已啟用",
+  "remote.notice.compacted": "上下文壓縮已完成",
   "remote.notice.skillDisabled": "Skill 已停用",
   "remote.notice.mcpUpdated": "MCP 設定已更新",
   "remote.notice.approved": "已允許工具執行",

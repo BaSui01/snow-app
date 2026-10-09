@@ -7,6 +7,7 @@ import {
   type WebContents,
 } from "electron";
 import * as path from "node:path";
+import { tMain } from "../i18n/mainI18n";
 
 /**
  * webview 下载管理：session 无 will-download 监听器时 Electron 会直接
@@ -164,7 +165,7 @@ export const installWebviewDownloadHandler = (): void => {
 
     // 保存对话框：每个下载由用户选择保存地址；取消即放弃下载。
     item.setSaveDialogOptions({
-      title: "保存文件",
+      title: tMain("download.saveDialogTitle"),
       defaultPath: path.join(
         app.getPath("downloads"),
         gmFilename || item.getFilename(),
@@ -222,7 +223,10 @@ export const installWebviewDownloadHandler = (): void => {
       }
       if (state !== "cancelled" && Notification.isSupported()) {
         new Notification({
-          title: state === "completed" ? "下载完成" : "下载失败",
+          title:
+            state === "completed"
+              ? tMain("download.completed")
+              : tMain("download.failed"),
           body: record.filename,
           silent: state !== "completed",
         }).show();

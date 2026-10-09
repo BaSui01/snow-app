@@ -28,6 +28,7 @@ import { snowLog } from "../../utils/snowLogger";
 import { safeSend } from "../utils/safeSend";
 import { getMainWindow } from "../app/mainWindow";
 import { isMacOS } from "../app/constants";
+import { tMain } from "../i18n/mainI18n";
 import {
   loadPetSettings,
   savePetSettings,
@@ -255,7 +256,7 @@ export const showPetContextMenu = (native: NativeBridge): void => {
 
   const template: MenuItemConstructorOptions[] = [
     {
-      label: "关闭宠物",
+      label: tMain("pet.close"),
       click: () => {
         void closePet(native);
       },

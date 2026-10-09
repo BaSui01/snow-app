@@ -179,6 +179,7 @@ export const zhCN: Record<string, string> = {
   "remote.notice.settingsUpdated": "设置已更新",
   "remote.notice.themeUpdated": "外观已更新",
   "remote.notice.skillEnabled": "Skill 已启用",
+  "remote.notice.compacted": "上下文压缩已完成",
   "remote.notice.skillDisabled": "Skill 已停用",
   "remote.notice.mcpUpdated": "MCP 设置已更新",
   "remote.notice.approved": "已允许工具执行",

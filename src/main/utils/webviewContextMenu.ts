@@ -10,6 +10,7 @@ import {
   getUserscriptMenuCommands,
   invokeUserscriptMenuCommand,
 } from "../ipc/handlers/userscriptHandlers";
+import { tMain } from "../i18n/mainI18n";
 
 let installed = false;
 
@@ -67,13 +68,22 @@ export const installWebviewContextMenu = (): void => {
       // 泄露到宿主页面；必须显式调用 contents 的实例方法。
       const editItems: MenuItemConstructorOptions[] = [];
       if (params.editFlags.canCut) {
-        editItems.push({ label: "剪切", click: () => contents.cut() });
+        editItems.push({
+          label: tMain("contextMenu.cut"),
+          click: () => contents.cut(),
+        });
       }
       if (params.editFlags.canCopy) {
-        editItems.push({ label: "复制", click: () => contents.copy() });
+        editItems.push({
+          label: tMain("contextMenu.copy"),
+          click: () => contents.copy(),
+        });
       }
       if (params.editFlags.canPaste) {
-        editItems.push({ label: "粘贴", click: () => contents.paste() });
+        editItems.push({
+          label: tMain("contextMenu.paste"),
+          click: () => contents.paste(),
+        });
       }
       if (editItems.length > 0) {
         template.push(...editItems, { type: "separator" });
@@ -82,7 +92,7 @@ export const installWebviewContextMenu = (): void => {
       // 链接：复制地址。
       if (params.linkURL) {
         template.push({
-          label: "复制链接地址",
+          label: tMain("contextMenu.copyLinkAddress"),
           click: () => clipboard.writeText(params.linkURL),
         });
         template.push({ type: "separator" });
@@ -91,7 +101,7 @@ export const installWebviewContextMenu = (): void => {
       // 图片：复制地址。
       if (params.srcURL && params.mediaType === "image") {
         template.push({
-          label: "复制图片地址",
+          label: tMain("contextMenu.copyImageAddress"),
           click: () => clipboard.writeText(params.srcURL),
         });
         template.push({ type: "separator" });
@@ -100,25 +110,28 @@ export const installWebviewContextMenu = (): void => {
       // 导航组。
       template.push(
         {
-          label: "后退",
+          label: tMain("contextMenu.back"),
           enabled: contents.navigationHistory.canGoBack(),
           click: () => contents.navigationHistory.goBack(),
         },
         {
-          label: "前进",
+          label: tMain("contextMenu.forward"),
           enabled: contents.navigationHistory.canGoForward(),
           click: () => contents.navigationHistory.goForward(),
         },
         // 不能用 role: "reload"！role 命令刷新的是聚焦的 BrowserWindow
         // （即宿主主窗口），会把整个 Snow App 界面重新加载；必须显式
         // 调用 guest webContents 的 reload() 让刷新只作用于浏览器区域。
-        { label: "刷新", click: () => contents.reload() },
+        { label: tMain("contextMenu.reload"), click: () => contents.reload() },
         { type: "separator" },
         // 同理，role: "selectAll" 会作用于宿主页面，改为显式调用。
-        { label: "全选", click: () => contents.selectAll() },
+        {
+          label: tMain("contextMenu.selectAll"),
+          click: () => contents.selectAll(),
+        },
         { type: "separator" },
         {
-          label: "检查元素",
+          label: tMain("contextMenu.inspectElement"),
           click: inspectBrowserElement,
         },
       );
@@ -129,7 +142,7 @@ export const installWebviewContextMenu = (): void => {
         template.push(
           { type: "separator" },
           {
-            label: "脚本命令",
+            label: tMain("contextMenu.scriptCommands"),
             submenu: scriptCommands.map((command) => ({
               label: command.title,
               click: () => invokeUserscriptMenuCommand(contents, command.id),

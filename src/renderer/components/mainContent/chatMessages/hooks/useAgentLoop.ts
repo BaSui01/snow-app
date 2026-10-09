@@ -32,7 +32,7 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
-import { settleInterruptedMessages } from "../utils/messageSettlement";
+import { settleInterruptedMessage } from "../utils/messageSettlement";
 import {
   demotePendingSteering,
   hasPendingSteering,
@@ -731,8 +731,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         if (isRunCancelled(effectiveKey)) {
           // 取消可能落在「消息已创建、请求尚未发出」的间隙（steering / 队列
           // 新回合刚挂上一条 sending 消息）：同样需要幂等收尾，否则该消息会
-          // 一直停在发送中。
-          ctx.updateSessionMessages(effectiveKey, settleInterruptedMessages);
+          // 一直停在发送中。只收尾本 run 自己的消息 —— 取代它的新 run 可能
+          // 已挂上自己的 sending 占位，不能被一并落定。
+          ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+            settleInterruptedMessage(
+              currentMessages,
+              currentAssistantMessageId,
+            ),
+          );
           return;
         }
 
@@ -1156,8 +1162,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         if (isRunCancelled(effectiveKey)) {
           // 取消：handleAbort 已同步收尾过一次，这里再跑一次幂等收尾，兜住
           // 未经 handleAbort 的取消路径（例如本 run 被新的 run 取代），避免
-          // 消息残留「发送中 / 重试中」。
-          ctx.updateSessionMessages(effectiveKey, settleInterruptedMessages);
+          // 消息残留「发送中 / 重试中」。只收尾本 run 自己的消息 —— 取代它
+          // 的新 run 已挂上自己的 sending 占位，不能被一并落定。
+          ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+            settleInterruptedMessage(
+              currentMessages,
+              currentAssistantMessageId,
+            ),
+          );
           return;
         }
 

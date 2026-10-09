@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.4.19
+
+## New Features
+
+- **ChatGPT Subscription Sign-In**: OAuth sign-in gains a ChatGPT (subscription plan) provider — the official Sign in with ChatGPT flow authorizes in the browser, the local callback returns automatically, and the channel calls the official Responses API with the subscription quota.
+- **Goal Mode Auto-Continuation**: When Goal Mode is on and the run stops with unfinished TODO items, the agent is automatically sent a continuation prompt listing the outstanding items and the remaining token budget, and keeps going until every item is completed.
+
+## Improvements
+
+- Full three-language localization (Simplified Chinese / Traditional Chinese / English): a shared renderer translation entry (`tGlobal`) covers module-level code, injected scripts and event callbacks; the chat area, tool cards and built-in tool badges, the right panel and sidebar, the team collaboration module, the mobile remote control, and the main-process native UI (tray menu, download dialogs and notifications, webview context menu, pet menu) are all localized; dates and times follow the app language, and switching the language updates the tray and mobile copy immediately.
+
+## Bug Fixes
+
+- Fixed empty responses (the upstream ends normally with zero output): the terminal state is now marked and persisted (`empty_response` / `retry_exhausted`), each retry is logged with its cause, the attempt count and upstream error are stored on the message and refilled after reload, and the reply shows the shared "retries exhausted" card instead of a blank bubble.
+- Fixed user-initiated cancellation being misrecorded as an upstream empty response — cancelled and failed runs keep their own terminal state, and a migration cleans the historical dirty rows.
+- Fixed the chat message query column-index shift introduced by the retry columns, which broke history pagination and left the message area blank when a conversation was opened; the archive database gained the same columns.
+- Fixed conversation history losing its raw Markdown / copy / fork buttons as soon as a new prompt was sent — only the tail message of the active run is masked now.
+- Fixed the pending-message mode chip being truncated and image thumbnails being stretched.
+
 ## v0.4.18
 
 ## New Features

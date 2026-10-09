@@ -529,6 +529,7 @@
     .scheduled-tasks-create-btn,
     .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active,
+    .form-dialog-button.confirm,
     .send-btn
   ) {
   background: var(--compact-button-bg) !important;
@@ -559,6 +560,7 @@
     .scheduled-tasks-create-btn,
     .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active,
+    .form-dialog-button.confirm,
     .send-btn
   ):hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--compact-button-hover) !important;
@@ -587,6 +589,7 @@
     .scheduled-tasks-create-btn,
     .scheduled-tasks-new-btn,
     .mcp-editor-mode-btn.active,
+    .form-dialog-button.confirm,
     .send-btn
   ):active:not(:disabled):not([aria-disabled="true"]) {
   transform: none !important;
@@ -620,6 +623,8 @@
     .scheduled-tasks-cancel-btn,
     .confirm-dialog-btn.cancel,
     .confirm-dialog-btn:not(.confirm):not(.danger),
+    .form-dialog-button.cancel,
+    .form-dialog-browse-button,
     .memory-editor-btn
   ) {
   border-radius: var(--radius-md) !important;
@@ -651,7 +656,9 @@
     .scheduled-tasks-back-btn,
     .scheduled-tasks-cancel-btn,
     .confirm-dialog-btn.cancel,
-    .confirm-dialog-btn:not(.confirm):not(.danger)
+    .confirm-dialog-btn:not(.confirm):not(.danger),
+    .form-dialog-button.cancel,
+    .form-dialog-browse-button
   ):hover:not(:disabled):not([aria-disabled="true"]):not(.active):not(
     .selected
   ) {
@@ -673,7 +680,9 @@
     .code-block-action-btn,
     .memo-icon-btn,
     .scheduled-task-action-btn,
-    .confirm-dialog-btn.cancel
+    .confirm-dialog-btn.cancel,
+    .form-dialog-button.cancel,
+    .form-dialog-browse-button
   ):active:not(:disabled):not([aria-disabled="true"]) {
   transform: none !important;
   transition: var(--compact-control-transition) !important;
@@ -975,6 +984,7 @@
     .branch-dropdown,
     .app-modal-dialog,
     .confirm-dialog,
+    .form-dialog-card,
     .search-modal,
     .explorer-entry-context-menu,
     .context-menu,
@@ -986,6 +996,119 @@
   background: var(--surface-island-strong);
   box-shadow: var(--shadow-md);
   backdrop-filter: none;
+}
+
+/* 无界主题原生表单对话框体系规范 (FormDialog) */
+:root[data-theme-preset="compact"] .form-dialog-card {
+  border-color: var(--border-light) !important;
+  border-radius: var(--radius-lg) !important;
+  background: var(--surface-island-strong) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-header {
+  border-bottom: 1px solid var(--border-light);
+}
+
+:root[data-theme-preset="compact"] .form-dialog-footer {
+  border-top: 1px solid var(--border-light);
+}
+
+:root[data-theme-preset="compact"] .form-dialog-drop-zone {
+  border-color: var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--bg-secondary) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-drop-zone:hover {
+  border-color: var(--compact-accent) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-drop-zone.drag-over {
+  border-color: var(--compact-accent) !important;
+  background: var(--compact-accent-bg) !important;
+  color: var(--compact-accent-text) !important;
+  box-shadow: inset 0 0 0 1px var(--compact-accent) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-input {
+  border-color: var(--compact-control-border) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-input:focus:not([readonly]) {
+  border-color: var(--compact-focus-color) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px var(--compact-focus-color) !important;
+}
+
+:root[data-theme-preset="compact"]
+  .form-dialog-input:focus-visible:not([readonly]) {
+  border-color: var(--compact-focus-color) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px var(--compact-focus-color) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-input[readonly] {
+  cursor: default;
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-input[readonly]:focus,
+:root[data-theme-preset="compact"] .form-dialog-input[readonly]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: var(--compact-control-border) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-button {
+  border-radius: var(--radius-md) !important;
+  font-weight: 500 !important;
+  transition: var(--compact-control-transition) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-button.cancel,
+:root[data-theme-preset="compact"] .form-dialog-browse-button {
+  border: 1px solid var(--compact-control-border) !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme-preset="compact"]
+  .form-dialog-button.cancel:hover:not(:disabled),
+:root[data-theme-preset="compact"]
+  .form-dialog-browse-button:hover:not(:disabled) {
+  border-color: var(--compact-control-border) !important;
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-button.confirm {
+  border: 1px solid transparent !important;
+  background: var(--compact-button-bg) !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25) !important;
+}
+
+:root[data-theme-preset="compact"]
+  .form-dialog-button.confirm:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--compact-button-hover) !important;
+  color: #ffffff !important;
+  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35) !important;
+}
+
+:root[data-theme-preset="compact"] .form-dialog-button.confirm:disabled,
+:root[data-theme-preset="compact"]
+  .form-dialog-button.confirm[aria-disabled="true"] {
+  background: var(--bg-tertiary) !important;
+  color: var(--text-muted) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.65 !important;
 }
 
 :root[data-theme-preset="compact"]

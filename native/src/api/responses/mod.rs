@@ -490,6 +490,7 @@ async fn create_response_async(
     // 空响应重试预算耗尽：把「正常收尾但零载荷」显式标记为 empty_response /
     // retry_exhausted，避免落库后与正常完成同形（前端与日志都无从分辨）。
     let (terminal_reason, terminal_outcome) = resolve_empty_response_terminal(
+        &streamed_response.status,
         streamed_response.interruption_reason,
         streamed_response.recovery_outcome,
         has_response_payload,

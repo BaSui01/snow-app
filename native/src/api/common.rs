@@ -65,6 +65,10 @@ impl<'a> StreamSink<'a> {
 /// 探针在 `StreamSink::call` 这一唯一出口顺带留存，provider 入口据此把
 /// `retry_attempts` / `retry_error` 写进消息行，重载后仍能说明
 /// 「重试了几次、上游报了什么」。
+///
+/// 记录的是「本轮确实发生过重试」这一事实，与最终终态无关：用户中途取消
+/// （`status=cancelled`）时同样保留；前端只在「重试进行中」或空响应终态才
+/// 展示它，取消后的终态不再复用这些字段。
 #[derive(Default)]
 pub(crate) struct RetryProbe {
     attempts: AtomicU32,

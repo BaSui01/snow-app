@@ -312,7 +312,17 @@ pub fn classify_final_stream_warning(
 ///
 /// 只在「原本没有任何中断原因」时改写：真实传输中断 / 服务商明确未完成
 /// （`incomplete`）等既有终态一律原样透传，不改变它们的语义与恢复结果。
+///
+/// 只有 Provider 正常收尾（`final_status == "completed"`）才可能被判定为
+/// 「空响应」：
+/// - `cancelled`：用户主动停止。取消路径会清空中断原因与工具调用，零载荷本
+///   就是预期结果；补标记会让前端把用户自己的打断渲染成「重试已耗尽 / 响应
+///   未完整结束」告警（与 `classify_final_stream_warning` 的 cancelled 豁免
+///   口径保持一致）。
+/// - `failed`：服务商明确失败，语义已由 `status` 与错误内容承载；补
+///   `empty_response` 会让落库标记与前端展示（error 分支优先）分叉。
 pub fn resolve_empty_response_terminal(
+    final_status: &str,
     interruption_reason: Option<StreamInterruptionReason>,
     recovery_outcome: Option<StreamRecoveryOutcome>,
     has_response_payload: bool,
@@ -320,6 +330,10 @@ pub fn resolve_empty_response_terminal(
     Option<StreamInterruptionReason>,
     Option<StreamRecoveryOutcome>,
 ) {
+    if final_status != "completed" {
+        return (interruption_reason, recovery_outcome);
+    }
+
     if interruption_reason.is_none() && !has_response_payload {
         return (
             Some(StreamInterruptionReason::EmptyResponse),

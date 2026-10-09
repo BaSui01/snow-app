@@ -1092,6 +1092,7 @@ export function FileViewerContent({
   const plainTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const plainGutterRef = useRef<HTMLSpanElement | null>(null);
   const plainHighlightRef = useRef<HTMLPreElement | null>(null);
+  const editScrollRef = useRef<HTMLDivElement | null>(null);
   const [plainRange, setPlainRange] = useState({ start: 0, end: 0 });
 
   // 编辑缓冲区自身一份行索引：行号列与高亮层都以编辑中的内容为准。
@@ -1993,12 +1994,23 @@ export function FileViewerContent({
       const lineHeight = parseFloat(
         window.getComputedStyle(textarea).lineHeight,
       );
-      if (Number.isFinite(lineHeight) && lineHeight > 0) {
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+      if (plainEditor) {
         textarea.scrollTop = Math.max(
           0,
           (match.line - 1) * lineHeight - textarea.clientHeight / 3,
         );
+        return;
       }
+      // 编辑器 textarea 自身不滚动（overflow: hidden），滚动由外层容器承担。
+      const editScroller = editScrollRef.current;
+      if (!editScroller) return;
+      editScroller.scrollTop = Math.max(
+        0,
+        codeMetrics.paddingTop +
+          (match.line - 1) * lineHeight -
+          editScroller.clientHeight / 3,
+      );
       return;
     }
 
@@ -2006,20 +2018,31 @@ export function FileViewerContent({
     if (!scrollEl) {
       return;
     }
-    const targetTop =
-      codeMetrics.paddingTop +
-      (lineMapping.toVisual(match.line) - 1) * codeMetrics.lineHeight;
-    scrollEl.scrollTop = Math.max(0, targetTop - scrollEl.clientHeight / 3);
+    const applyScroll = (): void => {
+      const targetTop =
+        codeMetrics.paddingTop +
+        (lineMapping.toVisual(match.line) - 1) * codeMetrics.lineHeight;
+      scrollEl.scrollTop = Math.max(0, targetTop - scrollEl.clientHeight / 3);
+    };
+    applyScroll();
     syncRange();
     if (!alignMatchRow(match)) {
       pendingAlignRef.current = match;
     }
+    // 虚拟窗口更新后补一次定位，避免 padding 变化/钳制吃掉目标位置。
+    const frame = requestAnimationFrame(() => {
+      if (codeScrollRef.current === scrollEl) {
+        applyScroll();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [
     alignMatchRow,
     codeMetrics,
     editMode,
     editTextareaId,
     lineMapping,
+    plainEditor,
     revealLine,
     searchIndex,
     searchMatches,
@@ -2305,7 +2328,7 @@ export function FileViewerContent({
     plainEditor ? (
       renderPlainEditBlock()
     ) : (
-      <div className="file-viewer-edit-scroll">
+      <div className="file-viewer-edit-scroll" ref={editScrollRef}>
         <div className="file-viewer-code">
           <code
             className="file-viewer-line-numbers file-viewer-line-numbers--edit"
@@ -2659,7 +2682,10 @@ export function FileViewerContent({
               className="file-viewer-search-input"
               type="text"
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                searchNavTickRef.current += 1;
+                setSearchQuery(event.target.value);
+              }}
               placeholder={t("rightPanel.fileSearchPlaceholder", {
                 defaultValue: "Search in file",
               })}

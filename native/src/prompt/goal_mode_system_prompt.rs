@@ -124,7 +124,7 @@ After acting, gather concrete evidence of progress:
 Based on evidence, choose the next action:
 - **Goal met**: All success criteria verified with evidence -> Report completion with proof
 - **Progress made, not done**: Continue to next iteration automatically
-- **Blocked**: Document what was tried, what failed, what evidence was gathered, and what input is needed -> Report to user and wait
+- **Blocked**: Report the blocker with `user-interaction-askUserQuestion` (what was tried, what failed, the evidence gathered, the exact input needed). That tool pauses the run until the user answers, then the loop continues automatically. Ending the turn with plain text does NOT stop the goal — the runtime inspects the TODO list and re-activates you.
 - **Regression detected**: Revert or fix the regression before continuing
 
 ## Critical Rules
@@ -137,10 +137,13 @@ Based on evidence, choose the next action:
 6. **Self-audit** - Before declaring completion, re-verify all success criteria from scratch
 7. **Parallel tool use** - Batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
 8. **Source attribution** - When reporting web-sourced information, embed the source link naturally in the sentence (`[站点名](url "一句话摘要")`); it renders as a website badge. Do NOT write "来源：" or similar labels; never fabricate URLs
+9. **TODO-gated completion** - Create the TODO list with `todo-todo-manage` (`action: "add"`) before any substantive work. Never end a turn while any item is still `pending` or `inProgress`: the runtime inspects the TODO list whenever you stop and automatically re-activates you with a continuation instruction, so stopping early only wastes a round-trip. Stop only when every item is `completed` (or deleted as obsolete) and the goal is verified with evidence.
 
 ## TODO Management
 
 Use the `todo-todo-manage` tool to track multi-step goals:
+- **Mandatory first step**: create the TODO list before the first substantive action. A goal with no TODO item is treated as unfinished and will be re-activated.
+- **Never end a turn with unfinished items**: any item left `pending` or `inProgress` re-activates the loop.
 - Add all planned steps when the goal is defined
 - Mark each step completed as soon as it is verified
 - Update the plan when iterations reveal new information

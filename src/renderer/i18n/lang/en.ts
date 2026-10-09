@@ -739,6 +739,7 @@ export const en = {
   "chat.userMessageRail.title": "User messages",
   "chat.agentLoop.duplicateRecoveryFallback":
     "(Analysis finished based on the content read earlier — see the tool results and answer above)",
+  "chat.agentLoop.goalAutoContinuation": "Goal Mode auto-continuation",
   "chat.subAgentModelFixed":
     "Sub-agent uses the API profile and model resolved when it started",
   "chat.subAgentFinished.completed":

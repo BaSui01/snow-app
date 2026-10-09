@@ -70,6 +70,7 @@ import {
 } from "../workflow/workflowRunner";
 import { createToolExecutor } from "./toolExecution";
 import { ReadonlyCallGuard } from "./readonlyCallGuard";
+import { resolveGoalContinuation } from "./goalContinuation";
 
 type CapturedChatInputSendOptions = ChatInputSendOptions;
 
@@ -1199,6 +1200,57 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               response.conversationId,
               steering.checkpointId ?? checkpointId,
             );
+            return;
+          }
+
+          // Goal Mode auto-continuation: the model stopped while its TODO list
+          // was still unfinished. Re-activate the loop with a visible
+          // continuation message instead of ending the run. A user cancel
+          // (isRunCancelled above) always wins and never re-activates; the
+          // configured token budget caps the loop.
+          if (!disableTools) {
+            const runUsage = iterRef?.runTokenUsage;
+            const decision = await resolveGoalContinuation({
+              goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
+              budgetTokens:
+                iterRef?.goalModeTokenBudget ?? ctx.goalModeTokenBudget,
+              usedTokens:
+                (runUsage?.inputTokens ?? 0) + (runUsage?.outputTokens ?? 0),
+              conversationId: response.conversationId,
+              directoryId: sessionDirId,
+              heading: t("chat.agentLoop.goalAutoContinuation", {
+                defaultValue: "Goal Mode auto-continuation",
+              }),
+            });
+            if (isRunCancelled(effectiveKey)) return;
+            if (decision.kind === "continue") {
+              const goalUserMessage: ChatConversationMessage = {
+                id: createMessageId("user"),
+                role: "user",
+                content: decision.prompt,
+                timestamp: formatMessageTime(),
+                status: "sent",
+              };
+              const goalAssistantId = createMessageId("assistant");
+              ctx.updateSessionMessages(effectiveKey, (currentMessages) => [
+                ...currentMessages,
+                goalUserMessage,
+                {
+                  id: goalAssistantId,
+                  role: "assistant",
+                  content: "",
+                  timestamp: formatMessageTime(),
+                  status: "sending",
+                  model: capturedOptions.model,
+                },
+              ]);
+              await runAgentLoop(
+                goalAssistantId,
+                [{ role: "user", content: decision.prompt }],
+                response.conversationId,
+                checkpointId,
+              );
+            }
           }
           return;
         }

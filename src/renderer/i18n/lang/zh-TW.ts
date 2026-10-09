@@ -703,6 +703,7 @@ export const zhTW = {
   "chat.userMessageRail.title": "使用者訊息",
   "chat.agentLoop.duplicateRecoveryFallback":
     "（已根據先前讀取的內容分析完畢，請參閱上方的工具結果與回答）",
+  "chat.agentLoop.goalAutoContinuation": "Goal 模式自動續跑",
   "chat.subAgentModelFixed": "子代理使用啟動時確定的 API 配置和模型",
   "chat.subAgentFinished.completed": "該子代理已完成，會話僅供檢視。",
   "chat.subAgentFinished.failed": "該子代理執行失敗，會話僅供檢視。",

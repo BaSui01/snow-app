@@ -149,7 +149,14 @@ Plan Mode separates investigation and planning from execution:
 
 ### 4.2 Goal Mode
 
-Goal Mode runs a continuing, goal-driven autonomous loop within its token budget and stop conditions. Adjust the per-conversation token budget from the plus menu (including an **Unlimited** option). Goal is mutually exclusive with Plan, and both the enabled state and budget are saved per conversation. The exact number of iterations is not fixed; execution also depends on the budget, model output, tool state, and user stop actions.
+Goal Mode runs a continuing, goal-driven autonomous loop within its token budget and stop conditions. Adjust the per-conversation token budget from the plus menu (including an **Unlimited** option). Goal is mutually exclusive with Plan, and both the enabled state and budget are saved per conversation.
+
+Two constraints are enforced at runtime:
+
+- The AI must first create the TODO list for the goal with `todo-todo-manage`;
+- Whenever the AI stops while the TODO list is still unfinished, the app appends a "Goal Mode auto-continuation" user message (with the current TODO progress and token budget) and re-activates the loop from it until every item is completed or the token budget is exhausted.
+
+That continuation message is stored as a regular user message, so every automatic continuation is visible in the conversation and in the user-message rail, and it can be rolled back like any other turn. An explicit user stop (cancel) is never re-activated. The number of iterations is therefore bounded by the token budget: with an **Unlimited** budget the loop only ends when all TODOs are complete or the user stops it.
 
 ### 4.3 YOLO Mode
 

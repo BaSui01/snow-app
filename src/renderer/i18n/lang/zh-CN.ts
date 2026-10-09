@@ -702,6 +702,7 @@ export const zhCN = {
   "chat.userMessageRail.title": "用户消息",
   "chat.agentLoop.duplicateRecoveryFallback":
     "（已基于此前读取的内容分析完毕，请参见上方工具结果与回答）",
+  "chat.agentLoop.goalAutoContinuation": "Goal 模式自动续跑",
   "chat.subAgentModelFixed": "子代理使用启动时确定的 API 配置和模型",
   "chat.subAgentFinished.completed": "该子代理已完成，会话仅供查看。",
   "chat.subAgentFinished.failed": "该子代理执行失败，会话仅供查看。",

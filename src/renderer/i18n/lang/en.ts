@@ -2119,11 +2119,14 @@ export const en = {
     "A browser window will open for the sign-in. The channel is created and activated automatically once it completes.",
   "settings.oauthProviderLabel": "Provider",
   "settings.oauthProvider.codex": "Codex (ChatGPT subscription)",
+  "settings.oauthProvider.chatgpt": "ChatGPT (subscription plan)",
   "settings.oauthProvider.anthropic": "Anthropic (Claude subscription)",
   "settings.oauthProvider.antigravity": "Antigravity (Google subscription)",
   "settings.oauthProvider.xai": "xAI (Grok subscription)",
   "settings.oauthProviderDesc.codex":
     "Sign in to Codex through the OAuth flow. The credential file is fetched and saved automatically.",
+  "settings.oauthProviderDesc.chatgpt":
+    "Sign in with ChatGPT through the official flow and use your ChatGPT subscription plan allowance with the official Responses API. The credential is fetched and saved automatically.",
   "settings.oauthProviderDesc.anthropic":
     "Sign in to Anthropic (Claude) through the OAuth flow. The credential is fetched and saved automatically.",
   "settings.oauthProviderDesc.antigravity":

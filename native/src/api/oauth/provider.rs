@@ -7,7 +7,7 @@ use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{anthropic, antigravity, codex, xai};
+use super::{anthropic, antigravity, chatgpt, codex, xai};
 use crate::storage::services::api_configs as api_configs_service;
 use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::{ensure_database_file, ApiConfigInput, ApiConfigRecord};
@@ -20,6 +20,7 @@ const METADATA_KEY: &str = "oauth";
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OAuthProviderId {
     Codex,
+    ChatGpt,
     Anthropic,
     Antigravity,
     Xai,
@@ -29,6 +30,7 @@ impl OAuthProviderId {
     pub fn all() -> &'static [OAuthProviderId] {
         &[
             OAuthProviderId::Codex,
+            OAuthProviderId::ChatGpt,
             OAuthProviderId::Anthropic,
             OAuthProviderId::Antigravity,
             OAuthProviderId::Xai,
@@ -38,6 +40,7 @@ impl OAuthProviderId {
     pub fn as_str(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => "codex",
+            OAuthProviderId::ChatGpt => "chatgpt",
             OAuthProviderId::Anthropic => "anthropic",
             OAuthProviderId::Antigravity => "antigravity",
             OAuthProviderId::Xai => "xai",
@@ -55,6 +58,7 @@ impl OAuthProviderId {
     pub fn display_name(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => "ChatGPT Codex",
+            OAuthProviderId::ChatGpt => "ChatGPT",
             OAuthProviderId::Anthropic => "Anthropic (Claude)",
             OAuthProviderId::Antigravity => "Antigravity (Google)",
             OAuthProviderId::Xai => "xAI (Grok)",
@@ -64,6 +68,7 @@ impl OAuthProviderId {
     pub fn default_model(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => codex::DEFAULT_MODEL,
+            OAuthProviderId::ChatGpt => chatgpt::DEFAULT_MODEL,
             OAuthProviderId::Anthropic => anthropic::DEFAULT_MODEL,
             OAuthProviderId::Antigravity => antigravity::DEFAULT_MODEL,
             OAuthProviderId::Xai => xai::DEFAULT_MODEL,
@@ -73,6 +78,7 @@ impl OAuthProviderId {
     pub fn default_max_context_tokens(self) -> i32 {
         match self {
             OAuthProviderId::Codex => 400_000,
+            OAuthProviderId::ChatGpt => 400_000,
             OAuthProviderId::Anthropic => 200_000,
             OAuthProviderId::Antigravity => 1_000_000,
             OAuthProviderId::Xai => 500_000,
@@ -82,6 +88,7 @@ impl OAuthProviderId {
     pub fn backend_base_url(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => codex::BACKEND_BASE_URL,
+            OAuthProviderId::ChatGpt => chatgpt::BACKEND_BASE_URL,
             OAuthProviderId::Anthropic => anthropic::BACKEND_BASE_URL,
             OAuthProviderId::Antigravity => antigravity::BACKEND_BASE_URL,
             OAuthProviderId::Xai => xai::BACKEND_BASE_URL,
@@ -91,6 +98,7 @@ impl OAuthProviderId {
     pub fn request_method(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => "responses",
+            OAuthProviderId::ChatGpt => "responses",
             OAuthProviderId::Anthropic => "anthropic",
             OAuthProviderId::Antigravity => "gemini",
             OAuthProviderId::Xai => "responses",
@@ -100,6 +108,7 @@ impl OAuthProviderId {
     pub fn supports_vision(self) -> bool {
         match self {
             OAuthProviderId::Codex => true,
+            OAuthProviderId::ChatGpt => true,
             OAuthProviderId::Anthropic => true,
             OAuthProviderId::Antigravity => true,
             OAuthProviderId::Xai => true,
@@ -113,6 +122,7 @@ impl OAuthProviderId {
     pub fn callback_path(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => codex::CALLBACK_PATH,
+            OAuthProviderId::ChatGpt => chatgpt::CALLBACK_PATH,
             OAuthProviderId::Anthropic => anthropic::CALLBACK_PATH,
             OAuthProviderId::Antigravity => antigravity::CALLBACK_PATH,
             OAuthProviderId::Xai => xai::CALLBACK_PATH,
@@ -122,6 +132,7 @@ impl OAuthProviderId {
     pub fn callback_ports(self) -> &'static [u16] {
         match self {
             OAuthProviderId::Codex => codex::CALLBACK_PORTS,
+            OAuthProviderId::ChatGpt => chatgpt::CALLBACK_PORTS,
             OAuthProviderId::Anthropic => anthropic::CALLBACK_PORTS,
             OAuthProviderId::Antigravity => antigravity::CALLBACK_PORTS,
             OAuthProviderId::Xai => xai::CALLBACK_PORTS,
@@ -131,6 +142,7 @@ impl OAuthProviderId {
     pub fn redirect_host(self) -> &'static str {
         match self {
             OAuthProviderId::Codex => "127.0.0.1",
+            OAuthProviderId::ChatGpt => "127.0.0.1",
             OAuthProviderId::Anthropic => "localhost",
             OAuthProviderId::Antigravity => "localhost",
             OAuthProviderId::Xai => "127.0.0.1",
@@ -217,6 +229,7 @@ pub struct OAuthTokenSet {
 pub struct OAuthProfileMetadata {
     pub provider: OAuthProviderId,
     pub refresh_token: String,
+    pub client_id: String,
     pub account_id: String,
     pub email: String,
     pub plan_type: String,
@@ -228,6 +241,7 @@ impl OAuthProfileMetadata {
         json!({
             "provider": self.provider.as_str(),
             "refreshToken": self.refresh_token,
+            "clientId": self.client_id,
             "accountId": self.account_id,
             "email": self.email,
             "planType": self.plan_type,
@@ -246,6 +260,7 @@ impl OAuthProfileMetadata {
         Some(OAuthProfileMetadata {
             provider,
             refresh_token: read_string(object, "refreshToken"),
+            client_id: read_string(object, "clientId"),
             account_id: read_string(object, "accountId"),
             email: read_string(object, "email"),
             plan_type: read_string(object, "planType"),
@@ -289,10 +304,15 @@ pub fn build_authorize_url(
     redirect_uri: &str,
     pkce: &PkceCodes,
     state: &str,
+    nonce: &str,
+    host_id: &str,
 ) -> Result<String> {
     match provider {
         OAuthProviderId::Codex => {
             codex::build_authorize_url(redirect_uri, &pkce.challenge, state)
+        }
+        OAuthProviderId::ChatGpt => {
+            chatgpt::build_authorize_url(redirect_uri, &pkce.challenge, state, nonce, host_id)
         }
         OAuthProviderId::Anthropic => {
             anthropic::build_authorize_url(redirect_uri, &pkce.challenge, state)
@@ -310,9 +330,13 @@ pub async fn exchange_code(
     redirect_uri: &str,
     code_verifier: &str,
     state: &str,
+    issued_client_id: &str,
 ) -> Result<OAuthTokenSet> {
     match provider {
         OAuthProviderId::Codex => codex::exchange_code(code, redirect_uri, code_verifier).await,
+        OAuthProviderId::ChatGpt => {
+            chatgpt::exchange_code(code, redirect_uri, code_verifier, issued_client_id).await
+        }
         OAuthProviderId::Anthropic => {
             anthropic::exchange_code(code, redirect_uri, code_verifier, state).await
         }
@@ -326,9 +350,11 @@ pub async fn exchange_code(
 pub async fn refresh_tokens(
     provider: OAuthProviderId,
     refresh_token: &str,
+    client_id: &str,
 ) -> Result<OAuthTokenSet> {
     match provider {
         OAuthProviderId::Codex => codex::refresh_tokens(refresh_token).await,
+        OAuthProviderId::ChatGpt => chatgpt::refresh_tokens(refresh_token, client_id).await,
         OAuthProviderId::Anthropic => anthropic::refresh_tokens(refresh_token).await,
         OAuthProviderId::Antigravity => antigravity::refresh_tokens(refresh_token).await,
         OAuthProviderId::Xai => xai::refresh_tokens(refresh_token).await,
@@ -342,6 +368,7 @@ pub async fn fetch_models(
 ) -> Result<Vec<String>> {
     match provider {
         OAuthProviderId::Codex => codex::fetch_models(access_token, account_id).await,
+        OAuthProviderId::ChatGpt => chatgpt::fetch_models(access_token).await,
         OAuthProviderId::Anthropic => anthropic::fetch_models(access_token).await,
         OAuthProviderId::Antigravity => antigravity::fetch_models(access_token, account_id).await,
         OAuthProviderId::Xai => xai::fetch_models(access_token).await,
@@ -357,6 +384,7 @@ pub fn apply_request_headers(
     };
     match metadata.provider {
         OAuthProviderId::Codex => codex::apply_request_headers(&metadata, headers),
+        OAuthProviderId::ChatGpt => {}
         OAuthProviderId::Anthropic => anthropic::apply_request_headers(headers),
         OAuthProviderId::Antigravity => {
             antigravity::apply_request_headers(&config.api_key, headers)
@@ -500,7 +528,7 @@ pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigR
     }
 
     let provider = metadata.provider;
-    let tokens = match refresh_tokens(provider, &metadata.refresh_token).await {
+    let tokens = match refresh_tokens(provider, &metadata.refresh_token, &metadata.client_id).await {
         Ok(tokens) => tokens,
         Err(error) => {
             if let Ok(database_path) = ensure_database_file() {
@@ -517,7 +545,7 @@ pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigR
     };
 
     let claims = match provider {
-        OAuthProviderId::Codex => codex::parse_claims(&tokens.id_token),
+        OAuthProviderId::Codex | OAuthProviderId::ChatGpt => codex::parse_claims(&tokens.id_token),
         OAuthProviderId::Anthropic => anthropic::parse_claims(&tokens),
         OAuthProviderId::Antigravity => antigravity::parse_claims(&tokens),
         OAuthProviderId::Xai => xai::parse_claims(&tokens.id_token),
@@ -525,6 +553,7 @@ pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigR
 
     let updated_metadata = OAuthProfileMetadata {
         provider,
+        client_id: metadata.client_id.clone(),
         refresh_token: pick_fresh(&tokens.refresh_token, &metadata.refresh_token),
         account_id: pick_fresh(&claims.account_id, &metadata.account_id),
         email: pick_fresh(&claims.email, &metadata.email),

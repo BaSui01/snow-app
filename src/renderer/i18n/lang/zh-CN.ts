@@ -2021,11 +2021,14 @@ export const zhCN = {
     "将打开浏览器完成账号授权，完成后自动创建并启用渠道。",
   "settings.oauthProviderLabel": "服务商",
   "settings.oauthProvider.codex": "Codex（ChatGPT 订阅）",
+  "settings.oauthProvider.chatgpt": "ChatGPT（订阅计划）",
   "settings.oauthProvider.anthropic": "Anthropic（Claude 订阅）",
   "settings.oauthProvider.antigravity": "Antigravity（Google 订阅）",
   "settings.oauthProvider.xai": "xAI（Grok 订阅）",
   "settings.oauthProviderDesc.codex":
     "通过 OAuth 流程登录 Codex 服务，自动获取并保存认证文件。",
+  "settings.oauthProviderDesc.chatgpt":
+    "通过官方 Sign in with ChatGPT 流程登录，使用 ChatGPT 订阅额度调用官方 Responses API，自动获取并保存认证信息。",
   "settings.oauthProviderDesc.anthropic":
     "通过 OAuth 流程登录 Anthropic（Claude）订阅账号，自动获取并保存认证信息。",
   "settings.oauthProviderDesc.antigravity":

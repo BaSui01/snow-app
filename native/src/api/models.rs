@@ -15,6 +15,7 @@ use crate::api::config::{
 };
 use crate::api::oauth::anthropic as anthropic_oauth;
 use crate::api::oauth::antigravity as antigravity_oauth;
+use crate::api::oauth::chatgpt as chatgpt_oauth;
 use crate::api::oauth::codex as codex_oauth;
 use crate::api::oauth::provider::{
     self as oauth_provider, OAuthProfileMetadata, OAuthProviderId,
@@ -366,6 +367,7 @@ fn resolve_oauth_metadata(
     }
     oauth_provider::detect_provider_from_base_url(base_url).map(|provider| OAuthProfileMetadata {
         provider,
+        client_id: String::new(),
         refresh_token: String::new(),
         account_id: String::new(),
         email: String::new(),
@@ -383,6 +385,7 @@ fn fetch_oauth_models(
         OAuthProviderId::Codex => {
             codex_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
         }
+        OAuthProviderId::ChatGpt => chatgpt_oauth::fetch_models_blocking(base_url, api_key)?,
         OAuthProviderId::Anthropic => anthropic_oauth::fetch_models_blocking(base_url, api_key)?,
         OAuthProviderId::Antigravity => {
             antigravity_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?

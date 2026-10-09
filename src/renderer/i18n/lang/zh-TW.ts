@@ -2022,11 +2022,14 @@ export const zhTW = {
     "將開啟瀏覽器完成帳號授權，完成後自動建立並啟用渠道。",
   "settings.oauthProviderLabel": "服務商",
   "settings.oauthProvider.codex": "Codex（ChatGPT 訂閱）",
+  "settings.oauthProvider.chatgpt": "ChatGPT（訂閱方案）",
   "settings.oauthProvider.anthropic": "Anthropic（Claude 訂閱）",
   "settings.oauthProvider.antigravity": "Antigravity（Google 訂閱）",
   "settings.oauthProvider.xai": "xAI（Grok 訂閱）",
   "settings.oauthProviderDesc.codex":
     "透過 OAuth 流程登入 Codex 服務，自動取得並儲存認證檔案。",
+  "settings.oauthProviderDesc.chatgpt":
+    "透過官方 Sign in with ChatGPT 流程登入，使用 ChatGPT 訂閱額度呼叫官方 Responses API，自動取得並儲存認證資訊。",
   "settings.oauthProviderDesc.anthropic":
     "透過 OAuth 流程登入 Anthropic（Claude）訂閱帳號，自動取得並儲存認證資訊。",
   "settings.oauthProviderDesc.antigravity":

@@ -5,7 +5,7 @@ use std::time::Duration;
 use napi::bindgen_prelude::*;
 use tokio::sync::oneshot;
 
-use super::{anthropic, antigravity, codex, xai};
+use super::{anthropic, antigravity, chatgpt, codex, xai};
 use super::provider::{self, OAuthProfileMetadata, OAuthProviderId};
 use crate::storage::ensure_database_file;
 
@@ -16,6 +16,7 @@ pub struct OAuthLoginSession {
     pub session_id: String,
     pub provider: OAuthProviderId,
     pub state: String,
+    pub nonce: String,
     pub code_verifier: String,
     pub redirect_uri: String,
     pub auth_url: String,
@@ -88,6 +89,7 @@ pub async fn start_login(
 ) -> Result<StartLoginResult> {
     let pkce = provider::generate_pkce()?;
     let state = provider::generate_state()?;
+    let nonce = provider::generate_state()?;
     let session_id = uuid::Uuid::new_v4().to_string();
 
     let preferred_ports = provider.callback_ports();
@@ -121,12 +123,19 @@ pub async fn start_login(
             provider.callback_path()
         )
     };
-    let auth_url = provider::build_authorize_url(provider, &redirect_uri, &pkce, &state)?;
+    let host_id = if provider == OAuthProviderId::ChatGpt {
+        chatgpt::ensure_host_id().await?
+    } else {
+        String::new()
+    };
+    let auth_url =
+        provider::build_authorize_url(provider, &redirect_uri, &pkce, &state, &nonce, &host_id)?;
 
     let session = OAuthLoginSession {
         session_id: session_id.clone(),
         provider,
         state,
+        nonce,
         code_verifier: pkce.verifier,
         redirect_uri,
         auth_url: auth_url.clone(),
@@ -301,7 +310,14 @@ pub async fn handle_callback_request(
         .ok_or_else(|| "Missing authorization code".to_string())?
         .to_string();
 
-    complete_login(session, &code)
+    let issued_client_id = params
+        .get("client_id")
+        .map(String::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+
+    complete_login(session, &code, &issued_client_id)
         .await
         .map(|_| ())
         .map_err(|error| error.reason.clone())
@@ -344,6 +360,7 @@ fn finish_session(session_id: &str, result: &Result<OAuthLoginOutcome>) {
 async fn complete_login(
     session: &OAuthLoginSession,
     code: &str,
+    issued_client_id: &str,
 ) -> Result<OAuthLoginOutcome> {
     {
         let mut sessions = lock_sessions();
@@ -361,12 +378,16 @@ async fn complete_login(
         entry.completing = true;
     }
 
-    let result = perform_login(session, code).await;
+    let result = perform_login(session, code, issued_client_id).await;
     finish_session(&session.session_id, &result);
     result
 }
 
-async fn perform_login(session: &OAuthLoginSession, code: &str) -> Result<OAuthLoginOutcome> {
+async fn perform_login(
+    session: &OAuthLoginSession,
+    code: &str,
+    issued_client_id: &str,
+) -> Result<OAuthLoginOutcome> {
     let provider = session.provider;
     let tokens = provider::exchange_code(
         provider,
@@ -374,16 +395,21 @@ async fn perform_login(session: &OAuthLoginSession, code: &str) -> Result<OAuthL
         &session.redirect_uri,
         &session.code_verifier,
         &session.state,
+        issued_client_id,
     )
     .await?;
+    if provider == OAuthProviderId::ChatGpt {
+        chatgpt::verify_identity(&tokens.id_token, &session.nonce)?;
+    }
     let claims = match provider {
-        OAuthProviderId::Codex => codex::parse_claims(&tokens.id_token),
+        OAuthProviderId::Codex | OAuthProviderId::ChatGpt => codex::parse_claims(&tokens.id_token),
         OAuthProviderId::Anthropic => anthropic::parse_claims(&tokens),
         OAuthProviderId::Antigravity => antigravity::parse_claims(&tokens),
         OAuthProviderId::Xai => xai::parse_claims(&tokens.id_token),
     };
     let metadata = OAuthProfileMetadata {
         provider,
+        client_id: issued_client_id.trim().to_string(),
         refresh_token: tokens.refresh_token.clone(),
         account_id: claims.account_id.clone(),
         email: claims.email.clone(),

@@ -1,4 +1,11 @@
-import { Anthropic, Antigravity, Codex, Grok, Kimi } from "@lobehub/icons";
+import {
+  Anthropic,
+  Antigravity,
+  Codex,
+  Grok,
+  Kimi,
+  OpenAI,
+} from "@lobehub/icons";
 import { KeyRound } from "lucide-react";
 
 type OAuthProviderIconProps = {
@@ -11,6 +18,8 @@ export function OAuthProviderIcon({
   size = 22,
 }: OAuthProviderIconProps): React.JSX.Element {
   switch (providerId) {
+    case "chatgpt":
+      return <OpenAI size={size} />;
     case "codex":
       return <Codex.Color size={size} />;
     case "anthropic":

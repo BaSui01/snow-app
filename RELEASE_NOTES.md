@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.18
+
+## New Features
+
+- **Memo Multi-Select Batch Delete**: The memo panel gains a multi-select mode with select-all / deselect-all and a selected count, deleting the chosen memos in one confirmed action.
+- **Three-Tier Responses Fast Mode**: Fast Mode is no longer a boolean — off sends nothing, Fast sends `service_tier: priority` and UltraFast sends `ultrafast`; the API settings and the chat input picker both switch it.
+- **System Log Retention**: System logs are pruned automatically (once at startup, then every 6 hours), with a retention setting of 7 / 30 / 90 days or never (default 7 days) that reports how many expired entries were deleted.
+
+## Improvements
+
+- The file reader was reworked for performance: in-file search locates lines by binary search on the line index (545x faster), code folding resolves in O(log K), column estimation samples in strides (8.1x), lines over 10,000 characters are truncated with a badge, search highlighting is scheduled via requestAnimationFrame, and the syntax-highlight cache grows to 128 entries with LRU refresh.
+- Rust text reading compares UTF-8 buffers without a second copy and caps raw reads at 64 MiB.
+- Read-only call protection is now mutation-aware: duplicate calls probe the file fingerprint and Git dirty / commit state so legitimate re-reads pass, mutating-tool detection covers terminals, sub-agents and LSP renames, and duplicate-recovery rounds emit a fallback notice instead of a stream cutoff.
+- Tool errors are localized: 30 error render points across 23 tool cards show translated messages in all three languages, while protocol and audit fields in tool results keep their original text.
+- The compact theme gained a full native form-dialog style set (card, header, footer, drop zone, input, buttons) with unified read-only and disabled states; form dialogs now focus the choose button instead of a read-only path field.
+- Plugin message-footer eligibility is decided precisely, keeping ordinary footers and task-history footers mutually exclusive.
+
+## Bug Fixes
+
+- Fixed file viewer search positioning in edit mode: the editor textarea does not scroll itself, so scrolling is driven by the outer container.
+- Fixed MCP settings JSON mode needing two clicks to save (stale draft closure); parse and save errors are localized and no longer hidden behind the modal overlay.
+- Fixed the file-change tracking memory peak: Git output and file contents are read in chunks with checked allocation, so an allocation failure degrades coverage instead of aborting the app.
+
 ## v0.4.17
 
 ## New Features

@@ -432,16 +432,22 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subResponse = await subStreamPromise;
     } finally {
       subChunkHandler.flush();
+      const subRef = ctx.sessionsRefData.current.get(subConvId);
+      if (subRef?.streamPromise === subStreamPromise) {
+        subRef.streamId = null;
+        subRef.streamPromise = null;
+      }
+      ctx.updateSessionMessages(subConvId, (currentMessages) =>
+        currentMessages.map((currentMessage) =>
+          currentMessage.id === subAssistantMessageId
+            ? { ...currentMessage, isThinkingActive: false }
+            : currentMessage,
+        ),
+      );
     }
     recordTaskResponse(taskHistory, subConvId, subResponse.id, agentName);
     const subResponseDisposition = resolveResponseDisposition(subResponse);
     const subResponseFailed = subResponseDisposition.kind === "error";
-
-    const subRef = ctx.sessionsRefData.current.get(subConvId);
-    if (subRef) {
-      subRef.streamId = null;
-      subRef.streamPromise = null;
-    }
 
     // Replace the frontend-generated temporary user message ids with the real
     // database ids returned by createResponseStream (same as the main agent
@@ -558,7 +564,9 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
             : currentMessage,
         ),
       );
-      return safeIncompleteResult;
+      throw new Error(
+        `Sub-agent response incomplete (${subResponseDisposition.reason}): ${safeIncompleteResult}`,
+      );
     }
 
     const subToolCalls =
@@ -582,11 +590,13 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                 responseId: subResponse.id || undefined,
                 model: subResponse.model || undefined,
                 isRetrying: false,
+                retryAttempt: undefined,
+                retryError: undefined,
               }
             : currentMessage,
         ),
       );
-      return failureContent;
+      throw new Error(failureContent);
     }
 
     // Auto-compaction for sub-agents: mirrors the main agent loop. When the
@@ -1193,6 +1203,40 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
           break;
         }
       }
+    } catch (error) {
+      stopped = true;
+      const cancelled = isSubCancelled();
+      const forceSendAbort =
+        !!ctx.sessionsRefData.current.get(subConvId)?.forceSendAbort;
+      const errorMessage = cancelled
+        ? forceSendAbort
+          ? ""
+          : "Sub-agent interrupted by user"
+        : getErrorMessage(error);
+      ctx.updateSessionMessages(subConvId, (currentMessages) =>
+        currentMessages.map((currentMessage) =>
+          currentMessage.role === "assistant" &&
+          currentMessage.status === "sending"
+            ? {
+                ...currentMessage,
+                content: cancelled
+                  ? currentMessage.content || errorMessage
+                  : currentMessage.content
+                    ? `${currentMessage.content}\n\n${errorMessage}`
+                    : errorMessage,
+                timestamp: formatMessageTime(),
+                status: cancelled ? "sent" : "error",
+                isThinkingActive: false,
+                isRetrying: false,
+                retryAttempt: undefined,
+                retryError: undefined,
+                toolCalls: undefined,
+              }
+            : currentMessage,
+        ),
+      );
+      if (cancelled) return errorMessage;
+      throw error;
     } finally {
       demotePendingSteering(ctx, subConvId);
     }
@@ -1316,9 +1360,11 @@ const createSubAgentFinalizer = (
         const forceSendSummary = await runForceSendLoop();
         if (forceSendSummary) {
           summary = forceSendSummary;
+          status = "completed";
         }
-      } catch {
-        // 强行发送回合异常：继续统一收尾（失败路径）
+      } catch (error) {
+        summary = getErrorMessage(error);
+        status = "failed";
       }
     }
     if (finalRef) {
@@ -1328,6 +1374,8 @@ const createSubAgentFinalizer = (
       // input box.
       finalRef.subAgentTerminated = true;
       finalRef.isSending = false;
+      finalRef.streamId = null;
+      finalRef.streamPromise = null;
       finalRef.activeSendOptions = undefined;
       finalRef.activeTaskMessages = undefined;
     }

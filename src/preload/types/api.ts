@@ -191,7 +191,8 @@ export type StreamInterruptionReason =
   | "read_error"
   | "idle_timeout"
   | "explicit_incomplete"
-  | "output_limit";
+  | "output_limit"
+  | "empty_response";
 
 export type StreamRecoveryOutcome =
   "partial_threshold" | "retry_exhausted" | "non_retriable";

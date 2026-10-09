@@ -987,7 +987,8 @@ export type StreamInterruptionReason =
   | "read_error"
   | "idle_timeout"
   | "explicit_incomplete"
-  | "output_limit";
+  | "output_limit"
+  | "empty_response";
 
 export type StreamRecoveryOutcome =
   "partial_threshold" | "retry_exhausted" | "non_retriable";
@@ -1014,6 +1015,11 @@ export type ChatMessageRecord = {
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+  /** 自动重试次数（0 表示未重试）。空响应重试耗尽时据此在重载后仍显示
+   *  「重试已耗尽 (N)」。 */
+  retryAttempts: number;
+  /** 最后一次自动重试的上游错误文本（未重试为空串）。 */
+  retryError: string;
   createdAt: string;
 };
 

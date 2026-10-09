@@ -3991,6 +3991,7 @@ export const zhTW = {
   "chat.streamMetrics.elapsedTitle": "運行時長",
   "chat.streamMetrics.ttftTitle": "TTFT（首 Token 延遲）",
   "chat.retrying": "重試中",
+  "chat.retryExhausted": "重試已耗盡",
   "chat.retryDetailsShow": "錯誤詳情",
   "chat.retryDetailsHide": "收起詳情",
   "chat.retryCopyDetails": "複製錯誤詳情",

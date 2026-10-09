@@ -4302,6 +4302,7 @@ export const en = {
   "chat.streamMetrics.elapsedTitle": "Elapsed time",
   "chat.streamMetrics.ttftTitle": "TTFT (time to first token)",
   "chat.retrying": "Retrying",
+  "chat.retryExhausted": "Retries exhausted",
   "chat.retryDetailsShow": "Error details",
   "chat.retryDetailsHide": "Hide details",
   "chat.retryCopyDetails": "Copy error details",

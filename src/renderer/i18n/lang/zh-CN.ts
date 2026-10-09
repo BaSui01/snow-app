@@ -4039,6 +4039,7 @@ export const zhCN = {
   "chat.streamMetrics.elapsedTitle": "运行时长",
   "chat.streamMetrics.ttftTitle": "TTFT（首 Token 延迟）",
   "chat.retrying": "重试中",
+  "chat.retryExhausted": "重试已耗尽",
   "chat.retryDetailsShow": "错误详情",
   "chat.retryDetailsHide": "收起详情",
   "chat.retryCopyDetails": "复制错误详情",

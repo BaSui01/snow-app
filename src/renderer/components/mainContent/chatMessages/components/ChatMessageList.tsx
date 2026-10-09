@@ -28,7 +28,7 @@ export const ChatMessageList = ({
   canRollback,
   scrollContainerRef,
 }: ChatMessageListProps): React.JSX.Element => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const {
     activeConversationId,
     handleForkConversation,
@@ -292,7 +292,7 @@ export const ChatMessageList = ({
     let timeLabel = "";
     const ms = Date.parse(triggeredByTask.triggeredAt);
     if (!Number.isNaN(ms)) {
-      timeLabel = new Date(ms).toLocaleTimeString();
+      timeLabel = new Date(ms).toLocaleTimeString(locale);
     }
     return (
       <div className="chat-task-triggered-banner" role="note">

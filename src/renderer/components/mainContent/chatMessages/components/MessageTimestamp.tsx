@@ -1,4 +1,5 @@
 import { Clock3 } from "lucide-react";
+import { useI18n } from "../../../../i18n";
 import { useMessageTimeVisible } from "../utils/messageTimeVisibility";
 import { Tooltip } from "../../../common/Tooltip";
 
@@ -13,6 +14,7 @@ const pad2 = (value: number): string => String(value).padStart(2, "0");
 
 const parseTimestamp = (
   value: string,
+  locale: string,
 ): { label: string; title: string } | null => {
   const text = value.trim();
   if (!text) {
@@ -30,7 +32,7 @@ const parseTimestamp = (
     label: `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(
       date.getSeconds(),
     )}`,
-    title: date.toLocaleString(),
+    title: date.toLocaleString(locale),
   };
 };
 
@@ -39,10 +41,11 @@ export const MessageTimestamp = ({
   className,
 }: MessageTimestampProps): React.JSX.Element | null => {
   const visible = useMessageTimeVisible();
+  const { locale } = useI18n();
   if (!visible || !timestamp) {
     return null;
   }
-  const parsed = parseTimestamp(timestamp);
+  const parsed = parseTimestamp(timestamp, locale);
   if (!parsed) {
     return null;
   }

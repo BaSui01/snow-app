@@ -391,7 +391,7 @@ export function LspRenameNotice({
   dryRun: boolean;
   blocked: boolean;
 }): React.JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [, refresh] = useState(0);
   useEffect(() => {
     if (!safety.previewExpiresAt) return;
@@ -419,7 +419,7 @@ export function LspRenameNotice({
       {!applied && dryRun && safety.hasPreview && expires !== undefined && (
         <p>
           {t("toolCall.lsp.previewExpires", {
-            values: { time: new Date(expires).toLocaleString() },
+            values: { time: new Date(expires).toLocaleString(locale) },
           })}
         </p>
       )}

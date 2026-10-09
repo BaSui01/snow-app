@@ -163,7 +163,9 @@ export const DataTableViewer = ({
               {columns.map((col, i) => (
                 <th
                   key={i}
-                  title={`点击排序: ${col}`}
+                  title={t("toolCall.common.sortBy", {
+                    values: { column: col },
+                  })}
                   className="data-table-th-sortable"
                   onClick={() => {
                     if (sortCol === i) {

@@ -1621,7 +1621,12 @@ export const LspToolCall = ({
 
   const targetFileSummary =
     allArgFiles.length > 1
-      ? `${getFileName(allArgFiles[0])} 等 ${allArgFiles.length} 个文件`
+      ? t("toolCall.lsp.multiFileSummary", {
+          values: {
+            file: getFileName(allArgFiles[0]),
+            count: allArgFiles.length,
+          },
+        })
       : allArgFiles.length === 1
         ? getFileName(allArgFiles[0])
         : undefined;

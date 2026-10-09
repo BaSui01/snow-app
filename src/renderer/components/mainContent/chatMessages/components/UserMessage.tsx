@@ -34,6 +34,7 @@ import {
   parseContentSegments,
 } from "../../chatInput/fileTagUtils";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import { useI18n } from "../../../../i18n";
 
 const COLLAPSE_LINES = 6;
 
@@ -47,6 +48,7 @@ export const UserMessage = memo(
     onRollback,
     hookExecutions,
   }: UserMessageProps): React.JSX.Element => {
+    const { t } = useI18n();
     const segments = parseContentSegments(content);
     const [expanded, setExpanded] = useState(false);
     const [collapsible, setCollapsible] = useState(false);
@@ -603,7 +605,9 @@ export const UserMessage = memo(
               onClick={() => setExpanded((prev) => !prev)}
             >
               {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              {isExpanded ? "收起" : "展开"}
+              {isExpanded
+                ? t("chat.message.collapse")
+                : t("chat.message.expand")}
             </button>
           )}
         </article>

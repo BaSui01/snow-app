@@ -587,6 +587,8 @@ pub fn list_chat_messages(
                         output_tokens,
                         cache_creation_input_tokens,
                         cache_read_input_tokens,
+                        retry_attempts,
+                        retry_error,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -612,6 +614,8 @@ pub fn list_chat_messages(
                     output_tokens: row.get(14)?,
                     cache_creation_input_tokens: row.get(15)?,
                     cache_read_input_tokens: row.get(16)?,
+                    retry_attempts: row.get(18)?,
+                    retry_error: row.get(19)?,
                     created_at: row.get(17)?,
                 })
             })?;
@@ -719,6 +723,8 @@ pub fn list_chat_messages_paginated(
                         output_tokens,
                         cache_creation_input_tokens,
                         cache_read_input_tokens,
+                        retry_attempts,
+                        retry_error,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -748,6 +754,8 @@ pub fn list_chat_messages_paginated(
                         output_tokens: row.get(14)?,
                         cache_creation_input_tokens: row.get(15)?,
                         cache_read_input_tokens: row.get(16)?,
+                        retry_attempts: row.get(18)?,
+                        retry_error: row.get(19)?,
                         created_at: row.get(17)?,
                     })
                 },

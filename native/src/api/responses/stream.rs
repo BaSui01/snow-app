@@ -330,6 +330,22 @@ pub(super) async fn collect_streaming_response(
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
 
+            // 空响应重试此前完全不落库（只有传输类重试会写日志），事后无法对账
+            // 「是否重试过、重试了几次」。与传输重试对齐补一条 WARN。
+            {
+                let db_path = database_path.clone();
+                log_api_warning(
+                    &db_path,
+                    "create_response_stream_with_context",
+                    "AI response stream retrying",
+                    &format!(
+                        "provider=openai, request_method=responses, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
+                        attempt + 1
+                    ),
+                )
+                .await;
+            }
+
             wait_before_retry(retry_options, cancel_token, attempt).await?;
             attempt += 1;
         }};

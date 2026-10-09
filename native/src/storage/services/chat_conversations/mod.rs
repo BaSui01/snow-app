@@ -71,6 +71,12 @@ pub struct StoreChatExchangeInput<'a> {
     pub status: &'a str,
     pub interruption_reason: Option<&'a str>,
     pub recovery_outcome: Option<&'a str>,
+    /// Number of automatic retries attempted for this exchange's request
+    /// (0 when none). Persisted so the retry-exhausted notice still explains
+    /// the failure after a reload.
+    pub retry_attempts: i64,
+    /// Upstream error text of the last automatic retry (empty when none).
+    pub retry_error: &'a str,
     pub raw_response_json: &'a str,
     pub token_usage: ChatTokenUsage,
     pub response_thinking: &'a str,
@@ -318,6 +324,8 @@ pub fn store_chat_exchange(
                     "[]",
                     context_usage,
                     0,
+                    0,
+                    "",
                 )?;
                 persisted_user_message_ids.push(message_id);
             } else if !input.context_compaction {
@@ -387,6 +395,8 @@ pub fn store_chat_exchange(
                             "[]",
                             None,
                             index,
+                            0,
+                            "",
                         )?;
                         if normalize_role(&message.role) == "user" {
                             persisted_user_message_ids.push(message_id);
@@ -412,6 +422,8 @@ pub fn store_chat_exchange(
                     input.tool_calls_json,
                     context_usage,
                     input.request_messages.len(),
+                    input.retry_attempts,
+                    input.retry_error,
                 )?;
             }
 
@@ -597,6 +609,8 @@ pub fn store_failed_chat_exchange(
             status: "error",
             interruption_reason: None,
             recovery_outcome: None,
+            retry_attempts: 0,
+            retry_error: "",
             raw_response_json: "{}",
             token_usage: ChatTokenUsage::default(),
             response_thinking: "",
@@ -653,6 +667,8 @@ pub fn append_tool_message(
                 "[]",
                 None,
                 0,
+                0,
+                "",
             )?;
             transaction.execute(
                 "UPDATE chat_conversations
@@ -715,6 +731,9 @@ fn insert_message(
     tool_calls_json: &str,
     token_usage: Option<ChatTokenUsage>,
     index: usize,
+    // 自动重试次数（0 = 未重试）与最后一次重试的上游错误文本（空 = 无）。
+    retry_attempts: i64,
+    retry_error: &str,
 ) -> rusqlite::Result<String> {
     let id = database::create_snowflake_id();
     connection.execute(
@@ -740,9 +759,11 @@ fn insert_message(
            output_tokens,
            cache_creation_input_tokens,
            cache_read_input_tokens,
+           retry_attempts,
+           retry_error,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, datetime('now', 'localtime')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, datetime('now', 'localtime')
          )",
         params![
             id,
@@ -770,6 +791,8 @@ fn insert_message(
             token_usage
                 .map(|usage| usage.cache_read_input_tokens)
                 .unwrap_or(0),
+            retry_attempts,
+            retry_error,
         ],
     )?;
 

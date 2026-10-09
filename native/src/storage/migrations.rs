@@ -92,6 +92,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_messages_interruption_metadata(connection)?;
     migrate_chat_messages_thinking_stats(connection)?;
     migrate_chat_messages_token_usage(connection)?;
+    migrate_chat_messages_retry_metadata(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
     migrate_project_collections(connection)?;
@@ -670,6 +671,39 @@ fn migrate_chat_messages_token_usage(connection: &Connection) -> rusqlite::Resul
             "INTEGER NOT NULL DEFAULT 0",
         ),
         ("cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            connection.execute(
+                &format!("ALTER TABLE chat_messages ADD COLUMN {name} {definition}"),
+                [],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Adds the automatic-retry metadata columns to `chat_messages` for databases
+/// created before the retry-exhausted notice became persistent.
+///
+/// A response that ends with no content/thinking/tool calls after the empty
+/// response retry budget was exhausted records how many retries were attempted
+/// and the upstream error of the last one, so the chat UI can still explain the
+/// failure (「重试已耗尽 (N)」+ 错误详情) after a reload. Existing rows keep
+/// `0` / `''` and therefore render exactly as before.
+///
+/// Idempotent: each column is checked independently so partially migrated and
+/// repeatedly migrated databases are both safe (fresh databases get the columns
+/// from the `CREATE TABLE` statement in `create_schema`).
+fn migrate_chat_messages_retry_metadata(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for (name, definition) in [
+        ("retry_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("retry_error", "TEXT NOT NULL DEFAULT ''"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(

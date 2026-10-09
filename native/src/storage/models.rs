@@ -755,6 +755,12 @@ pub struct ChatMessageRecord {
     pub output_tokens: i64,
     pub cache_creation_input_tokens: i64,
     pub cache_read_input_tokens: i64,
+    /// Number of automatic retries attempted for this assistant message's
+    /// request (0 when none). Persisted so the retry-exhausted notice can still
+    /// explain the failure after a reload.
+    pub retry_attempts: i64,
+    /// Upstream error text of the last automatic retry (empty when none).
+    pub retry_error: String,
     pub created_at: String,
 }
 

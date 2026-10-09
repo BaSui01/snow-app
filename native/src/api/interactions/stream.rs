@@ -1,6 +1,7 @@
 //! Google Interactions streaming response collection.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -21,6 +22,7 @@ use crate::api::retry::{
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
+use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
 pub(super) struct InteractionsStreamResult {
@@ -43,6 +45,7 @@ pub(super) struct InteractionsStreamResult {
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn collect_interactions_stream(
     client: &reqwest::Client,
+    database_path: PathBuf,
     endpoint: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
@@ -78,6 +81,22 @@ pub(super) async fn collect_interactions_stream(
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
+
+            // 空响应重试此前完全不落库（该 provider 连传输重试都不写日志），
+            // 事后无法对账「是否重试过、重试了几次」。这里补一条 WARN。
+            {
+                let db_path = database_path.clone();
+                log_api_warning(
+                    &db_path,
+                    "create_interactions_response_stream",
+                    "AI response stream retrying",
+                    &format!(
+                        "provider=interactions, request_method=interactions, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
+                        attempt + 1
+                    ),
+                )
+                .await;
+            }
 
             wait_before_retry(retry_options, cancel_token, attempt).await?;
             attempt += 1;

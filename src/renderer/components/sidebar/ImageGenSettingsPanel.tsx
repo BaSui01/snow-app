@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   Brain,
   CircleCheck,
   Clock,
@@ -14,7 +15,6 @@ import {
   SearchX,
   Save,
   Sparkles,
-  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -62,6 +62,10 @@ import {
   readImageGenSettingsJson,
   toImageGenSettingsJson,
 } from "./imagegenSettings/utils";
+import {
+  isGeminiFamilyModel,
+  resolveModelCapability,
+} from "./imagegenSettings/modelCapabilities";
 import type {
   ImageGenChannelValue,
   ImageGenModelItem,
@@ -117,6 +121,88 @@ const openaiStandardCaps = (modelId: string) => {
     OPENAI_STANDARD_CAPS.find((rule) => rule.match(id)) ??
     OPENAI_STANDARD_CAPS[OPENAI_STANDARD_CAPS.length - 1]
   );
+};
+
+/**
+ * 解析主模型在列表中的索引：按模型 ID（忽略大小写）精确匹配，
+ * 未命中（主模型为空或指向不存在的 ID）时回退首个模型。
+ *
+ * 单一入口保证「默认主模型」标记唯一——即使历史脏数据里存在两个
+ * 同 ID 模型项，也只有第一个会被标记为主模型。
+ */
+const resolvePrimaryIndex = (
+  list: ImageGenModelItem[],
+  primaryModel: string,
+): number => {
+  const primary = primaryModel.trim().toLowerCase();
+  if (primary) {
+    const index = list.findIndex(
+      (item) => item.model.trim().toLowerCase() === primary,
+    );
+    if (index >= 0) {
+      return index;
+    }
+  }
+  return 0;
+};
+
+/**
+ * 属于「模型能力」的字段：用于判定模型项是否仍处于「未定制」状态，
+ * 从而决定改模型 ID 时是否可以用内置能力库覆盖。
+ */
+const CAPABILITY_FIELDS = [
+  "defaultSize",
+  "defaultQuality",
+  "defaultThinking",
+  "supportedRatios",
+  "supportedResolutions",
+  "supportedThinking",
+] as const satisfies readonly (keyof ImageGenModelItem)[];
+
+/** 能力字段名（同时是 ImageGenModelCapability 的键）。 */
+type CapabilityField = (typeof CAPABILITY_FIELDS)[number];
+
+/**
+ * 用内置能力库填充模型项的能力字段（默认尺寸/质量/思考强度/支持范围）。
+ *
+ * 覆盖策略（满足「选择模型 ID 后自动填充，用户手改后不再覆盖」，且必须是
+ * 纯函数——组件运行在 React.StrictMode 下，updater 会被双调用）：
+ * - 新模型 ID 不在能力库中 → 原样返回；
+ * - 任一能力字段既非空、又与「上一个模型的能力值」不同 → 视为用户已定制，
+ *   原样返回（不覆盖手改内容）；
+ * - 其余情况（全空，或仍等于上一个模型的能力快照）→ 按新模型能力覆盖。
+ */
+const applyCapability = (
+  item: ImageGenModelItem,
+  previousModel: string,
+): ImageGenModelItem => {
+  const next = resolveModelCapability(item.model);
+  if (!next) {
+    return item;
+  }
+  const previous = resolveModelCapability(previousModel);
+  const untouched = CAPABILITY_FIELDS.every((field) => {
+    const current = ((item[field] as string | undefined) ?? "").trim();
+    if (current === "") {
+      return true;
+    }
+    const previousValue = (
+      (previous?.[field] as string | undefined) ?? ""
+    ).trim();
+    return previousValue !== "" && current === previousValue;
+  });
+  if (!untouched) {
+    return item;
+  }
+  return {
+    ...item,
+    defaultSize: next.defaultSize,
+    defaultQuality: next.defaultQuality,
+    defaultThinking: next.defaultThinking,
+    supportedRatios: next.supportedRatios,
+    supportedResolutions: next.supportedResolutions,
+    supportedThinking: next.supportedThinking,
+  };
 };
 
 /**
@@ -747,12 +833,9 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     // 主模型一致性校正：channel.model 必须在 modelsList 中命中，否则回退首个
     // 有模型 ID 的项（历史脏数据 / 手工编辑存储导致的不一致），并把该模型的
     // 参数同步回顶层兼容字段，避免「主模型指向不存在的 ID」。
-    const primaryIndex = channel.model
-      ? modelsList.findIndex((m) => m.model === channel.model)
-      : -1;
-    const fallbackIndex = modelsList.findIndex((m) => m.model.trim() !== "");
-    const targetIndex =
-      primaryIndex >= 0 ? primaryIndex : fallbackIndex >= 0 ? fallbackIndex : 0;
+    // 统一走 resolvePrimaryIndex：即使存在多个同 ID 模型项，也只有第一个被
+    // 视为主模型，保证「一个渠道只有一个默认主模型」。
+    const targetIndex = resolvePrimaryIndex(modelsList, channel.model);
     const primaryItem = modelsList[targetIndex];
     const syncedDraft: ImageGenChannelValue = {
       ...channel,
@@ -852,14 +935,17 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       // 必须在覆盖字段之前判定「是否主模型」：若在之后判定，编辑主模型的
       // model 字段时 updatedItem.model（新值）≠ prev.model（旧值），会导致
       // 主模型判定失败、顶层 model 停留在旧 ID（渠道主模型指向不存在的 ID）。
-      const wasPrimary =
-        (current.model.trim() !== "" && current.model === prev.model) ||
-        (!prev.model && idx === 0) ||
-        list.length === 1;
-      const updatedItem: ImageGenModelItem = {
+      // 统一走 resolvePrimaryIndex，保证多 tab 同 ID 时只有唯一主模型。
+      const wasPrimary = idx === resolvePrimaryIndex(list, prev.model);
+      let updatedItem: ImageGenModelItem = {
         ...current,
         [field]: value,
       };
+      // 修改模型 ID 时按内置能力库自动填充能力字段（纯函数，用户手改过的
+      // 值不会被覆盖，见 applyCapability 的「未定制」判定）。
+      if (field === "model") {
+        updatedItem = applyCapability(updatedItem, current.model);
+      }
       list[idx] = updatedItem;
 
       const nextDraft: ImageGenChannelValue = {
@@ -884,7 +970,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     });
   };
 
-  /** 将指定索引的模型设为默认主模型。 */
+  /** 将指定索引的模型设为默认主模型（一个渠道只有一个，切换即替换）。 */
   const setAsPrimaryModel = (index: number) => {
     setDraft((prev) => {
       if (!prev || !prev.models || !prev.models[index]) return prev;
@@ -904,8 +990,56 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     });
   };
 
-  /** 从预设模板添加模型到当前渠道。 */
+  /**
+   * 提交模型 ID：同渠道内模型 ID 必须唯一。
+   * 命中重复时拒绝写入（输入框会回退为原值）并提示，从源头杜绝
+   * 「多个 tab 带同一默认主模型标记」。不切换 tab，避免打断输入。
+   */
+  const commitActiveModelId = (modelId: string) => {
+    const target = modelId.trim();
+    const duplicateIndex = currentModelList.findIndex(
+      (item, idx) =>
+        idx !== safeModelIndex &&
+        target !== "" &&
+        item.model.trim().toLowerCase() === target.toLowerCase(),
+    );
+    if (duplicateIndex >= 0) {
+      setError(
+        t("settings.imagegenModelDuplicateEdit", {
+          defaultValue:
+            "Model {model} already exists in this channel. Each model ID can only be configured once — edit the existing one instead.",
+        }).replace("{model}", target),
+      );
+      return;
+    }
+    updateActiveModelItem("model", modelId);
+  };
+
+  /**
+   * 查找已存在的同 ID 模型项索引（忽略大小写）。
+   * 一个渠道内同一个模型 ID 只能配置一次——否则默认主模型标记无法唯一。
+   */
+  const findDuplicateModelIndex = (modelId: string): number => {
+    const target = modelId.trim().toLowerCase();
+    if (!target) return -1;
+    return currentModelList.findIndex(
+      (item) => item.model.trim().toLowerCase() === target,
+    );
+  };
+
+  /** 从预设模板添加模型到当前渠道（同 ID 已存在时提示并跳到该 tab）。 */
   const addModelFromTemplate = (template: ImageGenTemplate) => {
+    const duplicateIndex = findDuplicateModelIndex(template.model);
+    if (duplicateIndex >= 0) {
+      setActiveModelIndex(duplicateIndex);
+      setError(
+        t("settings.imagegenModelDuplicate", {
+          defaultValue:
+            "Model {model} is already configured in this channel — switched to it instead.",
+        }).replace("{model}", template.model),
+      );
+      return;
+    }
     setDraft((prev) => {
       if (!prev) return prev;
       const list = prev.models ? [...prev.models] : [];
@@ -932,7 +1066,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     setActiveModelIndex(currentModelList.length);
   };
 
-  /** 添加空白自定义模型。 */
+  /** 添加空白自定义模型（能力字段留空，选定模型 ID 后由能力库自动填充）。 */
   const addCustomModel = () => {
     setDraft((prev) => {
       if (!prev) return prev;
@@ -942,7 +1076,8 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         id: newId,
         model: "",
         name: "",
-        defaultSize: prev.provider === "gemini" ? "16:9@2K" : "1024x1024",
+        // 留空而非套用协议默认尺寸：避免「已有值」判定阻断后续能力库自动填充。
+        defaultSize: "",
         defaultQuality: "",
         defaultThinking: "",
         supportedRatios: "",
@@ -972,12 +1107,15 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     setDraft((prev) => {
       if (!prev || !prev.models || prev.models.length <= 1) return prev;
       const list = prev.models.filter((_, i) => i !== index);
-      const isDeletingPrimary = prev.models[index]?.model === prev.model;
+      // 删除的是主模型时，主模型顺延到剩余列表的首个（与 resolvePrimaryIndex
+      // 的回退规则一致）；否则保持原主模型不变。
+      const isDeletingPrimary =
+        index === resolvePrimaryIndex(prev.models, prev.model);
       const nextPrimary = isDeletingPrimary
         ? (list[0]?.model ?? "")
         : prev.model;
       const nextPrimaryItem =
-        list.find((m) => m.model === nextPrimary) ?? list[0];
+        list[resolvePrimaryIndex(list, nextPrimary)] ?? list[0];
       return {
         ...prev,
         model: nextPrimary,
@@ -1132,7 +1270,15 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         customPrompt: (m.customPrompt ?? "").trim(),
         enabled: m.enabled !== false,
       }))
-      .filter((m) => m.model.length > 0);
+      .filter((m) => m.model.length > 0)
+      // 兜底去重：同一个模型 ID 只保留首个，保证默认主模型标记唯一
+      // （面板已在添加/失焦两处拦截，这里防止历史脏数据再次写回存储）。
+      .filter(
+        (m, index, all) =>
+          all.findIndex(
+            (other) => other.model.toLowerCase() === m.model.toLowerCase(),
+          ) === index,
+      );
 
     let primaryModel = draft.model.trim();
     if (!primaryModel && cleanedModels.length > 0) {
@@ -1320,15 +1466,21 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       ? GEMINI_MODEL_EXAMPLES
       : OPENAI_MODEL_EXAMPLES;
     const currentModelId = activeModelItem.model;
-    const isGeminiModel =
-      isGemini ||
-      currentModelId.toLowerCase().includes("gemini") ||
-      currentModelId.toLowerCase().includes("banana");
+    // 尺寸/思考等参数控件沿用原判定：渠道协议为 Gemini，或模型 ID 属于
+    // Gemini 生图家族（兼容「OpenAI 兼容中转跑 Gemini 模型」的场景）。
+    const isGeminiModel = isGemini || isGeminiFamilyModel(currentModelId);
     const activeCaps = getModelCapabilities(currentModelId);
+    const capability = resolveModelCapability(currentModelId);
+    // 联网搜索仅 Gemini **原生协议**（google_search grounding）支持：必须
+    // 渠道协议为 Gemini，且当前模型属于 Gemini 生图家族，且能力库确认支持。
+    const supportsWebSearch =
+      isGemini &&
+      isGeminiFamilyModel(currentModelId) &&
+      capability?.webSearch !== false;
+    // 默认主模型唯一：索引与「主模型解析」结果一致才算主模型，多 tab 同 ID
+    // 时只有唯一一个 tab 会被标记。
     const isPrimaryActive =
-      (activeModelItem.model && activeModelItem.model === draft.model) ||
-      (!draft.model && safeModelIndex === 0) ||
-      currentModelList.length === 1;
+      safeModelIndex === resolvePrimaryIndex(currentModelList, draft.model);
 
     return (
       <div className="imagegen-editor">
@@ -1523,10 +1675,10 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                 <div className="imagegen-models-tabs-list" role="tablist">
                   {currentModelList.map((item, idx) => {
                     const isTabActive = idx === safeModelIndex;
+                    // 默认主模型标记唯一：与 resolvePrimaryIndex 结果一致才标记。
                     const isPrimary =
-                      (item.model && item.model === draft.model) ||
-                      (!draft.model && idx === 0) ||
-                      currentModelList.length === 1;
+                      idx ===
+                      resolvePrimaryIndex(currentModelList, draft.model);
                     const tabLabel =
                       item.name?.trim() ||
                       item.model?.trim() ||
@@ -1551,7 +1703,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                               defaultValue: "Primary default model",
                             })}
                           >
-                            <Star size={11} fill="currentColor" />
+                            <BadgeCheck size={12} strokeWidth={2} />
                           </span>
                         ) : null}
                         <span>{tabLabel}</span>
@@ -1640,7 +1792,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                           "Default model called when AI does not specify a specific model",
                       })}
                     >
-                      <Star size={12} fill="#eab308" />
+                      <BadgeCheck size={13} strokeWidth={2} />
                       {t("settings.imagegenPrimaryBadge", {
                         defaultValue: "Default primary model",
                       })}
@@ -1664,7 +1816,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                           "Set this model as default primary when AI does not specify a model",
                       })}
                     >
-                      <Star size={11} fill="currentColor" />
+                      <BadgeCheck size={12} strokeWidth={2} />
                       {t("settings.imagegenSetAsPrimary", {
                         defaultValue: "Set as default primary model",
                       })}
@@ -1742,9 +1894,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     retryText={t("settings.imagegenModelsRetry", {
                       defaultValue: "Retry",
                     })}
-                    onChange={(modelId) =>
-                      updateActiveModelItem("model", modelId)
-                    }
+                    onChange={(modelId) => commitActiveModelId(modelId)}
                     onRequestModels={() => void requestDraftModels()}
                     onRetry={() => void requestDraftModels()}
                     knownModels={KNOWN_IMAGE_MODELS.filter(
@@ -2225,21 +2375,49 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     <small>
                       {t("settings.imagegenWebSearchHint", {
                         defaultValue:
-                          "Gemini only: let Imagen use real-time web information",
+                          "Gemini native protocol only: let the model use real-time web information via google_search grounding",
                       })}
                     </small>
+                    {!supportsWebSearch ? (
+                      <small className="api-settings-field-hint">
+                        {t("settings.imagegenWebSearchModelUnsupported", {
+                          defaultValue:
+                            "The current model ({model}) is not a Gemini image model — grounding is ignored. Pick a Gemini / Nano Banana model to enable it.",
+                        }).replace("{model}", currentModelId || "—")}
+                      </small>
+                    ) : null}
                   </span>
                   <label className="toggle-switch">
                     <input
                       type="checkbox"
                       checked={draft.webSearch}
                       onChange={updateDraftEvent("webSearch")}
-                      disabled={draftSaving}
+                      disabled={draftSaving || !supportsWebSearch}
                     />
                     <span className="toggle-slider" />
                   </label>
                 </div>
-              ) : null}
+              ) : (
+                <div className="imagegen-toggle-row">
+                  <span className="imagegen-toggle-copy">
+                    <span>
+                      {t("settings.imagegenWebSearch", {
+                        defaultValue: "Google Search grounding",
+                      })}
+                    </span>
+                    <small>
+                      {t("settings.imagegenWebSearchProtocolOnly", {
+                        defaultValue:
+                          "Only available on the Gemini native protocol (google_search grounding). Switch this channel's provider to Google Gemini to enable it — OpenAI-compatible endpoints do not support web search.",
+                      })}
+                    </small>
+                  </span>
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={false} disabled />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+              )}
 
               <div className="imagegen-toggle-row">
                 <span className="imagegen-toggle-copy">
@@ -2590,7 +2768,14 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                                 gap: 4,
                               }}
                             >
-                              <Star size={11} fill="#eab308" color="#eab308" />
+                              <BadgeCheck
+                                size={12}
+                                strokeWidth={2}
+                                style={{ color: "var(--accent, #eab308)" }}
+                                aria-label={t("settings.imagegenPrimaryBadge", {
+                                  defaultValue: "Default primary model",
+                                })}
+                              />
                               <strong>{channel.model || "-"}</strong>
                             </span>
                             {channel.models && channel.models.length > 1 ? (

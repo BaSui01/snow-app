@@ -1966,6 +1966,10 @@ export const en = {
   "settings.imagegenPrimaryBadge": "Default primary model",
   "settings.imagegenPrimaryHint":
     "Default model used when AI does not specify a specific image model",
+  "settings.imagegenModelDuplicate":
+    "Model {model} is already configured in this channel — switched to it instead.",
+  "settings.imagegenModelDuplicateEdit":
+    "Model {model} already exists in this channel. Each model ID can only be configured once — edit the existing one instead.",
   "settings.imagegenModelAlias": "Model display alias",
   "settings.imagegenModelAliasPlaceholder": "e.g. Ultra / Fast (optional)",
   "settings.imagegenModelAliasHint":
@@ -2017,7 +2021,11 @@ export const en = {
   "settings.imagegenFormatDefault": "Default (png)",
   "settings.imagegenWebSearch": "Google Search grounding",
   "settings.imagegenWebSearchHint":
-    "Gemini only: saved per channel; when a generation request does not override it, the backend injects the Google Search tool.",
+    "Gemini native protocol only: saved per channel; when a generation request does not override it, the backend injects the Google Search tool.",
+  "settings.imagegenWebSearchProtocolOnly":
+    "Only available on the Gemini native protocol (google_search grounding). OpenAI-compatible endpoints do not support web search — switch this channel's provider to Google Gemini to enable it.",
+  "settings.imagegenWebSearchModelUnsupported":
+    "The current model ({model}) is not a Gemini image model, so grounding has no effect. Pick a Gemini / Nano Banana model to enable it.",
   "settings.imagegenStreaming": "Streaming preview",
   "settings.imagegenStreamingHint":
     "Streaming: show intermediate preview images while generating; Non-streaming: show images once generation finishes (OpenAI gpt-image / Gemini Imagen)",

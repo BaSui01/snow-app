@@ -1876,6 +1876,10 @@ export const zhCN = {
   "settings.imagegenSetAsPrimary": "设为默认主模型",
   "settings.imagegenPrimaryBadge": "默认主模型",
   "settings.imagegenPrimaryHint": "AI 未指定具体模型出图时，默认优先调用此模型",
+  "settings.imagegenModelDuplicate":
+    "模型 {model} 已在当前渠道配置过，已为你切换到该模型。",
+  "settings.imagegenModelDuplicateEdit":
+    "模型 {model} 已存在于当前渠道。同一模型 ID 只能配置一次，请直接编辑已有模型。",
   "settings.imagegenModelAlias": "模型显示别名",
   "settings.imagegenModelAliasPlaceholder": "如：超清旗舰版 / 快速生图（选填）",
   "settings.imagegenModelAliasHint":
@@ -1925,7 +1929,11 @@ export const zhCN = {
   "settings.imagegenFormatDefault": "默认（png）",
   "settings.imagegenWebSearch": "谷歌搜索联网",
   "settings.imagegenWebSearchHint":
-    "仅 Gemini：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
+    "仅 Gemini 原生协议支持：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
+  "settings.imagegenWebSearchProtocolOnly":
+    "仅 Gemini 原生协议支持（google_search grounding）。OpenAI 兼容端点不支持联网搜索，把渠道服务商切换为 Google Gemini 后即可启用。",
+  "settings.imagegenWebSearchModelUnsupported":
+    "当前模型（{model}）不是 Gemini 生图模型，联网搜索不会生效；请选择 Gemini / Nano Banana 系列模型。",
   "settings.imagegenStreaming": "流式预览",
   "settings.imagegenStreamingHint":
     "流式：生成过程中实时显示中间预览图；非流式：生成完成后一次性出图（OpenAI gpt-image / Gemini Imagen）",

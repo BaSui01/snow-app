@@ -4823,6 +4823,8 @@ export const zhCN = {
   "git.graphTooltipStats": "变更行数",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.tooltipFilesChanged": "已更改 {{count}} 个文件",
+  "git.tooltipFilesChangedOne": "已更改 1 个文件",
   "git.tooltipChangedFiles":
     "已更改 {{count}} 个文件，{{insertions}} 行插入(+)，{{deletions}} 行删除(-)",
   "git.tooltipChangedFilesOne":

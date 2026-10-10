@@ -4776,6 +4776,8 @@ export const zhTW = {
   "git.graphTooltipStats": "變更行數",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.tooltipFilesChanged": "已變更 {{count}} 個檔案",
+  "git.tooltipFilesChangedOne": "已變更 1 個檔案",
   "git.tooltipChangedFiles":
     "已變更 {{count}} 個檔案，{{insertions}} 行插入(+)，{{deletions}} 行刪除(-)",
   "git.tooltipChangedFilesOne":

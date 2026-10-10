@@ -117,10 +117,14 @@ export function CommitTooltip({
     insertions: commit.additions,
     deletions: commit.deletions,
   };
-  const statsLabel =
+  // 完整句子（文件数 + 插入 + 删除）只作悬停标题与读屏文本；卡片正文改用
+  // 「文件数 + 绿色 +N + 红色 -N」的紧凑标记，与工具卡片、文件变更面板一致。
+  const statsSentence =
     commit.filesChanged === 1
       ? t("git.tooltipChangedFilesOne", { values: statsValues })
       : t("git.tooltipChangedFiles", { values: statsValues });
+  const statsTitle =
+    commit.filesChanged > 0 ? statsSentence : t("git.graphTooltipStats");
 
   return createPortal(
     <div
@@ -245,22 +249,28 @@ export function CommitTooltip({
         </div>
       )}
       {hasStats && (
-        <div
-          className="git-graph-tooltip-stats"
-          title={t("git.graphTooltipStats")}
-        >
-          {commit.filesChanged > 0 ? (
-            statsLabel
-          ) : (
-            <span className="git-graph-stats">
-              {commit.additions > 0 && (
-                <span className="git-graph-stats-add">+{commit.additions}</span>
-              )}
-              {commit.deletions > 0 && (
-                <span className="git-graph-stats-del">-{commit.deletions}</span>
-              )}
-            </span>
-          )}
+        <div className="git-graph-tooltip-stats" title={statsTitle}>
+          <span className="git-graph-stats">
+            {commit.filesChanged > 0 && (
+              <span className="git-graph-stats-files">
+                {commit.filesChanged === 1
+                  ? t("git.tooltipFilesChangedOne")
+                  : t("git.tooltipFilesChanged", {
+                      values: { count: commit.filesChanged },
+                    })}
+              </span>
+            )}
+            {commit.additions > 0 && (
+              <span className="git-graph-stats-add">
+                +{commit.additions.toLocaleString(locale)}
+              </span>
+            )}
+            {commit.deletions > 0 && (
+              <span className="git-graph-stats-del">
+                -{commit.deletions.toLocaleString(locale)}
+              </span>
+            )}
+          </span>
         </div>
       )}
       <div className="git-graph-tooltip-footer">

@@ -5133,6 +5133,8 @@ export const en = {
   "git.graphTooltipStats": "Changes",
   "git.graphTooltipRefs": "Refs",
   "git.graphTooltipParents": "Parents",
+  "git.tooltipFilesChanged": "{{count}} files changed",
+  "git.tooltipFilesChangedOne": "1 file changed",
   "git.tooltipChangedFiles":
     "{{count}} files changed, {{insertions}} insertions(+), {{deletions}} deletions(-)",
   "git.tooltipChangedFilesOne":

@@ -1031,7 +1031,11 @@ export const useChatConversation = (
     refreshConversations: conversationManagementApi.refreshConversations,
     updateConversationSummary,
     updateSessionMessages: sessionApi.updateSessionMessages,
-    isStreaming: activeSession?.isStreaming ?? false,
+    isStreaming: Boolean(
+      activeSession?.isStreaming ||
+      (activeKey && streamingConversationIds.has(activeKey)) ||
+      (activeKey && sessionsRefData.current.get(activeKey)?.isSending),
+    ),
     isAborting: activeSession?.isAborting ?? false,
     isPaused: activeSession?.isPaused ?? false,
     handleAbort: conversationManagementApi.handleAbort,

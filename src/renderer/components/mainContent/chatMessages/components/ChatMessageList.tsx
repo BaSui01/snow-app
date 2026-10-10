@@ -11,6 +11,7 @@ type ChatMessageListProps = {
   messages: ChatConversationMessage[];
   isStreaming: boolean;
   isAborting: boolean;
+  isRunActive: boolean;
   canRollback: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 };
@@ -25,6 +26,7 @@ export const ChatMessageList = ({
   messages,
   isStreaming,
   isAborting,
+  isRunActive,
   canRollback,
   scrollContainerRef,
 }: ChatMessageListProps): React.JSX.Element => {
@@ -366,6 +368,7 @@ export const ChatMessageList = ({
           messages={messages}
           isStreaming={isStreaming}
           isAborting={isAborting}
+          isRunActive={isRunActive}
           tokenUsage={conversationTokenUsage}
           durationMs={lastRunDurationMs}
           ttftSumMs={conversationTtftSumMs}
@@ -392,6 +395,7 @@ export const ChatMessageList = ({
         messages={messages}
         isStreaming={isStreaming}
         isAborting={isAborting}
+        isRunActive={isRunActive}
         tokenUsage={conversationTokenUsage}
         durationMs={lastRunDurationMs}
         ttftSumMs={conversationTtftSumMs}

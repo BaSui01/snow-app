@@ -465,13 +465,18 @@ export const useConversationManagement = (
                 if (existing && !isConversationCacheExpired(existing)) {
                   return prev;
                 }
+                const isCurrentlyStreaming = Boolean(
+                  existing?.isStreaming ||
+                  ctx.streamingConversationIds.has(trimmedId) ||
+                  ctx.sessionsRefData.current.get(trimmedId)?.isSending,
+                );
                 return {
                   ...prev,
                   [trimmedId]: {
                     messages: buildConversationMessages(page.items),
                     messageRecords: page.items,
                     summary: nextTitle,
-                    isStreaming: false,
+                    isStreaming: isCurrentlyStreaming,
                     isAborting: false,
                     isPaused: false,
                     isLoadingOlderMessages: false,

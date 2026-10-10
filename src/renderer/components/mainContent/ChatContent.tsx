@@ -270,6 +270,9 @@ const ChatContentBody = ({
     ["completed", "failed"].includes(workflowNodeRunStatus);
   const workflowNodeParentConversationId =
     activeConversationMeta?.parentConversationId ?? "";
+  const isRunActive =
+    (isSubAgentConversation && !isSubAgentFinished) ||
+    (isWorkflowNodeConversation && !isWorkflowNodeFinished);
 
   // 节点状态落盘（updateWorkflowNodeSession）不触发会话 upsert，runner 每次状态
   // 变化都会 bump conversationListVersion：观看中的节点会话据此重查元数据，
@@ -578,6 +581,7 @@ const ChatContentBody = ({
                   messages={messages}
                   isStreaming={isStreaming}
                   isAborting={isAborting}
+                  isRunActive={isRunActive}
                   canRollback={!isSubAgentConversation}
                   scrollContainerRef={scrollRef}
                 />

@@ -22,6 +22,7 @@ type ChatRunSummaryProps = {
   messages: ChatConversationMessage[];
   isStreaming: boolean;
   isAborting: boolean;
+  isRunActive: boolean;
   tokenUsage: TokenUsage | null;
   durationMs: number;
   ttftSumMs: number;
@@ -34,6 +35,7 @@ export const ChatRunSummary = ({
   messages,
   isStreaming,
   isAborting,
+  isRunActive,
   tokenUsage,
   durationMs,
   ttftSumMs,
@@ -51,7 +53,20 @@ export const ChatRunSummary = ({
     return undefined;
   }, [messages]);
 
-  if (isStreaming || isAborting) {
+  if (isStreaming || isAborting || isRunActive) {
+    return null;
+  }
+  const hasActiveGeneration = messages.some(
+    (message) =>
+      message.status === "sending" ||
+      (message.role === "assistant" &&
+        (message.isThinkingActive === true ||
+          message.toolCalls?.some(
+            (toolCall) =>
+              toolCall.status === "pending" || toolCall.status === "running",
+          ))),
+  );
+  if (hasActiveGeneration) {
     return null;
   }
   const hasAssistant = messages.some((m) => m.role === "assistant");

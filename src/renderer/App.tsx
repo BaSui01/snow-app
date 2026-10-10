@@ -355,6 +355,34 @@ export const App = (): React.JSX.Element => {
   const [activeMainView, setActiveMainView] = useState<MainContentView>("chat");
   const [activeDirectory, setActiveDirectory] =
     useState<WorkspaceDirectoryRecord | null>(null);
+
+  // 激活目录上报去重：不同来源（侧边栏、通知桥、远程控制等）会以新对象引用
+  // 上报同一目录；保持引用不变可避免右侧面板（Git 等）因对象变更而无谓刷新，
+  // 也让侧边栏显示形态切换（split/tree）不产生任何数据层副作用。
+  const handleActiveDirectoryChange = useCallback(
+    (directory: WorkspaceDirectoryRecord | null): void => {
+      setActiveDirectory((prev) => {
+        if (prev === directory) {
+          return prev;
+        }
+        if (!prev || !directory) {
+          return directory;
+        }
+        if (
+          prev.directoryId === directory.directoryId &&
+          prev.path === directory.path &&
+          prev.name === directory.name &&
+          prev.kind === directory.kind &&
+          prev.source === directory.source &&
+          prev.isActive === directory.isActive
+        ) {
+          return prev;
+        }
+        return directory;
+      });
+    },
+    [],
+  );
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [isRightPanelFullscreen, setIsRightPanelFullscreen] = useState(false);
@@ -982,12 +1010,12 @@ export const App = (): React.JSX.Element => {
       >
         <NotificationNavigationBridge
           activeDirectory={activeDirectory}
-          onActiveDirectoryChange={setActiveDirectory}
+          onActiveDirectoryChange={handleActiveDirectoryChange}
           onSelectMainView={setActiveMainView}
         />
         <RemoteControlBridge
           activeDirectory={activeDirectory}
-          onActiveDirectoryChange={setActiveDirectory}
+          onActiveDirectoryChange={handleActiveDirectoryChange}
           onSelectMainView={setActiveMainView}
         />
         <ShortcutHandlerBridge />
@@ -1036,7 +1064,7 @@ export const App = (): React.JSX.Element => {
               activeDirectory={activeDirectory}
               activeMainView={activeMainView}
               isCollapsed={isSidebarCollapsed}
-              onActiveDirectoryChange={setActiveDirectory}
+              onActiveDirectoryChange={handleActiveDirectoryChange}
               onSelectMainView={setActiveMainView}
               onOpenSshWizard={handleOpenSshWizard}
               onOpenTerminal={handleOpenTerminal}
@@ -1056,7 +1084,7 @@ export const App = (): React.JSX.Element => {
               activeView={activeMainView}
               isFloating={isChatFloatActive}
               isFullscreenPending={isRightPanelFullscreenPending}
-              onActiveDirectoryChange={setActiveDirectory}
+              onActiveDirectoryChange={handleActiveDirectoryChange}
               onSelectView={setActiveMainView}
             />
             {!isRightPanelCollapsed && (

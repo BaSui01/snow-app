@@ -704,6 +704,12 @@
   padding-bottom: 8px;
 }
 
+:root[data-theme-preset="google"] .chat-item {
+  min-height: 30px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
 :root[data-theme-preset="google"] .nav-item {
   padding-left: 12px;
   padding-right: 12px;

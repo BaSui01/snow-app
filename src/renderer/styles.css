@@ -1325,8 +1325,8 @@ body.is-panel-resizing * {
   flex-wrap: wrap;
   gap: 8px;
   width: 100%;
-  padding: 7px 8px;
-  margin-bottom: 2px;
+  padding: 4px 6px;
+  margin-bottom: 1px;
   border: none;
   border-radius: var(--radius-sm, 6px);
   background: transparent;
@@ -2509,6 +2509,14 @@ body.is-panel-resizing * {
   border-color: color-mix(in srgb, var(--accent, #3b82f6) 32%, transparent);
   background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
   color: var(--accent, #3b82f6);
+}
+
+.chat-item-pin-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
 }
 
 .chat-item-title-row .chat-item-title {
@@ -54246,4 +54254,226 @@ img.plugin-icon {
   line-height: 1.7;
   color: var(--accent-red);
   word-break: break-word;
+}
+
+/* ============================================================
+ * 侧边栏显示方案：Tree 结构（合集 > 项目 > 会话）
+ * ============================================================ */
+
+.sidebar-section.sidebar-tree-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.sidebar-tree-section .section-header {
+  flex-shrink: 0;
+}
+
+.sidebar-tree-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 2px 0 8px;
+}
+
+.tree-collection-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-collection-node.expanded {
+  margin-bottom: 2px;
+}
+
+.section-heading-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-actions .tooltip-wrapper,
+.section-heading-group .tooltip-wrapper,
+.project-collection-actions .tooltip-wrapper {
+  align-items: center;
+}
+
+.tree-chevron--open {
+  transform: rotate(90deg);
+}
+
+.tree-chevron-btn > svg {
+  transition: transform 0.15s ease;
+}
+
+.tree-collection-members {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 8px;
+  padding-left: 4px;
+  padding-top: 1px;
+}
+
+.tree-collection-members::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--border-color) 10px,
+    var(--border-color) calc(100% - 10px),
+    transparent
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.tree-project-node {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tree-project-row-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background 0.12s ease;
+}
+
+.tree-project-row-wrap:hover {
+  background: var(--bg-hover);
+}
+
+.tree-project-row-wrap.active {
+  background: var(--bg-tertiary);
+}
+
+.tree-project-row-wrap.drag-over {
+  background: var(--bg-hover);
+}
+
+.tree-chevron-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-tertiary);
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.tree-chevron-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.tree-project-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 8px 3px 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-project-row-wrap.active .tree-project-row {
+  color: var(--text-primary);
+}
+
+.tree-project-session-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green-text);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-green-text) 16%, transparent);
+  animation: tree-session-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tree-session-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.tree-project-chats {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin-left: 8px;
+  padding-left: 4px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.tree-project-chats::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--border-color) 8px,
+    var(--border-color) calc(100% - 8px),
+    transparent
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.tree-project-row-edit {
+  flex: 1;
+  min-width: 0;
+  min-height: 28px;
+  padding-left: 22px;
+  padding-right: 6px;
+}
+
+.tree-project-chats .chat-item {
+  gap: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.tree-project-chats .sub-agent-list-panel,
+.tree-project-chats .workflow-node-list-panel {
+  margin-left: 8px;
+  padding-left: 4px;
+}
+
+.tree-project-chats .workflow-node-list-panel .sub-agent-list-panel {
+  margin-left: 4px;
+}
+
+.tree-project-chats .sub-agent-list-item,
+.tree-project-chats .workflow-node-list-item {
+  gap: 6px;
+  padding: 4px 6px;
 }

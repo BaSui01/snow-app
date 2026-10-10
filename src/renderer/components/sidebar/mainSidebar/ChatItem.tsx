@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquareMore,
   Pause,
+  Pin,
   Snowflake,
   Workflow,
 } from "lucide-react";
@@ -33,6 +34,7 @@ type ChatItemProps = {
   isCompleted?: boolean;
   /** 运行中（流式/待确认）：多选模式下不参与选择，不渲染复选框 */
   isRunning?: boolean;
+  showPinBadge?: boolean;
   subAgentConversations?: ChatConversationRecord[];
   /** 子代理中待用户确认（提问/工具授权）的会话 id 集合 */
   subAgentAttentionRequiredIds?: Set<string>;
@@ -73,6 +75,7 @@ export function ChatItem({
   isPaused = false,
   isCompleted = false,
   isRunning = false,
+  showPinBadge = false,
   subAgentConversations = [],
   subAgentAttentionRequiredIds = new Set<string>(),
   isSubAgentExpanded = false,
@@ -443,6 +446,16 @@ export function ChatItem({
                   {statusLabel}
                 </span>
               )}
+              {showPinBadge && isPinned ? (
+                <span
+                  className="chat-item-pin-badge"
+                  aria-label={t("sidebar.chatPinnedBadge", {
+                    defaultValue: "Pinned",
+                  })}
+                >
+                  <Pin size={11} />
+                </span>
+              ) : null}
               {hasSubAgents && runningSubAgentCount > 0 && (
                 <span className="chat-item-sub-agent-count">
                   {runningSubAgentCount}

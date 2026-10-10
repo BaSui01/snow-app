@@ -61,7 +61,7 @@ type WorkspaceDirectoryRowProps = {
   onShowRelinkHistory?: (directoryId: string) => void;
 };
 
-const getDirectoryIcon = (
+export const getDirectoryIcon = (
   directory: WorkspaceDirectoryRecord,
 ): React.JSX.Element => {
   // SSH 目录始终用 Server 图标：图标表达类型，激活态由行高亮样式承担

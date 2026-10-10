@@ -46,9 +46,14 @@ export function useWorkspaceDirectories({
     [workspaceDirectories],
   );
 
+  // 目录列表加载完成前不上报：侧边栏切换显示形态（split/tree）会重建本 hook，
+  // 初始空列表若上报会把父级 activeDirectory 置空，触发右侧面板（Git 等）刷新。
   useEffect(() => {
+    if (isLoadingDirectories) {
+      return;
+    }
     onActiveDirectoryChange?.(activeDirectory ?? null);
-  }, [activeDirectory, onActiveDirectoryChange]);
+  }, [activeDirectory, isLoadingDirectories, onActiveDirectoryChange]);
 
   const updateSwitchingDirectory = useCallback(
     (nextIsSwitching: boolean): void => {

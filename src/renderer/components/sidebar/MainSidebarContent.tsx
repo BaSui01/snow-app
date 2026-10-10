@@ -29,6 +29,8 @@ import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
+import { useSidebarDisplayMode } from "./mainSidebar/sidebarDisplayMode";
+import { SidebarProjectTree } from "./mainSidebar/tree/SidebarProjectTree";
 import { TeamEntry } from "./mainSidebar/TeamEntry";
 import {
   TEAM_ENABLED_CHANGED_EVENT,
@@ -68,6 +70,7 @@ export function MainSidebarContent({
   onOpenSshWizard,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
+  const { mode: sidebarDisplayMode } = useSidebarDisplayMode();
   const { handleSelectConversation, handleNewChat, activeConversationId } =
     useChatConversationContext();
   const shortcutLabel = useShortcutLabel("newChat");
@@ -459,24 +462,38 @@ export function MainSidebarContent({
           data-snow-slot="sidebar.nav.actions"
         />
       </div>
-      <ProjectsSection
-        activeDirectory={activeDirectory}
-        activeConversationId={activeConversationId}
-        activeSessionDirectoryIds={activeSessionDirectoryIds}
-        notificationGroups={crossProjectNotifications}
-        onActiveDirectoryChange={onActiveDirectoryChange}
-        onSwitchingDirectoryChange={setIsSwitchingDirectory}
-        onSwitchContent={onSwitchContent}
-        onSwitchToExplorer={onSwitchToExplorer}
-        onOpenSshWizard={onOpenSshWizard}
-        isChatsCollapsed={isChatsCollapsed}
-      />
-      <ChatsSection
-        activeDirectory={activeDirectory}
-        crossProjectNotifications={crossProjectNotifications}
-        isSwitchingDirectory={isSwitchingDirectory}
-        onCollapsedChange={setIsChatsCollapsed}
-      />
+      {sidebarDisplayMode === "tree" ? (
+        <SidebarProjectTree
+          activeDirectory={activeDirectory}
+          activeSessionDirectoryIds={activeSessionDirectoryIds}
+          notificationGroups={crossProjectNotifications}
+          onActiveDirectoryChange={onActiveDirectoryChange}
+          onOpenSshWizard={onOpenSshWizard}
+          onSwitchToExplorer={onSwitchToExplorer}
+          onSwitchingDirectoryChange={setIsSwitchingDirectory}
+        />
+      ) : (
+        <>
+          <ProjectsSection
+            activeDirectory={activeDirectory}
+            activeConversationId={activeConversationId}
+            activeSessionDirectoryIds={activeSessionDirectoryIds}
+            notificationGroups={crossProjectNotifications}
+            onActiveDirectoryChange={onActiveDirectoryChange}
+            onSwitchingDirectoryChange={setIsSwitchingDirectory}
+            onSwitchContent={onSwitchContent}
+            onSwitchToExplorer={onSwitchToExplorer}
+            onOpenSshWizard={onOpenSshWizard}
+            isChatsCollapsed={isChatsCollapsed}
+          />
+          <ChatsSection
+            activeDirectory={activeDirectory}
+            crossProjectNotifications={crossProjectNotifications}
+            isSwitchingDirectory={isSwitchingDirectory}
+            onCollapsedChange={setIsChatsCollapsed}
+          />
+        </>
+      )}
 
       <div className="sidebar-footer" data-snow-anchor="sidebar.footer">
         <div
@@ -491,7 +508,6 @@ export function MainSidebarContent({
           >
             <Settings size={18} strokeWidth={1.8} />
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
-            <ShortcutHint action="openSettings" />
           </button>
 
           {/* 自动检测到新版本时显示更新入口，点击打开更新弹窗 */}

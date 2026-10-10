@@ -27,13 +27,14 @@ type ChatConversationRowProps = {
   isSelected: boolean;
   isArchiving: boolean;
   isDeleting: boolean;
+  showPinBadge?: boolean;
   onSelectConversation: (conversation: ChatConversationRecord) => void;
   onSelectChildConversation: (
     conversationId: string,
     directoryId: string,
   ) => void;
   onToggleSelect: () => void;
-  onEnterMultiSelect: () => void;
+  onEnterMultiSelect?: () => void;
   onToggleSubAgentPanel: () => void;
   onToggleWorkflowPanel: () => void;
   onToggleWorkflowNode: (conversationId: string) => void;
@@ -65,6 +66,7 @@ export function ChatConversationRow({
   isSelected,
   isArchiving,
   isDeleting,
+  showPinBadge = false,
   onSelectConversation,
   onSelectChildConversation,
   onToggleSelect,
@@ -99,6 +101,7 @@ export function ChatConversationRow({
           runningConversationIds.has(conversationId) ||
           surfacedConversationIds.has(conversationId)
         }
+        showPinBadge={showPinBadge}
         subAgentConversations={subAgentConversations}
         subAgentAttentionRequiredIds={attentionRequiredConversationIds}
         isSubAgentExpanded={isSubAgentExpanded}

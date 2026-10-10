@@ -1,31 +1,23 @@
-import { ChevronRight, LayoutGrid, Loader2, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronRight,
+  LayoutGrid,
+  ListTree,
+  Loader2,
+  Plus,
+} from "lucide-react";
+import { useMemo } from "react";
 
 import { useI18n } from "../../../i18n";
-import type {
-  ProjectCollectionRecord,
-  WorkspaceDirectoryRecord,
-} from "../../../../preload";
-import { ConfirmDialog } from "../../common/ConfirmDialog";
+import type { WorkspaceDirectoryRecord } from "../../../../preload";
+import { Tooltip } from "../../common/Tooltip";
 import { CloneTaskList } from "./projects/CloneTaskList";
-import { RelinkDirectoryDialog } from "./RelinkDirectoryDialog";
-import { RelinkHistoryDialog } from "./RelinkHistoryDialog";
+import { ProjectsDialogs } from "./projects/ProjectsDialogs";
 import { SidebarCollapse } from "./SidebarCollapse";
 import { WorkspaceDirectoryList } from "./WorkspaceDirectoryList";
-import { AddDirectoryMenuDialog } from "./projects/dialogs/AddDirectoryMenuDialog";
-import { AddLocalDirectoryDialog } from "./projects/dialogs/AddLocalDirectoryDialog";
-import { CloneRepositoryDialog } from "./projects/dialogs/CloneRepositoryDialog";
-import { CreateCollectionDialog } from "./projects/dialogs/CreateCollectionDialog";
-import { CreateProjectDialog } from "./projects/dialogs/CreateProjectDialog";
-import { LinkProjectsDialog } from "./projects/dialogs/LinkProjectsDialog";
-import { ProjectGridDialog } from "./projects/dialogs/ProjectGridDialog";
-import { RenameCollectionDialog } from "./projects/dialogs/RenameCollectionDialog";
-import { useDirectoryDragDrop } from "./projects/useDirectoryDragDrop";
 import { useDirectoryPagination } from "./projects/useDirectoryPagination";
-import { useProjectAddFlow } from "./projects/useProjectAddFlow";
-import { useProjectCollections } from "./projects/useProjectCollections";
 import { useProjectsSectionLayout } from "./projects/useProjectsSectionLayout";
-import { useWorkspaceDirectories } from "./projects/useWorkspaceDirectories";
+import { useProjectsWorkspace } from "./projects/useProjectsWorkspace";
+import { useSidebarDisplayMode } from "./sidebarDisplayMode";
 import type { CrossProjectNotificationGroup } from "./useCrossProjectNotifications";
 
 type ProjectsSectionProps = {
@@ -48,7 +40,6 @@ type ProjectsSectionProps = {
 
 export function ProjectsSection({
   activeDirectory: externalActiveDirectory,
-  activeConversationId,
   activeSessionDirectoryIds,
   notificationGroups,
   onActiveDirectoryChange,
@@ -58,90 +49,43 @@ export function ProjectsSection({
   isChatsCollapsed,
 }: ProjectsSectionProps): React.JSX.Element {
   const { t } = useI18n();
-  const [isProjectGridOpen, setIsProjectGridOpen] = useState(false);
+  const { toggleMode } = useSidebarDisplayMode();
 
-  const directories = useWorkspaceDirectories({
+  const workspace = useProjectsWorkspace({
     externalActiveDirectory,
     onActiveDirectoryChange,
     onSwitchingDirectoryChange,
+    onOpenSshWizard,
   });
   const {
     workspaceDirectories,
-    setWorkspaceDirectories,
     activeDirectory,
     isLoadingDirectories,
     isSavingDirectory,
-    setIsSavingDirectory,
-    isReorderingDirectories,
-    isSwitchingDirectory,
+    isActionLocked,
+    isAddDialogsOpen,
     directoryError,
-    setDirectoryError,
-    relinkTarget,
-    setRelinkTarget,
-    historyTarget,
-    setHistoryTarget,
-    loadWorkspaceDirectories,
-    persistWorkspaceDirectory,
-    persistWorkspaceDirectoryOrder,
-    handleUnavailableDirectory,
+    collections,
+    expandedCollectionIds,
+    addFlow,
+    dragAndDrop,
+    topLevelDirectories,
     handleActivateDirectory,
     handleDeleteDirectory,
     handleRenameDirectory,
     handleShowRelinkHistory,
-  } = directories;
-
-  const collectionsApi = useProjectCollections({
-    activeConversationId,
-    activeDirectoryId: activeDirectory?.directoryId,
-    setDirectoryError,
-    setIsSavingDirectory,
-  });
-  const {
-    collections,
-    setCollections,
-    collectionMemberIds,
-    expandedCollectionIds,
     handleToggleCollectionExpanded,
-    deleteCollectionTarget,
     setDeleteCollectionTarget,
-    loadProjectCollections,
-    createCollection,
-    updateCollectionColor,
-    addProjectToCollection,
     setMemberLinked,
-    renameCollection,
-    confirmDeleteCollection,
     removeProjectFromCollection,
-  } = collectionsApi;
-
-  const addFlow = useProjectAddFlow({
-    workspaceDirectories,
-    setWorkspaceDirectories,
-    persistWorkspaceDirectory,
-    createCollection,
-    updateCollectionColor,
-    renameCollection,
-    addProjectToCollection,
-    setIsSavingDirectory,
-    setDirectoryError,
-    onOpenSshWizard,
-  });
-
-  // 顶层（合集外）可见项目 = 全部项目 - 已入合集项目
-  const topLevelDirectories = useMemo(
-    () =>
-      workspaceDirectories.filter(
-        (directory) => !collectionMemberIds.has(directory.directoryId),
-      ),
-    [collectionMemberIds, workspaceDirectories],
-  );
+    openLinkProjects,
+  } = workspace;
 
   const layout = useProjectsSectionLayout({
     isChatsCollapsed,
     workspaceDirectories,
     activeDirectory,
-    isActionLocked:
-      isSavingDirectory || isReorderingDirectories || isSwitchingDirectory,
+    isActionLocked,
     onActivateDirectory: (directoryId) => {
       void handleActivateDirectory(directoryId);
     },
@@ -161,17 +105,6 @@ export function ProjectsSection({
     hasMoreDirectories,
   } = pagination;
 
-  const dragAndDrop = useDirectoryDragDrop({
-    workspaceDirectories,
-    setWorkspaceDirectories,
-    collections,
-    setCollections,
-    collectionMemberIds,
-    setIsSavingDirectory,
-    setDirectoryError,
-    persistWorkspaceDirectoryOrder,
-  });
-
   // 各项目通知计数：directoryId → 通知会话数（需关注/运行中/已完成）。
   // 当前项目的动态由对话列表展示，不参与徽标（hook 已排除）。
   const notificationCountByDirectory = useMemo(() => {
@@ -181,41 +114,6 @@ export function ProjectsSection({
     }
     return counts;
   }, [notificationGroups]);
-
-  // 「关联项目」弹窗候选：除锚点目录本身外的全部项目。
-  const linkProjectsCandidates = useMemo(
-    () =>
-      workspaceDirectories.filter(
-        (directory) =>
-          directory.directoryId !== addFlow.linkProjectsSource?.directoryId,
-      ),
-    [addFlow.linkProjectsSource?.directoryId, workspaceDirectories],
-  );
-
-  const handleRelinked = (): void => {
-    setRelinkTarget(null);
-    setDirectoryError(null);
-    void loadWorkspaceDirectories();
-    void loadProjectCollections();
-  };
-
-  const handleRelinkUndone = (): void => {
-    void loadWorkspaceDirectories();
-    void loadProjectCollections();
-  };
-
-  /** 打开「关联项目…」弹窗：把该项目与其它目录关联成一个统一项目。 */
-  const handleLinkProjectsOpen = (directoryId: string): void => {
-    const directory = workspaceDirectories.find(
-      (d) => d.directoryId === directoryId,
-    );
-
-    if (!directory) {
-      return;
-    }
-
-    addFlow.handleLinkProjectsOpen(directory);
-  };
 
   const handleShowDetails = (directoryId: string): void => {
     const directory = workspaceDirectories.find(
@@ -229,14 +127,6 @@ export function ProjectsSection({
     onSwitchToExplorer?.(directory.directoryId);
   };
 
-  const isDialogOpen =
-    addFlow.isCreateProjectOpen ||
-    addFlow.isAddLocalDialogOpen ||
-    addFlow.isCloneRepoOpen ||
-    addFlow.isCreateCollectionOpen ||
-    addFlow.isRenameCollectionOpen ||
-    addFlow.isLinkProjectsOpen;
-
   return (
     <div
       className={`sidebar-section projects-section${
@@ -245,193 +135,88 @@ export function ProjectsSection({
       ref={sectionRef}
     >
       <div className="section-header">
-        <button
-          aria-expanded={!isProjectsCollapsed}
-          className="section-toggle-btn"
-          onClick={toggleProjectsCollapsed}
-          type="button"
-        >
-          <ChevronRight
-            className={
-              isProjectsCollapsed ? "" : "section-toggle-chevron--open"
-            }
-            size={12}
-          />
-          <span className="section-title">
-            {t("sidebar.projects", { defaultValue: "Projects" })}
-          </span>
-        </button>
+        <div className="section-heading-group">
+          <button
+            aria-expanded={!isProjectsCollapsed}
+            className="section-toggle-btn"
+            onClick={toggleProjectsCollapsed}
+            type="button"
+          >
+            <ChevronRight
+              className={
+                isProjectsCollapsed ? "" : "section-toggle-chevron--open"
+              }
+              size={12}
+            />
+            <span className="section-title">
+              {t("sidebar.projects", { defaultValue: "Projects" })}
+            </span>
+          </button>
+          <Tooltip
+            content={t("sidebar.switchToTreeView", {
+              defaultValue: "Tree view",
+            })}
+            placement="top"
+          >
+            <button
+              aria-label={t("sidebar.switchToTreeView", {
+                defaultValue: "Tree view",
+              })}
+              className="icon-btn ghost"
+              onClick={toggleMode}
+              type="button"
+            >
+              <ListTree size={14} />
+            </button>
+          </Tooltip>
+        </div>
         <div className="section-actions">
           {isLoadingDirectories || isSavingDirectory ? (
             <Loader2 className="spin" size={14} />
           ) : (
             <>
-              <button
-                aria-label={t("sidebar.openProjectGrid", {
+              <Tooltip
+                content={t("sidebar.openProjectGrid", {
                   defaultValue: "Project grid",
                 })}
-                className="icon-btn ghost"
-                onClick={() => setIsProjectGridOpen(true)}
-                title={t("sidebar.openProjectGrid", {
-                  defaultValue: "Project grid",
-                })}
-                type="button"
+                placement="top"
               >
-                <LayoutGrid size={14} />
-              </button>
-              <button
-                aria-expanded={addFlow.isAddMenuOpen}
-                aria-haspopup="dialog"
-                aria-label={t("sidebar.addDirectoryScheme", {
+                <button
+                  aria-label={t("sidebar.openProjectGrid", {
+                    defaultValue: "Project grid",
+                  })}
+                  className="icon-btn ghost"
+                  onClick={() => workspace.setIsProjectGridOpen(true)}
+                  type="button"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+              </Tooltip>
+              <Tooltip
+                content={t("sidebar.addDirectoryScheme", {
                   defaultValue: "Add directory",
                 })}
-                className="icon-btn ghost"
-                onClick={addFlow.openAddMenu}
-                type="button"
+                placement="top"
               >
-                <Plus size={14} />
-              </button>
+                <button
+                  aria-expanded={addFlow.isAddMenuOpen}
+                  aria-haspopup="dialog"
+                  aria-label={t("sidebar.addDirectoryScheme", {
+                    defaultValue: "Add directory",
+                  })}
+                  className="icon-btn ghost"
+                  onClick={addFlow.openAddMenu}
+                  type="button"
+                >
+                  <Plus size={14} />
+                </button>
+              </Tooltip>
             </>
           )}
         </div>
       </div>
 
-      <AddDirectoryMenuDialog
-        onAddLocalDirectory={() =>
-          addFlow.handleAddDirectoryModeSelect("local")
-        }
-        onAddSshDirectory={() => addFlow.handleAddDirectoryModeSelect("ssh")}
-        onCloneRepository={addFlow.handleCloneRepoModeOpen}
-        onClose={addFlow.closeAddMenu}
-        onCreateCollection={addFlow.handleCreateCollectionModeOpen}
-        onCreateProject={addFlow.handleCreateProjectModeOpen}
-        open={addFlow.isAddMenuOpen}
-        showCreateCollection={addFlow.collectionAddTargetId === null}
-      />
-
-      <CreateProjectDialog
-        error={directoryError}
-        isSubmitting={isSavingDirectory}
-        name={addFlow.projectNameInput}
-        onCancel={addFlow.handleCreateProjectCancel}
-        onConfirm={() => void addFlow.handleCreateProjectConfirm()}
-        onNameChange={addFlow.setProjectNameInput}
-        open={addFlow.isCreateProjectOpen}
-      />
-
-      <CreateCollectionDialog
-        error={directoryError}
-        isSubmitting={isSavingDirectory}
-        name={addFlow.createCollectionName}
-        onCancel={addFlow.handleCreateCollectionCancel}
-        onConfirm={() => void addFlow.handleCreateCollectionConfirm()}
-        onNameChange={addFlow.setCreateCollectionName}
-        open={addFlow.isCreateCollectionOpen}
-      />
-
-      <RenameCollectionDialog
-        color={addFlow.renameCollectionColor}
-        error={directoryError}
-        isSubmitting={isSavingDirectory}
-        name={addFlow.renameCollectionName}
-        onCancel={addFlow.handleRenameCollectionCancel}
-        onColorChange={addFlow.setRenameCollectionColor}
-        onConfirm={() => void addFlow.handleRenameCollectionConfirm()}
-        onNameChange={addFlow.setRenameCollectionName}
-        open={addFlow.isRenameCollectionOpen}
-      />
-
-      <LinkProjectsDialog
-        directories={linkProjectsCandidates}
-        error={directoryError}
-        isSubmitting={isSavingDirectory}
-        name={addFlow.linkProjectsName}
-        onCancel={addFlow.handleLinkProjectsCancel}
-        onConfirm={() => void addFlow.handleLinkProjectsConfirm()}
-        onNameChange={addFlow.setLinkProjectsName}
-        onToggleDirectory={addFlow.handleLinkProjectsToggle}
-        open={addFlow.isLinkProjectsOpen}
-        selectedDirectoryIds={addFlow.linkProjectsSelection}
-        sourceDirectory={addFlow.linkProjectsSource}
-      />
-
-      <ConfirmDialog
-        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
-        confirmLabel={t("sidebar.deleteCollection", {
-          defaultValue: "Delete",
-        })}
-        isConfirming={isSavingDirectory}
-        message={t("sidebar.deleteCollectionConfirm", {
-          defaultValue:
-            "Are you sure you want to delete this collection? Projects inside it are not affected.",
-        })}
-        onCancel={() => setDeleteCollectionTarget(null)}
-        onConfirm={() => void confirmDeleteCollection()}
-        open={deleteCollectionTarget !== null}
-        title={t("sidebar.deleteCollectionTitle", {
-          defaultValue: "Delete collection",
-        })}
-        variant="danger"
-      />
-
-      <AddLocalDirectoryDialog
-        error={directoryError}
-        isDragging={addFlow.isDraggingLocalDirectory}
-        isSubmitting={isSavingDirectory}
-        onCancel={addFlow.handleAddLocalDirectoryCancel}
-        onConfirm={() => void addFlow.handleAddLocalDirectoryConfirm()}
-        onDragStateChange={addFlow.setIsDraggingLocalDirectory}
-        onDropFiles={(files) => void addFlow.handleLocalDirectoryDrop(files)}
-        onSelectFolder={() => void addFlow.handleSelectLocalDirectory()}
-        open={addFlow.isAddLocalDialogOpen}
-        path={addFlow.selectedLocalPath}
-      />
-
-      <CloneRepositoryDialog
-        error={addFlow.cloneError}
-        isAborting={addFlow.isCloneAborting}
-        isSubmitting={addFlow.isCloneSubmitting}
-        onAbort={addFlow.handleAbortActiveClone}
-        onCancel={addFlow.handleCloneRepoCancel}
-        onConfirm={() => void addFlow.handleCloneRepoConfirm()}
-        onRepoUrlChange={addFlow.setCloneRepoUrl}
-        onSelectFolder={() => void addFlow.handleSelectCloneDirectory()}
-        open={addFlow.isCloneRepoOpen}
-        parentPath={addFlow.cloneParentPath}
-        progress={addFlow.cloneProgress}
-        repoUrl={addFlow.cloneRepoUrl}
-        targetPreview={addFlow.cloneTargetPreview}
-      />
-
-      <RelinkDirectoryDialog
-        directory={relinkTarget}
-        onCancel={() => setRelinkTarget(null)}
-        onRelinked={handleRelinked}
-      />
-
-      <RelinkHistoryDialog
-        directory={historyTarget}
-        onCancel={() => setHistoryTarget(null)}
-        onUndone={handleRelinkUndone}
-      />
-
-      <ProjectGridDialog
-        activeDirectoryId={activeDirectory?.directoryId}
-        collections={collections}
-        dragAndDrop={dragAndDrop}
-        isActionLocked={
-          isSavingDirectory || isReorderingDirectories || isSwitchingDirectory
-        }
-        onActivate={(directoryId) => {
-          void handleActivateDirectory(directoryId);
-          if (directoryId !== activeDirectory?.directoryId) {
-            setIsProjectGridOpen(false);
-          }
-        }}
-        onClose={() => setIsProjectGridOpen(false)}
-        open={isProjectGridOpen}
-        workspaceDirectories={workspaceDirectories}
-      />
+      <ProjectsDialogs workspace={workspace} />
 
       <SidebarCollapse open={!isProjectsCollapsed}>
         <div className="workspace-directory-card">
@@ -450,11 +235,7 @@ export function ProjectsSection({
             dragOverDirectoryId={dragAndDrop.dragOverDirectoryId}
             expandedCollectionIds={expandedCollectionIds}
             hasMoreDirectories={hasMoreDirectories}
-            isActionLocked={
-              isSavingDirectory ||
-              isReorderingDirectories ||
-              isSwitchingDirectory
-            }
+            isActionLocked={isActionLocked}
             isLoadingDirectories={isLoadingDirectories}
             loadMoreRef={directoryLoadMoreRef}
             notificationCountByDirectory={notificationCountByDirectory}
@@ -466,15 +247,13 @@ export function ProjectsSection({
             onCollectionDrop={dragAndDrop.handleCollectionDrop}
             onCollectionMemberDrop={dragAndDrop.handleCollectionMemberDrop}
             onDelete={(directoryId) => void handleDeleteDirectory(directoryId)}
-            onDeleteCollection={(collection: ProjectCollectionRecord) =>
-              setDeleteCollectionTarget(collection)
-            }
+            onDeleteCollection={setDeleteCollectionTarget}
             onDragEnd={dragAndDrop.handleDirectoryDragEnd}
             onDragOver={dragAndDrop.handleDirectoryDragOver}
             onDragStart={dragAndDrop.handleDirectoryDragStart}
             onDrop={dragAndDrop.handleDirectoryDrop}
             onDropOutside={dragAndDrop.handleDropOutside}
-            onLinkProjects={handleLinkProjectsOpen}
+            onLinkProjects={openLinkProjects}
             onToggleMemberLinked={(collectionId, directoryId, linked) =>
               void setMemberLinked(collectionId, directoryId, linked)
             }
@@ -495,7 +274,7 @@ export function ProjectsSection({
             onRemove={addFlow.handleRemoveCloneTask}
             tasks={addFlow.cloneTasks}
           />
-          {directoryError && !isDialogOpen ? (
+          {directoryError && !isAddDialogsOpen ? (
             <span className="workspace-directory-error">{directoryError}</span>
           ) : null}
         </div>

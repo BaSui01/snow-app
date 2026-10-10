@@ -378,10 +378,6 @@
   filter: none;
 }
 
-:root[data-theme-preset="cream"] .app-shell::after {
-  z-index: 0;
-}
-
 :root[data-theme-preset="cream"] .app-shell > .top-bar,
 :root[data-theme-preset="cream"] .app-shell > .app-layout {
   position: relative;

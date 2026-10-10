@@ -1691,6 +1691,9 @@ body.is-panel-resizing * {
 }
 
 .chat-item-title {
+  --chat-title-marquee-gap: 32px;
+  display: flex;
+  align-items: center;
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -1723,6 +1726,38 @@ body.is-panel-resizing * {
 }
 
 .chat-item-actions:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.chat-item-menu-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-item-quick-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.chat-item:hover .chat-item-quick-action,
+.chat-item.menu-open .chat-item-quick-action {
+  display: flex;
+}
+
+.chat-item-quick-action:hover {
   background: var(--bg-active);
   color: var(--text-primary);
 }
@@ -2519,6 +2554,40 @@ body.is-panel-resizing * {
 .chat-item-title-row .chat-item-title {
   flex: 1;
   min-width: 0;
+}
+
+.chat-item.has-quick-actions:hover .chat-item-time,
+.chat-item.has-quick-actions.menu-open .chat-item-time {
+  display: none;
+}
+
+.chat-item-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-item-title-text + .chat-item-title-text {
+  margin-left: var(--chat-title-marquee-gap);
+}
+
+.chat-item:hover .chat-item-title[data-overflow="true"] .chat-item-title-text {
+  flex: none;
+  width: max-content;
+  animation: chat-item-title-marquee var(--chat-title-marquee-duration, 10s)
+    linear infinite;
+  animation-delay: 0.8s;
+}
+
+@keyframes chat-item-title-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--chat-title-marquee-gap, 32px)));
+  }
 }
 
 .chat-load-more {
@@ -23149,10 +23218,10 @@ body.is-panel-resizing * {
   max-width: min(280px, 70vw);
   width: max-content;
   padding: 6px 10px;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--tooltip-border);
   border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
+  background: var(--tooltip-bg);
+  box-shadow: var(--tooltip-shadow);
   z-index: 10000;
   font-size: 11px;
   line-height: 1.5;
@@ -23180,27 +23249,27 @@ body.is-panel-resizing * {
 .tooltip::before {
   top: 100%;
   border-width: 6px;
-  border-top-color: var(--border-light);
+  border-top-color: var(--tooltip-border);
 }
 
 .tooltip::after {
   top: 100%;
   border-width: 5px;
-  border-top-color: var(--bg-secondary);
+  border-top-color: var(--tooltip-bg);
 }
 
 .tooltip-bottom::before {
   top: auto;
   bottom: 100%;
   border-top-color: transparent;
-  border-bottom-color: var(--border-light);
+  border-bottom-color: var(--tooltip-border);
 }
 
 .tooltip-bottom::after {
   top: auto;
   bottom: 100%;
   border-top-color: transparent;
-  border-bottom-color: var(--bg-secondary);
+  border-bottom-color: var(--tooltip-bg);
 }
 
 @keyframes tooltip-in {
@@ -23486,7 +23555,8 @@ body.is-panel-resizing * {
    分隔线跟随其后的指标一起隐藏，防止孤立竖线。
    Electron 37 (Chromium 130+) 支持 @container。 */
 @container (max-width: 390px) {
-  .stream-metrics-sep:has(+ .stream-metrics-tps) {
+  .stream-metrics-sep:has(+ .tooltip-wrapper .stream-metrics-tps),
+  .stream-metrics > .tooltip-wrapper:has(.stream-metrics-tps) {
     display: none;
   }
   .stream-metrics-tps {
@@ -23495,7 +23565,8 @@ body.is-panel-resizing * {
 }
 
 @container (max-width: 300px) {
-  .stream-metrics-sep:has(+ .stream-metrics-ttft) {
+  .stream-metrics-sep:has(+ .tooltip-wrapper .stream-metrics-ttft),
+  .stream-metrics > .tooltip-wrapper:has(.stream-metrics-ttft) {
     display: none;
   }
   .stream-metrics-ttft {
@@ -23504,7 +23575,8 @@ body.is-panel-resizing * {
 }
 
 @container (max-width: 240px) {
-  .stream-metrics-sep:has(+ .stream-metrics-elapsed) {
+  .stream-metrics-sep:has(+ .tooltip-wrapper .stream-metrics-elapsed),
+  .stream-metrics > .tooltip-wrapper:has(.stream-metrics-elapsed) {
     display: none;
   }
   .stream-metrics-elapsed {

@@ -425,10 +425,6 @@
   filter: drop-shadow(0 0 6px rgba(255, 0, 170, 0.4));
 }
 
-:root[data-theme-preset="cyberpunk"] .app-shell::after {
-  z-index: 0;
-}
-
 :root[data-theme-preset="cyberpunk"] .app-shell > .top-bar,
 :root[data-theme-preset="cyberpunk"] .app-shell > .app-layout {
   position: relative;

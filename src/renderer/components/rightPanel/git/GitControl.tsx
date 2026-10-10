@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
+import { Tooltip } from "../../common/Tooltip";
 import type {
   GitFileStatus,
   GitRemoteInfo,
@@ -1171,6 +1172,17 @@ export const GitControl = ({
       (f.workdirStatus !== " " && f.workdirStatus !== ""),
   );
 
+  const refreshLabel = t("git.refresh");
+  const pullLabel =
+    status.behind > 0
+      ? t("git.pullBehind", { values: { count: status.behind } })
+      : t("git.pull");
+  const pushLabel = t("git.push");
+  const fileViewModeLabel =
+    fileViewMode === "tree"
+      ? t("git.showAsList", { defaultValue: "Show as List" })
+      : t("git.showAsTree", { defaultValue: "Show as Tree" });
+
   return (
     <div className="git-control">
       <div className="git-control-top">
@@ -1262,84 +1274,84 @@ export const GitControl = ({
               setActionsContextMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            <button
-              type="button"
-              className="icon-btn git-action-btn"
-              onClick={handleRefresh}
-              disabled={actionInProgress !== null || isRefreshing}
-              title={t("git.refresh")}
-            >
-              {isRefreshing ? (
-                <Loader2 size={14} strokeWidth={1.8} className="spin" />
-              ) : (
-                <RefreshCw size={14} strokeWidth={1.8} />
-              )}
-            </button>
-            <button
-              type="button"
-              className="icon-btn git-action-btn"
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                requestGitAction("pull", {
-                  left: rect.left,
-                  right: rect.right,
-                  bottom: rect.bottom,
-                });
-              }}
-              disabled={actionInProgress !== null}
-              title={
-                status.behind > 0
-                  ? t("git.pullBehind", { values: { count: status.behind } })
-                  : t("git.pull")
-              }
-            >
-              {actionInProgress === "pull" ? (
-                <Loader2 size={14} strokeWidth={1.8} className="spin" />
-              ) : (
-                <ArrowDownToLine size={14} strokeWidth={1.8} />
-              )}
-              {status.behind > 0 && (
-                <span className="git-pull-badge" aria-hidden="true" />
-              )}
-            </button>
-            <button
-              type="button"
-              className="icon-btn git-action-btn"
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                requestGitAction("push", {
-                  left: rect.left,
-                  right: rect.right,
-                  bottom: rect.bottom,
-                });
-              }}
-              disabled={actionInProgress !== null}
-              title={t("git.push")}
-            >
-              {actionInProgress === "push" ? (
-                <Loader2 size={14} strokeWidth={1.8} className="spin" />
-              ) : (
-                <ArrowUpFromLine size={14} strokeWidth={1.8} />
-              )}
-            </button>
-            <button
-              type="button"
-              className={`icon-btn git-action-btn${
-                fileViewMode === "tree" ? " active" : ""
-              }`}
-              onClick={handleToggleFileViewMode}
-              title={
-                fileViewMode === "tree"
-                  ? t("git.showAsList", { defaultValue: "Show as List" })
-                  : t("git.showAsTree", { defaultValue: "Show as Tree" })
-              }
-            >
-              {fileViewMode === "tree" ? (
-                <List size={14} strokeWidth={1.8} />
-              ) : (
-                <FolderTree size={14} strokeWidth={1.8} />
-              )}
-            </button>
+            <Tooltip content={refreshLabel}>
+              <button
+                type="button"
+                className="icon-btn git-action-btn"
+                onClick={handleRefresh}
+                disabled={actionInProgress !== null || isRefreshing}
+                aria-label={refreshLabel}
+              >
+                {isRefreshing ? (
+                  <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                ) : (
+                  <RefreshCw size={14} strokeWidth={1.8} />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip content={pullLabel}>
+              <button
+                type="button"
+                className="icon-btn git-action-btn"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  requestGitAction("pull", {
+                    left: rect.left,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                  });
+                }}
+                disabled={actionInProgress !== null}
+                aria-label={pullLabel}
+              >
+                {actionInProgress === "pull" ? (
+                  <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                ) : (
+                  <ArrowDownToLine size={14} strokeWidth={1.8} />
+                )}
+                {status.behind > 0 && (
+                  <span className="git-pull-badge" aria-hidden="true" />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip content={pushLabel}>
+              <button
+                type="button"
+                className="icon-btn git-action-btn"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  requestGitAction("push", {
+                    left: rect.left,
+                    right: rect.right,
+                    bottom: rect.bottom,
+                  });
+                }}
+                disabled={actionInProgress !== null}
+                aria-label={pushLabel}
+              >
+                {actionInProgress === "push" ? (
+                  <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                ) : (
+                  <ArrowUpFromLine size={14} strokeWidth={1.8} />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip content={fileViewModeLabel}>
+              <button
+                type="button"
+                className={`icon-btn git-action-btn${
+                  fileViewMode === "tree" ? " active" : ""
+                }`}
+                onClick={handleToggleFileViewMode}
+                aria-label={fileViewModeLabel}
+              >
+                {fileViewMode === "tree" ? (
+                  <List size={14} strokeWidth={1.8} />
+                ) : (
+                  <FolderTree size={14} strokeWidth={1.8} />
+                )}
+              </button>
+            </Tooltip>
           </div>
         </div>
 

@@ -11,6 +11,7 @@ import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { isFeaturePageView } from "./components/featurePages";
+import { SETTINGS_VIEW_IDS } from "./components/sidebar/settingsItems";
 import { NotificationNavigationBridge } from "./components/NotificationNavigationBridge";
 import { RemoteControlBridge } from "./components/RemoteControlBridge";
 import { PluginRuntimeBridge } from "./plugins/PluginRuntimeBridge";
@@ -417,10 +418,14 @@ export const App = (): React.JSX.Element => {
     };
   }, []);
 
-  // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）渲染在主内容区，而右面板全屏
-  // 会把主内容区整体隐藏 —— 打开这些页面时先退出全屏，避免"点了没反应"。
+  // 独立页面（备忘录 / 项目记忆 / 定时任务 / 插件）与设置页渲染在主内容区，而右面板
+  // 全屏会把主内容区整体隐藏 —— 打开这些页面时先退出全屏，避免"点了没反应"。
   useEffect(() => {
-    if (isFeaturePageView(activeMainView) && isRightPanelFullscreen) {
+    if (
+      (isFeaturePageView(activeMainView) ||
+        SETTINGS_VIEW_IDS.has(activeMainView)) &&
+      isRightPanelFullscreen
+    ) {
       setIsRightPanelFullscreen(false);
     }
   }, [activeMainView, isRightPanelFullscreen]);

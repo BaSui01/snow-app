@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Check, Copy, Loader2, Pencil, Undo2 } from "lucide-react";
+import { useI18n } from "../../../../i18n";
 import { writeBackToChatInput } from "../../chatInput/chatInputDraftBridge";
+import { Tooltip } from "../../../common/Tooltip";
 import { MessageTimestamp } from "./MessageTimestamp";
 type UserMessageActionsProps = {
   content: string;
@@ -19,6 +21,7 @@ export const UserMessageActions = ({
   isRollbackPreparing,
   onRollback,
 }: UserMessageActionsProps): React.JSX.Element => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const [editWritten, setEditWritten] = useState(false);
@@ -41,50 +44,72 @@ export const UserMessageActions = ({
   return (
     <div className="user-message-actions" aria-label="User message actions">
       <MessageTimestamp timestamp={timestamp} className="user-message-time" />
-      <button
-        className="user-message-action-btn"
-        type="button"
-        aria-label="Copy user message"
-        onClick={handleCopy}
-      >
-        {copied ? (
-          <Check size={15} strokeWidth={1.8} />
-        ) : (
-          <Copy size={15} strokeWidth={1.8} />
-        )}
-      </button>
-      <button
-        className="user-message-action-btn"
-        type="button"
-        aria-label="Edit message in input"
-        title={editWritten ? "Written back to input" : "Edit in input box"}
-        onClick={handleEdit}
-      >
-        {editWritten ? (
-          <Check size={15} strokeWidth={1.8} />
-        ) : (
-          <Pencil size={15} strokeWidth={1.8} />
-        )}
-      </button>
-      {canRollback && !isStreaming ? (
+      <Tooltip content={t("chat.copyUserMessage", { defaultValue: "Copy" })}>
         <button
           className="user-message-action-btn"
           type="button"
-          aria-label="Rollback to this message"
-          title={
-            isRollbackPreparing
-              ? "Checking file changes…"
-              : "Rollback to this message"
-          }
-          disabled={isRollbackPreparing}
-          onClick={onRollback}
+          aria-label={t("chat.copyUserMessage", { defaultValue: "Copy" })}
+          onClick={handleCopy}
         >
-          {isRollbackPreparing ? (
-            <Loader2 size={15} strokeWidth={1.8} className="spin" />
+          {copied ? (
+            <Check size={15} strokeWidth={1.8} />
           ) : (
-            <Undo2 size={15} strokeWidth={1.8} />
+            <Copy size={15} strokeWidth={1.8} />
           )}
         </button>
+      </Tooltip>
+      <Tooltip
+        content={
+          editWritten
+            ? t("chat.writtenToInput", {
+                defaultValue: "Written back to input",
+              })
+            : t("chat.editInInput", { defaultValue: "Edit in input box" })
+        }
+      >
+        <button
+          className="user-message-action-btn"
+          type="button"
+          aria-label={t("chat.editInInput", {
+            defaultValue: "Edit in input box",
+          })}
+          onClick={handleEdit}
+        >
+          {editWritten ? (
+            <Check size={15} strokeWidth={1.8} />
+          ) : (
+            <Pencil size={15} strokeWidth={1.8} />
+          )}
+        </button>
+      </Tooltip>
+      {canRollback && !isStreaming ? (
+        <Tooltip
+          content={
+            isRollbackPreparing
+              ? t("chat.rollbackCheckingChanges", {
+                  defaultValue: "Checking file changes…",
+                })
+              : t("chat.rollbackToThisMessage", {
+                  defaultValue: "Rollback to this message",
+                })
+          }
+        >
+          <button
+            className="user-message-action-btn"
+            type="button"
+            aria-label={t("chat.rollbackToThisMessage", {
+              defaultValue: "Rollback to this message",
+            })}
+            disabled={isRollbackPreparing}
+            onClick={onRollback}
+          >
+            {isRollbackPreparing ? (
+              <Loader2 size={15} strokeWidth={1.8} className="spin" />
+            ) : (
+              <Undo2 size={15} strokeWidth={1.8} />
+            )}
+          </button>
+        </Tooltip>
       ) : null}
       <div className="snow-client-slot" data-snow-slot="chat.message.actions" />
     </div>

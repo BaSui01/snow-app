@@ -112,7 +112,9 @@ export function ArchivedChatItem({
       )}
       <div className="chat-item-content">
         <div className="chat-item-title-row">
-          <span className="chat-item-title">{displayName}</span>
+          <span className="chat-item-title">
+            <span className="chat-item-title-text">{displayName}</span>
+          </span>
           <span className="chat-item-time">{timeLabel}</span>
         </div>
       </div>

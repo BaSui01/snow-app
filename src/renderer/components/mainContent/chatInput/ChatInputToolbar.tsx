@@ -206,36 +206,44 @@ export const ChatInputToolbar = ({
           <span className="toolbar-divider" aria-hidden="true" />
         )}
         {planMode && (
-          <span
-            className="plan-mode-badge"
-            title={t("plusMenu.planModeActive")}
-          >
-            <ClipboardList size={14} />
-          </span>
+          <Tooltip content={t("plusMenu.planModeDescription")}>
+            <span
+              className="plan-mode-badge"
+              aria-label={t("plusMenu.planModeDescription")}
+            >
+              <ClipboardList size={14} />
+            </span>
+          </Tooltip>
         )}
         {goalMode && (
-          <span
-            className="plan-mode-badge"
-            title={t("plusMenu.goalModeActive")}
-          >
-            <Target size={14} />
-          </span>
+          <Tooltip content={t("plusMenu.goalModeDescription")}>
+            <span
+              className="plan-mode-badge"
+              aria-label={t("plusMenu.goalModeDescription")}
+            >
+              <Target size={14} />
+            </span>
+          </Tooltip>
         )}
         {worktreeMode && (
-          <span
-            className="plan-mode-badge"
-            title={t("plusMenu.worktreeModeActive")}
-          >
-            <GitBranch size={14} />
-          </span>
+          <Tooltip content={t("plusMenu.worktreeModeDescription")}>
+            <span
+              className="plan-mode-badge"
+              aria-label={t("plusMenu.worktreeModeDescription")}
+            >
+              <GitBranch size={14} />
+            </span>
+          </Tooltip>
         )}
         {workflowMode && (
-          <span
-            className="plan-mode-badge"
-            title={t("plusMenu.workflowModeActive")}
-          >
-            <Workflow size={14} />
-          </span>
+          <Tooltip content={t("plusMenu.workflowModeDescription")}>
+            <span
+              className="plan-mode-badge"
+              aria-label={t("plusMenu.workflowModeDescription")}
+            >
+              <Workflow size={14} />
+            </span>
+          </Tooltip>
         )}
         {yoloMode && (
           <Tooltip content={t("plusMenu.yoloModeActive")}>

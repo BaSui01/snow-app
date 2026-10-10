@@ -1,5 +1,6 @@
 import { Eye, FileCode, GitFork } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { Tooltip } from "../../../common/Tooltip";
 import { MessageCopyButton } from "./MessageCopyButton";
 
 export type AiResponseActionsProps = {
@@ -27,32 +28,49 @@ export const AiResponseActions = ({
 
   return (
     <div className="ai-response-actions" aria-label="AI response actions">
-      <button
-        className={`ai-response-action-btn${showRawMarkdown ? " is-open" : ""}`}
-        type="button"
-        aria-label={
+      <Tooltip
+        content={
           showRawMarkdown
             ? t("chat.showRenderedView", { defaultValue: "Show rendered view" })
             : t("chat.showRawMarkdown", { defaultValue: "Show raw Markdown" })
         }
-        aria-pressed={showRawMarkdown}
-        onClick={onToggleRawMarkdown}
       >
-        {showRawMarkdown ? (
-          <Eye size={15} strokeWidth={1.8} />
-        ) : (
-          <FileCode size={15} strokeWidth={1.8} />
-        )}
-      </button>
-      <MessageCopyButton content={content} className="ai-response-action-btn" />
-      <button
-        className="ai-response-action-btn"
-        type="button"
-        aria-label={t("chat.forkConversation", { defaultValue: "Fork" })}
-        onClick={handleFork}
-      >
-        <GitFork size={15} strokeWidth={1.8} />
-      </button>
+        <button
+          className={`ai-response-action-btn${showRawMarkdown ? " is-open" : ""}`}
+          type="button"
+          aria-label={
+            showRawMarkdown
+              ? t("chat.showRenderedView", {
+                  defaultValue: "Show rendered view",
+                })
+              : t("chat.showRawMarkdown", { defaultValue: "Show raw Markdown" })
+          }
+          aria-pressed={showRawMarkdown}
+          onClick={onToggleRawMarkdown}
+        >
+          {showRawMarkdown ? (
+            <Eye size={15} strokeWidth={1.8} />
+          ) : (
+            <FileCode size={15} strokeWidth={1.8} />
+          )}
+        </button>
+      </Tooltip>
+      <Tooltip content={t("chat.copyResponse", { defaultValue: "Copy" })}>
+        <MessageCopyButton
+          content={content}
+          className="ai-response-action-btn"
+        />
+      </Tooltip>
+      <Tooltip content={t("chat.forkConversation", { defaultValue: "Fork" })}>
+        <button
+          className="ai-response-action-btn"
+          type="button"
+          aria-label={t("chat.forkConversation", { defaultValue: "Fork" })}
+          onClick={handleFork}
+        >
+          <GitFork size={15} strokeWidth={1.8} />
+        </button>
+      </Tooltip>
       <div className="snow-client-slot" data-snow-slot="chat.message.actions" />
     </div>
   );

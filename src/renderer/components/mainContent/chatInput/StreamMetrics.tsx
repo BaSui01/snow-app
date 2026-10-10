@@ -2,6 +2,7 @@ import { ArrowDown, Clock, Gauge, Pause, Play, Timer } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { formatTtft } from "../../../utils/formatTtft";
+import { Tooltip } from "../../common/Tooltip";
 
 export type StreamMetricsProps = {
   /** Cumulative streamed tokens across every model iteration in the run. */
@@ -121,74 +122,72 @@ export const StreamMetrics = memo(
           : formatTokPerSec(tokenCount, elapsedMs)
         : "--";
     const hasTps = tps !== "--";
+    const pauseLabel = isPaused
+      ? t("chat.streamMetrics.resume")
+      : t("chat.streamMetrics.pause");
 
     return (
       <span className="stream-metrics">
-        <button
-          type="button"
-          className={`stream-metrics-pause-btn${isPaused ? " is-paused" : ""}`}
-          aria-label={
-            isPaused
-              ? t("chat.streamMetrics.resume")
-              : t("chat.streamMetrics.pause")
-          }
-          title={
-            isPaused
-              ? t("chat.streamMetrics.resume")
-              : t("chat.streamMetrics.pause")
-          }
-          onClick={isPaused ? onResume : onPause}
-        >
-          {isPaused ? (
-            <Play size={11} fill="currentColor" />
-          ) : (
-            <Pause size={11} fill="currentColor" />
-          )}
-        </button>
+        <Tooltip content={pauseLabel}>
+          <button
+            type="button"
+            className={`stream-metrics-pause-btn${isPaused ? " is-paused" : ""}`}
+            aria-label={pauseLabel}
+            onClick={isPaused ? onResume : onPause}
+          >
+            {isPaused ? (
+              <Play size={11} fill="currentColor" />
+            ) : (
+              <Pause size={11} fill="currentColor" />
+            )}
+          </button>
+        </Tooltip>
         <span className="stream-metrics-sep" />
-        <span
-          className={`stream-metrics-metric stream-metrics-elapsed${
-            isActive ? " is-active" : ""
-          }`}
-          title={t("chat.streamMetrics.elapsedTitle")}
-        >
-          <Timer size={11} className="stream-metrics-icon" />
-          <span className="stream-metrics-value">{elapsedDisplay}</span>
-        </span>
-        <span className="stream-metrics-sep" />
-        <span
-          className="stream-metrics-metric stream-metrics-ttft"
-          title={t("chat.streamMetrics.ttftTitle")}
-        >
-          <Clock size={11} className="stream-metrics-icon" />
-          <span className="stream-metrics-value">
-            {hasTtft ? formatTtft(ttftMs) : "--"}
+        <Tooltip content={t("chat.streamMetrics.elapsedTitle")}>
+          <span
+            className={`stream-metrics-metric stream-metrics-elapsed${
+              isActive ? " is-active" : ""
+            }`}
+          >
+            <Timer size={11} className="stream-metrics-icon" />
+            <span className="stream-metrics-value">{elapsedDisplay}</span>
           </span>
-        </span>
+        </Tooltip>
         <span className="stream-metrics-sep" />
-        <span
-          className={`stream-metrics-metric stream-metrics-tokens${
-            hasTokens ? " is-active" : ""
-          }`}
-          title="tokens"
-        >
-          <ArrowDown size={11} className="stream-metrics-icon" />
-          <span className="stream-metrics-value">
-            {hasTokens ? formatTokenCount(tokenCount) : "--"}
+        <Tooltip content={t("chat.streamMetrics.ttftTitle")}>
+          <span className="stream-metrics-metric stream-metrics-ttft">
+            <Clock size={11} className="stream-metrics-icon" />
+            <span className="stream-metrics-value">
+              {hasTtft ? formatTtft(ttftMs) : "--"}
+            </span>
           </span>
-          <span className="stream-metrics-label">tokens</span>
-        </span>
+        </Tooltip>
         <span className="stream-metrics-sep" />
-        <span
-          className={`stream-metrics-metric stream-metrics-tps${
-            hasTps ? " is-active" : ""
-          }`}
-          title="tok/s"
-        >
-          <Gauge size={11} className="stream-metrics-icon" />
-          <span className="stream-metrics-value">{tps}</span>
-          <span className="stream-metrics-label">tok/s</span>
-        </span>
+        <Tooltip content={t("chat.streamMetrics.tokensTitle")}>
+          <span
+            className={`stream-metrics-metric stream-metrics-tokens${
+              hasTokens ? " is-active" : ""
+            }`}
+          >
+            <ArrowDown size={11} className="stream-metrics-icon" />
+            <span className="stream-metrics-value">
+              {hasTokens ? formatTokenCount(tokenCount) : "--"}
+            </span>
+            <span className="stream-metrics-label">tokens</span>
+          </span>
+        </Tooltip>
+        <span className="stream-metrics-sep" />
+        <Tooltip content={t("chat.streamMetrics.tpsTitle")}>
+          <span
+            className={`stream-metrics-metric stream-metrics-tps${
+              hasTps ? " is-active" : ""
+            }`}
+          >
+            <Gauge size={11} className="stream-metrics-icon" />
+            <span className="stream-metrics-value">{tps}</span>
+            <span className="stream-metrics-label">tok/s</span>
+          </span>
+        </Tooltip>
       </span>
     );
   },

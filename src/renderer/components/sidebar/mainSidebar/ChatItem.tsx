@@ -1,4 +1,5 @@
 import {
+  Archive,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -15,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
+import { Tooltip } from "../../common/Tooltip";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
 import {
   beginConversationDrag,
@@ -23,6 +25,8 @@ import {
 } from "./conversationDrag";
 import { setChatDragData } from "./chatDrag";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
+
+const TITLE_MARQUEE_GAP = 32;
 
 type ChatItemProps = {
   conversation: ChatConversationRecord;
@@ -111,6 +115,9 @@ export function ChatItem({
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
   const [isDragSource, setIsDragSource] = useState(false);
+  const titleBoxRef = useRef<HTMLSpanElement>(null);
+  const titleTextRef = useRef<HTMLSpanElement>(null);
+  const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -219,6 +226,29 @@ export function ChatItem({
       ? t("sidebar.chatTimeYesterday", { defaultValue: "Yesterday" })
       : rawTimeLabel;
 
+  const handleTitleHover = (): void => {
+    const box = titleBoxRef.current;
+    const text = titleTextRef.current;
+    if (!box || !text) {
+      return;
+    }
+    const textWidth = text.scrollWidth;
+    const overflows = textWidth > box.clientWidth + 1;
+    setIsTitleOverflowing(overflows);
+    if (!overflows) {
+      return;
+    }
+    const distance = textWidth + TITLE_MARQUEE_GAP;
+    box.style.setProperty(
+      "--chat-title-marquee-duration",
+      `${Math.min(40, Math.max(6, distance / 50))}s`,
+    );
+  };
+
+  const handleTitleLeave = (): void => {
+    setIsTitleOverflowing(false);
+  };
+
   const handleSelectClick = (): void => {
     if (isEditing) {
       return;
@@ -250,6 +280,7 @@ export function ChatItem({
   // 编辑/多选/运行中的会话不可拖拽，避免与重命名、勾选及运行状态冲突
   //（isDraggable 由调用方控制：PENDING 会话等不作为拖拽源）
   const canDrag = isDraggable && !isEditing && !isMultiSelectMode && !isRunning;
+  const showQuickActions = !isEditing && !isMultiSelectMode && !isRunning;
 
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>): void => {
     if (!canDrag) {
@@ -297,8 +328,12 @@ export function ChatItem({
         isActive ? " active" : ""
       }${isMultiSelectMode && !isRunning ? " multi-select" : ""}${
         isSelected ? " selected" : ""
-      }${isDragSource ? " dragging" : ""}`}
+      }${isDragSource ? " dragging" : ""}${
+        showQuickActions ? " has-quick-actions" : ""
+      }`}
       draggable={canDrag}
+      onMouseEnter={handleTitleHover}
+      onMouseLeave={handleTitleLeave}
       onDragStart={canDrag ? handleDragStart : undefined}
       onDragEnd={handleDragEnd}
       onClick={handleSelectClick}
@@ -427,13 +462,22 @@ export function ChatItem({
                 </span>
               )}
               <span
+                ref={titleBoxRef}
                 className="chat-item-title"
+                data-overflow={isTitleOverflowing ? "true" : undefined}
                 onDoubleClick={(event) => {
                   event.stopPropagation();
                   handleRenameStart();
                 }}
               >
-                {displayName}
+                <span ref={titleTextRef} className="chat-item-title-text">
+                  {displayName}
+                </span>
+                {isTitleOverflowing ? (
+                  <span className="chat-item-title-text" aria-hidden="true">
+                    {displayName}
+                  </span>
+                ) : null}
               </span>
               {statusLabel && (
                 <span
@@ -475,7 +519,7 @@ export function ChatItem({
           </>
         )}
       </div>
-      {!isEditing && !isMultiSelectMode && !isRunning && (
+      {showQuickActions && (
         <span
           className="chat-item-menu-wrapper"
           onClick={(event) => event.stopPropagation()}
@@ -490,23 +534,55 @@ export function ChatItem({
               })}
             />
           ) : (
-            <ChatItemMenu
-              conversationId={conversation.conversationId}
-              isPinned={isPinned}
-              emoji={conversation.emoji}
-              onPin={onPin}
-              onRename={handleRenameStart}
-              onSetEmoji={onSetEmoji}
-              onDelete={onDelete}
-              isDeleting={isDeleting}
-              onExport={onExport}
-              onFork={onFork}
-              onArchive={onArchive}
-              onEnterMultiSelect={onEnterMultiSelect}
-              onOpenChange={setIsMenuOpen}
-              contextMenuAnchor={contextMenuAnchor}
-              onContextMenuClose={() => setContextMenuAnchor(null)}
-            />
+            <>
+              {onArchive ? (
+                <Tooltip
+                  content={t("sidebar.chatActionArchive", {
+                    defaultValue: "Archive",
+                  })}
+                  placement="top"
+                >
+                  <span
+                    className="chat-item-quick-action"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t("sidebar.chatActionArchive", {
+                      defaultValue: "Archive",
+                    })}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchive();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onArchive();
+                      }
+                    }}
+                  >
+                    <Archive size={14} />
+                  </span>
+                </Tooltip>
+              ) : null}
+              <ChatItemMenu
+                conversationId={conversation.conversationId}
+                isPinned={isPinned}
+                emoji={conversation.emoji}
+                onPin={onPin}
+                onRename={handleRenameStart}
+                onSetEmoji={onSetEmoji}
+                onDelete={onDelete}
+                isDeleting={isDeleting}
+                onExport={onExport}
+                onFork={onFork}
+                onArchive={onArchive}
+                onEnterMultiSelect={onEnterMultiSelect}
+                onOpenChange={setIsMenuOpen}
+                contextMenuAnchor={contextMenuAnchor}
+                onContextMenuClose={() => setContextMenuAnchor(null)}
+              />
+            </>
           )}
         </span>
       )}

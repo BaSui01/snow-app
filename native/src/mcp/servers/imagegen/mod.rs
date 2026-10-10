@@ -373,6 +373,27 @@ impl ImageGenService {
         // 查找此特定模型项的专有独立配置（多模型渠道支持）
         let model_item = channel_config.find_model_config(&model);
 
+        // 支持范围：模型项优先，留空时回退渠道级配置（与尺寸/思考的取值来源一致）。
+        // 用于发送前的本地能力校验，避免把模型不支持的参数发给上游导致 400。
+        let supported_ratios = model_item
+            .as_ref()
+            .map(|item| item.supported_ratios.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| channel_config.supported_ratios.trim().to_string());
+        let supported_resolutions = model_item
+            .as_ref()
+            .map(|item| item.supported_resolutions.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| channel_config.supported_resolutions.trim().to_string());
+        let supported_thinking = model_item
+            .as_ref()
+            .map(|item| item.supported_thinking.trim())
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| channel_config.supported_thinking.trim().to_string());
+
         // --- 5. Resolve default size / quality / outputFormat from the model item or channel ---
         let size = args
             .get("size")
@@ -381,7 +402,12 @@ impl ImageGenService {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
             .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_size)))
-            .or_else(|| non_empty(&channel_config.default_size));
+            .or_else(|| non_empty(&channel_config.default_size))
+            // 发送前按声明的支持范围校验：未声明支持范围视为不支持，直接不下发
+            // size（交由上游默认），避免把不支持的尺寸发给模型得到 400。
+            .and_then(|value| {
+                sanitize_size(Some(&value), &supported_ratios, &supported_resolutions)
+            });
         let quality = args
             .get("quality")
             .and_then(Value::as_str)
@@ -543,7 +569,17 @@ impl ImageGenService {
             .filter(|value| !value.is_empty())
             .map(str::to_string)
             .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_thinking)))
-            .or_else(|| non_empty(&channel_config.default_thinking));
+            .or_else(|| non_empty(&channel_config.default_thinking))
+            // 发送前按模型/渠道声明的 supported_thinking 校验：未声明或不在
+            // 支持列表内则不下发（不支持的模型收到 reasoning_effort /
+            // thinking_level 会 400），仅保留合法取值。
+            .and_then(|value| {
+                sanitize_thinking_level(
+                    Some(&value),
+                    &supported_thinking,
+                    provider == "gemini",
+                )
+            });
         // 反向提示词（negativePrompt）：仅 Gemini Imagen 系生效（写入
         // generationConfig.negativePrompt）；Nano Banana / OpenAI 不支持，
         // 在 generate_gemini 内按模型判断丢弃。
@@ -2267,6 +2303,124 @@ fn mime_for_format(format: &str) -> String {
         "webp" => "image/webp".to_string(),
         _ => "image/png".to_string(),
     }
+}
+
+/// 将「支持范围」说明文本切分为小写词元集合。
+///
+/// `supported_ratios` / `supported_resolutions` / `supported_thinking` 是用户在
+/// 设置面板自由填写的说明文本（如 `"1K (1792x1008), 2K (2560x1440)"`、
+/// `"512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)"`、`"low, medium, high"`），
+/// 因此不能用精确相等判定，需按词元匹配。按空白与常见分隔符（逗号/分号/
+/// 括号/竖线/斜杠/@）切分，`@` 也切分以便 `"16:9@2K"` 拆成比例与档位。
+fn capability_tokens(raw: &str) -> Vec<String> {
+    raw.split(|c: char| {
+        c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '|' | '/' | '@')
+    })
+    .map(|token| token.trim().to_ascii_lowercase())
+    .filter(|token| !token.is_empty())
+    .collect()
+}
+
+/// 判断某个取值是否出现在支持列表中（大小写不敏感的词元匹配）。
+fn capability_contains(raw: &str, value: &str) -> bool {
+    let needle = value.trim().to_ascii_lowercase();
+    if needle.is_empty() {
+        return false;
+    }
+    capability_tokens(raw).iter().any(|token| token == &needle)
+}
+
+/// 「支持范围」是否已被用户显式声明（非空白）。
+///
+/// 三态语义：**未声明**（空）与**已声明**（有值）必须区分——
+/// - 未声明：用户没配过（旧数据/未收录模型），宽松放行，保持原有行为；
+/// - 已声明：用户明确写了范围，越界即拦截，避免上游 400。
+fn capability_declared(raw: &str) -> bool {
+    !raw.trim().is_empty()
+}
+
+/// 按模型能力规整思考强度：只有模型/渠道**已声明**支持范围且取值在其中时
+/// 才下发，否则返回 None（不发送该参数），避免不支持思考的模型收到
+/// `reasoning_effort` / `thinking_level` 而报 400。
+///
+/// - `supported` 为空 = 未声明能力 → 宽松放行（保留归一化后的合法取值）；
+/// - 取值先按协议归一化（Gemini: low/minimal → minimal；OpenAI: minimal → low），
+///   再与支持列表做词元匹配，与下游各协议分支的映射保持一致。
+fn sanitize_thinking_level(
+    requested: Option<&str>,
+    supported: &str,
+    is_gemini: bool,
+) -> Option<String> {
+    let value = requested?.trim().to_ascii_lowercase();
+    if value.is_empty() {
+        return None;
+    }
+    let effective = if is_gemini {
+        match value.as_str() {
+            "minimal" | "low" => "minimal",
+            "high" => "high",
+            _ => return None,
+        }
+    } else {
+        match value.as_str() {
+            "low" | "minimal" => "low",
+            "medium" => "medium",
+            "high" => "high",
+            _ => return None,
+        }
+    };
+    // 未声明支持范围 → 宽松放行；已声明 → 必须在范围内。
+    if !capability_declared(supported) || capability_contains(supported, effective) {
+        Some(effective.to_string())
+    } else {
+        None
+    }
+}
+
+/// 按模型能力规整尺寸：拆解 `"16:9@2K"` / `"1K"` / `"16:9"` / `"1024x1024"` 等写法，
+/// 与 `supported_ratios` / `supported_resolutions` 比对；已声明范围但取值越界时
+/// 返回 None（不发送 size，交由上游默认），避免 400。
+///
+/// - `"auto"` 是 OpenAI 的合法取值，直接放行（不受比例/分辨率列表约束）；
+/// - 两字段均未声明 = 未配置能力 → 宽松放行，保持原有行为不回退。
+fn sanitize_size(
+    requested: Option<&str>,
+    supported_ratios: &str,
+    supported_resolutions: &str,
+) -> Option<String> {
+    let raw = requested?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.eq_ignore_ascii_case("auto") {
+        return Some(raw.to_string());
+    }
+    let ratios_declared = capability_declared(supported_ratios);
+    let resolutions_declared = capability_declared(supported_resolutions);
+    // 两段都未声明 → 无从校验，放行。
+    if !ratios_declared && !resolutions_declared {
+        return Some(raw.to_string());
+    }
+    // 组合写法「比例@档位」：已声明的那一段必须命中。
+    if let Some((ratio_part, tier_part)) = raw.split_once('@') {
+        let ratio = ratio_part.trim();
+        let tier = tier_part.trim();
+        let ratio_ok = !ratios_declared || capability_contains(supported_ratios, ratio);
+        let tier_ok = !resolutions_declared || capability_contains(supported_resolutions, tier);
+        return (ratio_ok && tier_ok).then(|| format!("{ratio}@{tier}"));
+    }
+    // 纯比例（含 ':'）→ 查 supported_ratios（未声明则放行）。
+    if raw.contains(':') {
+        if !ratios_declared || capability_contains(supported_ratios, raw) {
+            return Some(raw.to_string());
+        }
+        return None;
+    }
+    // 纯档位（1K/2K/512px）或具体像素尺寸（1024x1024）→ 查 supported_resolutions。
+    if !resolutions_declared || capability_contains(supported_resolutions, raw) {
+        return Some(raw.to_string());
+    }
+    None
 }
 
 /// 根据模型能力规整 `background` 参数：

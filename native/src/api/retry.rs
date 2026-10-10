@@ -569,6 +569,17 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
     is_retriable_error(error, options)
 }
 
+/// 第 `attempt` 次重试前的退避时长（毫秒）。
+///
+/// 与 `wait_before_retry` 使用完全相同的公式（`base_delay_ms × 2^attempt`，
+/// 上限 30s），保证下发给前端做倒计时的时长与实际等待时间一致——两处算法
+/// 必须同源，否则倒计时会在到点后继续等待或提前归零。
+pub fn retry_backoff_ms(options: &RetryOptions, attempt: u32) -> i64 {
+    const MAX_BACKOFF_MS: u64 = 30_000;
+    let backoff = options.base_delay_ms.saturating_mul(1u64 << attempt.min(4));
+    backoff.min(MAX_BACKOFF_MS) as i64
+}
+
 /// Wait for the retry delay, respecting the cancel token.
 ///
 /// The delay grows exponentially with the attempt count
@@ -585,9 +596,7 @@ pub async fn wait_before_retry(
     cancel_token: &CancellationToken,
     attempt: u32,
 ) -> Result<()> {
-    const MAX_BACKOFF_MS: u64 = 30_000;
-    let backoff = options.base_delay_ms.saturating_mul(1u64 << attempt.min(4));
-    let delay = Duration::from_millis(backoff.min(MAX_BACKOFF_MS));
+    let delay = Duration::from_millis(retry_backoff_ms(options, attempt).max(0) as u64);
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {

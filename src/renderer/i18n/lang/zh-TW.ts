@@ -4063,6 +4063,8 @@ export const zhTW = {
   "chat.streamMetrics.tpsTitle": "輸出速度（每秒 Token 數）",
   "chat.retrying": "重試中",
   "chat.retryExhausted": "重試已耗盡",
+  "chat.retryCountdown": "{{seconds}} 秒後重試",
+  "chat.retryCountdownHint": "正在等待下一次重試",
   "chat.retryDetailsShow": "錯誤詳情",
   "chat.retryDetailsHide": "收起詳情",
   "chat.retryCopyDetails": "複製錯誤詳情",

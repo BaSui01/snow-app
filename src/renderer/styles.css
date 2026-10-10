@@ -11917,6 +11917,35 @@ body.is-panel-resizing * {
   font-weight: 500;
 }
 
+/* 「N 秒后重试」倒计时：与重试标题同处一行，等宽数字避免逐秒跳动。 */
+.stream-retry-notice-countdown {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-amber-bg) 70%, transparent);
+  color: var(--accent-amber-text);
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stream-retry-notice-countdown-urgent {
+  color: var(--accent-red-text);
+  animation: stream-retry-countdown-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes stream-retry-countdown-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .stream-retry-notice-preview {
   flex: 1;
   min-width: 0;

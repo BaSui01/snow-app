@@ -4111,6 +4111,8 @@ export const zhCN = {
   "chat.streamMetrics.tpsTitle": "输出速度（每秒 Token 数）",
   "chat.retrying": "重试中",
   "chat.retryExhausted": "重试已耗尽",
+  "chat.retryCountdown": "{{seconds}} 秒后重试",
+  "chat.retryCountdownHint": "正在等待下一次重试",
   "chat.retryDetailsShow": "错误详情",
   "chat.retryDetailsHide": "收起详情",
   "chat.retryCopyDetails": "复制错误详情",

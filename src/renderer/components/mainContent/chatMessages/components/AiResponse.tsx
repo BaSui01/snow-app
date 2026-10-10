@@ -91,6 +91,7 @@ export const AiResponse = memo(
     isRetrying = false,
     retryAttempt,
     retryError,
+    retryBackoffMs,
     isError = false,
     incompleteVariant,
     interruptionReason,
@@ -317,7 +318,11 @@ export const AiResponse = memo(
               <span>{t("chat.stopping", { defaultValue: "Stopping..." })}</span>
             </span>
           ) : isRetrying ? (
-            <StreamRetryNotice attempt={retryAttempt} error={retryError} />
+            <StreamRetryNotice
+              attempt={retryAttempt}
+              error={retryError}
+              backoffMs={retryBackoffMs}
+            />
           ) : isStreaming ? (
             <StreamCursor />
           ) : null}

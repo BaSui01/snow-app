@@ -178,6 +178,10 @@ pub struct ResponsesApiStreamChunk {
     pub retrying: bool,
     pub retry_attempt: Option<i32>,
     pub retry_error: Option<String>,
+    /// 本次重试前的退避时长（毫秒）。仅在 `retrying == true` 的分片上为
+    /// `Some(...)`，供前端渲染「N 秒后重试」倒计时——否则用户面对 3s→30s 的
+    /// 指数退避只能盲等，不知道还要多久。普通分片恒为 `None`。
+    pub retry_backoff_ms: Option<i64>,
     /// Cumulative token count for the current agent-loop iteration.
     ///
     /// The Rust backend counts tokens for every streamed delta (content and

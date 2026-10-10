@@ -54,6 +54,7 @@ fn emit_vision_status(
             elapsed_ms: 0,
             ttft_ms: 0,
             vision_status: Some(payload.to_string()),
+            retry_backoff_ms: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

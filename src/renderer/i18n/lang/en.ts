@@ -4380,6 +4380,8 @@ export const en = {
   "chat.streamMetrics.tpsTitle": "Output speed (tokens per second)",
   "chat.retrying": "Retrying",
   "chat.retryExhausted": "Retries exhausted",
+  "chat.retryCountdown": "in {{seconds}}s",
+  "chat.retryCountdownHint": "Waiting before the next attempt",
   "chat.retryDetailsShow": "Error details",
   "chat.retryDetailsHide": "Hide details",
   "chat.retryCopyDetails": "Copy error details",

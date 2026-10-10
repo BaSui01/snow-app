@@ -199,6 +199,7 @@ pub(crate) fn emit_stream_chunk(
                 elapsed_ms,
                 ttft_ms,
                 vision_status: None,
+                retry_backoff_ms: None,
             },
             ThreadsafeFunctionCallMode::NonBlocking,
         );
@@ -226,6 +227,7 @@ pub(crate) fn emit_stream_chunk(
             elapsed_ms,
             ttft_ms,
             vision_status: None,
+            retry_backoff_ms: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );
@@ -266,6 +268,7 @@ pub(crate) fn emit_tool_args_probe(
             elapsed_ms,
             ttft_ms,
             vision_status: None,
+            retry_backoff_ms: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

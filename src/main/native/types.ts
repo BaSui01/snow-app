@@ -1374,6 +1374,8 @@ export type ResponsesApiStreamChunk = {
   retrying: boolean;
   retryAttempt?: number | null;
   retryError?: string | null;
+  /** 本次重试前的退避时长（毫秒）。仅重试分片携带，供前端渲染倒计时。 */
+  retryBackoffMs?: number | null;
   streamTokenCount: number;
   /** Cumulative thinking-only token count for the current iteration
    *  (subset of streamTokenCount). 0 while no thinking has streamed. */

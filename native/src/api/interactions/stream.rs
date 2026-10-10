@@ -16,7 +16,7 @@ use crate::api::common::{
 use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
-    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
+    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response, retry_backoff_ms,
     stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
@@ -78,6 +78,7 @@ pub(super) async fn collect_interactions_stream(
                     elapsed_ms: stream_start.elapsed().as_millis() as i64,
                     ttft_ms,
                     vision_status: None,
+                    retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
@@ -209,6 +210,7 @@ pub(super) async fn collect_interactions_stream(
                                 elapsed_ms: stream_start.elapsed().as_millis() as i64,
                                 ttft_ms,
                                 vision_status: None,
+                                retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                             },
                             ThreadsafeFunctionCallMode::NonBlocking,
                         );
@@ -243,6 +245,7 @@ pub(super) async fn collect_interactions_stream(
                             elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
                             vision_status: None,
+                            retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -410,6 +413,7 @@ pub(super) async fn collect_interactions_stream(
                         elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
                             vision_status: None,
+                            retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );

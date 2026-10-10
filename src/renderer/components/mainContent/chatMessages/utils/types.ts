@@ -47,6 +47,8 @@ export type AiResponseProps = {
   retryAttempt?: number;
   /** Transport error that triggered the current retry attempt. */
   retryError?: string;
+  /** 最近一次重试的退避时长（毫秒），驱动重试提示的倒计时。 */
+  retryBackoffMs?: number;
   /** True when the persisted assistant response represents a terminal
    *  failure; the body renders as an error notice instead of markdown. */
   isError?: boolean;

@@ -156,6 +156,8 @@ export type ChatConversationMessage = {
   isRetrying?: boolean;
   retryAttempt?: number;
   retryError?: string;
+  /** 最近一次重试的退避时长（毫秒），驱动重试提示的倒计时。运行时状态，不落库。 */
+  retryBackoffMs?: number;
   /** File-system checkpoint id created when the user sent this message.
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;

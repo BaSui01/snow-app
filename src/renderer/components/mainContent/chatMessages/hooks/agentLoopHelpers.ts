@@ -343,6 +343,7 @@ export const applyStreamChunkToMessage = (
       isRetrying: true,
       retryAttempt: chunk.retryAttempt ?? undefined,
       retryError: chunk.retryError ?? undefined,
+      retryBackoffMs: chunk.retryBackoffMs ?? undefined,
       status: "sending",
     };
   }

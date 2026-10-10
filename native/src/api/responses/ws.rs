@@ -40,7 +40,7 @@ use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     decide_stream_recovery, is_retriable_error, next_stream_item_with_idle,
-    should_retry_empty_response, stream_idle_timeout_error, wait_before_retry, RetryOptions,
+    should_retry_empty_response, retry_backoff_ms, stream_idle_timeout_error, wait_before_retry, RetryOptions,
     StreamEndCause, StreamReadOutcome, StreamRecoveryDecision, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::SseStreamEnd;
@@ -608,7 +608,13 @@ impl StreamProgress {
     }
 
     /// 推送一次「请求重试中」状态。
-    fn emit_retry(&self, on_chunk: StreamSink<'_>, attempt: u32, retry_error: &str) {
+    fn emit_retry(
+        &self,
+        on_chunk: StreamSink<'_>,
+        attempt: u32,
+        retry_error: &str,
+        retry_options: &RetryOptions,
+    ) {
         on_chunk.call(
             ResponsesApiStreamChunk {
                 content_delta: String::new(),
@@ -624,6 +630,7 @@ impl StreamProgress {
                 elapsed_ms: self.elapsed_ms(),
                 ttft_ms: self.ttft_ms,
                 vision_status: None,
+                retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
             },
             ThreadsafeFunctionCallMode::NonBlocking,
         );
@@ -801,7 +808,7 @@ pub(super) async fn collect_streaming_response_ws(
                 if !failure.retriable || attempt >= retry_options.max_retries {
                     return Err(failure.error);
                 }
-                progress.emit_retry(on_chunk, attempt, &failure.error.reason);
+                progress.emit_retry(on_chunk, attempt, &failure.error.reason, retry_options);
                 log_retry(&database_path, "connect", attempt, endpoint, &failure.error.reason)
                     .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
@@ -892,7 +899,7 @@ pub(super) async fn collect_streaming_response_ws(
                 if !retriable || attempt >= retry_options.max_retries {
                     return Err(error);
                 }
-                progress.emit_retry(on_chunk, attempt, &error.reason);
+                progress.emit_retry(on_chunk, attempt, &error.reason, retry_options);
                 log_retry(&database_path, "connection_error", attempt, endpoint, &error.reason)
                     .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
@@ -915,7 +922,7 @@ pub(super) async fn collect_streaming_response_ws(
             if terminal_interruption_reason.is_none()
                 && should_retry_empty_response(attempt, retry_options, attempt_state.has_payload())
             {
-                progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
+                progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR, retry_options);
                 log_empty_retry(&database_path, attempt, endpoint).await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
@@ -959,7 +966,7 @@ pub(super) async fn collect_streaming_response_ws(
                         attempt_state.has_payload(),
                     )
                 {
-                    progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
+                    progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR, retry_options);
                     log_empty_retry(&database_path, attempt, endpoint).await;
                     wait_before_retry(retry_options, cancel_token, attempt).await?;
                     attempt += 1;
@@ -968,7 +975,7 @@ pub(super) async fn collect_streaming_response_ws(
                 break 'attempt_loop (attempt_state, provider_reason, provider_outcome);
             }
             StreamRecoveryDecision::Retry => {
-                progress.emit_retry(on_chunk, attempt, &retry_error);
+                progress.emit_retry(on_chunk, attempt, &retry_error, retry_options);
                 log_retry(
                     &database_path,
                     &format!("{cause:?}"),

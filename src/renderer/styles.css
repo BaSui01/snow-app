@@ -37633,6 +37633,74 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   );
 }
 
+/* 优化提示词（复用宿主 prompt 优化接口；与上传按钮同尺寸族） */
+.ai-drawing-optimize-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ai-drawing-optimize-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-tertiary));
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
+}
+
+.ai-drawing-optimize-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 优化进行中：可点击取消，用强调色提示正在工作 */
+.ai-drawing-optimize-btn.is-busy {
+  color: var(--accent-color);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-tertiary));
+}
+
+/* 还原（回退优化前原文）：低调的文本按钮 */
+.ai-drawing-optimize-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.ai-drawing-optimize-undo:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* 上传导入提示（成功/失败，自动消失） */
 .ai-drawing-import-notice {
   display: inline-flex;

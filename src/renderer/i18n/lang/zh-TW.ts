@@ -4407,6 +4407,19 @@ export const zhTW = {
   "rightPanel.aiDrawing.promptPlaceholder":
     "描述你想生成的畫面，支援中文；例如：賽博龐克風格的雨夜城市，霓虹燈倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",
+  "rightPanel.aiDrawing.optimizePrompt": "優化提示詞",
+  "rightPanel.aiDrawing.optimizeHint":
+    "用 AI 改寫目前提示詞，補全畫面要素（主體、風格、構圖、光影、鏡頭），不會自動生成圖片",
+  "rightPanel.aiDrawing.optimizing": "優化中",
+  "rightPanel.aiDrawing.optimizeCancelHint": "點擊取消本次優化",
+  "rightPanel.aiDrawing.optimizeDone": "提示詞已優化，可直接生成或繼續編輯",
+  "rightPanel.aiDrawing.optimizeFailed": "優化失敗，請檢查 API 設定後重試",
+  "rightPanel.aiDrawing.optimizeCancelled": "已取消優化",
+  "rightPanel.aiDrawing.optimizeUnavailable":
+    "目前版本不支援提示詞優化，請升級 Snow App",
+  "rightPanel.aiDrawing.optimizeUndo": "還原",
+  "rightPanel.aiDrawing.optimizeUndoHint": "還原到優化前的提示詞",
+  "rightPanel.aiDrawing.optimizeRestored": "已還原為優化前的提示詞",
   "rightPanel.aiDrawing.generate": "生成",
   "rightPanel.aiDrawing.channelAuto": "自動（預設渠道）",
   "rightPanel.aiDrawing.model": "模型",

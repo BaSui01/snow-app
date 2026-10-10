@@ -4853,6 +4853,24 @@ export const en = {
   "rightPanel.aiDrawing.promptPlaceholder":
     "Describe the image you want to generate, Chinese supported; e.g. cyberpunk rainy city at night, neon reflections…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter to generate",
+  "rightPanel.aiDrawing.optimizePrompt": "Optimize prompt",
+  "rightPanel.aiDrawing.optimizeHint":
+    "Rewrite the current prompt with AI, enriching visual details (subject, style, composition, lighting, camera). It never generates an image.",
+  "rightPanel.aiDrawing.optimizing": "Optimizing",
+  "rightPanel.aiDrawing.optimizeCancelHint":
+    "Click to cancel this optimization",
+  "rightPanel.aiDrawing.optimizeDone":
+    "Prompt optimized — generate now or keep editing",
+  "rightPanel.aiDrawing.optimizeFailed":
+    "Optimization failed. Check the API configuration and retry.",
+  "rightPanel.aiDrawing.optimizeCancelled": "Optimization cancelled",
+  "rightPanel.aiDrawing.optimizeUnavailable":
+    "Prompt optimization is not available in this version. Please update Snow App.",
+  "rightPanel.aiDrawing.optimizeUndo": "Restore",
+  "rightPanel.aiDrawing.optimizeUndoHint":
+    "Restore the prompt from before optimizing",
+  "rightPanel.aiDrawing.optimizeRestored":
+    "Restored the pre-optimization prompt",
   "rightPanel.aiDrawing.generate": "Generate",
   "rightPanel.aiDrawing.channelAuto": "Auto (default channel)",
   "rightPanel.aiDrawing.model": "Model",

@@ -657,6 +657,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         "focus" => {
             required_non_empty_string(args, "instanceId", tool_name)?;
         }
+        "request_share" => {
+            optional_non_empty_string(args, "instanceId")?;
+        }
         "emulate" => {
             optional_non_empty_string(args, "instanceId")?;
             if let Some(scheme) = optional_non_empty_string(args, "colorScheme")? {
@@ -1173,7 +1176,7 @@ pub(crate) fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-fill_form, browser-drag, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames, browser-emulate, browser-resize_page, browser-performance_start_trace, browser-performance_stop_trace, browser-performance_analyze_insight, browser-get_css_styles, browser-audit, browser-take_heapsnapshot, browser-get_heapsnapshot_summary, browser-query_heapsnapshot_objects, browser-get_heapsnapshot_object_details, browser-get_heapsnapshot_edges, browser-get_heapsnapshot_retainers, browser-get_heapsnapshot_retaining_paths, browser-get_heapsnapshot_duplicate_strings, browser-compare_heapsnapshots, browser-screencast_start, browser-screencast_stop, browser-list_page_tools, browser-call_page_tool]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-fill_form, browser-drag, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames, browser-request_share, browser-emulate, browser-resize_page, browser-performance_start_trace, browser-performance_stop_trace, browser-performance_analyze_insight, browser-get_css_styles, browser-audit, browser-take_heapsnapshot, browser-get_heapsnapshot_summary, browser-query_heapsnapshot_objects, browser-get_heapsnapshot_object_details, browser-get_heapsnapshot_edges, browser-get_heapsnapshot_retainers, browser-get_heapsnapshot_retaining_paths, browser-get_heapsnapshot_duplicate_strings, browser-compare_heapsnapshots, browser-screencast_start, browser-screencast_stop, browser-list_page_tools, browser-call_page_tool]"
         ),
     )
 }

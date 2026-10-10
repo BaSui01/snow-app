@@ -51,6 +51,11 @@ import {
 } from "./rightPanel/browser/useBrowserMcpCommandBridge";
 import { focusBrowserMcpInstance } from "./rightPanel/browser/browserMcpController";
 import {
+  getBrowserAgentAccess,
+  subscribeBrowserAgentAccess,
+  type BrowserAgentAccess,
+} from "./rightPanel/browser/browserAgentAccess";
+import {
   useTerminalMcpCommandBridge,
   type TerminalMcpTabCallbacks,
 } from "./rightPanel/terminal/useTerminalMcpCommandBridge";
@@ -275,6 +280,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     ]);
     const [activeTabId, setActiveTabId] = useState<string>(GIT_TAB_ID);
     const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
+    // 浏览器 tab 的 Agent 共享状态来自 browserAgentAccess 注册表（非 React 状态），
+    // 用版本号驱动重渲染以刷新标签栏徽标。
+    const [, setAgentAccessVersion] = useState(0);
+    useEffect(
+      () =>
+        subscribeBrowserAgentAccess(() =>
+          setAgentAccessVersion((version) => version + 1),
+        ),
+      [],
+    );
     // 聊天区 Ctrl+点击远程路径时按工作区复用 SSH 连接；Promise 缓存还能
     // 合并快速连续点击产生的并发连接请求。
     const sshFileSessionPromisesRef = useRef<Map<string, Promise<string>>>(
@@ -404,13 +419,24 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenBrowserTab = useCallback(
-      (url?: string, requestedInstanceId?: string, activate = true): string => {
+      (
+        url?: string,
+        requestedInstanceId?: string,
+        activate = true,
+        access?: BrowserAgentAccess,
+      ): string => {
         const instanceId =
           requestedInstanceId ??
           `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const browserData: BrowserTabData = {
           instanceId,
           url: url ?? "",
+          agentAccess: access ?? {
+            shared: false,
+            isolated: false,
+            origin: "user",
+            url: url ?? "",
+          },
         };
         setTabs((prev) => [
           ...prev,
@@ -1126,8 +1152,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           return;
         }
         const browserTab = tab.data as BrowserTabData;
+        const access = getBrowserAgentAccess(browserTab.instanceId);
         void window.snow
-          .openDetachedBrowserWindow(browserTab.instanceId, browserTab.url)
+          .openDetachedBrowserWindow(browserTab.instanceId, browserTab.url, {
+            shared: access?.shared ?? false,
+            isolated: access?.isolated ?? false,
+            origin: access?.origin ?? "user",
+          })
           .then(() => {
             handleCloseTab(tabId);
           })
@@ -1164,6 +1195,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         }
         const url = payload.url.trim();
         const restoredTitle = payload.title.trim();
+        const agentAccess: BrowserAgentAccess = {
+          shared: payload.shared === true,
+          isolated: payload.isolated === true,
+          origin: payload.origin === "agent" ? "agent" : "user",
+          url,
+        };
         setTabs((prev) => {
           const existing = prev.find(
             (t) => t.id === instanceId && t.type === "browser",
@@ -1179,6 +1216,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                     data: {
                       ...existingData,
                       url: url || existingData.url,
+                      agentAccess,
                     },
                   }
                 : t,
@@ -1193,6 +1231,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               data: {
                 instanceId,
                 url,
+                agentAccess,
               },
             },
           ];
@@ -1261,17 +1300,24 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const handleListBrowserTabs = useCallback(() => {
       return tabs
         .filter((t) => t.type === "browser")
-        .map((t) => ({
-          instanceId: t.id,
-          title: t.title,
-          url: (t.data as BrowserTabData)?.url ?? "",
-          isActive: t.id === activeTabId,
-        }));
+        .map((t) => {
+          const access = getBrowserAgentAccess(t.id);
+          return {
+            instanceId: t.id,
+            title: t.title,
+            url: (t.data as BrowserTabData)?.url ?? "",
+            isActive: t.id === activeTabId,
+            shared: access?.shared ?? false,
+            isolated: access?.isolated ?? false,
+            origin: access?.origin ?? ("user" as const),
+          };
+        });
     }, [tabs, activeTabId]);
 
     const browserMcpCallbacks = useMemo<BrowserMcpTabCallbacks>(
       () => ({
-        openTab: handleOpenBrowserTab,
+        openTab: (url, instanceId, access) =>
+          handleOpenBrowserTab(url, instanceId, true, access),
         closeTab: handleCloseBrowserTab,
         focusTab: handleFocusBrowserTab,
         listTabs: handleListBrowserTabs,
@@ -1567,6 +1613,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               instanceId={(tab.data as BrowserTabData).instanceId}
               initialUrl={(tab.data as BrowserTabData).url}
               isActive={activeTabId === tab.id}
+              agentAccess={(tab.data as BrowserTabData).agentAccess}
               onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
               onUrlChange={(url) => handleBrowserUrlChange(tab.id, url)}
               onOpenNewTab={(url, activate) =>
@@ -1764,6 +1811,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   }}
                 >
                   {getTabFileIcon(tab)}
+                  {tab.type === "browser" &&
+                    getBrowserAgentAccess(tab.id)?.shared && (
+                      <span
+                        className="right-panel-tab-agent-badge"
+                        title={t("browser.sharedBadge")}
+                        aria-hidden="true"
+                      />
+                    )}
                   <span className="right-panel-tab-title" title={tab.title}>
                     {dirtyTabs.has(tab.id) && (
                       <span

@@ -7,7 +7,7 @@
  * 归属转发）。
  */
 import { createRoot } from "react-dom/client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 // 主题设计令牌与预设变量必须与主窗口保持一致地引入（styles.css 内的
 // var(--surface-island-strong) / --accent-color 等依赖 tokens 与预设文件，
 // 缺失会导致弹窗背景透明、呼吸灯动画失效）。
@@ -33,6 +33,8 @@ import {
   useBrowserMcpCommandBridge,
   type BrowserMcpTabCallbacks,
 } from "./components/rightPanel/browser/useBrowserMcpCommandBridge";
+import type { BrowserAgentAccess } from "./components/rightPanel/browser/browserAgentAccess";
+import { getBrowserAgentAccess } from "./components/rightPanel/browser/browserAgentAccess";
 
 const DEFAULT_TITLE = "Snow Browser";
 
@@ -50,6 +52,13 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
   const initialUrl = params.get("url") ?? "";
   const [title, setTitle] = useState("");
   const [pageUrl, setPageUrl] = useState(initialUrl);
+  // Agent 授权随窗口迁移（主窗口「在新窗口中打开」时经 query 传入）。
+  const initialAgentAccess = useRef<BrowserAgentAccess>({
+    shared: params.get("shared") === "1",
+    isolated: params.get("isolated") === "1",
+    origin: params.get("origin") === "agent" ? "agent" : "user",
+    url: initialUrl,
+  }).current;
 
   // 页面标题（onTitleChange 来自 webview）同步到窗口标题栏。
   useEffect(() => {
@@ -80,14 +89,20 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
         window.focus();
         return true;
       },
-      listTabs: () => [
-        {
-          instanceId,
-          title: title || DEFAULT_TITLE,
-          url: pageUrl,
-          isActive: true,
-        },
-      ],
+      listTabs: () => {
+        const access = getBrowserAgentAccess(instanceId);
+        return [
+          {
+            instanceId,
+            title: title || DEFAULT_TITLE,
+            url: pageUrl,
+            isActive: true,
+            shared: access?.shared ?? false,
+            isolated: access?.isolated ?? false,
+            origin: access?.origin ?? "user",
+          },
+        ];
+      },
     }),
     [instanceId, title, pageUrl],
   );
@@ -148,6 +163,7 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
         initialUrl={initialUrl}
         isActive
         detached
+        agentAccess={initialAgentAccess}
         onTitleChange={setTitle}
         onUrlChange={setPageUrl}
         // guest 页面（target=_blank / window.open）请求打开新标签页：本窗口

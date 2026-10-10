@@ -896,6 +896,7 @@ export const ChatInputView = ({
             }}
           />
           <ChatInputToolbar
+            projectId={projectId}
             plusMenuSections={plusMenuSections}
             commandTriggerRef={commandTriggerRef}
             isCommandOpen={isCommandOpen}

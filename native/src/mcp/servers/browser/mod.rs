@@ -85,7 +85,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "create".to_string(),
-                description: "Create a new embedded browser tab in the right panel (each browser tab hosts one page and its instanceId is the tab ID). Returns an instanceId for explicitly targeting it later. Optionally opens an initial URL.".to_string(),
+                description: "Create a new embedded browser tab in the right panel (each browser tab hosts one page and its instanceId is the tab ID). Returns an instanceId for explicitly targeting it later. Optionally opens an initial URL. Tabs created this way count as shared with the agent and use an isolated session by default (their own cookies/storage, no access to the user's login state).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -572,7 +572,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "list".to_string(),
-                description: "List all open embedded browser tabs with their instance IDs, titles, URLs, and active state. Use this to discover available tabs before closing or switching.".to_string(),
+                description: "List all open embedded browser tabs with their instance IDs, titles, URLs, active state and agent access flags (shared / isolated / origin). Tabs the user has not shared with the agent only expose their instanceId and a placeholder title (url is null); call browser-request_share to ask the user to share such a tab. Use this to discover available tabs before closing or switching.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {}
@@ -1415,6 +1415,20 @@ impl McpService for BrowserService {
             description: "Enumerate attached frames of an embedded browser, including cross-origin frames. Returns opaque document-scoped frameId and parentFrameId, main-frame flag and redacted URL/name. Re-enumerate after navigation or detachment; stale IDs never fall back to the main frame. Does not read cookies or authentication storage.".to_string(),
             input_schema: json!({"type": "object", "properties": {"instanceId": {"type": "string", "description": "Optional browser tab ID; omit or use current for the focused tab."}}}),
         });
+        tools.push(McpTool {
+            server_id: SERVER_ID.to_string(),
+            name: "request_share".to_string(),
+            description: "Ask the user to share a browser tab with the agent. Only tabs explicitly shared by the user (or tabs the agent created itself) can be driven by the other browser tools; this tool shows an in-app confirmation on the tab and waits for the user's answer. Returns { shared: true } when granted, or { shared: false, reason: \"denied\" | \"domain-blocked\" } when the user declined, did not answer in time, or the tab URL is excluded by the browser agent domain policy. Returns an error when browser agent access is turned off in settings. Omit instanceId to target the focused tab.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "instanceId": {
+                        "type": "string",
+                        "description": "Optional browser instance ID to share. Omit it or use current to target the most recently focused embedded browser tab."
+                    }
+                }
+            }),
+        });
         for tool in &mut tools {
             if matches!(tool.name.as_str(), "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "fill_form" | "hover" | "select_option" | "upload-file" | "devtools") {
                 tool.input_schema["properties"]["frameId"] = json!({
@@ -1444,7 +1458,8 @@ impl McpService for BrowserService {
             | "get_heapsnapshot_object_details" | "get_heapsnapshot_edges"
             | "get_heapsnapshot_retainers" | "get_heapsnapshot_retaining_paths"
             | "get_heapsnapshot_duplicate_strings" | "compare_heapsnapshots"
-            | "screencast_start" | "screencast_stop" | "list_page_tools" | "call_page_tool" => {
+            | "screencast_start" | "screencast_stop" | "list_page_tools" | "call_page_tool"
+            | "request_share" => {
                 Err(Error::new(
                     Status::GenericFailure,
                     "Browser tools must be executed through the asynchronous Electron command bridge"

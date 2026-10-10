@@ -64,7 +64,10 @@ import {
   stopBrowserTrace,
 } from "./browserTrace";
 import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
-import { createDetachedBrowserWindow } from "../../browser/browserWindow";
+import {
+  createDetachedBrowserWindow,
+  type BrowserAgentAccessQuery,
+} from "../../browser/browserWindow";
 import {
   applyBrowserEmulation,
   resizeBrowserViewport,
@@ -482,14 +485,27 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   // 重建浏览器。原 tab 由渲染端在成功后关闭。
   ipcMain.handle(
     "browser:open-detached-window",
-    (_event, instanceId: unknown, url: unknown) => {
+    (_event, instanceId: unknown, url: unknown, access: unknown) => {
       if (typeof instanceId !== "string" || !instanceId.trim()) {
         throw new Error("A valid browser instanceId is required");
       }
       if (typeof url !== "string") {
         throw new Error("A valid browser URL is required");
       }
-      createDetachedBrowserWindow(instanceId.trim(), url.trim());
+      let resolvedAccess: BrowserAgentAccessQuery | undefined;
+      if (access && typeof access === "object" && !Array.isArray(access)) {
+        const record = access as Record<string, unknown>;
+        resolvedAccess = {
+          shared: record.shared === true,
+          isolated: record.isolated === true,
+          origin: record.origin === "agent" ? "agent" : "user",
+        };
+      }
+      createDetachedBrowserWindow(
+        instanceId.trim(),
+        url.trim(),
+        resolvedAccess,
+      );
     },
   );
 
@@ -550,6 +566,26 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     mainWindow.focus();
     mainWindow.webContents.send("browser:open-tab-in-main-broadcast", {
       url: url.trim(),
+    });
+  });
+
+  // 独立浏览器窗口「发送给 Agent」：把文本片段（页面正文 / 控制台日志 /
+  // 网络请求）转发给主窗口聊天输入框（渲染进程内事件无法跨窗口）。
+  ipcMain.on("chat-text:forward", (_event, payload: unknown) => {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return;
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.text !== "string" || !record.text.trim()) {
+      return;
+    }
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindow.webContents.send("chat-text:insert", {
+      text: record.text,
+      source: typeof record.source === "string" ? record.source : "",
     });
   });
 

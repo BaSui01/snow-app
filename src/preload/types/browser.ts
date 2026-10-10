@@ -22,7 +22,14 @@ export type BrowserFramesResult = {
   unavailable: { frameTreeNodeId: number; error: string }[];
 };
 
-export type BrowserRestorePayload = {
+/** 浏览器标签页的 Agent 授权信息（跨窗口迁移时随载荷传递）。 */
+export type BrowserAgentAccessPayload = {
+  shared?: boolean;
+  isolated?: boolean;
+  origin?: "user" | "agent";
+};
+
+export type BrowserRestorePayload = BrowserAgentAccessPayload & {
   instanceId: string;
   url: string;
   title: string;

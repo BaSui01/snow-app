@@ -17,11 +17,13 @@ import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { TokenUsageRing } from "./TokenUsageRing";
 import { WorktreeSessionSelector } from "./WorktreeSessionSelector";
 import { ChatInputActionButtons } from "./ChatInputActionButtons";
+import { LspStatusBadge } from "./LspStatusBadge";
 import type { ChatInputViewProps } from "./types";
 
 type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
   Pick<
     ChatInputViewProps,
+    | "projectId"
     | "value"
     | "tokenUsage"
     | "isAborting"
@@ -69,6 +71,7 @@ type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
   };
 
 export const ChatInputToolbar = ({
+  projectId,
   plusMenuSections,
   commandTriggerRef,
   isCommandOpen,
@@ -127,6 +130,14 @@ export const ChatInputToolbar = ({
   return (
     <div className="input-toolbar">
       <div className="toolbar-left">
+        <LspStatusBadge
+          projectId={projectId}
+          onOpenSettings={
+            modelSelectorProps.onNavigateToView
+              ? () => modelSelectorProps.onNavigateToView?.("lsp-settings")
+              : undefined
+          }
+        />
         <PlusMenu
           sections={plusMenuSections}
           modesLocked={isSessionRunning}

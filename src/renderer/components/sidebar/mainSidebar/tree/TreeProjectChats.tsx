@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from "react";
+import { Fragment, useCallback, useMemo } from "react";
 import type { RefObject } from "react";
 
 import { Loader2 } from "lucide-react";
@@ -6,16 +6,19 @@ import { Loader2 } from "lucide-react";
 import type { ChatConversationRecord } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../../../mainContent/chatMessages";
+import { ChatDeleteConfirmDialog } from "../ChatDeleteConfirmDialog";
 import { ChatConversationRow } from "../chats/ChatConversationRow";
 import { ChatListFooter } from "../chats/ChatListFooter";
+import {
+  ChatMultiSelectBar,
+  type ChatMultiSelectAction,
+} from "../chats/ChatMultiSelectBar";
 import { useChatConversationList } from "../chats/useChatConversationList";
+import { useChatSelection } from "../chats/useChatSelection";
 import { useConversationActions } from "../chats/useConversationActions";
 import { useConversationTree } from "../chats/useConversationTree";
 import { usePausedConversationIds } from "../chats/usePausedConversationIds";
 import { usePinnedConversations } from "../chats/usePinnedConversations";
-
-const EMPTY_SELECTED_IDS = new Set<string>();
-const noop = (): void => undefined;
 
 type TreeProjectChatsProps = {
   directoryId: string;
@@ -82,10 +85,16 @@ export function TreeProjectChats({
     runningConversationIds,
   });
 
+  const selection = useChatSelection({
+    conversations: list.conversations,
+    runningConversationIds,
+    surfacedConversationIds: tree.surfacedConversationIds,
+  });
+
   const actions = useConversationActions({
     activeConversationId,
-    selectedIds: EMPTY_SELECTED_IDS,
-    resetMultiSelect: noop,
+    selectedIds: selection.selectedIds,
+    resetMultiSelect: selection.resetMultiSelect,
     collectConversationTreeIds: tree.collectConversationTreeIds,
     refreshConversations,
     updateConversationSummary,
@@ -101,6 +110,52 @@ export function TreeProjectChats({
     conversationListVersion,
     upsertedConversation,
   });
+
+  const exitMultiSelect = useCallback((): void => {
+    if (actions.isActionLocked) {
+      return;
+    }
+    selection.exitMultiSelect();
+    actions.setShowBatchConfirm(false);
+  }, [actions, selection]);
+
+  const allSelected =
+    selection.selectedIds.size === selection.multiSelectableCount;
+
+  const multiSelectActions: ChatMultiSelectAction[] = [
+    {
+      key: "archive",
+      label:
+        actions.archivingIds.size > 0
+          ? t("sidebar.chatMultiSelectArchiving", {
+              defaultValue: "Archiving...",
+            })
+          : t("sidebar.chatMultiSelectArchive", {
+              defaultValue: "Archive selected",
+            }),
+      icon: actions.archivingIds.size > 0 ? "spinner" : "archive",
+      disabled:
+        actions.archivingIds.size > 0 || selection.selectedIds.size === 0,
+      onClick: () => void actions.handleBatchArchive(),
+    },
+    {
+      key: "delete",
+      label: actions.isBatchDeleting
+        ? t("sidebar.chatMultiSelectDeleting", {
+            defaultValue: "Deleting...",
+          })
+        : t("sidebar.chatMultiSelectDelete", {
+            defaultValue: "Delete selected",
+          }),
+      icon: actions.isBatchDeleting ? "spinner" : "trash",
+      disabled:
+        actions.isBatchDeleting ||
+        actions.archivingIds.size > 0 ||
+        selection.selectedIds.size === 0,
+      danger: true,
+      onClick: actions.handleOpenBatchConfirm,
+    },
+  ];
 
   const handleSelectConversationFromList = (
     conversation: ChatConversationRecord,
@@ -171,8 +226,8 @@ export function TreeProjectChats({
         }
         isArchiving={actions.archivingIds.has(conversationId)}
         isDeleting={actions.deletingIds.has(conversationId)}
-        isMultiSelectMode={false}
-        isSelected={false}
+        isMultiSelectMode={selection.isMultiSelectMode}
+        isSelected={selection.selectedIds.has(conversationId)}
         isSubAgentExpanded={tree.expandedSubAgentConversationIds.has(
           conversationId,
         )}
@@ -183,6 +238,7 @@ export function TreeProjectChats({
         onDelete={(deleteImages, deleteMemories) =>
           void actions.handleDelete(conversation, deleteImages, deleteMemories)
         }
+        onEnterMultiSelect={selection.enterMultiSelect}
         onExport={(format) => void actions.handleExport(conversation, format)}
         onFork={() => actions.handleFork(conversation)}
         onPin={() =>
@@ -194,7 +250,7 @@ export function TreeProjectChats({
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
         onSetEmoji={(emoji) => actions.handleSetEmoji(conversation, emoji)}
-        onToggleSelect={noop}
+        onToggleSelect={() => selection.handleToggleSelect(conversationId)}
         onToggleSubAgentPanel={() =>
           tree.handleToggleSubAgentPanel(conversationId)
         }
@@ -223,6 +279,21 @@ export function TreeProjectChats({
 
   return (
     <>
+      {selection.isMultiSelectMode ? (
+        <ChatMultiSelectBar
+          actions={multiSelectActions}
+          allSelected={allSelected}
+          isExitDisabled={actions.isActionLocked}
+          onExit={exitMultiSelect}
+          onToggleSelectAll={
+            allSelected
+              ? selection.handleDeselectAll
+              : selection.handleSelectAll
+          }
+          selectAllDisabled={actions.isActionLocked}
+          selectedCount={selection.selectedIds.size}
+        />
+      ) : null}
       {showLoading ? (
         <span className="empty-text loading">
           <Loader2 className="spin" size={13} />
@@ -238,11 +309,12 @@ export function TreeProjectChats({
         </span>
       ) : (
         <>
-          {pinned.pinnedConversations.map((conversation) => (
-            <Fragment key={list.getConversationKey(conversation)}>
-              {renderConversationRow(conversation)}
-            </Fragment>
-          ))}
+          {!selection.isMultiSelectMode &&
+            pinned.pinnedConversations.map((conversation) => (
+              <Fragment key={list.getConversationKey(conversation)}>
+                {renderConversationRow(conversation)}
+              </Fragment>
+            ))}
           {list.conversations.map((conversation) => (
             <Fragment key={list.getConversationKey(conversation)}>
               {renderConversationRow(conversation)}
@@ -255,6 +327,20 @@ export function TreeProjectChats({
           />
         </>
       )}
+      <ChatDeleteConfirmDialog
+        conversationCount={selection.selectedIds.size}
+        deleteImages={actions.batchDeleteImages}
+        deleteMemories={actions.batchDeleteMemories}
+        imagesCount={actions.batchImagesCount}
+        isBatch
+        isConfirming={actions.isBatchDeleting}
+        memoriesCount={actions.batchMemoriesCount}
+        onCancel={() => actions.setShowBatchConfirm(false)}
+        onConfirm={() => void actions.handleBatchDelete()}
+        onDeleteImagesChange={actions.setBatchDeleteImages}
+        onDeleteMemoriesChange={actions.setBatchDeleteMemories}
+        open={actions.showBatchConfirm}
+      />
     </>
   );
 }

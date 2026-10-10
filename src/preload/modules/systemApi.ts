@@ -7,6 +7,7 @@ import {
 } from "../../shared/notification";
 import type {
   BashStreamChunk,
+  BrowserAgentAccessPayload,
   BrowserCommandRequest,
   BrowserCommandResponse,
   BrowserFrameOperationArgs,
@@ -54,6 +55,9 @@ const BROWSER_OPEN_TAB_IN_MAIN_BROADCAST_CHANNEL =
 // 独立浏览器窗口确认元素选择后转发到主窗口聊天输入框。
 const ELEMENT_TAG_FORWARD_CHANNEL = "element-tag:forward";
 const ELEMENT_TAG_INSERT_CHANNEL = "element-tag:insert";
+// 独立浏览器窗口「发送给 Agent」的文本片段转发到主窗口聊天输入框。
+const CHAT_TEXT_FORWARD_CHANNEL = "chat-text:forward";
+const CHAT_TEXT_INSERT_CHANNEL = "chat-text:insert";
 // 独立浏览器窗口点击「浏览器设置」后经主进程转发到主窗口（Sidebar 打开设置）。
 const APP_CONTROL_OPEN_SETTINGS_FORWARD_CHANNEL =
   "app-control:open-settings-forward";
@@ -383,9 +387,50 @@ ipcRenderer.on(
   },
 );
 
+export type ChatTextPayload = {
+  text: string;
+  source?: string;
+};
+
+type ChatTextInsertSubscriber = (payload: ChatTextPayload) => void;
+
+const chatTextInsertSubscribers = new Set<ChatTextInsertSubscriber>();
+
+const isChatTextPayload = (value: unknown): value is ChatTextPayload => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.text === "string" &&
+    (value.source === undefined || typeof value.source === "string")
+  );
+};
+
+const deliverChatTextInsert = (
+  subscriber: ChatTextInsertSubscriber,
+  payload: ChatTextPayload,
+): void => {
+  try {
+    subscriber(payload);
+  } catch (error) {
+    console.error("[chat-text] Insert subscriber failed", error);
+  }
+};
+
+ipcRenderer.on(
+  CHAT_TEXT_INSERT_CHANNEL,
+  (_event: IpcRendererEvent, payload: unknown): void => {
+    if (!isChatTextPayload(payload)) {
+      return;
+    }
+    for (const subscriber of chatTextInsertSubscribers) {
+      deliverChatTextInsert(subscriber, payload);
+    }
+  },
+);
+
 /** 主窗口打开设置的请求（view 为目标设置视图 id，如 browser-settings）。 */
 type OpenSettingsRequestSubscriber = (view: string) => void;
-
 const openSettingsRequestSubscribers = new Set<OpenSettingsRequestSubscriber>();
 
 const deliverOpenSettingsRequest = (
@@ -877,6 +922,22 @@ export const systemApi = {
     };
   },
   /**
+   * 将文本片段（页面正文 / 控制台日志 / 网络请求）转发给主窗口聊天输入框
+   * （独立浏览器窗口专用，同 forwardElementTagToChat 的跨进程转发思路）。
+   */
+  forwardTextToChat: (payload: ChatTextPayload): void => {
+    ipcRenderer.send(CHAT_TEXT_FORWARD_CHANNEL, payload);
+  },
+  /** 订阅主进程转发过来的文本片段（主窗口 ChatInputView 使用）。 */
+  onChatTextInserted: (
+    callback: (payload: ChatTextPayload) => void,
+  ): (() => void) => {
+    chatTextInsertSubscribers.add(callback);
+    return () => {
+      chatTextInsertSubscribers.delete(callback);
+    };
+  },
+  /**
    * 请求主窗口打开设置面板（独立浏览器窗口专用：该窗口内没有 Sidebar，
    * APP_CONTROL_OPEN_SETTINGS_EVENT 事件无法跨渲染进程到达主窗口，
    * 须经主进程转发并聚焦主窗口）。
@@ -954,8 +1015,17 @@ export const systemApi = {
    * 承载同一实例（继承 instanceId），携带当前页面 URL，独立窗口据此
    * 重建浏览器。返回后原 tab 由渲染端关闭。
    */
-  openDetachedBrowserWindow: (instanceId: string, url: string): Promise<void> =>
-    ipcRenderer.invoke("browser:open-detached-window", instanceId, url),
+  openDetachedBrowserWindow: (
+    instanceId: string,
+    url: string,
+    access?: BrowserAgentAccessPayload,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "browser:open-detached-window",
+      instanceId,
+      url,
+      access ?? null,
+    ),
   /**
    * 独立浏览器窗口「还原为标签页」：把当前实例（页面 URL + 标题）
    * 经主进程转发给主窗口，由 RightPanel 恢复为右侧面板浏览器 tab，

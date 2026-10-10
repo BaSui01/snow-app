@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Bot,
   Camera,
   Check,
   ChevronRight,
@@ -14,10 +15,12 @@ import {
   Cookie,
   EllipsisVertical,
   Eraser,
+  FileText,
   Globe,
   History,
   Loader2,
   Minus,
+  Network,
   PanelLeft,
   Plus,
   RefreshCw,
@@ -25,10 +28,12 @@ import {
   Settings,
   SlidersHorizontal,
   Smartphone,
+  Terminal,
   Trash2,
   ZoomIn,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
+import { Tooltip } from "../../common/Tooltip";
 import {
   DEFAULT_BROWSER_DEVICE_SIZE_ID,
   type BrowserDisplayDevice,
@@ -63,6 +68,14 @@ export type BrowserMenuProps = {
   isCapturing: boolean;
   /** 独立窗口专属：还原为右侧面板标签页（undefined 时菜单不显示该项） */
   onRestoreToTabs?: () => void;
+  /** 当前标签页是否已共享给 Agent */
+  sharedWithAgent: boolean;
+  /** 当前标签页是否运行在隔离会话 */
+  isolatedSession: boolean;
+  /** 把页面正文 / 控制台日志 / 网络请求附到聊天输入框 */
+  onSendPageToAgent: () => void;
+  onSendConsoleToAgent: () => void;
+  onSendNetworkToAgent: () => void;
 };
 
 type MenuPosition = {
@@ -120,6 +133,11 @@ export const BrowserMenu = ({
   onScreenshot,
   isCapturing,
   onRestoreToTabs,
+  sharedWithAgent,
+  isolatedSession,
+  onSendPageToAgent,
+  onSendConsoleToAgent,
+  onSendNetworkToAgent,
 }: BrowserMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -253,20 +271,34 @@ export const BrowserMenu = ({
 
   return (
     <div className="browser-menu-wrapper" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`browser-nav-btn browser-menu-trigger${
-          isOpen ? " is-open" : ""
-        }`}
-        onClick={handleTriggerClick}
-        aria-label={t("browser.moreActions")}
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-        title={t("browser.moreActions")}
+      <Tooltip
+        content={
+          <span className="browser-tooltip-content">
+            <span className="browser-tooltip-title">
+              {t("browser.moreActions")}
+            </span>
+            <span className="browser-tooltip-hint">
+              {t("browser.moreActionsHint")}
+            </span>
+          </span>
+        }
+        placement="top"
+        visible={isOpen ? false : undefined}
       >
-        <EllipsisVertical size={15} strokeWidth={1.8} />
-      </button>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={`browser-nav-btn browser-menu-trigger${
+            isOpen ? " is-open" : ""
+          }`}
+          onClick={handleTriggerClick}
+          aria-label={t("browser.moreActions")}
+          aria-haspopup="true"
+          aria-expanded={isOpen}
+        >
+          <EllipsisVertical size={15} strokeWidth={1.8} />
+        </button>
+      </Tooltip>
       {isOpen && menuPosition
         ? createPortal(
             <div
@@ -539,6 +571,58 @@ export const BrowserMenu = ({
                   {t("browser.screenshot")}
                 </span>
               </button>
+
+              <div className="browser-menu-separator" role="separator" />
+              <div className="browser-menu-section-header">
+                <Bot size={13} strokeWidth={1.8} />
+                <span>{t("browser.sendToAgent")}</span>
+                {sharedWithAgent ? (
+                  <span className="browser-menu-section-flag">
+                    {t("browser.sharedBadge")}
+                  </span>
+                ) : isolatedSession ? (
+                  <span className="browser-menu-section-flag">
+                    {t("browser.isolatedBadge")}
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="browser-menu-item"
+                role="menuitem"
+                onClick={() => runAction(onSendPageToAgent)}
+                title={t("browser.sendPageToAgentTitle")}
+              >
+                <FileText size={14} strokeWidth={1.8} />
+                <span className="browser-menu-label">
+                  {t("browser.sendPageToAgent")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="browser-menu-item"
+                role="menuitem"
+                onClick={() => runAction(onSendConsoleToAgent)}
+                title={t("browser.sendConsoleToAgentTitle")}
+              >
+                <Terminal size={14} strokeWidth={1.8} />
+                <span className="browser-menu-label">
+                  {t("browser.sendConsoleToAgent")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="browser-menu-item"
+                role="menuitem"
+                onClick={() => runAction(onSendNetworkToAgent)}
+                title={t("browser.sendNetworkToAgentTitle")}
+              >
+                <Network size={14} strokeWidth={1.8} />
+                <span className="browser-menu-label">
+                  {t("browser.sendNetworkToAgent")}
+                </span>
+              </button>
+              <div className="browser-menu-separator" role="separator" />
 
               <button
                 type="button"

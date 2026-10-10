@@ -7,6 +7,7 @@ import {
   AppWindow,
   ArrowLeft,
   ArrowRight,
+  Bot,
   Braces,
   Camera,
   CheckCircle2,
@@ -66,6 +67,7 @@ type BrowserOperation =
   | "close"
   | "focus"
   | "list"
+  | "request_share"
   | "wait"
   | "press_key"
   | "hover"
@@ -2186,6 +2188,7 @@ const RUNNING_LABEL_KEYS: Record<BrowserOperation, string> = {
   close: "toolCall.browser.running.close",
   focus: "toolCall.browser.running.focus",
   list: "toolCall.browser.running.list",
+  request_share: "toolCall.browser.running.request_share",
   wait: "toolCall.browser.running.wait",
   press_key: "toolCall.browser.running.press_key",
   hover: "toolCall.browser.running.hover",
@@ -2349,6 +2352,11 @@ export const BrowserToolCall = ({
     case "list":
       displayName = t("toolCall.browser.allTabs");
       break;
+    case "request_share": {
+      const instanceId = asString(data?.instanceId) ?? argInstanceId;
+      displayName = instanceId ? shortInstanceId(instanceId) : undefined;
+      break;
+    }
   }
 
   /* 头部 meta 徽章：按操作给出最有信息量的摘要 */
@@ -2532,6 +2540,21 @@ export const BrowserToolCall = ({
           );
         }
         return null;
+      }
+      case "request_share": {
+        const shared = data.shared === true;
+        return (
+          <span
+            className={`tool-call-browser-meta ${
+              shared ? "tool-call-browser-meta-active" : ""
+            }`}
+          >
+            <Bot size={10} aria-hidden="true" />
+            {shared
+              ? t("toolCall.browser.shareGranted")
+              : t("toolCall.browser.shareDenied")}
+          </span>
+        );
       }
       case "list": {
         const count = parseBrowserTabs(data.tabs).length;

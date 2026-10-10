@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bookmark,
+  Bot,
   Check,
   Cookie,
   Download,
@@ -34,14 +35,16 @@ import {
 import { UserscriptsSection } from "./UserscriptsSection";
 import { DisplayDevicesSection } from "./DisplayDevicesSection";
 import { HistorySection } from "./HistorySection";
+import { AgentAccessSection } from "./AgentAccessSection";
 
 type BrowserSettingsPanelProps = {
   /** 初始 tab（菜单「自定义设备…」经 browser-devices view 直达设备 tab） */
   initialTab?: BrowserSettingsTab;
 };
 
-/** 面板顶部 tab：浏览器设置 / 显示尺寸设备 / 用户脚本 / 历史记录 */
-type BrowserSettingsTab = "settings" | "devices" | "userscripts" | "history";
+/** 面板顶部 tab：浏览器设置 / 显示尺寸设备 / 用户脚本 / 历史记录 / Agent 授权 */
+type BrowserSettingsTab =
+  "settings" | "devices" | "userscripts" | "history" | "agent";
 
 type PasswordRecord = {
   id: string;
@@ -672,6 +675,18 @@ export function BrowserSettingsPanel({
           <History size={13} strokeWidth={1.8} />
           {t("settings.browserHistory")}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "agent"}
+          className={`import-settings-tab ${
+            activeTab === "agent" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("agent")}
+        >
+          <Bot size={13} strokeWidth={1.8} />
+          {t("settings.browserAgentAccess")}
+        </button>
       </div>
 
       {activeTab === "userscripts" ? (
@@ -680,6 +695,8 @@ export function BrowserSettingsPanel({
         <DisplayDevicesSection />
       ) : activeTab === "history" ? (
         <HistorySection />
+      ) : activeTab === "agent" ? (
+        <AgentAccessSection />
       ) : (
         <>
           {/* 概览卡片 */}

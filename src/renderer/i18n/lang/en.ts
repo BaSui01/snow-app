@@ -1296,6 +1296,8 @@ export const en = {
   "toolCall.imagegen.describeChars": "{{count}} chars",
   "toolCall.browser.newTab": "New tab",
   "toolCall.browser.allTabs": "All tabs",
+  "toolCall.browser.shareGranted": "Shared",
+  "toolCall.browser.shareDenied": "Not shared",
   "toolCall.browser.timeout": "Timeout",
   "toolCall.browser.exactMatch": "Exact match",
   "toolCall.browser.fullPage": "Full page",
@@ -1338,6 +1340,7 @@ export const en = {
   "toolCall.browser.running.close": "Closing tab...",
   "toolCall.browser.running.focus": "Focusing tab...",
   "toolCall.browser.running.list": "Listing tabs...",
+  "toolCall.browser.running.request_share": "Requesting tab access...",
   "toolCall.browser.running.wait": "Waiting for condition...",
   "toolCall.browser.running.press_key": "Pressing key...",
   "toolCall.browser.running.hover": "Hovering element...",
@@ -4375,6 +4378,8 @@ export const en = {
   "chatInput.lspBadgeTitleRunning": "{{count}} language server(s) running",
   "chatInput.lspBadgeTitleProblems": "{{count}} language server(s) unhealthy",
   "browser.moreActions": "More actions",
+  "browser.moreActionsHint":
+    "Screenshot, zoom, display size, clear data, send to agent and more",
   "browser.restoreToTabs": "Restore to tabs",
   "browser.clearBrowsingData": "Clear browsing data",
   "browser.clearCache": "Clear cache",
@@ -4407,6 +4412,7 @@ export const en = {
   "browser.screenshot": "Screenshot",
   "browser.screenshotTitle": "Capture page to clipboard",
   "browser.downloadsTitle": "Downloads",
+  "browser.downloadsHint": "View, open or reveal downloaded files",
   "browser.downloadsEmpty": "No downloads yet",
   "browser.openFile": "Open",
   "browser.showInFolder": "Show in folder",
@@ -4415,6 +4421,35 @@ export const en = {
   "browser.downloadCancel": "Cancel download",
   "browser.pickElement": "Pick element",
   "browser.pickElementTitle": "Pick a page element and add it to the input",
+  "browser.shareWithAgent": "Share with agent",
+  "browser.shareWithAgentTitle":
+    "Share this tab (including its login state) with the agent",
+  "browser.unshareFromAgent": "Stop sharing",
+  "browser.unshareFromAgentTitle": "Revoke the agent's access to this tab now",
+  "browser.sharedBadge": "Shared with agent",
+  "browser.isolatedBadge": "Isolated session",
+  "browser.agentShareRequest": "The agent is asking to share this tab",
+  "browser.agentShareApprove": "Allow",
+  "browser.agentShareDeny": "Deny",
+  "browser.agentAccessDisabled":
+    "Browser access for the agent is turned off (Settings > Browser > Agent access)",
+  "browser.agentTabNotShared":
+    'Tab {{instanceId}} is not shared with the agent. Click "Share with agent" on the tab, or let the agent call browser-request_share to ask for access.',
+  "browser.agentInstanceMissing": "Browser tab was not found: {{instanceId}}",
+  "browser.agentDomainBlocked":
+    "The browser agent domain policy does not allow {{host}}",
+  "browser.agentTabHiddenTitle": "Tab not shared with the agent",
+  "browser.sendToAgent": "Send to agent",
+  "browser.sendPageToAgent": "Send page text",
+  "browser.sendPageToAgentTitle":
+    "Attach the current page's text content to the chat input",
+  "browser.sendConsoleToAgent": "Send console logs",
+  "browser.sendConsoleToAgentTitle":
+    "Attach this tab's console logs to the chat input",
+  "browser.sendNetworkToAgent": "Send network requests",
+  "browser.sendNetworkToAgentTitle":
+    "Attach this tab's recent network requests to the chat input",
+  "browser.sendToAgentEmpty": "Nothing to send",
   "browser.elementNotePlaceholder": "Add a note (optional)...",
   "browser.elementAddToInput": "Confirm",
   "browser.elementStyleTitle": "Style editor",
@@ -4464,6 +4499,29 @@ export const en = {
     "Delete the {{count}} selected bookmarks? This action cannot be undone.",
   "settings.browserBookmarkSelectRecord": "Select this bookmark",
   "settings.browserHistory": "History",
+  "settings.browserAgentAccess": "Agent access",
+  "settings.browserAgentAccessHint":
+    "Browser tabs are private by default: the agent can only drive tabs you explicitly share (or tabs the agent opened itself, which run in an isolated session).",
+  "settings.browserAgentEnabled": "Allow the agent to use the embedded browser",
+  "settings.browserAgentEnabledHint":
+    "When off, every browser tool is rejected with an error.",
+  "settings.browserAgentIsolation":
+    "Give agent-opened tabs an isolated session",
+  "settings.browserAgentIsolationHint":
+    "Isolated tabs keep their own cookies and storage (in memory only), so they never touch your logged-in session. Turn this off to let the agent reuse your login state in tabs it opens.",
+  "settings.browserAgentDomainMode": "Domain policy",
+  "settings.browserAgentDomainModeHint":
+    "Restrict which sites the agent may drive, in addition to tab sharing.",
+  "settings.browserAgentDomainModeOff": "No restriction",
+  "settings.browserAgentDomainModeAllow": "Allow list only",
+  "settings.browserAgentDomainModeDeny": "Block list only",
+  "settings.browserAgentDomains": "Domains",
+  "settings.browserAgentDomainsPlaceholder": "example.com",
+  "settings.browserAgentDomainsHint":
+    "Entries match the host and its subdomains. Allow list: only these hosts are reachable. Block list: everything except these hosts is reachable.",
+  "settings.browserAgentDomainsEmpty":
+    "No domains yet. Add the sites the agent may (or may not) use.",
+  "settings.browserAgentAddDomain": "Add domain",
   "settings.browserHistoryManageTitle": "Browsing history",
   "settings.browserHistoryHint":
     "Pages visited in the embedded browser, used for address bar autocomplete",

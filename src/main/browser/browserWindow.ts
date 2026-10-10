@@ -25,11 +25,26 @@ const MIN_WINDOW_HEIGHT = 320;
 /** instanceId -> 独立浏览器窗口（同一实例只允许一个独立窗口）。 */
 const detachedWindows = new Map<string, BrowserWindow>();
 
+export type BrowserAgentAccessQuery = {
+  shared: boolean;
+  isolated: boolean;
+  origin: "user" | "agent";
+};
+
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
 
-const buildPageUrl = (instanceId: string, url: string): string => {
+const buildPageUrl = (
+  instanceId: string,
+  url: string,
+  access?: BrowserAgentAccessQuery,
+): string => {
   const query = new URLSearchParams({ instanceId, url });
+  if (access) {
+    query.set("shared", access.shared ? "1" : "0");
+    query.set("isolated", access.isolated ? "1" : "0");
+    query.set("origin", access.origin);
+  }
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     return `${process.env.ELECTRON_RENDERER_URL}/browserWindow.html?${query.toString()}`;
   }
@@ -48,6 +63,7 @@ const buildPageUrl = (instanceId: string, url: string): string => {
 export const createDetachedBrowserWindow = (
   instanceId: string,
   url: string,
+  access?: BrowserAgentAccessQuery,
 ): void => {
   const existing = detachedWindows.get(instanceId);
   if (existing && !existing.isDestroyed()) {
@@ -113,7 +129,7 @@ export const createDetachedBrowserWindow = (
     event.preventDefault();
   });
 
-  void win.loadURL(buildPageUrl(instanceId, url)).catch((error) => {
+  void win.loadURL(buildPageUrl(instanceId, url, access)).catch((error) => {
     console.error("Failed to load detached browser window:", error);
   });
 };

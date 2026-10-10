@@ -238,6 +238,26 @@ export const useInputFileOperations = ({
       window.removeEventListener(TERMINAL_INSERT_TEXT_EVENT, onInsertText);
   }, [restoreCaret, syncContent, textareaRef]);
 
+  // 独立浏览器窗口「发送给 Agent」：文本片段经主进程转发到主窗口输入框，
+  // 与终端「发送到输入框」共用同一种 text snippet chip。
+  useEffect(() => {
+    return window.snow.onChatTextInserted((payload) => {
+      const text = payload.text.trim();
+      if (!text || !textareaRef.current) {
+        return;
+      }
+      textareaRef.current.focus();
+      restoreCaret();
+      const tag: TextSnippetTag = {
+        content: text,
+        summary: buildTextSnippetSummary(text, 36),
+        charCount: text.length,
+      };
+      insertHtmlAtSelection(createTextSnippetChipHtml(tag));
+      syncContent();
+    });
+  }, [restoreCaret, syncContent, textareaRef]);
+
   useEffect(() => {
     const handleInsertElementTag = (event: Event): void => {
       const tag = (event as CustomEvent<ElementTag>).detail;

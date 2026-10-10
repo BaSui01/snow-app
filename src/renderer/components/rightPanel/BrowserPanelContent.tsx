@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bot } from "lucide-react";
 import {
   attachGuestPointerDismiss,
   BrowserElementPicker,
@@ -23,12 +24,33 @@ import {
   registerBrowserMcpInstance,
 } from "./browser/browserMcpController";
 import {
+  getBrowserAgentAccess,
+  getPendingBrowserAgentShareRequest,
+  registerBrowserAgentAccess,
+  resolveBrowserAgentShareRequest,
+  setBrowserTabShared,
+  subscribeBrowserAgentAccess,
+  unregisterBrowserAgentAccess,
+  updateBrowserAgentAccessUrl,
+  type BrowserAgentAccess,
+  type BrowserAgentShareRequest,
+} from "./browser/browserAgentAccess";
+import {
+  BROWSER_AGENT_ISOLATED_PARTITION,
+  getBrowserAgentSettings,
+  isBrowserAgentUrlAllowed,
+} from "./browser/browserAgentSettings";
+import {
   clearBrowserNavigationState,
   clearBrowserRouteRulesForInstance,
   executeBrowserMcpOperation,
   recordMainFrameNavigationFailure,
   recordMainFrameNavigationSuccess,
 } from "./browser/browserMcpOperations";
+import {
+  TERMINAL_INSERT_TEXT_EVENT,
+  type TerminalInsertTextPayload,
+} from "./terminal/terminalMonitor";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
 import { useI18n } from "../../i18n";
 import {
@@ -54,6 +76,8 @@ export type BrowserPanelContentProps = {
   onOpenNewTab?: (url: string, activate: boolean) => void;
   /** 独立浏览器窗口模式：工具栏菜单显示「还原为标签页」（主面板 tab 内为 false/缺省） */
   detached?: boolean;
+  /** 标签页创建时的 Agent 授权初始值（运行时以 browserAgentAccess 注册表为准） */
+  agentAccess?: BrowserAgentAccess;
 };
 
 const normalizeUrl = (input: string, homepage: string): string => {
@@ -98,6 +122,10 @@ const MAX_ELEMENT_TEXT_LENGTH = 2000;
 const MAX_SNAPSHOT_DATA_URL_LENGTH = 3 * 1024 * 1024;
 /** 单层快照采集的超时（毫秒），输入框侧另有 5s 全链路超时兜底 */
 const SNAPSHOT_LAYER_TIMEOUT_MS = 3000;
+/** 「发送给 Agent」单次附给输入框的文本上限（字符数） */
+const MAX_AGENT_PAYLOAD_LENGTH = 20_000;
+/** 「发送给 Agent」网络请求条数上限 */
+const MAX_AGENT_NETWORK_RECORDS = 50;
 
 /**
  * webview 内执行的整页正文提取脚本（IIFE）：
@@ -234,6 +262,7 @@ export const BrowserPanelContent = ({
   onUrlChange,
   onOpenNewTab,
   detached = false,
+  agentAccess,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const { t } = useI18n();
   // onTitleChange / onUrlChange / onOpenNewTab 由 RightPanel 内联传入,每次
@@ -293,6 +322,22 @@ export const BrowserPanelContent = ({
   // 标题迟到更新也据此判断页面是否仍是同一页。
   const lastRecordedUrlRef = useRef("");
   const consoleMessagesRef = useRef<unknown[]>([]);
+  // Agent 授权初始值只在挂载时读取一次：运行时状态以 browserAgentAccess 注册表为准。
+  const initialAgentAccessRef = useRef<BrowserAgentAccess>({
+    shared: agentAccess?.shared ?? false,
+    isolated: agentAccess?.isolated ?? false,
+    origin: agentAccess?.origin ?? "user",
+    url: agentAccess?.url ?? "",
+  });
+  const [agentShared, setAgentShared] = useState<boolean>(
+    initialAgentAccessRef.current.shared,
+  );
+  const [agentIsolated, setAgentIsolated] = useState<boolean>(
+    initialAgentAccessRef.current.isolated,
+  );
+  const [agentShareRequest, setAgentShareRequest] =
+    useState<BrowserAgentShareRequest | null>(null);
+  const [agentNotice, setAgentNotice] = useState("");
   const [zoomFactor, setZoomFactor] = useState(1);
   const [findVisible, setFindVisible] = useState(false);
   const [findText, setFindText] = useState("");
@@ -445,6 +490,8 @@ export const BrowserPanelContent = ({
         // 导航成功（含重定向目标、页面内 pushState）后清除失败状态，
         // 使 screenshot 等 MCP 操作恢复正常执行。
         recordMainFrameNavigationSuccess(instanceId, e.url);
+        // 授权门禁的域名过滤按当前页面地址判定，导航后同步到注册表。
+        updateBrowserAgentAccessUrl(instanceId, e.url);
         setAddressInput(e.url);
         // 访问历史：导航提交即记录（标题由页面标题更新事件回填）。
         recordVisit(e.url);
@@ -658,6 +705,41 @@ export const BrowserPanelContent = ({
   const handleDownloadCancel = (id: number): void => {
     void window.snow.cancelBrowserDownload(id).catch(() => {});
   };
+
+  // Agent 授权注册：必须在 MCP 实例注册之前完成，命令门禁才能查到本实例的
+  // 共享状态（create 命令等待实例就绪后立即执行 navigate）。
+  useEffect(() => {
+    registerBrowserAgentAccess(instanceId, initialAgentAccessRef.current);
+    return () => {
+      unregisterBrowserAgentAccess(instanceId);
+    };
+  }, [instanceId]);
+
+  useEffect(() => {
+    const sync = (): void => {
+      const access = getBrowserAgentAccess(instanceId);
+      setAgentShared(access?.shared ?? false);
+      setAgentIsolated(access?.isolated ?? false);
+      setAgentShareRequest(getPendingBrowserAgentShareRequest(instanceId));
+    };
+    sync();
+    return subscribeBrowserAgentAccess(sync);
+  }, [instanceId]);
+
+  const handleToggleShareWithAgent = useCallback((): void => {
+    const access = getBrowserAgentAccess(instanceId);
+    if (!access) {
+      return;
+    }
+    setBrowserTabShared(instanceId, !access.shared);
+  }, [instanceId]);
+
+  const handleShareRequestDecision = useCallback(
+    (granted: boolean): void => {
+      resolveBrowserAgentShareRequest(instanceId, granted);
+    },
+    [instanceId],
+  );
 
   // MCP 命令桥：所有页面级操作（navigate/click/devtools 等）作用于本实例
   // 唯一的 webview；get_tab_content 提取页面正文。标签页的增删切换由上层
@@ -942,10 +1024,14 @@ export const BrowserPanelContent = ({
   // 主进程转发给主窗口 RightPanel，恢复为右侧面板浏览器 tab（保持实例
   // id，MCP 路由不受影响），随后主进程关闭本独立窗口。
   const handleRestoreToTabs = useCallback((): void => {
+    const access = getBrowserAgentAccess(instanceId);
     window.snow.restoreBrowserToMainWindow({
       instanceId,
       url: addressInput || src,
       title,
+      shared: access?.shared ?? false,
+      isolated: access?.isolated ?? false,
+      origin: access?.origin ?? "user",
     });
   }, [instanceId, addressInput, src, title]);
 
@@ -1036,6 +1122,94 @@ export const BrowserPanelContent = ({
     setFindResult(null);
   };
 
+  // 「发送给 Agent」：把页面正文 / 控制台日志 / 网络请求作为文本片段附到聊天
+  // 输入框。主窗口直接派发本地事件；独立窗口经主进程转发到主窗口输入框。
+  const pushAgentText = useCallback(
+    (rawText: string, source: string): void => {
+      const text = rawText.trim().slice(0, MAX_AGENT_PAYLOAD_LENGTH);
+      if (!text) {
+        setAgentNotice(
+          t("browser.sendToAgentEmpty", { defaultValue: "Nothing to send" }),
+        );
+        return;
+      }
+      const payload: TerminalInsertTextPayload = { text, source };
+      if (detached) {
+        window.snow.forwardTextToChat(payload);
+      } else {
+        window.dispatchEvent(
+          new CustomEvent<TerminalInsertTextPayload>(
+            TERMINAL_INSERT_TEXT_EVENT,
+            {
+              detail: payload,
+            },
+          ),
+        );
+      }
+    },
+    [detached, t],
+  );
+
+  useEffect(() => {
+    if (!agentNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setAgentNotice(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [agentNotice]);
+
+  const handleSendPageToAgent = useCallback((): void => {
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    void extractPageText(webview)
+      .then((text) => pushAgentText(text, addressInput || src))
+      .catch(() => pushAgentText("", ""));
+  }, [pushAgentText, addressInput, src]);
+
+  const handleSendConsoleToAgent = useCallback((): void => {
+    const entries = consoleMessagesRef.current as Array<{
+      level?: string;
+      message?: string;
+      line?: number;
+      sourceId?: string;
+    }>;
+    const text = entries
+      .map((entry) => {
+        const location = entry.sourceId
+          ? ` (${entry.sourceId}:${entry.line ?? 0})`
+          : "";
+        return `[${entry.level ?? "log"}] ${entry.message ?? ""}${location}`;
+      })
+      .join("\n");
+    pushAgentText(text, addressInput || src);
+  }, [pushAgentText, addressInput, src]);
+
+  const handleSendNetworkToAgent = useCallback((): void => {
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    void window.snow
+      .browserNetworkRequests(webview.getWebContentsId(), {
+        pageSize: MAX_AGENT_NETWORK_RECORDS,
+        includeStatic: false,
+      })
+      .then((result) => {
+        const text = (result.records as Array<Record<string, unknown>>)
+          .map(
+            (record) =>
+              `${String(record.method ?? "GET")} ${String(
+                record.status ?? "",
+              ).trim()} ${String(record.url ?? "")}`,
+          )
+          .join("\n");
+        pushAgentText(text, addressInput || src);
+      })
+      .catch(() => pushAgentText("", ""));
+  }, [pushAgentText, addressInput, src]);
+
   // allowpopups 是必须的：webview guest 默认 disablePopups=true，所有
   // window.open / target=_blank 都会被 Chromium 直接拦截（window.open
   // 返回 null），不会到达主进程 setWindowOpenHandler。放行后由主进程
@@ -1083,11 +1257,49 @@ export const BrowserPanelContent = ({
         onSetHomepage={setHomepage}
         onSetDeviceSize={handleSetDeviceSize}
         onRestoreToTabs={detached ? handleRestoreToTabs : undefined}
+        sharedWithAgent={agentShared}
+        isolatedSession={agentIsolated}
+        onToggleShareWithAgent={handleToggleShareWithAgent}
+        onSendPageToAgent={handleSendPageToAgent}
+        onSendConsoleToAgent={handleSendConsoleToAgent}
+        onSendNetworkToAgent={handleSendNetworkToAgent}
         downloads={downloads}
         onDownloadOpen={handleDownloadOpen}
         onDownloadShowInFolder={handleDownloadShowInFolder}
         onDownloadCancel={handleDownloadCancel}
       />
+      {agentShareRequest && (
+        <div className="browser-agent-share-request" role="alert">
+          <Bot size={14} strokeWidth={1.8} />
+          <span className="browser-agent-share-request-text">
+            {t("browser.agentShareRequest", {
+              defaultValue: "The agent is asking to share this tab",
+            })}
+          </span>
+          <span className="browser-agent-share-request-host">
+            {agentShareRequest.url || addressInput || src}
+          </span>
+          <button
+            type="button"
+            className="browser-agent-share-request-btn primary"
+            onClick={() => handleShareRequestDecision(true)}
+          >
+            {t("browser.agentShareApprove", { defaultValue: "Allow" })}
+          </button>
+          <button
+            type="button"
+            className="browser-agent-share-request-btn"
+            onClick={() => handleShareRequestDecision(false)}
+          >
+            {t("browser.agentShareDeny", { defaultValue: "Deny" })}
+          </button>
+        </div>
+      )}
+      {agentNotice && (
+        <div className="browser-agent-notice" role="status">
+          {agentNotice}
+        </div>
+      )}
       <BrowserBookmarksBar
         activeUrl={addressInput || src}
         activeTitle={title}
@@ -1107,6 +1319,9 @@ export const BrowserPanelContent = ({
       >
         <webview
           ref={handleWebviewRef}
+          partition={
+            agentIsolated ? BROWSER_AGENT_ISOLATED_PARTITION : undefined
+          }
           src={src}
           className="browser-webview"
           preload={window.snow.browserWebviewPreloadPath}

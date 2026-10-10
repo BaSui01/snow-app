@@ -8,6 +8,20 @@ import {
   parseBrowserMcpCommandArgs,
   waitForBrowserMcpInstance,
 } from "./browserMcpController";
+import {
+  ensureBrowserAgentAccess,
+  ensureBrowserAgentCreationAllowed,
+  ensureBrowserAgentEnabled,
+  getBrowserAgentAccess,
+  requestBrowserAgentShare,
+  type BrowserAgentAccess,
+} from "./browserAgentAccess";
+import {
+  getBrowserAgentSettings,
+  isBrowserAgentUrlAllowed,
+  resolveBrowserAgentHost,
+} from "./browserAgentSettings";
+import { tGlobal } from "../../../i18n";
 
 /** 等待右侧面板展开的兜底超时（毫秒），避免命令被永远挂起。 */
 const EXPAND_WAIT_TIMEOUT_MS = 3_000;
@@ -17,10 +31,17 @@ export type BrowserTabInfo = {
   title: string;
   url: string;
   isActive: boolean;
+  shared: boolean;
+  isolated: boolean;
+  origin: "user" | "agent";
 };
 
 export type BrowserMcpTabCallbacks = {
-  openTab: (url?: string, instanceId?: string) => string;
+  openTab: (
+    url?: string,
+    instanceId?: string,
+    access?: BrowserAgentAccess,
+  ) => string;
   closeTab: (instanceId: string) => boolean;
   focusTab: (instanceId: string) => boolean;
   listTabs: () => BrowserTabInfo[];
@@ -34,6 +55,14 @@ const resolveInstanceId = (argsJson: string): string | null => {
     return getFocusedBrowserInstanceId();
   }
   return requested;
+};
+
+const readStringArg = (
+  args: Record<string, unknown>,
+  field: string,
+): string | undefined => {
+  const value = args[field];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
 export const useBrowserMcpCommandBridge = (
@@ -80,20 +109,27 @@ export const useBrowserMcpCommandBridge = (
   useEffect(() => {
     return window.snow.registerBrowserCommandHandler(
       async (request: BrowserCommandRequest): Promise<string> => {
-        await ensurePanelExpanded();
-        const cb = callbacksRef.current;
+        const args = parseBrowserMcpCommandArgs(request.argsJson);
 
         switch (request.operation) {
           case "create": {
-            const args = parseBrowserMcpCommandArgs(request.argsJson);
-            const url =
-              typeof args.url === "string" ? args.url.trim() : undefined;
+            const url = readStringArg(args, "url");
+            ensureBrowserAgentCreationAllowed(url);
+            await ensurePanelExpanded();
             const instanceId = createBrowserInstanceId();
-            cb.openTab(url, instanceId);
+            const settings = getBrowserAgentSettings();
+            callbacksRef.current.openTab(url, instanceId, {
+              shared: true,
+              isolated: settings.isolation,
+              origin: "agent",
+              url: url ?? "",
+            });
             await waitForBrowserMcpInstance(instanceId);
             return JSON.stringify({
               instanceId,
               url: url || null,
+              shared: true,
+              isolated: settings.isolation,
               created: true,
             });
           }
@@ -105,7 +141,9 @@ export const useBrowserMcpCommandBridge = (
                 "No embedded browser is available to close; open a browser tab first",
               );
             }
-            const closed = cb.closeTab(instanceId);
+            ensureBrowserAgentAccess(instanceId);
+            await ensurePanelExpanded();
+            const closed = callbacksRef.current.closeTab(instanceId);
             if (!closed) {
               throw new Error(`Browser tab was not found: ${instanceId}`);
             }
@@ -116,13 +154,13 @@ export const useBrowserMcpCommandBridge = (
           }
 
           case "focus": {
-            const args = parseBrowserMcpCommandArgs(request.argsJson);
-            const instanceId =
-              typeof args.instanceId === "string" ? args.instanceId.trim() : "";
+            const instanceId = readStringArg(args, "instanceId");
             if (!instanceId) {
               throw new Error("instanceId is required for browser-focus");
             }
-            const focused = cb.focusTab(instanceId);
+            ensureBrowserAgentAccess(instanceId);
+            await ensurePanelExpanded();
+            const focused = callbacksRef.current.focusTab(instanceId);
             if (!focused) {
               throw new Error(`Browser tab was not found: ${instanceId}`);
             }
@@ -133,18 +171,76 @@ export const useBrowserMcpCommandBridge = (
           }
 
           case "list": {
-            const tabs = cb.listTabs();
+            ensureBrowserAgentEnabled();
+            const tabs = callbacksRef.current.listTabs().map((tab) => ({
+              instanceId: tab.instanceId,
+              isActive: tab.isActive,
+              shared: tab.shared,
+              isolated: tab.isolated,
+              origin: tab.origin,
+              title: tab.shared
+                ? tab.title
+                : tGlobal("browser.agentTabHiddenTitle", {
+                    defaultValue: "Tab not shared with the agent",
+                  }),
+              url: tab.shared ? tab.url : null,
+            }));
             return JSON.stringify({
               tabs,
               totalTabs: tabs.length,
             });
           }
 
-          default:
+          case "request_share": {
+            ensureBrowserAgentEnabled();
+            const instanceId = resolveInstanceId(request.argsJson);
+            if (!instanceId) {
+              throw new Error(
+                "No embedded browser is available to share; open a browser tab first",
+              );
+            }
+            const access = getBrowserAgentAccess(instanceId);
+            if (!access) {
+              throw new Error(`Browser tab was not found: ${instanceId}`);
+            }
+            if (access.shared) {
+              return JSON.stringify({ instanceId, shared: true });
+            }
+            const settings = getBrowserAgentSettings();
+            if (!isBrowserAgentUrlAllowed(access.url, settings)) {
+              return JSON.stringify({
+                instanceId,
+                shared: false,
+                reason: "domain-blocked",
+                host: resolveBrowserAgentHost(access.url),
+              });
+            }
+            await ensurePanelExpanded();
+            callbacksRef.current.focusTab(instanceId);
+            const granted = await requestBrowserAgentShare(instanceId);
+            return JSON.stringify({
+              instanceId,
+              shared: granted,
+              reason: granted ? null : "denied",
+            });
+          }
+
+          default: {
+            const instanceId = resolveInstanceId(request.argsJson);
+            if (instanceId) {
+              ensureBrowserAgentAccess(
+                instanceId,
+                request.operation === "navigate"
+                  ? readStringArg(args, "url")
+                  : undefined,
+              );
+            }
+            await ensurePanelExpanded();
             return executeBrowserMcpCommand(
               request.operation,
               request.argsJson,
             );
+          }
         }
       },
     );

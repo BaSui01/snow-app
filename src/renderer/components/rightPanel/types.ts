@@ -5,6 +5,7 @@ import type {
   GitImageDiff,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
+import type { BrowserAgentAccess } from "./browser/browserAgentAccess";
 
 export type RightPanelContentKey =
   | "git"
@@ -47,6 +48,8 @@ export type TerminalTabData = {
 export type BrowserTabData = {
   instanceId: string;
   url: string;
+  /** 创建时的 Agent 授权初始值（运行时以 browserAgentAccess 注册表为准） */
+  agentAccess?: BrowserAgentAccess;
 };
 
 export type FileViewerTabData = {

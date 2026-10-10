@@ -1343,9 +1343,6 @@ body.is-panel-resizing * {
 }
 .chat-item.active {
   background: var(--bg-active, rgba(255, 255, 255, 0.05));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .chat-item-icon {
@@ -6112,7 +6109,8 @@ body.is-panel-resizing * {
 
 .import-settings-tabs {
   display: flex;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 6px 18px;
   margin: 0 0 14px;
   border-bottom: 1px solid var(--border-light);
 }
@@ -39685,6 +39683,123 @@ body.ctrl-held [data-path] {
   animation: browser-pick-breath 1.6s ease-in-out infinite;
 }
 
+.browser-agent-share-btn {
+  position: relative;
+}
+
+.browser-agent-share-btn.is-active,
+.browser-agent-share-btn.is-active:hover:not(:disabled) {
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+}
+
+.browser-agent-share-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-color);
+}
+
+/* 浏览器工具栏 Tooltip：主标题 + 说明行（说明按钮的实际作用） */
+.browser-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 220px;
+}
+
+.browser-tooltip-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.browser-tooltip-hint {
+  color: var(--text-tertiary);
+}
+
+.browser-agent-share-request {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-secondary));
+  color: var(--text-primary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.browser-agent-share-request-text {
+  flex-shrink: 0;
+}
+
+.browser-agent-share-request-host {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.browser-agent-share-request-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.browser-agent-share-request-btn:hover {
+  background: var(--bg-hover);
+}
+
+.browser-agent-share-request-btn.primary {
+  border-color: transparent;
+  background: var(--accent-color);
+  color: var(--accent-contrast, #fff);
+}
+
+.browser-agent-notice {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.browser-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-light);
+}
+
+.browser-menu-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.browser-menu-section-flag {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: var(--accent-color);
+  font-size: 10px;
+}
+
 @keyframes browser-pick-breath {
   0%,
   100% {
@@ -40371,6 +40486,90 @@ body.ctrl-held [data-path] {
 .browser-settings-device-toggle input {
   accent-color: var(--text-primary);
   margin: 0;
+}
+
+.browser-settings-agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.browser-settings-agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.browser-settings-agent-toggle input {
+  accent-color: var(--text-primary);
+  margin: 0;
+}
+
+.browser-settings-agent-domain-modes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.browser-settings-agent-domain-mode {
+  padding: 4px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.browser-settings-agent-domain-mode:hover {
+  background: var(--bg-hover);
+}
+
+.browser-settings-agent-domain-mode.is-active {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  color: var(--text-primary);
+}
+
+.browser-settings-agent-domains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.browser-settings-agent-domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.browser-settings-agent-domain button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.browser-settings-agent-domain button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .browser-settings-device-save-btn {
@@ -42686,6 +42885,17 @@ pre.file-viewer-code {
   height: 6px;
   border-radius: 50%;
   background: var(--accent-amber-text, #d97706);
+  margin-right: 4px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.right-panel-tab-agent-badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-color);
   margin-right: 4px;
   flex-shrink: 0;
   vertical-align: middle;

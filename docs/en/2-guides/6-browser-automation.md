@@ -24,7 +24,8 @@ tools of the built-in `browser` server and typical workflows.
 | `browser-devtools`                                   | Text/accessibility-tree snapshot / performance trace / console messages / network requests & details / offline simulation / route mocking / encrypted login-state save & restore / cookie management / dialog handling / open DevTools |
 | `browser-close`                                      | Close a browser tab                                                                                                                                                                                                                    |
 | `browser-focus`                                      | Switch to a tab                                                                                                                                                                                                                        |
-| `browser-list`                                       | List all open tabs                                                                                                                                                                                                                     |
+| `browser-list`                                       | List all open tabs (tabs not shared with the agent only return `instanceId` and a placeholder title, `url` is null)                                                                                                                    |
+| `browser-request_share`                              | Ask the user to share a tab with the agent (in-app confirmation bar; a refusal or timeout returns `shared: false`)                                                                                                                     |
 
 ## 2. Typical Workflows
 
@@ -210,7 +211,30 @@ browser-devtools action=dialog dialogResponse={accept:true, promptText:"input"} 
 → provide input for a prompt dialog
 ```
 
-## 5. Best Practices
+## 5. Agent access, sharing and isolation
+
+Browser tabs are private by default: only tabs the user explicitly shared, or tabs the agent
+opened itself, can be driven by the browser tools. Any command targeting another tab fails
+immediately.
+
+- **Share a tab**: the robot button in the toolbar (`Bot` / `BotOff`) shares or revokes the
+  current tab in one click; a shared tab highlights the button and shows a dot on the tab,
+  and clicking again revokes access instantly (no restart, no re-login);
+- **Agent requests access**: the agent may call `browser-request_share`; the app switches to
+  that tab and shows an Allow / Deny bar, returning `{ shared: false, reason: "denied" }`
+  when the user denies or does not answer within 60 seconds;
+- **Agent-opened tabs**: tabs created by `browser-create` count as shared and run in an
+  **isolated session** by default (their own in-memory cookies and storage, never touching
+  your login state). Turn isolation off in **Settings > Browser > Agent access** to let the
+  agent reuse your login state in tabs it opens;
+- **Global switch**: the same settings page can disable browser access for the agent entirely
+  (every browser tool then returns an error);
+- **Domain policy**: optionally restrict the agent to (or exclude it from) a domain list,
+  matching a host and its subdomains, on top of tab sharing;
+- **Visible and auditable**: every tool call's arguments and results stay in the conversation
+  transcript, and the sharing state is always visible in the toolbar and the tab bar.
+
+## 6. Best Practices
 
 - **Snapshot before interacting**: for dynamic/complex pages prefer
   `browser-devtools action=ax` and target elements deterministically with
@@ -227,8 +251,8 @@ browser-devtools action=dialog dialogResponse={accept:true, promptText:"input"} 
 - **Not headless**: the built-in browser is an embedded window and requires
   the app to be running.
 
-## 6. Related config
+## 7. Related config
 
-- Browser tools can pop the current page out into a **standalone window**; standalone windows support full **tab migration and restoration** — tabs can be moved between the standalone window and the main panel, and reopening a standalone window restores its tabs and session state;
+- Browser tools can pop the current page out into a **standalone window**; standalone windows support full **tab migration and restoration** — tabs can be moved between the standalone window and the main panel, and reopening a standalone window restores its tabs and session state (the agent sharing state migrates with the tab);
 - Proxy and browser paths are configured in **Settings → Proxy & Browser** (`app-control-openSettings page=proxy-browser-settings`); fields are documented in [3-config-file-field-reference](../3-reference/3-config-file-field-reference.md) under `proxy-config.json` (`browserPath`, `browserDebugPort`);
 - Other browser settings are covered in [17-browser-settings-passwords-and-import](17-browser-settings-passwords-and-import.md).

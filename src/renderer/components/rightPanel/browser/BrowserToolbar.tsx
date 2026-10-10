@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
+  BotOff,
   Download,
   Loader2,
   MousePointer2,
   RotateCw,
 } from "lucide-react";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
+import { Tooltip } from "../../common/Tooltip";
 import type {
   BrowserBookmark,
   BrowserDownloadItemEvent,
@@ -115,12 +118,34 @@ export type BrowserToolbarProps = {
   onSetDeviceSize: (id: string) => void;
   /** 独立窗口专属：还原为右侧面板标签页（undefined 时菜单不显示该项） */
   onRestoreToTabs?: () => void;
+  /** 当前标签页是否已共享给 Agent（工具栏显示可见标识，可一键撤销） */
+  sharedWithAgent: boolean;
+  /** 当前标签页是否运行在隔离会话（Agent 自开页） */
+  isolatedSession: boolean;
+  onToggleShareWithAgent: () => void;
+  onSendPageToAgent: () => void;
+  onSendConsoleToAgent: () => void;
+  onSendNetworkToAgent: () => void;
   // 下载管理
   downloads: BrowserDownloadItemEvent[];
   onDownloadOpen: (id: number) => void;
   onDownloadShowInFolder: (id: number) => void;
   onDownloadCancel: (id: number) => void;
 };
+
+/** 工具栏提示内容：主标题 + 可选说明行（说明行解释按钮的实际作用）。 */
+const ToolbarTooltip = ({
+  title,
+  hint,
+}: {
+  title: string;
+  hint?: string;
+}): React.JSX.Element => (
+  <span className="browser-tooltip-content">
+    <span className="browser-tooltip-title">{title}</span>
+    {hint ? <span className="browser-tooltip-hint">{hint}</span> : null}
+  </span>
+);
 
 /**
  * The browser top toolbar: back / forward / reload navigation buttons and
@@ -162,6 +187,12 @@ export const BrowserToolbar = ({
   onSetHomepage,
   onSetDeviceSize,
   onRestoreToTabs,
+  sharedWithAgent,
+  isolatedSession,
+  onToggleShareWithAgent,
+  onSendPageToAgent,
+  onSendConsoleToAgent,
+  onSendNetworkToAgent,
   downloads,
   onDownloadOpen,
   onDownloadShowInFolder,
@@ -440,39 +471,51 @@ export const BrowserToolbar = ({
 
   return (
     <div className="browser-toolbar">
-      <button
-        type="button"
-        className="browser-nav-btn"
-        onClick={onBack}
-        disabled={!canGoBack}
-        aria-label={t("browser.back")}
-        title={t("browser.back")}
+      <Tooltip
+        content={<ToolbarTooltip title={t("browser.back")} />}
+        placement="top"
       >
-        <ArrowLeft size={15} strokeWidth={1.8} />
-      </button>
-      <button
-        type="button"
-        className="browser-nav-btn"
-        onClick={onForward}
-        disabled={!canGoForward}
-        aria-label={t("browser.forward")}
-        title={t("browser.forward")}
+        <button
+          type="button"
+          className="browser-nav-btn"
+          onClick={onBack}
+          disabled={!canGoBack}
+          aria-label={t("browser.back")}
+        >
+          <ArrowLeft size={15} strokeWidth={1.8} />
+        </button>
+      </Tooltip>
+      <Tooltip
+        content={<ToolbarTooltip title={t("browser.forward")} />}
+        placement="top"
       >
-        <ArrowRight size={15} strokeWidth={1.8} />
-      </button>
-      <button
-        type="button"
-        className="browser-nav-btn"
-        onClick={onReload}
-        aria-label={t("browser.reload")}
-        title={t("browser.reload")}
+        <button
+          type="button"
+          className="browser-nav-btn"
+          onClick={onForward}
+          disabled={!canGoForward}
+          aria-label={t("browser.forward")}
+        >
+          <ArrowRight size={15} strokeWidth={1.8} />
+        </button>
+      </Tooltip>
+      <Tooltip
+        content={<ToolbarTooltip title={t("browser.reload")} />}
+        placement="top"
       >
-        {isLoading ? (
-          <Loader2 size={15} strokeWidth={1.8} className="spin-icon" />
-        ) : (
-          <RotateCw size={15} strokeWidth={1.8} />
-        )}
-      </button>
+        <button
+          type="button"
+          className="browser-nav-btn"
+          onClick={onReload}
+          aria-label={t("browser.reload")}
+        >
+          {isLoading ? (
+            <Loader2 size={15} strokeWidth={1.8} className="spin-icon" />
+          ) : (
+            <RotateCw size={15} strokeWidth={1.8} />
+          )}
+        </button>
+      </Tooltip>
       <div className="browser-address-bar" ref={addressBarRef}>
         <WebsiteFavicon
           url={addressInput}
@@ -512,35 +555,93 @@ export const BrowserToolbar = ({
           onRemove={removeSuggestion}
         />
       )}
-      {canPickElement && (
+      <Tooltip
+        content={
+          <ToolbarTooltip
+            title={
+              sharedWithAgent
+                ? t("browser.unshareFromAgent")
+                : t("browser.shareWithAgent")
+            }
+            hint={
+              sharedWithAgent
+                ? t("browser.unshareFromAgentTitle")
+                : t("browser.shareWithAgentTitle")
+            }
+          />
+        }
+        placement="top"
+      >
         <button
           type="button"
-          className={`browser-nav-btn browser-element-pick-btn${
-            isPickingElement ? " is-active" : ""
+          className={`browser-nav-btn browser-agent-share-btn${
+            sharedWithAgent ? " is-active" : ""
           }`}
-          onClick={onToggleElementPicker}
-          aria-label={t("browser.pickElement")}
-          aria-pressed={isPickingElement}
-          title={t("browser.pickElementTitle")}
+          onClick={onToggleShareWithAgent}
+          aria-pressed={sharedWithAgent}
+          aria-label={
+            sharedWithAgent
+              ? t("browser.unshareFromAgent")
+              : t("browser.shareWithAgent")
+          }
         >
-          <MousePointer2 size={15} strokeWidth={1.8} />
+          {sharedWithAgent ? (
+            <Bot size={15} strokeWidth={1.8} />
+          ) : (
+            <BotOff size={15} strokeWidth={1.8} />
+          )}
+          {sharedWithAgent && <span className="browser-agent-share-dot" />}
         </button>
+      </Tooltip>
+      {canPickElement && (
+        <Tooltip
+          content={
+            <ToolbarTooltip
+              title={t("browser.pickElement")}
+              hint={t("browser.pickElementTitle")}
+            />
+          }
+          placement="top"
+        >
+          <button
+            type="button"
+            className={`browser-nav-btn browser-element-pick-btn${
+              isPickingElement ? " is-active" : ""
+            }`}
+            onClick={onToggleElementPicker}
+            aria-label={t("browser.pickElement")}
+            aria-pressed={isPickingElement}
+          >
+            <MousePointer2 size={15} strokeWidth={1.8} />
+          </button>
+        </Tooltip>
       )}
-      <button
-        type="button"
-        className={`browser-nav-btn browser-downloads-btn${
-          downloadsOpen ? " is-active" : ""
-        }`}
-        onClick={() => setDownloadsOpen((prev) => !prev)}
-        disabled={downloads.length === 0 && activeDownloadCount === 0}
-        aria-label={t("browser.downloadsTitle")}
-        title={t("browser.downloadsTitle")}
+      <Tooltip
+        content={
+          <ToolbarTooltip
+            title={t("browser.downloadsTitle")}
+            hint={t("browser.downloadsHint")}
+          />
+        }
+        placement="top"
       >
-        <Download size={15} strokeWidth={1.8} />
-        {activeDownloadCount > 0 && (
-          <span className="browser-downloads-badge">{activeDownloadCount}</span>
-        )}
-      </button>
+        <button
+          type="button"
+          className={`browser-nav-btn browser-downloads-btn${
+            downloadsOpen ? " is-active" : ""
+          }`}
+          onClick={() => setDownloadsOpen((prev) => !prev)}
+          disabled={downloads.length === 0 && activeDownloadCount === 0}
+          aria-label={t("browser.downloadsTitle")}
+        >
+          <Download size={15} strokeWidth={1.8} />
+          {activeDownloadCount > 0 && (
+            <span className="browser-downloads-badge">
+              {activeDownloadCount}
+            </span>
+          )}
+        </button>
+      </Tooltip>
       <BrowserMenu
         zoomFactor={zoomFactor}
         homepage={homepage}
@@ -562,6 +663,11 @@ export const BrowserToolbar = ({
         onSetHomepage={onSetHomepage}
         onSetDeviceSize={onSetDeviceSize}
         onRestoreToTabs={onRestoreToTabs}
+        sharedWithAgent={sharedWithAgent}
+        isolatedSession={isolatedSession}
+        onSendPageToAgent={onSendPageToAgent}
+        onSendConsoleToAgent={onSendConsoleToAgent}
+        onSendNetworkToAgent={onSendNetworkToAgent}
       />
       {downloadsOpen && (
         <BrowserDownloadsPanel

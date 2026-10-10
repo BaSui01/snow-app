@@ -28,6 +28,46 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                         .get("model")
                         .and_then(Value::as_str)
                         .unwrap_or("");
+                    let api_key = channel
+                        .get("apiKey")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    // 多模型渠道：渠道内子模型（enabled 且 model 非空）也算已配置，
+                    // 否则「只在 models 里配了模型、顶层 model 留空」的渠道会被
+                    // 误判为未配置。
+                    let child_models: Vec<Value> = channel
+                        .get("models")
+                        .and_then(Value::as_array)
+                        .map(|items| {
+                            items
+                                .iter()
+                                .filter(|item| {
+                                    item.get("enabled").and_then(Value::as_bool).unwrap_or(true)
+                                        && !item
+                                            .get("model")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("")
+                                            .is_empty()
+                                })
+                                .map(|item| {
+                                    json!({
+                                        "id": item.get("id").and_then(Value::as_str).unwrap_or(""),
+                                        "model": item.get("model").and_then(Value::as_str).unwrap_or(""),
+                                        "name": item.get("name").and_then(Value::as_str).unwrap_or(""),
+                                        "defaultSize": item.get("defaultSize").and_then(Value::as_str).unwrap_or(""),
+                                        "defaultQuality": item.get("defaultQuality").and_then(Value::as_str).unwrap_or(""),
+                                        "defaultThinking": item.get("defaultThinking").and_then(Value::as_str).unwrap_or(""),
+                                        "isPrimary": item
+                                            .get("model")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("")
+                                            .eq_ignore_ascii_case(model),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let has_model = !model.is_empty() || !child_models.is_empty();
                     json!({
                         "key": channel.get("id").and_then(Value::as_str).unwrap_or(""),
                         "id": channel.get("id").and_then(Value::as_str).unwrap_or(""),
@@ -35,9 +75,8 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                         "provider": channel.get("provider").and_then(Value::as_str).unwrap_or("openai"),
                         "enabled": enabled,
                         "model": model,
-                        "configured": enabled
-                            && !model.is_empty()
-                            && !channel.get("apiKey").and_then(Value::as_str).unwrap_or("").is_empty(),
+                        "models": child_models,
+                        "configured": enabled && has_model && !api_key.is_empty(),
                     })
                 })
                 .collect();
@@ -52,7 +91,7 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                     .get("timeoutSecs")
                     .cloned()
                     .unwrap_or_else(|| json!(300)),
-                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read it with config-get key=maxConcurrentImages, and write it with config-set value={\"maxConcurrentImages\": N} — the value MUST be an object (a bare number is rejected, and the key argument does not select this global field for writes). timeoutSecs (top-level global field, 60-3600, default 300) is the per-request timeout for image generation (including streaming); raise it if complex/high-resolution prompts time out. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel. IMPORTANT when writing: an openai channel's baseUrl MUST include the /v1 path segment (e.g. https://api.openai.com/v1, or http://host:port/v1 — the same rule as the conversation API baseUrl); generation requests are built as {baseUrl}/images/generations and {baseUrl}/images/edits, so a bare host root without /v1 returns 404. A gemini channel's baseUrl must include its version segment (default https://generativelanguage.googleapis.com/v1beta).",
+                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. MULTI-MODEL CHANNELS: one channel (a single baseUrl + apiKey, e.g. a relay service) can host several image models — each channel entry's `models` array lists them with their own defaultSize / defaultQuality / defaultThinking / supportedRatios / supportedResolutions / supportedThinking / customPrompt, and the entry's top-level `model` is the default primary model. `configured` is true when the channel is enabled, has an apiKey, and has at least one model (either the top-level `model` or an enabled child in `models`). Pass `model` to imagegen-generate with an exact child model id to use that model's own defaults. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read it with config-get key=maxConcurrentImages, and write it with config-set value={\"maxConcurrentImages\": N} — the value MUST be an object (a bare number is rejected, and the key argument does not select this global field for writes). timeoutSecs (top-level global field, 60-3600, default 300) is the per-request timeout for image generation (including streaming); raise it if complex/high-resolution prompts time out. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel. IMPORTANT when writing: an openai channel's baseUrl MUST include the /v1 path segment (e.g. https://api.openai.com/v1, or http://host:port/v1 — the same rule as the conversation API baseUrl); generation requests are built as {baseUrl}/images/generations and {baseUrl}/images/edits, so a bare host root without /v1 returns 404. A gemini channel's baseUrl must include its version segment (default https://generativelanguage.googleapis.com/v1beta). Writing `models` via {<channelId>: {models:[...]}} is a DEEP merge by model id (only the fields you pass change; other models and fields are preserved) — to fully replace the list, use the {channels:[...]} form instead.",
             }))
         }
         TOOL_GET => {
@@ -229,6 +268,19 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                             if let Some(merged_map) = merged.as_object_mut() {
                                 if let Some(override_map) = override_value.as_object() {
                                     for (field, val) in override_map {
+                                        // models 需按模型 id 逐项深合并：浅替换会让
+                                        // 「只传某个模型的某一字段」把其余模型与其他
+                                        // 字段全部静默丢掉。
+                                        if field == "models" {
+                                            if let Some(models) = merge_channel_models(
+                                                merged_map.get("models"),
+                                                val,
+                                            ) {
+                                                merged_map
+                                                    .insert("models".to_string(), models);
+                                            }
+                                            continue;
+                                        }
                                         merged_map.insert(field.clone(), val.clone());
                                     }
                                 }
@@ -291,6 +343,60 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
             ),
         )),
     }
+}
+
+/// 渠道 `models` 数组的深合并（按模型 id 逐项合并字段）。
+///
+/// 语义（与 `{<channelId>: {...}}` 的「按 id 合并」保持一致的直觉）：
+/// - `incoming` 不是数组 → 返回 None（调用方保持原值，不破坏已有配置）；
+/// - 已存在的模型项（按 `id` 匹配，缺失 id 时按 `model` 匹配）：逐字段覆盖，
+///   未提供的字段保留旧值（例如只改某个模型的 `defaultThinking`）；
+/// - `incoming` 中出现的新模型项：追加；
+/// - `incoming` 未提及的旧模型项：保留（非破坏性）。
+///
+/// 这样 `config-set value={ch:<id>: {models:[{id:"a", defaultThinking:"high"}]}}`
+/// 只改动模型 a 的思考强度，不会把模型 b、c 或其他字段静默丢掉。
+fn merge_channel_models(existing: Option<&Value>, incoming: &Value) -> Option<Value> {
+    let incoming_items = incoming.as_array()?;
+    let mut merged: Vec<Value> = existing
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    for item in incoming_items {
+        let Some(item_map) = item.as_object() else {
+            continue;
+        };
+        let item_id = item_map.get("id").and_then(Value::as_str).unwrap_or("");
+        let item_model = item_map.get("model").and_then(Value::as_str).unwrap_or("");
+
+        // 定位既有模型项：优先按 id，其次按 model
+        let target_index = merged.iter().position(|entry| {
+            let Some(entry_map) = entry.as_object() else {
+                return false;
+            };
+            let entry_id = entry_map.get("id").and_then(Value::as_str).unwrap_or("");
+            let entry_model = entry_map
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            (!item_id.is_empty() && entry_id == item_id)
+                || (!item_model.is_empty() && entry_model == item_model)
+        });
+
+        match target_index {
+            Some(index) => {
+                if let Some(entry_map) = merged[index].as_object_mut() {
+                    for (field, value) in item_map {
+                        entry_map.insert(field.clone(), value.clone());
+                    }
+                }
+            }
+            None => merged.push(item.clone()),
+        }
+    }
+
+    Some(Value::Array(merged))
 }
 
 /// 规范化「最大并发生成数」：必须是有限数字，取整后收敛到 1-8 范围

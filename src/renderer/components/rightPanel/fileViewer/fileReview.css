@@ -1,10 +1,16 @@
+/* 容器查询基准放在组件根节点：容器查询只能命中容器的后代，无法命中容器
+   自身。基准若放在 workspace 上，下面窄宽度下的 `flex-wrap: wrap` 永远不
+   匹配，表现为任何宽度都保持左右结构。根节点宽度即右侧面板内容宽度。 */
+.file-viewer {
+  container-type: inline-size;
+}
+
 .file-viewer-workspace {
   display: flex;
   flex: 1;
   flex-wrap: nowrap;
   min-height: 0;
   min-width: 0;
-  container-type: inline-size;
 }
 
 /* 交叉轴定高：wrap 容器的 flex line 高度取子项的内容假想高度，body 不定高时
@@ -199,26 +205,38 @@
     );
 }
 
+/* 面板宽度不足时切换为上下结构：正文区在上、审阅面板在下，分隔条转为
+   水平方向（row-resize）继续可拖拽调整面板高度（--file-review-panel-height
+   由拖拽写入，未拖拽时退回 42%）。 */
 @container (max-width: 520px) {
   .file-viewer-workspace--review {
-    flex-wrap: wrap;
+    flex-direction: column;
   }
 
   .file-viewer-workspace--review > .file-viewer-body {
-    flex: 0 0 100%;
-    height: 58%;
+    flex: 1 1 0;
+    height: auto;
   }
 
   .file-review-resizer {
-    display: none;
+    cursor: row-resize;
+  }
+
+  .file-review-resizer::after {
+    inset: 1px 0;
+  }
+
+  .file-viewer-workspace--resizing {
+    cursor: row-resize;
   }
 
   .file-review-panel {
-    flex: 0 0 100%;
+    flex: 0 0 var(--file-review-panel-height, 42%);
     width: 100%;
     max-width: none;
     min-width: 0;
-    height: 42%;
+    height: auto;
+    max-height: calc(100% - 160px);
     border-left: none;
     border-top: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);
   }

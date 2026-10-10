@@ -110,6 +110,11 @@ const PLAIN_EDITOR_MIN_LINES = 1500;
 const PLAIN_EDITOR_MIN_CHARS = 150000;
 /** 降级编辑模式行号列的视口外预渲染行数。 */
 const PLAIN_GUTTER_OVERSCAN = 32;
+/** 审阅面板上下结构切换阈值：与 fileReview.css 的 @container 断点一致。 */
+const REVIEW_STACK_BREAKPOINT = 520;
+/** 上下结构下审阅面板高度下限与正文区保留下限（px）。 */
+const REVIEW_PANEL_MIN_HEIGHT = 160;
+const REVIEW_BODY_MIN_HEIGHT = 160;
 
 type SearchMatch = {
   start: number;
@@ -568,6 +573,11 @@ export function FileViewerContent({
   } | null>(null);
   // 左右模式的审阅面板宽度（px，拖拽分隔条实时更新；null 表示用样式默认值）。
   const [reviewPanelWidth, setReviewPanelWidth] = useState<number | null>(null);
+  // 上下模式的审阅面板高度（px，同上；null 表示用样式默认值 42%）。
+  const [reviewPanelHeight, setReviewPanelHeight] = useState<number | null>(
+    null,
+  );
+  const [reviewStacked, setReviewStacked] = useState(false);
   const [reviewResizing, setReviewResizing] = useState(false);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const reviewSourceKey = virtualSource
@@ -691,6 +701,27 @@ export function FileViewerContent({
     setReviewScroll((prev) => ({ location, seq: (prev?.seq ?? 0) + 1 }));
   };
 
+  // 组件宽度决定审阅面板是左右还是上下结构（与 fileReview.css 断点一致），
+  // 拖拽方向随之切换：窄宽度下改为调整面板高度。
+  // 依赖 loading/error：首屏走 loading 分支时根节点尚未挂载（rootRef 为空），
+  // 此时建立 observer 会静默失败，导致上下结构下拖拽方向判错。
+  useEffect(() => {
+    if (loading || error) return;
+    const root = rootRef.current;
+    if (!root || typeof ResizeObserver === "undefined") return;
+    const apply = (width: number): void => {
+      setReviewStacked(width > 0 && width <= REVIEW_STACK_BREAKPOINT);
+    };
+    apply(root.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      apply(entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width);
+    });
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [loading, error]);
+
   /**
    * 拖拽左右模式的分隔条调整审阅面板宽度：宽度取「工作区右缘 - 指针」，
    * 下限保留正文可用宽度（左侧至少 240px）。
@@ -710,6 +741,36 @@ export function FileViewerContent({
           Math.max(minWidth, rect.right - moveEvent.clientX),
         );
         setReviewPanelWidth(Math.round(next));
+      };
+      const handleEnd = (): void => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleEnd);
+        setReviewResizing(false);
+      };
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleEnd);
+    },
+    [],
+  );
+
+  /** 上下模式的分隔条：高度取「工作区下缘 - 指针」，上下各保留下限高度。 */
+  const handleReviewResizeStartY = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const workspace = workspaceRef.current;
+      if (!workspace || event.button !== 0) return;
+      event.preventDefault();
+      const rect = workspace.getBoundingClientRect();
+      const maxHeight = Math.max(
+        REVIEW_PANEL_MIN_HEIGHT,
+        rect.height - REVIEW_BODY_MIN_HEIGHT,
+      );
+      setReviewResizing(true);
+      const handleMove = (moveEvent: PointerEvent): void => {
+        const next = Math.min(
+          maxHeight,
+          Math.max(REVIEW_PANEL_MIN_HEIGHT, rect.bottom - moveEvent.clientY),
+        );
+        setReviewPanelHeight(Math.round(next));
       };
       const handleEnd = (): void => {
         window.removeEventListener("pointermove", handleMove);
@@ -2762,11 +2823,14 @@ export function FileViewerContent({
         className={`file-viewer-workspace${reviewOpen && canReview && !editMode ? " file-viewer-workspace--review" : ""}${reviewResizing ? " file-viewer-workspace--resizing" : ""}`}
         ref={workspaceRef}
         style={
-          reviewPanelWidth != null
-            ? ({
-                "--file-review-panel-width": `${reviewPanelWidth}px`,
-              } as React.CSSProperties)
-            : undefined
+          {
+            ...(reviewPanelWidth != null
+              ? { "--file-review-panel-width": `${reviewPanelWidth}px` }
+              : {}),
+            ...(reviewPanelHeight != null
+              ? { "--file-review-panel-height": `${reviewPanelHeight}px` }
+              : {}),
+          } as React.CSSProperties
         }
       >
         <div className="file-viewer-body">
@@ -2824,8 +2888,12 @@ export function FileViewerContent({
             <div
               className={`file-review-resizer${reviewResizing ? " dragging" : ""}`}
               role="separator"
-              aria-orientation="vertical"
-              onPointerDown={handleReviewResizeStart}
+              aria-orientation={reviewStacked ? "horizontal" : "vertical"}
+              onPointerDown={
+                reviewStacked
+                  ? handleReviewResizeStartY
+                  : handleReviewResizeStart
+              }
             />
             <FileReviewPanel
               key={`${reviewSourceKey}:${filePath}`}

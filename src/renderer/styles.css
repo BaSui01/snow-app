@@ -20211,6 +20211,130 @@ body.is-panel-resizing * {
   }
 }
 
+/* 渠道内多模型管理区（支持单渠道多模型） */
+.imagegen-models-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.imagegen-models-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.imagegen-models-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.imagegen-model-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle, var(--border-color));
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.imagegen-model-tab:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+.imagegen-model-tab.active {
+  background: var(--accent-color, #3b82f6);
+  color: #fff;
+  border-color: var(--accent-color, #3b82f6);
+  font-weight: 500;
+}
+
+.imagegen-model-tab.disabled {
+  opacity: 0.55;
+}
+
+.imagegen-model-tab-star {
+  color: #eab308;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.imagegen-model-tab.active .imagegen-model-tab-star {
+  color: #fef08a;
+}
+
+.imagegen-model-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.65;
+  transition: all 0.12s ease;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.imagegen-model-tab-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.imagegen-model-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  font-size: 11.5px;
+}
+
+.imagegen-model-primary-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #eab308;
+  font-weight: 600;
+}
+
+.imagegen-model-more-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: 9999px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border-subtle, var(--border-color));
+  color: var(--text-muted);
+}
+
 .tool-call-imagegen-lightbox {
   position: fixed;
   inset: 0;

@@ -1,4 +1,8 @@
-import type { ImageGenChannelValue, ImageGenSettingsValue } from "./types";
+import type {
+  ImageGenChannelValue,
+  ImageGenSettingsValue,
+  ImageGenTemplate,
+} from "./types";
 
 /** system_settings 表中生图设置的 code（与 Rust native 侧一致）。 */
 export const IMAGE_GEN_SETTING_CODE = "imagegen_settings";
@@ -20,6 +24,11 @@ export const DEFAULT_IMAGE_GEN_CHANNEL: ImageGenChannelValue = {
   outputFormat: "",
   webSearch: false,
   defaultStream: false,
+  defaultThinking: "",
+  supportedRatios: "",
+  supportedResolutions: "",
+  supportedThinking: "",
+  customPrompt: "",
 };
 
 /** 最大并发生成数默认值（旧数据缺失该字段时回退）。 */
@@ -59,12 +68,320 @@ export const DEFAULT_GEMINI_BASE_URL =
 
 /** 常见生图模型提示（placeholder 用，含别名与预览版）。 */
 export const OPENAI_MODEL_EXAMPLES =
-  "gpt-image-2, dall-e-3, chatgpt-image-latest (preview), grok-imagine-image-2.0 (xAI), ...";
+  "gpt-image-2.5-flare, qwen-image-2.1, niji-6, flux-1.1-pro, grok-imagine-image-2.0, dall-e-3, ...";
 export const GEMINI_MODEL_EXAMPLES =
-  "gemini-3.1-flash-image (Nano Banana 2), gemini-3-pro-image (Nano Banana Pro), gemini-3.1-flash-lite-image (Nano Banana 2 Lite), gemini-2.5-flash-image (legacy), ...";
+  "gemini-nano-banana-2.1 (Nano Banana 2.1 最新), gemini-3.1-flash-image, gemini-3-pro-image, gemini-2.5-flash-image, ...";
 /** xAI Grok Imagine 模型示例（OpenAI 兼容协议，baseUrl = https://api.x.ai/v1）。 */
 export const GROK_MODEL_EXAMPLES =
   "grok-imagine-image-quality, grok-imagine-image-2.0, ...";
+
+/** OpenAI 思考/推理强度预设选项（支持 gpt-image-2 / 2.5 系列）。 */
+export const OPENAI_THINKING_OPTIONS = ["", "low", "medium", "high"] as const;
+
+/** Gemini 思考强度预设选项（支持 gemini-3.1 / 3 系列）。 */
+export const GEMINI_THINKING_LEVEL_OPTIONS = ["", "minimal", "high"] as const;
+
+/**
+ * 开箱即用的生图渠道预置模板，支持在新建/编辑渠道时一键填充。
+ */
+export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
+  {
+    id: "template-gemini-banana21",
+    name: "Google - Gemini Nano Banana 2.1 (最新香蕉)",
+    provider: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-nano-banana-2.1",
+    defaultSize: "16:9@2K",
+    defaultThinking: "minimal",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
+    supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
+    supportedThinking: "minimal, high",
+    customPrompt:
+      "Google 最新 Nano Banana 2.1 图像生成与编辑旗舰（API 模型 ID: gemini-nano-banana-2.1）。成本大幅降低，支持 14 种宽高比及 512px~4K 分辨率（尺寸支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
+    webSearch: true,
+    defaultStream: true,
+    description:
+      "Google 2026 最新 Nano Banana 2.1 官方旗舰（API ID: gemini-nano-banana-2.1），成本减半、支持4K与双通道搜索",
+  },
+  {
+    id: "template-openai-flare",
+    name: "OpenAI - GPT Image 2.5 Flare",
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-image-2.5-flare",
+    defaultSize: "1792x1008",
+    defaultQuality: "high",
+    defaultThinking: "medium",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
+    supportedResolutions: "1K (1792x1008), 2K (2560x1440), 4K (3840x2160)",
+    supportedThinking: "low, medium, high",
+    customPrompt:
+      "OpenAI 最新高性价比推理生图模型。支持 1K/2K/4K 比例尺寸（最大 3840px，16倍数）；支持 reasoningEffort 思考强度（low/medium/high）；画质支持 low/medium/high/xhigh；支持参考图多模态图生图。",
+    outputFormat: "png",
+    defaultStream: true,
+    description: "日常高画质与快速响应推荐，支持 1K/2K/4K 比例及推理思考",
+  },
+  {
+    id: "template-openai-sunburst",
+    name: "OpenAI - GPT Image 2.5 Sunburst",
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-image-2.5-sunburst",
+    defaultSize: "2560x1440",
+    defaultQuality: "xhigh",
+    defaultThinking: "high",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
+    supportedResolutions: "1K (1792x1008), 2K (2560x1440), 4K (3840x2160)",
+    supportedThinking: "low, medium, high",
+    customPrompt:
+      "OpenAI 旗舰推理画质生图模型。具备深度推理与复杂指令遵循能力；支持 reasoningEffort（low/medium/high 深度思考）；画质支持 xhigh 与 max 顶级档位；支持 1K/2K/4K 各比例尺寸。",
+    outputFormat: "png",
+    defaultStream: true,
+    description: "旗舰级深度推理生图，画质极致，支持 xhigh / max 与深度思考",
+  },
+  {
+    id: "template-openai-gpt2",
+    name: "OpenAI - GPT Image 2",
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-image-2",
+    defaultSize: "1792x1008",
+    defaultQuality: "high",
+    defaultThinking: "medium",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
+    supportedResolutions: "1K, 2K, 4K (任意16倍数尺寸，最大3840px)",
+    supportedThinking: "low, medium, high",
+    customPrompt:
+      "经典 GPT 多模态生图模型。支持 1K/2K/4K 各比例尺寸；支持 reasoningEffort 推理；支持参考图多模态图生图；注意 transparent 背景仅 gpt-image-1 支持。",
+    outputFormat: "png",
+    defaultStream: true,
+    description: "经典 GPT 多模态图生图与文生图模型",
+  },
+  {
+    id: "template-openai-dalle3",
+    name: "OpenAI - DALL-E 3",
+    provider: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    model: "dall-e-3",
+    defaultSize: "1024x1024",
+    defaultQuality: "standard",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16",
+    supportedResolutions: "1024x1024, 1792x1024, 1024x1792",
+    supportedThinking: "",
+    customPrompt:
+      "经典文本生图模型（纯文生图，不支持参考图输入）。固定支持 1024x1024 (1:1)、1792x1024 (16:9 横屏)、1024x1792 (9:16 竖屏)；质量仅 standard 与 hd。",
+    outputFormat: "png",
+    defaultStream: false,
+    description: "经典纯文本生图模型（固定 1024x1024 / 1792x1024）",
+  },
+  {
+    id: "template-gemini-flash3",
+    name: "Google - Gemini 3.1 Flash Image",
+    provider: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-3.1-flash-image",
+    defaultSize: "16:9@2K",
+    defaultThinking: "minimal",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
+    supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
+    supportedThinking: "minimal, high",
+    customPrompt:
+      "Google 最新 Nano Banana 2 多模态生图旗舰。支持 14 种宽高比及 512px~4K 分辨率（尺寸参数支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
+    webSearch: true,
+    defaultStream: true,
+    description: "最新 Nano Banana 2 多模态生图旗舰，支持14种比例、联网与思考",
+  },
+  {
+    id: "template-gemini-pro3",
+    name: "Google - Gemini 3 Pro Image",
+    provider: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-3-pro-image",
+    defaultSize: "16:9@2K",
+    defaultThinking: "high",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9",
+    supportedResolutions: "1K, 2K, 4K (支持 16:9@2K 组合语法)",
+    supportedThinking: "minimal, high",
+    customPrompt:
+      "Nano Banana Pro 专业画质生图模型。支持 10 种比例与 1K/2K/4K 档位；支持 thinkingLevel (minimal/high 深度思考)；图生图最多 14 张参考图。",
+    webSearch: true,
+    defaultStream: true,
+    description: "Nano Banana Pro 专业画质生图，支持 14 张参考图与深度思考",
+  },
+  {
+    id: "template-gemini-flash25",
+    name: "Google - Gemini 2.5 Flash Image",
+    provider: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-2.5-flash-image",
+    defaultSize: "16:9",
+    defaultThinking: "minimal",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9",
+    supportedResolutions: "1K",
+    supportedThinking: "minimal, high",
+    customPrompt:
+      "轻量快速生图模型（Nano Banana 1）。支持 10 种比例，标准 1K 分辨率，图生图最多支持 3 张参考图；支持 thinkingLevel 思考强度。",
+    webSearch: false,
+    defaultStream: true,
+    description: "经典轻量级 Nano Banana 生图模型",
+  },
+  {
+    id: "template-xai-grok",
+    name: "xAI - Grok Imagine 2.0",
+    provider: "openai",
+    baseUrl: "https://api.x.ai/v1",
+    model: "grok-imagine-image-2.0",
+    defaultSize: "16:9@2k",
+    defaultQuality: "medium",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9",
+    supportedResolutions: "1k, 2k",
+    supportedThinking: "",
+    customPrompt:
+      "xAI 官方 Grok 生图模型（OpenAI 兼容端点）。尺寸采用 aspect_ratio 宽高比 + resolution 分辨率（1k/2k）；质量支持 low 与 medium。",
+    outputFormat: "",
+    defaultStream: false,
+    description: "xAI 官方 Grok 生图模型（OpenAI 兼容端点）",
+  },
+  {
+    id: "template-qwen-image-21",
+    name: "Qwen - Qwen Image 2.1 (通义千问)",
+    provider: "openai",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-image-2.1",
+    defaultSize: "1024x1024",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9",
+    supportedResolutions:
+      "1024x1024 (1:1), 1280x720 / 1920x1080 (16:9), 720x1280 / 1080x1920 (9:16), 1280x960 (4:3), 960x1280 (3:4), 2048x2048 (原生2K)",
+    supportedThinking: "",
+    customPrompt:
+      "阿里云通义千问 7B 视觉生成模型。支持 1:1, 16:9, 9:16, 4:3 等多种构图比例；支持最高 2K 原生分辨率与中英文复杂双语提示词；支持原生透明度与图生图编辑。",
+    outputFormat: "png",
+    defaultStream: false,
+    description:
+      "通义千问开源 7B 生图旗舰，原生 2K 与双语文本理解（百炼 OpenAI 兼容端点）",
+  },
+  {
+    id: "template-wanx-21-plus",
+    name: "Qwen - Wanx 2.1 Plus (通义万相)",
+    provider: "openai",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "wanx2.1-t2i-plus",
+    defaultSize: "1024x1024",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4",
+    supportedResolutions: "1024x1024, 1280x720, 720x1280, 1280x960, 960x1280",
+    supportedThinking: "",
+    customPrompt:
+      "阿里巴巴通义万相 2.1 Plus 模型。画面艺术感与光影质感全面升级，支持 1:1, 16:9, 9:16 等主流构图，擅长中式国风与写实艺术渲染。",
+    outputFormat: "png",
+    defaultStream: false,
+    description: "通义万相 2.1 顶级艺术与摄影渲染模型，光影与中式国风极强",
+  },
+  {
+    id: "template-anime-niji6",
+    name: "Anime - Midjourney Niji 6 (二次元动漫)",
+    provider: "openai",
+    model: "niji-6",
+    defaultSize: "1024x1536",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "1:1, 2:3, 3:2, 9:16, 16:9, 4:3, 3:4, 21:9",
+    supportedResolutions:
+      "1024x1024 (1:1), 1024x1536 (2:3 立绘), 1536x1024 (3:2 插画), 1080x1920 (9:16 壁纸), 1920x1080 (16:9 壁纸)",
+    supportedThinking: "",
+    customPrompt:
+      "二次元动漫与日系插画顶尖模型（适用于 Midjourney Niji 6 兼容中转）。构图极具张力，色彩细腻，擅长角色立绘、动漫壁纸与轻小说插图；提示词支持中英双语与自然语言描述。",
+    outputFormat: "png",
+    defaultStream: false,
+    description:
+      "二次元动漫与日系插画天花板，卓越的色彩与动态张力（适用于 Midjourney Niji 兼容中转）",
+  },
+  {
+    id: "template-anime-novelai",
+    name: "Anime - NovelAI Diffusion (二次元立绘)",
+    provider: "openai",
+    model: "nai-diffusion-4-full",
+    defaultSize: "832x1216",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "2:3, 3:2, 1:1, 9:16, 16:9",
+    supportedResolutions:
+      "832x1216 (标准立绘), 1216x832 (横向插画), 1024x1024 (方形头像), 1024x1536 (高清立绘)",
+    supportedThinking: "",
+    customPrompt:
+      "专精二次元动漫 Danbooru Tag 标签的模型（适用于聚合中转）。推荐使用半角逗号分隔英文标签（如 masterpiece, 1girl, anime, looking at viewer...），对角色服装、发色发型、姿势与镜头控制精准。",
+    outputFormat: "png",
+    defaultStream: false,
+    description:
+      "专精二次元 Danbooru 标签与日系美少女角色立绘生成（适用于兼容中转）",
+  },
+  {
+    id: "template-anime-animagine",
+    name: "Anime - Animagine XL 3.1 (SDXL 动漫)",
+    provider: "openai",
+    model: "animagine-xl-3.1",
+    defaultSize: "832x1216",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "2:3, 3:2, 3:4, 4:3, 1:1, 9:16, 16:9",
+    supportedResolutions:
+      "832x1216 (9:16/立绘), 1216x832 (16:9/横屏), 896x1152 (3:4), 1152x896 (4:3), 1024x1024 (1:1)",
+    supportedThinking: "",
+    customPrompt:
+      "基于 SDXL 的开源动漫生图旗舰模型（适用于 SiliconFlow 硅基流动 / Fal.ai / Replicate 等兼容端点）。支持质量标签（masterpiece, best quality, very aesthetic）与二次元角色标签。",
+    outputFormat: "png",
+    defaultStream: false,
+    description: "开源 SDXL 二次元标杆模型，支持硅基流动/Fal.ai等兼容端点",
+  },
+  {
+    id: "template-flux-11-pro",
+    name: "FLUX - FLUX.1.1 Pro (超写实摄影)",
+    provider: "openai",
+    model: "flux-1.1-pro",
+    defaultSize: "1536x1024",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9",
+    supportedResolutions:
+      "1024x1024, 1536x1024 (3:2), 1024x1536 (2:3), 1792x1008 (16:9), 2048x2048 (4MP 超清)",
+    supportedThinking: "",
+    customPrompt:
+      "Black Forest Labs 顶级生图旗舰（适用于 Together.ai / 硅基流动 / Fal.ai 等 OpenAI 兼容端点）。具备顶级自然语言遵循能力与逼真摄影质感，原生渲染复杂文字和排版。",
+    outputFormat: "png",
+    defaultStream: false,
+    description:
+      "BFL 顶级生图旗舰，超高自然语言理解与极致摄影真实感（适用于各大兼容中转）",
+  },
+  {
+    id: "template-zhipu-cogview",
+    name: "Zhipu - CogView-3-Plus (智谱清言)",
+    provider: "openai",
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "cogview-3-plus",
+    defaultSize: "1024x1024",
+    defaultQuality: "",
+    defaultThinking: "",
+    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 21:9",
+    supportedResolutions:
+      "1024x1024, 768x1344 (9:16), 1344x768 (16:9), 864x1152 (3:4), 1152x864 (4:3), 1440x720 (2:1)",
+    supportedThinking: "",
+    customPrompt:
+      "智谱 AI 文本生图模型（支持官方与兼容端点）。中文自然语言理解极强，支持横竖屏主流比例。",
+    outputFormat: "png",
+    defaultStream: false,
+    description: "智谱 AI 国产高质量图文生成模型，中文语境与成语古诗理解极佳",
+  },
+];
 
 /** xAI Grok Imagine 支持的全部宽高比（官方文档；auto = 模型自选，作默认）。 */
 export const GROK_ASPECT_RATIOS = [
@@ -94,7 +411,7 @@ export const GROK_SIZE_PRESETS = ["", "1k", "2k"] as const;
  * - 其他（自定义/空）→ 均为 ""
  */
 export const matchGrokSizePreset = (
-  size: string
+  size: string,
 ): { ratio: string; resolution: string } => {
   const trimmed = size.trim();
   const [ratioPart, sizePart] = trimmed.includes("@")
@@ -104,7 +421,7 @@ export const matchGrokSizePreset = (
     ? ratioPart.trim()
     : "";
   let resolution = (GROK_SIZE_PRESETS as readonly string[]).includes(
-    sizePart.trim()
+    sizePart.trim(),
   )
     ? sizePart.trim()
     : "";
@@ -172,12 +489,7 @@ export const GEMINI_ASPECT_RATIOS = [
 ];
 
 /** Gemini 3.1 Flash Image 独有超宽比例（官方文档）。 */
-export const GEMINI_ASPECT_RATIOS_FLASH3_EXTRA = [
-  "1:4",
-  "1:8",
-  "4:1",
-  "8:1",
-];
+export const GEMINI_ASPECT_RATIOS_FLASH3_EXTRA = ["1:4", "1:8", "4:1", "8:1"];
 
 /**
  * 按模型返回 Gemini 支持的宽高比列表（官方文档 2026-07）：
@@ -207,20 +519,90 @@ export const GEMINI_SIZE_TABLE: Record<
   string,
   Record<"512px" | "1K" | "2K" | "4K", string>
 > = {
-  "1:1": { "512px": "512x512", "1K": "1024x1024", "2K": "2048x2048", "4K": "4096x4096" },
-  "1:4": { "512px": "256x1024", "1K": "512x2048", "2K": "1024x4096", "4K": "2048x8192" },
-  "1:8": { "512px": "192x1536", "1K": "384x3072", "2K": "768x6144", "4K": "1536x12288" },
-  "2:3": { "512px": "424x632", "1K": "848x1264", "2K": "1696x2528", "4K": "3392x5056" },
-  "3:2": { "512px": "632x424", "1K": "1264x848", "2K": "2528x1696", "4K": "5056x3392" },
-  "3:4": { "512px": "448x600", "1K": "896x1200", "2K": "1792x2400", "4K": "3584x4800" },
-  "4:1": { "512px": "1024x256", "1K": "2048x512", "2K": "4096x1024", "4K": "8192x2048" },
-  "4:3": { "512px": "600x448", "1K": "1200x896", "2K": "2400x1792", "4K": "4800x3584" },
-  "4:5": { "512px": "464x576", "1K": "928x1152", "2K": "1856x2304", "4K": "3712x4608" },
-  "5:4": { "512px": "576x464", "1K": "1152x928", "2K": "2304x1856", "4K": "4608x3712" },
-  "8:1": { "512px": "1536x192", "1K": "3072x384", "2K": "6144x768", "4K": "12288x1536" },
-  "9:16": { "512px": "384x688", "1K": "768x1376", "2K": "1536x2752", "4K": "3072x5504" },
-  "16:9": { "512px": "688x384", "1K": "1376x768", "2K": "2752x1536", "4K": "5504x3072" },
-  "21:9": { "512px": "792x168", "1K": "1584x672", "2K": "3168x1344", "4K": "6336x2688" },
+  "1:1": {
+    "512px": "512x512",
+    "1K": "1024x1024",
+    "2K": "2048x2048",
+    "4K": "4096x4096",
+  },
+  "1:4": {
+    "512px": "256x1024",
+    "1K": "512x2048",
+    "2K": "1024x4096",
+    "4K": "2048x8192",
+  },
+  "1:8": {
+    "512px": "192x1536",
+    "1K": "384x3072",
+    "2K": "768x6144",
+    "4K": "1536x12288",
+  },
+  "2:3": {
+    "512px": "424x632",
+    "1K": "848x1264",
+    "2K": "1696x2528",
+    "4K": "3392x5056",
+  },
+  "3:2": {
+    "512px": "632x424",
+    "1K": "1264x848",
+    "2K": "2528x1696",
+    "4K": "5056x3392",
+  },
+  "3:4": {
+    "512px": "448x600",
+    "1K": "896x1200",
+    "2K": "1792x2400",
+    "4K": "3584x4800",
+  },
+  "4:1": {
+    "512px": "1024x256",
+    "1K": "2048x512",
+    "2K": "4096x1024",
+    "4K": "8192x2048",
+  },
+  "4:3": {
+    "512px": "600x448",
+    "1K": "1200x896",
+    "2K": "2400x1792",
+    "4K": "4800x3584",
+  },
+  "4:5": {
+    "512px": "464x576",
+    "1K": "928x1152",
+    "2K": "1856x2304",
+    "4K": "3712x4608",
+  },
+  "5:4": {
+    "512px": "576x464",
+    "1K": "1152x928",
+    "2K": "2304x1856",
+    "4K": "4608x3712",
+  },
+  "8:1": {
+    "512px": "1536x192",
+    "1K": "3072x384",
+    "2K": "6144x768",
+    "4K": "12288x1536",
+  },
+  "9:16": {
+    "512px": "384x688",
+    "1K": "768x1376",
+    "2K": "1536x2752",
+    "4K": "3072x5504",
+  },
+  "16:9": {
+    "512px": "688x384",
+    "1K": "1376x768",
+    "2K": "2752x1536",
+    "4K": "5504x3072",
+  },
+  "21:9": {
+    "512px": "792x168",
+    "1K": "1584x672",
+    "2K": "3168x1344",
+    "4K": "6336x2688",
+  },
 };
 
 /** Gemini 3 Pro Image 官方分辨率（无 512px 档）。 */
@@ -265,7 +647,7 @@ const GEMINI_2_5_SIZE_TABLE: Record<string, string> = {
 export const getGeminiResolution = (
   model: string,
   ratio: string,
-  imageSize: string
+  imageSize: string,
 ): string => {
   const id = model.toLowerCase();
   if (id.includes("gemini-2.5-flash-image") || id.startsWith("imagen")) {
@@ -276,14 +658,11 @@ export const getGeminiResolution = (
   }
   if (id.includes("gemini-3-pro-image")) {
     return (
-      GEMINI_3_PRO_SIZE_TABLE[ratio]?.[
-        imageSize as "1K" | "2K" | "4K"
-      ] ?? ""
+      GEMINI_3_PRO_SIZE_TABLE[ratio]?.[imageSize as "1K" | "2K" | "4K"] ?? ""
     );
   }
   return (
-    GEMINI_SIZE_TABLE[ratio]?.[imageSize as "512px" | "1K" | "2K" | "4K"] ??
-    ""
+    GEMINI_SIZE_TABLE[ratio]?.[imageSize as "512px" | "1K" | "2K" | "4K"] ?? ""
   );
 };
 
@@ -295,7 +674,7 @@ export const getGeminiResolution = (
  * - 其他（自定义/空）→ 均为 ""
  */
 export const matchGeminiSizePreset = (
-  size: string
+  size: string,
 ): { ratio: string; imageSize: string } => {
   const trimmed = size.trim();
   const [ratioPart, sizePart] = trimmed.includes("@")
@@ -310,7 +689,7 @@ export const matchGeminiSizePreset = (
     ? ratioPart.trim()
     : "";
   let imageSize = (GEMINI_SIZE_PRESETS as readonly string[]).includes(
-    sizePart.trim()
+    sizePart.trim(),
   )
     ? sizePart.trim()
     : "";
@@ -367,7 +746,7 @@ export const getGeminiSizePresets = (model: string): string[] => {
  * 匹配不到（自定义值）返回 null；"auto" 也返回 null。
  */
 export const matchOpenAISizePreset = (
-  size: string
+  size: string,
 ): { ratio: string; tier: "1K" | "2K" | "4K" } | null => {
   const trimmed = size.trim().toLowerCase();
   if (trimmed === "auto" || trimmed === "") {

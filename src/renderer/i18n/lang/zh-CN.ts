@@ -1867,6 +1867,54 @@ export const zhCN = {
   "settings.imagegenCap.capLegacy": "旧版",
   "settings.imagegenCap.capDeprecated": "已弃用（2026-08-17 关停）",
   "settings.imagegenCap.capTextToImageOnly": "仅文生图",
+  "settings.imagegenMultiModelsGroup": "绘图模型配置 (支持一渠道多模型)",
+  "settings.imagegenMultiModelsHint":
+    "一个渠道连接可配置多个绘图模型，每个模型独立配置其默认尺寸、质量、思考强度与专属提示词。",
+  "settings.imagegenAddModel": "添加模型",
+  "settings.imagegenAddFromTemplate": "从预设模板添加...",
+  "settings.imagegenAddCustomModel": "添加空白自定义模型",
+  "settings.imagegenSetAsPrimary": "设为默认主模型",
+  "settings.imagegenPrimaryBadge": "默认主模型",
+  "settings.imagegenPrimaryHint": "AI 未指定具体模型出图时，默认优先调用此模型",
+  "settings.imagegenModelAlias": "模型显示别名",
+  "settings.imagegenModelAliasPlaceholder": "如：超清旗舰版 / 快速生图（选填）",
+  "settings.imagegenModelAliasHint":
+    "在界面标签中更易识别的自定义名称（留空则显示模型 ID）",
+  "settings.imagegenDeleteModel": "删除模型",
+  "settings.imagegenDeleteModelConfirm": "确定要从当前渠道删除该模型配置吗？",
+  "settings.imagegenMoreModels": "+{count} 个模型",
+  "settings.imagegenModelEnabled": "启用此模型",
+  "settings.imagegenModelDisabled": "已停用",
+  "settings.imagegenActiveModelConfig": "当前配置模型：",
+  "settings.imagegenTemplate": "预设配置模板",
+  "settings.imagegenApplyTemplate": "应用模板",
+  "settings.imagegenTemplateReplaceConfirm":
+    "应用该模板会整体替换本渠道当前已配置的全部模型，是否继续？",
+  "settings.imagegenTemplateSelect": "选择模板快速填入配置...",
+  "settings.imagegenDefaultThinking": "默认思考强度",
+  "settings.imagegenDefaultThinkingHint":
+    "控制生图前的推理/思考深度（适用于 GPT Image 2.5 / Gemini 3.1 等具备推理能力的模型）",
+  "settings.imagegenThinkingAuto": "自动 (模型默认)",
+  "settings.imagegenThinkingMinimal": "Minimal (极速思考)",
+  "settings.imagegenThinkingLow": "Low (低度思考)",
+  "settings.imagegenThinkingMedium": "Medium (中度平衡)",
+  "settings.imagegenThinkingHigh": "High (深度思考)",
+  "settings.imagegenCapabilitiesGroup": "模型能力与提示词动态配置",
+  "settings.imagegenAutoGeneratePrompt": "按参数自动生成提示词",
+  "settings.imagegenSupportedRatios": "支持的宽高比（比例）",
+  "settings.imagegenSupportedRatiosHint":
+    "告知 AI 该模型支持的比例（逗号分隔，如 1:1, 16:9, 9:16）",
+  "settings.imagegenSupportedResolutions": "支持的分辨率/档位",
+  "settings.imagegenSupportedResolutionsHint":
+    "告知 AI 该模型支持的分辨率预设或档位（如 1K, 2K, 4K 或 1024x1024）",
+  "settings.imagegenSupportedThinking": "支持的思考强度",
+  "settings.imagegenSupportedThinkingHint":
+    "告知 AI 该模型支持的思考/推理级别（如 low, medium, high 或 minimal, high）",
+  "settings.imagegenCustomPrompt": "渠道提示词说明/补充指引",
+  "settings.imagegenCustomPromptPlaceholder":
+    "为 AI 注入此渠道的专属要求、参数规范或风格说明...",
+  "settings.imagegenCustomPromptHint":
+    "直接动态注入到生图工具（imagegen-generate）描述与系统提示词中，指导 AI 准确传参",
   "settings.imagegenDefaults": "默认参数",
   "settings.imagegenDefaultSize": "默认尺寸",
   "settings.imagegenDefaultSizeHint":

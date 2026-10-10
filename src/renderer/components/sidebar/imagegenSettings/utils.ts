@@ -7,6 +7,7 @@ import {
 } from "./constants";
 import type {
   ImageGenChannelValue,
+  ImageGenModelItem,
   ImageGenProvider,
   ImageGenSettingsForm,
   ImageGenSettingsValue,
@@ -41,14 +42,43 @@ const toTimeoutSecs = (value: unknown): number => {
 
 const readProvider = (
   value: unknown,
-  fallback: ImageGenProvider
+  fallback: ImageGenProvider,
 ): ImageGenProvider => (value === "gemini" ? "gemini" : fallback);
+
+/** 解析单个模型的配置。 */
+export const readModelItem = (source: unknown): ImageGenModelItem => {
+  if (!isRecord(source)) {
+    return { id: "", model: "" };
+  }
+  return {
+    id: toText(source.id, ""),
+    model: toText(source.model, ""),
+    name: toText(source.name, ""),
+    defaultSize: toText(source.defaultSize, ""),
+    defaultQuality: toText(source.defaultQuality, ""),
+    defaultThinking: toText(source.defaultThinking, ""),
+    supportedRatios: toText(source.supportedRatios, ""),
+    supportedResolutions: toText(source.supportedResolutions, ""),
+    supportedThinking: toText(source.supportedThinking, ""),
+    customPrompt: toText(source.customPrompt, ""),
+    enabled: source.enabled !== false,
+  };
+};
+
+/** 解析多模型列表。 */
+export const readModels = (source: unknown): ImageGenModelItem[] => {
+  if (!Array.isArray(source)) {
+    return [];
+  }
+  return source.map(readModelItem).filter((m) => m.model.trim().length > 0);
+};
 
 /** 解析单个渠道的原始字段。 */
 const readChannel = (source: unknown): ImageGenChannelValue => {
   if (!isRecord(source)) {
     return { ...DEFAULT_IMAGE_GEN_CHANNEL };
   }
+  const models = readModels(source.models);
   return {
     id: toText(source.id, DEFAULT_IMAGE_GEN_CHANNEL.id),
     name: toText(source.name, DEFAULT_IMAGE_GEN_CHANNEL.name),
@@ -59,28 +89,49 @@ const readChannel = (source: unknown): ImageGenChannelValue => {
     model: toText(source.model, DEFAULT_IMAGE_GEN_CHANNEL.model),
     defaultSize: toText(
       source.defaultSize,
-      DEFAULT_IMAGE_GEN_CHANNEL.defaultSize
+      DEFAULT_IMAGE_GEN_CHANNEL.defaultSize,
     ),
     defaultQuality: toText(
       source.defaultQuality,
-      DEFAULT_IMAGE_GEN_CHANNEL.defaultQuality
+      DEFAULT_IMAGE_GEN_CHANNEL.defaultQuality,
     ),
     outputFormat: toText(
       source.outputFormat,
-      DEFAULT_IMAGE_GEN_CHANNEL.outputFormat
+      DEFAULT_IMAGE_GEN_CHANNEL.outputFormat,
     ),
     webSearch: toBoolean(source.webSearch, DEFAULT_IMAGE_GEN_CHANNEL.webSearch),
     defaultStream: toBoolean(
       source.defaultStream,
-      DEFAULT_IMAGE_GEN_CHANNEL.defaultStream
+      DEFAULT_IMAGE_GEN_CHANNEL.defaultStream,
     ),
+    defaultThinking: toText(
+      source.defaultThinking,
+      DEFAULT_IMAGE_GEN_CHANNEL.defaultThinking,
+    ),
+    supportedRatios: toText(
+      source.supportedRatios,
+      DEFAULT_IMAGE_GEN_CHANNEL.supportedRatios ?? "",
+    ),
+    supportedResolutions: toText(
+      source.supportedResolutions,
+      DEFAULT_IMAGE_GEN_CHANNEL.supportedResolutions ?? "",
+    ),
+    supportedThinking: toText(
+      source.supportedThinking,
+      DEFAULT_IMAGE_GEN_CHANNEL.supportedThinking ?? "",
+    ),
+    customPrompt: toText(
+      source.customPrompt,
+      DEFAULT_IMAGE_GEN_CHANNEL.customPrompt ?? "",
+    ),
+    models: models.length > 0 ? models : undefined,
   };
 };
 
 /** 生成新的渠道 ID（前端使用；旧数据无 id 或新建渠道时调用）。 */
 export const generateChannelId = (
   provider: ImageGenProvider,
-  index = 0
+  index = 0,
 ): string => {
   const random = Math.random().toString(36).slice(2, 8);
   return `${provider}-${random}${index > 0 ? `-${index}` : ""}`;
@@ -89,7 +140,7 @@ export const generateChannelId = (
 /** 迁移旧格式渠道（旧双渠道键 "openai"/"gemini" 即协议类型）。 */
 const migrateLegacyChannel = (
   provider: ImageGenProvider,
-  source: unknown
+  source: unknown,
 ): ImageGenChannelValue => {
   const channel = readChannel(source);
   if (!channel.id) {
@@ -101,7 +152,7 @@ const migrateLegacyChannel = (
 
 /** 将 system_settings 原始 JSON 字符串解析为规范化设置（含旧格式迁移）。 */
 export const readImageGenSettingsJson = (
-  raw: string | null
+  raw: string | null,
 ): ImageGenSettingsValue => {
   if (!raw) {
     return {
@@ -179,7 +230,7 @@ export const readImageGenSettingsJson = (
 
 /** 存储值 -> 表单（深拷贝渠道数组）。 */
 export const toImageGenForm = (
-  settings: ImageGenSettingsValue
+  settings: ImageGenSettingsValue,
 ): ImageGenSettingsForm => ({
   channels: settings.channels.map((channel) => ({ ...channel })),
   maxConcurrentImages: settings.maxConcurrentImages,
@@ -202,6 +253,29 @@ export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
       outputFormat: channel.outputFormat.trim(),
       webSearch: channel.webSearch,
       defaultStream: channel.defaultStream,
+      defaultThinking: (channel.defaultThinking ?? "").trim(),
+      supportedRatios: (channel.supportedRatios ?? "").trim(),
+      supportedResolutions: (channel.supportedResolutions ?? "").trim(),
+      supportedThinking: (channel.supportedThinking ?? "").trim(),
+      customPrompt: (channel.customPrompt ?? "").trim(),
+      models:
+        channel.models && channel.models.length > 0
+          ? channel.models
+              .filter((m) => m.model.trim().length > 0)
+              .map((m) => ({
+                id: m.id || m.model.trim(),
+                model: m.model.trim(),
+                name: (m.name ?? "").trim(),
+                defaultSize: (m.defaultSize ?? "").trim(),
+                defaultQuality: (m.defaultQuality ?? "").trim(),
+                defaultThinking: (m.defaultThinking ?? "").trim(),
+                supportedRatios: (m.supportedRatios ?? "").trim(),
+                supportedResolutions: (m.supportedResolutions ?? "").trim(),
+                supportedThinking: (m.supportedThinking ?? "").trim(),
+                customPrompt: (m.customPrompt ?? "").trim(),
+                enabled: m.enabled !== false,
+              }))
+          : undefined,
     })),
     maxConcurrentImages: toConcurrentCount(form.maxConcurrentImages),
     timeoutSecs: toTimeoutSecs(form.timeoutSecs),

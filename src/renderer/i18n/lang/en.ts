@@ -1955,6 +1955,58 @@ export const en = {
   "settings.imagegenCap.capLegacy": "Legacy",
   "settings.imagegenCap.capDeprecated": "Deprecated (shuts down 2026-08-17)",
   "settings.imagegenCap.capTextToImageOnly": "Text-to-image only",
+  "settings.imagegenMultiModelsGroup":
+    "Image models configuration (multi-model channel)",
+  "settings.imagegenMultiModelsHint":
+    "A channel connection can include multiple image models. Each model independently configures size, quality, thinking effort, and custom prompt.",
+  "settings.imagegenAddModel": "Add model",
+  "settings.imagegenAddFromTemplate": "Add from preset template...",
+  "settings.imagegenAddCustomModel": "Add blank custom model",
+  "settings.imagegenSetAsPrimary": "Set as default primary model",
+  "settings.imagegenPrimaryBadge": "Default primary model",
+  "settings.imagegenPrimaryHint":
+    "Default model used when AI does not specify a specific image model",
+  "settings.imagegenModelAlias": "Model display alias",
+  "settings.imagegenModelAliasPlaceholder": "e.g. Ultra / Fast (optional)",
+  "settings.imagegenModelAliasHint":
+    "Custom label shown on tabs for easier identification (shows model ID if empty)",
+  "settings.imagegenDeleteModel": "Delete model",
+  "settings.imagegenDeleteModelConfirm":
+    "Are you sure you want to remove this model config from the channel?",
+  "settings.imagegenMoreModels": "+{count} models",
+  "settings.imagegenModelEnabled": "Enable this model",
+  "settings.imagegenModelDisabled": "Disabled",
+  "settings.imagegenActiveModelConfig": "Configuring model:",
+  "settings.imagegenTemplate": "Preset template",
+  "settings.imagegenApplyTemplate": "Apply template",
+  "settings.imagegenTemplateReplaceConfirm":
+    "Applying this template will REPLACE all models currently configured in this channel. Continue?",
+  "settings.imagegenTemplateSelect":
+    "Select a template to auto-fill settings...",
+  "settings.imagegenDefaultThinking": "Default thinking strength",
+  "settings.imagegenDefaultThinkingHint":
+    "Controls reasoning/thinking depth before image generation (for models like GPT Image 2.5 / Gemini 3.1)",
+  "settings.imagegenThinkingAuto": "Auto (Model default)",
+  "settings.imagegenThinkingMinimal": "Minimal (Fast)",
+  "settings.imagegenThinkingLow": "Low (Faster)",
+  "settings.imagegenThinkingMedium": "Medium (Balanced)",
+  "settings.imagegenThinkingHigh": "High (Deep reasoning)",
+  "settings.imagegenCapabilitiesGroup": "Model capabilities & prompt template",
+  "settings.imagegenAutoGeneratePrompt": "Auto-generate prompt",
+  "settings.imagegenSupportedRatios": "Supported aspect ratios",
+  "settings.imagegenSupportedRatiosHint":
+    "Aspect ratios available for this model (comma-separated, e.g. 1:1, 16:9, 9:16)",
+  "settings.imagegenSupportedResolutions": "Supported resolutions / tiers",
+  "settings.imagegenSupportedResolutionsHint":
+    "Resolution tiers or dimensions supported by this model (e.g. 1K, 2K, 4K or 1024x1024)",
+  "settings.imagegenSupportedThinking": "Supported thinking strength",
+  "settings.imagegenSupportedThinkingHint":
+    "Thinking levels supported by this model (e.g. low, medium, high or minimal, high)",
+  "settings.imagegenCustomPrompt": "Channel prompt instructions",
+  "settings.imagegenCustomPromptPlaceholder":
+    "Custom instructions and capability notes injected into imagegen-generate tool description...",
+  "settings.imagegenCustomPromptHint":
+    "Directly injected into AI tool description to guide model on parameters and features.",
   "settings.imagegenDefaults": "Default parameters",
   "settings.imagegenDefaultSize": "Default size",
   "settings.imagegenDefaultSizeHint":

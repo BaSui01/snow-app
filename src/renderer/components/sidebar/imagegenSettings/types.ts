@@ -1,7 +1,33 @@
 /** 渠道协议类型：openai = OpenAI 兼容 Images API；gemini = Google Gemini Imagen。 */
 export type ImageGenProvider = "openai" | "gemini";
 
-/** 单个生图渠道（支持任意多个，每个渠道独立配置自己的端点/密钥/模型）。 */
+/** 渠道内单个绘图模型的独立参数配置 */
+export type ImageGenModelItem = {
+  /** 唯一标识（例如 modelId 或生成 id） */
+  id: string;
+  /** 真实模型 ID（如 gpt-image-2.5-sunburst） */
+  model: string;
+  /** 别名/展示名（可选，如 "Sunburst 旗舰推理"） */
+  name?: string;
+  /** 默认尺寸（如 "2560x1440" 或 "16:9@2K"） */
+  defaultSize?: string;
+  /** 默认质量（如 "xhigh"） */
+  defaultQuality?: string;
+  /** 默认思考强度（如 "high"） */
+  defaultThinking?: string;
+  /** 该模型支持的比例列表（如 "1:1, 16:9, 9:16..."） */
+  supportedRatios?: string;
+  /** 该模型支持的分辨率列表（如 "1K, 2K, 4K"） */
+  supportedResolutions?: string;
+  /** 该模型支持的思考强度选项（如 "low, medium, high"） */
+  supportedThinking?: string;
+  /** 专属提示词说明/指引（注入给生图工具描述） */
+  customPrompt?: string;
+  /** 是否启用（可选，默认 true） */
+  enabled?: boolean;
+};
+
+/** 单个生图渠道（支持任意多个，每个渠道独立配置自己的端点/密钥/多模型）。 */
 export type ImageGenChannelValue = {
   /** 渠道唯一 ID（前端生成；旧数据迁移时用协议名），供 provider 参数引用。 */
   id: string;
@@ -14,7 +40,7 @@ export type ImageGenChannelValue = {
   /** 留空 = 使用服务商官方默认端点。 */
   baseUrl: string;
   apiKey: string;
-  /** 绘图模型；留空时该渠道不可用（无内置默认）。 */
+  /** 默认主模型 ID；留空时若 models 非空取首个。 */
   model: string;
   defaultSize: string;
   defaultQuality: string;
@@ -23,6 +49,38 @@ export type ImageGenChannelValue = {
   webSearch: boolean;
   /** 默认流式预览（生成过程实时显示中间图），工具参数 stream 可覆盖。 */
   defaultStream: boolean;
+  /** 默认思考强度 / 推理深度（OpenAI: low/medium/high; Gemini: minimal/high; 留空 = auto）。 */
+  defaultThinking: string;
+  /** 用户配置的模型支持的宽高比（例如 "1:1, 16:9, 9:16, 4:3, 3:4, 21:9" 等）。 */
+  supportedRatios?: string;
+  /** 用户配置的模型支持的分辨率档位（例如 "1K, 2K, 4K" 或 "1024x1024, 1792x1024" 等）。 */
+  supportedResolutions?: string;
+  /** 用户配置的模型支持的思考强度选项（例如 "low, medium, high" 或 "minimal, high" 等）。 */
+  supportedThinking?: string;
+  /** 用户自定义的渠道/模型能力说明与提示词模板（动态注入到 imagegen-generate 工具提示词中）。 */
+  customPrompt?: string;
+  /** 渠道内配置的多个绘图模型列表（每个模型有独立的尺寸/画质/思考强度/提示词配置）。 */
+  models?: ImageGenModelItem[];
+};
+
+/** 渠道预设模板，供前端配置时一键填入。 */
+export type ImageGenTemplate = {
+  id: string;
+  name: string;
+  provider: ImageGenProvider;
+  baseUrl?: string;
+  model: string;
+  defaultSize?: string;
+  defaultQuality?: string;
+  defaultThinking?: string;
+  supportedRatios?: string;
+  supportedResolutions?: string;
+  supportedThinking?: string;
+  customPrompt?: string;
+  outputFormat?: string;
+  webSearch?: boolean;
+  defaultStream?: boolean;
+  description?: string;
 };
 
 /** 生图设置：任意多个独立渠道（数组顺序即优先级），可同时启用。 */

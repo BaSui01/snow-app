@@ -113,6 +113,8 @@ export type GitLogEntry = {
   additions: number;
   /** 本次提交删除的行数（来自 git log --shortstat）。 */
   deletions: number;
+  /** 本次提交改动的文件数（git log --shortstat 的 "N file(s) changed"）。 */
+  filesChanged: number;
   /** 是否已推送到远端：被任一远端跟踪分支（refs/remotes/*）包含。 */
   pushed: boolean;
 };

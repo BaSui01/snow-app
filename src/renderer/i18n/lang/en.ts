@@ -5133,6 +5133,18 @@ export const en = {
   "git.graphTooltipStats": "Changes",
   "git.graphTooltipRefs": "Refs",
   "git.graphTooltipParents": "Parents",
+  "git.tooltipChangedFiles":
+    "{{count}} files changed, {{insertions}} insertions(+), {{deletions}} deletions(-)",
+  "git.tooltipChangedFilesOne":
+    "1 file changed, {{insertions}} insertions(+), {{deletions}} deletions(-)",
+  "git.tooltipOpenOnGitHub": "Open on GitHub",
+  "git.tooltipOpenOnGitLab": "Open on GitLab",
+  "git.tooltipOpenOnRemote": "Open in remote repository",
+  "git.saveToMemo": "Save to Memo",
+  "git.memoSaved": "Saved to memo",
+  "git.memoSaveFailed": "Failed to save memo",
+  "git.memoMessage": "Commit message",
+  "git.memoFiles": "Files: {{count}}",
   "git.graphCurrentBranch": "Current branch",
   "git.graphDetachedHead": "Detached HEAD",
   "git.graphLocalBranch": "Local branch",

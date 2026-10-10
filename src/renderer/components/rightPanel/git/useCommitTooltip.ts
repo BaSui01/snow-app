@@ -163,6 +163,17 @@ export function useCommitTooltip() {
     };
   }, [hoveredCommit, positionTooltip]);
 
+  // 卡片内容异步补全（如改动文件数载入）会改变高度，尺寸变化后重新贴合
+  // 悬停行；positionTooltip 只改 left / top，不会反过来触发尺寸变化。
+  useEffect(() => {
+    if (!hoveredCommit) return;
+    const node = tooltipRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => positionTooltip());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hoveredCommit, positionTooltip]);
+
   return {
     hoveredCommit,
     tooltipRef,

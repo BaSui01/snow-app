@@ -268,6 +268,7 @@ export function GitPanelContent({
         {repoPath ? (
           <GitGraph
             repoPath={repoPath}
+            directoryId={activeDirectory?.directoryId}
             branch={gitStatus?.currentBranch ?? null}
             refreshKey={graphRefreshKey}
             onOpenInTab={onOpenInTab}

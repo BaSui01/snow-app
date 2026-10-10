@@ -1160,6 +1160,7 @@ export const remoteGetGitLog = async (
         parents: parts[7].split(/\s+/).filter(Boolean),
         additions: parseShortstatCount(statText, "insertion"),
         deletions: parseShortstatCount(statText, "deletion"),
+        filesChanged: parseShortstatCount(statText, "file"),
         pushed: !unpushed.has(parts[0]),
       });
     }

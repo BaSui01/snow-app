@@ -36171,6 +36171,19 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   border-bottom-color: rgba(248, 113, 113, 0.3);
 }
 
+/* 成功类提示（如「已记录到备忘录」）复用同一条提示位，只换语义配色。 */
+.git-graph-action-error.success {
+  color: #16a34a;
+  background: rgba(34, 197, 94, 0.12);
+  border-bottom-color: rgba(34, 197, 94, 0.3);
+}
+
+:root[data-theme="dark"] .git-graph-action-error.success {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.18);
+  border-bottom-color: rgba(74, 222, 128, 0.3);
+}
+
 /* 本地分支（含当前 HEAD） */
 .git-graph-ref.local {
   background: var(--accent-blue-bg);
@@ -36277,9 +36290,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .git-graph-tooltip {
   position: fixed;
   z-index: 1000;
-  min-width: 240px;
-  max-width: 440px;
-  padding: 10px 12px;
+  min-width: 260px;
+  max-width: 460px;
+  max-height: calc(100vh - 24px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
@@ -36315,23 +36332,49 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   border-right: 1px solid var(--border-light);
 }
 
-.git-graph-tooltip-row {
+/* 作者行：头像 + 作者名 + 相对时间（括号内是本地化后的绝对时间）。 */
+.git-graph-tooltip-header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.git-graph-tooltip-label {
+.git-graph-tooltip-avatar {
   flex-shrink: 0;
-  min-width: 44px;
-  color: var(--text-tertiary);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
 }
 
-.git-graph-tooltip-value {
-  min-width: 0;
+.git-graph-tooltip-avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.git-graph-tooltip-author {
+  flex-shrink: 0;
   color: var(--text-primary);
-  word-break: break-all;
+  font-weight: 600;
+}
+
+.git-graph-tooltip-time {
+  min-width: 0;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .git-graph-tooltip-mono {
@@ -36339,17 +36382,88 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-size: 10px;
 }
 
-.git-graph-tooltip-divider {
-  height: 1px;
-  background: var(--border-light);
-  margin: 6px 0;
+/* 引用 / 父提交 / 工作树：图标 + 文本的次要信息行。 */
+.git-graph-tooltip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
-.git-graph-tooltip-message {
-  font-size: 12px;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
+.git-graph-tooltip-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 变更统计：与 VS Code 一致的一句话（文件数 + 插入 + 删除）。 */
+.git-graph-tooltip-stats {
+  color: var(--text-secondary);
+}
+
+/* 底栏：短哈希 + 在 GitHub 上打开。 */
+.git-graph-tooltip-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.git-graph-tooltip-hash {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.git-graph-tooltip-footer-divider {
+  width: 1px;
+  height: 11px;
+  background: var(--border-light);
+}
+
+.git-graph-tooltip-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-blue-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.git-graph-tooltip-link:hover {
+  text-decoration: underline;
+}
+
+/* 卡片高度受限（max-height）时只让正文区收缩，其余各行保持原高。 */
+.git-graph-tooltip-header,
+.git-graph-tooltip-meta,
+.git-graph-tooltip-stats,
+.git-graph-tooltip-footer {
+  flex-shrink: 0;
+}
+
+/* 正文按 markdown 列表 / 段落结构化渲染（替代原先的 pre-wrap 纯文本）。 */
+.git-graph-tooltip-paragraph {
+  margin: 0;
+}
+
+.git-graph-tooltip-list {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.git-graph-tooltip-list li {
+  margin: 0;
 }
 
 /* 提交按钮与模式切换下拉按钮合体：整体一个圆角胶囊，
@@ -54259,8 +54373,10 @@ img.plugin-icon {
 /* Git Graph Commit Details & Tooltip */
 .git-graph-tooltip-message-section {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
+  min-height: 0;
 }
 
 .git-graph-tooltip-subject {
@@ -54272,20 +54388,19 @@ img.plugin-icon {
 }
 
 .git-graph-tooltip-body {
-  font-size: 11px;
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.55;
   color: var(--text-secondary);
-  white-space: pre-wrap;
   word-break: break-word;
-  padding: 6px 8px;
-  background: var(--bg-tertiary, rgba(0, 0, 0, 0.04));
-  border-radius: var(--radius-sm, 4px);
-  border: 1px solid var(--border-light);
+  /* 卡片整体高度受限时优先收缩正文区并滚动。 */
+  min-height: 0;
   max-height: 240px;
   overflow-y: auto;
   /* 滚到底不把滚动传递给面板背后的界面。 */
   overscroll-behavior: contain;
-  font-family: var(--font-mono, monospace);
 }
 
 .git-graph-detail-message-body {

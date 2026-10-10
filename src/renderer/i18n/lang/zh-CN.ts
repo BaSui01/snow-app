@@ -4823,6 +4823,18 @@ export const zhCN = {
   "git.graphTooltipStats": "变更行数",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.tooltipChangedFiles":
+    "已更改 {{count}} 个文件，{{insertions}} 行插入(+)，{{deletions}} 行删除(-)",
+  "git.tooltipChangedFilesOne":
+    "已更改 1 个文件，{{insertions}} 行插入(+)，{{deletions}} 行删除(-)",
+  "git.tooltipOpenOnGitHub": "在 GitHub 上打开",
+  "git.tooltipOpenOnGitLab": "在 GitLab 上打开",
+  "git.tooltipOpenOnRemote": "在远端仓库打开",
+  "git.saveToMemo": "记录到备忘录",
+  "git.memoSaved": "已记录到备忘录",
+  "git.memoSaveFailed": "记录到备忘录失败",
+  "git.memoMessage": "提交说明",
+  "git.memoFiles": "文件：{{count}} 个",
   "git.graphCurrentBranch": "当前分支",
   "git.graphDetachedHead": "分离头指针",
   "git.graphLocalBranch": "本地分支",

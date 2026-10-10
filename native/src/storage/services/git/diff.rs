@@ -245,11 +245,15 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
                 parents,
                 additions: 0,
                 deletions: 0,
+                files_changed: 0,
                 pushed: true,
             };
 
             if parts.len() > 9 {
                 let stat_text = parts[9];
+                // "1 file changed, 18 insertions(+), 10 deletions(-)" 三段同源，
+                // 文件数一并取出，前端无需再为统计单独查询文件列表。
+                entry.files_changed = parse_shortstat_count(stat_text, "file");
                 entry.additions = parse_shortstat_count(stat_text, "insertion");
                 entry.deletions = parse_shortstat_count(stat_text, "deletion");
             }

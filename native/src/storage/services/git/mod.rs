@@ -202,6 +202,10 @@ pub struct GitLogEntry {
     pub parents: Vec<String>,
     pub additions: i32,
     pub deletions: i32,
+    /// 本次提交改动的文件数（git log --shortstat 的 "N file(s) changed"）。
+    /// 与 additions / deletions 同源，供提交详情卡片直接展示，无需再跑一次
+    /// git 查询文件列表。
+    pub files_changed: i32,
     /// 是否已推送到远端：该提交被任一远端跟踪分支（refs/remotes/*）包含。
     pub pushed: bool,
 }

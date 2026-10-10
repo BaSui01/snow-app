@@ -1,5 +1,6 @@
 import {
   Copy,
+  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -7,6 +8,7 @@ import {
   GitBranch,
   Hash,
   MessageSquareText,
+  NotebookPen,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -29,9 +31,12 @@ import {
   type ParsedRef,
 } from "./gitGraphRefs";
 import {
+  buildCommitMemoContent,
+  getCommitWebLink,
   getWorktreeFolderName,
   isImageFile,
   isOtherWorktreePath,
+  REMOTE_LINK_LABEL_KEY,
   toGitFileStatus,
 } from "./gitGraphUtils";
 import { BRANCHES_CHANGED, useBranchManagement } from "./useBranchManagement";
@@ -40,6 +45,8 @@ import { useCommitTooltip } from "./useCommitTooltip";
 
 type GitGraphProps = {
   repoPath: string;
+  /** 当前项目目录 id：提交右键菜单「记录到备忘录」据此确定归属项目。 */
+  directoryId?: string | null;
   /** 当前分支名（来自 git status）：切换分支时提交图整体重载，因为图谱只
    *  包含当前分支可达的提交，增量合并无法移除旧分支独有的提交。 */
   branch?: string | null;
@@ -53,6 +60,7 @@ type GitGraphProps = {
 
 export const GitGraph = ({
   repoPath,
+  directoryId,
   branch,
   worktrees = [],
   refreshKey,
@@ -91,6 +99,32 @@ export const GitGraph = ({
     new Map(),
   );
 
+  // 仓库远端地址（优先 origin）：悬停卡片据此提供「在 GitHub 上打开」。
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!repoPath) {
+      setRemoteUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    window.snow
+      .gitRemotes(repoPath)
+      .then((remotes) => {
+        if (cancelled) return;
+        const selected =
+          remotes.find((remote) => remote.name === "origin") ?? remotes[0];
+        setRemoteUrl(selected?.fetchUrl ?? selected?.pushUrl ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath]);
+
   // 分支徽章专属菜单
   const [branchContextMenu, setBranchContextMenu] = useState<{
     x: number;
@@ -111,19 +145,30 @@ export const GitGraph = ({
     file: GitCommitFile;
   } | null>(null);
 
-  // 轻量操作反馈（如 checkout 失败的错误原因），自动淡出
-  const [actionError, setActionError] = useState<string | null>(null);
-  const actionErrorTimerRef = useRef<number | null>(null);
+  // 轻量操作反馈（checkout 失败、备忘录已保存等），自动淡出
+  const [actionNotice, setActionNotice] = useState<{
+    text: string;
+    kind: "error" | "success";
+  } | null>(null);
+  const actionNoticeTimerRef = useRef<number | null>(null);
 
-  const showActionError = useCallback((msg: string) => {
-    setActionError(msg);
-    if (actionErrorTimerRef.current) {
-      window.clearTimeout(actionErrorTimerRef.current);
-    }
-    actionErrorTimerRef.current = window.setTimeout(() => {
-      setActionError(null);
-    }, 4000);
-  }, []);
+  const showActionNotice = useCallback(
+    (text: string, kind: "error" | "success" = "error") => {
+      setActionNotice({ text, kind });
+      if (actionNoticeTimerRef.current) {
+        window.clearTimeout(actionNoticeTimerRef.current);
+      }
+      actionNoticeTimerRef.current = window.setTimeout(() => {
+        setActionNotice(null);
+      }, 4000);
+    },
+    [],
+  );
+
+  const showActionError = useCallback(
+    (msg: string) => showActionNotice(msg, "error"),
+    [showActionNotice],
+  );
 
   useEffect(() => {
     setBranchContextMenu(null);
@@ -436,6 +481,38 @@ export const GitGraph = ({
       },
     );
 
+    // 在远端打开：仅当远端地址能推导出提交页时提供（文案随平台变化）。
+    const commitLink = getCommitWebLink(remoteUrl, commit.hash);
+    if (commitLink) {
+      const commitUrl = commitLink.url;
+      items.push({
+        id: "open-in-remote",
+        label: t(REMOTE_LINK_LABEL_KEY[commitLink.provider]),
+        icon: <ExternalLink size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          window.open(commitUrl, "_blank");
+        },
+      });
+    }
+
+    // 记录到备忘录：写入当前项目，可在 App 的备忘录页面检索。
+    if (directoryId) {
+      items.push({
+        id: "save-to-memo",
+        separator: true,
+        label: t("git.saveToMemo", { defaultValue: "Save to Memo" }),
+        icon: <NotebookPen size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          void window.snow
+            .createMemo(directoryId, buildCommitMemoContent(commit, t))
+            .then(() => showActionNotice(t("git.memoSaved"), "success"))
+            .catch(() => showActionNotice(t("git.memoSaveFailed"), "error"));
+        },
+      });
+    }
+
     return items;
   };
 
@@ -526,13 +603,15 @@ export const GitGraph = ({
 
   return (
     <div className="git-graph" ref={containerRef}>
-      {actionError && (
+      {actionNotice && (
         <div
-          className="git-graph-action-error"
-          onClick={() => setActionError(null)}
-          title={actionError}
+          className={`git-graph-action-error${
+            actionNotice.kind === "success" ? " success" : ""
+          }`}
+          onClick={() => setActionNotice(null)}
+          title={actionNotice.text}
         >
-          <span>{actionError}</span>
+          <span>{actionNotice.text}</span>
         </div>
       )}
       <WorktreeLegend
@@ -575,6 +654,7 @@ export const GitGraph = ({
         <CommitTooltip
           commit={hoveredCommit}
           worktrees={worktrees}
+          remoteUrl={remoteUrl}
           tooltipRef={tooltipRef}
           onMouseEnter={cancelHideTooltip}
           onMouseLeave={scheduleHideTooltip}

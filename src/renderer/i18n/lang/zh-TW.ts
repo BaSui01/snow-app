@@ -4776,6 +4776,18 @@ export const zhTW = {
   "git.graphTooltipStats": "變更行數",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.tooltipChangedFiles":
+    "已變更 {{count}} 個檔案，{{insertions}} 行插入(+)，{{deletions}} 行刪除(-)",
+  "git.tooltipChangedFilesOne":
+    "已變更 1 個檔案，{{insertions}} 行插入(+)，{{deletions}} 行刪除(-)",
+  "git.tooltipOpenOnGitHub": "在 GitHub 上開啟",
+  "git.tooltipOpenOnGitLab": "在 GitLab 上開啟",
+  "git.tooltipOpenOnRemote": "在遠端倉庫開啟",
+  "git.saveToMemo": "記錄至備忘錄",
+  "git.memoSaved": "已記錄至備忘錄",
+  "git.memoSaveFailed": "記錄至備忘錄失敗",
+  "git.memoMessage": "提交說明",
+  "git.memoFiles": "檔案：{{count}} 個",
   "git.graphCurrentBranch": "目前分支",
   "git.graphDetachedHead": "分離的 HEAD",
   "git.graphLocalBranch": "本地分支",

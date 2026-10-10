@@ -1,24 +1,126 @@
+import { FolderGit2, GitBranch, GitCommitHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { GitLogEntry, GitWorktreeInfo } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { imageProxyUrl } from "../../../utils/imageProxyUrl";
 import { getCommitWorktrees, parseRefs } from "./gitGraphRefs";
+import {
+  formatAbsoluteTime,
+  formatRelativeTime,
+  getCommitWebLink,
+  getOwnerAvatarUrl,
+  parseGitDate,
+  REMOTE_LINK_LABEL_KEY,
+} from "./gitGraphUtils";
 
 type CommitTooltipProps = {
   commit: GitLogEntry;
   worktrees: GitWorktreeInfo[];
+  /** 仓库远端地址（优先 origin）：用于提交链接与 GitHub 头像。 */
+  remoteUrl: string | null;
   tooltipRef: React.RefObject<HTMLDivElement | null>;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 };
 
+type BodyBlock =
+  | { kind: "list"; items: { text: string; depth: number }[] }
+  | { kind: "text"; text: string };
+
+/**
+ * 提交正文轻量按 markdown 列表渲染：`-` / `*` / `+` 开头的行成列表项（按两空格
+ * 缩进最多两级），其余非空行成段落，空行结束当前列表。正文来自 git，可能含任意
+ * 用户文本，这里只做结构切分，文本一律交给 React 转义，不做 HTML 注入。
+ */
+const parseBodyBlocks = (body: string): BodyBlock[] => {
+  const blocks: BodyBlock[] = [];
+  let list: Extract<BodyBlock, { kind: "list" }> | null = null;
+
+  for (const rawLine of body.split(/\r?\n/)) {
+    const item = /^([ \t]*)[-*+]\s+(.*)$/.exec(rawLine);
+    if (item) {
+      if (!list) {
+        const created: Extract<BodyBlock, { kind: "list" }> = {
+          kind: "list",
+          items: [],
+        };
+        blocks.push(created);
+        list = created;
+      }
+      const indent = item[1].replace(/\t/g, "  ").length;
+      list.items.push({
+        text: item[2],
+        depth: Math.min(Math.floor(indent / 2), 2),
+      });
+      continue;
+    }
+
+    // 非列表行（含空行）结束当前列表。
+    list = null;
+    const text = rawLine.trim();
+    if (text) {
+      blocks.push({ kind: "text", text });
+    }
+  }
+
+  return blocks;
+};
+
 export function CommitTooltip({
   commit,
   worktrees,
+  remoteUrl,
   tooltipRef,
   onMouseEnter,
   onMouseLeave,
 }: CommitTooltipProps): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const parsedRefs = parseRefs(commit.refs);
+  const commitWorktrees = getCommitWorktrees(commit, parsedRefs, worktrees);
+  const commitDate = parseGitDate(commit.date);
+  const relativeTime = commitDate ? formatRelativeTime(commitDate, locale) : "";
+  const absoluteTime = commitDate
+    ? formatAbsoluteTime(commitDate, locale)
+    : commit.date;
+
+  // 首字母头像同时作为真实头像缺失 / 加载失败时的回退。
+  const avatarHue = useMemo(() => {
+    let hash = 2166136261;
+    for (let i = 0; i < commit.author.length; i++) {
+      hash = Math.imul(hash ^ commit.author.charCodeAt(i), 16777619);
+    }
+    return (hash >>> 0) % 360;
+  }, [commit.author]);
+  const avatarInitial = (commit.author.trim()[0] ?? "?").toUpperCase();
+
+  // GitHub 头像经 img-proxy 代理（主进程落盘缓存 7 天），失败回退首字母。
+  const avatarUrl = useMemo(() => getOwnerAvatarUrl(remoteUrl), [remoteUrl]);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  const showAvatarImage = avatarUrl !== null && failedAvatarUrl !== avatarUrl;
+
+  const bodyBlocks = useMemo(
+    () => (commit.body ? parseBodyBlocks(commit.body) : []),
+    [commit.body],
+  );
+
+  const commitLink = useMemo(
+    () => getCommitWebLink(remoteUrl, commit.hash),
+    [remoteUrl, commit.hash],
+  );
+
+  const hasStats =
+    commit.filesChanged > 0 || commit.additions > 0 || commit.deletions > 0;
+  // 文件数已随 git log --shortstat 一并返回；仅个别提交（如空改动合并）缺失。
+  const statsValues = {
+    count: commit.filesChanged,
+    insertions: commit.additions,
+    deletions: commit.deletions,
+  };
+  const statsLabel =
+    commit.filesChanged === 1
+      ? t("git.tooltipChangedFilesOne", { values: statsValues })
+      : t("git.tooltipChangedFiles", { values: statsValues });
 
   return createPortal(
     <div
@@ -28,69 +130,103 @@ export function CommitTooltip({
       onMouseLeave={onMouseLeave}
     >
       <span className="git-graph-tooltip-arrow" aria-hidden="true" />
-      <div className="git-graph-tooltip-row">
-        <span className="git-graph-tooltip-label">
-          {t("git.graphTooltipHash")}
+      <div className="git-graph-tooltip-header">
+        <span
+          className="git-graph-tooltip-avatar"
+          style={
+            showAvatarImage
+              ? undefined
+              : { background: `hsl(${avatarHue} 62% 45%)` }
+          }
+          aria-hidden="true"
+        >
+          {showAvatarImage && avatarUrl ? (
+            <img
+              className="git-graph-tooltip-avatar-img"
+              src={imageProxyUrl(avatarUrl)}
+              alt=""
+              onError={() => setFailedAvatarUrl(avatarUrl)}
+            />
+          ) : (
+            avatarInitial
+          )}
         </span>
-        <span className="git-graph-tooltip-value git-graph-tooltip-mono">
-          {commit.hash}
+        <span className="git-graph-tooltip-author">{commit.author}</span>
+        <span
+          className="git-graph-tooltip-time"
+          title={[
+            `${t("git.graphTooltipAuthor")}: ${commit.author}${
+              commit.email ? ` <${commit.email}>` : ""
+            }`,
+            `${t("git.graphTooltipDate")}: ${commit.date}`,
+          ].join("\n")}
+        >
+          {relativeTime ? `${relativeTime} (${absoluteTime})` : commit.date}
         </span>
       </div>
-      <div className="git-graph-tooltip-row">
-        <span className="git-graph-tooltip-label">
-          {t("git.graphTooltipAuthor")}
-        </span>
-        <span className="git-graph-tooltip-value">
-          {commit.author}
-          {commit.email ? ` <${commit.email}>` : ""}
-        </span>
+      <div className="git-graph-tooltip-message-section">
+        <div className="git-graph-tooltip-subject">{commit.message}</div>
+        {bodyBlocks.length > 0 && (
+          <div className="git-graph-tooltip-body">
+            {bodyBlocks.map((block, index) =>
+              block.kind === "list" ? (
+                <ul
+                  key={`list-${index}`}
+                  className="git-graph-tooltip-list"
+                  // 嵌套层级由正文缩进决定，层级很浅且内容不可信，直接内联。
+                  style={
+                    block.items[0]?.depth
+                      ? { paddingLeft: 16 + block.items[0].depth * 12 }
+                      : undefined
+                  }
+                >
+                  {block.items.map((item, itemIndex) => (
+                    <li key={`item-${itemIndex}`}>{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p
+                  key={`text-${index}`}
+                  className="git-graph-tooltip-paragraph"
+                >
+                  {block.text}
+                </p>
+              ),
+            )}
+          </div>
+        )}
       </div>
-      <div className="git-graph-tooltip-row">
-        <span className="git-graph-tooltip-label">
-          {t("git.graphTooltipDate")}
-        </span>
-        <span className="git-graph-tooltip-value">{commit.date}</span>
-      </div>
-      {(commit.additions > 0 || commit.deletions > 0) && (
-        <div className="git-graph-tooltip-row">
-          <span className="git-graph-tooltip-label">
-            {t("git.graphTooltipStats")}
-          </span>
-          <span className="git-graph-tooltip-value">
-            <span className="git-graph-stats">
-              {commit.additions > 0 && (
-                <span className="git-graph-stats-add">+{commit.additions}</span>
-              )}
-              {commit.deletions > 0 && (
-                <span className="git-graph-stats-del">-{commit.deletions}</span>
-              )}
+      {(parsedRefs.length > 0 ||
+        commitWorktrees.length > 0 ||
+        commit.parents.length > 0) && (
+        <div className="git-graph-tooltip-meta">
+          {parsedRefs.length > 0 && (
+            <span
+              className="git-graph-tooltip-meta-item"
+              title={t("git.graphTooltipRefs")}
+            >
+              <GitBranch size={11} strokeWidth={2} aria-hidden="true" />
+              {parsedRefs.map((ref) => ref.name).join(", ")}
             </span>
-          </span>
-        </div>
-      )}
-      {commit.refs && (
-        <div className="git-graph-tooltip-row">
-          <span className="git-graph-tooltip-label">
-            {t("git.graphTooltipRefs")}
-          </span>
-          <span className="git-graph-tooltip-value">
-            {parseRefs(commit.refs)
-              .map((ref) => ref.name)
-              .join(", ")}
-          </span>
-        </div>
-      )}
-      {getCommitWorktrees(commit, parseRefs(commit.refs), worktrees).map(
-        (worktree) => (
-          <div
-            className="git-graph-tooltip-row"
-            key={`tooltip-worktree-${worktree.worktreeId}`}
-          >
-            <span className="git-graph-tooltip-label">
-              {worktree.branchName ?? t("git.graphDetachedHead")}
+          )}
+          {commit.parents.length > 0 && (
+            <span
+              className="git-graph-tooltip-meta-item git-graph-tooltip-mono"
+              title={t("git.graphTooltipParents")}
+            >
+              <GitCommitHorizontal
+                size={11}
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+              {commit.parents.map((parent) => parent.slice(0, 7)).join(", ")}
             </span>
-            <span className="git-graph-tooltip-value">
-              {t("git.graphWorktreeTooltip", {
+          )}
+          {commitWorktrees.map((worktree) => (
+            <span
+              key={`tooltip-worktree-${worktree.worktreeId}`}
+              className="git-graph-tooltip-meta-item"
+              title={t("git.graphWorktreeTooltip", {
                 values: {
                   path: worktree.worktreePath,
                   state: worktree.isDirty
@@ -101,25 +237,58 @@ export function CommitTooltip({
                     : ` · ${t("git.graphWorktreeInvalid")}`,
                 },
               })}
+            >
+              <FolderGit2 size={11} strokeWidth={2} aria-hidden="true" />
+              {worktree.branchName ?? t("git.graphDetachedHead")}
             </span>
-          </div>
-        ),
-      )}
-      {commit.parents.length > 0 && (
-        <div className="git-graph-tooltip-row">
-          <span className="git-graph-tooltip-label">
-            {t("git.graphTooltipParents")}
-          </span>
-          <span className="git-graph-tooltip-value git-graph-tooltip-mono">
-            {commit.parents.join(", ")}
-          </span>
+          ))}
         </div>
       )}
-      <div className="git-graph-tooltip-divider" />
-      <div className="git-graph-tooltip-message-section">
-        <div className="git-graph-tooltip-subject">{commit.message}</div>
-        {commit.body && (
-          <div className="git-graph-tooltip-body">{commit.body}</div>
+      {hasStats && (
+        <div
+          className="git-graph-tooltip-stats"
+          title={t("git.graphTooltipStats")}
+        >
+          {commit.filesChanged > 0 ? (
+            statsLabel
+          ) : (
+            <span className="git-graph-stats">
+              {commit.additions > 0 && (
+                <span className="git-graph-stats-add">+{commit.additions}</span>
+              )}
+              {commit.deletions > 0 && (
+                <span className="git-graph-stats-del">-{commit.deletions}</span>
+              )}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="git-graph-tooltip-footer">
+        <span
+          className="git-graph-tooltip-hash"
+          title={`${t("git.graphTooltipHash")}: ${commit.hash}`}
+        >
+          <GitBranch size={11} strokeWidth={2} aria-hidden="true" />
+          {commit.shortHash}
+        </span>
+        {commitLink && (
+          <>
+            <span
+              className="git-graph-tooltip-footer-divider"
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              className="git-graph-tooltip-link"
+              onClick={() => {
+                if (commitLink) {
+                  window.open(commitLink.url, "_blank");
+                }
+              }}
+            >
+              {t(REMOTE_LINK_LABEL_KEY[commitLink.provider])}
+            </button>
+          </>
         )}
       </div>
     </div>,

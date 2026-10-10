@@ -1,5 +1,7 @@
 import { protocol, net } from "electron";
-import { readFile } from "fs/promises";
+import { createHash } from "crypto";
+import { mkdir, readFile, stat, writeFile } from "fs/promises";
+import { homedir } from "os";
 import { join, normalize, sep } from "path";
 import type { NativeBridge } from "../native/types";
 import {
@@ -130,6 +132,64 @@ const isFaviconUrl = (url: string): boolean => {
   }
 };
 
+/** 头像类图片的 host 白名单：体积小、内容稳定，且提交卡片会反复展示，
+ *  因此额外落盘长期缓存（与普通图片 no-store 的「改图即刷新」区分开）。 */
+const AVATAR_HOSTS = new Set([
+  "github.com",
+  "avatars.githubusercontent.com",
+  "secure.gravatar.com",
+  "gravatar.com",
+  "www.gravatar.com",
+]);
+
+/** 头像缓存有效期：GitHub 头像换图后 URL 不变，靠 TTL 兜底刷新。 */
+const AVATAR_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** 头像磁盘缓存目录（应用自有数据目录，与 browser-state 等约定一致）。 */
+const avatarCacheDir = (): string => join(homedir(), ".snowapp", "avatars");
+
+const isAvatarUrl = (url: string): boolean => {
+  try {
+    return AVATAR_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
+/** 缓存文件按 URL 的 sha1 命名，避免同一 owner 的不同尺寸互相覆盖。 */
+const avatarCachePath = (url: string): string =>
+  join(avatarCacheDir(), `${createHash("sha1").update(url).digest("hex")}.img`);
+
+/** 命中未过期缓存时直接返回本地字节；未命中 / 过期返回 null 走网络分支。 */
+const serveCachedAvatar = async (url: string): Promise<Response | null> => {
+  const filePath = avatarCachePath(url);
+  try {
+    const info = await stat(filePath);
+    if (Date.now() - info.mtimeMs > AVATAR_CACHE_TTL_MS) {
+      return null;
+    }
+
+    const bytes = await readFile(filePath);
+    const headers = new Headers();
+    // GitHub / Gravatar 头像均为位图，统一按 PNG 声明即可被解码器识别。
+    headers.set("Content-Type", "image/png");
+    headers.set("Cache-Control", "no-store");
+    return new Response(bytes, { status: 200, headers });
+  } catch {
+    return null;
+  }
+};
+
+/** 把上游头像写入本地缓存；写失败只影响下次命中，不向上抛。 */
+const cacheAvatar = async (url: string, bytes: Buffer): Promise<void> => {
+  try {
+    await mkdir(avatarCacheDir(), { recursive: true });
+    await writeFile(avatarCachePath(url), bytes);
+  } catch {
+    // 忽略：缓存是纯优化，失败时下次请求重新拉取即可。
+  }
+};
+
 /**
  * 注册 img-proxy:// 自定义协议，代理外部 HTTP/HTTPS 图片与本地图片文件。
  *
@@ -166,6 +226,15 @@ export const registerImageProxyProtocol = (native: NativeBridge): void => {
         });
       }
 
+      // 头像走本地磁盘缓存：命中即返回，不再打上游（断网也能显示）。
+      const avatar = isAvatarUrl(originalUrl);
+      if (avatar) {
+        const cached = await serveCachedAvatar(originalUrl);
+        if (cached) {
+          return cached;
+        }
+      }
+
       const upstream = await net.fetch(originalUrl, {
         redirect: "follow",
         // 避免主进程挂载本地 Cookie 仓库泄露给第三方图床。
@@ -196,6 +265,11 @@ export const registerImageProxyProtocol = (native: NativeBridge): void => {
       const buffer = await upstream.arrayBuffer();
       if (buffer.byteLength > MAX_IMAGE_BYTES) {
         return new Response("Image too large", { status: 413 });
+      }
+
+      // 回写头像缓存（不阻塞本次响应）。
+      if (avatar) {
+        void cacheAvatar(originalUrl, Buffer.from(buffer));
       }
 
       const headers = new Headers();

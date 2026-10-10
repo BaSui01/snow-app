@@ -1,10 +1,4 @@
-import {
-  FolderX,
-  GripVertical,
-  HardDriveDownload,
-  Server,
-  ShieldAlert,
-} from "lucide-react";
+import { FolderX, HardDriveDownload, Server, ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
@@ -236,15 +230,6 @@ export function WorkspaceDirectoryRow({
           <span className="workspace-directory-guide" aria-hidden="true">
             <span className="workspace-directory-guide-dot" />
           </span>
-          <span
-            aria-label={t("sidebar.dragDirectory", {
-              defaultValue: "Drag to reorder",
-            })}
-            className="workspace-directory-drag-handle"
-            role="img"
-          >
-            <GripVertical size={13} />
-          </span>
           {getDirectoryIcon(directory)}
           <input
             ref={editInputRef}
@@ -278,15 +263,6 @@ export function WorkspaceDirectoryRow({
         >
           <span className="workspace-directory-guide" aria-hidden="true">
             <span className="workspace-directory-guide-dot" />
-          </span>
-          <span
-            aria-label={t("sidebar.dragDirectory", {
-              defaultValue: "Drag to reorder",
-            })}
-            className="workspace-directory-drag-handle"
-            role="img"
-          >
-            <GripVertical size={13} />
           </span>
           {collectionColor && memberLinked ? (
             <span

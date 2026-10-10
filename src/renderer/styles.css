@@ -2866,38 +2866,6 @@ body.is-panel-resizing * {
   cursor: pointer;
 }
 
-.workspace-directory-drag-handle {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 100%;
-  margin-left: -4px;
-  border-radius: var(--radius-sm, 6px);
-  color: var(--text-tertiary);
-  cursor: grab;
-  transition:
-    color 0.12s ease,
-    background 0.12s ease;
-}
-
-.workspace-directory-drag-handle:hover {
-  color: var(--text-primary);
-  background: var(--bg-active);
-}
-
-.workspace-directory-drag-handle:active {
-  cursor: grabbing;
-}
-
-.workspace-directory-row.dragging .workspace-directory-drag-handle {
-  cursor: grabbing;
-}
-
-.workspace-directory-drag-handle svg {
-  pointer-events: none;
-}
 .workspace-directory-guide {
   position: absolute;
   left: -8px;

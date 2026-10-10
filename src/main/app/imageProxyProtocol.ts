@@ -140,6 +140,10 @@ const AVATAR_HOSTS = new Set([
   "secure.gravatar.com",
   "gravatar.com",
   "www.gravatar.com",
+  "q1.qlogo.cn",
+  "q2.qlogo.cn",
+  "q3.qlogo.cn",
+  "q4.qlogo.cn",
 ]);
 
 /** 头像缓存有效期：GitHub 头像换图后 URL 不变，靠 TTL 兜底刷新。 */

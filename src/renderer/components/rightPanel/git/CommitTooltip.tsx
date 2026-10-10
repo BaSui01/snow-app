@@ -8,8 +8,9 @@ import { getCommitWorktrees, parseRefs } from "./gitGraphRefs";
 import {
   formatAbsoluteTime,
   formatRelativeTime,
+  getCommitAvatarUrl,
   getCommitWebLink,
-  getOwnerAvatarUrl,
+  getGravatarIdenticonUrl,
   parseGitDate,
   REMOTE_LINK_LABEL_KEY,
 } from "./gitGraphUtils";
@@ -17,7 +18,7 @@ import {
 type CommitTooltipProps = {
   commit: GitLogEntry;
   worktrees: GitWorktreeInfo[];
-  /** 仓库远端地址（优先 origin）：用于提交链接与 GitHub 头像。 */
+  /** 仓库远端地址（优先 origin）：用于「在 GitHub 上打开」的提交链接。 */
   remoteUrl: string | null;
   tooltipRef: React.RefObject<HTMLDivElement | null>;
   onMouseEnter: () => void;
@@ -94,10 +95,30 @@ export function CommitTooltip({
   }, [commit.author]);
   const avatarInitial = (commit.author.trim()[0] ?? "?").toUpperCase();
 
-  // GitHub 头像经 img-proxy 代理（主进程落盘缓存 7 天），失败回退首字母。
-  const avatarUrl = useMemo(() => getOwnerAvatarUrl(remoteUrl), [remoteUrl]);
-  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-  const showAvatarImage = avatarUrl !== null && failedAvatarUrl !== avatarUrl;
+  // 头像三级回退：按邮箱静态推导（GitHub noreply / QQ / Gravatar 真实头像）→
+  // Gravatar 几何图案（identicon，同作者稳定且互相可区分）→ 首字母色块。
+  const primaryAvatarUrl = useMemo(
+    () => getCommitAvatarUrl(commit.email),
+    [commit.email],
+  );
+  const identiconUrl = useMemo(
+    () => getGravatarIdenticonUrl(commit.email),
+    [commit.email],
+  );
+  // 记录加载失败的地址而非用计数器：面板在提交间复用，跨提交的计数会串状态。
+  const [failedAvatarUrls, setFailedAvatarUrls] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const markAvatarFailed = (url: string): void =>
+    setFailedAvatarUrls((prev) => new Set(prev).add(url));
+
+  // 按优先级取第一个未失败的候选；全失败则回退首字母。
+  const avatarCandidates = [primaryAvatarUrl, identiconUrl];
+  const avatarSrc =
+    avatarCandidates.find(
+      (url): url is string => url !== null && !failedAvatarUrls.has(url),
+    ) ?? null;
+  const showAvatarImage = avatarSrc !== null;
 
   const bodyBlocks = useMemo(
     () => (commit.body ? parseBodyBlocks(commit.body) : []),
@@ -144,12 +165,15 @@ export function CommitTooltip({
           }
           aria-hidden="true"
         >
-          {showAvatarImage && avatarUrl ? (
+          {avatarSrc ? (
             <img
+              // 换源（真实头像 → identicon）时重置 img 元素，避免沿用上一次的
+              // 加载失败状态而跳过新地址。
+              key={avatarSrc}
               className="git-graph-tooltip-avatar-img"
-              src={imageProxyUrl(avatarUrl)}
+              src={imageProxyUrl(avatarSrc)}
               alt=""
-              onError={() => setFailedAvatarUrl(avatarUrl)}
+              onError={() => markAvatarFailed(avatarSrc)}
             />
           ) : (
             avatarInitial

@@ -125,6 +125,43 @@ export const GitGraph = ({
     };
   }, [repoPath]);
 
+  // 提交里出现过的作者邮箱（去重排序后拼成稳定键，避免每次加载更多都重复请求）。
+  const authorEmailKey = useMemo(
+    () =>
+      [...new Set(commits.map((commit) => commit.email?.trim().toLowerCase()))]
+        .filter(Boolean)
+        .sort()
+        .join("\n"),
+    [commits],
+  );
+
+  // 作者头像映射（邮箱 → GitHub 头像地址）：由主进程按仓库远端反查，补齐静态
+  // 推导（noreply / QQ / Gravatar）覆盖不到的邮箱；失败时保持为空，卡片继续回退。
+  const [authorAvatars, setAuthorAvatars] = useState<Record<string, string>>(
+    {},
+  );
+  useEffect(() => {
+    const emails = authorEmailKey ? authorEmailKey.split("\n") : [];
+    if (!remoteUrl || emails.length === 0) {
+      setAuthorAvatars({});
+      return;
+    }
+
+    let cancelled = false;
+    window.snow
+      .gitAuthorAvatars(remoteUrl, emails)
+      .then((map) => {
+        if (!cancelled) setAuthorAvatars(map);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthorAvatars({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [remoteUrl, authorEmailKey]);
+
   // 分支徽章专属菜单
   const [branchContextMenu, setBranchContextMenu] = useState<{
     x: number;
@@ -655,6 +692,7 @@ export const GitGraph = ({
           commit={hoveredCommit}
           worktrees={worktrees}
           remoteUrl={remoteUrl}
+          authorAvatars={authorAvatars}
           tooltipRef={tooltipRef}
           onMouseEnter={cancelHideTooltip}
           onMouseLeave={scheduleHideTooltip}

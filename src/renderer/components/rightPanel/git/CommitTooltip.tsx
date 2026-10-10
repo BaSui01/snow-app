@@ -20,6 +20,8 @@ type CommitTooltipProps = {
   worktrees: GitWorktreeInfo[];
   /** 仓库远端地址（优先 origin）：用于「在 GitHub 上打开」的提交链接。 */
   remoteUrl: string | null;
+  /** 按作者邮箱反查到的 GitHub 头像（邮箱小写 → 地址）；可为空对象。 */
+  authorAvatars: Record<string, string>;
   tooltipRef: React.RefObject<HTMLDivElement | null>;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -72,6 +74,7 @@ export function CommitTooltip({
   commit,
   worktrees,
   remoteUrl,
+  authorAvatars,
   tooltipRef,
   onMouseEnter,
   onMouseLeave,
@@ -95,8 +98,13 @@ export function CommitTooltip({
   }, [commit.author]);
   const avatarInitial = (commit.author.trim()[0] ?? "?").toUpperCase();
 
-  // 头像三级回退：按邮箱静态推导（GitHub noreply / QQ / Gravatar 真实头像）→
-  // Gravatar 几何图案（identicon，同作者稳定且互相可区分）→ 首字母色块。
+  // 头像四级回退：GitHub API 反查到的真实头像（可覆盖 Gmail 等静态推导查不到的作者）
+  // → 按邮箱静态推导（GitHub noreply / QQ / Gravatar 真实头像）→ Gravatar 几何图案
+  // （identicon，同作者稳定且互相可区分）→ 首字母色块。
+  const normalizedEmail = commit.email?.trim().toLowerCase() ?? "";
+  const resolvedAvatarUrl = normalizedEmail
+    ? (authorAvatars[normalizedEmail] ?? null)
+    : null;
   const primaryAvatarUrl = useMemo(
     () => getCommitAvatarUrl(commit.email),
     [commit.email],
@@ -113,7 +121,7 @@ export function CommitTooltip({
     setFailedAvatarUrls((prev) => new Set(prev).add(url));
 
   // 按优先级取第一个未失败的候选；全失败则回退首字母。
-  const avatarCandidates = [primaryAvatarUrl, identiconUrl];
+  const avatarCandidates = [resolvedAvatarUrl, primaryAvatarUrl, identiconUrl];
   const avatarSrc =
     avatarCandidates.find(
       (url): url is string => url !== null && !failedAvatarUrls.has(url),

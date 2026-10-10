@@ -28,6 +28,7 @@ import {
 } from "../../ssh/remoteGit";
 import { safeSend } from "../../utils/safeSend";
 import { isStorageReady } from "../../app/storageReady";
+import { resolveGitAuthorAvatars } from "../../git/authorAvatars";
 
 const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
 
@@ -708,6 +709,19 @@ export const registerGitHandlers = (native: NativeBridge): void => {
         onChunk,
         normalizedStreamId,
       );
+    },
+  );
+
+  // 按作者邮箱反查 GitHub 头像（供提交悬停卡片使用）。非 GitHub 远端或网络异常
+  // 时返回空对象，渲染进程继续按静态规则回退，不影响任何交互。
+  ipcMain.handle(
+    "git:author-avatars",
+    async (_event, remoteUrl: unknown, emails: unknown) => {
+      const remote = typeof remoteUrl === "string" ? remoteUrl : null;
+      const list = Array.isArray(emails)
+        ? emails.filter((email): email is string => typeof email === "string")
+        : [];
+      return resolveGitAuthorAvatars(remote, list);
     },
   );
 };

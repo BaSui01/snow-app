@@ -51,6 +51,7 @@ pub(super) fn process_responses_sse_event_block(
     completed_response: &mut Option<Value>,
     stream_completed_normally: &mut bool,
     reasoning_stream_mode: &mut HashMap<u64, ReasoningStreamMode>,
+    failure_reason: &mut Option<String>,
 ) -> (String, String) {
     let mut content_delta_out = String::new();
     let mut thinking_delta_out = String::new();
@@ -235,6 +236,15 @@ pub(super) fn process_responses_sse_event_block(
                     }) {
                         *response_status = status;
                     }
+                    // 上游以 `response.failed` 明确收尾时，失败原因只存在于
+                    // `response.error` 里。此前这里只取 id / model / status / usage，
+                    // 原因被直接丢弃，导致 app_logs 完全无痕（事后只能反查
+                    // usage_records 的 status='failed'）。这里显式提取出来交给调用方。
+                    if *response_status == "failed" {
+                        if let Some(reason) = extract_response_failure_reason(response) {
+                            *failure_reason = Some(reason);
+                        }
+                    }
                     *token_usage = extract_token_usage(response);
                     *completed_response = Some(response.clone());
                 }
@@ -251,6 +261,8 @@ pub(super) fn process_responses_sse_event_block(
                     .unwrap_or("Responses stream failed");
                 // Store the error message so the caller can surface it.
                 *completed_response = Some(json!({"error": message}));
+                // 与 `response.failed` 同样留痕：`error` 事件本身就是失败终态。
+                *failure_reason = Some(message.to_string());
             }
             _ => {}
         }
@@ -402,6 +414,63 @@ pub(super) fn collect_text_values(value: &Value, chunks: &mut Vec<String>) {
         }
         _ => {}
     }
+}
+
+/// Read the failure reason of a `response.failed` payload.
+///
+/// The Responses API reports a failed terminal in `response.error`, which is
+/// either a plain string or an object carrying `message` / `code` / `type`.
+/// This mirrors `read_message_field`'s tolerance so a relay that reshapes the
+/// envelope still yields a usable reason. Returns `None` when the payload
+/// carries no readable text, so callers can fall back to a generic marker
+/// instead of logging an empty reason.
+pub(super) fn extract_response_failure_reason(response: &Value) -> Option<String> {
+    let error = response.get("error")?;
+
+    let mut candidates: Vec<String> = Vec::new();
+    match error {
+        Value::String(text) => candidates.push(text.clone()),
+        Value::Object(object) => {
+            for key in ["message", "code", "type"] {
+                if let Some(text) = object
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    candidates.push(text.to_string());
+                }
+            }
+            // Some relays nest the real cause one level deeper.
+            if let Some(nested) = object.get("error") {
+                for key in ["message", "code", "type"] {
+                    if let Some(text) = nested
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    {
+                        candidates.push(text.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    // De-duplicate while preserving order so a relay echoing the same text in
+    // several fields does not produce a noisy, repetitive log line.
+    let mut unique: Vec<String> = Vec::new();
+    for candidate in candidates {
+        if !unique.iter().any(|existing| existing == &candidate) {
+            unique.push(candidate);
+        }
+    }
+    Some(unique.join(" / "))
 }
 
 // ---------------------------------------------------------------------------

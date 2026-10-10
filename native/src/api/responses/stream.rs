@@ -33,6 +33,11 @@ use super::event::{
     process_responses_sse_event_block,
 };
 
+/// 上游以 `response.failed` 收尾但未给出任何可读原因时的兜底标记，
+/// 保证失败终态在 app_logs 里至少留下一条可检索的线索。
+pub(super) const RESPONSES_FAILED_NO_REASON: &str =
+    "Responses stream failed without a readable error payload";
+
 pub(super) struct StreamingResponseResult {
     pub id: String,
     pub content: String,
@@ -46,6 +51,10 @@ pub(super) struct StreamingResponseResult {
     pub status: String,
     pub interruption_reason: Option<StreamInterruptionReason>,
     pub recovery_outcome: Option<StreamRecoveryOutcome>,
+    /// 上游以 `response.failed` / `error` 明确收尾时的失败原因（取自
+    /// `response.error`）。这类终态既不算传输中断也不重试，此前在日志里完全
+    /// 无痕；这里把它带出来供调用方落一条 WARN 留痕。
+    pub failure_reason: Option<String>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
     pub tool_parse_errors: Vec<String>,
@@ -70,6 +79,7 @@ pub(super) struct ResponsesAttemptState {
     completed_response: Option<Value>,
     stream_completed_normally: bool,
     reasoning_stream_mode: HashMap<u64, crate::api::responses::event::ReasoningStreamMode>,
+    failure_reason: Option<String>,
 }
 
 impl Default for ResponsesAttemptState {
@@ -88,6 +98,7 @@ impl Default for ResponsesAttemptState {
             completed_response: None,
             stream_completed_normally: false,
             reasoning_stream_mode: HashMap::new(),
+            failure_reason: None,
         }
     }
 }
@@ -110,6 +121,7 @@ impl ResponsesAttemptState {
             &mut self.completed_response,
             &mut self.stream_completed_normally,
             &mut self.reasoning_stream_mode,
+            &mut self.failure_reason,
         );
         (content_delta, thinking_delta, tool_args_delta_out)
     }
@@ -177,8 +189,18 @@ impl ResponsesAttemptState {
 
         if self.response_status == "incomplete" {
             self.tool_parse_errors.clear();
+            self.failure_reason = None;
             (Some(StreamInterruptionReason::ExplicitIncomplete), None)
+        } else if self.response_status == "failed" {
+            // 失败终态：保留 failure_reason 交给调用方留痕；上游没给出可读原因时
+            // 用兜底文案，避免出现「failed 却无任何线索」的空日志。
+            if self.failure_reason.is_none() {
+                self.failure_reason = Some(RESPONSES_FAILED_NO_REASON.to_string());
+            }
+            (None, None)
         } else {
+            // 成功终态：清空，避免重试成功后被上一轮的失败原因污染。
+            self.failure_reason = None;
             (None, None)
         }
     }
@@ -228,6 +250,7 @@ pub(super) fn cancelled_stream_result(
         status: String::from("cancelled"),
         interruption_reason: None,
         recovery_outcome: None,
+        failure_reason: None,
         token_usage: ChatTokenUsage {
             input_tokens: 0,
             output_tokens: 0,
@@ -279,6 +302,7 @@ pub(super) fn finalize_attempt_result(
         status: attempt_state.response_status.clone(),
         interruption_reason,
         recovery_outcome,
+        failure_reason: attempt_state.failure_reason.clone(),
         token_usage: attempt_state.token_usage,
         tool_calls_json,
         tool_parse_errors: attempt_state.tool_parse_errors.clone(),

@@ -2990,18 +2990,16 @@ body.is-panel-resizing * {
 }
 
 .project-collection-actions {
-  display: flex;
+  display: none;
   flex-shrink: 0;
   align-items: center;
   gap: 2px;
   padding-right: 4px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
 }
 
 .project-collection-row:hover .project-collection-actions,
 .project-collection-row:focus-within .project-collection-actions {
-  opacity: 1;
+  display: flex;
 }
 
 .project-collection-delete-btn:hover:not(:disabled) {

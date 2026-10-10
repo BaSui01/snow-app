@@ -289,7 +289,7 @@ impl McpService for AppLogsService {
                 "type": "object",
                 "properties": {
                     "scope": {"type":"string", "enum":["all","current"], "description":"Detail scope; defaults to all application logs, including rows from other conversations and unassociated system logs."},
-                    "level": {"type":"string", "enum":["","DEBUG","INFO","WARN","ERROR"], "description":"Optional exact severity level; empty means all levels."},
+                    "level": {"type":"string", "enum":["DEBUG","INFO","WARN","ERROR"], "description":"Optional exact severity level; omit this field to query all levels."},
                     "module": {"type":"string", "description":"Optional exact subsystem filter (for example api, api_request, api_response, lsp, hooks)."},
                     "conversationId": {"type":"string", "description":"Runtime-scoped by Snow App to the current conversation; any caller-supplied value is overwritten."},
                     "since": {"type":"string", "description":"Optional local datetime lower bound: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS."},

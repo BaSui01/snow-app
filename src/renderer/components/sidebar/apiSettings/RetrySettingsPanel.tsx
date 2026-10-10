@@ -50,6 +50,10 @@ const CATEGORY_LABELS: Record<string, { key: string; defaultValue: string }> = {
     key: "settings.retryCategoryNonSse",
     defaultValue: "Non-SSE response",
   },
+  emptyResponse: {
+    key: "settings.retryCategoryEmptyResponse",
+    defaultValue: "Empty response (no content or tool calls)",
+  },
 };
 
 const parseDefaults = (raw: string): RetryDefaultCategory[] => {
@@ -305,14 +309,18 @@ export function RetrySettingsPanel(): React.JSX.Element {
                         ? t(label.key, { defaultValue: label.defaultValue })
                         : category.id}
                     </span>
-                    <input
-                      value={state?.keywords ?? ""}
-                      placeholder={category.keywords.join(", ")}
-                      onChange={(event) =>
-                        updateCategory(category.id, event.target.value)
-                      }
-                      disabled={busy || !draft}
-                    />
+                    {/* 条件型类别（如 emptyResponse）没有关键词，只渲染开关：
+                        关键词对它没有任何作用，显示一个永远为空的输入框只会误导。 */}
+                    {category.keywords.length > 0 ? (
+                      <input
+                        value={state?.keywords ?? ""}
+                        placeholder={category.keywords.join(", ")}
+                        onChange={(event) =>
+                          updateCategory(category.id, event.target.value)
+                        }
+                        disabled={busy || !draft}
+                      />
+                    ) : null}
                     <label className="toggle-switch">
                       <input
                         type="checkbox"

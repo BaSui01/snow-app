@@ -2455,6 +2455,7 @@ export const zhTW = {
   "settings.retryCategoryStream": "串流錯誤",
   "settings.retryCategoryIdleTimeout": "串流閒置超時",
   "settings.retryCategoryNonSse": "非 SSE 回應",
+  "settings.retryCategoryEmptyResponse": "空回應（無正文且無工具呼叫）",
   "settings.retrySaveSuccess": "重試設定已儲存。",
   "settings.retryLoadError": "載入重試設定失敗",
   "settings.retrySaveError": "儲存重試設定失敗",

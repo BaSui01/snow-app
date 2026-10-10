@@ -2455,6 +2455,7 @@ export const zhCN = {
   "settings.retryCategoryStream": "流错误",
   "settings.retryCategoryIdleTimeout": "流空闲超时",
   "settings.retryCategoryNonSse": "非 SSE 响应",
+  "settings.retryCategoryEmptyResponse": "空响应（无正文且无工具调用）",
   "settings.retrySaveSuccess": "重试配置已保存。",
   "settings.retryLoadError": "加载重试配置失败",
   "settings.retrySaveError": "保存重试配置失败",

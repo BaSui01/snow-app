@@ -1904,6 +1904,11 @@ export const zhCN = {
   "settings.imagegenThinkingMedium": "Medium (中度平衡)",
   "settings.imagegenThinkingHigh": "High (深度思考)",
   "settings.imagegenCapabilitiesGroup": "模型能力与提示词动态配置",
+  "settings.imagegenFillCapability": "按模型 ID 填充能力",
+  "settings.imagegenFillCapabilityHint":
+    "用内置能力库覆盖当前模型的默认尺寸 / 质量 / 思考强度与支持范围",
+  "settings.imagegenCapabilityFillUnavailable":
+    "内置能力库未收录模型 {model}，请手动填写能力参数。",
   "settings.imagegenAutoGeneratePrompt": "按参数自动生成提示词",
   "settings.imagegenSupportedRatios": "支持的宽高比（比例）",
   "settings.imagegenSupportedRatiosHint":

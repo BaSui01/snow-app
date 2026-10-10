@@ -1996,6 +1996,11 @@ export const en = {
   "settings.imagegenThinkingMedium": "Medium (Balanced)",
   "settings.imagegenThinkingHigh": "High (Deep reasoning)",
   "settings.imagegenCapabilitiesGroup": "Model capabilities & prompt template",
+  "settings.imagegenFillCapability": "Fill from model ID",
+  "settings.imagegenFillCapabilityHint":
+    "Overwrite this model's default size / quality / thinking strength and supported ranges with the built-in capability profile",
+  "settings.imagegenCapabilityFillUnavailable":
+    "The built-in capability library has no entry for model {model} — fill the capability fields manually.",
   "settings.imagegenAutoGeneratePrompt": "Auto-generate prompt",
   "settings.imagegenSupportedRatios": "Supported aspect ratios",
   "settings.imagegenSupportedRatiosHint":

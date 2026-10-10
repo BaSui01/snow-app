@@ -1905,6 +1905,11 @@ export const zhTW = {
   "settings.imagegenThinkingMedium": "Medium (中度平衡)",
   "settings.imagegenThinkingHigh": "High (深度思考)",
   "settings.imagegenCapabilitiesGroup": "模型能力與提示詞動態配置",
+  "settings.imagegenFillCapability": "按模型 ID 填充能力",
+  "settings.imagegenFillCapabilityHint":
+    "用內建能力庫覆蓋目前模型的預設尺寸 / 品質 / 思考強度與支援範圍",
+  "settings.imagegenCapabilityFillUnavailable":
+    "內建能力庫未收錄模型 {model}，請手動填寫能力參數。",
   "settings.imagegenAutoGeneratePrompt": "按參數自動生成提示词",
   "settings.imagegenSupportedRatios": "支援的寬高比（比例）",
   "settings.imagegenSupportedRatiosHint":

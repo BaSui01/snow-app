@@ -16,6 +16,7 @@ import {
   Save,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 import {
@@ -193,6 +194,31 @@ const applyCapability = (
   });
   if (!untouched) {
     return item;
+  }
+  return {
+    ...item,
+    defaultSize: next.defaultSize,
+    defaultQuality: next.defaultQuality,
+    defaultThinking: next.defaultThinking,
+    supportedRatios: next.supportedRatios,
+    supportedResolutions: next.supportedResolutions,
+    supportedThinking: next.supportedThinking,
+  };
+};
+
+/**
+ * 用内置能力库强制填充模型项的能力字段（显式按钮入口）。
+ *
+ * 与 `applyCapability` 的区别：**不做「未定制」判定**，用户点击按钮即视为
+ * 明确要求套用能力库，无条件覆盖 6 个能力字段（但仍不改 model / name /
+ * customPrompt）。未收录的模型返回 null，由调用方提示「未收录」。
+ */
+const forceApplyCapability = (
+  item: ImageGenModelItem,
+): ImageGenModelItem | null => {
+  const next = resolveModelCapability(item.model);
+  if (!next) {
+    return null;
   }
   return {
     ...item,
@@ -966,6 +992,54 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         nextDraft.customPrompt = updatedItem.customPrompt ?? "";
       }
 
+      return nextDraft;
+    });
+  };
+
+  /**
+   * 显式「按模型 ID 填充能力」：用内置能力库**无条件覆盖**当前模型的能力字段。
+   *
+   * 与改模型 ID 时的静默自动填充不同——用户点击按钮即视为明确要求套用能力库，
+   * 因此不做 applyCapability 的「未定制」判定；命中能力库即覆盖 6 个能力字段
+   * （并同步主模型的顶层兼容字段），未收录则提示、不改动任何字段。
+   * 用单次 setDraft 完成，updater 内只做纯计算（StrictMode 下会被双调用）。
+   */
+  const fillCapabilityFromModel = () => {
+    setError("");
+    if (!resolveModelCapability(activeModelItem.model)) {
+      setError(
+        t("settings.imagegenCapabilityFillUnavailable", {
+          defaultValue:
+            "No built-in capability profile for model {model} — fill the fields manually.",
+        }).replace("{model}", activeModelItem.model.trim() || "—"),
+      );
+      return;
+    }
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const list =
+        prev.models && prev.models.length > 0 ? [...prev.models] : [];
+      const idx = Math.min(
+        Math.max(0, activeModelIndex),
+        Math.max(0, list.length - 1),
+      );
+      const current = list[idx];
+      if (!current) return prev;
+      const filled = forceApplyCapability(current);
+      if (!filled) return prev;
+      const wasPrimary = idx === resolvePrimaryIndex(list, prev.model);
+      list[idx] = filled;
+      const nextDraft: ImageGenChannelValue = { ...prev, models: list };
+      // 与 updateActiveModelItem 一致：主模型变更时同步顶层兼容字段。
+      if (wasPrimary) {
+        nextDraft.model = filled.model ?? "";
+        nextDraft.defaultSize = filled.defaultSize ?? "";
+        nextDraft.defaultQuality = filled.defaultQuality ?? "";
+        nextDraft.defaultThinking = filled.defaultThinking ?? "";
+        nextDraft.supportedRatios = filled.supportedRatios ?? "";
+        nextDraft.supportedResolutions = filled.supportedResolutions ?? "";
+        nextDraft.supportedThinking = filled.supportedThinking ?? "";
+      }
       return nextDraft;
     });
   };
@@ -1868,8 +1942,44 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
               <div className="api-settings-form-grid">
                 {/* 模型标识 ID */}
                 <div className="api-settings-field">
-                  <span className="api-settings-field-label">
-                    {t("settings.imagegenModel", { defaultValue: "Model ID" })}
+                  <span
+                    className="api-settings-field-label"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span>
+                      {t("settings.imagegenModel", {
+                        defaultValue: "Model ID",
+                      })}
+                    </span>
+                    {capability ? (
+                      <button
+                        type="button"
+                        className="api-settings-form-btn secondary"
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          height: "auto",
+                          display: "inline-flex",
+                          alignItems: "center",
+                        }}
+                        onClick={fillCapabilityFromModel}
+                        disabled={draftSaving}
+                        title={t("settings.imagegenFillCapabilityHint", {
+                          defaultValue:
+                            "Overwrite default size / quality / thinking and supported ranges with the built-in capability profile for this model ID",
+                        })}
+                      >
+                        <Wand2 size={11} style={{ marginRight: 4 }} />
+                        {t("settings.imagegenFillCapability", {
+                          defaultValue: "Fill from model ID",
+                        })}
+                      </button>
+                    ) : null}
                   </span>
                   <ApiModelCombobox
                     label={t("settings.imagegenModel", {
@@ -2064,9 +2174,13 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                                   ? t("settings.imagegenThinkingMinimal", {
                                       defaultValue: "minimal (Fast)",
                                     })
-                                  : t("settings.imagegenThinkingHigh", {
-                                      defaultValue: "high (Deep thinking)",
-                                    }),
+                                  : value === "medium"
+                                    ? t("settings.imagegenThinkingMedium", {
+                                        defaultValue: "medium (Balanced)",
+                                      })
+                                    : t("settings.imagegenThinkingHigh", {
+                                        defaultValue: "high (Deep thinking)",
+                                      }),
                           }))
                         : OPENAI_THINKING_OPTIONS.map((value) => ({
                             value,

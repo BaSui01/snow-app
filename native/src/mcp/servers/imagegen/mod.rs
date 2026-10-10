@@ -1162,6 +1162,7 @@ impl ImageGenService {
             let lower = level.to_ascii_lowercase();
             let effective = match lower.as_str() {
                 "minimal" | "low" => "minimal",
+                "medium" => "medium",
                 "high" => "high",
                 _ => "",
             };
@@ -1221,6 +1222,10 @@ impl ImageGenService {
             let lower = level.to_ascii_lowercase();
             if matches!(lower.as_str(), "minimal" | "low") {
                 legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 1024 });
+            } else if lower == "medium" {
+                // 官方 medium 档（Nano Banana 2.1 默认）在 legacy 协议里没有
+                // 字符串档位，只能近似为介于 minimal(1024) 与 high(4096) 之间的预算。
+                legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 2048 });
             } else if lower == "high" {
                 legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 4096 });
             }
@@ -1528,12 +1533,12 @@ impl McpService for ImageGenService {
                     },
                     "thinkingLevel": {
                         "type": "string",
-                        "description": "Thinking strength / reasoning effort before rendering. Gemini (Nano Banana / 3.1 / 3): \"minimal\" (faster) or \"high\" (better quality). OpenAI: alias for reasoningEffort (\"low\", \"medium\", \"high\"). Ignored when the model does not support reasoning/thinking.",
+                        "description": "Thinking strength / reasoning effort before rendering. Gemini (Nano Banana 2.1 / 3.1 / 3): \"minimal\" (fast), \"medium\" (default), or \"high\" (better quality). OpenAI: alias for reasoningEffort (\"low\", \"medium\", \"high\"). Ignored when the model does not support reasoning/thinking.",
                         "enum": ["minimal", "high", "low", "medium", "auto"]
                     },
                     "reasoningEffort": {
                         "type": "string",
-                        "description": "Reasoning/thinking effort before image generation. OpenAI (gpt-image-2 / gpt-image-2.5): \"low\", \"medium\", \"high\". Gemini: alias for thinkingLevel (\"minimal\" or \"high\"). Ignored when the model does not support reasoning.",
+                        "description": "Reasoning/thinking effort before image generation. OpenAI (gpt-image-2 / gpt-image-2.5): \"low\", \"medium\", \"high\". Gemini: alias for thinkingLevel (\"minimal\", \"medium\" or \"high\"). Ignored when the model does not support reasoning.",
                         "enum": ["low", "medium", "high", "minimal", "auto"]
                     },
                     "imageSearch": {
@@ -1842,7 +1847,7 @@ fn format_channel_capabilities(channel: &ImageGenChannel) -> Vec<String> {
         lines.push(format!("Configured default thinking effort: {}", channel.default_thinking.trim()));
     } else {
         if channel.provider == "gemini" {
-            lines.push("Thinking strength (parameter: thinkingLevel): minimal (fast), high (deep thinking)".to_string());
+            lines.push("Thinking strength (parameter: thinkingLevel): minimal (fast), medium (default), high (deep thinking)".to_string());
         } else if !channel.model.to_ascii_lowercase().contains("dall-e") {
             lines.push("Reasoning effort (parameter: reasoningEffort): low, medium, high".to_string());
         }
@@ -2356,8 +2361,12 @@ fn sanitize_thinking_level(
         return None;
     }
     let effective = if is_gemini {
+        // Nano Banana 2.1（gemini-nano-banana-2.1 / gemini-3.1-flash-image）
+        // 官方新增 medium 档并设为默认（Google 官方文档 2026-10），必须保留，
+        // 否则用户在下拉里选的 medium 会被静默丢弃。
         match value.as_str() {
             "minimal" | "low" => "minimal",
+            "medium" => "medium",
             "high" => "high",
             _ => return None,
         }

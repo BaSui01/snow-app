@@ -78,8 +78,17 @@ export const GROK_MODEL_EXAMPLES =
 /** OpenAI 思考/推理强度预设选项（支持 gpt-image-2 / 2.5 系列）。 */
 export const OPENAI_THINKING_OPTIONS = ["", "low", "medium", "high"] as const;
 
-/** Gemini 思考强度预设选项（支持 gemini-3.1 / 3 系列）。 */
-export const GEMINI_THINKING_LEVEL_OPTIONS = ["", "minimal", "high"] as const;
+/**
+ * Gemini 思考强度预设选项（支持 gemini-3.1 / 3 系列）。
+ * Nano Banana 2.1（gemini-nano-banana-2.1）新增 medium 档并设为官方默认
+ * （Google 官方文档 2026-10），因此这里必须收录 medium。
+ */
+export const GEMINI_THINKING_LEVEL_OPTIONS = [
+  "",
+  "minimal",
+  "medium",
+  "high",
+] as const;
 
 /**
  * 开箱即用的生图渠道预置模板，支持在新建/编辑渠道时一键填充。
@@ -92,11 +101,11 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-nano-banana-2.1",
     defaultSize: "16:9@2K",
-    defaultThinking: "minimal",
+    defaultThinking: "medium",
     supportedRatios:
       "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
-    supportedThinking: "minimal, high",
+    supportedThinking: "minimal, medium, high",
     customPrompt:
       "Google 最新 Nano Banana 2.1 图像生成与编辑旗舰（API 模型 ID: gemini-nano-banana-2.1）。成本大幅降低，支持 14 种宽高比及 512px~4K 分辨率（尺寸支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
     webSearch: true,
@@ -186,11 +195,11 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-3.1-flash-image",
     defaultSize: "16:9@2K",
-    defaultThinking: "minimal",
+    defaultThinking: "medium",
     supportedRatios:
       "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
-    supportedThinking: "minimal, high",
+    supportedThinking: "minimal, medium, high",
     customPrompt:
       "Google 最新 Nano Banana 2 多模态生图旗舰。支持 14 种宽高比及 512px~4K 分辨率（尺寸参数支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
     webSearch: true,
@@ -240,7 +249,8 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     defaultSize: "16:9@2k",
     defaultQuality: "medium",
     defaultThinking: "",
-    supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9",
+    supportedRatios:
+      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 19.5:9, 9:19.5, 20:9, 9:20",
     supportedResolutions: "1k, 2k",
     supportedThinking: "",
     customPrompt:

@@ -1812,6 +1812,12 @@ fn format_channel_capabilities(channel: &ImageGenChannel) -> Vec<String> {
             lines.push("Supported aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9".to_string());
         } else if m.contains("niji") || m.contains("novelai") || m.contains("animagine") {
             lines.push("Supported aspect ratios: 1:1 (avatar), 2:3 / 9:16 (character portrait), 3:2 / 16:9 (landscape wallpaper)".to_string());
+        } else if m.contains("gpt-image-1") {
+            // gpt-image-1 / 1.5 / 1-mini：仅固定三种尺寸，比例受限。
+            lines.push("Supported aspect ratios: 1:1, 3:2, 2:3".to_string());
+        } else if m.contains("gpt-image-2") {
+            // gpt-image-2 / 2.5：任意比例，仅受 1:3~3:1 与 3840px 上限约束。
+            lines.push("Supported aspect ratios: any ratio between 1:3 and 3:1 (multiples of 16px, max edge 3840px)".to_string());
         } else {
             lines.push("Supported aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5".to_string());
         }
@@ -1830,6 +1836,9 @@ fn format_channel_capabilities(channel: &ImageGenChannel) -> Vec<String> {
             lines.push("Supported resolutions: 1024x1024, 1280x720, 720x1280, 2048x2048 (up to native 2K)".to_string());
         } else if m.contains("flux") {
             lines.push("Supported resolutions: 1024x1024, 1536x1024, 1792x1008, 2048x2048 (up to 4MP)".to_string());
+        } else if m.contains("gpt-image-1") {
+            // gpt-image-1 / 1.5 / 1-mini：仅固定三种尺寸。
+            lines.push("Supported sizes: 1024x1024, 1536x1024, 1024x1536".to_string());
         } else {
             lines.push("Supported resolution tiers: 1K, 2K, 4K (multiples of 16px, max side <=3840px)".to_string());
         }

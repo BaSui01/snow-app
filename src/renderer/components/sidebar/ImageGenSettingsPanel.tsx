@@ -43,7 +43,6 @@ import {
   DEFAULT_OPENAI_BASE_URL,
   GEMINI_MODEL_EXAMPLES,
   GEMINI_ASPECT_RATIOS,
-  GEMINI_THINKING_LEVEL_OPTIONS,
   IMAGE_GEN_MAX_CONCURRENT_RANGE,
   IMAGE_GEN_SETTING_CODE,
   IMAGE_GEN_SETTING_NAME,
@@ -66,6 +65,7 @@ import {
 import {
   isGeminiFamilyModel,
   resolveModelCapability,
+  resolveThinkingLevels,
 } from "./imagegenSettings/modelCapabilities";
 import type {
   ImageGenChannelValue,
@@ -2163,25 +2163,27 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     value={activeModelItem.defaultThinking ?? ""}
                     options={
                       isGeminiModel
-                        ? GEMINI_THINKING_LEVEL_OPTIONS.map((value) => ({
-                            value,
-                            label:
-                              value === ""
-                                ? t("settings.imagegenThinkingAuto", {
-                                    defaultValue: "Auto",
-                                  })
-                                : value === "minimal"
-                                  ? t("settings.imagegenThinkingMinimal", {
-                                      defaultValue: "minimal (Fast)",
+                        ? ["", ...resolveThinkingLevels(currentModelId)].map(
+                            (value) => ({
+                              value,
+                              label:
+                                value === ""
+                                  ? t("settings.imagegenThinkingAuto", {
+                                      defaultValue: "Auto",
                                     })
-                                  : value === "medium"
-                                    ? t("settings.imagegenThinkingMedium", {
-                                        defaultValue: "medium (Balanced)",
+                                  : value === "minimal"
+                                    ? t("settings.imagegenThinkingMinimal", {
+                                        defaultValue: "minimal (Fast)",
                                       })
-                                    : t("settings.imagegenThinkingHigh", {
-                                        defaultValue: "high (Deep thinking)",
-                                      }),
-                          }))
+                                    : value === "medium"
+                                      ? t("settings.imagegenThinkingMedium", {
+                                          defaultValue: "medium (Balanced)",
+                                        })
+                                      : t("settings.imagegenThinkingHigh", {
+                                          defaultValue: "high (Deep thinking)",
+                                        }),
+                            }),
+                          )
                         : OPENAI_THINKING_OPTIONS.map((value) => ({
                             value,
                             label:

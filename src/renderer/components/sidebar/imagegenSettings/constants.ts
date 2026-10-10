@@ -107,7 +107,7 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
     supportedThinking: "minimal, medium, high",
     customPrompt:
-      "Google 最新 Nano Banana 2.1 图像生成与编辑旗舰（API 模型 ID: gemini-nano-banana-2.1）。成本大幅降低，支持 14 种宽高比及 512px~4K 分辨率（尺寸支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
+      "Google 最新 Nano Banana 2.1 图像生成与编辑旗舰（API 模型 ID: gemini-nano-banana-2.1）。成本大幅降低，支持 14 种宽高比及 512px~4K 分辨率（尺寸支持 16:9@2K）；支持 thinkingLevel (minimal/medium/high 思考强度，官方默认 medium)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
     webSearch: true,
     defaultStream: true,
     description:
@@ -122,12 +122,13 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     defaultSize: "1792x1008",
     defaultQuality: "high",
     defaultThinking: "medium",
-    supportedRatios:
-      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
-    supportedResolutions: "1K (1792x1008), 2K (2560x1440), 4K (3840x2160)",
+    // gpt-image-2 系尺寸/比例空间开放（任意 16 倍数、两边 ≤3840px、比例 1:3~3:1）
+    // → supported_* 留空 = 未声明 = 放行；声明不完整会被 Rust 精确白名单误拦。
+    supportedRatios: "",
+    supportedResolutions: "",
     supportedThinking: "low, medium, high",
     customPrompt:
-      "OpenAI 最新高性价比推理生图模型。支持 1K/2K/4K 比例尺寸（最大 3840px，16倍数）；支持 reasoningEffort 思考强度（low/medium/high）；画质支持 low/medium/high/xhigh；支持参考图多模态图生图。",
+      "OpenAI 最新高性价比推理生图模型。支持 1K/2K/4K 比例尺寸（最大 3840px，16倍数，比例 1:3~3:1，可传任意 WIDTHxHEIGHT）；支持 reasoningEffort 思考强度（low/medium/high）；画质支持 low/medium/high/xhigh/max；支持参考图多模态图生图。",
     outputFormat: "png",
     defaultStream: true,
     description: "日常高画质与快速响应推荐，支持 1K/2K/4K 比例及推理思考",
@@ -141,12 +142,11 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     defaultSize: "2560x1440",
     defaultQuality: "xhigh",
     defaultThinking: "high",
-    supportedRatios:
-      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
-    supportedResolutions: "1K (1792x1008), 2K (2560x1440), 4K (3840x2160)",
+    supportedRatios: "",
+    supportedResolutions: "",
     supportedThinking: "low, medium, high",
     customPrompt:
-      "OpenAI 旗舰推理画质生图模型。具备深度推理与复杂指令遵循能力；支持 reasoningEffort（low/medium/high 深度思考）；画质支持 xhigh 与 max 顶级档位；支持 1K/2K/4K 各比例尺寸。",
+      "OpenAI 旗舰推理画质生图模型。具备深度推理与复杂指令遵循能力；支持 reasoningEffort（low/medium/high 深度思考）；画质支持 xhigh 与 max 顶级档位；支持 1K/2K/4K 各比例尺寸（最大 3840px，比例 1:3~3:1）。",
     outputFormat: "png",
     defaultStream: true,
     description: "旗舰级深度推理生图，画质极致，支持 xhigh / max 与深度思考",
@@ -160,12 +160,11 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     defaultSize: "1792x1008",
     defaultQuality: "high",
     defaultThinking: "medium",
-    supportedRatios:
-      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5",
-    supportedResolutions: "1K, 2K, 4K (任意16倍数尺寸，最大3840px)",
+    supportedRatios: "",
+    supportedResolutions: "",
     supportedThinking: "low, medium, high",
     customPrompt:
-      "经典 GPT 多模态生图模型。支持 1K/2K/4K 各比例尺寸；支持 reasoningEffort 推理；支持参考图多模态图生图；注意 transparent 背景仅 gpt-image-1 支持。",
+      "经典 GPT 多模态生图模型。支持 1K/2K/4K 各比例尺寸（最大 3840px，16 倍数，比例 1:3~3:1）；支持 reasoningEffort 推理；支持参考图多模态图生图；注意 transparent 背景仅 gpt-image-1 支持。",
     outputFormat: "png",
     defaultStream: true,
     description: "经典 GPT 多模态图生图与文生图模型",
@@ -195,11 +194,13 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-3.1-flash-image",
     defaultSize: "16:9@2K",
-    defaultThinking: "medium",
+    // Nano Banana 2（Gemini 3.1 Flash Image）官方只有 minimal / high 两档，
+    // medium 是 2.1 新增 —— 此处不可声明，否则上游 400。
+    defaultThinking: "minimal",
     supportedRatios:
       "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
-    supportedThinking: "minimal, medium, high",
+    supportedThinking: "minimal, high",
     customPrompt:
       "Google 最新 Nano Banana 2 多模态生图旗舰。支持 14 种宽高比及 512px~4K 分辨率（尺寸参数支持 16:9@2K）；支持 thinkingLevel (minimal/high 思考强度)；支持联网搜索与以图搜图（webSearch/imageSearch）；图生图最多支持 14 张参考图。",
     webSearch: true,
@@ -249,8 +250,11 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     defaultSize: "16:9@2k",
     defaultQuality: "medium",
     defaultThinking: "",
-    supportedRatios:
-      "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 19.5:9, 9:19.5, 20:9, 9:20",
+    // ⚠️ xAI 官方比例清单无法完全核实（第三方文档口径 13~14 种不一致），
+    // 而 supported_* 一经声明即被 Rust 侧当作精确白名单**拦截**越界值 →
+    // 声明不完整会误拦合法比例，故留空（未声明 = 放行）。
+    // 比例选项在 Grok 专用控件里走 GROK_ASPECT_RATIOS 常量，不依赖此字段。
+    supportedRatios: "",
     supportedResolutions: "1k, 2k",
     supportedThinking: "",
     customPrompt:

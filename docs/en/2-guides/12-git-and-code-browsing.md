@@ -89,6 +89,22 @@ Git WorkTree allows a single repository to mount multiple physical directories c
 - **Status change limit**: local Git status is truncated at the configured limit with a warning shown in the Git panel, keeping huge repositories responsive;
 - **Auto refresh**: whether repository status refreshes automatically.
 
+### 1.7 Commit Author Avatars
+
+The commit hover card shows the commit author's avatar in its top-left corner. Each level is tried in order, falling back to the next only when the previous one fails:
+
+1. **GitHub lookup**: queries `api.github.com` for that commit and uses the avatar of the account GitHub associates with the commit email. This level covers authors the static rules cannot resolve (Gmail addresses, for example), but requires the commit to have been pushed to a remote; non-GitHub remotes skip this level.
+2. **Static derivation**: builds a URL directly from the email, with no API request:
+   - `…@users.noreply.github.com` → `github.com/<login>.png`;
+   - `…@qq.com` → the QQ number avatar from `q1.qlogo.cn`;
+   - anything else → the real Gravatar avatar (`md5(email)`).
+3. **Gravatar geometric pattern**: when the email has no Gravatar account, a geometric pattern (identicon) derived from the email hash is used instead. The pattern is stable per author and differs between authors.
+4. **Initial-letter tile**: when none of the above is usable, it falls back to a colored tile with the author name's first letter.
+
+**Authentication and rate limits for the GitHub lookup**: GitHub allows 5000 requests/hour when authenticated but only 60/hour anonymously. Snow reads the `GITHUB_TOKEN` then `GH_TOKEN` environment variables (the latter is written by the gh CLI after `gh auth login`), matching the convention already used by the built-in Skills installer. Without a token it still attempts an anonymous request, which may hit the limit sooner; the avatar then simply falls back to level 2 or lower, with no impact on other features. Lookup results are cached per repository for 7 days (in `git-author-avatars.json` under the app data directory), so normal browsing does not repeat requests.
+
+> Avatars are decorative: network failures, rate limiting, or non-GitHub repositories only make the avatar fall back to the next level — they never raise an error or block the UI.
+
 ## 2. Project Explorer and Workspace Search
 
 Choose **Details** from a workspace's ellipsis/context menu to open that workspace in the project explorer:

@@ -1755,7 +1755,7 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
                   onClick={() => setLightbox(null)}
                   aria-label={t("toolCall.imagegen.close")}
                 >
-                  ✕
+                  <X size={14} aria-hidden="true" />
                 </button>
               </div>
               <div

@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Star,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -271,9 +272,16 @@ export const MemoryPanel = ({
             {entry.title}
           </span>
           <span className="memory-panel-row-importance" aria-hidden="true">
-            {"★".repeat(entry.importance)}
+            {Array.from({ length: entry.importance }, (_, i) => (
+              <Star key={`on-${i}`} size={10} fill="currentColor" />
+            ))}
             <span className="memory-importance-dim">
-              {"★".repeat(5 - entry.importance)}
+              {Array.from(
+                { length: Math.max(0, 5 - entry.importance) },
+                (_, i) => (
+                  <Star key={`off-${i}`} size={10} />
+                ),
+              )}
             </span>
           </span>
           {entry.status !== "active" && (

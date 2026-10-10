@@ -11,6 +11,7 @@ import {
   Plus,
   RotateCw,
   Search,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -513,9 +514,14 @@ export function UserscriptsSection(): React.JSX.Element {
                               </span>
                             )}
                             <span className="userscripts-cell-rating">
-                              {item.ratingScore > 0
-                                ? `★ ${item.ratingScore.toFixed(1)}`
-                                : ""}
+                              {item.ratingScore > 0 ? (
+                                <>
+                                  <Star size={10} fill="currentColor" />
+                                  {item.ratingScore.toFixed(1)}
+                                </>
+                              ) : (
+                                ""
+                              )}
                             </span>
                             {item.url && (
                               <a

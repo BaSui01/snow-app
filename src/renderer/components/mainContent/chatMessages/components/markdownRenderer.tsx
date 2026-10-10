@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Download } from "lucide-react";
+import { Download, X } from "lucide-react";
 import "katex/dist/katex.min.css";
 import MarkdownWorker from "./markdownWorker?worker";
 import type {
@@ -1048,7 +1048,7 @@ export const MarkdownBlock = memo(
                     onClick={() => setLightboxSrc(null)}
                     aria-label={t("common.close")}
                   >
-                    ✕
+                    <X size={14} aria-hidden="true" />
                   </button>
                 </div>
               </div>,

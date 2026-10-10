@@ -999,7 +999,11 @@ export const GitControl = ({
       ...(remotes.length > 1
         ? remotes.map((r) => ({
             id: `push-${r.name}`,
-            label: `${t("git.push")} → ${r.name}${selectedRemote === r.name ? " ✓" : ""}`,
+            label: `${t("git.push")} → ${r.name}${
+              selectedRemote === r.name
+                ? ` (${t("git.currentRemote", { defaultValue: "current" })})`
+                : ""
+            }`,
             icon: <ArrowUpFromLine size={13} strokeWidth={1.8} />,
             disabled: busy,
             onClick: () => {

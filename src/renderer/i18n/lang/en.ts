@@ -5773,7 +5773,7 @@ export const en = {
   "remoteControl.passphrase": "Key passphrase (leave empty if none)",
   "remoteControl.step4Title": "Verify first, then deploy automatically",
   "remoteControl.step4Text":
-    "Click “Check DNS” first. When both lines show ✓, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
+    "Click “Check DNS” first. Once both lines pass, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
   "remoteControl.checkDns": "Check DNS",
   "remoteControl.deployConnect": "Deploy and connect",
   "remoteControl.cancelDeploy": "Cancel deployment",

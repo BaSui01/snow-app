@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { Lightbulb } from "lucide-react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName } from "./shared/formatters";
@@ -216,7 +217,8 @@ export const FilesystemEditToolCall = ({
             {closestMatch && (
               <div className="tool-call-edit-closest-hint">
                 <div className="tool-call-edit-closest-title">
-                  💡 未匹配到目标代码，文件中最接近的上下文片段：
+                  <Lightbulb size={12} aria-hidden="true" />
+                  未匹配到目标代码，文件中最接近的上下文片段：
                 </div>
                 <pre className="tool-call-section-pre tool-call-edit-closest-pre">
                   {closestMatch}

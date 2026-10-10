@@ -5442,7 +5442,7 @@ export const zhTW = {
   "remoteControl.passphrase": "私鑰密碼（沒有可留空）",
   "remoteControl.step4Title": "偵測成功後再自動部署",
   "remoteControl.step4Text":
-    "先點「偵測 DNS」。兩行均為 ✓ 後，再點「自動部署並連線」；之後 FRP、Caddy、token、CA、憑證與設定匯入都由 Snow 處理。",
+    "先點「偵測 DNS」。兩行均通過後，再點「自動部署並連線」；之後 FRP、Caddy、token、CA、憑證與設定匯入都由 Snow 處理。",
   "remoteControl.checkDns": "偵測 DNS",
   "remoteControl.deployConnect": "自動部署並連線",
   "remoteControl.cancelDeploy": "取消部署",

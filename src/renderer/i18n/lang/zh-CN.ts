@@ -5435,7 +5435,7 @@ export const zhCN = {
   "remoteControl.passphrase": "私钥密码（没有可留空）",
   "remoteControl.step4Title": "检测成功后再自动部署",
   "remoteControl.step4Text":
-    "先点“检测 DNS”。两行均为 ✓ 后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
+    "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
   "remoteControl.checkDns": "检测 DNS",
   "remoteControl.deployConnect": "自动部署并连接",
   "remoteControl.cancelDeploy": "取消部署",

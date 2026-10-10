@@ -1,4 +1,5 @@
 import {
+  Check,
   Copy,
   Download,
   FileUp,
@@ -14,6 +15,7 @@ import {
   Trash2,
   Unplug,
   Wifi,
+  X,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -2126,7 +2128,7 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                   <p>
                     {t("remoteControl.step4Text", {
                       defaultValue:
-                        "先点“检测 DNS”。两行均为 ✓ 后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
+                        "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
                     })}
                   </p>
 
@@ -2134,8 +2136,16 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                     <div className="remote-dns-check-results">
                       {dnsCheck.records.map((record) => (
                         <span key={record.host}>
-                          {record.ready ? "✓" : "×"} {record.name} →{" "}
-                          {record.expectedValue}
+                          {record.ready ? (
+                            <Check
+                              size={11}
+                              strokeWidth={2.4}
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <X size={11} strokeWidth={2.4} aria-hidden="true" />
+                          )}{" "}
+                          {record.name} → {record.expectedValue}
                         </span>
                       ))}
                     </div>

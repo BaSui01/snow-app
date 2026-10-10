@@ -8,6 +8,7 @@ import {
   MessageSquareText,
   Plus,
   Search,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -985,9 +986,16 @@ export function ProjectMemoryPanel({
                   </div>
                   <div className="memory-list-item-meta">
                     <span className="memory-list-item-importance">
-                      {"★".repeat(record.importance)}
+                      {Array.from({ length: record.importance }, (_, i) => (
+                        <Star key={`on-${i}`} size={10} fill="currentColor" />
+                      ))}
                       <span className="memory-importance-dim">
-                        {"★".repeat(5 - record.importance)}
+                        {Array.from(
+                          { length: Math.max(0, 5 - record.importance) },
+                          (_, i) => (
+                            <Star key={`off-${i}`} size={10} />
+                          ),
+                        )}
                       </span>
                     </span>
                     <span>{date}</span>

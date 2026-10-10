@@ -77,7 +77,10 @@ fn load_directory_row(database_path: &Path, directory_id: &str) -> Result<Option
 
 #[cfg(windows)]
 fn mount_root(path: &Path) -> PathBuf {
-    for component in path.components() {
+    // 取路径的首个 component（盘符根，如 `D:`）作为挂载点；
+    // 无 component 时回退为原路径。原写法 `for ... { return ... }`
+    // 首次迭代即返回，等价于取首项，会被 clippy::never_loop 拒绝。
+    if let Some(component) = path.components().next() {
         return PathBuf::from(component.as_os_str());
     }
     path.to_path_buf()

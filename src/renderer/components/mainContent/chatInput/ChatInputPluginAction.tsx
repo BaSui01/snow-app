@@ -46,8 +46,6 @@ const LABELS = {
     copied: "Copied",
     confirm: "Confirm",
     close: "Close",
-    running: "Running…",
-    cancelled: "Cancelled",
     failed: "Action failed",
   },
   "zh-CN": {
@@ -60,8 +58,6 @@ const LABELS = {
     copied: "已复制",
     confirm: "确认",
     close: "关闭",
-    running: "执行中…",
-    cancelled: "已取消",
     failed: "操作失败",
   },
   "zh-TW": {
@@ -74,8 +70,6 @@ const LABELS = {
     copied: "已複製",
     confirm: "確認",
     close: "關閉",
-    running: "執行中…",
-    cancelled: "已取消",
     failed: "操作失敗",
   },
 };
@@ -239,7 +233,8 @@ export const ChatInputPluginAction = ({
         ? { message: previous.message, preview: previous.preview }
         : null,
     );
-    setStatus(labels.cancelled);
+    // Cancelling also stays silent: the spinner simply stops.
+    setStatus("");
   };
   const openConfiguration = (): void => {
     rightPanelEvents.emit("open-plugin-panel", {
@@ -356,7 +351,9 @@ export const ChatInputPluginAction = ({
     };
     runRef.current = run;
     setResult(null);
-    setStatus(labels.running);
+    // Start silent: the spinner conveys progress. The plugin clears it again on
+    // its first `onStatus`, and a slow plugin no longer flashes a truncated label.
+    setStatus("");
     void perform(
       run,
       async () => {

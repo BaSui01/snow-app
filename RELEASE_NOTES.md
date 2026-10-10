@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.4.20
+
+## New Features
+
+- **Browser Agent Authorization and Tab Sharing**: Agent access to the built-in browser is now opt-in — only tabs you explicitly share (or tabs the Agent opens itself in an isolated, memory-only session) can be driven, and commands aimed at other tabs fail with an explicit error. A new `browser-request_share` tool asks for permission through an in-app Allow / Reject bar (auto-rejected after 60 seconds), the toolbar gains a share button and badge, the tab bar a shared dot, the menu a "Send to Agent" group (page body / console logs / network requests into the input box), and Browser settings gain an Agent authorization page (global switch, isolation session, domain allow / block list).
+- **Sidebar Project Tree View**: The sidebar switches between the flat list and a project tree that nests collections, projects and conversations; running sessions and pinned chats are marked, and the chosen view is remembered.
+
+## Improvements
+
+- A unified Tooltip component replaces the scattered native hints across the chat input toolbar, stream metrics, message actions, Git control and session list, with consistent placement and theming.
+- Session list: hovering an overflowing conversation title scrolls it as a marquee, quick actions appear on hover, multi-select batch archive / delete is supported, and an LSP status badge is added to the chat input toolbar.
+- The file reader's review panel switches to a top / bottom layout on narrow widths, and the drag handle follows that direction (width or height).
+
+## Bug Fixes
+
+- Fixed the built-in log tool being rejected as a whole request: the `level` enum no longer contains an empty string (Gemini-compatible gateways answered HTTP 400).
+- Fixed the run summary reappearing while a generation is still in progress.
+- Fixed the collection actions permanently occupying the sidebar row — they are hidden by default and shown on hover / focus.
+
 ## v0.4.19
 
 ## New Features

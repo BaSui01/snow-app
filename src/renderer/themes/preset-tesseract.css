@@ -1270,6 +1270,10 @@
   stroke: var(--tesseract-cyan);
 }
 
+:root[data-theme-preset="tesseract"] .token-usage-ring-cache-write {
+  stroke: var(--warning);
+}
+
 :root[data-theme-preset="tesseract"] .token-usage-ring-cache {
   stroke: #a78bfa;
 }

@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.4.24
+
+## New Features
+
+- **Task Manager Performance Panel**: Processes, performance trends, LSP services and alerts are split into tabs, with 60-second trends and exact LSP session stop / restart.
+- **Plugin Tool-Call Renderers**: ESM plugins can supply cards for matching tool calls, falling back to the generic card on failure; the Anysearch desktop card is now provided by its own plugin.
+- **MCP Access Banner**: Browser and terminal panels show a banner when MCP is off, with a jump-to-open action; "don't ask again" applies app-wide.
+- **Pet Theme Background**: Desktop pet animations can serve as the theme background.
+- **Plugin Binary Responses**: `api.net.fetch` accepts `responseType: "arraybuffer"` and returns the raw bytes as base64.
+
+## Improvements
+
+- Repeated read-only calls with unchanged arguments and targets reuse the earlier result; a loop is only stopped after three consecutive repeats.
+- Tool authorization and question cards submit with Ctrl/Cmd+Enter, and the Bash tool card can send a bare Enter to interactive programs.
+- LSP sessions reuse eligible gopls workspaces and reclaim idle sessions periodically, within session and cold-start budgets.
+- Plugin input-bar actions keep running across floating-panel and session switches, and drafts persist in background sessions.
+- Plugin metadata adds a `processes` domain (task manager process tree); `app.processMemoryBytes` is removed.
+- Compact theme refines hover, selection, disabled and focus feedback; the top bar adapts to macOS native full-screen.
+
+## Bug Fixes
+
+- Fixed Anthropic subscription login endpoints, request headers and thought-chain display.
+- Fixed the daily usage trend chart's hover position and selected point being misaligned.
+- Fixed screenshots of background browser tabs hanging.
+
 ## v0.4.23
 
 ## New Features

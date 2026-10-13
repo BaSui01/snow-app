@@ -665,6 +665,10 @@
   stroke: var(--accent-green);
 }
 
+:root[data-theme-preset="notion"] .token-usage-ring-cache-write {
+  stroke: var(--warning);
+}
+
 :root[data-theme-preset="notion"] .token-usage-ring-cache {
   stroke: var(--nt-cache-read);
 }

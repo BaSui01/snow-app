@@ -1648,6 +1648,10 @@
   stroke: var(--compact-token-output);
 }
 
+:root[data-theme-preset="compact"] .token-usage-ring-cache-write {
+  stroke: var(--compact-token-cache-write);
+}
+
 :root[data-theme-preset="compact"] .token-usage-ring-cache {
   stroke: var(--compact-token-cache-read);
 }

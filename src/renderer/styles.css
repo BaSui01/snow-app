@@ -28432,6 +28432,11 @@ body.is-panel-resizing * {
   transition: stroke-dasharray 0.3s ease;
 }
 
+.token-usage-ring-cache-write {
+  stroke: #f59e0b;
+  transition: stroke-dasharray 0.3s ease;
+}
+
 .token-usage-ring-cache {
   stroke: #a855f7;
   transition: stroke-dasharray 0.3s ease;

@@ -679,6 +679,10 @@
   stroke: var(--accent-green);
 }
 
+:root[data-theme-preset="cream"] .token-usage-ring-cache-write {
+  stroke: var(--warning);
+}
+
 :root[data-theme-preset="cream"] .token-usage-ring-cache {
   stroke: var(--accent-blue);
 }

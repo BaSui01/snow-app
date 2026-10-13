@@ -1402,8 +1402,12 @@
   stroke: var(--google-green);
 }
 
-:root[data-theme-preset="google"] .token-usage-ring-cache {
+:root[data-theme-preset="google"] .token-usage-ring-cache-write {
   stroke: var(--google-yellow);
+}
+
+:root[data-theme-preset="google"] .token-usage-ring-cache {
+  stroke: var(--google-red);
 }
 
 :root[data-theme-preset="google"] .token-usage-ring-text {

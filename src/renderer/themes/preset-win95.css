@@ -1036,6 +1036,15 @@
   stroke: #008000;
 }
 
+:root[data-theme-preset="win95"] .token-usage-ring-cache-write {
+  stroke: #808000;
+}
+
+:root[data-theme-preset="win95"][data-theme="dark"]
+  .token-usage-ring-cache-write {
+  stroke: #d0c060;
+}
+
 :root[data-theme-preset="win95"] .token-usage-ring-cache {
   stroke: #008080;
 }

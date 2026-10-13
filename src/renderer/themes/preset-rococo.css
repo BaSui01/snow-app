@@ -1247,6 +1247,10 @@
   stroke: #4e8a5a;
 }
 
+:root[data-theme-preset="rococo"] .token-usage-ring-cache-write {
+  stroke: var(--rc-gold);
+}
+
 :root[data-theme-preset="rococo"] .token-usage-ring-cache {
   stroke: #3d8a78;
 }

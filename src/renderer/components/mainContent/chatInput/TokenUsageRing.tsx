@@ -30,11 +30,14 @@ export const TokenUsageRing = ({
 
     const input = tokenUsage.inputTokens;
     const output = tokenUsage.outputTokens;
-    const cacheCreation = tokenUsage.cacheCreationInputTokens;
     const cacheRead = Math.min(tokenUsage.cacheReadInputTokens, input);
+    const cacheCreation = Math.min(
+      tokenUsage.cacheCreationInputTokens,
+      input - cacheRead,
+    );
 
-    // Rust normalizes all providers so input includes cache reads. Cache reads
-    // are therefore a subset of input rather than an additional total.
+    // Rust normalizes all providers so input includes cache reads and cache
+    // writes. Both are therefore subsets of input, not additional totals.
     const total = input + output;
 
     if (total === 0) {
@@ -46,10 +49,11 @@ export const TokenUsageRing = ({
     const ratio = Math.min(total / max, 1);
     const filled = ratio * CIRCUMFERENCE;
     const remaining = CIRCUMFERENCE - filled;
-    const nonCachedInput = input - cacheRead;
+    const nonCachedInput = input - cacheRead - cacheCreation;
 
     const inputLength = filled * (nonCachedInput / total);
     const outputLength = filled * (output / total);
+    const cacheWriteLength = filled * (cacheCreation / total);
     const cacheLength = filled * (cacheRead / total);
 
     return {
@@ -65,6 +69,7 @@ export const TokenUsageRing = ({
       remaining,
       inputLength,
       outputLength,
+      cacheWriteLength,
       cacheLength,
     };
   }, [tokenUsage, maxContextTokens]);
@@ -246,11 +251,30 @@ export const TokenUsageRing = ({
           fill="none"
           strokeWidth={STROKE_WIDTH}
           strokeLinecap="butt"
+          className="token-usage-ring-cache-write"
+          strokeDasharray={`${segments.cacheWriteLength} ${
+            CIRCUMFERENCE - segments.cacheWriteLength
+          }`}
+          strokeDashoffset={-(segments.inputLength + segments.outputLength)}
+        />
+        <circle
+          cx={RING_SIZE / 2}
+          cy={RING_SIZE / 2}
+          r={RADIUS}
+          fill="none"
+          strokeWidth={STROKE_WIDTH}
+          strokeLinecap="butt"
           className="token-usage-ring-cache"
           strokeDasharray={`${segments.cacheLength} ${
             CIRCUMFERENCE - segments.cacheLength
           }`}
-          strokeDashoffset={-(segments.inputLength + segments.outputLength)}
+          strokeDashoffset={
+            -(
+              segments.inputLength +
+              segments.outputLength +
+              segments.cacheWriteLength
+            )
+          }
         />
       </svg>
       <span

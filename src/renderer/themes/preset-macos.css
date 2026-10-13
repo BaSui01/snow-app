@@ -1349,6 +1349,15 @@
   stroke: #2f7a3d;
 }
 
+:root[data-theme-preset="macos"] .token-usage-ring-cache-write {
+  stroke: #9a6b1f;
+}
+
+:root[data-theme-preset="macos"][data-theme="dark"]
+  .token-usage-ring-cache-write {
+  stroke: #d8bc70;
+}
+
 :root[data-theme-preset="macos"] .token-usage-ring-cache {
   stroke: #2f8f8f;
 }

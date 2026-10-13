@@ -734,6 +734,10 @@
   stroke: var(--cp-neon-green);
 }
 
+:root[data-theme-preset="cyberpunk"] .token-usage-ring-cache-write {
+  stroke: var(--cp-neon-yellow);
+}
+
 :root[data-theme-preset="cyberpunk"] .token-usage-ring-cache {
   stroke: var(--cp-neon-cyan);
 }

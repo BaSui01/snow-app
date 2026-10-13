@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { keyToDisplay } from "../../../../utils/shortcutUtils";
 import { ContentChips } from "../../chatInput/ContentChips";
 import {
   createImageChipHtml,
@@ -273,6 +274,31 @@ export const AskUserQuestionToolCall = ({
     onSubmitted?.();
   };
 
+  /**
+   * 自定义答案输入框的 Ctrl/Cmd + Enter：草稿非空时先加入自定义答案列表，
+   * 草稿已清空（第二次按下）则直接提交回答，全程无需移动鼠标。
+   */
+  const handleCustomKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ): void => {
+    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+    const nativeEvent = event.nativeEvent;
+    if (
+      nativeEvent.isComposing ||
+      (nativeEvent as unknown as { keyCode?: number }).keyCode === 229
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (hasPendingCustomAnswer) {
+      addCustomAnswer();
+    } else {
+      submitAnswer();
+    }
+  };
+
   const cancelAnswer = (): void => {
     if (!questionState || !isInteractive) {
       return;
@@ -394,6 +420,7 @@ export const AskUserQuestionToolCall = ({
               onInput={syncCustomDraft}
               onPaste={handleCustomPaste}
               onClick={handleCustomClick}
+              onKeyDown={handleCustomKeyDown}
             />
             <button
               type="button"
@@ -405,6 +432,14 @@ export const AskUserQuestionToolCall = ({
               <Plus size={14} aria-hidden="true" />
             </button>
           </div>
+
+          {isInteractive ? (
+            <span className="tool-call-user-question-hint">
+              {t("toolCall.userQuestion.customShortcutHint", {
+                values: { keys: keyToDisplay("mod+enter") },
+              })}
+            </span>
+          ) : null}
 
           {customAnswers.length > 0 ? (
             <div className="tool-call-user-question-custom-list">

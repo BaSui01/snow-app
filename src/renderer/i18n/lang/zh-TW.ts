@@ -1020,6 +1020,8 @@ export const zhTW = {
   "toolCall.userQuestion.optionsLabel": "可選答案",
   "toolCall.userQuestion.customLabel": "自訂答案",
   "toolCall.userQuestion.customPlaceholder": "新增其他答案，可貼上圖片",
+  "toolCall.userQuestion.customShortcutHint":
+    "{{keys}}：加入清單；再按一次提交回答",
   "toolCall.userQuestion.addCustom": "新增自訂答案",
   "toolCall.userQuestion.removeCustom": "移除 {{answer}}",
   "toolCall.userQuestion.preparing": "正在準備問題...",
@@ -3654,6 +3656,7 @@ export const zhTW = {
   "toolAuthorization.rejectionReason": "拒絕理由",
   "toolAuthorization.rejectionReasonPlaceholder":
     "可選，請說明不允許執行此工具的原因。",
+  "toolAuthorization.rejectionShortcutHint": "{{keys}}：填寫理由後直接拒絕",
   "toolAuthorization.defaultRejectionReason": "使用者拒絕執行工具",
   "toolAuthorization.reject": "拒絕",
   "toolAuthorization.approve": "同意",

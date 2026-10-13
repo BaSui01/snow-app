@@ -1019,6 +1019,8 @@ export const zhCN = {
   "toolCall.userQuestion.optionsLabel": "可选答案",
   "toolCall.userQuestion.customLabel": "自定义答案",
   "toolCall.userQuestion.customPlaceholder": "添加其他答案，可粘贴图片",
+  "toolCall.userQuestion.customShortcutHint":
+    "{{keys}}：加入列表；再按一次提交回答",
   "toolCall.userQuestion.addCustom": "添加自定义答案",
   "toolCall.userQuestion.removeCustom": "移除 {{answer}}",
   "toolCall.userQuestion.preparing": "正在准备问题...",
@@ -3703,6 +3705,7 @@ export const zhCN = {
   "toolAuthorization.rejectionReason": "拒绝理由",
   "toolAuthorization.rejectionReasonPlaceholder":
     "可选，请说明不允许执行此工具的原因。",
+  "toolAuthorization.rejectionShortcutHint": "{{keys}}：填写理由后直接拒绝",
   "toolAuthorization.defaultRejectionReason": "用户拒绝执行工具",
   "toolAuthorization.reject": "拒绝",
   "toolAuthorization.approve": "同意",

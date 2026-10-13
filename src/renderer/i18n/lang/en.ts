@@ -1081,6 +1081,8 @@ export const en = {
   "toolCall.userQuestion.customLabel": "Custom answers",
   "toolCall.userQuestion.customPlaceholder":
     "Add another answer, images can be pasted",
+  "toolCall.userQuestion.customShortcutHint":
+    "{{keys}} adds it to the list; press again to submit",
   "toolCall.userQuestion.addCustom": "Add custom answer",
   "toolCall.userQuestion.removeCustom": "Remove {{answer}}",
   "toolCall.userQuestion.preparing": "Preparing the question...",
@@ -3921,6 +3923,8 @@ export const en = {
   "toolAuthorization.rejectionReason": "Reason for rejection",
   "toolAuthorization.rejectionReasonPlaceholder":
     "Optional. Explain why this tool should not run.",
+  "toolAuthorization.rejectionShortcutHint":
+    "{{keys}} rejects with the reason above",
   "toolAuthorization.defaultRejectionReason": "User declined tool execution",
   "toolAuthorization.reject": "Reject",
   "toolAuthorization.approve": "Allow",

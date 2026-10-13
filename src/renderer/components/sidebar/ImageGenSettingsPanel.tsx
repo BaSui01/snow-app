@@ -1858,6 +1858,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     }}
                     disabled={draftSaving}
                     portal
+                    dropdownMinWidth={300}
                   />
                 </div>
               </div>

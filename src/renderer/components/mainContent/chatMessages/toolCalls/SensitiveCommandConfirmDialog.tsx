@@ -1,6 +1,7 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "../../../../i18n";
+import { keyToDisplay } from "../../../../utils/shortcutUtils";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 
 type SensitiveCommandMatch = {
@@ -78,6 +79,38 @@ const SensitiveCommandItem = ({
   const command =
     parseBashArgument(toolCall, "command") ?? toolCall.arguments ?? "";
   const description = parseBashArgument(toolCall, "description");
+  const trimmedReason = rejectionReason.trim();
+
+  /** 拒绝：理由为空时回落到默认理由（与「拒绝」按钮一致）。 */
+  const handleReject = (): void => {
+    if (isSubmitting) {
+      return;
+    }
+    onReject(
+      toolCall,
+      trimmedReason || t("toolAuthorization.defaultRejectionReason"),
+      trimmedReason.length > 0,
+    );
+  };
+
+  /**
+   * 拒绝理由输入框的 Ctrl/Cmd + Enter：填写了理由才生效，等同「拒绝」按钮，
+   * 免去移动鼠标。
+   */
+  const handleReasonKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ): void => {
+    if (
+      event.key !== "Enter" ||
+      !(event.ctrlKey || event.metaKey) ||
+      event.nativeEvent.isComposing ||
+      !trimmedReason
+    ) {
+      return;
+    }
+    event.preventDefault();
+    handleReject();
+  };
 
   return (
     <article className="tool-authorization-prompt-item sensitive-command-item">
@@ -181,24 +214,23 @@ const SensitiveCommandItem = ({
         <textarea
           disabled={isSubmitting}
           onChange={(event) => setRejectionReason(event.target.value)}
+          onKeyDown={handleReasonKeyDown}
           placeholder={t("toolAuthorization.rejectionReasonPlaceholder")}
           rows={2}
           value={rejectionReason}
         />
+        <span className="tool-authorization-rejection-hint">
+          {t("toolAuthorization.rejectionShortcutHint", {
+            values: { keys: keyToDisplay("mod+enter") },
+          })}
+        </span>
       </label>
 
       <div className="tool-authorization-actions">
         <button
           className="tool-authorization-action tool-authorization-reject"
           disabled={isSubmitting}
-          onClick={() => {
-            const trimmedReason = rejectionReason.trim();
-            onReject(
-              toolCall,
-              trimmedReason || t("toolAuthorization.defaultRejectionReason"),
-              trimmedReason.length > 0,
-            );
-          }}
+          onClick={handleReject}
           type="button"
         >
           {t("toolAuthorization.reject")}

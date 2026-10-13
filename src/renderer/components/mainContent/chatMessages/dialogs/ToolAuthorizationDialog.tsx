@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { getCompareDiffStats } from "../../../../utils/generateComparePatch";
+import { keyToDisplay } from "../../../../utils/shortcutUtils";
 import { getFileName } from "../toolCalls/shared/formatters";
 import { MiniDiffViewer } from "../toolCalls/shared/MiniDiffViewer";
 import type { ToolCallInfo } from "../utils/conversationTypes";
@@ -14,7 +15,7 @@ type ToolAuthorizationDialogProps = {
   onReject: (
     toolCall: ToolCallInfo,
     reason: string,
-    userProvidedReason?: boolean
+    userProvidedReason?: boolean,
   ) => void;
 };
 
@@ -39,7 +40,7 @@ const isFileMutationTool = (toolName: string): boolean =>
   toolName === FILE_EDIT_TOOL || toolName === FILE_CREATE_TOOL;
 
 const parseFileMutationPreview = (
-  toolCall: ToolCallInfo
+  toolCall: ToolCallInfo,
 ): FileMutationPreview | null => {
   if (!isFileMutationTool(toolCall.name)) {
     return null;
@@ -69,7 +70,7 @@ const parseFileMutationPreview = (
         typeof parsed.occurrence === "number" ? parsed.occurrence : undefined;
       const { additions, deletions } = getCompareDiffStats(
         searchContent,
-        replaceContent
+        replaceContent,
       );
 
       return {
@@ -194,7 +195,7 @@ const AuthorizationToolItem = ({
   onReject: (
     toolCall: ToolCallInfo,
     reason: string,
-    userProvidedReason?: boolean
+    userProvidedReason?: boolean,
   ) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
@@ -204,9 +205,41 @@ const AuthorizationToolItem = ({
     `${toolCall.name}-${toolCall.callId ?? toolCall.arguments}`;
   const filePreview = useMemo(
     () => parseFileMutationPreview(toolCall),
-    [toolCall]
+    [toolCall],
   );
   const isFileMutation = filePreview !== null;
+  const trimmedReason = rejectionReason.trim();
+
+  /** 拒绝：理由为空时回落到默认理由（与「拒绝」按钮一致）。 */
+  const handleReject = (): void => {
+    if (isSubmitting) {
+      return;
+    }
+    onReject(
+      toolCall,
+      trimmedReason || t("toolAuthorization.defaultRejectionReason"),
+      trimmedReason.length > 0,
+    );
+  };
+
+  /**
+   * 拒绝理由输入框的 Ctrl/Cmd + Enter：填写了理由才生效，等同「拒绝」按钮，
+   * 免去移动鼠标。
+   */
+  const handleReasonKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+  ): void => {
+    if (
+      event.key !== "Enter" ||
+      !(event.ctrlKey || event.metaKey) ||
+      event.nativeEvent.isComposing ||
+      !trimmedReason
+    ) {
+      return;
+    }
+    event.preventDefault();
+    handleReject();
+  };
 
   return (
     <article className="tool-authorization-prompt-item" key={authorizationId}>
@@ -237,24 +270,22 @@ const AuthorizationToolItem = ({
         <textarea
           disabled={isSubmitting}
           onChange={(event) => setRejectionReason(event.target.value)}
+          onKeyDown={handleReasonKeyDown}
           placeholder={t("toolAuthorization.rejectionReasonPlaceholder")}
           rows={2}
           value={rejectionReason}
         />
+        <span className="tool-authorization-rejection-hint">
+          {t("toolAuthorization.rejectionShortcutHint", {
+            values: { keys: keyToDisplay("mod+enter") },
+          })}
+        </span>
       </label>
       <div className="tool-authorization-actions">
         <button
           className="tool-authorization-action tool-authorization-reject"
           disabled={isSubmitting}
-          onClick={() => {
-            const trimmedReason = rejectionReason.trim();
-            onReject(
-              toolCall,
-              trimmedReason ||
-                t("toolAuthorization.defaultRejectionReason"),
-              trimmedReason.length > 0
-            );
-          }}
+          onClick={handleReject}
           type="button"
         >
           {t("toolAuthorization.reject")}
@@ -300,10 +331,10 @@ export const ToolAuthorizationDialog = ({
   }
 
   const hasFileMutation = toolCalls.some((toolCall) =>
-    isFileMutationTool(toolCall.name)
+    isFileMutationTool(toolCall.name),
   );
   const onlyFileMutations = toolCalls.every((toolCall) =>
-    isFileMutationTool(toolCall.name)
+    isFileMutationTool(toolCall.name),
   );
 
   const title = onlyFileMutations
@@ -312,8 +343,8 @@ export const ToolAuthorizationDialog = ({
   const message = onlyFileMutations
     ? t("toolAuthorization.fileMessage")
     : hasFileMutation
-    ? t("toolAuthorization.mixedMessage")
-    : t("toolAuthorization.message");
+      ? t("toolAuthorization.mixedMessage")
+      : t("toolAuthorization.message");
 
   return (
     <section className="tool-authorization-prompt" aria-label={title}>
@@ -340,19 +371,19 @@ export const ToolAuthorizationDialog = ({
               isSubmitting={isSubmitting}
               onApprove={(item) => {
                 setSubmittingAuthorizationId(
-                  item.authorizationId ?? authorizationId
+                  item.authorizationId ?? authorizationId,
                 );
                 onApprove(item);
               }}
               onApproveAlways={(item) => {
                 setSubmittingAuthorizationId(
-                  item.authorizationId ?? authorizationId
+                  item.authorizationId ?? authorizationId,
                 );
                 onApproveAlways(item);
               }}
               onReject={(item, reason, userProvidedReason) => {
                 setSubmittingAuthorizationId(
-                  item.authorizationId ?? authorizationId
+                  item.authorizationId ?? authorizationId,
                 );
                 onReject(item, reason, userProvidedReason);
               }}

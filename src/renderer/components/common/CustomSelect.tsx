@@ -30,6 +30,13 @@ type CustomSelectBaseProps = {
    */
   portal?: boolean;
   /**
+   * Minimum width (px) of the portal dropdown. By default the dropdown is
+   * exactly as wide as its trigger; pass a larger value so long option
+   * labels are not ellipsized when the trigger sits in a narrow container
+   * (e.g. a compact toolbar button).
+   */
+  dropdownMinWidth?: number;
+  /**
    * Optional custom renderer for each dropdown item (e.g. an icon or a
    * small diagram next to the label). Falls back to the plain label when
    * omitted.
@@ -86,6 +93,7 @@ export function CustomSelect({
   disabled = false,
   title,
   portal = false,
+  dropdownMinWidth,
   renderOption,
   renderLabel,
   filterable = false,
@@ -145,17 +153,28 @@ export function CustomSelect({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
+  // 测量 portal 下拉的位置与宽度：默认与触发按钮等宽；调用方给出
+  // dropdownMinWidth 时取两者较大值，避免窄按钮旁的菜单把选项文字截断。
+  // 加宽后仍要保证菜单不超出窗口右边缘。
+  const measureDropdownRect = useCallback((): DropdownRect | null => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    const width = Math.max(rect.width, dropdownMinWidth ?? 0);
+    const maxLeft = Math.max(0, window.innerWidth - width - 8);
+    return {
+      top: rect.bottom + 4,
+      left: Math.min(rect.left, maxLeft),
+      width,
+    };
+  }, [dropdownMinWidth]);
+
   // Reposition the portal dropdown on resize/scroll while open.
   useEffect(() => {
     if (!isOpen || !usePortal) return;
     const update = (): void => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setDropdownRect({
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: rect.width,
-      });
+      const next = measureDropdownRect();
+      if (!next) return;
+      setDropdownRect(next);
     };
     update();
     window.addEventListener("resize", update);
@@ -164,7 +183,7 @@ export function CustomSelect({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [isOpen, usePortal]);
+  }, [isOpen, usePortal, measureDropdownRect]);
 
   // Initial measurement for portal dropdown.
   useLayoutEffect(() => {
@@ -173,14 +192,10 @@ export function CustomSelect({
       return;
     }
     if (!isOpen) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setDropdownRect({
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-    });
-  }, [isOpen, usePortal]);
+    const next = measureDropdownRect();
+    if (!next) return;
+    setDropdownRect(next);
+  }, [isOpen, usePortal, measureDropdownRect]);
 
   const selectedValues = multiple ? (Array.isArray(value) ? value : []) : null;
   const selectedOption = multiple

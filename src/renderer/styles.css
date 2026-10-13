@@ -14885,6 +14885,12 @@ body.is-panel-resizing * {
   opacity: 0.55;
 }
 
+.tool-call-user-question-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .tool-call-user-question-custom-form button,
 .tool-call-user-question-custom-item button {
   display: inline-flex;
@@ -37162,6 +37168,12 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .tool-authorization-rejection-reason textarea:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.tool-authorization-rejection-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
 .tool-authorization-actions {

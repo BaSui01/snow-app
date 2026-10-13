@@ -5108,9 +5108,7 @@ export const en = {
   "rightPanel.aiDrawing.model": "Model",
   "rightPanel.aiDrawing.modelPlaceholder": "Channel default model",
   "rightPanel.aiDrawing.modelHint":
-    "Model list is aggregated from the model APIs of configured channels; selecting a model automatically matches its provider",
-  "rightPanel.aiDrawing.modelsLoading": "Loading models…",
-  "rightPanel.aiDrawing.modelsLoadFailed": "Failed to load model list",
+    "Model list comes from enabled channels configured in API Settings → Image models; the same model across channels coexists, and selecting an entry locks its channel",
   "rightPanel.aiDrawing.ratio": "Aspect ratio",
   "rightPanel.aiDrawing.tier": "Size",
   "rightPanel.aiDrawing.sizeControlHint":
@@ -5141,6 +5139,7 @@ export const en = {
   "rightPanel.aiDrawing.thinkingLevel": "Thinking level",
   "rightPanel.aiDrawing.thinkingDefault": "Default",
   "rightPanel.aiDrawing.thinkingMinimal": "Minimal (fast)",
+  "rightPanel.aiDrawing.thinkingMedium": "Medium (balanced)",
   "rightPanel.aiDrawing.thinkingHigh": "High (more detailed)",
   "rightPanel.aiDrawing.personGeneration": "Person generation",
   "rightPanel.aiDrawing.personDefault": "Default",
@@ -5242,7 +5241,6 @@ export const en = {
     "Stream preview is not supported when count is greater than 1",
   "rightPanel.aiDrawing.streamOffRef":
     "Stream preview is not supported for image-to-image",
-  "rightPanel.aiDrawing.retryModels": "Retry model list",
   "rightPanel.aiDrawing.examplesTitle": "Try these",
   "rightPanel.aiDrawing.example1":
     "Cyberpunk rainy city at night, neon reflections, cinematic composition",

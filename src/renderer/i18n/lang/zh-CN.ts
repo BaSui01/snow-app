@@ -4804,9 +4804,7 @@ export const zhCN = {
   "rightPanel.aiDrawing.model": "模型",
   "rightPanel.aiDrawing.modelPlaceholder": "渠道默认模型",
   "rightPanel.aiDrawing.modelHint":
-    "模型列表来自已设置渠道的模型 API（自动聚合）；选择模型自动匹配对应服务商",
-  "rightPanel.aiDrawing.modelsLoading": "加载模型中…",
-  "rightPanel.aiDrawing.modelsLoadFailed": "获取模型列表失败",
+    "模型列表来自「API 设置 → 生图模型」中已启用渠道的配置；同一模型多渠道并存，选择即锁定渠道",
   "rightPanel.aiDrawing.ratio": "宽高比",
   "rightPanel.aiDrawing.tier": "尺寸",
   "rightPanel.aiDrawing.sizeControlHint":
@@ -4837,6 +4835,7 @@ export const zhCN = {
   "rightPanel.aiDrawing.thinkingLevel": "思考等级",
   "rightPanel.aiDrawing.thinkingDefault": "默认",
   "rightPanel.aiDrawing.thinkingMinimal": "最小（快速）",
+  "rightPanel.aiDrawing.thinkingMedium": "中等（平衡）",
   "rightPanel.aiDrawing.thinkingHigh": "高（更精细）",
   "rightPanel.aiDrawing.personGeneration": "人物生成",
   "rightPanel.aiDrawing.personDefault": "默认",
@@ -4929,7 +4928,6 @@ export const zhCN = {
     "放弃等待并丢弃本次结果（后台请求会继续完成，但结果将被忽略）",
   "rightPanel.aiDrawing.streamOffCount": "数量大于 1 时不支持流式预览",
   "rightPanel.aiDrawing.streamOffRef": "图生图不支持流式预览",
-  "rightPanel.aiDrawing.retryModels": "重试模型列表",
   "rightPanel.aiDrawing.examplesTitle": "试试这些",
   "rightPanel.aiDrawing.example1":
     "赛博朋克风格的雨夜城市，霓虹灯倒影，电影感构图",

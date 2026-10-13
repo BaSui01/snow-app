@@ -4650,9 +4650,7 @@ export const zhTW = {
   "rightPanel.aiDrawing.model": "模型",
   "rightPanel.aiDrawing.modelPlaceholder": "渠道預設模型",
   "rightPanel.aiDrawing.modelHint":
-    "模型清單來自已設定渠道的模型 API（自動聚合）；選擇模型自動匹配對應服務商",
-  "rightPanel.aiDrawing.modelsLoading": "載入模型中…",
-  "rightPanel.aiDrawing.modelsLoadFailed": "取得模型清單失敗",
+    "模型清單來自「API 設定 → 生圖模型」中已啟用渠道的設定；同一模型多渠道並存，選擇即鎖定渠道",
   "rightPanel.aiDrawing.ratio": "寬高比",
   "rightPanel.aiDrawing.tier": "尺寸",
   "rightPanel.aiDrawing.sizeControlHint":
@@ -4683,6 +4681,7 @@ export const zhTW = {
   "rightPanel.aiDrawing.thinkingLevel": "思考等級",
   "rightPanel.aiDrawing.thinkingDefault": "預設",
   "rightPanel.aiDrawing.thinkingMinimal": "最小（快速）",
+  "rightPanel.aiDrawing.thinkingMedium": "中等（平衡）",
   "rightPanel.aiDrawing.thinkingHigh": "高（更精細）",
   "rightPanel.aiDrawing.personGeneration": "人物生成",
   "rightPanel.aiDrawing.personDefault": "預設",
@@ -4775,7 +4774,6 @@ export const zhTW = {
     "放棄等待並丟棄本次結果（後台請求會繼續完成，但結果將被忽略）",
   "rightPanel.aiDrawing.streamOffCount": "數量大於 1 時不支援串流預覽",
   "rightPanel.aiDrawing.streamOffRef": "圖生圖不支援串流預覽",
-  "rightPanel.aiDrawing.retryModels": "重試模型清單",
   "rightPanel.aiDrawing.examplesTitle": "試試這些",
   "rightPanel.aiDrawing.example1":
     "賽博龐克風格的雨夜城市，霓虹燈倒影，電影感構圖",

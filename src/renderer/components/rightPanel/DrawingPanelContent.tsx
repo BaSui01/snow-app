@@ -44,19 +44,15 @@ import {
 import { useI18n } from "../../i18n";
 import { CustomSelect } from "../common/CustomSelect";
 import {
-  filterImageModels,
-  inferModelCapabilities,
+  collectChannelModelEntries,
   isGrokModel,
   openaiFixedSizePresets,
+  resolveChannelModelCapabilities,
   supportsSizeTier,
 } from "./modelCapabilities";
 import { DrawingPromptExamples } from "./DrawingPromptExamples";
 import type { ModelCapabilities } from "./modelCapabilities";
-import {
-  DEFAULT_GEMINI_BASE_URL,
-  DEFAULT_OPENAI_BASE_URL,
-  IMAGE_GEN_SETTING_CODE,
-} from "../sidebar/imagegenSettings/constants";
+import { IMAGE_GEN_SETTING_CODE } from "../sidebar/imagegenSettings/constants";
 import {
   OPENAI_SIZE_PRESETS,
   OPENAI_SIZE_TIERS,
@@ -131,12 +127,6 @@ type LightboxState = {
 /** 生成结果中图库落盘引用（image/... 前缀）的代理 URL 缓存。 */
 const libraryProxyCache = new Map<string, string>();
 
-/** 聚合模型列表项：模型 ID → 所属渠道（真实拉取，不做协议推断硬编码）。 */
-type AggregatedModel = {
-  id: string;
-  channelId: string;
-};
-
 /** 生成数量选项（渲染时按模型能力上限 maxCount 过滤，如 grok 上限 10）。 */
 const COUNT_OPTIONS = [1, 2, 4, 8, 10];
 
@@ -198,13 +188,6 @@ const FIDELITY_OPTIONS = [
   { value: "auto", labelKey: "rightPanel.aiDrawing.fidelityAuto" },
   { value: "low", labelKey: "rightPanel.aiDrawing.fidelityLow" },
   { value: "high", labelKey: "rightPanel.aiDrawing.fidelityHigh" },
-];
-
-/** Gemini 思考级别。 */
-const THINKING_OPTIONS = [
-  { value: "", labelKey: "rightPanel.aiDrawing.thinkingDefault" },
-  { value: "minimal", labelKey: "rightPanel.aiDrawing.thinkingMinimal" },
-  { value: "high", labelKey: "rightPanel.aiDrawing.thinkingHigh" },
 ];
 
 /** Gemini 人物生成策略。 */
@@ -811,17 +794,23 @@ export function DrawingPanelContent({
   const [negativePrompt, setNegativePrompt] = useState(
     persisted.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT,
   );
-  const [channelId, setChannelId] = useState("");
-  /** 当前选中的模型（聚合模型列表；优先恢复持久化值，加载完成后校验兜底）。 */
-  const [model, setModel] = useState(persisted.model ?? "");
-  /** 当前模型的 ref 镜像（loadModels 内部读取，避免切换模型触发重复拉取）。 */
-  const modelRef = useRef(model);
-  modelRef.current = model;
-  /** 聚合模型列表（所有启用渠道模型 API 的并集，记录所属渠道）。 */
-  const [modelList, setModelList] = useState<AggregatedModel[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  /** 模型列表拉取失败（无任何渠道返回可用模型）。 */
-  const [modelsLoadFailed, setModelsLoadFailed] = useState(false);
+  /**
+   * 当前选中的模型条目键（渠道|模型）：选择即锁定渠道与模型。
+   * 优先恢复持久化的旧模型 ID（键格式不匹配时在条目就绪后校验兜底）。
+   */
+  const [selectedEntryKey, setSelectedEntryKey] = useState(
+    persisted.model ?? "",
+  );
+  /** 模型条目列表（启用渠道的配置模型项；纯本地推导，无网络请求）。 */
+  const modelEntries = useMemo(
+    () => collectChannelModelEntries(channels),
+    [channels],
+  );
+  /** 当前选中的条目（生成时据此锁定 provider/model 与能力解析）。 */
+  const selectedEntry = useMemo(
+    () => modelEntries.find((entry) => entry.key === selectedEntryKey),
+    [modelEntries, selectedEntryKey],
+  );
   /** 宽高比（空 = 渠道默认）。 */
   const [ratio, setRatio] = useState(persisted.ratio ?? "");
   /** 档位 1K/2K/4K（空 = 渠道默认）。 */
@@ -1100,45 +1089,6 @@ export function DrawingPanelContent({
 
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
-  /** 将渠道默认尺寸同步到宽高比/档位/分辨率（切换渠道时调用）。 */
-  const syncChannelSize = useCallback((channel: ImageGenChannelValue) => {
-    setRatio("");
-    setTier("");
-    setResolution("");
-    if (channel.provider === "gemini") {
-      const preset = matchGeminiSizePreset(channel.defaultSize);
-      setRatio(preset.ratio);
-      setTier(preset.imageSize);
-    } else if (isGrokModel(channel.model)) {
-      // xAI Grok：尺寸 = 宽高比 + 分辨率（1k/2k），存储格式 "16:9@2k"
-      const preset = matchGrokSizePreset(channel.defaultSize);
-      setRatio(preset.ratio);
-      setResolution(preset.resolution);
-    } else {
-      const preset = matchOpenAISizePreset(channel.defaultSize);
-      if (preset) {
-        setRatio(preset.ratio);
-        setTier(preset.tier);
-      } else {
-        // 渠道默认无法匹配预设（自定义分辨率或 auto）：尽力解析出宽高比展示，
-        // 档位留空（跟随渠道默认），避免下拉框只显示「渠道默认」这种抽象文案。
-        // 仅当化简出的比例属于当前模型的可用选项时才填充，否则保持空
-        // （「默认」选项的展示文本会由 defaultRatioLabel 兜底，避免 select 空白）。
-        const fallbackRatio = ratioFromResolution(channel.defaultSize);
-        const ratioAvailable = supportsSizeTier(channel.provider, channel.model)
-          ? fallbackRatio in OPENAI_SIZE_PRESETS
-          : openaiFixedSizePresets(channel.model).some(
-              (item) => item.ratio === fallbackRatio,
-            );
-        setRatio(fallbackRatio && ratioAvailable ? fallbackRatio : "");
-        setTier("");
-      }
-    }
-  }, []);
-
-  /** 已同步过默认尺寸的渠道（避免刷新配置时重置用户手选的比例/档位）。 */
-  const lastSyncedChannelRef = useRef<string | null>(null);
-
   // 读取现有生图渠道配置（复用设置面板同一解析逻辑）。
   const loadSettings = useCallback(async (): Promise<void> => {
     try {
@@ -1150,127 +1100,75 @@ export function DrawingPanelContent({
         (channel) => channel.enabled && channel.model.trim() !== "",
       );
       setChannels(usable);
-      // 保留当前选中渠道（若仍可用），否则回退第一个可用渠道。
-      const keepId = usable.some((channel) => channel.id === channelId)
-        ? channelId
-        : (usable[0]?.id ?? "");
-      setChannelId(keepId);
-      const channel = usable.find((item) => item.id === keepId) ?? usable[0];
-      // 仅当渠道真正变化时同步默认尺寸，避免覆盖用户手动选择的参数。
-      if (channel && lastSyncedChannelRef.current !== keepId) {
-        lastSyncedChannelRef.current = keepId;
-        syncChannelSize(channel);
-      }
     } catch (error) {
       console.warn("[ai-drawing] load imagegen settings failed", error);
     }
-  }, [channelId, syncChannelSize]);
+  }, []);
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
 
   /**
-   * 聚合所有启用渠道的模型 API（OpenAI /v1/models、Gemini models.list），
-   * 筛选出生图模型并按模型 ID 去重（保留首个渠道；渠道配置的模型
-   * 不在 API 列表中时也补充进列表）。不做任何硬编码模型候选。
+   * 模型条目就绪后的校验兜底：
+   * - 持久化键失效（渠道/模型已删除）→ 回退第一个条目；
+   * - 键为旧版纯模型 ID 格式 → 匹配首个同名条目迁移；
+   * - 选中条目变化时同步其渠道默认尺寸（仅真正变化时执行）。
    */
-  const loadModels = useCallback(async (): Promise<void> => {
-    if (channels.length === 0) {
-      setModelList([]);
-      setModelsLoadFailed(false);
+  const lastSyncedEntryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (modelEntries.length === 0) {
+      lastSyncedEntryRef.current = null;
       return;
     }
-    setModelsLoading(true);
-    setModelsLoadFailed(false);
-    const aggregated: AggregatedModel[] = [];
-    try {
-      for (const channel of channels) {
-        const isGemini = channel.provider === "gemini";
-        try {
-          const all = await window.snow.fetchAvailableModelsForConfig({
-            baseUrl:
-              channel.baseUrl.trim() ||
-              (isGemini ? DEFAULT_GEMINI_BASE_URL : DEFAULT_OPENAI_BASE_URL),
-            baseUrlMode: "custom",
-            apiKey: channel.apiKey.trim(),
-            requestMethod: isGemini ? "gemini" : "openai",
-            customHeaderSchemeId: "",
-          });
-          const imageModels = filterImageModels(all, channel.provider);
-          for (const item of imageModels) {
-            aggregated.push({ id: item.id, channelId: channel.id });
-          }
-        } catch (error) {
-          console.warn(
-            `[ai-drawing] fetch models failed for channel ${channel.id}`,
-            error,
-          );
-        }
-        // 渠道配置的模型补充进列表（API 拉取失败或自定义模型名时仍可用）。
-        const channelModel = channel.model.trim();
-        if (
-          channelModel &&
-          !aggregated.some((item) => item.id === channelModel)
-        ) {
-          aggregated.push({ id: channelModel, channelId: channel.id });
-        }
+    const current = selectedEntry?.key;
+    if (current && modelEntries.some((entry) => entry.key === current)) {
+      if (lastSyncedEntryRef.current !== current) {
+        lastSyncedEntryRef.current = current;
       }
-      // 模型 ID 去重：同 ID 出现在多个渠道时保留第一个（生成走其所属渠道）。
-      const seen = new Map<string, AggregatedModel>();
-      for (const item of aggregated) {
-        if (!seen.has(item.id)) {
-          seen.set(item.id, item);
-        }
-      }
-      const list = [...seen.values()];
-      setModelList(list);
-      if (list.length === 0) {
-        setModelsLoadFailed(true);
-        return;
-      }
-      // 保留当前选中的模型（若仍可用），否则默认选中列表第一个，
-      // 并同步到其所属渠道的默认尺寸（仅当模型真正变化时）。
-      const currentModel = modelRef.current;
-      const keepModel = list.some((item) => item.id === currentModel)
-        ? currentModel
-        : list[0].id;
-      setModel(keepModel);
-      if (keepModel !== currentModel) {
-        const target = channels.find(
-          (channel) =>
-            channel.id ===
-            (list.find((item) => item.id === keepModel)?.channelId ?? ""),
-        );
-        if (target) {
-          setChannelId(target.id);
-          // 同步渠道切换标记：随后因 channelId 变化触发的 loadSettings
-          // 不再重复 syncChannelSize，也避免并发加载时旧渠道状态回写。
-          lastSyncedChannelRef.current = target.id;
-          syncChannelSize(target);
-        }
-      }
-    } finally {
-      setModelsLoading(false);
+      return;
     }
-  }, [channels, syncChannelSize]);
-
-  useEffect(() => {
-    void loadModels();
-  }, [loadModels]);
+    // 旧版持久化值（纯模型 ID）：迁移到首个同名条目。
+    const legacy = selectedEntryKey.trim();
+    const migrated =
+      legacy !== "" && !legacy.includes("|")
+        ? modelEntries.find((entry) => entry.id === legacy)
+        : undefined;
+    const fallback = migrated ?? modelEntries[0];
+    if (fallback) {
+      lastSyncedEntryRef.current = fallback.key;
+      setSelectedEntryKey(fallback.key);
+    }
+  }, [modelEntries, selectedEntry, selectedEntryKey]);
 
   // ----------------------------------------------------------------
   // 派生参数：当前渠道、组装 size、Gemini 档位候选、模型能力
   // ----------------------------------------------------------------
-  const selectedChannel = channels.find((channel) => channel.id === channelId);
-  const isGemini = selectedChannel?.provider === "gemini";
+  /** 选中条目派生：渠道与模型 ID（条目即路由，不再从渠道状态反推）。 */
+  const effectiveChannel = selectedEntry
+    ? (channels.find((channel) => channel.id === selectedEntry.channelId) ??
+      channels[0])
+    : channels[0];
+  const isGemini: boolean = effectiveChannel?.provider === "gemini";
 
-  /** 当前生效模型（模型覆盖值优先，否则回退渠道默认）。 */
-  const effectiveModel = model.trim() || selectedChannel?.model || "";
+  /** 当前生效模型 ID（选中条目优先，回退渠道主模型）。 */
+  const effectiveModel =
+    selectedEntry?.id ?? effectiveChannel?.model.trim() ?? "";
 
-  /** 按当前生效模型推断能力（决定条件渲染）。 */
-  const capabilities: ModelCapabilities | null = selectedChannel
-    ? inferModelCapabilities(selectedChannel.provider, effectiveModel)
+  /** 选中条目的渠道 ID（生成参数 provider；无条目时回退首个可用渠道）。 */
+  const activeChannelId = selectedEntry?.channelId ?? channels[0]?.id ?? "";
+
+  /**
+   * 当前生效能力：模型项声明 > 渠道级字段回退 > 协议推断兜底
+   * （双层解析，与 native effective_capability 同构；决定条件渲染）。
+   */
+  const capabilities: ModelCapabilities | null = effectiveChannel
+    ? resolveChannelModelCapabilities(
+        effectiveChannel.provider,
+        effectiveModel,
+        selectedEntry?.item,
+        effectiveChannel,
+      )
     : null;
 
   /** 参考图数量上限（按当前模型能力；未识别模型兜底 MAX_REF_IMAGES）。 */
@@ -1345,17 +1243,21 @@ export function DrawingPanelContent({
   }, [sizePanelOpen, updateSizePopoverPosition]);
 
   /** 当前模型是否支持「档位」（1K/2K/4K；OpenAI 仅 gpt-image-2 系，Gemini 全系）。 */
-  const showTier = selectedChannel
-    ? supportsSizeTier(selectedChannel.provider, effectiveModel)
+  const showTier = effectiveChannel
+    ? supportsSizeTier(effectiveChannel.provider, effectiveModel)
     : false;
 
   /** 无档位 OpenAI 模型的固定尺寸预设（dall-e-3 / gpt-image-1 等）。 */
   const fixedSizePresets = useMemo(() => {
-    if (!selectedChannel || selectedChannel.provider === "gemini" || showTier) {
+    if (
+      !effectiveChannel ||
+      effectiveChannel.provider === "gemini" ||
+      showTier
+    ) {
       return [];
     }
     return openaiFixedSizePresets(effectiveModel);
-  }, [selectedChannel, showTier, effectiveModel]);
+  }, [effectiveChannel, showTier, effectiveModel]);
 
   /** 当前模型的质量选项（按能力裁剪；空数组 = 隐藏质量控件）。 */
   const qualityOptions = useMemo(
@@ -1365,10 +1267,10 @@ export function DrawingPanelContent({
 
   /** 组装后的 size 参数（"" = 渠道默认；ratio-resolution 体系不组装，见 handleGenerate）。 */
   const effectiveSize = useMemo((): string => {
-    if (!selectedChannel) {
+    if (!effectiveChannel) {
       return "";
     }
-    if (selectedChannel.provider === "gemini") {
+    if (effectiveChannel.provider === "gemini") {
       return buildGeminiSize(ratio, tier);
     }
     if (capabilities?.sizeSystem === "ratio-resolution") {
@@ -1391,20 +1293,20 @@ export function DrawingPanelContent({
       }
     }
     return "";
-  }, [selectedChannel, ratio, tier, showTier, effectiveModel, capabilities]);
+  }, [effectiveChannel, ratio, tier, showTier, effectiveModel, capabilities]);
 
   /** 渠道默认尺寸原文（空 = 未配置，如渠道使用服务商默认）。 */
-  const channelDefaultSize = (selectedChannel?.defaultSize ?? "").trim();
+  const channelDefaultSize = (effectiveChannel?.defaultSize ?? "").trim();
 
   /** 渠道默认质量原文（空 = 未配置；「默认」选项展示用，实际参数由 Rust 侧应用）。 */
-  const channelDefaultQuality = (selectedChannel?.defaultQuality ?? "").trim();
+  const channelDefaultQuality = (effectiveChannel?.defaultQuality ?? "").trim();
 
   /** 宽高比下拉「默认」选项的展示文本：优先显示渠道默认解析出的比例，否则显示默认尺寸原文。 */
   const defaultRatioLabel = useMemo((): string => {
-    if (!selectedChannel || !channelDefaultSize) {
+    if (!effectiveChannel || !channelDefaultSize) {
       return "";
     }
-    if (selectedChannel.provider === "gemini") {
+    if (effectiveChannel.provider === "gemini") {
       return matchGeminiSizePreset(channelDefaultSize).ratio;
     }
     if (capabilities?.sizeSystem === "ratio-resolution") {
@@ -1414,14 +1316,14 @@ export function DrawingPanelContent({
       matchOpenAISizePreset(channelDefaultSize)?.ratio ??
       ratioFromResolution(channelDefaultSize)
     );
-  }, [selectedChannel, channelDefaultSize, capabilities]);
+  }, [effectiveChannel, channelDefaultSize, capabilities]);
 
   /** 尺寸/分辨率下拉「默认」选项的展示文本：优先显示渠道默认解析出的具体值，否则显示默认尺寸原文。 */
   const defaultTierLabel = useMemo((): string => {
-    if (!selectedChannel || !channelDefaultSize) {
+    if (!effectiveChannel || !channelDefaultSize) {
       return "";
     }
-    if (selectedChannel.provider === "gemini") {
+    if (effectiveChannel.provider === "gemini") {
       const preset = matchGeminiSizePreset(channelDefaultSize);
       return preset.imageSize || preset.ratio || "";
     }
@@ -1434,15 +1336,15 @@ export function DrawingPanelContent({
       return OPENAI_SIZE_PRESETS[preset.ratio]?.[preset.tier] ?? preset.tier;
     }
     return channelDefaultSize;
-  }, [selectedChannel, channelDefaultSize, capabilities]);
+  }, [effectiveChannel, channelDefaultSize, capabilities]);
 
   /** Gemini 档位候选（按模型能力过滤）。 */
   const geminiTierOptions = useMemo(() => {
-    if (!selectedChannel || selectedChannel.provider !== "gemini") {
+    if (!effectiveChannel || effectiveChannel.provider !== "gemini") {
       return [];
     }
-    return getGeminiSizePresets(model.trim() || selectedChannel.model);
-  }, [selectedChannel, model]);
+    return getGeminiSizePresets(effectiveModel || effectiveChannel.model);
+  }, [effectiveChannel, effectiveModel]);
 
   /** 三位一体控件：比例候选（按尺寸体系裁剪；空 = 不显示比例选择）。 */
   const sizeRatioOptions = useMemo((): string[] => {
@@ -1619,30 +1521,12 @@ export function DrawingPanelContent({
   }, [isGemini, tier, geminiTierOptions]);
 
   /**
-   * 模型选择变化：记录选中模型；若其所属渠道与当前渠道不同，
-   * 自动切换到该渠道并同步其默认尺寸/档位。
-   * 模型 → 渠道映射来自聚合的真实模型列表（不做协议推断硬编码）。
+   * 模型条目选择：写入复合键（渠道|模型）。条目即路由——
+   * 生成参数的 provider/model 与能力解析均由该条目派生，无需额外切换。
    */
-  const handleModelChange = useCallback(
-    (value: string) => {
-      setModel(value);
-      const entry = modelList.find((item) => item.id === value);
-      if (
-        !entry ||
-        !selectedChannel ||
-        entry.channelId === selectedChannel.id
-      ) {
-        return;
-      }
-      const target = channels.find((channel) => channel.id === entry.channelId);
-      if (!target) {
-        return;
-      }
-      setChannelId(target.id);
-      syncChannelSize(target);
-    },
-    [modelList, channels, selectedChannel, syncChannelSize],
-  );
+  const handleModelChange = useCallback((value: string) => {
+    setSelectedEntryKey(value);
+  }, []);
 
   // ----------------------------------------------------------------
   // 生成（复用 imagegen-generate MCP 工具 + 流式 partial_image 预览）
@@ -1684,11 +1568,11 @@ export function DrawingPanelContent({
       // 流式：模型不支持（如 xAI Grok）或场景不支持（多图/图生图）时强制关闭
       stream: capabilities?.supportsStream === false ? false : effectiveStream,
     };
-    if (channelId) {
-      args.provider = channelId;
+    if (activeChannelId) {
+      args.provider = activeChannelId;
     }
-    if (model.trim()) {
-      args.model = model.trim();
+    if (effectiveModel.trim()) {
+      args.model = effectiveModel.trim();
     }
     // ratio-resolution 体系（xAI Grok）：尺寸 = aspect_ratio + resolution，
     // 不走 OpenAI 的 size 参数。
@@ -1882,8 +1766,8 @@ export function DrawingPanelContent({
     prompt,
     negativePrompt,
     isGenerating,
-    channelId,
-    model,
+    activeChannelId,
+    effectiveModel,
     effectiveSize,
     capabilities,
     effectiveStream,
@@ -2644,7 +2528,7 @@ export function DrawingPanelContent({
       JSON.stringify({
         prompt,
         negativePrompt,
-        model,
+        model: selectedEntryKey,
         ratio,
         tier,
         resolution,
@@ -2665,7 +2549,7 @@ export function DrawingPanelContent({
     [
       prompt,
       negativePrompt,
-      model,
+      selectedEntryKey,
       ratio,
       tier,
       resolution,
@@ -2932,7 +2816,7 @@ export function DrawingPanelContent({
           </div>
         </div>
 
-        {/* 参数栏（模型来自渠道模型 API 聚合，选择模型自动匹配服务商） */}
+        {/* 参数栏（模型条目来自「API 设置 → 生图模型」的渠道配置；选择即锁定渠道） */}
         <div className="ai-drawing-params">
           <label className="ai-drawing-param ai-drawing-param-model">
             <span className="ai-drawing-param-label">
@@ -2943,49 +2827,16 @@ export function DrawingPanelContent({
                 {t("rightPanel.aiDrawing.noChannel")}
               </span>
             ) : (
-              <>
-                <CustomSelect
-                  value={
-                    modelsLoading || modelsLoadFailed || modelList.length === 0
-                      ? ""
-                      : model
-                  }
-                  options={
-                    modelsLoading
-                      ? [
-                          {
-                            value: "",
-                            label: t("rightPanel.aiDrawing.modelsLoading"),
-                          },
-                        ]
-                      : modelsLoadFailed || modelList.length === 0
-                        ? [
-                            {
-                              value: "",
-                              label: t("rightPanel.aiDrawing.modelsLoadFailed"),
-                            },
-                          ]
-                        : modelList.map((item) => ({
-                            value: item.id,
-                            label: item.id,
-                          }))
-                  }
-                  disabled={modelsLoading || modelsLoadFailed}
-                  title={t("rightPanel.aiDrawing.modelHint")}
-                  onChange={handleModelChange}
-                  portal
-                />
-                {modelsLoadFailed && (
-                  <button
-                    type="button"
-                    className="ai-drawing-retry-models"
-                    title={t("rightPanel.aiDrawing.retryModels")}
-                    onClick={() => void loadModels()}
-                  >
-                    <RefreshCw size={12} strokeWidth={1.8} />
-                  </button>
-                )}
-              </>
+              <CustomSelect
+                value={selectedEntry?.key ?? ""}
+                options={modelEntries.map((entry) => ({
+                  value: entry.key,
+                  label: entry.label,
+                }))}
+                title={t("rightPanel.aiDrawing.modelHint")}
+                onChange={handleModelChange}
+                portal
+              />
             )}
           </label>
 
@@ -3208,10 +3059,12 @@ export function DrawingPanelContent({
                     </span>
                     <CustomSelect
                       value={thinkingLevel}
-                      options={THINKING_OPTIONS.map((option) => ({
-                        value: option.value,
-                        label: t(option.labelKey),
-                      }))}
+                      options={(capabilities?.thinkingOptions ?? []).map(
+                        (option) => ({
+                          value: option.value,
+                          label: t(option.labelKey),
+                        }),
+                      )}
                       onChange={setThinkingLevel}
                       portal
                     />

@@ -79,9 +79,20 @@ impl OAuthProviderId {
         match self {
             OAuthProviderId::Codex => 400_000,
             OAuthProviderId::ChatGpt => 400_000,
-            OAuthProviderId::Anthropic => 200_000,
+            OAuthProviderId::Anthropic => 500_000,
             OAuthProviderId::Antigravity => 1_000_000,
             OAuthProviderId::Xai => 500_000,
+        }
+    }
+
+    /// 订阅档案的默认最大输出 tokens。
+    ///
+    /// 仅 Claude 订阅（OAuth）有固定默认值 128k；其余提供方保持 `None`
+    /// （不传 `max_tokens`，由服务端决定），与既有行为一致。
+    pub fn default_max_tokens(self) -> Option<i32> {
+        match self {
+            OAuthProviderId::Anthropic => Some(128_000),
+            _ => None,
         }
     }
 
@@ -428,7 +439,7 @@ pub fn prepare_profile(
         vision_request_method: provider.request_method().to_string(),
         vision_model: String::new(),
         max_context_tokens: Some(provider.default_max_context_tokens()),
-        max_tokens: None,
+        max_tokens: provider.default_max_tokens(),
         stream_idle_timeout_sec: None,
         enable_auto_compress: true,
         auto_compress_threshold: None,

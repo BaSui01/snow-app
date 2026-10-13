@@ -97,7 +97,7 @@ pub(super) fn resolve_anthropic_endpoint(api_config: &ApiConfigRecord) -> String
     }
 
     let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
-    format!("{}/messages", resolved_base)
+    crate::api::oauth::anthropic::resolve_messages_endpoint(&resolved_base, &api_config.api_key)
 }
 
 pub(super) fn build_anthropic_payload(
@@ -463,6 +463,13 @@ fn normalize_anthropic_role(role: &str) -> &str {
     }
 }
 
+/// 组装 Messages 请求的 `thinking` 参数。
+///
+/// 除了 `type: adaptive`，必须显式声明 `display: "summarized"`：新模型
+/// （Haiku 5.5、Opus 4.7+、Sonnet 5+ 等）的 `display` 默认为 `"omitted"`，
+/// 服务端只会返回 `thinking` 文本为空的思考块（签名照常保留、token 照常
+/// 计费），上层因此拿不到任何思维链。订阅（OAuth）与 API key 渠道共用本
+/// 构造，避免 Claude Code 订阅登录下「思考开着却看不到思维链」。
 pub(crate) fn build_anthropic_thinking(config_json: &str) -> Option<(Value, Option<String>)> {
     let parsed = serde_json::from_str::<Value>(config_json).ok()?;
     let thinking = parsed.get("snowcfg")?.get("thinking")?.as_object()?;
@@ -481,5 +488,8 @@ pub(crate) fn build_anthropic_thinking(config_json: &str) -> Option<(Value, Opti
         .filter(|value| !value.is_empty() && *value != "none")
         .map(|value| value.to_string());
 
-    Some((json!({ "type": "adaptive" }), effort))
+    Some((
+        json!({ "type": "adaptive", "display": "summarized" }),
+        effort,
+    ))
 }

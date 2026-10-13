@@ -17,6 +17,14 @@ pub const CALLBACK_PORTS: &[u16] = &[54545];
 const AUTHORIZE_URL: &str = "https://claude.ai/oauth/authorize";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
+/// 订阅（OAuth）对话请求的 anthropic-beta 基线。
+///
+/// Claude Code 客户端固定先声明 `claude-code-20250219`，紧随其后才是
+/// `oauth-2025-04-20`（与 Claude Code 及 CLIProxyAPI 的上游请求顺序一致），
+/// 网关据此把请求识别为官方订阅客户端请求。
+const MESSAGES_BETA: &str = "claude-code-20250219,oauth-2025-04-20";
+/// Claude Code 客户端的 User-Agent 形状，订阅请求必须携带。
+const CLAUDE_CODE_USER_AGENT: &str = "claude-cli/2.1.280 (external, cli)";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const OAUTH_SCOPE: &str =
     "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
@@ -27,6 +35,26 @@ const MODELS_LIMIT: u32 = 1000;
 
 pub fn is_oauth_access_token(api_key: &str) -> bool {
     api_key.trim().starts_with(OAUTH_TOKEN_PREFIX)
+}
+
+/// 组装 Anthropic Messages 端点。
+///
+/// 订阅（OAuth）令牌的端点形状与 API key 渠道不同：
+/// 1. 订阅档案的 base_url 只填了域名（`https://api.anthropic.com`），而 Messages
+///    API 挂在 `/v1` 前缀下，这里补上前缀，避免请求落到 `/messages` 上（404）。
+/// 2. Claude Code 客户端始终在 Messages 端点上携带 `beta=true`，网关按该参数把
+///    请求路由到订阅可用的 beta 通道；缺少该参数同样得到 404。
+pub fn resolve_messages_endpoint(resolved_base: &str, api_key: &str) -> String {
+    let base = resolved_base.trim().trim_end_matches('/');
+    if !is_oauth_access_token(api_key) {
+        return format!("{base}/messages");
+    }
+    let base = if base.ends_with("/v1") {
+        base.to_string()
+    } else {
+        format!("{base}/v1")
+    };
+    format!("{base}/messages?beta=true")
 }
 
 pub fn build_authorize_url(redirect_uri: &str, challenge: &str, state: &str) -> Result<String> {
@@ -287,10 +315,25 @@ pub fn fetch_models_blocking(base_url: &str, access_token: &str) -> Result<Vec<S
     parse_models_payload(&body)
 }
 
+/// 订阅（OAuth）对话请求需要携带的 Claude Code 身份头。
+///
+/// 与 API key 渠道不同，Anthropic 按官方 Claude Code 客户端的形状校验订阅令牌的
+/// Messages 请求：`anthropic-beta` 必须同时声明 `claude-code-20250219`，并携带 CLI 的
+/// User-Agent、`x-app: cli` 与直接浏览器访问声明，请求才会被网关当作官方订阅客户端
+/// 放行（与 CLIProxyAPI 的上游伪装行为一致）。
+pub fn oauth_messages_headers() -> [(&'static str, &'static str); 5] {
+    [
+        ("anthropic-version", ANTHROPIC_VERSION),
+        ("anthropic-beta", MESSAGES_BETA),
+        ("anthropic-dangerous-direct-browser-access", "true"),
+        ("x-app", "cli"),
+        ("user-agent", CLAUDE_CODE_USER_AGENT),
+    ]
+}
+
+/// 把订阅（OAuth）身份头写入可变请求头表。
 pub fn apply_request_headers(headers: &mut HashMap<String, String>) {
-    headers.insert(
-        "anthropic-version".to_string(),
-        ANTHROPIC_VERSION.to_string(),
-    );
-    headers.insert("anthropic-beta".to_string(), OAUTH_BETA.to_string());
+    for (name, value) in oauth_messages_headers() {
+        headers.insert(name.to_string(), value.to_string());
+    }
 }

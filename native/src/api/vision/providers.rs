@@ -310,9 +310,9 @@ fn resolve_anthropic_endpoint(vision_config: &VisionApiConfig) -> String {
     if vision_config.base_url_mode == "endpoint" {
         return normalized;
     }
-    format!(
-        "{}/messages",
-        resolve_sdk_api_base_url(&normalized, &vision_config.base_url_mode)
+    crate::api::oauth::anthropic::resolve_messages_endpoint(
+        &resolve_sdk_api_base_url(&normalized, &vision_config.base_url_mode),
+        &vision_config.api_key,
     )
 }
 
@@ -378,6 +378,15 @@ fn build_anthropic_headers(
                 Error::from_reason(format!("Invalid vision API key header value: {error}"))
             })?,
         );
+    } else {
+        // 订阅（OAuth）令牌按 Claude Code 客户端的形状请求，缺失身份头会被
+        // 上游网关拒绝（与对话链路 api/oauth/anthropic.rs 保持一致）。
+        for (name, value) in crate::api::oauth::anthropic::oauth_messages_headers() {
+            headers.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
+        }
     }
     headers.insert(
         AUTHORIZATION,

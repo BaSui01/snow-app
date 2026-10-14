@@ -17,8 +17,8 @@ type Props = {
   onDismiss: (metric: "cpu" | "memory") => void;
   samplingActive: boolean;
   valid: boolean;
-  /** all: settings panel + notices. notice-only: notices only. */
-  mode?: "all" | "notice-only";
+  /** settings: settings panel only. notice-only: inline notice banners only. */
+  mode: "settings" | "notice-only";
   /** Expand the settings panel on first render (the alerts tab wants it open). */
   settingsOpen?: boolean;
 };
@@ -29,19 +29,43 @@ type HookArgs = {
   continuity: number;
   samplingActive: boolean;
   valid: boolean;
+  /** Fired once per alert episode, when a metric newly becomes active and system notifications are enabled. */
+  onTriggered: (metric: "cpu" | "memory", rule: AlertOptions) => void;
 };
+
+type AlertTranslate = ReturnType<typeof useI18n>["t"];
+
+/** Shared wording for the inline banner and the system notification. */
+export const alertTriggeredText = (
+  t: AlertTranslate,
+  metric: "cpu" | "memory",
+  rule: AlertOptions,
+): string =>
+  t("taskManager.alertTriggered", {
+    values: {
+      metric: t(
+        metric === "cpu"
+          ? "taskManager.visibleCpu"
+          : "taskManager.visibleMemory",
+      ),
+      threshold:
+        metric === "cpu" ? `${rule.cpuPercent}%` : `${rule.memoryMiB} MiB`,
+      duration: rule.durationSecs,
+    },
+  });
 
 const DEFAULT_ALERT_OPTIONS: AlertOptions = {
   enabled: false,
   cpuPercent: 70,
   memoryMiB: 1024,
   durationSecs: 10,
+  systemNotify: false,
 };
 
 /**
  * One monitoring instance per panel: both the settings form and the notice
  * banner render from this state, so they can never diverge. Ephemeral
- * preferences only - no notifications, automatic termination or config writes.
+ * preferences only - no automatic termination or config writes.
  */
 export function useUsageAlerts({
   samples,
@@ -49,6 +73,7 @@ export function useUsageAlerts({
   continuity,
   samplingActive,
   valid,
+  onTriggered,
 }: HookArgs): {
   options: AlertOptions;
   setOptions: (next: AlertOptions) => void;
@@ -65,14 +90,33 @@ export function useUsageAlerts({
     consumedAtRef.current = latest?.atMs ?? 0;
     setAlerts(alertsRef.current);
     // The current sample predates this configuration/continuity boundary; do not reuse it.
-  }, [options, scopeKey, continuity, samplingActive, valid]);
+    // Only thresholds and the enable switch are continuity boundaries; toggling
+    // system notifications must not clear an active or dismissed alert.
+  }, [
+    options.enabled,
+    options.cpuPercent,
+    options.memoryMiB,
+    options.durationSecs,
+    scopeKey,
+    continuity,
+    samplingActive,
+    valid,
+  ]);
   useEffect(() => {
     if (!latest || latest.atMs <= consumedAtRef.current) return;
     consumedAtRef.current = latest.atMs;
     if (!samplingActive || !valid) return;
-    alertsRef.current = advanceUsageAlerts(alertsRef.current, latest, options);
-    setAlerts(alertsRef.current);
-  }, [latest, options, samplingActive, valid]);
+    const previous = alertsRef.current;
+    const next = advanceUsageAlerts(previous, latest, options);
+    alertsRef.current = next;
+    setAlerts(next);
+    if (!options.systemNotify) return;
+    for (const metric of ["cpu", "memory"] as const) {
+      if (next[metric].active && !previous[metric].active) {
+        onTriggered(metric, options);
+      }
+    }
+  }, [latest, options, samplingActive, valid, onTriggered]);
   useEffect(() => {
     if (!latest || !options.enabled || !samplingActive || !valid) return;
     const reset = (): void => {
@@ -109,7 +153,7 @@ export function TaskManagerAlerts({
   onDismiss,
   samplingActive,
   valid,
-  mode = "all",
+  mode,
   settingsOpen = false,
 }: Props): React.JSX.Element {
   const { t } = useI18n();
@@ -123,7 +167,7 @@ export function TaskManagerAlerts({
   ] as const;
   return (
     <>
-      {mode !== "notice-only" && (
+      {mode === "settings" && (
         <details
           className="task-manager-disclosure task-manager-alert-settings"
           open={settingsOpen || undefined}
@@ -145,6 +189,17 @@ export function TaskManagerAlerts({
               />
               <span className="toggle-slider" />
               <span>{t("taskManager.alertEnable")}</span>
+            </label>
+            <label className="toggle-switch task-manager-alert-enable">
+              <input
+                type="checkbox"
+                checked={options.systemNotify}
+                onChange={(event) =>
+                  update({ systemNotify: event.target.checked })
+                }
+              />
+              <span className="toggle-slider" />
+              <span>{t("taskManager.alertSystemNotify")}</span>
             </label>
             <p className="task-manager-hint">{t("taskManager.alertHint")}</p>
             <div className="task-manager-budget-fields">
@@ -201,42 +256,28 @@ export function TaskManagerAlerts({
           </div>
         </details>
       )}
-      {(["cpu", "memory"] as const).map(
-        (metric) =>
-          alerts[metric].active &&
-          !alerts[metric].dismissed && (
-            <div
-              key={metric}
-              className="task-manager-alert-notice"
-              role="status"
-              data-alert-metric={metric}
-            >
-              <span>
-                {t("taskManager.alertTriggered", {
-                  values: {
-                    metric: t(
-                      metric === "cpu"
-                        ? "taskManager.visibleCpu"
-                        : "taskManager.visibleMemory",
-                    ),
-                    threshold:
-                      metric === "cpu"
-                        ? `${options.cpuPercent}%`
-                        : `${options.memoryMiB} MiB`,
-                    duration: options.durationSecs,
-                  },
-                })}
-              </span>
-              <button
-                type="button"
-                className="task-manager-refresh-btn"
-                onClick={() => onDismiss(metric)}
+      {mode === "notice-only" &&
+        (["cpu", "memory"] as const).map(
+          (metric) =>
+            alerts[metric].active &&
+            !alerts[metric].dismissed && (
+              <div
+                key={metric}
+                className="task-manager-alert-notice"
+                role="status"
+                data-alert-metric={metric}
               >
-                {t("taskManager.dismissAlert")}
-              </button>
-            </div>
-          ),
-      )}
+                <span>{alertTriggeredText(t, metric, options)}</span>
+                <button
+                  type="button"
+                  className="task-manager-refresh-btn"
+                  onClick={() => onDismiss(metric)}
+                >
+                  {t("taskManager.dismissAlert")}
+                </button>
+              </div>
+            ),
+        )}
     </>
   );
 }

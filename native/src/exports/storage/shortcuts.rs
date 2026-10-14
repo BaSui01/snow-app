@@ -69,6 +69,8 @@ pub struct KeyboardShortcutsSettingsNapi {
     pub ui_zoom_in: KeyboardShortcutConfigNapi,
     pub ui_zoom_out: KeyboardShortcutConfigNapi,
     pub ui_zoom_reset: KeyboardShortcutConfigNapi,
+    pub new_chat_in_new_window: KeyboardShortcutConfigNapi,
+    pub cycle_detached_window: KeyboardShortcutConfigNapi,
 }
 
 impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
@@ -106,6 +108,8 @@ impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSetting
             ui_zoom_in: s.ui_zoom_in.into(),
             ui_zoom_out: s.ui_zoom_out.into(),
             ui_zoom_reset: s.ui_zoom_reset.into(),
+            new_chat_in_new_window: s.new_chat_in_new_window.into(),
+            cycle_detached_window: s.cycle_detached_window.into(),
         }
     }
 }
@@ -145,6 +149,8 @@ impl From<KeyboardShortcutsSettingsNapi>
             ui_zoom_in: s.ui_zoom_in.into(),
             ui_zoom_out: s.ui_zoom_out.into(),
             ui_zoom_reset: s.ui_zoom_reset.into(),
+            new_chat_in_new_window: s.new_chat_in_new_window.into(),
+            cycle_detached_window: s.cycle_detached_window.into(),
         }
     }
 }

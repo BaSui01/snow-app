@@ -53,6 +53,8 @@ const ACTIONS: &[&str] = &[
     "uiZoomIn",
     "uiZoomOut",
     "uiZoomReset",
+    "newChatInNewWindow",
+    "cycleDetachedWindow",
 ];
 
 /// 单个动作允许写入的字段。

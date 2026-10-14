@@ -24,6 +24,7 @@ import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { Tooltip } from "../../common/Tooltip";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import { openConversationInNewWindow } from "./openConversationInNewWindow";
 import {
   beginConversationDrag,
   endConversationDrag,
@@ -345,6 +346,14 @@ export function ChatItem({
 
   const hasTreeChildren = hasSubAgents || isWorkflow;
 
+  const handleOpenInNewWindow = (): void => {
+    openConversationInNewWindow(conversation, displayName).catch(
+      (error: unknown) => {
+        console.error("Failed to open conversation in new window", error);
+      },
+    );
+  };
+
   const attentionRequiredSubAgentCount = subAgentConversations.filter((sub) =>
     subAgentAttentionRequiredIds.has(sub.conversationId),
   ).length;
@@ -592,6 +601,7 @@ export function ChatItem({
                 isDeleting={isDeleting}
                 onExport={onExport}
                 onFork={onFork}
+                onOpenInNewWindow={handleOpenInNewWindow}
                 onArchive={onArchive}
                 onEnterMultiSelect={onEnterMultiSelect}
                 onOpenChange={setIsMenuOpen}

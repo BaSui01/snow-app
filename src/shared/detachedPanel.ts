@@ -30,3 +30,27 @@ export type DetachedPanelRuntimeMirror = Record<string, unknown>;
 /** 主进程向独立面板窗口广播运行时快照镜像的通道。 */
 export const DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL =
   "detached-panel:runtime-mirror-broadcast";
+
+/**
+ * 会话 tab 所属的会话 id 集合（tab 中的会话与运行中的会话）变化后，
+ * 主进程广播给主窗口：主窗口据此拦截对这些会话的点击，改为聚焦所在窗口。
+ */
+export const DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL =
+  "detached-panel:conversation-owners-broadcast";
+
+/** 主进程要求独立面板窗口激活某个会话 tab（主窗口点击已归属会话时触发）。 */
+export const DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL =
+  "detached-panel:conversation-activate-broadcast";
+
+/**
+ * 用户请求关闭独立面板窗口（标题栏关闭、系统关闭等）时，主进程先拦截关闭，
+ * 通知渲染进程弹出二次确认；确认后再真正关闭。
+ */
+export const DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL =
+  "detached-panel:close-requested";
+
+/** 独立面板窗口内的会话列表 / 树形数据发生变化（新建会话、标题与摘要更新、子代理或
+ * Workflow 节点变化）后，主进程通知主窗口重新拉取侧边栏数据。
+ */
+export const DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL =
+  "detached-panel:conversation-list-broadcast";

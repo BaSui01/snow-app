@@ -36,6 +36,7 @@ import { useConversationManagement } from "./useConversationManagement";
 export const useChatConversation = (
   directoryId?: string,
   directoryPath?: string,
+  isDetachedWindow = false,
 ): UseChatConversationResult => {
   // --- State ---
   const [sessions, setSessions] = useState<
@@ -862,6 +863,147 @@ export const useChatConversation = (
   // 供 useRollback 等后续 hook 使用。
   ctx.abortWorkflowNodes = conversationManagementApi.abortWorkflowNodes;
 
+  // --- 独立窗口归属 ---
+  // 归属于某个独立窗口的会话（窗口内的会话 tab 与运行中的会话）只能在该窗口运行。
+  // 主窗口据此拦截对它们的选中（改为聚焦所在窗口），并释放本地缓存，避免主窗口加载到过期数据。
+  // 独立窗口自身的运行时不拦截，也不订阅归属变化。
+  const detachedOwnedIdsRef = useRef<Set<string>>(new Set());
+  const handleNewChatRef = useRef(conversationManagementApi.handleNewChat);
+  handleNewChatRef.current = conversationManagementApi.handleNewChat;
+
+  /**
+   * 释放会话的本地缓存（下次选中时从数据库重新加载）。运行中的会话不释放；
+   * keepActive=false 时当前激活会话也不释放（用于主窗口切走后释放）。
+   */
+  const dropSessionCaches = useCallback(
+    (conversationIds: string[], keepActive: boolean): void => {
+      const activeId = activeConversationIdRef.current;
+      const releasableIds = conversationIds.filter((id) => {
+        if (keepActive && id === activeId) {
+          return false;
+        }
+        if (streamingConversationIdsRef.current.has(id)) {
+          return false;
+        }
+        const refData = sessionsRefData.current.get(id);
+        return !(
+          refData?.isSending ||
+          refData?.streamPromise ||
+          refData?.summaryPromise ||
+          pauseControllerRef.current.get(id)?.paused
+        );
+      });
+      if (releasableIds.length === 0) {
+        return;
+      }
+      for (const id of releasableIds) {
+        sessionsRefData.current.delete(id);
+      }
+      setSessions((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of releasableIds) {
+          if (next[id]) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [],
+  );
+
+  const releaseConversationSessions = useCallback(
+    (conversationIds: string[]): void => {
+      dropSessionCaches(conversationIds, true);
+    },
+    [dropSessionCaches],
+  );
+
+  useEffect(() => {
+    if (isDetachedWindow) {
+      return;
+    }
+    let disposed = false;
+    const applyOwners = (conversationIds: string[]): void => {
+      const next = new Set(conversationIds);
+      const previous = detachedOwnedIdsRef.current;
+      detachedOwnedIdsRef.current = next;
+      const changedIds = [
+        ...conversationIds.filter((id) => !previous.has(id)),
+        ...[...previous].filter((id) => !next.has(id)),
+      ];
+      if (changedIds.length === 0) {
+        return;
+      }
+      // 当前视图刚被独立窗口接管：切到新会话，不再展示该会话。
+      const activeId = activeConversationIdRef.current;
+      if (activeId && next.has(activeId)) {
+        handleNewChatRef.current();
+      }
+      dropSessionCaches(changedIds, false);
+    };
+    const unsubscribe = window.snow.onDetachedConversationOwnersChanged(
+      (conversationIds) => {
+        applyOwners(conversationIds);
+      },
+    );
+    void window.snow
+      .takeDetachedConversationOwners()
+      .then((conversationIds) => {
+        if (!disposed) {
+          applyOwners(conversationIds);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [isDetachedWindow, dropSessionCaches]);
+
+  const handleSelectConversationGuarded = useCallback<
+    UseChatConversationResult["handleSelectConversation"]
+  >(
+    async (conversationId, title, tokenUsage, directoryId) => {
+      const trimmedId = conversationId.trim();
+      if (
+        !isDetachedWindow &&
+        trimmedId &&
+        detachedOwnedIdsRef.current.has(trimmedId)
+      ) {
+        const focused = await window.snow.focusDetachedConversation(trimmedId);
+        if (focused) {
+          return;
+        }
+      }
+      await conversationManagementApi.handleSelectConversation(
+        conversationId,
+        title,
+        tokenUsage,
+        directoryId,
+      );
+    },
+    [isDetachedWindow, conversationManagementApi.handleSelectConversation],
+  );
+
+  // 独立窗口内的会话列表 / 树形数据变化（如在独立窗口新建并发送了会话）：
+  // 主窗口侧边栏不会自动感知，这里重新拉取。
+  const refreshSidebarDataRef = useRef<() => void>(() => undefined);
+  refreshSidebarDataRef.current = (): void => {
+    conversationManagementApi.refreshConversations();
+    conversationManagementApi.refreshConversationTree();
+  };
+  useEffect(() => {
+    if (isDetachedWindow) {
+      return;
+    }
+    return window.snow.onDetachedConversationListChanged(() => {
+      refreshSidebarDataRef.current();
+    });
+  }, [isDetachedWindow]);
+
   // --- 7. Rollback ---
   const rollbackApi = useRollback(ctx);
 
@@ -1038,11 +1180,11 @@ export const useChatConversation = (
     compactionError,
     isCompacting,
     compactingConversationId,
-    handleSelectConversation:
-      conversationManagementApi.handleSelectConversation,
+    handleSelectConversation: handleSelectConversationGuarded,
     handleNewChat: conversationManagementApi.handleNewChat,
     refreshConversations: conversationManagementApi.refreshConversations,
     refreshConversationTree: conversationManagementApi.refreshConversationTree,
+    releaseConversationSessions,
     updateConversationSummary,
     updateSessionMessages: sessionApi.updateSessionMessages,
     isStreaming: Boolean(

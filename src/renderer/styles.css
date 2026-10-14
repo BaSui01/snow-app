@@ -22875,6 +22875,52 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 
+/* 侧边栏「新建会话」行：悬停时右侧显示「在新窗口中打开」图标，快捷键提示让位。 */
+.sidebar-new-chat-row {
+  position: relative;
+  width: 100%;
+}
+
+.sidebar-new-chat-window-btn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.sidebar-new-chat-window-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidebar-new-chat-row:hover .sidebar-new-chat-window-btn,
+.sidebar-new-chat-window-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-new-chat-row:hover .sidebar-new-chat-shortcut,
+.sidebar-new-chat-row:focus-within .sidebar-new-chat-shortcut {
+  opacity: 0;
+}
+
 .sidebar-more-btn {
   width: 100%;
   color: var(--text-secondary);
@@ -29541,6 +29587,16 @@ body.is-panel-resizing * {
 .detached-panel-body .right-panel-tabs > .overlay-scrollbar {
   flex: 0 1 auto;
   min-width: 0;
+}
+
+/* 独立面板窗口：会话 tab 的聊天区占满面板，底部保留留白，避免输入框贴边。 */
+.detached-conversation-body {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding-bottom: 12px;
 }
 
 /* 独立面板窗口顶部操作栏（系统标题栏已隐藏）：整栏可拖拽，窗口控制按钮保持可点击。 */

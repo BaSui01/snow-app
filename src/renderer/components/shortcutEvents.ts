@@ -28,6 +28,7 @@ export type ShortcutAction =
   | "toggle-sidebar"
   | "toggle-right-panel"
   | "new-chat"
+  | "new-chat-in-new-window"
   | "send-message"
   | "stop-generation"
   | "toggle-pet"
@@ -59,6 +60,7 @@ type ListenerMap = {
   "toggle-sidebar": Set<() => void>;
   "toggle-right-panel": Set<() => void>;
   "new-chat": Set<() => void>;
+  "new-chat-in-new-window": Set<() => void>;
   "send-message": Set<() => void>;
   "stop-generation": Set<() => void>;
   "toggle-pet": Set<() => void>;
@@ -91,6 +93,7 @@ const listeners: ListenerMap = {
   "toggle-sidebar": new Set(),
   "toggle-right-panel": new Set(),
   "new-chat": new Set(),
+  "new-chat-in-new-window": new Set(),
   "send-message": new Set(),
   "stop-generation": new Set(),
   "toggle-pet": new Set(),

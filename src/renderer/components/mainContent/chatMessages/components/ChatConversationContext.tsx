@@ -11,12 +11,19 @@ export const ChatConversationProvider = ({
   children,
   directoryId,
   directoryPath,
+  isDetachedWindow = false,
 }: {
   children: ReactNode;
   directoryId?: string;
   directoryPath?: string;
+  /** 独立面板窗口内的会话运行时：不拦截归属会话的点击（归属由主窗口处理）。 */
+  isDetachedWindow?: boolean;
 }): React.JSX.Element => {
-  const conversation = useChatConversation(directoryId, directoryPath);
+  const conversation = useChatConversation(
+    directoryId,
+    directoryPath,
+    isDetachedWindow,
+  );
 
   return (
     <ChatConversationContext.Provider value={conversation}>
@@ -30,7 +37,7 @@ export const useChatConversationContext = (): ChatConversationContextValue => {
 
   if (!context) {
     throw new Error(
-      "useChatConversationContext must be used within a ChatConversationProvider"
+      "useChatConversationContext must be used within a ChatConversationProvider",
     );
   }
 

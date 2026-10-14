@@ -12,6 +12,7 @@ import {
   Archive,
   GitFork,
   Copy,
+  ExternalLink,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -37,6 +38,8 @@ type ChatItemMenuProps = {
   onExport: (format: ExportFormat) => void;
   /** 创建分支会话（复制整个会话到新的分支） */
   onFork?: () => void;
+  /** 在新窗口中打开会话（仅对空闲会话展示菜单，运行中的会话不提供） */
+  onOpenInNewWindow?: () => void;
   /** 归档会话（置顶会话不提供归档入口，由父组件控制不传入） */
   onArchive?: () => void;
   onEnterMultiSelect?: () => void;
@@ -57,6 +60,7 @@ export function ChatItemMenu({
   onDelete,
   onExport,
   onFork,
+  onOpenInNewWindow,
   onArchive,
   isDeleting = false,
   onEnterMultiSelect,
@@ -294,6 +298,12 @@ export function ChatItemMenu({
     onContextMenuCloseRef.current?.();
   };
 
+  const handleOpenInNewWindow = (): void => {
+    onOpenInNewWindow?.();
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+  };
+
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
     setShowConfirm(false);
@@ -437,6 +447,21 @@ export function ChatItemMenu({
                       <GitFork size={13} />
                       <span>
                         {t("chat.forkConversation", { defaultValue: "Fork" })}
+                      </span>
+                    </button>
+                  ) : null}
+                  {onOpenInNewWindow ? (
+                    <button
+                      type="button"
+                      className="chat-item-menu-item"
+                      onClick={handleOpenInNewWindow}
+                      role="menuitem"
+                    >
+                      <ExternalLink size={13} />
+                      <span>
+                        {t("rightPanel.openInNewWindow", {
+                          defaultValue: "Open in new window",
+                        })}
                       </span>
                     </button>
                   ) : null}

@@ -23,15 +23,24 @@ import "./themes/preset-tesseract.css";
 import "./themes/preset-rococo.css";
 import type { WorkspaceDirectoryRecord } from "../preload";
 import type { DetachedPanelPayload } from "../shared/detachedPanel";
-import { I18nProvider } from "./i18n";
+import { I18nProvider, useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { applyThemeCacheToDocument } from "./components/sidebar/themeSettings/themeSettingsUtils";
-import { KeyboardShortcutsProvider } from "./components/KeyboardShortcutsProvider";
+import {
+  KeyboardShortcutsProvider,
+  useKeyboardShortcutsSettings,
+} from "./components/KeyboardShortcutsProvider";
+import { openNewChatInNewWindow } from "./components/sidebar/mainSidebar/openConversationInNewWindow";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
+import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { DetachedPanelTitleBar } from "./components/DetachedPanelTitleBar";
 import { RightPanel } from "./components/RightPanel";
-import { toRightPanelTab } from "./components/rightPanel/detachedPanelTab";
+import { ChatConversationProvider } from "./components/mainContent/chatMessages/components/ChatConversationContext";
+import {
+  hasMountedConversationPane,
+  toRightPanelTab,
+} from "./components/rightPanel/detachedPanelTab";
 import { applyPluginRuntimeMirror } from "./plugins/runtimeMirror";
 import {
   INSERT_ELEMENT_TAG_EVENT,
@@ -43,19 +52,20 @@ import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "./hooks/useAppControl";
 applyThemeCacheToDocument();
 
 function DetachedPanelWindowApp(): React.JSX.Element | null {
+  const { t } = useI18n();
   // 主题 CSS 变量由主窗口注入，独立窗口需自行应用（读 Rust 后端持久化的主题设置）。
   useTheme();
   // 局部快捷键（如文件查看器的文内搜索）依赖 document 级 keydown 引擎；
   // 全局动作在本窗口没有注册处理器，引擎对其为空操作。
   useKeyboardShortcuts();
+  const { registerHandler } = useKeyboardShortcutsSettings();
 
   // 元素选择确认后派发 INSERT_ELEMENT_TAG_EVENT（useWebviewElementPicker 的 confirmPicker）。
-  // 本窗口没有 ChatInputView，事件无法跨渲染进程到达主窗口，因此拦截并转发给主窗口，
-  // 由其聊天输入框插入 element chip。
+  // 本窗口挂载着会话面板时，标签由其中的聊天输入框接收；否则转发给主窗口的聊天输入框。
   useEffect(() => {
     const handleElementTag = (event: Event): void => {
       const tag = (event as CustomEvent<ElementTag>).detail;
-      if (!tag) {
+      if (!tag || hasMountedConversationPane()) {
         return;
       }
       window.snow.forwardElementTagToChat({
@@ -116,6 +126,15 @@ function DetachedPanelWindowApp(): React.JSX.Element | null {
   const token = new URLSearchParams(window.location.search).get("token") ?? "";
   // 顶部操作栏显示的标题：由 RightPanel 回传活动 tab 标题。
   const [windowTitle, setWindowTitle] = useState("Snow");
+  // 用户请求关闭窗口（标题栏关闭、系统关闭）时由主进程拦截并通知，这里弹出二次确认。
+  const [isCloseConfirmOpen, setIsCloseConfirmOpen] = useState(false);
+  useEffect(
+    () =>
+      window.snow.onDetachedPanelCloseRequested(() => {
+        setIsCloseConfirmOpen(true);
+      }),
+    [],
+  );
   // undefined：加载中；null：payload 已失效（窗口应关闭）。
   const [payload, setPayload] = useState<
     DetachedPanelPayload | null | undefined
@@ -142,26 +161,76 @@ function DetachedPanelWindowApp(): React.JSX.Element | null {
 
   useEffect(() => {
     if (payload === null) {
-      void window.snow.closeWindow();
+      // payload 已失效：窗口无内容可保留，直接关闭（不询问）。
+      void window.snow.confirmDetachedPanelClose();
     }
   }, [payload]);
+
+  const activeDirectory = (payload?.activeDirectory ??
+    null) as WorkspaceDirectoryRecord | null;
+
+  // 快捷键在独立窗口内同样生效：新建会话沿用本窗口的项目，循环切换由主进程统一处理。
+  useEffect(() => {
+    const unsubNewChat = registerHandler("newChatInNewWindow", () => {
+      openNewChatInNewWindow(
+        activeDirectory,
+        t("sidebar.newChat", { defaultValue: "New Chat" }),
+      ).catch((error: unknown) => {
+        console.error("Failed to open new chat in new window", error);
+      });
+    });
+    const unsubCycle = registerHandler("cycleDetachedWindow", () => {
+      void window.snow.focusNextDetachedPanelWindow();
+    });
+    return () => {
+      unsubNewChat();
+      unsubCycle();
+    };
+  }, [registerHandler, activeDirectory, t]);
 
   return (
     <AppErrorBoundary>
       <DetachedPanelTitleBar title={windowTitle} />
       <div className="detached-panel-body">
-        {payload ? (
-          <RightPanel
-            isCollapsed={false}
-            isFullscreen={false}
-            activeDirectory={
-              payload.activeDirectory as WorkspaceDirectoryRecord | null
-            }
-            detachedWindow={{ initialTab: toRightPanelTab(payload.tab) }}
-            onActiveTabTitleChange={setWindowTitle}
-          />
+        {payload === undefined ? (
+          // payload 尚未取回：与 detachedPanel.html 内置的占位保持一致，避免内容区空白。
+          <div className="detached-panel-boot" role="status" aria-busy="true">
+            <div className="detached-panel-boot-spinner" />
+          </div>
+        ) : payload ? (
+          <ChatConversationProvider
+            directoryId={activeDirectory?.directoryId}
+            directoryPath={activeDirectory?.path}
+            isDetachedWindow
+          >
+            <RightPanel
+              isCollapsed={false}
+              isFullscreen={false}
+              activeDirectory={activeDirectory}
+              detachedWindow={{ initialTab: toRightPanelTab(payload.tab) }}
+              onActiveTabTitleChange={setWindowTitle}
+            />
+          </ChatConversationProvider>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={isCloseConfirmOpen}
+        title={t("detachedPanel.closeConfirmTitle", {
+          defaultValue: "Close detached window",
+        })}
+        message={t("detachedPanel.closeConfirmMessage", {
+          defaultValue:
+            "Close this detached window? Conversations running in it will stop.",
+        })}
+        confirmLabel={t("common.confirm", { defaultValue: "Confirm" })}
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        variant="warning"
+        onConfirm={() => {
+          setIsCloseConfirmOpen(false);
+          void window.snow.confirmDetachedPanelClose();
+        }}
+        onCancel={() => setIsCloseConfirmOpen(false)}
+      />
     </AppErrorBoundary>
   );
 }

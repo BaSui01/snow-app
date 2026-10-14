@@ -2,6 +2,9 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <!-- 画布默认底色随深浅色：样式表加载前的首帧不会以白底闪烁。 -->
+    <meta name="color-scheme" content="light dark" />
+
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: theme-bg: img-proxy:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:* img-proxy:; frame-src 'self' blob: data:;"
@@ -19,10 +22,47 @@
         display: flex;
         flex-direction: column;
       }
+      /* 加载占位：打包脚本就绪前即可显示，样式与 React 端的占位共用同一套类名。
+         底色与 tokens.css 中的 --app-bg 一致，并随系统 / 应用的深浅色切换（不依赖 JS 写入的主题属性）。 */
+      .detached-panel-boot {
+        flex: 1;
+        min-height: 0;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #eef2f7;
+      }
+      @media (prefers-color-scheme: dark) {
+        .detached-panel-boot {
+          background: #050505;
+        }
+      }
+      /* 启动态下占位直接位于根节点，需让出顶部操作栏（44px）的高度，与 React 端的居中位置一致。 */
+      #detached-panel-root > .detached-panel-boot {
+        padding-top: 44px;
+      }
+      .detached-panel-boot-spinner {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 2px solid rgba(128, 128, 128, 0.25);
+        border-top-color: rgba(128, 128, 128, 0.9);
+        animation: detached-panel-boot-spin 0.85s linear infinite;
+      }
+      @keyframes detached-panel-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>
-    <div id="detached-panel-root"></div>
+    <div id="detached-panel-root">
+      <div class="detached-panel-boot" role="status" aria-busy="true">
+        <div class="detached-panel-boot-spinner"></div>
+      </div>
+    </div>
     <script type="module" src="./detachedPanelMain.tsx"></script>
   </body>
 </html>

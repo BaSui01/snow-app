@@ -1,5 +1,6 @@
 import { app, globalShortcut } from "electron";
 import type { NativeBridge } from "../native/types";
+import { focusNextDetachedPanelWindow } from "./detachedPanelWindow";
 import { getMainWindow } from "./mainWindow";
 import { refreshTrayStats, showMainWindow } from "./tray";
 import { snowLog } from "../../utils/snowLogger";
@@ -45,6 +46,8 @@ const GLOBAL_ACTIONS = [
   "uiZoomIn",
   "uiZoomOut",
   "uiZoomReset",
+  "newChatInNewWindow",
+  "cycleDetachedWindow",
 ] as const;
 
 type GlobalAction = (typeof GLOBAL_ACTIONS)[number];
@@ -145,6 +148,11 @@ const toggleMainWindow = (): void => {
 };
 
 const dispatchToRenderer = (action: GlobalAction): void => {
+  // 独立窗口循环聚焦由主进程直接处理：主窗口隐藏或不存在时同样可以切换独立窗口。
+  if (action === "cycleDetachedWindow") {
+    focusNextDetachedPanelWindow();
+    return;
+  }
   const win = getMainWindow();
   if (!win || win.isDestroyed()) {
     return;

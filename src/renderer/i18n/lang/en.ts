@@ -3698,6 +3698,8 @@ export const en = {
   "settings.shortcutCycleApiProfile": "Open API provider picker",
   "settings.shortcutToggleWindow": "Show/hide main window",
   "settings.shortcutTogglePet": "Show/hide desktop pet",
+  "settings.shortcutCycleDetachedWindow":
+    "Cycle through independent session windows",
   "settings.shortcutEnabled": "Enabled",
   "settings.shortcutFocusInput": "Focus chat input",
   "settings.shortcutToggleSidebar": "Collapse/expand left sidebar",
@@ -3705,6 +3707,8 @@ export const en = {
   "settings.shortcutSendMessage": "Send current input",
   "settings.shortcutStopGeneration": "Stop generating",
   "settings.shortcutNewChat": "Start a new conversation",
+  "settings.shortcutNewChatInNewWindow":
+    "Start a new conversation in a new window",
   "settings.shortcutPrevConversation": "Switch to previous conversation",
   "settings.shortcutNextConversation": "Switch to next conversation",
   "settings.shortcutScrollToTop": "Scroll chat to top",
@@ -4926,8 +4930,9 @@ export const en = {
   "taskManager.alertEnabled": "Enabled",
   "taskManager.alertDisabled": "Off by default",
   "taskManager.alertEnable": "Enable inline alerts for the current filter",
+  "taskManager.alertSystemNotify": "Enable system notifications",
   "taskManager.alertHint":
-    "Own-process totals in the current filter only; preferences live in this panel. CPU and memory have independent continuity clocks. Gaps, pauses, hidden windows, failures and scope/threshold changes reset them. No automatic termination, network messages or system notifications.",
+    "Own-process totals in the current filter only; preferences live in this panel. CPU and memory have independent continuity clocks. Gaps, pauses, hidden windows, failures and scope/threshold changes reset them. No automatic termination or network messages; system notifications are sent only when their switch is on.",
   "taskManager.alertCpu": "CPU threshold (%)",
   "taskManager.alertMemory": "Memory threshold (MiB)",
   "taskManager.alertDuration": "Duration (seconds)",
@@ -4941,6 +4946,7 @@ export const en = {
     "Sampling paused or scope unknown; continuity clocks reset.",
   "taskManager.alertTriggered":
     "Current-filter {{metric}} reached {{threshold}} for {{duration}} seconds. Advisory only; no automatic action.",
+  "taskManager.alertNotifyTitle": "Task manager alert",
   "taskManager.dismissAlert": "Dismiss this alert",
   "taskManager.colName": "Name",
   "taskManager.colType": "Type",
@@ -4974,6 +4980,9 @@ export const en = {
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
   "rightPanel.tabContextNewTasks": "Task manager",
   "rightPanel.openInNewWindow": "Open in new window",
+  "detachedPanel.closeConfirmTitle": "Close detached window",
+  "detachedPanel.closeConfirmMessage":
+    "Close this detached window? Conversations running in it will stop.",
   "rightPanel.returnToMainWindow": "Return to main window",
   "rightPanel.openInLocalBrowser": "Open in local browser",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",

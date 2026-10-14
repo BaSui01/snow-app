@@ -62,6 +62,8 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   uiZoomIn: "mod+=",
   uiZoomOut: "mod+-",
   uiZoomReset: "mod+0",
+  newChatInNewWindow: "mod+shift+n",
+  cycleDetachedWindow: "mod+shift+w",
 };
 
 export function KeyboardShortcutsSettingsPanel(): React.JSX.Element {

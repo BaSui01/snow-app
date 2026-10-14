@@ -1015,6 +1015,8 @@ export type UseChatConversationResult = {
   /** 仅刷新侧边栏树形数据（workflow 节点 / 子代理会话）：节点会话创建与
    *  状态变化时使用，不重拉主会话列表。 */
   refreshConversationTree: () => void;
+  /** 释放指定会话的本地缓存（运行中与激活中的会话不释放），下次选中时从数据库重新加载。 */
+  releaseConversationSessions: (conversationIds: string[]) => void;
   /** 同步更新内存中某会话的 summary（如重命名会话后让 TopBar 标题即时刷新）。 */
   updateConversationSummary: (conversationId: string, summary: string) => void;
   /** 按会话 key 更新内存中的消息列表：工具卡片本地收口（见 BashToolCall）

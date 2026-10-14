@@ -144,6 +144,16 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
   uiZoomIn: { key: "mod+=", enabled: true, foregroundOnly: true },
   uiZoomOut: { key: "mod+-", enabled: true, foregroundOnly: true },
   uiZoomReset: { key: "mod+0", enabled: true, foregroundOnly: true },
+  newChatInNewWindow: {
+    key: "mod+shift+n",
+    enabled: true,
+    foregroundOnly: true,
+  },
+  cycleDetachedWindow: {
+    key: "mod+shift+w",
+    enabled: true,
+    foregroundOnly: true,
+  },
 };
 
 /**

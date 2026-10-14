@@ -224,6 +224,7 @@ export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "sendMessage",
   "stopGeneration",
   "newChat",
+  "newChatInNewWindow",
   "prevConversation",
   "nextConversation",
   "scrollToTop",
@@ -244,6 +245,7 @@ export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "toggleRightPanel",
   "toggleRightPanelFullscreen",
   "togglePet",
+  "cycleDetachedWindow",
   "toggleWindow",
   "showShortcutHelp",
   "toggleMessageTime",
@@ -281,6 +283,11 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
   newChat: {
     descKey: "settings.shortcutNewChat",
     descDefault: "Start a new conversation",
+    group: "conversation",
+  },
+  newChatInNewWindow: {
+    descKey: "settings.shortcutNewChatInNewWindow",
+    descDefault: "Start a new conversation in a new window",
     group: "conversation",
   },
   prevConversation: {
@@ -381,6 +388,11 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
   togglePet: {
     descKey: "settings.shortcutTogglePet",
     descDefault: "Show/hide desktop pet",
+    group: "window",
+  },
+  cycleDetachedWindow: {
+    descKey: "settings.shortcutCycleDetachedWindow",
+    descDefault: "Cycle through independent session windows",
     group: "window",
   },
   toggleWindow: {

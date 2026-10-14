@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme } from "electron";
+import { BrowserWindow, nativeTheme, type WebContents } from "electron";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
@@ -6,7 +6,11 @@ import type {
   DetachedPanelRuntimeMirror,
   DetachedPanelTabPayload,
 } from "../../shared/detachedPanel";
-import { DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL } from "../../shared/detachedPanel";
+import {
+  DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL,
+  DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
+  DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL,
+} from "../../shared/detachedPanel";
 import { snowLog } from "../../utils/snowLogger";
 import {
   killAllPtyForWebContents,
@@ -37,7 +41,14 @@ const TRAFFIC_LIGHT_POSITION = { x: 16, y: 16 };
 type DetachedPanelEntry = {
   payload: DetachedPanelPayload;
   window: BrowserWindow;
+  /**
+   * 窗口归属的会话 id：会话 tab 中的会话（含子代理 / Workflow 节点）与仍在运行的会话。
+   * 初始值来自 payload，之后由渲染端上报覆盖。
+   */
+  conversationIds: string[];
 };
+
+type ConversationOwnersListener = (conversationIds: string[]) => void;
 
 /** token -> 面板窗口与其初始化 payload（窗口关闭时移除）。 */
 const panelEntries = new Map<string, DetachedPanelEntry>();
@@ -59,6 +70,30 @@ const readTerminalPtyId = (tab: DetachedPanelTabPayload): string | null => {
   const ptyId = (tab.data as Record<string, unknown>).ptyId;
   return typeof ptyId === "string" && ptyId.trim() ? ptyId.trim() : null;
 };
+
+/** 会话 tab 携带的会话 id（仅 conversation 类型 tab 有）。 */
+const readConversationId = (tab: DetachedPanelTabPayload): string | null => {
+  if (
+    tab.type !== "conversation" ||
+    !tab.data ||
+    typeof tab.data !== "object"
+  ) {
+    return null;
+  }
+  const conversationId = (tab.data as Record<string, unknown>).conversationId;
+  return typeof conversationId === "string" && conversationId.trim()
+    ? conversationId.trim()
+    : null;
+};
+
+/** 所有独立窗口归属会话 id 变化的监听者（主窗口用于拦截点击与释放缓存）。 */
+const conversationOwnersListeners = new Set<ConversationOwnersListener>();
+
+/** 已通过二次确认（或无需确认）、可以真正关闭的窗口。 */
+const confirmedCloseWindows = new WeakSet<BrowserWindow>();
+
+/** 应用正在退出：独立窗口随之关闭，不再逐个二次确认。 */
+let detachedPanelsQuitting = false;
 
 /**
  * 把即将随 tab 迁移的终端会话登记为交接保留。必须在源 tab 卸载（触发 kill）
@@ -128,7 +163,13 @@ export const openDetachedPanelWindow = (
     },
   });
   const contents = win.webContents;
-  panelEntries.set(token, { payload, window: win });
+  const initialConversationId = readConversationId(payload.tab);
+  panelEntries.set(token, {
+    payload,
+    window: win,
+    conversationIds: initialConversationId ? [initialConversationId] : [],
+  });
+  notifyConversationOwners();
 
   win.setMenu(null);
   win.setMenuBarVisibility(false);
@@ -144,15 +185,19 @@ export const openDetachedPanelWindow = (
     win.on("unmaximize", notifyMaximizeState);
   }
 
-  // 等待首帧渲染后再显示，避免白屏闪烁。
-  win.once("ready-to-show", () => {
-    if (!win.isDestroyed()) {
-      win.show();
+  win.on("close", (event) => {
+    if (detachedPanelsQuitting || confirmedCloseWindows.has(win)) {
+      return;
     }
+    // 用户关闭（标题栏关闭按钮、系统关闭）先二次确认，确认后由渲染端调用 confirmDetachedPanelClose。
+    event.preventDefault();
+    safeSend(contents, DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL);
   });
 
   win.on("closed", () => {
     panelEntries.delete(token);
+    // 窗口已销毁：归属会话随之释放，主窗口可重新加载这些会话。
+    notifyConversationOwners();
     // 窗口已销毁：回收名下会话（交接中的会话保留，等待目标窗口 claim）。
     killAllPtyForWebContents(contents);
   });
@@ -179,6 +224,10 @@ export const openDetachedPanelWindow = (
     }
     event.preventDefault();
   });
+
+  // 立即显示：窗口底色在创建时由 backgroundColor 决定（与应用当前深浅色一致），
+  // 页面内置的加载占位在样式与脚本就绪前即可绘制，无需等待首帧。
+  win.show();
 
   void win
     .loadURL(
@@ -217,10 +266,141 @@ export const publishDetachedRuntimeMirror = (
 export const takeDetachedRuntimeMirror =
   (): DetachedPanelRuntimeMirror | null => latestRuntimeMirror;
 
-/** 关闭所有独立面板窗口（主窗口关闭时调用，避免残留孤儿窗口）。 */
+/** 判断发送方是否为独立面板窗口（用于校验渲染端发来的广播请求）。 */
+export const isDetachedPanelWebContents = (sender: WebContents): boolean => {
+  for (const { window } of panelEntries.values()) {
+    if (!window.isDestroyed() && window.webContents.id === sender.id) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/** 当前所有独立窗口归属的会话 id（去重）。 */
+export const getDetachedConversationIds = (): string[] => {
+  const ids = new Set<string>();
+  for (const { conversationIds } of panelEntries.values()) {
+    for (const conversationId of conversationIds) {
+      ids.add(conversationId);
+    }
+  }
+  return [...ids];
+};
+
+/** 归属会话 id 变化时通知所有监听者（携带变化后的完整列表）。 */
+const notifyConversationOwners = (): void => {
+  const conversationIds = getDetachedConversationIds();
+  for (const listener of conversationOwnersListeners) {
+    listener(conversationIds);
+  }
+};
+
+/** 订阅独立窗口归属会话变化；返回取消订阅函数。 */
+export const subscribeDetachedConversationOwners = (
+  listener: ConversationOwnersListener,
+): (() => void) => {
+  conversationOwnersListeners.add(listener);
+  return () => {
+    conversationOwnersListeners.delete(listener);
+  };
+};
+
+/**
+ * 独立窗口渲染端上报其归属会话 id（tab 中的会话与运行中的会话）。
+ * 以发送方 webContents 定位窗口；非独立窗口的发送方忽略。
+ */
+export const reportDetachedPanelConversationIds = (
+  sender: WebContents,
+  conversationIds: string[],
+): void => {
+  for (const entry of panelEntries.values()) {
+    if (
+      entry.window.isDestroyed() ||
+      entry.window.webContents.id !== sender.id
+    ) {
+      continue;
+    }
+    entry.conversationIds = conversationIds;
+    notifyConversationOwners();
+    return;
+  }
+};
+
+/**
+ * 聚焦归属某会话的独立窗口并要求其激活该会话 tab。
+ * 返回 false 表示没有窗口归属该会话（调用方应按普通会话加载）。
+ */
+export const focusDetachedPanelConversation = (
+  conversationId: string,
+): boolean => {
+  for (const entry of panelEntries.values()) {
+    const win = entry.window;
+    if (win.isDestroyed() || !entry.conversationIds.includes(conversationId)) {
+      continue;
+    }
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.show();
+    win.focus();
+    safeSend(
+      win.webContents,
+      DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
+      conversationId,
+    );
+    return true;
+  }
+  return false;
+};
+
+/**
+ * 循环聚焦独立面板窗口：按打开顺序切到下一个窗口；当前焦点不在独立窗口上
+ * （如焦点在主窗口）时切到第一个。没有独立窗口时返回 false。
+ */
+export const focusNextDetachedPanelWindow = (): boolean => {
+  const windows = [...panelEntries.values()]
+    .map((entry) => entry.window)
+    .filter((win) => !win.isDestroyed());
+  if (windows.length === 0) {
+    return false;
+  }
+  const focused = BrowserWindow.getFocusedWindow();
+  const currentIndex = focused ? windows.indexOf(focused) : -1;
+  const next = windows[(currentIndex + 1) % windows.length];
+  if (next.isMinimized()) {
+    next.restore();
+  }
+  next.show();
+  next.focus();
+  return true;
+};
+
+/** 渲染端用户确认关闭后调用：标记该窗口已确认并关闭（仅对独立窗口生效）。 */
+export const confirmDetachedPanelClose = (sender: WebContents): void => {
+  if (!isDetachedPanelWebContents(sender)) {
+    return;
+  }
+  const win = BrowserWindow.fromWebContents(sender);
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+  confirmedCloseWindows.add(win);
+  win.close();
+};
+
+/** 应用开始退出：之后独立窗口的关闭不再弹出二次确认。 */
+export const markDetachedPanelsQuitting = (): void => {
+  detachedPanelsQuitting = true;
+};
+
+/**
+ * 关闭所有独立面板窗口（主窗口关闭时调用，避免残留孤儿窗口）。
+ * 主窗口本身已完成确认，这里的关闭不再逐个询问。
+ */
 export const closeAllDetachedPanelWindows = (): void => {
   for (const { window } of panelEntries.values()) {
     if (!window.isDestroyed()) {
+      confirmedCloseWindows.add(window);
       window.close();
     }
   }

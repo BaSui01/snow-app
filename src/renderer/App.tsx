@@ -115,6 +115,7 @@ const GLOBAL_ACTION_EVENTS: Record<
   toggleSidebar: "toggle-sidebar",
   toggleRightPanel: "toggle-right-panel",
   newChat: "new-chat",
+  newChatInNewWindow: "new-chat-in-new-window",
   sendMessage: "send-message",
   stopGeneration: "stop-generation",
   prevConversation: "prev-conversation",
@@ -209,6 +210,18 @@ const ShortcutHandlerBridge = (): null => {
     const unsubNewChat = registerHandler("newChat", () => {
       shortcutEvents.emit("new-chat");
     });
+    const unsubNewChatInNewWindow = registerHandler(
+      "newChatInNewWindow",
+      () => {
+        shortcutEvents.emit("new-chat-in-new-window");
+      },
+    );
+    const unsubCycleDetachedWindow = registerHandler(
+      "cycleDetachedWindow",
+      () => {
+        void window.snow.focusNextDetachedPanelWindow();
+      },
+    );
     const unsubSendMessage = registerHandler("sendMessage", () => {
       shortcutEvents.emit("send-message");
     });
@@ -281,6 +294,8 @@ const ShortcutHandlerBridge = (): null => {
       unsubPlugins();
       unsubCycleApiProfile();
       unsubNewChat();
+      unsubNewChatInNewWindow();
+      unsubCycleDetachedWindow();
       unsubSendMessage();
       unsubPrevConversation();
       unsubNextConversation();

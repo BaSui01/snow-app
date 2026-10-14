@@ -31,6 +31,24 @@ const readTerminalSnapshot = async (tabId: string): Promise<string> => {
 };
 
 /**
+ * 独立窗口内挂载中的会话面板数。会话面板含聊天输入框，元素标签由它接收；
+ * 没有会话面板时，独立窗口的元素标签转发给主窗口的聊天输入框。
+ */
+let mountedConversationPaneCount = 0;
+
+/** 会话面板挂载时调用，返回卸载时需要执行的注销函数。 */
+export const registerConversationPane = (): (() => void) => {
+  mountedConversationPaneCount += 1;
+  return () => {
+    mountedConversationPaneCount -= 1;
+  };
+};
+
+/** 本窗口当前是否挂载着会话面板（即存在可接收元素标签的聊天输入框）。 */
+export const hasMountedConversationPane = (): boolean =>
+  mountedConversationPaneCount > 0;
+
+/**
  * 构建 tab 的迁移快照。终端额外携带 PTY id（接管已有会话）与屏幕快照，
  * 使迁移后仍保留运行中的进程与输出历史。
  */

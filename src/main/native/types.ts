@@ -441,6 +441,8 @@ export type KeyboardShortcutsSettings = {
   uiZoomIn: KeyboardShortcutConfig;
   uiZoomOut: KeyboardShortcutConfig;
   uiZoomReset: KeyboardShortcutConfig;
+  newChatInNewWindow: KeyboardShortcutConfig;
+  cycleDetachedWindow: KeyboardShortcutConfig;
 };
 
 export type CodebaseEmbedProgress = {

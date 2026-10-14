@@ -38,10 +38,15 @@ import {
 } from "./TaskManagerTrend";
 import { TaskManagerProcessTable } from "./TaskManagerProcessTable";
 import { TaskManagerSessions } from "./TaskManagerSessions";
-import { TaskManagerAlerts, useUsageAlerts } from "./TaskManagerAlerts";
+import {
+  TaskManagerAlerts,
+  alertTriggeredText,
+  useUsageAlerts,
+} from "./TaskManagerAlerts";
 import {
   CONTINUOUS_SAMPLE_GAP_MS,
   TREND_WINDOW_MS,
+  type AlertOptions,
   type SampleStamp,
 } from "./taskManagerMonitoring";
 import {
@@ -294,6 +299,15 @@ export const TaskManagerContent = ({
   });
   const alertSamplingActive = isActive && !hidden && autoRefresh;
   const alertValid = scopeKnown && !hasError;
+  const notifyAlertTriggered = useCallback(
+    (metric: "cpu" | "memory", rule: AlertOptions) => {
+      void window.snow.showNotification({
+        title: t("taskManager.alertNotifyTitle"),
+        body: alertTriggeredText(t, metric, rule),
+      });
+    },
+    [t],
+  );
   const {
     options: alertOptions,
     setOptions: setAlertOptions,
@@ -305,6 +319,7 @@ export const TaskManagerContent = ({
     continuity,
     samplingActive: alertSamplingActive,
     valid: alertValid,
+    onTriggered: notifyAlertTriggered,
   });
   const groups = useMemo(() => {
     const grouped = new Map<
@@ -817,6 +832,7 @@ export const TaskManagerContent = ({
             onDismiss={dismissAlert}
             samplingActive={alertSamplingActive}
             valid={alertValid}
+            mode="settings"
             settingsOpen
           />
         </div>

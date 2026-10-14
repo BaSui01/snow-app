@@ -65,13 +65,24 @@ import {
 } from "./browserTrace";
 import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
 import {
+  confirmDetachedPanelClose,
+  focusDetachedPanelConversation,
+  focusNextDetachedPanelWindow,
+  getDetachedConversationIds,
+  isDetachedPanelWebContents,
   openDetachedPanelWindow,
   parseDetachedTabPayload,
   publishDetachedRuntimeMirror,
+  reportDetachedPanelConversationIds,
   reserveDetachedTabPty,
+  subscribeDetachedConversationOwners,
   takeDetachedPanelPayload,
   takeDetachedRuntimeMirror,
 } from "../../app/detachedPanelWindow";
+import {
+  DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL,
+  DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
+} from "../../../shared/detachedPanel";
 import {
   applyBrowserEmulation,
   resizeBrowserViewport,
@@ -1232,4 +1243,67 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
       return true;
     },
   );
+
+  // 会话归属（独立窗口的会话 tab 与运行中会话）：主窗口据此拦截点击、释放缓存。
+  subscribeDetachedConversationOwners((conversationIds) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      safeSend(
+        mainWindow.webContents,
+        DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
+        conversationIds,
+      );
+    }
+  });
+
+  // 独立窗口上报其归属会话 id（tab 中的会话与运行中的会话）。
+  ipcMain.handle(
+    "detached-panel:report-conversations",
+    (event, conversationIds: unknown): void => {
+      if (!Array.isArray(conversationIds)) {
+        return;
+      }
+      const ids = conversationIds.filter(
+        (id): id is string => typeof id === "string" && id.trim() !== "",
+      );
+      reportDetachedPanelConversationIds(event.sender, ids);
+    },
+  );
+
+  // 主窗口点击已归属会话：聚焦所在独立窗口。返回 false 表示无归属窗口，调用方按普通会话加载。
+  ipcMain.handle(
+    "detached-panel:focus-conversation",
+    (_event, conversationId: unknown): boolean =>
+      typeof conversationId === "string" &&
+      focusDetachedPanelConversation(conversationId),
+  );
+
+  // 快捷键循环切换独立会话窗口（主窗口与独立窗口的渲染端均可触发）。返回 false 表示当前没有独立窗口。
+  ipcMain.handle("detached-panel:focus-next", (): boolean =>
+    focusNextDetachedPanelWindow(),
+  );
+
+  // 主窗口挂载时取回当前归属会话 id。
+  ipcMain.handle("detached-panel:conversation-owners-take", (): string[] =>
+    getDetachedConversationIds(),
+  );
+
+  // 独立窗口内的会话列表 / 树形数据变化：通知主窗口重新拉取侧边栏数据。
+  ipcMain.handle("detached-panel:conversation-list-changed", (event): void => {
+    if (!isDetachedPanelWebContents(event.sender)) {
+      return;
+    }
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      safeSend(
+        mainWindow.webContents,
+        DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL,
+      );
+    }
+  });
+
+  // 渲染端用户确认关闭独立窗口后调用：标记并真正关闭（窗口无标签页时也由此直接关闭，无需确认）。
+  ipcMain.handle("detached-panel:confirm-close", (event): void => {
+    confirmDetachedPanelClose(event.sender);
+  });
 };

@@ -7,6 +7,12 @@ import type {
 } from "../../shared/detachedPanel";
 import { DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL } from "../../shared/detachedPanel";
 import {
+  DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL,
+  DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
+  DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL,
+  DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
+} from "../../shared/detachedPanel";
+import {
   isNotificationConversationTarget,
   type AppNotificationOptions,
   type NotificationConversationTarget,
@@ -1149,6 +1155,89 @@ export const systemApi = {
     return () => {
       ipcRenderer.removeListener(
         DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /** 独立面板窗口上报其归属会话 id（会话 tab 与运行中的会话）。 */
+  reportDetachedConversations: (conversationIds: string[]): Promise<void> =>
+    ipcRenderer.invoke("detached-panel:report-conversations", conversationIds),
+  /** 主窗口点击已归属会话时调用：聚焦所在独立窗口。返回 false 表示无归属窗口。 */
+  focusDetachedConversation: (conversationId: string): Promise<boolean> =>
+    ipcRenderer.invoke("detached-panel:focus-conversation", conversationId),
+  /** 快捷键循环聚焦独立会话窗口。返回 false 表示当前没有独立窗口。 */
+  focusNextDetachedPanelWindow: (): Promise<boolean> =>
+    ipcRenderer.invoke("detached-panel:focus-next"),
+  /** 主窗口挂载时取回当前归属的会话 id。 */
+  takeDetachedConversationOwners: (): Promise<string[]> =>
+    ipcRenderer.invoke("detached-panel:conversation-owners-take"),
+  /** 订阅归属会话变化（主窗口使用）。返回取消订阅函数。 */
+  onDetachedConversationOwnersChanged: (
+    callback: (conversationIds: string[]) => void,
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, ids: string[]): void => {
+      callback(ids);
+    };
+    ipcRenderer.on(
+      DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
+      handler,
+    );
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /** 订阅会话激活请求（独立面板窗口使用）。返回取消订阅函数。 */
+  onDetachedConversationActivate: (
+    callback: (conversationId: string) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      conversationId: string,
+    ): void => {
+      callback(conversationId);
+    };
+    ipcRenderer.on(
+      DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
+      handler,
+    );
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /** 订阅独立面板窗口的关闭请求（独立窗口使用，用于弹出二次确认）。返回取消订阅函数。 */
+  onDetachedPanelCloseRequested: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+    ipcRenderer.on(DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /** 独立面板窗口用户确认关闭（或无需确认时）调用：主进程真正关闭该窗口。 */
+  confirmDetachedPanelClose: (): Promise<void> =>
+    ipcRenderer.invoke("detached-panel:confirm-close"),
+  /** 独立面板窗口的会话列表 / 树形数据变化时调用：主进程通知主窗口重新拉取。 */
+  notifyDetachedConversationListChanged: (): Promise<void> =>
+    ipcRenderer.invoke("detached-panel:conversation-list-changed"),
+  /** 订阅独立窗口会话列表变化（主窗口使用）。返回取消订阅函数。 */
+  onDetachedConversationListChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+    ipcRenderer.on(DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL,
         handler,
       );
     };

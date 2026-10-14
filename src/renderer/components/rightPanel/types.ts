@@ -98,6 +98,14 @@ export type PluginTabData = {
 /** 应用任务管理器 tab 数据（进程快照由组件自行轮询，无需持久化字段）。 */
 export type TaskManagerTabData = Record<string, never>;
 
+/**
+ * 会话 tab 数据：仅出现在独立面板窗口中（「在新窗口中打开」会话）。
+ * 会话运行时由独立窗口的 ChatConversationProvider 承载，tab 只记录所属会话。
+ */
+export type ConversationTabData = {
+  conversationId: string;
+};
+
 export type RightPanelTab = {
   id: string;
   type:
@@ -111,7 +119,8 @@ export type RightPanelTab = {
     | "explorer"
     | "drawing"
     | "plugin"
-    | "tasks";
+    | "tasks"
+    | "conversation";
   title: string;
   data?:
     | DiffTabData
@@ -123,7 +132,8 @@ export type RightPanelTab = {
     | ExplorerTabData
     | DrawingTabData
     | PluginTabData
-    | TaskManagerTabData;
+    | TaskManagerTabData
+    | ConversationTabData;
 };
 
 export type OpenDiffTabCallback = (

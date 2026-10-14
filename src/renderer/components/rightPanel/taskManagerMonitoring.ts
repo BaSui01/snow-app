@@ -76,6 +76,8 @@ export type AlertOptions = {
   cpuPercent: number;
   memoryMiB: number;
   durationSecs: number;
+  /** Deliver a system notification when a metric alert newly becomes active. */
+  systemNotify: boolean;
 };
 export type MetricAlert = {
   sinceMs: number | null;

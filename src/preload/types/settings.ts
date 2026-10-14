@@ -542,7 +542,9 @@ export type KeyboardShortcutAction =
   | "toggleMessageTime"
   | "uiZoomIn"
   | "uiZoomOut"
-  | "uiZoomReset";
+  | "uiZoomReset"
+  | "newChatInNewWindow"
+  | "cycleDetachedWindow";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -586,6 +588,8 @@ export type KeyboardShortcutsSettings = {
   uiZoomIn: KeyboardShortcutConfig;
   uiZoomOut: KeyboardShortcutConfig;
   uiZoomReset: KeyboardShortcutConfig;
+  newChatInNewWindow: KeyboardShortcutConfig;
+  cycleDetachedWindow: KeyboardShortcutConfig;
 };
 
 // ===== App lock =====

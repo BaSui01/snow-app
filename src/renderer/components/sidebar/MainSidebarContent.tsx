@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   ChevronDown,
   CircleArrowUp,
   CircleHelp,
@@ -41,6 +42,7 @@ import { ShortcutHint } from "../ShortcutHint";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
+import { openNewChatInNewWindow } from "./mainSidebar/openConversationInNewWindow";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { useSidebarDisplayMode } from "./mainSidebar/sidebarDisplayMode";
 import { SidebarProjectTree } from "./mainSidebar/tree/SidebarProjectTree";
@@ -103,6 +105,15 @@ export function MainSidebarContent({
   );
 
   const activeDirectoryId = activeDirectory?.directoryId ?? "";
+
+  const handleNewChatInNewWindow = useCallback((): void => {
+    openNewChatInNewWindow(
+      activeDirectory ?? null,
+      t("sidebar.newChat", { defaultValue: "New Chat" }),
+    ).catch((error: unknown) => {
+      console.error("Failed to open new chat in new window", error);
+    });
+  }, [activeDirectory, t]);
 
   const pluginState = usePluginStore();
   const clientScriptState = useClientScriptStore();
@@ -341,6 +352,12 @@ export function MainSidebarContent({
     const unsubNewChat = shortcutEvents.on("new-chat", () => {
       handleNewChatFromSidebar();
     });
+    const unsubNewChatInNewWindow = shortcutEvents.on(
+      "new-chat-in-new-window",
+      () => {
+        handleNewChatInNewWindow();
+      },
+    );
     const unsubMemory = shortcutEvents.on("toggle-project-memory", () => {
       if (!activeDirectoryId) return;
       toggleFeaturePage("memory");
@@ -358,11 +375,17 @@ export function MainSidebarContent({
       unsubSearch();
       unsubMemo();
       unsubNewChat();
+      unsubNewChatInNewWindow();
       unsubMemory();
       unsubScheduledTasks();
       unsubPlugins();
     };
-  }, [activeDirectoryId, toggleFeaturePage, handleNewChatFromSidebar]);
+  }, [
+    activeDirectoryId,
+    toggleFeaturePage,
+    handleNewChatFromSidebar,
+    handleNewChatInNewWindow,
+  ]);
 
   const handleSearchSelectConversation = (
     conversation: ConversationSearchResult,
@@ -418,16 +441,34 @@ export function MainSidebarContent({
           </span>
           <ShortcutHint action="openSearch" />
         </button>
-        <button
-          className="nav-item sidebar-new-chat-btn"
-          onClick={handleNewChatFromSidebar}
-          title={`${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`}
-          type="button"
-        >
-          <AnimatedNewChatIcon size={16} strokeWidth={1.8} />
-          <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
-          <ShortcutHint action="newChat" />
-        </button>
+        <div className="sidebar-new-chat-row">
+          <button
+            className="nav-item sidebar-new-chat-btn"
+            onClick={handleNewChatFromSidebar}
+            title={`${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`}
+            type="button"
+          >
+            <AnimatedNewChatIcon size={16} strokeWidth={1.8} />
+            <span>{t("sidebar.newChat", { defaultValue: "New Chat" })}</span>
+            <ShortcutHint
+              action="newChat"
+              className="sidebar-new-chat-shortcut"
+            />
+          </button>
+          <button
+            className="sidebar-new-chat-window-btn"
+            onClick={handleNewChatInNewWindow}
+            title={t("rightPanel.openInNewWindow", {
+              defaultValue: "Open in new window",
+            })}
+            aria-label={t("rightPanel.openInNewWindow", {
+              defaultValue: "Open in new window",
+            })}
+            type="button"
+          >
+            <AppWindow size={14} strokeWidth={1.8} />
+          </button>
+        </div>
         <button
           className={`nav-item sidebar-more-btn${
             isMoreExpanded ? " expanded" : ""

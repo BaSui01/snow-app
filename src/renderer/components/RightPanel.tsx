@@ -5,6 +5,7 @@ import {
   Globe,
   Maximize2,
   Minimize2,
+  MessageSquarePlus,
   Paintbrush,
   Terminal,
   X,
@@ -35,6 +36,7 @@ import {
   type PlusMenuItem,
 } from "./common/PlusMenuButton";
 import { RightPanelTabContextMenu } from "./rightPanel/RightPanelTabContextMenu";
+import { DetachedConversationSync } from "./rightPanel/DetachedConversationSync";
 import { OverlayScrollbar } from "./common/OverlayScrollbar";
 import { PluginIcon } from "./common/PluginIcon";
 import { Puzzle } from "lucide-react";
@@ -74,6 +76,7 @@ import { buildSshConnectParams } from "./sidebar/personalization/roleFileUtils";
 import type {
   BrowserTabData,
   CodebaseTabData,
+  ConversationTabData,
   DiffTabData,
   ExplorerTabData,
   FileDiffPreviewTabData,
@@ -200,6 +203,11 @@ const TaskManagerContent = lazy(() =>
     default: m.TaskManagerContent,
   })),
 );
+const ConversationTabPane = lazy(() =>
+  import("./rightPanel/ConversationTabPane").then((m) => ({
+    default: m.ConversationTabPane,
+  })),
+);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
@@ -305,6 +313,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const [activeTabId, setActiveTabId] = useState<string>(() =>
       detachedWindow ? detachedWindow.initialTab.id : GIT_TAB_ID,
     );
+    // 「+」菜单「新建会话」入口（由 DetachedConversationSync 注册，仅独立窗口生效）。
+    const createConversationTabRef = useRef<(() => void) | null>(null);
     // 终端 tab 当前绑定的 PTY id（会话建立时上报）。仅用于 tab 迁移时交接会话，
     // 不放进 tab.data：tab.data 变化会触发终端重建。
     const terminalPtyIdsRef = useRef(new Map<string, string>());
@@ -1290,7 +1300,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
 
     useEffect(() => {
       if (isDetachedWindow && tabs.length === 0) {
-        void window.snow.closeWindow();
+        // 没有标签页可保留：直接关闭，不再二次确认。
+        void window.snow.confirmDetachedPanelClose();
       }
     }, [isDetachedWindow, tabs.length]);
 
@@ -1518,6 +1529,15 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         : [],
     );
     const plusMenuItems: PlusMenuItem[] = [
+      ...(isDetachedWindow
+        ? [
+            {
+              id: "conversation",
+              label: t("sidebar.newChat", { defaultValue: "New Chat" }),
+              icon: MessageSquarePlus,
+            },
+          ]
+        : []),
       {
         id: "terminal",
         label: t("topBar.plusMenu.terminal", { defaultValue: "Terminal" }),
@@ -1594,7 +1614,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         }
         return;
       }
-      if (actionId === "terminal") {
+      if (actionId === "conversation") {
+        createConversationTabRef.current?.();
+      } else if (actionId === "terminal") {
         handleOpenTerminalTab(activeDirectory?.path ?? "");
       } else if (actionId === "browser") {
         handleOpenBrowserTab();
@@ -1715,6 +1737,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             />
           ) : tab.type === "tasks" ? (
             <TaskManagerContent isActive={activeTabId === tab.id} />
+          ) : tab.type === "conversation" ? (
+            <ConversationTabPane
+              conversationId={(tab.data as ConversationTabData).conversationId}
+              isActive={activeTabId === tab.id}
+              activeDirectory={activeDirectory}
+            />
           ) : tab.type === "plugin" ? (
             (tab.data as PluginTabData) ? (
               <PluginPanelContent
@@ -1800,6 +1828,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       tabContextMenu !== null &&
       tabContextMenu.tabId !== null &&
       tabs.some((t) => t.id === tabContextMenu.tabId);
+    // 目标 tab 是否为会话 tab：会话运行时只能留在所在窗口，不提供「在新窗口中打开」与「移回主窗口」。
+    const contextMenuTargetIsConversation =
+      tabContextMenu !== null && tabContextMenu.tabId !== null
+        ? tabs.some(
+            (t) => t.id === tabContextMenu.tabId && t.type === "conversation",
+          )
+        : false;
     // 目标 tab 是否为浏览器 tab：决定是否提供「在本地浏览器中打开」。
     const contextMenuTargetIsBrowser =
       tabContextMenu !== null && tabContextMenu.tabId !== null
@@ -2113,7 +2148,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               handleOpenTaskManagerTab();
             }}
             onOpenInNewWindow={
-              contextMenuTargetExists
+              contextMenuTargetExists && !contextMenuTargetIsConversation
                 ? () => {
                     setTabContextMenu(null);
                     if (tabContextMenu.tabId !== null) {
@@ -2123,7 +2158,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 : undefined
             }
             onReturnToMain={
-              isDetachedWindow && contextMenuTargetExists
+              isDetachedWindow &&
+              contextMenuTargetExists &&
+              !contextMenuTargetIsConversation
                 ? () => {
                     setTabContextMenu(null);
                     if (tabContextMenu.tabId !== null) {
@@ -2152,6 +2189,15 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             onClose={() => setTabContextMenu(null)}
           />
         )}
+        {isDetachedWindow ? (
+          <DetachedConversationSync
+            tabs={tabs}
+            setTabs={setTabs}
+            activeTabId={activeTabId}
+            setActiveTabId={setActiveTabId}
+            createTabRef={createConversationTabRef}
+          />
+        ) : null}
       </aside>
     );
   },

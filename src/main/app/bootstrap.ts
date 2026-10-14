@@ -9,6 +9,7 @@ import {
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
+import { markDetachedPanelsQuitting } from "./detachedPanelWindow";
 import { lockAppOnStartup } from "./appLock";
 import { initTray } from "./tray";
 import { registerGlobalShortcuts } from "./globalShortcuts";
@@ -303,6 +304,7 @@ export const bootstrapApplication = (): void => {
   // 退出前释放远控监听端口和隧道进程、关闭常驻的 headless 浏览器，
   // 并销毁宠物窗口。
   app.on("before-quit", (event) => {
+    markDetachedPanelsQuitting();
     disposePetWindow();
     if (remoteShutdownComplete) return;
 

@@ -10,13 +10,13 @@ import {
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
-  AtSign,
   Ban,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Dices,
   Download,
   FileWarning,
   Gauge,
@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { CustomSelect } from "../common/CustomSelect";
+import { ModelBrandIcon } from "../common/ModelBrandIcon";
 import {
   collectChannelModelEntries,
   openaiFixedSizePresets,
@@ -51,6 +52,27 @@ import {
   QUALITY_LEVEL_LABEL_KEYS,
 } from "./modelCapabilities";
 import { DrawingPromptExamples } from "./DrawingPromptExamples";
+import { DrawingCanvasArea } from "./DrawingCanvasArea";
+import { DrawingHistorySection } from "./DrawingHistorySection";
+import { DrawingLightbox, type SavableImageItem } from "./DrawingLightbox";
+import { DrawingSizeControl } from "./DrawingSizeControl";
+import { DrawingRefStrip } from "./DrawingRefStrip";
+import {
+  LibraryImage,
+  proxyForLibraryPath,
+  resolveLibraryDataUrl,
+  resolveUploadDataUrl,
+  IMAGE_EXT_RE,
+  inferMimeFromPath,
+  libraryProxyCache,
+  libraryDataCache,
+  uploadDataCache,
+} from "./LibraryImage";
+import type {
+  DrawingGalleryItem,
+  DrawingLibraryRecord,
+  StreamingImageItem,
+} from "./drawingTypes";
 import type { ModelCapabilities } from "./modelCapabilities";
 import { IMAGE_GEN_SETTING_CODE } from "../sidebar/imagegenSettings/constants";
 import {
@@ -89,46 +111,22 @@ type DrawingPanelContentProps = {
   onOpenImageGenSettings?: () => void;
 };
 
-/** 流式预览图（imagegen partial_image chunk）。 */
-type StreamingImage = {
-  index: number;
-  mimeType: string;
-  data: string;
-};
-
 type GenerationState =
   | { status: "idle" }
-  | { status: "running"; streaming: StreamingImage[] }
+  | { status: "running"; streaming: StreamingImageItem[] }
   | { status: "done"; result: ParsedImageGenResult }
   | { status: "error"; error: ClassifiedImageGenError };
 
-/** 画廊/灯箱统一展示项：本地图（data / 图库 path）+ 远程 URL。 */
-type GalleryItem = {
-  key: string;
-  src: string;
-  /** 本地图片路径（image/... 图库路径、upload/... 或绝对路径）：灯箱经 IPC 解析展示。 */
-  path?: string;
-  image?: GeneratedImage;
-  record?: {
-    id: string;
-    relativePath: string;
-    mimeType: string;
-    prompt: string;
-    createdAt: string;
-  };
-  remoteUrl?: string;
-};
-
 type LightboxState = {
-  items: GalleryItem[];
+  items: DrawingGalleryItem[];
   index: number;
 };
 
-/** 生成结果中图库落盘引用（image/... 前缀）的代理 URL 缓存。 */
-const libraryProxyCache = new Map<string, string>();
-
-/** 生成数量选项（渲染时按模型能力上限 maxCount 过滤，如 grok 上限 10）。 */
-const COUNT_OPTIONS = [1, 2, 4, 8, 10];
+/** 生成 1 到 maxCount 的连续数量列表（默认 1 到 8，上游特殊模型支持 10）。 */
+const buildCountOptions = (maxCount = 8): number[] => {
+  const cap = Math.max(1, Math.min(10, Math.floor(maxCount)));
+  return Array.from({ length: cap }, (_, i) => i + 1);
+};
 
 /**
  * 从 "WxH" 分辨率计算最简宽高比（如 1024x1024 → "1:1"、1792x1008 → "16:9"）。
@@ -214,203 +212,7 @@ const IMAGE_CACHE_MAX = 300;
 /** 工作台参数 + 草稿持久化键（localStorage，版本号便于未来迁移）。 */
 const DRAWING_PERSIST_KEY = "snow:drawing-workbench:v1";
 
-/**
- * 带 LRU 上限的 Map 写入：Map 保持插入顺序，超限时删除最旧的条目。
- */
-const cacheSet = <K, V>(
-  map: Map<K, V>,
-  key: K,
-  value: V,
-  max: number,
-): void => {
-  if (map.has(key)) {
-    map.delete(key); // 更新访问顺序：删除后重新插入到末尾
-  }
-  map.set(key, value);
-  while (map.size > max) {
-    const oldest = map.keys().next();
-    if (oldest.done) {
-      break;
-    }
-    map.delete(oldest.value);
-  }
-};
-
-/** 把图库相对路径解析为可展示的代理 URL（带 LRU 缓存，避免重复构造）。 */
-const proxyForLibraryPath = (path: string): string => {
-  const cached = libraryProxyCache.get(path);
-  if (cached) {
-    cacheSet(libraryProxyCache, path, cached, IMAGE_CACHE_MAX); // LRU touch
-    return cached;
-  }
-  const url = localImageProxyUrl(path);
-  cacheSet(libraryProxyCache, path, url, IMAGE_CACHE_MAX);
-  return url;
-};
-
-/** 图库图片的 data URL 缓存（IPC resolveLibraryImage，删除图片时同步失效）。 */
-const libraryDataCache = new Map<string, string>();
-
-/** 异步读取图库图片为 data URL（带 LRU 缓存；失败返回 null）。 */
-const resolveLibraryDataUrl = async (path: string): Promise<string | null> => {
-  const cached = libraryDataCache.get(path);
-  if (cached) {
-    cacheSet(libraryDataCache, path, cached, IMAGE_CACHE_MAX); // LRU touch
-    return cached;
-  }
-  try {
-    const dataUrl = await window.snow.resolveLibraryImage(path);
-    if (dataUrl) {
-      cacheSet(libraryDataCache, path, dataUrl, IMAGE_CACHE_MAX);
-    }
-    return dataUrl;
-  } catch {
-    return null;
-  }
-};
-
-/** 上传/任意本地路径图片的 data URL 缓存（绝对路径或 upload/...，参考图用）。 */
-const uploadDataCache = new Map<string, string>();
-
-/** 异步读取 upload/ 相对路径或绝对路径图片为 data URL（带 LRU 缓存；失败返回 null）。 */
-const resolveUploadDataUrl = async (path: string): Promise<string | null> => {
-  const cached = uploadDataCache.get(path);
-  if (cached) {
-    cacheSet(uploadDataCache, path, cached, IMAGE_CACHE_MAX); // LRU touch
-    return cached;
-  }
-  try {
-    const dataUrl = await window.snow.resolveUploadImage(path);
-    if (dataUrl) {
-      cacheSet(uploadDataCache, path, dataUrl, IMAGE_CACHE_MAX);
-    }
-    return dataUrl;
-  } catch {
-    return null;
-  }
-};
-
-/** 图片扩展名白名单（外部文件拖入判断用）。 */
-const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|tiff?)$/i;
-
-/** 按扩展名推断图片 MIME（上传参考图用；服务端亦会按扩展名兜底）。 */
-const inferMimeFromPath = (path: string): string => {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  switch (ext) {
-    case "jpg":
-    case "jpeg":
-      return "image/jpeg";
-    case "webp":
-      return "image/webp";
-    case "gif":
-      return "image/gif";
-    case "bmp":
-      return "image/bmp";
-    case "svg":
-      return "image/svg+xml";
-    default:
-      return "image/png";
-  }
-};
-
-/**
- * 图库图片渲染组件：优先使用 img-proxy:// 协议（与聊天 markdown 图片同一链路），
- * 加载失败时自动回退到 IPC 读取的 data URL（聊天生成结果图链路），保证不出现破损图。
- */
-function LibraryImage({
-  path,
-  src,
-  alt,
-  title,
-  className,
-  loading,
-  onClick,
-}: {
-  /** 本地图库相对路径（image/...）；提供时忽略 src。 */
-  path?: string;
-  /** 直接图片 src（远程代理 URL / data URL）；仅无 path 时使用。 */
-  src?: string;
-  alt: string;
-  title?: string;
-  className?: string;
-  loading?: "lazy" | "eager";
-  onClick?: () => void;
-}): React.JSX.Element {
-  const [resolved, setResolved] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!path) {
-      setResolved(null);
-      return;
-    }
-    let cancelled = false;
-    // 预取 data URL 作为兜底（不阻塞首帧协议加载）。
-    // 图库路径（image/...）走图库 IPC；upload/ 相对路径与绝对路径
-    // （本地上传的参考图）走 resolveUploadImage（支持任意本地路径）。
-    // 注意：path 变化时必须先清掉旧图的 data URL，否则同一组件实例
-    // （灯箱左右切换、参考图 A→B）会一直残留并显示第一张已解析的图。
-    const load = path.startsWith("image/")
-      ? resolveLibraryDataUrl
-      : resolveUploadDataUrl;
-    setResolved(null);
-    void load(path).then((dataUrl) => {
-      if (!cancelled && dataUrl) {
-        setResolved(dataUrl);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
-
-  // 无 path：直接使用外部 src。
-  if (!path) {
-    return (
-      <img
-        src={src}
-        alt={alt}
-        title={title}
-        className={className}
-        loading={loading}
-        onClick={onClick}
-      />
-    );
-  }
-
-  // 仅图库相对路径支持 img-proxy:// 协议；其余路径（upload/、绝对路径）
-  // 无协议映射，只使用 IPC 解析出的 data URL。
-  const isLibraryPath = path.startsWith("image/");
-  const proxySrc = isLibraryPath ? proxyForLibraryPath(path) : undefined;
-  const fallbackResolve = isLibraryPath
-    ? resolveLibraryDataUrl
-    : resolveUploadDataUrl;
-
-  return (
-    <img
-      src={resolved ?? proxySrc}
-      alt={alt}
-      title={title}
-      className={className}
-      loading={loading}
-      onClick={onClick}
-      onError={() => {
-        // 协议加载失败（如文件被移动）：回退 IPC data URL。
-        const cached = isLibraryPath
-          ? libraryDataCache.get(path)
-          : uploadDataCache.get(path);
-        if (cached) {
-          setResolved(cached);
-        } else {
-          void fallbackResolve(path).then((dataUrl) => {
-            if (dataUrl) {
-              setResolved(dataUrl);
-            }
-          });
-        }
-      }}
-    />
-  );
-}
+// 图像缓存与 LibraryImage 已收敛至 LibraryImage.tsx 集中管理。
 
 /** 展示时间：MM-DD HH:mm。 */
 const formatTime = (iso: string): string => {
@@ -525,7 +327,8 @@ const readPersistedParams = (): Partial<PersistedDrawingParams> => {
     if (
       typeof parsed.count === "number" &&
       Number.isInteger(parsed.count) &&
-      COUNT_OPTIONS.includes(parsed.count)
+      parsed.count >= 1 &&
+      parsed.count <= 10
     ) {
       clean.count = parsed.count;
     }
@@ -747,34 +550,7 @@ const resolveImagePlaceholders = (
   return { expanded, unresolved };
 };
 
-/**
- * 流式预览画廊（memo 隔离）：partial_image 高频更新时，
- * 父组件其余子树（参数栏/历史区）不随每帧重渲染。
- */
-const StreamingGallery = memo(function StreamingGallery({
-  items,
-}: {
-  items: StreamingImage[];
-}): React.JSX.Element {
-  const { t } = useI18n();
-  return (
-    <div className="ai-drawing-gallery">
-      {items.map((image) => (
-        <div
-          className="ai-drawing-gallery-item ai-drawing-gallery-item-streaming"
-          key={`stream-${image.index}`}
-        >
-          <img
-            src={`data:${image.mimeType};base64,${image.data}`}
-            alt={t("toolCall.imagegen.streamingPreview", {
-              defaultValue: "Generating… preview",
-            })}
-          />
-        </div>
-      ))}
-    </div>
-  );
-});
+// 流式预览与骨架占位已收敛至 DrawingCanvasArea 组件统一管理。
 
 export function DrawingPanelContent({
   isActive,
@@ -810,6 +586,12 @@ export function DrawingPanelContent({
   const selectedEntry = useMemo(
     () => modelEntries.find((entry) => entry.key === selectedEntryKey),
     [modelEntries, selectedEntryKey],
+  );
+
+  /** 模型条目 key → 模型 ID 映射（供品牌图标查询，避免逐项线性查找）。 */
+  const modelIdByKey = useMemo(
+    () => new Map(modelEntries.map((entry) => [entry.key, entry.id] as const)),
+    [modelEntries],
   );
   /** 宽高比（空 = 渠道默认）。 */
   const [ratio, setRatio] = useState(persisted.ratio ?? "");
@@ -1059,7 +841,7 @@ export function DrawingPanelContent({
   /** 生成代际序号：取消/新生成后旧 IPC 的 chunk 与结果全部作废，防串台。 */
   const genSeqRef = useRef(0);
   /** 流式帧合并缓冲（rAF 每帧 flush 一次，降低高频 chunk 的重渲染开销）。 */
-  const pendingFramesRef = useRef<StreamingImage[]>([]);
+  const pendingFramesRef = useRef<StreamingImageItem[]>([]);
   const rafRef = useRef<number | null>(null);
   /** 本次生成开始时刻（耗时统计）。 */
   const genStartedAtRef = useRef(0);
@@ -1081,11 +863,11 @@ export function DrawingPanelContent({
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   /** 图库历史搜索词（按提示词过滤）。 */
   const [historyQuery, setHistoryQuery] = useState("");
-  /** 待删除确认的图库图片（弹窗确认）。 */
-  const [deleteTarget, setDeleteTarget] = useState<{
-    id: string;
-    relativePath: string;
-  } | null>(null);
+  /** 待删除确认的图库图片：仅需 id（删除）与 relativePath（缩略图预览）。 */
+  const [deleteTarget, setDeleteTarget] = useState<Pick<
+    DrawingLibraryRecord,
+    "id" | "relativePath"
+  > | null>(null);
 
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
@@ -1175,72 +957,7 @@ export function DrawingPanelContent({
   const maxRefLimit = capabilities?.maxReferenceImages ?? MAX_REF_IMAGES;
   maxRefLimitRef.current = maxRefLimit;
 
-  /** 三位一体尺寸控件弹层开关（比例 × 尺寸 × 质量）。 */
-  const [sizePanelOpen, setSizePanelOpen] = useState(false);
-  const [sizePopoverRect, setSizePopoverRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-  } | null>(null);
-  const sizeTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const updateSizePopoverPosition = useCallback((): void => {
-    const trigger = sizeTriggerRef.current;
-    if (!trigger) return;
-    const triggerRect = trigger.getBoundingClientRect();
-    const viewportPadding = 12;
-    const preferredWidth = 272;
-    const width = Math.min(
-      preferredWidth,
-      Math.max(0, window.innerWidth - viewportPadding * 2),
-    );
-    const maxLeft = Math.max(
-      viewportPadding,
-      window.innerWidth - width - viewportPadding,
-    );
-    const left = Math.min(Math.max(triggerRect.left, viewportPadding), maxLeft);
-    const estimatedHeight = 420;
-    const spaceBelow =
-      window.innerHeight - triggerRect.bottom - viewportPadding;
-    const spaceAbove = triggerRect.top - viewportPadding;
-    const openAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
-    const availableHeight = Math.max(
-      80,
-      Math.min(estimatedHeight, (openAbove ? spaceAbove : spaceBelow) - 6),
-    );
-    const top = openAbove
-      ? Math.max(viewportPadding, triggerRect.top - availableHeight - 6)
-      : triggerRect.bottom + 6;
-    setSizePopoverRect({
-      top,
-      left,
-      width,
-      maxHeight: availableHeight,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!sizePanelOpen) {
-      setSizePopoverRect(null);
-      return;
-    }
-    updateSizePopoverPosition();
-    window.addEventListener("resize", updateSizePopoverPosition);
-    window.addEventListener("scroll", updateSizePopoverPosition, true);
-    const triggerParent = sizeTriggerRef.current?.parentElement;
-    const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(updateSizePopoverPosition);
-    if (triggerParent && resizeObserver) {
-      resizeObserver.observe(triggerParent);
-    }
-    return () => {
-      window.removeEventListener("resize", updateSizePopoverPosition);
-      window.removeEventListener("scroll", updateSizePopoverPosition, true);
-      resizeObserver?.disconnect();
-    };
-  }, [sizePanelOpen, updateSizePopoverPosition]);
+  // 三位一体尺寸控件（比例 × 尺寸 × 质量）已收敛至 DrawingSizeControl 组件。
 
   /** 当前模型是否支持「档位」（1K/2K/4K；OpenAI 仅 gpt-image-2 系，Gemini 全系）。 */
   const showTier = effectiveChannel
@@ -1486,14 +1203,25 @@ export function DrawingPanelContent({
     t,
   ]);
 
-  /** 数量选项按模型能力裁剪（上限 maxCount；grok 支持到 10）。 */
+  /** 数量选项动态连续生成（1 到 maxCount，不硬编码，默认 1..8 完整可选）。 */
   const countOptions = useMemo(
-    () =>
-      capabilities
-        ? COUNT_OPTIONS.filter((value) => value <= capabilities.maxCount)
-        : COUNT_OPTIONS,
+    () => buildCountOptions(capabilities?.maxCount ?? 8),
     [capabilities],
   );
+
+  /** 随机抽取数量（在 1 到当前模型允许的最大数量之间随机，默认 1..8）。 */
+  const randomizeCount = useCallback(() => {
+    const max =
+      capabilities?.supportsMultiCount === false
+        ? 1
+        : Math.min(capabilities?.maxCount ?? 8, 8);
+    if (max <= 1) {
+      setCount(1);
+      return;
+    }
+    const picked = Math.floor(Math.random() * max) + 1;
+    setCount(picked);
+  }, [capabilities]);
 
   /** 模型能力联动：不支持的选项自动回退（数量/透明背景/档位/搜索）。 */
   useEffect(() => {
@@ -1998,8 +1726,8 @@ export function DrawingPanelContent({
     [renderPromptEditor],
   );
 
-  /** 参考图 → 灯箱 GalleryItem（chip 点击打开图片，复用 openLightbox）。 */
-  const refGalleryItems = useMemo<GalleryItem[]>(
+  /** 参考图 → 灯箱 DrawingGalleryItem（chip 点击打开图片，复用 openLightbox）。 */
+  const refGalleryItems = useMemo<DrawingGalleryItem[]>(
     () =>
       refImages.map((ref, index) => ({
         key: `ref-${index}-${ref.path}`,
@@ -2096,11 +1824,11 @@ export function DrawingPanelContent({
   // ----------------------------------------------------------------
   // 本次生成结果 → 画廊项
   // ----------------------------------------------------------------
-  const resultItems = useMemo<GalleryItem[]>(() => {
+  const resultItems = useMemo<DrawingGalleryItem[]>(() => {
     if (gen.status !== "done" || gen.result.type !== "success") {
       return [];
     }
-    const items: GalleryItem[] = [];
+    const items: DrawingGalleryItem[] = [];
     for (const [index, image] of gen.result.images.entries()) {
       items.push({
         // 无 path 的纯 base64 图：key 附加索引，避免两张等长 base64 撞 key。
@@ -2187,7 +1915,7 @@ export function DrawingPanelContent({
 
   /** 点击删除：弹出确认框（避免误删，交互明确）。 */
   const handleDelete = useCallback(
-    (record: { id: string; relativePath: string }): void => {
+    (record: Pick<DrawingLibraryRecord, "id" | "relativePath">): void => {
       setDeleteTarget(record);
     },
     [],
@@ -2195,7 +1923,9 @@ export function DrawingPanelContent({
 
   /** 确认删除：物理文件 + 索引 + 会话消息重写（Rust 侧事务处理）。 */
   const confirmDelete = useCallback(
-    async (record: { id: string; relativePath: string }): Promise<void> => {
+    async (
+      record: Pick<DrawingLibraryRecord, "id" | "relativePath">,
+    ): Promise<void> => {
       setDeleteTarget(null);
       try {
         await window.snow.deleteImageLibraryImage(record.id);
@@ -2225,7 +1955,12 @@ export function DrawingPanelContent({
 
   /** 以图库历史图为参考（图生图）：追加到参考图列表并回填提示词。 */
   const handleUseAsReference = useCallback(
-    (record: { relativePath: string; mimeType: string; prompt: string }) => {
+    (
+      record: Pick<
+        DrawingLibraryRecord,
+        "relativePath" | "mimeType" | "prompt"
+      >,
+    ) => {
       const { added, duplicate } = appendRefImages([
         { path: record.relativePath, mimeType: record.mimeType },
       ]);
@@ -2472,29 +2207,32 @@ export function DrawingPanelContent({
     [loadLibrary, appendRefImages, t],
   );
 
-  const saveItem = useCallback(async (item: GalleryItem): Promise<void> => {
-    let src = item.src;
-    // 本地图库图：优先 IPC data URL（与聊天保存链路一致，最可靠）。
-    const localPath = item.image?.path ?? item.record?.relativePath;
-    if (localPath) {
-      const resolved = await resolveLibraryDataUrl(localPath);
-      if (resolved) {
-        src = resolved;
+  const saveItem = useCallback(
+    async (item: SavableImageItem): Promise<void> => {
+      let src = item.src;
+      // 本地图库图：优先 IPC data URL（与聊天保存链路一致，最可靠）。
+      const localPath = item.image?.path ?? item.record?.relativePath;
+      if (localPath) {
+        const resolved = await resolveLibraryDataUrl(localPath);
+        if (resolved) {
+          src = resolved;
+        }
       }
-    }
-    if (!src && localPath) {
-      src = proxyForLibraryPath(localPath);
-    }
-    if (!src) {
-      return;
-    }
-    const blob = await srcToBlob(src);
-    const filename = `ai-image-${Date.now()}.${extensionForBlob(blob)}`;
-    await saveBlobToFile(blob, filename);
-  }, []);
+      if (!src && localPath) {
+        src = proxyForLibraryPath(localPath);
+      }
+      if (!src) {
+        return;
+      }
+      const blob = await srcToBlob(src);
+      const filename = `ai-image-${Date.now()}.${extensionForBlob(blob)}`;
+      await saveBlobToFile(blob, filename);
+    },
+    [],
+  );
 
   const handleSaveOne = useCallback(
-    async (item: GalleryItem): Promise<void> => {
+    async (item: SavableImageItem): Promise<void> => {
       if (saving) {
         return;
       }
@@ -2531,9 +2269,12 @@ export function DrawingPanelContent({
   // ----------------------------------------------------------------
   // 灯箱（放大查看 / 左右切换 / 保存 / 以图为参考）
   // ----------------------------------------------------------------
-  const openLightbox = useCallback((items: GalleryItem[], index: number) => {
-    setLightbox({ items, index });
-  }, []);
+  const openLightbox = useCallback(
+    (items: DrawingGalleryItem[], index: number) => {
+      setLightbox({ items, index });
+    },
+    [],
+  );
 
   const closeLightbox = useCallback(() => {
     setLightbox(null);
@@ -2896,180 +2637,106 @@ export function DrawingPanelContent({
                 title={t("rightPanel.aiDrawing.modelHint")}
                 onChange={handleModelChange}
                 portal
+                dropdownMinWidth={240}
+                /* 模型品牌图标：复用全局 ModelBrandIcon（按模型名模糊匹配 LobeHub
+                   品牌 logo，未命中时回落中性占位），与 API 设置页保持同一视觉语言。 */
+                renderLabel={(option) => (
+                  <span className="ai-drawing-model-option">
+                    <ModelBrandIcon
+                      model={modelIdByKey.get(option.value) ?? ""}
+                      size={14}
+                    />
+                    <span className="ai-drawing-model-option-name">
+                      {option.label}
+                    </span>
+                  </span>
+                )}
+                renderOption={(option) => (
+                  <span className="ai-drawing-model-option">
+                    <ModelBrandIcon
+                      model={modelIdByKey.get(option.value) ?? ""}
+                      size={15}
+                    />
+                    <span className="ai-drawing-model-option-name">
+                      {option.label}
+                    </span>
+                  </span>
+                )}
               />
             )}
           </label>
 
           {/* 三位一体尺寸控件：比例 × 尺寸 × 质量（各维度按模型能力裁剪） */}
-          {sizeRatioOptions.length > 0 && (
-            <div className="ai-drawing-size-control">
-              <span className="ai-drawing-param-label">
-                {t("rightPanel.aiDrawing.tier")}
-              </span>
-              <div className="ai-drawing-size-trigger-wrap">
-                <button
-                  ref={sizeTriggerRef}
-                  type="button"
-                  className={`ai-drawing-size-trigger${
-                    sizePanelOpen ? " open" : ""
-                  }`}
-                  title={t("rightPanel.aiDrawing.sizeControlHint")}
-                  onClick={() => setSizePanelOpen((open) => !open)}
-                >
-                  <span className="ai-drawing-size-summary">{sizeSummary}</span>
-                  <ChevronDown
-                    size={12}
-                    strokeWidth={1.8}
-                    className={sizePanelOpen ? "rotate-180" : ""}
-                  />
-                </button>
-                {sizePanelOpen &&
-                  sizePopoverRect &&
-                  createPortal(
-                    <>
-                      {/* 点击外部关闭弹层（透明 backdrop 优先捕获） */}
-                      <div
-                        className="ai-drawing-size-backdrop"
-                        onClick={() => setSizePanelOpen(false)}
-                      />
-                      <div
-                        className="ai-drawing-size-popover"
-                        style={{
-                          top: `${sizePopoverRect.top}px`,
-                          left: `${sizePopoverRect.left}px`,
-                          width: `${sizePopoverRect.width}px`,
-                          maxHeight: `${sizePopoverRect.maxHeight}px`,
-                        }}
-                      >
-                        {/* 比例 */}
-                        <div className="ai-drawing-size-row">
-                          <span className="ai-drawing-size-row-title">
-                            {t("rightPanel.aiDrawing.ratio")}
-                          </span>
-                          <div className="ai-drawing-size-grid">
-                            <button
-                              type="button"
-                              className={`ai-drawing-size-option${
-                                ratio === "" ? " active" : ""
-                              }`}
-                              onClick={() => setRatio("")}
-                            >
-                              {t("rightPanel.aiDrawing.sizeDefault")}
-                            </button>
-                            {sizeRatioOptions.map((value) => (
-                              <button
-                                type="button"
-                                key={value}
-                                className={`ai-drawing-size-option${
-                                  ratio === value ? " active" : ""
-                                }`}
-                                onClick={() => setRatio(value)}
-                              >
-                                {value}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        {/* 尺寸（档位/分辨率）；无档位模型（比例定尺寸）隐藏该行 */}
-                        {sizeTierOptions.length > 0 && (
-                          <div className="ai-drawing-size-row">
-                            <span className="ai-drawing-size-row-title">
-                              {t("rightPanel.aiDrawing.resolution")}
-                            </span>
-                            <div className="ai-drawing-size-grid">
-                              <button
-                                type="button"
-                                className={`ai-drawing-size-option${
-                                  isSizeActive("") ? " active" : ""
-                                }`}
-                                onClick={() => handleSizeSelect("")}
-                              >
-                                {t("rightPanel.aiDrawing.sizeDefault")}
-                              </button>
-                              {sizeTierOptions.map((value) => {
-                                const hint = sizeTierHint(value);
-                                return (
-                                  <button
-                                    type="button"
-                                    key={value}
-                                    className={`ai-drawing-size-option${
-                                      isSizeActive(value) ? " active" : ""
-                                    }`}
-                                    onClick={() => handleSizeSelect(value)}
-                                  >
-                                    <span>{value}</span>
-                                    {hint ? (
-                                      <em className="ai-drawing-size-hint">
-                                        {hint}
-                                      </em>
-                                    ) : null}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {/* 质量：按模型能力裁剪；无质量参数的模型隐藏该行 */}
-                        {qualityOptions.length > 0 && (
-                          <div className="ai-drawing-size-row">
-                            <span className="ai-drawing-size-row-title">
-                              {t("toolCall.imagegen.quality", {
-                                defaultValue: "Quality",
-                              })}
-                            </span>
-                            <div className="ai-drawing-size-grid">
-                              {qualityOptions.map((option) => (
-                                <button
-                                  type="button"
-                                  key={option.value}
-                                  className={`ai-drawing-size-option${
-                                    quality === option.value ? " active" : ""
-                                  }`}
-                                  onClick={() => setQuality(option.value)}
-                                >
-                                  <span>
-                                    {t(option.labelKey) ||
-                                      (option.value
-                                        ? option.value.toUpperCase()
-                                        : t(
-                                            "rightPanel.aiDrawing.qualityDefault",
-                                          ))}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </>,
-                    document.body,
-                  )}
-              </div>
-            </div>
-          )}
+          <DrawingSizeControl
+            sizeRatioOptions={sizeRatioOptions}
+            sizeTierOptions={sizeTierOptions}
+            qualityOptions={qualityOptions}
+            sizeSummary={sizeSummary}
+            ratio={ratio}
+            setRatio={setRatio}
+            quality={quality}
+            setQuality={setQuality}
+            isSizeActive={isSizeActive}
+            handleSizeSelect={handleSizeSelect}
+            sizeTierHint={sizeTierHint}
+          />
 
           <label className="ai-drawing-param">
             <span className="ai-drawing-param-label">
               {t("rightPanel.aiDrawing.count")}
             </span>
-            <CustomSelect
-              value={String(count)}
-              options={countOptions.map((value) => ({
-                value: String(value),
-                label: t("toolCall.imagegen.countParam", {
-                  defaultValue: "{{count}} images",
-                  values: { count: value },
-                }),
-              }))}
-              disabled={capabilities ? !capabilities.supportsMultiCount : false}
-              title={
-                capabilities && !capabilities.supportsMultiCount
-                  ? t("rightPanel.aiDrawing.modelSingleCount")
-                  : undefined
-              }
-              onChange={(value) => setCount(Number(value))}
-              portal
-            />
+            <div className="ai-drawing-count-group">
+              <CustomSelect
+                value={String(count)}
+                options={[
+                  ...countOptions.map((value) => ({
+                    value: String(value),
+                    label: t("toolCall.imagegen.countParam", {
+                      defaultValue: "{{count}} images",
+                      values: { count: value },
+                    }),
+                  })),
+                  ...(capabilities?.supportsMultiCount !== false
+                    ? [
+                        {
+                          value: "random",
+                          label: t("rightPanel.aiDrawing.countRandom", {
+                            defaultValue: "随机 (1~8)",
+                          }),
+                        },
+                      ]
+                    : []),
+                ]}
+                disabled={
+                  capabilities ? !capabilities.supportsMultiCount : false
+                }
+                title={
+                  capabilities && !capabilities.supportsMultiCount
+                    ? t("rightPanel.aiDrawing.modelSingleCount")
+                    : undefined
+                }
+                onChange={(value) => {
+                  if (value === "random") {
+                    randomizeCount();
+                  } else {
+                    setCount(Number(value));
+                  }
+                }}
+                portal
+              />
+              {capabilities?.supportsMultiCount !== false && (
+                <button
+                  type="button"
+                  className="ai-drawing-random-count-btn"
+                  onClick={randomizeCount}
+                  title={t("rightPanel.aiDrawing.randomCountHint", {
+                    defaultValue: "随机抽取 1~8 张",
+                  })}
+                >
+                  <Dices size={14} strokeWidth={1.8} />
+                </button>
+              )}
+            </div>
           </label>
 
           {/* 流式预览（是否开启流）：模型不支持时隐藏（如 xAI Grok） */}
@@ -3300,62 +2967,6 @@ export function DrawingPanelContent({
           </div>
         )}
 
-        {/* 参考图（图生图，最多 5 张，逐张可移除；编号角标 = {{Image N}} 引用号） */}
-        {refImages.length > 0 && (
-          <div className="ai-drawing-refs">
-            {refImages.map((ref, index) => (
-              <div
-                className="ai-drawing-ref"
-                key={ref.path}
-                title={t("rightPanel.aiDrawing.refInsert", {
-                  values: { n: index + 1 },
-                })}
-                onClick={() => insertRefPlaceholder(index + 1)}
-              >
-                <LibraryImage
-                  path={ref.path}
-                  alt={t("toolCall.imagegen.refImage", {
-                    defaultValue: "Reference image",
-                  })}
-                  className="ai-drawing-ref-thumb"
-                />
-                <span className="ai-drawing-ref-badge">{index + 1}</span>
-                <button
-                  type="button"
-                  className="ai-drawing-ref-remove"
-                  title={t("rightPanel.aiDrawing.removeReference")}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRefImages((prev) =>
-                      prev.filter((item) => item.path !== ref.path),
-                    );
-                  }}
-                >
-                  <X size={13} strokeWidth={1.8} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 参考图变量引用提示：{{Image N}} 注入提示词 */}
-        {refImages.length > 0 && (
-          <div className="ai-drawing-ref-hint">
-            <AtSign size={12} strokeWidth={1.8} />
-            <span>{t("rightPanel.aiDrawing.refPlaceholderHint")}</span>
-          </div>
-        )}
-
-        {/* 模型不支持参考图时提示（如 dall-e-3 / imagen 仅文生图） */}
-        {refImages.length > 0 &&
-          capabilities &&
-          !capabilities.supportsReference && (
-            <div className="ai-drawing-model-warn">
-              <AlertCircle size={13} strokeWidth={1.8} />
-              <span>{t("rightPanel.aiDrawing.modelUnsupportedRef")}</span>
-            </div>
-          )}
-
         {/* 上传导入提示（成功/失败，自动消失） */}
         {importNotice && (
           <div
@@ -3370,537 +2981,116 @@ export function DrawingPanelContent({
           </div>
         )}
 
-        {/* 本次生成结果（画布区：占据剩余空间） */}
+        {/* 本次生成结果（画布区：占据剩余空间，支持先渲染卡片形状再动态模拟渲染） */}
         <div className="ai-drawing-section ai-drawing-canvas">
-          {isGenerating ? (
-            <>
-              <div className="ai-drawing-status ai-drawing-status-generating">
-                <Loader2
-                  size={16}
-                  strokeWidth={1.8}
-                  className="ai-drawing-spin"
-                />
-                <span>
-                  {streamingItems.length > 0
-                    ? t("toolCall.imagegen.streamingPreview", {
-                        defaultValue: "Generating… preview",
-                      })
-                    : t("rightPanel.aiDrawing.generatingDetail")}
-                </span>
-                {streamingItems.length > 0 && count > 1 && (
-                  <span className="ai-drawing-streaming-count">
-                    {streamingItems.length} / {count}
-                  </span>
-                )}
-              </div>
-              {streamingItems.length > 0 && (
-                <StreamingGallery items={streamingItems} />
-              )}
-            </>
-          ) : hasError && errorInfo && errorIconComponent ? (
-            <div className="ai-drawing-error">
-              <div className="ai-drawing-error-icon" aria-hidden="true">
-                {(() => {
-                  const Icon = errorIconComponent;
-                  return <Icon size={18} strokeWidth={1.8} />;
-                })()}
-              </div>
-              <div className="ai-drawing-error-body">
-                <span className="ai-drawing-error-title">
-                  {t(imageGenErrorTitleKey(errorInfo.kind))}
-                </span>
-                <span className="ai-drawing-error-hint">
-                  {t(errorHintKey(errorInfo.kind))}
-                </span>
-                <span className="ai-drawing-error-detail">
-                  {errorInfo.detail}
-                </span>
-                <div className="ai-drawing-error-actions">
-                  <button
-                    type="button"
-                    className="ai-drawing-error-btn ai-drawing-error-btn-retry"
-                    onClick={() => void handleGenerate()}
-                  >
-                    <RefreshCw size={12} strokeWidth={1.8} />
-                    <span>{t("rightPanel.aiDrawing.retry")}</span>
-                  </button>
-                  {showErrorSettingsButton && (
-                    <button
-                      type="button"
-                      className="ai-drawing-error-btn"
-                      onClick={onOpenImageGenSettings}
-                    >
-                      <Settings size={12} strokeWidth={1.8} />
-                      <span>{t("rightPanel.aiDrawing.openSettings")}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : resultRawText ? (
-            <div className="ai-drawing-error">
-              <div className="ai-drawing-error-icon" aria-hidden="true">
-                <XCircle size={18} strokeWidth={1.8} />
-              </div>
-              <div className="ai-drawing-error-body">
-                <span className="ai-drawing-error-title">
-                  {t("toolCall.imagegen.error.fallback", {
-                    defaultValue: "Image generation failed",
-                  })}
-                </span>
-                <span className="ai-drawing-error-hint">
-                  {t(errorHintKey("fallback"))}
-                </span>
-                <span className="ai-drawing-error-detail">
-                  {resultRawText.slice(0, 600)}
-                </span>
-              </div>
-            </div>
-          ) : resultItems.length > 0 ? (
-            <div className="ai-drawing-result-header">
-              <span className="ai-drawing-result-title">
-                <Sparkles size={13} strokeWidth={1.8} />
-                <span>
-                  {t("toolCall.imagegen.result", { defaultValue: "Result" })}
-                </span>
-                <span className="ai-drawing-history-count">
-                  {t("rightPanel.aiDrawing.resultCount", {
-                    values: { count: resultItems.length },
-                  })}
-                </span>
-                {lastDurationMs > 0 && (
-                  <span className="ai-drawing-result-duration">
-                    {t("rightPanel.aiDrawing.duration", {
-                      values: { seconds: (lastDurationMs / 1000).toFixed(1) },
-                    })}
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                className="ai-drawing-save-all-btn"
-                disabled={saving}
-                title={t("toolCall.imagegen.downloadAll", {
-                  defaultValue: "Save all",
-                })}
-                onClick={() => void handleSaveAll()}
-              >
-                {saving ? (
-                  <Loader2
-                    size={13}
-                    strokeWidth={1.8}
-                    className="ai-drawing-spin"
-                  />
-                ) : (
-                  <Download size={13} strokeWidth={1.8} />
-                )}
-                <span>
-                  {t("toolCall.imagegen.downloadAll", {
-                    defaultValue: "Save all",
-                  })}
-                </span>
-              </button>
-            </div>
-          ) : showEmptyHint ? (
-            <div className="ai-drawing-status ai-drawing-status-empty">
-              <div className="ai-drawing-empty-icon" aria-hidden="true">
-                <Sparkles size={22} strokeWidth={1.6} />
-              </div>
-              <span className="ai-drawing-empty-title">
-                {t("rightPanel.aiDrawing.emptyHint")}
-              </span>
-              <span className="ai-drawing-empty-sub">
-                {t("rightPanel.aiDrawing.emptyHintSub")}
-              </span>
-              {/* 示例提示词（独立组件）：点击一键填入并聚焦输入框 */}
-              <DrawingPromptExamples
-                onPick={(example) => {
-                  setPrompt(example);
-                  promptEditorRef.current?.focus();
-                }}
-              />
-            </div>
-          ) : null}
-
-          {!isGenerating &&
-            !hasError &&
-            !resultRawText &&
-            resultItems.length > 0 && (
-              <div className="ai-drawing-gallery">
-                {resultItems.map((item) => (
-                  <div className="ai-drawing-gallery-item" key={item.key}>
-                    <LibraryImage
-                      path={item.image?.path}
-                      src={item.image?.path ? undefined : item.src}
-                      alt={t("toolCall.imagegen.generatedImage", {
-                        defaultValue: "Generated image",
-                      })}
-                      loading="lazy"
-                      onClick={() =>
-                        openLightbox(
-                          resultItems,
-                          resultItems.findIndex((it) => it.key === item.key),
-                        )
-                      }
-                    />
-                    <div className="ai-drawing-gallery-actions">
-                      <button
-                        type="button"
-                        className="ai-drawing-img-action"
-                        title={t("toolCall.imagegen.zoom", {
-                          defaultValue: "Zoom image",
-                        })}
-                        onClick={() =>
-                          openLightbox(
-                            resultItems,
-                            resultItems.findIndex((it) => it.key === item.key),
-                          )
-                        }
-                      >
-                        <ImageIcon size={13} strokeWidth={1.8} />
-                      </button>
-                      <button
-                        type="button"
-                        className="ai-drawing-img-action"
-                        title={t("toolCall.imagegen.download", {
-                          defaultValue: "Save image",
-                        })}
-                        onClick={() => void handleSaveOne(item)}
-                      >
-                        <Download size={13} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {/* 参考图缩略图条：常驻画布区顶部（图生图入口 / 引用号 / 放大 / 移除） */}
+          <DrawingRefStrip
+            refImages={refImages}
+            maxRefLimit={maxRefLimit}
+            referenceUnsupported={
+              !!capabilities && !capabilities.supportsReference
+            }
+            onUpload={() => void handleUploadImages()}
+            onInsert={insertRefPlaceholder}
+            onPreview={(index) => openLightbox(refGalleryItems, index)}
+            onRemove={(path) =>
+              setRefImages((prev) => prev.filter((item) => item.path !== path))
+            }
+            renderImage={({ path, alt, className }) => (
+              <LibraryImage path={path} alt={alt} className={className} />
             )}
+          />
+          <DrawingCanvasArea
+            isGenerating={isGenerating}
+            streamingItems={streamingItems}
+            count={count}
+            ratio={ratio}
+            hasError={hasError}
+            errorInfo={errorInfo}
+            errorIconComponent={errorIconComponent}
+            showErrorSettingsButton={showErrorSettingsButton}
+            onOpenImageGenSettings={onOpenImageGenSettings}
+            resultRawText={resultRawText}
+            resultItems={resultItems}
+            lastDurationMs={lastDurationMs}
+            saving={saving}
+            handleSaveAll={handleSaveAll}
+            handleSaveOne={handleSaveOne}
+            openLightbox={openLightbox}
+            showEmptyHint={showEmptyHint}
+            onPickExamplePrompt={(example) => {
+              setPrompt(example);
+              promptEditorRef.current?.focus();
+            }}
+            handleGenerate={handleGenerate}
+            errorHintKey={errorHintKey}
+            renderLibraryImage={({ path, src, alt, onClick }) => (
+              <LibraryImage
+                path={path}
+                src={src}
+                alt={alt}
+                loading="lazy"
+                onClick={onClick}
+              />
+            )}
+          />
         </div>
 
-        {/* 图库历史（存储） */}
-        <div
-          className={`ai-drawing-section ai-drawing-history${
-            historyCollapsed ? " collapsed" : ""
-          }`}
-          title={t("rightPanel.aiDrawing.libraryDragHint")}
-        >
-          <div className="ai-drawing-result-header">
-            <span className="ai-drawing-result-title">
-              <button
-                type="button"
-                className="ai-drawing-history-collapse"
-                title={
-                  historyCollapsed
-                    ? t("rightPanel.aiDrawing.expand")
-                    : t("rightPanel.aiDrawing.collapse")
-                }
-                aria-expanded={!historyCollapsed}
-                onClick={() => setHistoryCollapsed((collapsed) => !collapsed)}
-              >
-                <ChevronDown size={13} strokeWidth={1.8} />
-              </button>
-              <Images size={13} strokeWidth={1.8} />
-              <span>{t("rightPanel.aiDrawing.history")}</span>
-              {library.length > 0 && (
-                <span className="ai-drawing-history-count">
-                  {historyQuery.trim()
-                    ? `${filteredLibrary.length} / ${library.length}`
-                    : library.length}
-                </span>
-              )}
-            </span>
-            <div className="ai-drawing-history-tools">
-              {!historyCollapsed && library.length > 0 && (
-                <input
-                  type="text"
-                  className="ai-drawing-history-search"
-                  value={historyQuery}
-                  placeholder={t("rightPanel.aiDrawing.searchHistory")}
-                  onChange={(event) => setHistoryQuery(event.target.value)}
-                />
-              )}
-              <button
-                type="button"
-                className="ai-drawing-refresh-btn"
-                title={t("rightPanel.aiDrawing.refresh")}
-                onClick={() => void loadLibrary()}
-              >
-                <RefreshCw size={13} strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
-
-          {historyCollapsed ? null : library.length === 0 ? (
-            <div className="ai-drawing-status ai-drawing-status-empty">
-              <Images size={18} strokeWidth={1.8} />
-              <span>{t("rightPanel.aiDrawing.historyEmpty")}</span>
-            </div>
-          ) : filteredLibrary.length === 0 ? (
-            <div className="ai-drawing-status ai-drawing-status-empty">
-              <Images size={18} strokeWidth={1.8} />
-              <span>{t("rightPanel.aiDrawing.historyNoMatch")}</span>
-            </div>
-          ) : (
-            <>
-              <div className="ai-drawing-library-grid">
-                {visibleLibrary.map((record, index) => (
-                  <div
-                    className="ai-drawing-library-item"
-                    key={record.id}
-                    draggable
-                    onDragStart={(event) => {
-                      // 拖拽协议：application/json（与 file-tags/web-tag 同通道），
-                      // 可拖到聊天输入框（发图）或工作台其他区域（设为参考图）。
-                      event.dataTransfer.setData(
-                        "application/json",
-                        JSON.stringify({
-                          type: "library-image",
-                          path: record.relativePath,
-                          mimeType: record.mimeType,
-                          name:
-                            record.relativePath.split("/").pop() ??
-                            record.relativePath,
-                        }),
-                      );
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                  >
-                    <LibraryImage
-                      path={record.relativePath}
-                      alt={record.prompt || record.relativePath}
-                      title={`${record.prompt || record.relativePath}\n${formatTime(
-                        record.createdAt,
-                      )}`}
-                      loading="lazy"
-                      onClick={() =>
-                        openLightbox(
-                          visibleLibrary.map((item) => ({
-                            key: item.id,
-                            src: proxyForLibraryPath(item.relativePath),
-                            record: item,
-                          })),
-                          index,
-                        )
-                      }
-                    />
-                    <div className="ai-drawing-library-actions">
-                      <button
-                        type="button"
-                        className="ai-drawing-img-action"
-                        title={t("toolCall.imagegen.refEditTitle", {
-                          defaultValue: "Regenerate using this image",
-                        })}
-                        onClick={() => handleUseAsReference(record)}
-                      >
-                        <Sparkles size={13} strokeWidth={1.8} />
-                      </button>
-                      <button
-                        type="button"
-                        className="ai-drawing-img-action"
-                        title={t("toolCall.imagegen.zoom", {
-                          defaultValue: "Zoom image",
-                        })}
-                        onClick={() =>
-                          openLightbox(
-                            visibleLibrary.map((item) => ({
-                              key: item.id,
-                              src: proxyForLibraryPath(item.relativePath),
-                              record: item,
-                            })),
-                            index,
-                          )
-                        }
-                      >
-                        <ImageIcon size={13} strokeWidth={1.8} />
-                      </button>
-                      <button
-                        type="button"
-                        className="ai-drawing-img-action ai-drawing-delete-btn"
-                        title={t("rightPanel.aiDrawing.delete")}
-                        onClick={() => handleDelete(record)}
-                      >
-                        <Trash2 size={13} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {hasMoreLibrary && (
-                <button
-                  type="button"
-                  className="ai-drawing-load-more"
-                  onClick={handleLoadMore}
-                >
-                  {t("rightPanel.aiDrawing.loadMore")}
-                </button>
-              )}
-            </>
+        {/* 图库历史与删除弹窗 */}
+        <DrawingHistorySection
+          historyCollapsed={historyCollapsed}
+          setHistoryCollapsed={setHistoryCollapsed}
+          library={library}
+          filteredLibrary={filteredLibrary}
+          visibleLibrary={visibleLibrary}
+          historyQuery={historyQuery}
+          setHistoryQuery={setHistoryQuery}
+          loadLibrary={loadLibrary}
+          hasMoreLibrary={hasMoreLibrary}
+          handleLoadMore={handleLoadMore}
+          handleUseAsReference={handleUseAsReference}
+          handleDelete={handleDelete}
+          deleteTarget={deleteTarget}
+          setDeleteTarget={setDeleteTarget}
+          confirmDelete={confirmDelete}
+          openLightbox={openLightbox}
+          proxyForLibraryPath={proxyForLibraryPath}
+          formatTime={formatTime}
+          renderLibraryImage={({
+            path,
+            src,
+            alt,
+            title,
+            className,
+            loading,
+            onClick,
+          }) => (
+            <LibraryImage
+              path={path}
+              src={src}
+              alt={alt}
+              title={title}
+              className={className}
+              loading={loading}
+              onClick={onClick}
+            />
           )}
-        </div>
+        />
       </div>
 
-      {/* 删除确认弹窗（fixed 全屏浮层，保持在 container-type 容器之外） */}
-      {deleteTarget && (
-        <div
-          className="ai-drawing-delete-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("rightPanel.aiDrawing.deleteDialogTitle")}
-          onClick={() => setDeleteTarget(null)}
-        >
-          <div
-            className="ai-drawing-delete-dialog-body"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <LibraryImage
-              path={deleteTarget.relativePath}
-              alt={t("rightPanel.aiDrawing.deleteDialogTitle")}
-              className="ai-drawing-delete-thumb"
-            />
-            <p className="ai-drawing-delete-text">
-              {t("rightPanel.aiDrawing.deleteDialogBody")}
-            </p>
-            <div className="ai-drawing-delete-actions">
-              <button
-                type="button"
-                className="ai-drawing-delete-cancel"
-                onClick={() => setDeleteTarget(null)}
-              >
-                {t("rightPanel.aiDrawing.deleteDialogCancel")}
-              </button>
-              <button
-                type="button"
-                className="ai-drawing-delete-ok"
-                onClick={() => void confirmDelete(deleteTarget)}
-              >
-                {t("rightPanel.aiDrawing.deleteDialogConfirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 灯箱 */}
-      {lightbox && lightboxItem && (
-        <div
-          className="ai-drawing-lightbox"
-          role="dialog"
-          aria-modal="true"
-          onClick={closeLightbox}
-        >
-          <button
-            type="button"
-            className="ai-drawing-lightbox-close"
-            title={t("toolCall.imagegen.close", { defaultValue: "Close" })}
-            onClick={closeLightbox}
-          >
-            <X size={18} strokeWidth={1.8} />
-          </button>
-          {lightbox.items.length > 1 && (
-            <>
-              <button
-                type="button"
-                className="ai-drawing-lightbox-nav ai-drawing-lightbox-prev"
-                title={t("toolCall.imagegen.prev", {
-                  defaultValue: "Previous",
-                })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  lightboxStep(-1);
-                }}
-              >
-                <ChevronLeft size={22} strokeWidth={1.8} />
-              </button>
-              <button
-                type="button"
-                className="ai-drawing-lightbox-nav ai-drawing-lightbox-next"
-                title={t("toolCall.imagegen.next", { defaultValue: "Next" })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  lightboxStep(1);
-                }}
-              >
-                <ChevronRight size={22} strokeWidth={1.8} />
-              </button>
-            </>
-          )}
-          <div
-            className="ai-drawing-lightbox-body"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {lightbox.items.length > 1 && (
-              <span className="ai-drawing-lightbox-counter">
-                {t("rightPanel.aiDrawing.lightboxCounter", {
-                  values: {
-                    index: lightbox.index + 1,
-                    total: lightbox.items.length,
-                  },
-                })}
-              </span>
-            )}
-            <LibraryImage
-              path={
-                lightboxItem.path ??
-                lightboxItem.record?.relativePath ??
-                lightboxItem.image?.path
-              }
-              src={
-                (lightboxItem.path ??
-                lightboxItem.record?.relativePath ??
-                lightboxItem.image?.path)
-                  ? undefined
-                  : lightboxItem.src
-              }
-              alt={t("toolCall.imagegen.generatedImage", {
-                defaultValue: "Generated image",
-              })}
-            />
-            {lightboxItem.record?.prompt && (
-              <div className="ai-drawing-lightbox-meta">
-                <span className="ai-drawing-lightbox-prompt">
-                  {lightboxItem.record.prompt}
-                </span>
-                <span className="ai-drawing-lightbox-time">
-                  {formatTime(lightboxItem.record.createdAt)}
-                </span>
-              </div>
-            )}
-            <div className="ai-drawing-lightbox-actions">
-              {lightboxItem.record && (
-                <button
-                  type="button"
-                  className="ai-drawing-lightbox-btn"
-                  onClick={() => {
-                    if (lightboxItem.record) {
-                      handleUseAsReference(lightboxItem.record);
-                    }
-                    closeLightbox();
-                  }}
-                >
-                  <Sparkles size={14} strokeWidth={1.8} />
-                  <span>
-                    {t("toolCall.imagegen.refEdit", {
-                      defaultValue: "Use as reference",
-                    })}
-                  </span>
-                </button>
-              )}
-              <button
-                type="button"
-                className="ai-drawing-lightbox-btn"
-                disabled={saving}
-                onClick={() => void handleSaveOne(lightboxItem)}
-              >
-                <Download size={14} strokeWidth={1.8} />
-                <span>
-                  {t("toolCall.imagegen.download", {
-                    defaultValue: "Save image",
-                  })}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DrawingLightbox
+        lightbox={lightbox}
+        closeLightbox={closeLightbox}
+        lightboxStep={lightboxStep}
+        saving={saving}
+        handleSaveOne={handleSaveOne}
+        handleUseAsReference={handleUseAsReference}
+        formatTime={formatTime}
+        renderLibraryImage={({ path, src, alt }) => (
+          <LibraryImage path={path} src={src} alt={alt} />
+        )}
+      />
     </div>
   );
 }

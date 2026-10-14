@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  ExternalLink,
   FolderOpen,
   Loader2,
   MessageSquarePlus,
@@ -71,12 +72,15 @@ export function ExplorerEntryContextMenu({
   const [installedIdes, setInstalledIdes] = useState<IdeInfo[]>([]);
   const [isLoadingIdes, setIsLoadingIdes] = useState(false);
   const [ideError, setIdeError] = useState<string | null>(null);
+  const [systemOpenError, setSystemOpenError] = useState<string | null>(null);
   const idesLoadedRef = useRef(false);
   const openWithItemRef = useRef<HTMLButtonElement | null>(null);
   const openWithPanelRef = useRef<HTMLDivElement | null>(null);
   const openWithCloseTimerRef = useRef<number | null>(null);
 
   const canOpenWith = !isSsh && Boolean(entryPath);
+  // 系统默认应用仅面向文件；目录已由「在系统文件管理器中显示」覆盖。
+  const canOpenWithSystemApp = canOpenWith && !isDirectory;
 
   // 测量菜单实际高度，避免超出窗口底部；三种模式高度不同，切换时重新测量。
   useLayoutEffect(() => {
@@ -249,6 +253,27 @@ export function ExplorerEntryContextMenu({
     void window.snow.showItemInFolder(entryPath).catch(() => {
       // 打开失败时静默忽略（例如路径已被删除）。
     });
+  };
+
+  // 成功关闭菜单；失败保留菜单并展示原因，避免错误一闪而过。
+  const handleOpenWithSystemApp = (): void => {
+    setSystemOpenError(null);
+    void window.snow
+      .openPathWithSystemApp(entryPath)
+      .then((errorMessage) => {
+        if (errorMessage) {
+          setSystemOpenError(errorMessage);
+        } else {
+          onClose();
+        }
+      })
+      .catch(() => {
+        setSystemOpenError(
+          t("sidebar.openWithSystemAppError", {
+            defaultValue: "Failed to open with the system default app",
+          }),
+        );
+      });
   };
 
   const handleCopyPath = (): void => {
@@ -426,6 +451,26 @@ export function ExplorerEntryContextMenu({
                 })}
               </span>
             </button>
+            {canOpenWithSystemApp ? (
+              <button
+                className="explorer-entry-context-menu-item"
+                onClick={handleOpenWithSystemApp}
+                role="menuitem"
+                type="button"
+              >
+                <ExternalLink size={13} />
+                <span>
+                  {t("sidebar.explorerOpenWithSystemApp", {
+                    defaultValue: "Open with System Default App",
+                  })}
+                </span>
+              </button>
+            ) : null}
+            {systemOpenError ? (
+              <div className="explorer-entry-context-menu-status error">
+                <span>{systemOpenError}</span>
+              </div>
+            ) : null}
             {!isSsh ? (
               <button
                 className="explorer-entry-context-menu-item"

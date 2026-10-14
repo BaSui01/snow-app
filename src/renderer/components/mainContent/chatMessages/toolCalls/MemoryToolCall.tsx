@@ -54,6 +54,8 @@ type ParsedMemoryResult =
       items: MemoryListItem[];
       deleted: boolean;
       saved: boolean;
+      /** save / update 返回的记忆标题。 */
+      memoryTitle?: string;
     }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
@@ -188,7 +190,14 @@ const parseResult = (result: string | undefined): ParsedMemoryResult => {
 
     // save / update 返回单个 memory 对象。
     if (isRecord(parsed.memory)) {
-      return { type: "success", items: [], deleted: false, saved: true };
+      const { title } = parsed.memory;
+      return {
+        type: "success",
+        items: [],
+        deleted: false,
+        saved: true,
+        memoryTitle: typeof title === "string" ? title : undefined,
+      };
     }
 
     return { type: "raw", text: result };
@@ -260,13 +269,17 @@ export const MemoryToolCall = ({
 
   const hasError = parsedResult.type === "error";
 
-  // Header 摘要：save/update 显示标题，search 显示查询词，delete 显示 memoryId。
+  // 结果回填的记忆标题（update 返回的最新记录）。
+  const resultTitle =
+    parsedResult.type === "success" ? parsedResult.memoryTitle : undefined;
+
+  // Header：save 显示标题，search 显示查询词，update/delete 显示动作名（不展示 ID）。
   const summary =
-    parsedArgs.title ??
-    parsedArgs.query ??
-    (action === "delete" || action === "update"
-      ? parsedArgs.memoryId
-      : undefined);
+    action === "update" || action === "delete"
+      ? [actionLabel, parsedArgs.title ?? resultTitle]
+          .filter(Boolean)
+          .join(" · ")
+      : (parsedArgs.title ?? parsedArgs.query);
 
   return (
     <ToolCallNode

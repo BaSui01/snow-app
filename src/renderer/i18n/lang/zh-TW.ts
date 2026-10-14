@@ -358,6 +358,8 @@ export const zhTW = {
   "sidebar.explorerDeleteError": "刪除工作區項目失敗",
   "sidebar.explorerOpenInTerminal": "在終端機中開啟",
   "sidebar.explorerShowInFolder": "在系統檔案管理員中顯示",
+  "sidebar.explorerOpenWithSystemApp": "使用系統預設應用程式開啟",
+  "sidebar.openWithSystemAppError": "使用系統預設應用程式開啟失敗",
   "sidebar.explorerCopyPath": "複製路徑",
   "sidebar.explorerMultiSelectCount": "已選 {{count}} 項",
   "sidebar.explorerMultiSelectCopyPaths": "複製 {{count}} 個路徑",

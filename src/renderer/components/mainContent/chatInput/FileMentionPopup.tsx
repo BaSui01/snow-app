@@ -799,6 +799,12 @@ export const FileMentionPopup = forwardRef<
   const isDirectoryPicker = Boolean(
     directoryScope && !directoryScope.directory,
   );
+  // 计数只统计当前模式的列表，避免残留的文件结果叠加显示。
+  const activeResultCount = isSkillMode
+    ? skills.length
+    : isDirectoryPicker
+      ? directoryOptions.length
+      : displayEntries.length;
 
   const toggleCheck = useCallback((entry: FileSearchResult) => {
     setCheckedPaths((prev) => {
@@ -1228,28 +1234,16 @@ export const FileMentionPopup = forwardRef<
             ))}
           </div>
         )}
-        {(displayEntries.length > 0 ||
-          skills.length > 0 ||
-          directoryOptions.length > 0) && (
+        {activeResultCount > 0 && (
           <span className="file-mention-count">
-            {isSearching && displayEntries.length > 0 && (
+            {isSearching && !isSkillMode && displayEntries.length > 0 && (
               <Loader2 className="spin" size={11} />
             )}
-            {isDirectoryPicker &&
-              directoryOptions.length > 0 &&
-              t("fileMention.results", {
-                values: { count: directoryOptions.length },
-              })}
-            {displayEntries.length > 0 &&
-              t("fileMention.results", {
-                values: { count: displayEntries.length },
-              })}
-            {isSkillMode &&
-              skills.length > 0 &&
-              t("fileMention.results", {
-                values: { count: skills.length },
-              })}
-            {displayEntries.length > 0 &&
+            {t("fileMention.results", {
+              values: { count: activeResultCount },
+            })}
+            {!isSkillMode &&
+              !isDirectoryPicker &&
               checkedPaths.size > 0 &&
               ` | ${t("fileMention.selected", {
                 values: { count: checkedPaths.size },

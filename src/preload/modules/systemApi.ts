@@ -1525,6 +1525,9 @@ export const windowApi = {
   /** 在系统文件管理器中显示指定路径（文件高亮选中，目录直接打开）。 */
   showItemInFolder: (path: string): Promise<void> =>
     ipcRenderer.invoke("shell:show-item-in-folder", path),
+  /** 使用系统默认应用打开文件；失败返回错误信息，成功为 null。 */
+  openPathWithSystemApp: (path: string): Promise<string | null> =>
+    ipcRenderer.invoke("shell:open-path", path),
   clearBrowserCache: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>

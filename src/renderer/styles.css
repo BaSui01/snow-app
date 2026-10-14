@@ -4999,6 +4999,15 @@ body.is-panel-resizing * {
   color: var(--accent-red);
 }
 
+/* 菜单内操作失败提示（如使用系统默认应用打开失败） */
+.explorer-entry-context-menu-status {
+  padding: 6px 8px;
+  color: var(--accent-red);
+  font-size: 11.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .settings-content {
   flex: 1;
   min-height: 0;

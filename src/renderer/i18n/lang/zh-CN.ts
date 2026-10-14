@@ -357,6 +357,8 @@ export const zhCN = {
   "sidebar.explorerDeleteError": "删除工作区条目失败",
   "sidebar.explorerOpenInTerminal": "在终端中打开",
   "sidebar.explorerShowInFolder": "在系统文件管理器中显示",
+  "sidebar.explorerOpenWithSystemApp": "使用系统默认应用打开",
+  "sidebar.openWithSystemAppError": "使用系统默认应用打开失败",
   "sidebar.explorerCopyPath": "复制路径",
   "sidebar.explorerMultiSelectCount": "已选 {{count}} 项",
   "sidebar.explorerMultiSelectCopyPaths": "复制 {{count}} 个路径",

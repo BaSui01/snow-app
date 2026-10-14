@@ -384,6 +384,9 @@ export const en = {
   "sidebar.explorerDeleteError": "Failed to delete workspace entry",
   "sidebar.explorerOpenInTerminal": "Open in Terminal",
   "sidebar.explorerShowInFolder": "Show in System File Manager",
+  "sidebar.explorerOpenWithSystemApp": "Open with System Default App",
+  "sidebar.openWithSystemAppError":
+    "Failed to open with the system default app",
   "sidebar.explorerCopyPath": "Copy Path",
   "sidebar.explorerMultiSelectCount": "{{count}} selected",
   "sidebar.explorerMultiSelectCopyPaths": "Copy {{count}} paths",

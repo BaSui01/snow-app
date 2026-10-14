@@ -480,6 +480,18 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     shell.showItemInFolder(path);
   });
 
+  // 使用系统默认应用打开文件（Word / PPT / PDF 等）；失败返回错误信息，成功返回 null。
+  ipcMain.handle(
+    "shell:open-path",
+    async (_event, path: unknown): Promise<string | null> => {
+      if (typeof path !== "string" || !path.trim()) {
+        throw new Error("A valid path is required");
+      }
+      const errorMessage = await shell.openPath(path);
+      return errorMessage || null;
+    },
+  );
+
   // ===== Browser (embedded webview) =====
   ipcMain.handle("browser:clear-cache", async () => {
     await session.defaultSession.clearCache();

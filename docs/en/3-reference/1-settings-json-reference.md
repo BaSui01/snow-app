@@ -4,43 +4,43 @@
 
 ## 1. File Location
 
-| Platform | Path |
-| --- | --- |
-| Windows | `C:\Users\<username>\.snow\settings.json` |
-| macOS / Linux | `~/.snow/settings.json` |
+| Platform      | Path                                      |
+| ------------- | ----------------------------------------- |
+| Windows       | `C:\Users\<username>\.snow\settings.json` |
+| macOS / Linux | `~/.snow/settings.json`                   |
 
 The file is shared with Snow CLI. After modifying it, some settings (such as `mcpServers`) must be imported manually via **Settings → MCP Settings → Sync Snow CLI MCP Settings**.
 
 ## 2. Top-Level Fields Overview
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `codebase` | object | Codebase semantic search configuration |
-| `mcpServers` | object | Global MCP server configuration, keyed by server name |
-| `sensitiveCommands` | array | Sensitive command interception rules |
-| `yoloMode` | boolean | No-confirmation mode |
-| `planMode` | boolean | Plan mode |
-| `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode |
-| `toolSearchEnabled` | boolean | Tool search toggle |
-| `hybridCompressEnabled` | boolean | Hybrid compression toggle |
-| `teamMode` | boolean | Team mode |
-| `goal` | object | Goal mode configuration |
-| `ultraTodoEnabled` | boolean | Ultra-long TODO list toggle |
+| Field                      | Type    | Description                                           |
+| -------------------------- | ------- | ----------------------------------------------------- |
+| `codebase`                 | object  | Codebase semantic search configuration                |
+| `mcpServers`               | object  | Global MCP server configuration, keyed by server name |
+| `sensitiveCommands`        | array   | Sensitive command interception rules                  |
+| `yoloMode`                 | boolean | No-confirmation mode                                  |
+| `planMode`                 | boolean | Plan mode                                             |
+| `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode                            |
+| `toolSearchEnabled`        | boolean | Tool search toggle                                    |
+| `hybridCompressEnabled`    | boolean | Hybrid compression toggle                             |
+| `teamMode`                 | boolean | Team mode                                             |
+| `goal`                     | object  | Goal mode configuration                               |
+| `ultraTodoEnabled`         | boolean | Ultra-long TODO list toggle                           |
 
 ## 3. mcpServers Field
 
 Keys are server names, and values are server configuration objects:
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `type` | string | `stdio` (local command) or `http` (remote service) |
-| `command` | string | Executable path in stdio mode |
-| `args` | array | Arguments passed to the command |
-| `env` | object | Environment variable key-value pairs |
-| `headers` | object | Request header key-value pairs (http) |
-| `enabled` | boolean | Whether enabled |
-| `timeoutMs` | number | Timeout in milliseconds |
-| `alwaysAllow` | array | List of tool names exempt from confirmation |
+| Field         | Type    | Description                                        |
+| ------------- | ------- | -------------------------------------------------- |
+| `type`        | string  | `stdio` (local command) or `http` (remote service) |
+| `command`     | string  | Executable path in stdio mode                      |
+| `args`        | array   | Arguments passed to the command                    |
+| `env`         | object  | Environment variable key-value pairs               |
+| `headers`     | object  | Request header key-value pairs (http)              |
+| `enabled`     | boolean | Whether enabled                                    |
+| `timeoutMs`   | number  | Timeout in milliseconds                            |
+| `alwaysAllow` | array   | List of tool names exempt from confirmation        |
 
 > **Tool-level toggles are not stored in settings.json**: MCP tool-level enable/disable (global/project) is managed in the MCP Settings panel (app database) and is not written to settings.json; the `mcpServers` field in settings.json carries server-level configuration only.
 
@@ -81,63 +81,63 @@ For more configuration methods, see [2-guides/1-configure-mcp](../2-guides/1-con
 
 ## 4. codebase Field
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `enabled` | boolean | Whether codebase indexing is enabled |
-| `enableAgentReview` | boolean | Agent review toggle |
-| `enableReranking` | boolean | Whether reranking is enabled |
-| `embedding` | object | Embedding model configuration |
-| `reranking` | object | Reranking model configuration |
-| `batch` | object | Batch processing configuration |
-| `chunking` | object | Chunking configuration |
+| Field               | Type    | Description                          |
+| ------------------- | ------- | ------------------------------------ |
+| `enabled`           | boolean | Whether codebase indexing is enabled |
+| `enableAgentReview` | boolean | Agent review toggle                  |
+| `enableReranking`   | boolean | Whether reranking is enabled         |
+| `embedding`         | object  | Embedding model configuration        |
+| `reranking`         | object  | Reranking model configuration        |
+| `batch`             | object  | Batch processing configuration       |
+| `chunking`          | object  | Chunking configuration               |
 
 **embedding** (embedding model):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `type` | string | Embedding service type, e.g. `jina` |
-| `modelName` | string | Model name |
-| `baseUrl` | string | Service endpoint URL |
-| `apiKey` | string | API key |
-| `dimensions` | number | Vector dimensions |
+| Field        | Type   | Description                                                                                                              |
+| ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `type`       | string | Embedding service type, e.g. `jina`                                                                                      |
+| `modelName`  | string | Model name                                                                                                               |
+| `baseUrl`    | string | Service endpoint URL                                                                                                     |
+| `apiKey`     | string | API key                                                                                                                  |
+| `dimensions` | number | Vector dimensions; `0` or omitted means the `dimensions` parameter is not sent (some embedding models do not support it) |
 
 **reranking** (reranking model):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `modelName` | string | Model name |
-| `baseUrl` | string | Service endpoint URL |
-| `apiKey` | string | API key |
-| `contextLength` | number | Context length |
-| `topN` | number | Return top N results |
+| Field           | Type   | Description          |
+| --------------- | ------ | -------------------- |
+| `modelName`     | string | Model name           |
+| `baseUrl`       | string | Service endpoint URL |
+| `apiKey`        | string | API key              |
+| `contextLength` | number | Context length       |
+| `topN`          | number | Return top N results |
 
 **batch** (batch processing):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `maxLines` | number | Max lines per batch |
-| `concurrency` | number | Concurrency |
+| Field         | Type   | Description         |
+| ------------- | ------ | ------------------- |
+| `maxLines`    | number | Max lines per batch |
+| `concurrency` | number | Concurrency         |
 
 **chunking** (chunking):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `maxLinesPerChunk` | number | Max lines per chunk |
-| `minLinesPerChunk` | number | Min lines per chunk |
-| `minCharsPerChunk` | number | Min chars per chunk |
-| `overlapLines` | number | Overlapping lines between chunks |
+| Field              | Type   | Description                      |
+| ------------------ | ------ | -------------------------------- |
+| `maxLinesPerChunk` | number | Max lines per chunk              |
+| `minLinesPerChunk` | number | Min lines per chunk              |
+| `minCharsPerChunk` | number | Min chars per chunk              |
+| `overlapLines`     | number | Overlapping lines between chunks |
 
 ## 5. sensitiveCommands Field
 
 Array elements are used for sensitive command interception (GUI: **Settings → Sensitive Commands**):
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | string | Unique rule identifier |
-| `pattern` | string | Matching pattern |
-| `description` | string | Rule description |
-| `enabled` | boolean | Whether enabled |
-| `isPreset` | boolean | Whether it is a built-in preset rule |
+| Field         | Type    | Description                          |
+| ------------- | ------- | ------------------------------------ |
+| `id`          | string  | Unique rule identifier               |
+| `pattern`     | string  | Matching pattern                     |
+| `description` | string  | Rule description                     |
+| `enabled`     | boolean | Whether enabled                      |
+| `isPreset`    | boolean | Whether it is a built-in preset rule |
 
 ```json
 {
@@ -155,33 +155,33 @@ Array elements are used for sensitive command interception (GUI: **Settings → 
 
 ## 6. Mode Switch Fields
 
-| Field | Type | Description |
-| --- | --- | --- |
-| `yoloMode` | boolean | No-confirmation mode, skips dangerous operation confirmations |
-| `planMode` | boolean | Plan mode, plans before executing |
-| `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode |
-| `toolSearchEnabled` | boolean | Tool search toggle |
-| `hybridCompressEnabled` | boolean | Hybrid compression toggle |
-| `teamMode` | boolean | Team mode |
-| `ultraTodoEnabled` | boolean | Ultra-long TODO list toggle |
-| `goal.defaultTokenBudgetM` | number | Default token budget for Goal mode, in millions |
+| Field                      | Type    | Description                                                   |
+| -------------------------- | ------- | ------------------------------------------------------------- |
+| `yoloMode`                 | boolean | No-confirmation mode, skips dangerous operation confirmations |
+| `planMode`                 | boolean | Plan mode, plans before executing                             |
+| `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode                                    |
+| `toolSearchEnabled`        | boolean | Tool search toggle                                            |
+| `hybridCompressEnabled`    | boolean | Hybrid compression toggle                                     |
+| `teamMode`                 | boolean | Team mode                                                     |
+| `ultraTodoEnabled`         | boolean | Ultra-long TODO list toggle                                   |
+| `goal.defaultTokenBudgetM` | number  | Default token budget for Goal mode, in millions               |
 
 ## 7. Companion Configuration Files
 
 The following files are also located in the `~/.snow/` directory:
 
-| File | Description |
-| --- | --- |
-| `config.json` | API key and model configuration (`snowcfg` field; a CLI-compatible mirror of the **currently active profile** — the authoritative store for all profiles is the `api_configs` table in the app database) |
-| `active-profile.json` | Currently active API profile name (`activeProfile` field; CLI compatibility layer — at runtime the app database's `api_configs.is_active` is authoritative) |
+| File                             | Description                                                                                                                                                                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.json`                    | API key and model configuration (`snowcfg` field; a CLI-compatible mirror of the **currently active profile** — the authoritative store for all profiles is the `api_configs` table in the app database)                                                             |
+| `active-profile.json`            | Currently active API profile name (`activeProfile` field; CLI compatibility layer — at runtime the app database's `api_configs.is_active` is authoritative)                                                                                                          |
 | App database `api_configs` table | **Authoritative store for API profiles** (`~/.snowapp/snowapp.db`, one row per profile, `profile_name` unique); agents can read/write it via `config-set scope=apiProfiles ...` (see [2-guides/3-configure-api-keys](../2-guides/3-configure-api-keys.md) section 5) |
-| `proxy-config.json` | Proxy and browser configuration |
-| `custom-headers.json` | Custom request header schemes |
-| `system-prompt.json` | System prompts |
-| `theme.json` | Theme configuration |
-| `language.json` | UI language |
-| `permissions.json` | Permission configuration |
-| `lsp-config.json` | LSP configuration |
+| `proxy-config.json`              | Proxy and browser configuration                                                                                                                                                                                                                                      |
+| `custom-headers.json`            | Custom request header schemes                                                                                                                                                                                                                                        |
+| `system-prompt.json`             | System prompts                                                                                                                                                                                                                                                       |
+| `theme.json`                     | Theme configuration                                                                                                                                                                                                                                                  |
+| `language.json`                  | UI language                                                                                                                                                                                                                                                          |
+| `permissions.json`               | Permission configuration                                                                                                                                                                                                                                             |
+| `lsp-config.json`                | LSP configuration                                                                                                                                                                                                                                                    |
 
 ## 8. Windows Path Notes
 

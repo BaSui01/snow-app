@@ -7443,6 +7443,13 @@ body.is-panel-resizing * {
   font-weight: 500;
 }
 
+.api-settings-field .api-settings-field-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .api-settings-form-options,
 .api-settings-form-actions {
   display: flex;

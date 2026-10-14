@@ -189,9 +189,6 @@ export const OAuthQuotaPanel = ({
           </span>
         </div>
       )}
-      {!snapshot && !loading && !error && (
-        <div className="oauth-quota-status">{t("chat.oauthQuota.idle")}</div>
-      )}
       {snapshot && groups.length === 0 && (
         <div className="oauth-quota-status">{t("chat.oauthQuota.empty")}</div>
       )}

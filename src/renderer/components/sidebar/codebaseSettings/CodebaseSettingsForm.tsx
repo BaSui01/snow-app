@@ -72,7 +72,7 @@ export function CodebaseSettingsForm({
     placeholder = "",
     type: "text" | "password" | "number" = "text",
     min?: number,
-    step?: number,
+    hint?: string,
   ) => (
     <label className="api-settings-field">
       <span>{label}</span>
@@ -83,9 +83,9 @@ export function CodebaseSettingsForm({
         placeholder={placeholder}
         type={type}
         min={min}
-        step={step}
         disabled={isBusy}
       />
+      {hint ? <span className="api-settings-field-hint">{hint}</span> : null}
     </label>
   );
 
@@ -148,9 +148,13 @@ export function CodebaseSettingsForm({
               t("settings.codebaseEmbeddingDimensions", {
                 defaultValue: "Embedding dimensions",
               }),
-              "1536",
+              "",
               "number",
               1,
+              t("settings.codebaseEmbeddingDimensionsHint", {
+                defaultValue:
+                  "Leave empty to omit the dimensions parameter (some models do not support it).",
+              }),
             )}
             {renderTextInput(
               "embeddingApiKey",

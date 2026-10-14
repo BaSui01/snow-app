@@ -158,13 +158,21 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
         });
       }
 
+      // 维度允许留空（留空即不传递 dimensions 参数），填写时必须为正整数。
+      const dimensionsError = currentForm.embeddingDimensions.trim()
+        ? validatePositiveInteger(
+            currentForm.embeddingDimensions,
+            t("settings.codebaseValidationDimensionsPositive", {
+              defaultValue: "Embedding dimensions must be greater than 0.",
+            }),
+          )
+        : null;
+
+      if (dimensionsError) {
+        return dimensionsError;
+      }
+
       const numericChecks: Array<[string, string]> = [
-        [
-          currentForm.embeddingDimensions,
-          t("settings.codebaseValidationDimensionsPositive", {
-            defaultValue: "Embedding dimensions must be greater than 0.",
-          }),
-        ],
         [
           currentForm.batchMaxLines,
           t("settings.codebaseValidationMaxLinesPositive", {

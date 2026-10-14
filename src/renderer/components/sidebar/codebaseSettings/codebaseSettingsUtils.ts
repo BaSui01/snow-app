@@ -20,6 +20,20 @@ const toPositiveInteger = (value: unknown, fallback: number): number => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/** 嵌入维度：空输入存为 0，表示不传递 dimensions 参数。 */
+const toEmbeddingDimensions = (value: unknown, fallback: number): number => {
+  if (value === "") {
+    return 0;
+  }
+
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number.parseInt(String(value ?? ""), 10);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 const toNonNegativeInteger = (value: unknown, fallback: number): number => {
   const parsed =
     typeof value === "number"
@@ -108,7 +122,7 @@ export const normalizeCodebaseSettings = (
       source.embeddingApiKey,
       DEFAULT_CODEBASE_SETTINGS.embeddingApiKey,
     ),
-    embeddingDimensions: toPositiveInteger(
+    embeddingDimensions: toEmbeddingDimensions(
       source.embeddingDimensions,
       DEFAULT_CODEBASE_SETTINGS.embeddingDimensions,
     ),
@@ -165,7 +179,10 @@ export const toCodebaseForm = (
   embeddingModelName: settings.embeddingModelName,
   embeddingBaseUrl: settings.embeddingBaseUrl,
   embeddingApiKey: settings.embeddingApiKey,
-  embeddingDimensions: String(settings.embeddingDimensions),
+  embeddingDimensions:
+    settings.embeddingDimensions > 0
+      ? String(settings.embeddingDimensions)
+      : "",
   batchMaxLines: String(settings.batchMaxLines),
   batchConcurrency: String(settings.batchConcurrency),
   chunkingMaxLinesPerChunk: String(settings.chunkingMaxLinesPerChunk),
@@ -191,7 +208,10 @@ export const toSnowCliCodebaseConfigJson = (
         modelName: settings.embeddingModelName,
         baseUrl: settings.embeddingBaseUrl,
         apiKey: settings.embeddingApiKey,
-        dimensions: settings.embeddingDimensions,
+        dimensions:
+          settings.embeddingDimensions > 0
+            ? settings.embeddingDimensions
+            : undefined,
       },
       batch: {
         maxLines: settings.batchMaxLines,

@@ -816,7 +816,6 @@ export const en = {
   "chat.model": "Model",
   "chat.oauthQuota.title": "Subscription quota",
   "chat.oauthQuota.refresh": "Check quota",
-  "chat.oauthQuota.idle": "Click to check the subscription quota",
   "chat.oauthQuota.empty": "No quota data available",
   "chat.oauthQuota.failed": "Quota check failed: {{value}}",
   "chat.oauthQuota.remaining": "{{value}}% left",
@@ -2531,6 +2530,8 @@ export const en = {
   "settings.codebaseEmbeddingBaseUrl": "Embedding Base URL",
   "settings.codebaseEmbeddingApiKey": "Embedding API key",
   "settings.codebaseEmbeddingDimensions": "Embedding dimensions",
+  "settings.codebaseEmbeddingDimensionsHint":
+    "Leave empty to omit the dimensions parameter (some models do not support it).",
   "settings.codebaseRerankingSettings": "Reranking settings",
   "settings.codebaseRerankingModelName": "Reranking model name",
   "settings.codebaseRerankingBaseUrl": "Reranking Base URL",

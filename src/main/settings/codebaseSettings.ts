@@ -40,6 +40,20 @@ const getCodebaseObject = (
   return isRecord(codebase) ? codebase : {};
 };
 
+/** 嵌入维度：空字符串存为 0，表示不传递 dimensions 参数。 */
+const toEmbeddingDimensions = (value: unknown, fallback: number): number => {
+  if (value === "") {
+    return 0;
+  }
+
+  const parsed =
+    typeof value === "number"
+      ? value
+      : Number.parseInt(String(value ?? ""), 10);
+
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
 export const normalizeCodebaseSettings = (
   value: unknown,
 ): CodebaseSettingsInput => {
@@ -72,7 +86,7 @@ export const normalizeCodebaseSettings = (
       source.embeddingApiKey,
       DEFAULT_CODEBASE_SETTINGS.embeddingApiKey,
     ),
-    embeddingDimensions: toPositiveInteger(
+    embeddingDimensions: toEmbeddingDimensions(
       source.embeddingDimensions,
       DEFAULT_CODEBASE_SETTINGS.embeddingDimensions,
     ),

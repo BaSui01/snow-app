@@ -32,11 +32,8 @@ impl EmbeddingConfig {
             model_name: model_name.to_string(),
             base_url: normalize_base_url(base_url),
             api_key: api_key.to_string(),
-            dimensions: if dimensions > 0 {
-                dimensions as usize
-            } else {
-                1536
-            },
+            // 0 表示不传递 dimensions 参数
+            dimensions: dimensions.max(0) as usize,
         }
     }
 }

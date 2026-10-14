@@ -769,7 +769,6 @@ export const zhCN = {
   "chat.model": "模型",
   "chat.oauthQuota.title": "订阅配额",
   "chat.oauthQuota.refresh": "查询配额",
-  "chat.oauthQuota.idle": "点击查询订阅配额",
   "chat.oauthQuota.empty": "暂无配额数据",
   "chat.oauthQuota.failed": "配额查询失败：{{value}}",
   "chat.oauthQuota.remaining": "剩余 {{value}}%",
@@ -2413,6 +2412,8 @@ export const zhCN = {
   "settings.codebaseEmbeddingBaseUrl": "嵌入 Base URL",
   "settings.codebaseEmbeddingApiKey": "嵌入 API Key",
   "settings.codebaseEmbeddingDimensions": "嵌入维度",
+  "settings.codebaseEmbeddingDimensionsHint":
+    "留空则不传递 dimensions 参数（部分模型不支持）。",
   "settings.codebaseRerankingSettings": "重排设置",
   "settings.codebaseRerankingModelName": "重排模型名称",
   "settings.codebaseRerankingBaseUrl": "重排 Base URL",

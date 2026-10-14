@@ -770,7 +770,6 @@ export const zhTW = {
   "chat.model": "模型",
   "chat.oauthQuota.title": "訂閱配額",
   "chat.oauthQuota.refresh": "查詢配額",
-  "chat.oauthQuota.idle": "點擊查詢訂閱配額",
   "chat.oauthQuota.empty": "暫無配額資料",
   "chat.oauthQuota.failed": "配額查詢失敗：{{value}}",
   "chat.oauthQuota.remaining": "剩餘 {{value}}%",
@@ -2412,6 +2411,8 @@ export const zhTW = {
   "settings.codebaseEmbeddingBaseUrl": "嵌入 Base URL",
   "settings.codebaseEmbeddingApiKey": "嵌入 API Key",
   "settings.codebaseEmbeddingDimensions": "嵌入維度",
+  "settings.codebaseEmbeddingDimensionsHint":
+    "留空則不傳遞 dimensions 參數（部分模型不支援）。",
   "settings.codebaseRerankingSettings": "重排設定",
   "settings.codebaseRerankingModelName": "重排模型名稱",
   "settings.codebaseRerankingBaseUrl": "重排 Base URL",

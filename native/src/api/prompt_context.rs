@@ -926,9 +926,14 @@ pub async fn prepare(
             return Ok(empty(&e.reason));
         }
     };
+    // 维度未配置（0）时以已索引向量的长度为准。
+    let expected_dim = match s.embedding.dimensions {
+        0 => records.first().map_or(0, |r| r.embedding.len()),
+        d => d,
+    };
     if records
         .iter()
-        .any(|r| r.model != s.embedding.model_name || r.embedding.len() != s.embedding.dimensions)
+        .any(|r| r.model != s.embedding.model_name || r.embedding.len() != expected_dim)
     {
         if input.context_handle.is_some() {
             return Err(failure("context_index_changed"));
@@ -1168,7 +1173,7 @@ pub async fn prepare(
             {
                 Ok(vectors) => {
                     if let Some(vector) = vectors.first() {
-                        if vector.len() != s.embedding.dimensions {
+                        if vector.len() != expected_dim {
                             warnings.push("embedding_dimension_mismatch".into());
                         } else {
                             query_kind = "mixed";

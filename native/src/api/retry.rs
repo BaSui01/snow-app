@@ -12,6 +12,10 @@ use crate::storage::services::app_logs::{insert_app_log, log_api_warning, AppLog
 pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
 pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
+/// 档案 `maxRetries` 的上限。超出部分按此值截断，防止误配极端值导致单个请求被连续重试。
+pub const MAX_RETRIES_LIMIT: u32 = 20;
+/// 档案固定重试间隔（`retryDelayMs`）的上限（毫秒）。
+pub const MAX_RETRY_DELAY_MS: u64 = 60_000;
 pub const RETRY_POLICY_SETTING_CODE: &str = "retry_policy";
 /// 空响应（正文与工具全空）重试类别的策略 id。与其它类别不同，它不是
 /// 「错误文案关键词」类别，而是由流式收尾阶段直接判定的条件开关，因此它的
@@ -36,7 +40,7 @@ pub fn apply_auxiliary_retries(config: &mut crate::storage::ApiConfigRecord) {
 
 pub struct RetryOptions {
     pub max_retries: u32,
-    /// 固定重试间隔（毫秒）。`Some` = 每次重试固定等待该值（不受 30s 上限约束）；
+    /// 固定重试间隔（毫秒）。`Some` = 每次重试固定等待该值（封顶 `MAX_RETRY_DELAY_MS`）；
     /// `None` = 档案留 0 或未填写，走指数退避（`DEFAULT_BASE_DELAY_MS × 2^attempt`，封顶 30s）。
     pub retry_delay_ms: Option<u64>,
     /// mid-stream 中断时保留 partial 的纯文本阈值（字符数），来自 API 档案配置。
@@ -263,11 +267,11 @@ impl RetryOptions {
     ) -> Self {
         let max_retries = max_retries
             .filter(|&v| v > 0)
-            .map(|v| v as u32)
+            .map(|v| (v as u32).min(MAX_RETRIES_LIMIT))
             .unwrap_or(DEFAULT_MAX_RETRIES);
         let retry_delay_ms = retry_base_delay_ms
             .filter(|&v| v > 0)
-            .map(|v| v as u64);
+            .map(|v| (v as u64).min(MAX_RETRY_DELAY_MS));
         let partial_retry_max_chars = partial_retry_max_chars
             .filter(|&v| v > 0)
             .map(|v| v as usize)
@@ -626,8 +630,9 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
 
 /// 第 `attempt` 次重试前的退避时长（毫秒）。
 ///
-/// 档案填了大于 0 的固定间隔（`retry_delay_ms`）时直接使用该值，不做封顶；留 0 或
-/// 未填写时按 `DEFAULT_BASE_DELAY_MS × 2^attempt` 指数退避，上限 30s。与
+/// 档案填了大于 0 的固定间隔（`retry_delay_ms`）时直接使用该值（已在 `from_config`
+/// 中限制为不超过 `MAX_RETRY_DELAY_MS`）；留 0 或未填写时按
+/// `DEFAULT_BASE_DELAY_MS × 2^attempt` 指数退避，上限 30s。与
 /// `wait_before_retry` 同源，保证下发给前端做倒计时的时长与实际等待时间一致——
 /// 两处算法必须同源，否则倒计时会在到点后继续等待或提前归零。
 pub fn retry_backoff_ms(options: &RetryOptions, attempt: u32) -> i64 {
@@ -838,11 +843,26 @@ pub fn log_retry_attempt_sync(
     );
 }
 
+const STREAM_IDLE_TIMEOUT_MESSAGE: &str =
+    "Stream idle timeout: no data received within the configured period";
+
 /// Build the error used when the stream has been idle (no data received)
 /// for longer than the configured `stream_idle_timeout_sec`. The message is
 /// phrased so `is_retriable_error` recognises it as a retriable condition.
 pub fn stream_idle_timeout_error() -> Error {
-    Error::from_reason("Stream idle timeout: no data received within the configured period")
+    Error::from_reason(STREAM_IDLE_TIMEOUT_MESSAGE)
+}
+
+/// 发送阶段（建连 + 等待响应头）失败的留痕分类。
+///
+/// 等待超时（半开连接，响应头迟迟不来）归入 `idle_timeout`，与读体阶段的空闲超时
+/// 同口径；其余 DNS / TCP / TLS 等连接层错误为 `connect_error`。
+pub fn send_failure_cause(error: &Error) -> &'static str {
+    if error.reason == STREAM_IDLE_TIMEOUT_MESSAGE {
+        "idle_timeout"
+    } else {
+        "connect_error"
+    }
 }
 
 /// Build the error used when the HTTP response has a 2xx status code but the

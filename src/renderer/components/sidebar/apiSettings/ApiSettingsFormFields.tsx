@@ -964,6 +964,7 @@ export function ApiSettingsFormFields({
               placeholder="5"
               type="number"
               min={0}
+              max={20}
               disabled={disabled}
             />
           </label>
@@ -979,6 +980,7 @@ export function ApiSettingsFormFields({
               placeholder="e.g. 3000"
               type="number"
               min={0}
+              max={60000}
               disabled={disabled}
             />
             <small className="api-settings-hint-text">

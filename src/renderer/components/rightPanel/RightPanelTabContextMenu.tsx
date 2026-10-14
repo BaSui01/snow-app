@@ -101,11 +101,10 @@ export function RightPanelTabContextMenu({
       icon: <Gauge size={13} strokeWidth={1.8} />,
       onClick: onNewTasks,
     },
-    ...pluginItems,
   ];
 
   // 浏览器 tab 专属：把当前实例弹出到独立浏览器窗口（继承实例 id，
-  // 原 tab 在打开成功后关闭）。
+  // 原 tab 在打开成功后关闭）。与新建类项、插件区域之间以分隔线隔开。
   if (onOpenInNewWindow) {
     items.push({
       id: "open-in-new-window",
@@ -113,6 +112,7 @@ export function RightPanelTabContextMenu({
         defaultValue: "Open in new window",
       }),
       icon: <ExternalLink size={13} strokeWidth={1.8} />,
+      separator: true,
       onClick: onOpenInNewWindow,
     });
   }
@@ -128,6 +128,9 @@ export function RightPanelTabContextMenu({
       onClick: onOpenInLocalBrowser,
     });
   }
+
+  // 插件声明式面板独占一片区域（首项由调用方加分隔线，末尾由关闭组分隔）。
+  items.push(...pluginItems);
 
   // 分隔线下方按 VS Code 习惯组织关闭类菜单项：
   // 关闭标签页 → 关闭其他 → 关闭右侧 → 关闭左侧 → 关闭所有。

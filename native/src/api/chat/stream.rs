@@ -19,7 +19,7 @@ use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response, retry_backoff_ms,
-    log_retry_attempt, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    log_retry_attempt, send_failure_cause, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
@@ -178,6 +178,11 @@ pub(super) async fn collect_chat_completions_stream(
                 result = send_future => {
                     result.map_err(|error| Error::from_reason(format!("Failed to create chat stream: {}", error)))
                 }
+                // 半开连接下响应头可能永远不到：与读体阶段同口径以空闲超时兜底，
+                // 超时后按重试策略重试并留痕，而不是无限等待。
+                _ = tokio::time::sleep(idle_timeout) => {
+                    Err(stream_idle_timeout_error())
+                }
             };
 
             match result {
@@ -272,7 +277,7 @@ pub(super) async fn collect_chat_completions_stream(
                         "create_chat_completion_response_stream",
                         "chat",
                         "chat",
-                        "connect_error",
+                        send_failure_cause(&error),
                         attempt,
                         endpoint,
                         &error.reason,

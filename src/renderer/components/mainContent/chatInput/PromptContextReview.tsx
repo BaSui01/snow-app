@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { diffLines } from "diff";
+import { useEffect, useRef, useState } from "react";
 import type { PluginChatInputActionResult } from "../../../plugins/pluginChatInputAction";
 import type { Locale } from "../../../i18n";
 
@@ -9,33 +8,27 @@ const LABELS = {
     continue: "Continue with selected sources",
     without: "Continue without code",
     source: "Read-only source preview",
-    diff: "Changes",
     warnings: "Warnings",
     reason: "Context outcome",
     unavailable: "Source preview unavailable",
-    lines: "lines",
   },
   "zh-CN": {
     review: "审阅项目来源",
     continue: "使用所选来源继续",
     without: "不带代码继续",
     source: "只读代码预览",
-    diff: "优化差异",
     warnings: "注意事项",
     reason: "上下文结果",
     unavailable: "代码预览不可用",
-    lines: "行",
   },
   "zh-TW": {
     review: "審閱專案來源",
     continue: "使用所選來源繼續",
     without: "不帶程式碼繼續",
     source: "唯讀程式碼預覽",
-    diff: "優化差異",
     warnings: "注意事項",
     reason: "上下文結果",
     unavailable: "程式碼預覽不可用",
-    lines: "行",
   },
 };
 const CONTEXT_LABELS: Record<string, readonly [string, string, string]> = {
@@ -220,20 +213,6 @@ export const PromptContextReview = ({
     }
   };
   const report = result.details?.contextReport;
-  const originalText = result.details?.originalText ?? "";
-  const optimizedText = result.preview;
-  const changes = useMemo(() => {
-    if (optimizedText === undefined) return [];
-    const original = originalText.slice(0, 100000);
-    const optimized = optimizedText.slice(0, 100000);
-    // Bound worst-case diff cost; fallback still shows the complete compared texts.
-    return (
-      diffLines(original, optimized, { timeout: 50, maxEditLength: 2000 }) ?? [
-        { value: original, added: false, removed: true, count: 1 },
-        { value: optimized, added: true, removed: false, count: 1 },
-      ]
-    );
-  }, [originalText, optimizedText]);
   const warnings = [
     ...new Set(
       [...(result.details?.warnings ?? []), ...(report?.warnings ?? [])].map(
@@ -241,10 +220,13 @@ export const PromptContextReview = ({
       ),
     ),
   ];
+  // Only the review-required flow keeps an element in the toolbar; an ordinary
+  // optimization result must not add any persistent input-area affordance.
+  if (!selection) return <></>;
   return (
-    <details open={!!selection}>
+    <details open>
       <summary style={{ cursor: "pointer", fontSize: 12 }}>
-        {selection ? labels.review : labels.diff}
+        {labels.review}
       </summary>
       <div
         style={{
@@ -293,17 +275,6 @@ export const PromptContextReview = ({
               </span>
             )}
           </p>
-        )}
-        {!selection && report && report.sources.length > 0 && (
-          <ul>
-            {report.sources.map((source) => (
-              <li key={source.id}>
-                {source.path}:{source.startLine}–{source.endLine} ·{" "}
-                {contextLabel(source.matchKind, locale)} ·{" "}
-                {contextLabel(source.freshness, locale)} · {source.characters}
-              </li>
-            ))}
-          </ul>
         )}
         {warnings.length > 0 && (
           <div role="status">
@@ -385,34 +356,6 @@ export const PromptContextReview = ({
               {labels.without}
             </button>
           </>
-        )}
-        {result.details && typeof result.preview === "string" && (
-          <div
-            aria-label={labels.diff}
-            style={{
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              fontFamily: "monospace",
-            }}
-          >
-            {changes.map((part, index) => (
-              <div
-                key={index}
-                style={{
-                  background: part.added
-                    ? "rgba(40,180,90,.15)"
-                    : part.removed
-                      ? "rgba(220,60,60,.15)"
-                      : undefined,
-                }}
-              >
-                <span aria-hidden="true">
-                  {part.added ? "+ " : part.removed ? "− " : "  "}
-                </span>
-                {part.value}
-              </div>
-            ))}
-          </div>
         )}
       </div>
     </details>

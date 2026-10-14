@@ -226,19 +226,15 @@ export const useContentEditableInteractions = ({
     };
   }, [isCommandOpen, handleCloseCommand]);
 
-  const handleCommandSelect = useCallback(
-    (command: ChatCommand) => {
-      if (command.disabled) {
-        return;
-      }
-      const args = extractCustomCommandArguments(value, command.label);
-      handleCloseCommand();
+  const runCommandSelect = useCallback(
+    (command: ChatCommand, typedValue: string) => {
+      const args = extractCustomCommandArguments(typedValue, command.label);
       const inputContent = command.buildInputContent?.(args);
       if (inputContent) {
         // prompt 类型自定义指令：chip 插入输入框，由用户补充后自行发送。
         // 末尾补空格：chip 是末节点时光标无法定位到其后（与
         // insertHtmlAtSelection 同一原因），补空格后可直接继续输入。
-        const typed = value.trim();
+        const typed = typedValue.trim();
         restoreContent(
           typed && !typed.startsWith("/")
             ? `${typed} ${inputContent} `
@@ -246,12 +242,32 @@ export const useContentEditableInteractions = ({
         );
         return;
       }
-      if (value.trim().startsWith("/")) {
+      if (typedValue.trim().startsWith("/")) {
         restoreContent("");
       }
       command.execute(args);
     },
-    [handleCloseCommand, restoreContent, value],
+    [restoreContent],
+  );
+
+  const handleCommandSelect = useCallback(
+    (command: ChatCommand) => {
+      if (command.disabled) {
+        return;
+      }
+      handleCloseCommand();
+      if (command.precheck) {
+        // 异步前置检查（如依赖的技能是否开启）通过后才执行。
+        void command.precheck().then((allowed) => {
+          if (allowed) {
+            runCommandSelect(command, value);
+          }
+        });
+        return;
+      }
+      runCommandSelect(command, value);
+    },
+    [handleCloseCommand, runCommandSelect, value],
   );
 
   const handleMentionDragStart = useCallback(

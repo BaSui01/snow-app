@@ -106,9 +106,23 @@ pub(crate) fn invalidate_server_discovery_cache(config_server_id: &str) {
     }
 }
 
-/// 外部 MCP 服务器工具获取的默认超时（毫秒）：120 秒。
+/// 外部 MCP 服务器的默认超时（毫秒）：覆盖连接、工具发现与单次工具调用。
 /// 服务器配置中显式设置了 timeout_ms（>0）时优先使用配置值。
-const DEFAULT_DISCOVERY_TIMEOUT_MS: u64 = 120_000;
+const DEFAULT_SERVER_TIMEOUT_MS: u64 = 120_000;
+
+fn server_timeout_ms(config: &McpServerConfigRecord) -> u64 {
+    config
+        .timeout_ms
+        .filter(|value| *value > 0)
+        .map(|value| value as u64)
+        .unwrap_or(DEFAULT_SERVER_TIMEOUT_MS)
+}
+
+fn tool_timeout_error(tool_full_name: &str, timeout_ms: u64) -> Error {
+    Error::from_reason(format!(
+        "External MCP tool {tool_full_name} timed out after {timeout_ms}ms"
+    ))
+}
 
 // Built-in MCP server names, used to exclude external tools with the same name.
 // Kept in sync with `tools::BUILTIN_SERVER_IDS`.
@@ -268,10 +282,19 @@ pub async fn resolve_project_scope_server(
         scope_server_id: project_scope_server_id(&config.server_id),
         project_owned: config.source == "project",
     };
-    let client = ExternalMcpClient::connect(&config).await?;
-    let tools_result = client.list_all_tools().await;
+    let timeout_ms = server_timeout_ms(&config);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    let client =
+        match tokio::time::timeout_at(deadline, ExternalMcpClient::connect(&config)).await {
+            Ok(client) => client?,
+            Err(_) => return Err(tool_timeout_error(tool_full_name, timeout_ms)),
+        };
+    let tools_result = tokio::time::timeout_at(deadline, client.list_all_tools()).await;
     client.close().await;
-    let tools = tools_result?;
+    let tools = match tools_result {
+        Ok(tools) => tools?,
+        Err(_) => return Err(tool_timeout_error(tool_full_name, timeout_ms)),
+    };
     let tool_names = public_tool_names(&tools);
     let tool_exists = tools
         .iter()
@@ -285,6 +308,7 @@ pub async fn resolve_project_scope_server(
     Ok(Some(project_server))
 }
 
+/// 调用外部工具：连接、工具列表与调用共用 timeoutMs 截止时间，超时返回错误。
 pub async fn call_tool(
     project_id: Option<&str>,
     tool_full_name: &str,
@@ -307,10 +331,24 @@ pub async fn call_tool(
         )));
     }
 
-    let client = ExternalMcpClient::connect(&config).await?;
-    let result = call_tool_with_client(&client, &public_tool_name, arguments).await;
+    let timeout_ms = server_timeout_ms(&config);
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    let client =
+        match tokio::time::timeout_at(deadline, ExternalMcpClient::connect(&config)).await {
+            Ok(client) => client?,
+            Err(_) => return Err(tool_timeout_error(tool_full_name, timeout_ms)),
+        };
+    let result = tokio::time::timeout_at(
+        deadline,
+        call_tool_with_client(&client, &public_tool_name, arguments),
+    )
+    .await;
     client.close().await;
 
+    let result = match result {
+        Ok(result) => result,
+        Err(_) => return Err(tool_timeout_error(tool_full_name, timeout_ms)),
+    };
     match result {
         Ok(result) => Ok(Some(result)),
         // 旧版本回退：Auto 协商降级后的连接可能在调用时被关闭
@@ -319,13 +357,30 @@ pub async fn call_tool(
         // 并重试一次；重试失败时保留原始错误（含 Transport closed
         // 诊断信息），避免掩盖根因。
         Err(error) if is_transport_closed(&error) => {
-            let retry_client = ExternalMcpClient::connect_legacy(&config).await?;
-            let retry = call_tool_with_client(&retry_client, &public_tool_name, arguments).await;
-            retry_client.close().await;
-            retry.map(Some).or_else(|_| Err(error))
+            match tokio::time::timeout_at(
+                deadline,
+                retry_call_tool_legacy(&config, &public_tool_name, arguments),
+            )
+            .await
+            {
+                Ok(retry) => retry.map(Some).or_else(|_| Err(error)),
+                Err(_) => Err(tool_timeout_error(tool_full_name, timeout_ms)),
+            }
         }
         Err(error) => Err(error),
     }
+}
+
+/// 旧版本回退：以 legacy initialize 握手重连并重试一次调用。
+async fn retry_call_tool_legacy(
+    config: &McpServerConfigRecord,
+    public_tool_name: &str,
+    arguments: &Value,
+) -> Result<Value> {
+    let client = ExternalMcpClient::connect_legacy(config).await?;
+    let result = call_tool_with_client(&client, public_tool_name, arguments).await;
+    client.close().await;
+    result
 }
 
 /// 在已连接的客户端上解析工具名并调用，返回服务器原始结果。
@@ -403,11 +458,7 @@ async fn discover_config_tools_inner(
     config: McpServerConfigRecord,
     server_name: String,
 ) -> Result<Vec<McpTool>> {
-    let timeout_ms = config
-        .timeout_ms
-        .filter(|value| *value > 0)
-        .map(|value| value as u64)
-        .unwrap_or(DEFAULT_DISCOVERY_TIMEOUT_MS);
+    let timeout_ms = server_timeout_ms(&config);
     // 连接与工具列表共享同一个截止时间，保证整个获取流程有总预算；
     // 超时后仍显式 close，避免 stdio 子进程 / HTTP 连接残留。
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);

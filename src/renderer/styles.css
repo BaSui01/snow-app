@@ -10405,6 +10405,47 @@ body.is-panel-resizing * {
   min-width: 0;
 }
 
+/* 空状态「使用指南」提示行：欢迎语下方，可收起 */
+.chat-empty-help-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-empty-help-hint svg {
+  flex-shrink: 0;
+}
+
+.chat-empty-help-hint-action,
+.chat-empty-help-hint-dismiss {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.chat-empty-help-hint-action:hover,
+.chat-empty-help-hint-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.chat-empty-help-hint-action:focus-visible,
+.chat-empty-help-hint-dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
 /* Quick action cards in empty chat state */
 .chat-empty-quick-actions {
   --quick-gap: 12px;

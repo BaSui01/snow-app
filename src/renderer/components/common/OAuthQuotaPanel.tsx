@@ -1,4 +1,4 @@
-import { AlertCircle, Gauge, RefreshCw } from "lucide-react";
+import { AlertCircle, ChartPie, RefreshCw } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type {
   ApiConfigRecord,
@@ -167,7 +167,7 @@ export const OAuthQuotaPanel = ({
   return (
     <div className="oauth-quota">
       <div className="oauth-quota-header">
-        <Gauge size={14} />
+        <ChartPie size={14} />
         <span className="oauth-quota-title">{t("chat.oauthQuota.title")}</span>
         {planLabel && <span className="oauth-quota-plan">{planLabel}</span>}
         <button

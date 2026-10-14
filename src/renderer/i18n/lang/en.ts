@@ -803,6 +803,9 @@ export const en = {
   "chat.quickActionConfigApiDesc": "Set up providers, models and credentials",
   "chat.quickActionCustomizeTheme": "Customize appearance",
   "chat.quickActionCustomizeThemeDesc": "Choose theme, light or dark mode",
+  "chat.helpHintText": "You can also ask me how to use Snow",
+  "chat.helpHintAsk": "Ask",
+  "chat.helpHintDismiss": "Don't show again",
   "chat.selectModel": "Select model",
   "chat.terminalMonitorLabel": "Monitoring terminal",
   "chat.terminalMonitorLines": "{{count}} lines",
@@ -1910,6 +1913,7 @@ export const en = {
   "sidebar.newChat": "New Chat",
   "sidebar.more": "More",
   "sidebar.settings": "Settings",
+  "sidebar.userGuide": "User guide",
   "sidebar.untitledChat": "Untitled",
   "sidebar.loadChatsError": "Failed to load chats",
   "sidebar.noActiveDirectory": "No active directory",
@@ -3983,6 +3987,15 @@ export const en = {
     "Ask me anything. Type / for commands or @ for files...",
   "chatCommand.title": "Chat commands",
   "chatCommand.clearDescription": "Start a new chat",
+  "chatCommand.helpDescription": "Ask how to use Snow, using the built-in docs",
+  "chatCommand.helpPromptGeneral":
+    "I'm new to Snow App. Please load the snow-app-docs skill (the built-in docs skill) first, then check the built-in docs and tell me its main features, what each part of the interface does, and what I should do first.",
+  "chatCommand.helpPromptQuestion":
+    "Please load the snow-app-docs skill (the built-in docs skill) first, then check the Snow App built-in docs and answer my question: {{request}}",
+  "chatCommand.helpSkillDisabledTitle": "Turn on the snow-app-docs skill",
+  "chatCommand.helpSkillDisabledMessage":
+    "The usage guide relies on the built-in snow-app-docs skill to read the docs. Turn it on in Skills settings first.",
+  "chatCommand.helpSkillDisabledOpen": "Open Skills settings",
   "chatCommand.compactDescription":
     "Compact this conversation into a context handoff",
   "chatCommand.mcpDescription":

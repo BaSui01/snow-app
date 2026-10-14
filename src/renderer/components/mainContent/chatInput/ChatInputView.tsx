@@ -36,6 +36,11 @@ import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
 import { CommandPanel } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
 import {
+  isHelpSkillDisabled,
+  markHelpGuideUsed,
+} from "../../../constants/helpGuide";
+import { HelpSkillDisabledDialog } from "../../common/HelpSkillDisabledDialog";
+import {
   applyCustomCommandArguments,
   type EffectiveCustomCommand,
 } from "./commands/customCommands";
@@ -335,10 +340,22 @@ export const ChatInputView = ({
     ],
   );
 
+  const [isHelpSkillDialogOpen, setIsHelpSkillDialogOpen] = useState(false);
+  // /help 选中前检查 snow-app-docs 技能：明确关闭时弹窗拦截，不插入指令。
+  const checkHelpAvailable = useCallback(async (): Promise<boolean> => {
+    const disabled = await isHelpSkillDisabled(projectId);
+    if (disabled) {
+      setIsHelpSkillDialogOpen(true);
+    }
+    return !disabled;
+  }, [projectId]);
+
   const commands = useMemo(
     () =>
       createChatCommands({
         onNewChat: handleNewChat,
+        onHelpUsed: markHelpGuideUsed,
+        checkHelpAvailable,
         onCompactConversation,
         onOpenFileChangesPanel: () => {
           setIsProjectMcpOpen(false);
@@ -454,6 +471,9 @@ export const ChatInputView = ({
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
           fileChangesDescription: t("chatCommand.fileChangesDescription"),
+          helpDescription: t("chatCommand.helpDescription"),
+          helpPromptGeneral: t("chatCommand.helpPromptGeneral"),
+          helpPromptQuestion: t("chatCommand.helpPromptQuestion"),
           memoryDescription: activeConversationId
             ? t("chatCommand.memoryDescription")
             : t("chatCommand.memoryNoProject"),
@@ -489,6 +509,7 @@ export const ChatInputView = ({
       }),
     [
       activeConversationId,
+      checkHelpAvailable,
       customCommands,
       handleNewChat,
       handleOpenCodebasePanel,
@@ -1026,6 +1047,10 @@ export const ChatInputView = ({
           />
         </div>
       </div>
+      <HelpSkillDisabledDialog
+        open={isHelpSkillDialogOpen}
+        onClose={() => setIsHelpSkillDialogOpen(false)}
+      />
     </div>
   );
 };

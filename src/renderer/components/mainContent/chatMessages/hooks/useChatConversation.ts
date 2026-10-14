@@ -1085,6 +1085,16 @@ export const useChatConversation = (
       setPendingAutoSendOverride(options ?? null);
       setAutoSendToken(Date.now());
     },
+    // 回填输入框但不发送（不走 autoSendToken 分支）；newChat 时先新建会话。
+    prefillComposer: (
+      content: string,
+      options?: { newChat?: boolean; directoryId?: string },
+    ) => {
+      if (options?.newChat) {
+        conversationManagementApi.handleNewChat(options.directoryId);
+      }
+      setDraftToRestore(content);
+    },
     pendingAutoSendOverride,
     setPendingAutoSendOverride,
     handleRollback: rollbackApi.handleRollback,

@@ -15,5 +15,7 @@ export type ChatCommand = {
   badge?: string;
   /** prompt 类型自定义指令：返回插入输入框的 chip 编码内容（不直接执行） */
   buildInputContent?: (args?: string) => string;
+  /** 选中前的异步前置检查：返回 false 时取消本次选中（由检查方自行提示）。 */
+  precheck?: () => Promise<boolean>;
   execute: (args?: string) => void;
 };

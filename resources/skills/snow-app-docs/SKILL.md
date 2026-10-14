@@ -1,14 +1,14 @@
 ---
 name: snow-app-docs
 description: >-
-  Snow App 配置与排查向导（中文/English）——配置/管理 API 密钥、模型与档案、
+  Snow App 入门、使用与配置向导（中文/English）——新手快速开始、怎么用、界面与功能介绍、聊天与 AI 助手、终端与 SSH、Git 面板、代码库索引、浏览器自动化、快捷键；配置/管理 API 密钥、模型与档案、
   MCP 服务器、Skills、子代理、Hooks、图像生成、代理与网络、全局站点拦截规则、
   安全隐私与工具授权、个性化/系统提示词/自定义请求头/主题/快捷键、用量统计与
   系统日志、数据存储位置、settings.json 字段、内置工具、插件开发、安装与发布
   （plugin.json 清单、ESM/iframe 面板、运行时元数据 API、config plugins 域、
   插件市场与 snow-plugin-store 上架）等。
   Guides the agent to read the built-in Snow App documentation (~/.snowapp/docs)
-  before configuring or troubleshooting Snow App. Covers MCP servers;
+  before configuring, troubleshooting, or answering how-to questions about Snow App (getting started, chat, terminal, Git panel, codebase index, browser automation, keyboard shortcuts). Covers MCP servers;
   installing, managing, creating, and authoring Skills; plugin authoring,
   installation, and publishing (plugin.json manifest, ESM/iframe panels, runtime
   metadata API, config plugins scope, plugin market, snow-plugin-store publishing
@@ -52,7 +52,7 @@ allowed-tools:
 
 当用户请求**配置 MCP 服务器、安装与管理 Skills、创建与编写 Skills、配置 Hooks
 与子代理、配置 API 密钥与模型、配置图像生成、配置代理与网络、管理浏览器密码/数据、处理应用更新、个性化与自定义请求头、用量/日志诊断、
-开发/安装/发布插件、项目级设置**，或询问 **settings.json 字段 / 内置工具 / 安全边界 / 数据位置**时，
+开发/安装/发布插件、项目级设置**，或询问 **settings.json 字段 / 内置工具 / 安全边界 / 数据位置**，或询问 **应用怎么用、功能在哪里、如何上手**时，
 先阅读应用内置文档，再按文档步骤动手配置，而不是凭记忆操作。
 
 ## 1. 先读文档（Read the docs first）

@@ -50,6 +50,17 @@ fn register_remote_tool_execution(
     (tool_execution_id, cancel_token)
 }
 
+/// 非内置（外部）工具登记为可中止执行：发出 execution id，供停止按钮中止。
+pub(crate) fn begin_external_tool_execution(
+    tool_full_name: &str,
+    on_chunk: &BashStreamCallback,
+) -> Option<(String, tokio_util::sync::CancellationToken)> {
+    if is_builtin_mcp_tool(&sanitize_tool_full_name(tool_full_name)) {
+        return None;
+    }
+    Some(register_remote_tool_execution(on_chunk))
+}
+
 /// Execute an MCP tool and capture incremental checkpoint state immediately
 pub async fn call_mcp_tool(
     tool_full_name: String,

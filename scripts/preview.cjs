@@ -81,6 +81,8 @@ const child = spawn(require("electron"), [snapshotDir], {
     ...process.env,
     NODE_ENV: "production",
     NODE_ENV_ELECTRON_VITE: "production",
+    // 未打包也执行真实更新检查与下载（安装仍被拦截）
+    SNOW_UPDATE_FORCE_CHECK: "1",
   },
 });
 

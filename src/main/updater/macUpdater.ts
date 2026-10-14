@@ -39,7 +39,9 @@ const RUNTIME_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 // 统一的应用 User-Agent（与 native 侧 http_client.rs 保持一致）：
 // Snow-App/<version> Snow App <role> (<OS>; <arch>)
 const appUserAgent = (role?: string): string =>
-  `Snow-App/${app.getVersion()} Snow App${role ? ` ${role}` : ""} (${uaPlatform()})`;
+  `Snow-App/${app.getVersion()} Snow App${
+    role ? ` ${role}` : ""
+  } (${uaPlatform()})`;
 
 const uaPlatform = (): string => {
   // process.getSystemVersion() 返回真实系统版本（如 10.0.26100 / 15.3.1 / 24.04）
@@ -135,7 +137,7 @@ const fetchManifest = async (): Promise<MacUpdateManifest> => {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
-    MANIFEST_FETCH_TIMEOUT_MS,
+    MANIFEST_FETCH_TIMEOUT_MS
   );
   try {
     const response = await net.fetch(MANIFEST_URL, {
@@ -184,7 +186,7 @@ const fetchManifest = async (): Promise<MacUpdateManifest> => {
 
 const downloadZip = async (
   fileInfo: MacUpdateFileInfo,
-  zipPath: string,
+  zipPath: string
 ): Promise<void> => {
   const response = await net.fetch(fileInfo.url, {
     headers: {
@@ -240,12 +242,12 @@ const downloadZip = async (
 
 const verifyZip = async (
   zipPath: string,
-  fileInfo: MacUpdateFileInfo,
+  fileInfo: MacUpdateFileInfo
 ): Promise<void> => {
   const fileStat = await stat(zipPath);
   if (typeof fileInfo.size === "number" && fileStat.size !== fileInfo.size) {
     throw new Error(
-      `文件大小不匹配：期望 ${fileInfo.size} 字节，实际 ${fileStat.size} 字节`,
+      `文件大小不匹配：期望 ${fileInfo.size} 字节，实际 ${fileStat.size} 字节`
     );
   }
 
@@ -253,7 +255,7 @@ const verifyZip = async (
   const actualHash = await getRawNative().sha256File(zipPath);
   if (actualHash.toLowerCase() !== fileInfo.sha256.toLowerCase()) {
     throw new Error(
-      `SHA256 校验失败：期望 ${fileInfo.sha256}，实际 ${actualHash}`,
+      `SHA256 校验失败：期望 ${fileInfo.sha256}，实际 ${actualHash}`
     );
   }
 };
@@ -285,6 +287,11 @@ const cleanupStaleZips = async (keepZipPath: string): Promise<void> => {
 // 检查更新
 // ---------------------------------------------------------------------------
 
+// preview 模式（未打包，注入 SNOW_UPDATE_FORCE_CHECK=1）允许真实检查与下载，
+// 安装仍要求打包环境，避免误删 Electron 运行目录。
+const isForcedUnpackagedCheck = (): boolean =>
+  process.env.SNOW_UPDATE_FORCE_CHECK === "1";
+
 const checkForUpdatesAction = async (): Promise<void> => {
   if (checkInFlight || downloadInFlight) {
     return;
@@ -293,7 +300,7 @@ const checkForUpdatesAction = async (): Promise<void> => {
   try {
     // 每次检查前同步代理设置，确保清单请求与后续下载走配置的代理
     await applySessionProxy(native);
-    if (!app.isPackaged) {
+    if (!app.isPackaged && !isForcedUnpackagedCheck()) {
       return;
     }
     const manifest = await fetchManifest();
@@ -385,7 +392,7 @@ const downloadUpdateAction = async (): Promise<void> => {
   try {
     // 下载前同步代理设置，确保更新包下载走配置的代理
     await applySessionProxy(native);
-    if (!app.isPackaged) {
+    if (!app.isPackaged && !isForcedUnpackagedCheck()) {
       throw new Error("开发模式下不支持下载更新");
     }
     // 已下载完成则直接返回
@@ -438,7 +445,7 @@ const downloadUpdateAction = async (): Promise<void> => {
     await writeFile(
       getStoredManifestPath(),
       JSON.stringify(manifest, null, 2),
-      "utf8",
+      "utf8"
     );
 
     await cleanupStaleZips(zipPath);
@@ -483,7 +490,7 @@ const buildInstallScript = (
   bundlePath: string,
   zipPath: string,
   destDir: string,
-  logPath: string,
+  logPath: string
 ): string => {
   const waitSeconds = INSTALL_WAIT_APP_EXIT_SEC;
   return [
@@ -570,7 +577,7 @@ const installUpdateAction = async (): Promise<void> => {
       bundlePath,
       downloadedZipPath,
       destDir,
-      logPath,
+      logPath
     );
     await writeFile(scriptPath, script, { mode: 0o755 });
 

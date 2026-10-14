@@ -1038,6 +1038,11 @@ export type UseChatConversationResult = {
     options?: ScheduledTaskRunOptions,
     taskName?: string,
   ) => void;
+  /** 回填输入框但不自动发送；newChat 时先新建会话（可指定目标项目）。 */
+  prefillComposer: (
+    content: string,
+    options?: { newChat?: boolean; directoryId?: string },
+  ) => void;
   /** One-shot per-send override queued by buildFromContent for the ChatInput's
    *  auto-send. Cleared once consumed (onAutoSendOverrideConsumed). */
   pendingAutoSendOverride: ScheduledTaskRunOptions | null;

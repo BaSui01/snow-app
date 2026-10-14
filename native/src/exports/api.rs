@@ -495,6 +495,8 @@ pub async fn call_mcp_tool(
     plan_approved: Option<bool>,
     conversation_id: Option<String>,
 ) -> napi::Result<String> {
+    let cancellable =
+        crate::mcp::tools::begin_external_tool_execution(&tool_full_name, &on_chunk);
     let execution = call_tool(
         tool_full_name,
         args_json,
@@ -514,7 +516,19 @@ pub async fn call_mcp_tool(
         plan_approved.unwrap_or(false),
         conversation_id,
     );
-    crate::utils::panic_guard::guard_panic(execution).await
+    let Some((tool_execution_id, cancel_token)) = cancellable else {
+        return crate::utils::panic_guard::guard_panic(execution).await;
+    };
+    // 停止按钮取消时丢弃整条调用链（连接、子进程或 HTTP 请求随之释放）。
+    let outcome = tokio::select! {
+        result = crate::utils::panic_guard::guard_panic(execution) => result,
+        _ = cancel_token.cancelled() => Err(Error::new(
+            Status::GenericFailure,
+            "Tool execution was aborted".to_string(),
+        )),
+    };
+    crate::api::cancel::unregister_tool_execution(&tool_execution_id);
+    outcome
 }
 
 #[napi(object)]

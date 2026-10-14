@@ -4,6 +4,7 @@ import { createCodebaseCommand } from "./CodebaseCommand";
 import { createCompactCommand } from "./CompactCommand";
 import { createCustomCommandsCommand } from "./CustomCommandsCommand";
 import { createFileChangesCommand } from "./FileChangesCommand";
+import { createHelpCommand } from "./HelpCommand";
 import { createMcpCommand } from "./McpCommand";
 import { createMemoryCommand } from "./MemoryCommand";
 import { createPermissionsCommand } from "./PermissionsCommand";
@@ -30,6 +31,7 @@ export const BUILT_IN_COMMAND_NAMES: ReadonlySet<string> = new Set([
   "review",
   "compact",
   "custom",
+  "help",
 ]);
 
 /**
@@ -79,6 +81,7 @@ const COMMAND_DESCRIPTION_KEYS: Record<string, string[]> = {
     "chatCommand.reviewNewChatOnly",
   ],
   compact: ["chatCommand.compactDescription"],
+  help: ["chatCommand.helpDescription"],
   custom: ["chatCommand.customCommandsDescription"],
 };
 
@@ -105,6 +108,9 @@ type ChatCommandLabels = {
   customCommandsDescription: string;
   customCommandsPromptType: string;
   fileChangesDescription: string;
+  helpDescription: string;
+  helpPromptGeneral: string;
+  helpPromptQuestion: string;
   mcpDescription: string;
   memoryDescription: string;
   permissionsDescription: string;
@@ -123,6 +129,8 @@ export type CustomCommandRunHandler = (
 
 type CreateChatCommandsOptions = {
   onNewChat: () => void;
+  onHelpUsed: () => void;
+  checkHelpAvailable: () => Promise<boolean>;
   onCompactConversation?: (
     model?: string,
     apiProfile?: string,
@@ -157,6 +165,8 @@ type CreateChatCommandsOptions = {
 
 export const createChatCommands = ({
   onNewChat,
+  onHelpUsed,
+  checkHelpAvailable,
   onCompactConversation,
   onOpenFileChangesPanel,
   onOpenMcpPanel,
@@ -190,6 +200,13 @@ export const createChatCommands = ({
 
   const commands: ChatCommand[] = [
     createClearCommand(onNewChat, labels.clearDescription),
+    createHelpCommand({
+      description: labels.helpDescription,
+      generalPrompt: labels.helpPromptGeneral,
+      questionTemplate: labels.helpPromptQuestion,
+      onUsed: onHelpUsed,
+      precheck: checkHelpAvailable,
+    }),
     {
       ...createFileChangesCommand(
         onOpenFileChangesPanel,

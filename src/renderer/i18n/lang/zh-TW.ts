@@ -757,6 +757,9 @@ export const zhTW = {
   "chat.quickActionConfigApiDesc": "設定服務商、模型和憑證",
   "chat.quickActionCustomizeTheme": "個人化外觀",
   "chat.quickActionCustomizeThemeDesc": "選擇主題、淺色或深色模式",
+  "chat.helpHintText": "也可以直接問我怎麼用",
+  "chat.helpHintAsk": "問一下",
+  "chat.helpHintDismiss": "不再提示",
   "chat.selectModel": "選擇模型",
   "chat.terminalMonitorLabel": "監控終端",
   "chat.terminalMonitorLines": "{{count}} 行",
@@ -1822,6 +1825,7 @@ export const zhTW = {
   "sidebar.newChat": "新增對話",
   "sidebar.more": "更多",
   "sidebar.settings": "設定",
+  "sidebar.userGuide": "使用指南",
   "sidebar.untitledChat": "未命名對話",
   "sidebar.loadChatsError": "載入對話失敗",
   "sidebar.noActiveDirectory": "暫無活動目錄",
@@ -3711,6 +3715,15 @@ export const zhTW = {
     "問我任何問題，輸入 / 開啟指令面板，輸入 @ 開啟檔案面板...",
   "chatCommand.title": "聊天指令",
   "chatCommand.clearDescription": "建立新對話",
+  "chatCommand.helpDescription": "問 Snow 怎麼用，查閱內建文件",
+  "chatCommand.helpPromptGeneral":
+    "我剛開始使用 Snow App。請先載入 snow-app-docs 技能（內建文件技能），再查閱內建文件，告訴我這個應用的主要功能、各介面區域的作用，以及第一步該做什麼。",
+  "chatCommand.helpPromptQuestion":
+    "請先載入 snow-app-docs 技能（內建文件技能），再查閱 Snow App 內建文件，回答我的問題：{{request}}",
+  "chatCommand.helpSkillDisabledTitle": "需要開啟 snow-app-docs 技能",
+  "chatCommand.helpSkillDisabledMessage":
+    "使用指南依賴內建的 snow-app-docs 技能查閱文件。請先在 Skills 設定中開啟該技能，再使用此功能。",
+  "chatCommand.helpSkillDisabledOpen": "開啟 Skills 設定",
   "chatCommand.compactDescription": "將目前對話壓縮為上下文交接文件",
   "chatCommand.mcpDescription": "管理目前專案的 MCP 服務和工具",
   "chatCommand.mcpNoProject": "請先選擇專案再管理 MCP 服務",

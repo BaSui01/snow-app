@@ -61,6 +61,7 @@ mod worktree_execution;
 
 pub use super::servers::sub_agents::SUB_AGENT_COMMS_TOOL_FULL_NAMES;
 pub use call::call_mcp_tool;
+pub(crate) use call::begin_external_tool_execution;
 pub(crate) use collect::{
     ensure_project_tool_enabled,
     builtin_scope_server_id, builtin_server_name, load_global_scope, load_project_scope,

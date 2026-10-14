@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  CircleHelp,
   Copy,
   Folder,
   FolderGit2,
@@ -20,9 +21,16 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../preload";
 import { useI18n } from "../../i18n";
+import { HelpSkillDisabledDialog } from "../common/HelpSkillDisabledDialog";
 import { PixelLogo } from "../common/PixelLogo";
 import { useChatConversationContext } from "./chatMessages";
 import { rightPanelEvents } from "../rightPanel/rightPanelEvents";
+import {
+  dismissHelpGuideHint,
+  isHelpSkillDisabled,
+  markHelpGuideUsed,
+  useHelpGuideHint,
+} from "../../constants/helpGuide";
 
 /** 清理 Windows 拓展长路径前缀 \\\\?\\ 或 //?/，还原为干净美观的本地绝对路径。 */
 const cleanWorktreePath = (rawPath: string): string => {
@@ -51,8 +59,9 @@ export function EmptyChatGreeting({
   onNavigateToView,
 }: EmptyChatGreetingProps): React.JSX.Element {
   const { t } = useI18n();
-  const { pendingWorktreeId, setPendingWorktreeId } =
+  const { pendingWorktreeId, setPendingWorktreeId, prefillComposer } =
     useChatConversationContext();
+  const showHelpHint = useHelpGuideHint();
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
 
@@ -158,6 +167,20 @@ export function EmptyChatGreeting({
     }
   }, [isAddingProject, t]);
 
+  const [isHelpSkillDialogOpen, setIsHelpSkillDialogOpen] = useState(false);
+
+  const handleAskHelp = useCallback((): void => {
+    void isHelpSkillDisabled(activeDirectory?.directoryId).then((disabled) => {
+      if (disabled) {
+        setIsHelpSkillDialogOpen(true);
+        return;
+      }
+      markHelpGuideUsed();
+      prefillComposer(t("chatCommand.helpPromptGeneral"));
+      document.querySelector<HTMLElement>(".chat-input-textarea")?.focus();
+    });
+  }, [activeDirectory?.directoryId, prefillComposer, t]);
+
   return (
     <div className="chat-empty-greeting">
       <div className="chat-empty-greeting-brand">
@@ -173,6 +196,30 @@ export function EmptyChatGreeting({
               defaultValue: "Select a workspace project to get started.",
             })}
       </p>
+      {showHelpHint && (
+        <div className="chat-empty-help-hint">
+          <CircleHelp size={13} strokeWidth={1.8} />
+          <span>
+            {t("chat.helpHintText", {
+              defaultValue: "You can also ask me how to use Snow",
+            })}
+          </span>
+          <button
+            className="chat-empty-help-hint-action"
+            onClick={handleAskHelp}
+            type="button"
+          >
+            {t("chat.helpHintAsk", { defaultValue: "Ask" })}
+          </button>
+          <button
+            className="chat-empty-help-hint-dismiss"
+            onClick={dismissHelpGuideHint}
+            type="button"
+          >
+            {t("chat.helpHintDismiss", { defaultValue: "Don't show again" })}
+          </button>
+        </div>
+      )}
       {worktrees.length > 0 && (
         <div className="chat-empty-worktrees-section">
           <div className="chat-empty-worktrees-header">
@@ -390,6 +437,10 @@ export function EmptyChatGreeting({
       {addProjectError ? (
         <p className="chat-empty-quick-error">{addProjectError}</p>
       ) : null}
+      <HelpSkillDisabledDialog
+        open={isHelpSkillDialogOpen}
+        onClose={() => setIsHelpSkillDialogOpen(false)}
+      />
     </div>
   );
 }

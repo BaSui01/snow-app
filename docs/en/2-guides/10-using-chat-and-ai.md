@@ -118,11 +118,12 @@ See [Plugin development and installation, section 6.1](24-plugin-development-and
 
 ## 3. Complete Slash Command List
 
-Type `/` to open the command palette. The current version has exactly eleven commands:
+Type `/` to open the command palette. The current version has exactly twelve commands:
 
 | Command               | Behavior and availability                                                                                                                                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/clear`              | Creates a new conversation; it is not `/new` and does not erase history inside the existing conversation                                                                                                                                                                               |
+| `/help`               | Puts an "ask how to use Snow" prompt into the input (not sent automatically); add your question and send it, and the AI checks the built-in docs to answer. Always available, no project required                                                                                      |
 | `/file-changes`       | Shows file changes and diffs for the current conversation; disabled until the conversation has been persisted                                                                                                                                                                          |
 | `/memory`             | Shows the project memories saved or merged by the current conversation (including its sub-agents and WorkFlow nodes), with per-entry detail, a "locate in project memory" jump and an option to delete this conversation's entries; disabled until the conversation has been persisted |
 | `/mcp`                | Manages MCP servers for the current project; requires a selected project                                                                                                                                                                                                               |
@@ -135,6 +136,8 @@ Type `/` to open the command palette. The current version has exactly eleven com
 | `/compact`            | Compacts the current conversation; disabled when there are no messages or compaction is already running                                                                                                                                                                                |
 
 While the AI is running, `/compact`, `/role`, `/sensitive-commands`, `/skills`, `/codebase`, `/mcp`, and `/review` are disabled. `/file-changes`, `/memory` and `/clear` are not in that running-disabled set, but their own conditions still apply.
+
+To get started, use the "User guide" button at the bottom of the sidebar, click "Ask" under the greeting on an empty chat, or type `/help`. Each one only places the question in the input, so you can review it before sending. Choose "Don't show again" to hide the greeting hint for good. These entries rely on the built-in `snow-app-docs` skill: if that skill is turned off in Skills settings, a dialog asks you to turn it on first, and no prompt is added.
 
 ## 4. Plan, Goal, and YOLO
 

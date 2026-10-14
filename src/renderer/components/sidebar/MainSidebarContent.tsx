@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   CircleArrowUp,
+  CircleHelp,
   Download,
   Ellipsis,
   LoaderCircle,
@@ -28,6 +29,11 @@ import {
   useClientScriptStore,
 } from "../../userscripts/clientScriptStore";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { HelpSkillDisabledDialog } from "../common/HelpSkillDisabledDialog";
+import {
+  isHelpSkillDisabled,
+  markHelpGuideUsed,
+} from "../../constants/helpGuide";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
 import { useShortcutLabel } from "../../hooks/useShortcutLabel";
@@ -78,8 +84,12 @@ export function MainSidebarContent({
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
   const { mode: sidebarDisplayMode } = useSidebarDisplayMode();
-  const { handleSelectConversation, handleNewChat, activeConversationId } =
-    useChatConversationContext();
+  const {
+    handleSelectConversation,
+    handleNewChat,
+    activeConversationId,
+    prefillComposer,
+  } = useChatConversationContext();
   const shortcutLabel = useShortcutLabel("newChat");
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -295,6 +305,28 @@ export function MainSidebarContent({
     }
     handleNewChat();
   }, [activeMainView, handleNewChat, onSelectMainView]);
+
+  const [isHelpSkillDialogOpen, setIsHelpSkillDialogOpen] = useState(false);
+
+  // 「使用指南」：新建会话并预填提问（不自动发送）；非聊天视图先切回聊天。
+  const handleOpenUserGuide = useCallback((): void => {
+    void isHelpSkillDisabled(activeDirectoryId || undefined).then(
+      (disabled) => {
+        if (disabled) {
+          setIsHelpSkillDialogOpen(true);
+          return;
+        }
+        if (activeMainView !== "chat") {
+          onSelectMainView("chat");
+        }
+        markHelpGuideUsed();
+        prefillComposer(t("chatCommand.helpPromptGeneral"), { newChat: true });
+      },
+    );
+  }, [activeDirectoryId, activeMainView, onSelectMainView, prefillComposer, t]);
+
+  // 存在更新入口（可更新 / 下载中 / 已下载）时隐藏使用指南，避免底部按钮挤压
+  const hasUpdateEntry = updateStatus.available || updateStatus.downloaded;
 
   // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索面板，Ctrl/Cmd+B 切换备忘录页面。
   // 快捷键引擎通过 shortcutEvents 总线触发，页面切换状态由父级持有。
@@ -569,6 +601,19 @@ export function MainSidebarContent({
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
           </button>
 
+          {!hasUpdateEntry && (
+            <button
+              className="nav-item"
+              onClick={handleOpenUserGuide}
+              type="button"
+            >
+              <CircleHelp size={18} strokeWidth={1.8} />
+              <span>
+                {t("sidebar.userGuide", { defaultValue: "User guide" })}
+              </span>
+            </button>
+          )}
+
           {/* 自动检测到新版本时显示更新入口，点击打开更新弹窗 */}
           {updateStatus.available &&
             !updateStatus.downloading &&
@@ -636,6 +681,10 @@ export function MainSidebarContent({
       <UpdateDialog
         open={isUpdateDialogOpen}
         onClose={() => setIsUpdateDialogOpen(false)}
+      />
+      <HelpSkillDisabledDialog
+        open={isHelpSkillDialogOpen}
+        onClose={() => setIsHelpSkillDialogOpen(false)}
       />
     </>
   );

@@ -178,7 +178,7 @@ An effective tool must satisfy all of these conditions:
 - The current project has not disabled that exact full public tool name;
 - A project-owned server is itself enabled. Project-owned servers do not use the global-server project toggle, but their individual tools can still be disabled.
 
-A server appearing in Settings therefore does not guarantee that its tools enter the current Agent context. After changing global or project toggles, fetch tools again and use the actual full name in a sub-agent's `toolsJson` or a Skill's `allowed-tools`.
+A server appearing in Settings therefore does not guarantee that its tools enter the current Agent context. After changing global or project toggles, fetch tools again and use the actual full name in a sub-agent's `toolsJson` or a Skill's `allowed-tools`. The Global tab of Sub-agent Settings lists only tools from system and global MCP servers and does not change with the current project. When a project disables a server, global sub-agents skip those tools while running in that project; re-enabling the server in that project restores them.
 
 Tool discovery results are cached in-process per server (TTL 60 seconds): a cache hit returns the list immediately. Saving, editing, or deleting one server only invalidates that server's cache entry, so other servers are never reconnected. Server and tool toggles are read-time blacklists and never invalidate the cache.
 

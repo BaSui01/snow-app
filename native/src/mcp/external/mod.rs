@@ -193,8 +193,9 @@ pub async fn discover_tools(
     Ok(tools)
 }
 
-pub async fn discover_project_servers(project_id: &str) -> Result<Vec<ExternalMcpProjectServer>> {
-    let configs = load_configs(Some(project_id)).await?;
+/// `project_id` 为 None 时只返回全局服务器（不含项目专属服务器）。
+pub async fn discover_project_servers(project_id: Option<&str>) -> Result<Vec<ExternalMcpProjectServer>> {
+    let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
     Ok(configs
         .into_iter()

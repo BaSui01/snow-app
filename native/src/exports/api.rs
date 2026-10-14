@@ -30,7 +30,8 @@ use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::servers::websearch::WebSearchCommandCallback;
 use crate::mcp::servers::workflow::validate_graph as validate_workflow_graph_impl;
 use crate::mcp::tools::{
-    call_mcp_tool as call_tool, list_mcp_project_server_tools as list_project_server_tools,
+    call_mcp_tool as call_tool, list_mcp_global_servers as list_global_servers,
+    list_mcp_project_server_tools as list_project_server_tools,
     list_mcp_project_servers as list_project_servers,
     list_mcp_project_servers_cached as list_cached_project_servers,
     list_mcp_server_tools as list_server_tools, list_mcp_tools as list_all_mcp_tools,
@@ -207,16 +208,24 @@ pub fn cancel_conversation_summary(conversation_id: String) -> napi::Result<bool
 /// rounds, then returns the matching files as `FileSearchResult` entries.
 /// Request scheme follows the active API config (chat / responses /
 /// anthropic / gemini). `onProgress` is invoked after every tool execution
-/// so the UI can display the search process.
+/// so the UI can display the search process. Pass `linked=false` to keep the
+/// search inside the given workspace path only (e.g. an explicitly scoped
+/// project member), instead of covering the whole linked project group.
 #[napi(
-    ts_args_type = "query: string, workspacePath: string, onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined"
+    ts_args_type = "query: string, workspacePath: string, onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined, linked: boolean | undefined"
 )]
 pub async fn search_files_by_agent(
     query: String,
     workspace_path: String,
     on_progress: Option<FileSearchAgentProgressCallback>,
+    linked: Option<bool>,
 ) -> napi::Result<Vec<FileSearchResult>> {
-    let linked_roots = resolve_linked_roots_for_file_search(&workspace_path).await;
+    // linked=false（`@:项目/` 显式限定某个成员）时只搜索给定工作区，不并入关联项目。
+    let linked_roots = if linked.unwrap_or(true) {
+        resolve_linked_roots_for_file_search(&workspace_path).await
+    } else {
+        Vec::new()
+    };
     let token = CancellationToken::new();
     let agent = run_agent(query, workspace_path, linked_roots, token, on_progress);
     crate::utils::panic_guard::guard_panic(agent).await
@@ -294,6 +303,12 @@ pub async fn list_mcp_project_servers(
     project_id: String,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
     list_project_servers(project_id).await
+}
+
+/// 全局 MCP 服务器目录（不依赖项目）：全局子代理选择工具使用，只叠加全局层开关。
+#[napi]
+pub async fn list_mcp_global_servers() -> napi::Result<Vec<McpProjectServerStatus>> {
+    list_global_servers().await
 }
 
 /// 项目 MCP 服务器快速列表：外部服务器工具只读进程内缓存（不连接服务器），

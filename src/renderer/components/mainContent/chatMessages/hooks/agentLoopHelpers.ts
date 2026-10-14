@@ -333,17 +333,30 @@ export const applyStreamChunkToMessage = (
   chunk: ResponsesApiStreamChunk,
   timestamp: string = formatMessageTime(),
   thinkingActiveOverride?: boolean | null,
+  receivedAt: number = Date.now(),
 ): ChatConversationMessage => {
   if (chunk.retrying) {
+    const nextAttempt = chunk.retryAttempt ?? undefined;
+    const nextBackoffMs = chunk.retryBackoffMs ?? undefined;
+    // 只有新一轮重试（尝试序号或退避时长变化）才重设倒计时基准时刻：同一轮内
+    // 后端可能重发分片，且切换会话会重新挂载重试提示，倒计时需按基准续算。
+    const startsNewAttempt =
+      !currentMessage.isRetrying ||
+      currentMessage.retryAttempt !== nextAttempt ||
+      currentMessage.retryBackoffMs !== nextBackoffMs;
+
     return {
       ...currentMessage,
       content: "",
       thinking: undefined,
       isThinkingActive: false,
       isRetrying: true,
-      retryAttempt: chunk.retryAttempt ?? undefined,
+      retryAttempt: nextAttempt,
       retryError: chunk.retryError ?? undefined,
-      retryBackoffMs: chunk.retryBackoffMs ?? undefined,
+      retryBackoffMs: nextBackoffMs,
+      retryBackoffStartedAt: startsNewAttempt
+        ? receivedAt
+        : currentMessage.retryBackoffStartedAt,
       status: "sending",
     };
   }
@@ -575,6 +588,7 @@ export const createStreamChunkHandler = (
               chunk,
               undefined,
               thinkingActive,
+              now,
             )
           : currentMessage,
       ),

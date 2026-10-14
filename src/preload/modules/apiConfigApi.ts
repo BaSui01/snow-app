@@ -19,6 +19,7 @@ import type {
   OAuthLoginStart,
   OAuthLoginStatus,
   OAuthProviderInfo,
+  OAuthQuotaSnapshot,
   PrivacySettings,
   ProxyBrowserSettings,
   ResponsesApiRequest,
@@ -293,6 +294,8 @@ export const apiConfigApi = {
     ipcRenderer.invoke("api-configs:oauth-callback", sessionId, callbackUrl),
   cancelOAuthLogin: (sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke("api-configs:oauth-cancel", sessionId),
+  getOAuthQuota: (profileName: string): Promise<OAuthQuotaSnapshot> =>
+    ipcRenderer.invoke("api-configs:oauth-quota", profileName),
   getRetryDefaults: (): Promise<string> =>
     ipcRenderer.invoke("api-configs:retry-defaults"),
   upsertApiConfig: (config: ApiConfigInput): Promise<ApiConfigRecord[]> =>

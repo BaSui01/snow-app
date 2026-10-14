@@ -21,6 +21,11 @@ export type StreamRetryNoticeProps = {
    * 不知道还要多久。
    */
   backoffMs?: number | null;
+  /**
+   * 本轮退避的起始时刻（epoch ms），由消息状态携带。切换会话会让重试提示重新
+   * 挂载，以它为基准计算剩余时间，倒计时才不会从头重新开始。
+   */
+  backoffStartedAt?: number | null;
 };
 
 export const StreamRetryNotice = ({
@@ -28,16 +33,17 @@ export const StreamRetryNotice = ({
   error,
   status = "retrying",
   backoffMs,
+  backoffStartedAt,
 }: StreamRetryNoticeProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(false);
   const errorText = error?.trim() ?? "";
   const isExhausted = status === "exhausted";
 
-  // 倒计时基准：每次新的重试通知到达就重设一次。依赖必须同时含 attempt 与
-  // backoffMs —— 固定间隔配置下每轮重试的 backoffMs 完全相同，只依赖它会让
-  // 倒计时在首轮归零后永远停在 0s；而同一轮重试内后端可能重发分片，此时
-  // attempt 与 backoffMs 都不变，因此不会打断正在走的倒计时。
+  // 倒计时基准：每轮重试由消息携带一个退避起始时刻（backoffStartedAt）。依赖
+  // 必须同时含 attempt 与 backoffMs —— 固定间隔配置下每轮重试的 backoffMs
+  // 完全相同，只依赖它会让倒计时在首轮归零后永远停在 0s；而同一轮重试内后端
+  // 可能重发分片，此时这些值都不变，因此不会打断正在走的倒计时。
   const hasCountdown =
     !isExhausted && typeof backoffMs === "number" && backoffMs > 0;
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
@@ -48,15 +54,20 @@ export const StreamRetryNotice = ({
       return;
     }
     const totalMs = backoffMs as number;
-    const end = Date.now() + totalMs;
-    setRemainingSec(Math.ceil(totalMs / 1000));
+    // 以记录的起始时刻为基准：切换会话导致重试提示重新挂载时按剩余时间续算，
+    // 而不是把整段退避重新数一遍。
+    const startedAt =
+      typeof backoffStartedAt === "number" ? backoffStartedAt : Date.now();
+    const end = startedAt + totalMs;
+    const initialLeft = end - Date.now();
+    setRemainingSec(initialLeft > 0 ? Math.ceil(initialLeft / 1000) : 0);
     // 200ms 刷新：与 Bash/Terminal 工具卡片的倒计时节奏保持一致。
     const timer = window.setInterval(() => {
       const left = end - Date.now();
       setRemainingSec(left > 0 ? Math.ceil(left / 1000) : 0);
     }, 200);
     return () => window.clearInterval(timer);
-  }, [hasCountdown, backoffMs, attempt]);
+  }, [hasCountdown, backoffMs, attempt, backoffStartedAt]);
 
   const isUrgent = remainingSec !== null && remainingSec <= 3;
 

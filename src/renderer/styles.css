@@ -29066,6 +29066,153 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 
+.oauth-quota {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 8px 6px;
+  border-top: 1px solid var(--border-light);
+}
+
+.oauth-quota-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.oauth-quota-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oauth-quota-plan {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.oauth-quota .oauth-quota-refresh {
+  flex-shrink: 0;
+  width: auto;
+  margin-left: auto;
+  padding: 3px 6px;
+}
+
+/* 查询中保持普通光标，避免触发系统 loading 指针 */
+.oauth-quota .oauth-quota-refresh:disabled {
+  cursor: default;
+}
+
+/* 表单内的配额面板：卡片样式，去掉下拉菜单中的分隔线与外边距 */
+.api-settings-form-body > .oauth-quota {
+  margin-top: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.oauth-quota-status,
+.oauth-quota-row-reset,
+.oauth-quota-footer {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.oauth-quota-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.oauth-quota-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.oauth-quota-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oauth-quota-group-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.oauth-quota-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.oauth-quota-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.oauth-quota-row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.oauth-quota-row-value {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.oauth-quota-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-hover);
+}
+
+.oauth-quota-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.3s ease;
+}
+
+.oauth-quota-bar-fill.is-high {
+  background: var(--accent-color);
+}
+
+.oauth-quota-bar-fill.is-mid {
+  background: var(--accent-amber-text);
+}
+
+.oauth-quota-bar-fill.is-low {
+  background: var(--accent-red);
+}
+
 .model-manual-input {
   display: flex;
   flex-direction: column;

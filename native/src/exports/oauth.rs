@@ -1,8 +1,11 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::api::oauth::provider::OAuthProviderId;
+use crate::api::oauth::provider::{refresh_if_needed, OAuthProviderId};
+use crate::api::oauth::quota::{self, QuotaSnapshot};
 use crate::api::oauth::sessions;
+use crate::storage::services::api_configs as api_configs_service;
+use crate::storage::{ensure_database_file, ApiConfigRecord};
 
 #[napi(object)]
 pub struct OAuthProviderInfo {
@@ -124,4 +127,73 @@ pub async fn submit_oauth_callback(
 #[napi(js_name = "cancelOAuthLogin")]
 pub async fn cancel_oauth_login(session_id: String) -> Result<bool> {
     Ok(sessions::cancel_login(session_id.trim()))
+}
+
+#[napi(object)]
+pub struct OAuthQuotaBucket {
+    pub key: String,
+    pub label: String,
+    pub remaining_percent: Option<f64>,
+    pub reset_at_ms: Option<f64>,
+}
+
+#[napi(object)]
+pub struct OAuthQuotaGroup {
+    pub id: String,
+    pub label: String,
+    pub buckets: Vec<OAuthQuotaBucket>,
+}
+
+#[napi(object)]
+pub struct OAuthQuotaSnapshot {
+    pub provider: String,
+    pub plan: Option<String>,
+    pub groups: Vec<OAuthQuotaGroup>,
+    pub fetched_at_ms: f64,
+}
+
+fn to_quota_snapshot(snapshot: QuotaSnapshot) -> OAuthQuotaSnapshot {
+    OAuthQuotaSnapshot {
+        provider: snapshot.provider,
+        plan: snapshot.plan,
+        groups: snapshot
+            .groups
+            .into_iter()
+            .map(|group| OAuthQuotaGroup {
+                id: group.id,
+                label: group.label,
+                buckets: group
+                    .buckets
+                    .into_iter()
+                    .map(|bucket| OAuthQuotaBucket {
+                        key: bucket.key,
+                        label: bucket.label,
+                        remaining_percent: bucket.remaining_percent,
+                        reset_at_ms: bucket.reset_at_ms,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        fetched_at_ms: snapshot.fetched_at_ms,
+    }
+}
+
+async fn load_api_config(profile_name: String) -> Result<ApiConfigRecord> {
+    tokio::task::spawn_blocking(move || -> Result<ApiConfigRecord> {
+        let database_path = ensure_database_file()?;
+        api_configs_service::list_api_configs(&database_path)?
+            .into_iter()
+            .find(|config| config.profile_name == profile_name)
+            .ok_or_else(|| Error::from_reason("API profile not found"))
+    })
+    .await
+    .map_err(|error| Error::from_reason(format!("Failed to load API profile: {error}")))?
+}
+
+#[napi(js_name = "getOAuthQuota")]
+pub async fn get_oauth_quota(profile_name: String) -> Result<OAuthQuotaSnapshot> {
+    let config = load_api_config(profile_name.trim().to_string()).await?;
+    let config = refresh_if_needed(config).await?;
+    let snapshot = quota::fetch_snapshot(&config).await?;
+    Ok(to_quota_snapshot(snapshot))
 }

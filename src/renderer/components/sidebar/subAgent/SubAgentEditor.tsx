@@ -14,8 +14,8 @@ type SubAgentEditorProps = {
   isModelCatalogLoading: boolean;
   modelCatalogError: string;
   modelOptions: Model[];
-  /** 当前活动项目：工具候选来自该项目已启用的 MCP 工具。 */
-  projectId?: string;
+  /** 全局 Tab 的工具候选与项目无关；项目 Tab 仅列出当前项目已启用的工具。 */
+  isGlobalScope: boolean;
   toolCatalogError: string;
   toolOptions: SubAgentToolOption[];
   onDraftChange: (patch: Partial<SubAgentDraft>) => void;
@@ -32,7 +32,7 @@ export function SubAgentEditor({
   isModelCatalogLoading,
   modelCatalogError,
   modelOptions,
-  projectId,
+  isGlobalScope,
   toolCatalogError,
   toolOptions,
   onDraftChange,
@@ -44,7 +44,7 @@ export function SubAgentEditor({
   const unavailableToolNames = allToolsEnabled
     ? []
     : draft.toolNames.filter(
-        (toolName) => !toolOptions.some((tool) => tool.name === toolName)
+        (toolName) => !toolOptions.some((tool) => tool.name === toolName),
       );
   const apiProfileOptions = [
     {
@@ -60,7 +60,7 @@ export function SubAgentEditor({
             value: draft.configProfile,
             label: `${draft.configProfile} · ${t(
               "settings.subAgentApiProfileUnavailable",
-              { defaultValue: "No longer available" }
+              { defaultValue: "No longer available" },
             )}`,
           },
         ]
@@ -74,7 +74,7 @@ export function SubAgentEditor({
   ];
 
   const selectedApiConfig = apiConfigs.find(
-    (config) => config.profileName === draft.configProfile
+    (config) => config.profileName === draft.configProfile,
   );
   const availableModelIds = Array.from(
     new Set(
@@ -82,8 +82,8 @@ export function SubAgentEditor({
         selectedApiConfig?.advancedModel,
         draft.model,
         ...modelOptions.map((model) => model.id),
-      ].filter((modelId): modelId is string => Boolean(modelId?.trim()))
-    )
+      ].filter((modelId): modelId is string => Boolean(modelId?.trim())),
+    ),
   );
   const fixedModelOptions = [
     {
@@ -100,7 +100,7 @@ export function SubAgentEditor({
 
   const toggleTool = (toolName: string): void => {
     const selected = new Set(
-      allToolsEnabled ? toolOptions.map((tool) => tool.name) : draft.toolNames
+      allToolsEnabled ? toolOptions.map((tool) => tool.name) : draft.toolNames,
     );
     if (selected.has(toolName)) {
       selected.delete(toolName);
@@ -234,23 +234,12 @@ export function SubAgentEditor({
           <span>
             {t("settings.subAgentTools", { defaultValue: "MCP tools" })}
           </span>
-          {!projectId ? (
-            !allToolsEnabled && (
-              <div className="sub-agent-tool-state">
-                <AlertCircle size={15} />
-                <span>
-                  {t("settings.subAgentToolsNoProject", {
-                    defaultValue: "Select a project before choosing MCP tools.",
-                  })}
-                </span>
-              </div>
-            )
-          ) : isToolCatalogLoading ? (
+          {isToolCatalogLoading ? (
             <div className="sub-agent-tool-state">
               <Loader2 className="spin" size={15} />
               <span>
                 {t("settings.subAgentToolsLoading", {
-                  defaultValue: "Loading project MCP tools...",
+                  defaultValue: "Loading MCP tools...",
                 })}
               </span>
             </div>
@@ -263,8 +252,7 @@ export function SubAgentEditor({
             <div className="sub-agent-tool-state">
               <span>
                 {t("settings.subAgentToolsEmpty", {
-                  defaultValue:
-                    "No enabled MCP tools are available for this project.",
+                  defaultValue: "No enabled MCP tools are available.",
                 })}
               </span>
             </div>
@@ -301,18 +289,22 @@ export function SubAgentEditor({
               <AlertCircle size={15} />
               <span>
                 {t("settings.subAgentToolsUnavailable", {
-                  defaultValue:
-                    "Some saved MCP tools are not enabled for the current project.",
+                  defaultValue: "Some saved MCP tools are unavailable.",
                 })}{" "}
                 {unavailableToolNames.join(", ")}
               </span>
             </div>
           ) : null}
           <small className="sub-agent-field-hint">
-            {t("settings.subAgentToolsHint", {
-              defaultValue:
-                "Only tools enabled for the current project are available. You may select multiple tools.",
-            })}
+            {isGlobalScope
+              ? t("settings.subAgentToolsGlobalHint", {
+                  defaultValue:
+                    "Lists only system and global MCP server tools, independent of projects. When run in a project that disables a server, its tools are skipped.",
+                })
+              : t("settings.subAgentToolsHint", {
+                  defaultValue:
+                    "Only tools enabled for the current project are available. You may select multiple tools.",
+                })}
           </small>
         </div>
       </div>
@@ -349,11 +341,7 @@ export function SubAgentEditorActions({
         form="sub-agent-editor-form"
         disabled={isBusy}
       >
-        {isSaving ? (
-          <Loader2 size={14} className="spin" />
-        ) : (
-          <Save size={14} />
-        )}
+        {isSaving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
         <span>{t("settings.save", { defaultValue: "Save" })}</span>
       </button>
     </>

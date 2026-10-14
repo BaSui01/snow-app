@@ -558,7 +558,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "workspace-directories:search-files",
-    (_event, dirPath: unknown, query: unknown) => {
+    (_event, dirPath: unknown, query: unknown, linked: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {
         throw new Error("Directory path is required");
       }
@@ -566,13 +566,17 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
         return [];
       }
 
-      return native.searchFiles(dirPath.trim(), query.trim());
+      return native.searchFiles(
+        dirPath.trim(),
+        query.trim(),
+        typeof linked === "boolean" ? linked : undefined,
+      );
     },
   );
 
   ipcMain.handle(
     "workspace-directories:search-file-contents",
-    (_event, dirPath: unknown, query: unknown) => {
+    (_event, dirPath: unknown, query: unknown, linked: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {
         throw new Error("Directory path is required");
       }
@@ -580,13 +584,23 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
         return [];
       }
 
-      return native.searchFileContents(dirPath.trim(), query.trim());
+      return native.searchFileContents(
+        dirPath.trim(),
+        query.trim(),
+        typeof linked === "boolean" ? linked : undefined,
+      );
     },
   );
 
   ipcMain.handle(
     "workspace-directories:search-files-by-agent",
-    (event, query: unknown, workspacePath: unknown, streamId: unknown) => {
+    (
+      event,
+      query: unknown,
+      workspacePath: unknown,
+      streamId: unknown,
+      linked: unknown,
+    ) => {
       if (typeof query !== "string" || !query.trim()) {
         return [];
       }
@@ -607,6 +621,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
             chunk,
           });
         },
+        typeof linked === "boolean" ? linked : undefined,
       );
     },
   );

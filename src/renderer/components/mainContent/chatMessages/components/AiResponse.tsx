@@ -92,6 +92,7 @@ export const AiResponse = memo(
     retryAttempt,
     retryError,
     retryBackoffMs,
+    retryBackoffStartedAt,
     isError = false,
     incompleteVariant,
     interruptionReason,
@@ -322,6 +323,7 @@ export const AiResponse = memo(
               attempt={retryAttempt}
               error={retryError}
               backoffMs={retryBackoffMs}
+              backoffStartedAt={retryBackoffStartedAt}
             />
           ) : isStreaming ? (
             <StreamCursor />

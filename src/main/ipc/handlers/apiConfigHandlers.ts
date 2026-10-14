@@ -128,6 +128,15 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
       return native.cancelOAuthLogin(sessionId.trim());
     },
   );
+  ipcMain.handle(
+    "api-configs:oauth-quota",
+    async (_event, profileName: unknown) => {
+      if (typeof profileName !== "string" || !profileName.trim()) {
+        throw new Error("Profile name is required");
+      }
+      return native.getOAuthQuota(profileName.trim());
+    },
+  );
   ipcMain.handle("api-configs:upsert", async (_event, config: unknown) => {
     await native.upsertApiConfig(normalizeApiConfigInput(config));
     return native.listApiConfigs();

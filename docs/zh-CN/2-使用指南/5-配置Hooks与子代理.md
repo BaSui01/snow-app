@@ -13,17 +13,17 @@ Snow App 的 Hooks 和子代理配置存储在应用 SQLite 数据库中，与�
 
 ### 1.2 Hook 类型
 
-| `hookType` | 触发时机 | 允许的 action |
-| --- | --- | --- |
-| `onUserMessage` | 用户消息进入 AI 前 | `command`、`context` |
-| `beforeToolCall` | 工具调用前 | `command` |
-| `toolConfirmation` | 工具进入确认流程时 | `command` |
-| `afterToolCall` | 工具调用完成后 | `command` |
-| `onSubAgentComplete` | 子代理完成后 | `command`、`prompt` |
-| `beforeSubAgentStart` | 子代理启动前 | `command`、`context` |
-| `beforeCompress` | 上下文压缩前 | `command` |
-| `onSessionStart` | 打开已有会话时；fire-and-forget | `command`、`context` |
-| `onStop` | 会话停止/清理时；fire-and-forget | `command`、`prompt` |
+| `hookType`            | 触发时机                         | 允许的 action        |
+| --------------------- | -------------------------------- | -------------------- |
+| `onUserMessage`       | 用户消息进入 AI 前               | `command`、`context` |
+| `beforeToolCall`      | 工具调用前                       | `command`            |
+| `toolConfirmation`    | 工具进入确认流程时               | `command`            |
+| `afterToolCall`       | 工具调用完成后                   | `command`            |
+| `onSubAgentComplete`  | 子代理完成后                     | `command`、`prompt`  |
+| `beforeSubAgentStart` | 子代理启动前                     | `command`、`context` |
+| `beforeCompress`      | 上下文压缩前                     | `command`            |
+| `onSessionStart`      | 打开已有会话时；fire-and-forget  | `command`、`context` |
+| `onStop`              | 会话停止/清理时；fire-and-forget | `command`、`prompt`  |
 
 > `prompt` 是合法配置类型，但当前 native executor 不发起模型调用，而是返回“不支持”的失败记录。不要依赖 `prompt` action 实现生产自动化；优先使用可验证的 `command`，或在允许的触发点使用 `context`。`beforeSubAgentStart` 的 context 目前会被记录，但调用方不会把它追加到子代理 prompt。
 
@@ -44,25 +44,25 @@ Snow App 的 Hooks 和子代理配置存储在应用 SQLite 数据库中，与�
 }
 ```
 
-| 字段 | 位置 | 说明 |
-| --- | --- | --- |
-| `description` | rule | 必须存在；建议说明意图和失败影响。 |
-| `matcher` | rule | 可选。逗号分隔表示 OR；支持 `key:glob`，如 `toolName:bash-*`；无 key 时优先匹配 `toolName`，再检查上下文文本。 |
-| `hooks` | rule | 必填 action 数组。 |
-| `type` | action | `command`、`context` 或允许位置的 `prompt`。 |
-| `command` | command | 通过终端设置中选择的 shell 执行。 |
-| `content` | context | 静态文本；JSON 中的 `additionalContext` 或 `prompt` 字段会被提取，否则使用全文。 |
-| `prompt` | prompt | 当前 native executor 不执行模型调用。 |
-| `timeout` | command | 毫秒；缺省 `5000`。超时会终止子进程并返回错误。 |
-| `enabled` | action | **执行必需为 `true`**；缺省不会执行。 |
+| 字段          | 位置    | 说明                                                                                                           |
+| ------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `description` | rule    | 必须存在；建议说明意图和失败影响。                                                                             |
+| `matcher`     | rule    | 可选。逗号分隔表示 OR；支持 `key:glob`，如 `toolName:bash-*`；无 key 时优先匹配 `toolName`，再检查上下文文本。 |
+| `hooks`       | rule    | 必填 action 数组。                                                                                             |
+| `type`        | action  | `command`、`context` 或允许位置的 `prompt`。                                                                   |
+| `command`     | command | 通过终端设置中选择的 shell 执行。                                                                              |
+| `content`     | context | 静态文本；JSON 中的 `additionalContext` 或 `prompt` 字段会被提取，否则使用全文。                               |
+| `prompt`      | prompt  | 当前 native executor 不执行模型调用。                                                                          |
+| `timeout`     | command | 毫秒；缺省 `5000`。超时会终止子进程并返回错误。                                                                |
+| `enabled`     | action  | **执行必需为 `true`**；缺省不会执行。                                                                          |
 
 command action 会把事件上下文 JSON 写入 stdin，并在上下文包含 `cwd` 时使用该目录。stdout/stderr 按退出码解释：
 
-| 退出码 | 结果 |
-| --- | --- |
-| `0` | 通过；非空 stdout 成为附加上下文。stdout 若为 JSON，可从 `additionalContext` 或 `prompt` 提取。 |
-| `1` | 软警告；记录日志。stdout 为 `{"decision":{"message":"..."}}` 时，请求交互式用户决策。 |
-| `2+` 或无有效退出码 | 阻断当前可阻断流程，优先展示 stderr，其次 stdout。 |
+| 退出码              | 结果                                                                                            |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| `0`                 | 通过；非空 stdout 成为附加上下文。stdout 若为 JSON，可从 `additionalContext` 或 `prompt` 提取。 |
+| `1`                 | 软警告；记录日志。stdout 为 `{"decision":{"message":"..."}}` 时，请求交互式用户决策。           |
+| `2+` 或无有效退出码 | 阻断当前可阻断流程，优先展示 stderr，其次 stdout。                                              |
 
 `onSessionStart` 与 `onStop` 是 fire-and-forget：调用方会把交互式决策降级为普通警告，不能依赖它们阻断流程。
 
@@ -182,28 +182,29 @@ Hook 数据库写入会创建写入期间的临时备份，成功后删除本次
 
 子代理通过 `sub-agents-activate` 运行在独立执行循环中，没有主对话历史。配置字段：
 
-| 字段 | 说明 |
-| --- | --- |
-| `name` | 展示名称，必填。 |
-| `description` | 告诉主 Agent 何时委派。 |
-| `systemPrompt` | 必须自包含：使命、输入、流程、工具、安全边界和输出。 |
-| `toolsJson` | JSON 字符串或工具名数组。`["*"]` 表示全部，`[]` 表示无工具。 |
-| `configProfile` | 留空时继承启动它的主会话本次运行所用 API Profile 和当前模型；非空时固定使用指定 Profile。 |
-| `model` | 仅固定 Profile 时生效；非空时固定模型，省略、留空或 trim 后为空时使用该 Profile 的 `advancedModel`。若该 Profile 的 `advancedModel` 也为空则激活失败，不会回退 `basicModel`。 |
+| 字段            | 说明                                                                                                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | 展示名称，必填。                                                                                                                                                              |
+| `description`   | 告诉主 Agent 何时委派。                                                                                                                                                       |
+| `systemPrompt`  | 必须自包含：使命、输入、流程、工具、安全边界和输出。                                                                                                                          |
+| `toolsJson`     | JSON 字符串或工具名数组。`["*"]` 表示当前项目全部可用工具；显式清单至少包含一个读取类工具（`filesystem-read` 或 `grep-search`），空数组会被拒绝。                             |
+| `configProfile` | 留空时继承启动它的主会话本次运行所用 API Profile 和当前模型；非空时固定使用指定 Profile。                                                                                     |
+| `model`         | 仅固定 Profile 时生效；非空时固定模型，省略、留空或 trim 后为空时使用该 Profile 的 `advancedModel`。若该 Profile 的 `advancedModel` 也为空则激活失败，不会回退 `basicModel`。 |
 
 激活时先查当前项目的同 ID 配置，未命中才回退全局。内置 `agent_general` 不可通过 config 修改或删除。
 
 主 Agent 的系统提示词会**动态注入当前可用的子代理清单**（含 `agentId`、名称与用途描述）。调用 `sub-agents-activate` 时，主 Agent 应从清单中选择最匹配任务的 `agentId`——存在更合适的配置时**不得默认使用内置 `agent_general`**（它只是通用兜底，仅在无更匹配配置时使用）。清单遵循与激活一致的解析规则：**当前项目的项目级子代理优先**（同 `agentId` 时覆盖全局），未配置项目级的再显示全局/内置。其他项目的子代理不注入。修改配置后新会话立即生效。
 
-启动前会一次性校验工具、Profile 和模型，并生成运行快照。普通循环、工具递归、自动压缩和压缩后续跑都复用该快照，不会在每轮跟随全局配置变化。每次请求仍按固定 Profile 名读取最新凭证，但 Profile 被删除时会严格失败，不会切换到其他供应商。子会话会持久化启动时实际使用的 Profile 和模型，因此历史展示不受后续子代理/API 配置修改影响。
+启动前会一次性校验工具清单格式、Profile 和模型，并生成运行快照。普通循环、工具递归、自动压缩和压缩后续跑都复用该快照，不会在每轮跟随全局配置变化。每次请求仍按固定 Profile 名读取最新凭证，但 Profile 被删除时会严格失败，不会切换到其他供应商。子会话会持久化启动时实际使用的 Profile 和模型，因此历史展示不受后续子代理/API 配置修改影响。
 
 工具规则：
 
-- **显式工具名列表必须传 `projectId`**，因此该子代理是项目级；
-- 全局子代理只能使用 `["*"]` 或 `[]`；
-- 项目级列表中的每个工具必须是当前项目已启用的完整工具名；
-- 外部 MCP 工具的服务器公开名前缀也必须属于当前项目启用的服务器；
-- 激活时若配置工具不可用或被禁用，会返回错误，而不是静默扩大权限。
+- 在项目会话中省略 `projectId` 时会自动使用当前项目，结果是项目级子代理；要创建**全局**子代理，请显式传入 `projectId=""`；
+- 全局子代理的显式工具清单候选来自系统服务与全局 MCP 服务，与项目无关，不必先选择项目；项目级子代理的候选是该项目已启用的工具；
+- `["*"]` 在运行时展开为当前项目全部可用工具；
+- 显式清单必须包含 `filesystem-read` 或 `grep-search` 之一，否则保存失败；
+- 通过 config 写入项目级子代理时，工具名必须是内置工具，或属于已配置且启用的 MCP 服务器；全局子代理保存时不做项目校验；
+- 运行时只使用当前对话项目中实际可用的工具。配置了却被全局或项目禁用、不可用或已不存在的工具会被跳过并记录日志，子代理用其余工具继续运行，不会报错，也不会扩大权限。
 
 ### 2.2 子代理会话视图
 
@@ -218,20 +219,20 @@ Hook 数据库写入会创建写入期间的临时备份，成功后删除本次
 1. 打开 **设置 → 子代理设置**（设置页 id：`sub-agent-settings`）；
 2. 选择全局或项目范围；
 3. 填写名称、描述和完整 system prompt；
-4. 全局代理选择全部工具或无工具；项目代理可选择具体工具；
+4. 在「MCP 工具」列表中至少勾选一个读取类工具（`filesystem-read` 或 `grep-search`）。全局 Tab 列出系统服务与全局 MCP 服务的工具，与当前项目无关，不必先选择项目；项目 Tab 只列出当前项目已启用的工具。界面没有「全部工具」开关，`["*"]` 需通过 config 写入；
 5. 保持“跟随主会话（推荐）”，或选择固定 API 配置；固定后可再选择独立模型，留空则使用该配置的高级模型；
 6. 保存后，从主对话发起一个边界清晰的测试任务。
 
 ### 2.4 通过 `config` 配置
 
-合法的全局子代理示例：
+全局子代理示例（`projectId=""` 表示全局）：
 
 ```jsonc
-config-set scope=subAgents key=agent_readonly_reviewer value={
+config-set scope=subAgents key=agent_readonly_reviewer projectId="" value={
   "name": "只读审查员",
   "description": "需要独立审查并返回问题清单时使用",
-  "systemPrompt": "你是只读审查员。先验证输入和文件，再按严重级别输出问题与证据。不得修改文件、运行命令或推测缺失业务规则。没有工具时说明无法验证的部分。",
-  "toolsJson": [],
+  "systemPrompt": "你是只读审查员。先验证输入和文件，再按严重级别输出问题与证据。不得修改文件、运行命令或推测缺失业务规则。工具不可用时说明无法验证的部分。",
+  "toolsJson": ["filesystem-read", "grep-search"],
   "configProfile": "",
   "model": ""
 }
@@ -298,16 +299,18 @@ sequenceDiagram
 
 ## 3. 验证与排错
 
-| 症状 | 检查 |
-| --- | --- |
-| Hook 保存成功但从不执行 | action 是否显式 `"enabled": true`；缺省值会被 native executor 跳过。 |
-| 项目 Hook 未回退全局 | 项目规则数组非空即取代全局；删除项目配置或使用空规则数组才会回退。 |
-| matcher 不命中 | 核对上下文键名和完整工具名；需要时使用 `toolName:<glob>`。 |
-| command 超时 | 默认 5000 ms；检查 shell、PATH、cwd、stdin 读取和合理的正数 `timeout`。 |
-| 退出 1 没有决策卡 | stdout 必须是有效 JSON，且包含字符串 `decision.message`；fire-and-forget Hook 只显示警告。 |
-| prompt action 没有效果 | 当前 native executor 不执行 prompt 模型调用；改用 command 或受支持的 context。 |
-| context 未进入子代理 prompt | `beforeSubAgentStart` 当前只记录结果，不拼接子代理 prompt；把必需内容写入子代理 `systemPrompt`。 |
-| 全局子代理显式工具列表被拒 | 显式列表需要 `projectId`；改成项目级，或全局使用 `["*"]`/`[]`。 |
-| 子代理找不到工具 | 使用当前项目的完整启用工具名，检查 MCP 服务器与工具开关（全局+项目）。 |
-| 子代理行为依赖主对话 | 子代理没有主会话历史；把上下文放进任务 prompt 或自包含 `systemPrompt`。 |
-| 同 ID 激活了错误配置 | 项目级优先于全局；分别 `config-get` 并核对 `projectId`。 |
+| 症状                                         | 检查                                                                                                   |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Hook 保存成功但从不执行                      | action 是否显式 `"enabled": true`；缺省值会被 native executor 跳过。                                   |
+| 项目 Hook 未回退全局                         | 项目规则数组非空即取代全局；删除项目配置或使用空规则数组才会回退。                                     |
+| matcher 不命中                               | 核对上下文键名和完整工具名；需要时使用 `toolName:<glob>`。                                             |
+| command 超时                                 | 默认 5000 ms；检查 shell、PATH、cwd、stdin 读取和合理的正数 `timeout`。                                |
+| 退出 1 没有决策卡                            | stdout 必须是有效 JSON，且包含字符串 `decision.message`；fire-and-forget Hook 只显示警告。             |
+| prompt action 没有效果                       | 当前 native executor 不执行 prompt 模型调用；改用 command 或受支持的 context。                         |
+| context 未进入子代理 prompt                  | `beforeSubAgentStart` 当前只记录结果，不拼接子代理 prompt；把必需内容写入子代理 `systemPrompt`。       |
+| 保存子代理被拒（工具清单为空或缺少读取工具） | 显式清单至少包含 `filesystem-read` 或 `grep-search`；需要全部可用工具时使用 `["*"]`。                  |
+| 项目关闭服务后子代理不再使用该服务的工具     | 运行时按当前对话项目的开关跳过该工具并记录日志；在该项目重新启用服务即可恢复，全局子代理配置本身不变。 |
+| 全局子代理找不到项目专属服务的工具           | 全局子代理只列出系统服务与全局 MCP 服务的工具；项目专属服务的工具请使用项目级子代理。                  |
+| 子代理找不到工具                             | 使用当前项目的完整启用工具名，检查 MCP 服务器与工具开关（全局+项目）。                                 |
+| 子代理行为依赖主对话                         | 子代理没有主会话历史；把上下文放进任务 prompt 或自包含 `systemPrompt`。                                |
+| 同 ID 激活了错误配置                         | 项目级优先于全局；分别 `config-get` 并核对 `projectId`。                                               |

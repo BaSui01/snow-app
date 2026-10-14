@@ -228,13 +228,18 @@ pub fn delete_workspace_entries(
 
 /// 文件名 / 内容搜索。项目属于关联项目组时，搜索覆盖组内所有根目录：
 /// 兄弟根的相对路径带上「目录名/」前缀，主根结果保持相对路径不变。
+/// `linked=false`（如 `@:项目/` 显式限定某个成员）时只搜索给定根目录。
 pub fn search_files(
     root_dir: String,
     query: String,
+    linked: bool,
 ) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
     // 关联信息缺失（数据库异常等）时静默退化为单根搜索，不影响搜索结果本身。
-    let linked_roots =
-        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default();
+    let linked_roots = if linked {
+        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     if linked_roots.is_empty() {
         return services::fs_explorer::search_files(&root_dir, &query);
@@ -245,9 +250,13 @@ pub fn search_files(
 pub fn search_file_contents(
     root_dir: String,
     query: String,
+    linked: bool,
 ) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
-    let linked_roots =
-        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default();
+    let linked_roots = if linked {
+        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     if linked_roots.is_empty() {
         return services::fs_explorer::search_file_contents(&root_dir, &query);

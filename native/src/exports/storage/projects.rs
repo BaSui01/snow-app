@@ -361,20 +361,31 @@ pub async fn delete_workspace_entries(
 }
 
 #[napi]
-pub async fn search_files(root_dir: String, query: String) -> napi::Result<Vec<FileSearchResult>> {
-    tokio::task::spawn_blocking(move || crate::storage::search_files(root_dir, query))
-        .await
-        .map_err(map_spawn_error)?
+pub async fn search_files(
+    root_dir: String,
+    query: String,
+    linked: Option<bool>,
+) -> napi::Result<Vec<FileSearchResult>> {
+    let include_linked = linked.unwrap_or(true);
+    tokio::task::spawn_blocking(move || {
+        crate::storage::search_files(root_dir, query, include_linked)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
 pub async fn search_file_contents(
     root_dir: String,
     query: String,
+    linked: Option<bool>,
 ) -> napi::Result<Vec<FileSearchResult>> {
-    tokio::task::spawn_blocking(move || crate::storage::search_file_contents(root_dir, query))
-        .await
-        .map_err(map_spawn_error)?
+    let include_linked = linked.unwrap_or(true);
+    tokio::task::spawn_blocking(move || {
+        crate::storage::search_file_contents(root_dir, query, include_linked)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

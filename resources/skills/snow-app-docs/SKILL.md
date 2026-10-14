@@ -121,10 +121,12 @@ allowed-tools:
   → `1-配置MCP服务器.md`
 - **敏感命令（项目级）**：`settings.sensitiveCommands` 传 `projectId` 全量替换
   （元素 `{commandId, pattern, description, enabled}`）。→ `16-安全隐私与工具授权.md`
-- **子代理**：`subAgents` 域（key=agentId，写 DB 立即生效）。显式 `toolsJson`
-  工具名列表须传 `projectId`（全局仅空/`["*"]`）；`configProfile` 须是已存在
-  档案名；`systemPrompt` 须完全自包含；内置 `agent_general` 不可改删；项目级
-  优先于同名全局。→ `5-配置Hooks与子代理.md#2`
+- **子代理**：`subAgents` 域（key=agentId，写 DB 立即生效）。省略 `projectId` 时
+  使用当前会话项目（项目级），`projectId=""` 为全局；显式 `toolsJson` 须至少含
+  `filesystem-read` 或 `grep-search`，`["*"]` 表示当前项目全部可用工具，空数组无效；
+  全局子代理的候选工具与项目无关，运行时只使用当前项目可用的工具；`configProfile`
+  须是已存在档案名；`systemPrompt` 须完全自包含；内置 `agent_general` 不可改删；
+  项目级优先于同名全局。→ `5-配置Hooks与子代理.md#2`
 - **Hooks**：`hooks` 域（key=hookType，value 含 `rules` 数组；传 `projectId`
   为项目级）。**每个要执行的 action 必须显式 `enabled: true`**。
   → `5-配置Hooks与子代理.md`

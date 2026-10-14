@@ -70,6 +70,27 @@ export type OAuthLoginStatus = {
   manualMode: boolean;
 };
 
+/** 订阅配额单项；remainingPercent 为 0-100 的剩余百分比。 */
+export type OAuthQuotaBucket = {
+  key: string;
+  label: string;
+  remainingPercent?: number | null;
+  resetAtMs?: number | null;
+};
+
+export type OAuthQuotaGroup = {
+  id: string;
+  label: string;
+  buckets: OAuthQuotaBucket[];
+};
+
+export type OAuthQuotaSnapshot = {
+  provider: string;
+  plan?: string | null;
+  groups: OAuthQuotaGroup[];
+  fetchedAtMs: number;
+};
+
 export type ImportSnowCliApiConfigsResult = {
   importedCount: number;
   configs: ApiConfigRecord[];

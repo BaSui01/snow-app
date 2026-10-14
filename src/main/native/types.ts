@@ -85,6 +85,27 @@ export type OAuthLoginStatus = {
   manualMode: boolean;
 };
 
+/** 订阅配额单项；remainingPercent 为 0-100 的剩余百分比。 */
+export type OAuthQuotaBucket = {
+  key: string;
+  label: string;
+  remainingPercent?: number | null;
+  resetAtMs?: number | null;
+};
+
+export type OAuthQuotaGroup = {
+  id: string;
+  label: string;
+  buckets: OAuthQuotaBucket[];
+};
+
+export type OAuthQuotaSnapshot = {
+  provider: string;
+  plan?: string | null;
+  groups: OAuthQuotaGroup[];
+  fetchedAtMs: number;
+};
+
 export type ApiConfigRecord = ApiConfigInput & {
   id: string;
   updatedAt: string;
@@ -2055,6 +2076,7 @@ export type NativeBridge = {
     callbackUrl: string,
   ) => Promise<OAuthLoginStatus>;
   cancelOAuthLogin: (sessionId: string) => Promise<boolean>;
+  getOAuthQuota: (profileName: string) => Promise<OAuthQuotaSnapshot>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   /** 重试错误分类默认关键词（JSON 字符串，单一来源在 Rust api::retry）。 */
   getRetryDefaults: () => Promise<string>;
@@ -2172,15 +2194,22 @@ export type NativeBridge = {
   ) => Promise<BatchWorkspaceDeleteResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
-  searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
+  /** linked 默认 true：项目属于关联项目组时搜索覆盖组内全部根；false 只搜给定根目录。 */
+  searchFiles: (
+    rootDir: string,
+    query: string,
+    linked?: boolean,
+  ) => Promise<FileSearchResult[]>;
   searchFileContents: (
     rootDir: string,
     query: string,
+    linked?: boolean,
   ) => Promise<FileSearchResult[]>;
   searchFilesByAgent: (
     query: string,
     workspacePath: string,
     onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined,
+    linked?: boolean,
   ) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
@@ -2496,6 +2525,8 @@ export type NativeBridge = {
   listMcpProjectServers: (
     projectId: string,
   ) => Promise<McpProjectServerStatus[]>;
+  /** 全局 MCP 服务器目录（不依赖项目，供全局子代理选择工具）。 */
+  listMcpGlobalServers: () => Promise<McpProjectServerStatus[]>;
   /**
    * 项目 MCP 服务器快速列表：外部服务器工具只读 Rust 进程内缓存，不连接
    * 服务器；未命中的服务器以 `toolsPending` 标记，需调用方后台补发现。

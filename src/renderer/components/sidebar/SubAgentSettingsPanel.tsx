@@ -84,26 +84,23 @@ export function SubAgentSettingsPanel({
     }
   }, [t, scopeProjectId, isGlobalScope]);
 
-  const loadProjectTools = useCallback(async () => {
+  const loadToolCatalog = useCallback(async () => {
     const generation = toolCatalogGenerationRef.current + 1;
     toolCatalogGenerationRef.current = generation;
     setToolOptions([]);
     setToolCatalogError("");
-    if (!projectId) {
-      setIsToolCatalogLoading(false);
-      return;
-    }
 
     setIsToolCatalogLoading(true);
     try {
-      const servers = await window.snow.listMcpProjectServers(projectId);
+      // 全局 Tab 使用不依赖项目的全局目录；项目 Tab 使用当前项目目录。
+      const servers = scopeProjectId
+        ? await window.snow.listMcpProjectServers(scopeProjectId)
+        : await window.snow.listMcpGlobalServers();
       const availableServers = servers.filter(
         (server) => server.globalEnabled && server.enabled && !server.error,
       );
-      // Rust 侧 listMcpProjectServers 已并发发现各启用外部服务器的
-      // 工具并随列表返回（进程内 TTL 缓存，重复打开面板直接命中），
-      // 无需再逐个服务器发起 IPC；单个服务器发现失败仅被过滤，
-      // 不再拖垮整个列表。
+      // Rust 侧已并发发现各启用服务器的工具并随列表返回（进程内 TTL 缓存），
+      // 单个服务器发现失败仅被过滤，不再拖垮整个列表。
       const uniqueTools = new Map<string, SubAgentToolOption>();
       for (const server of availableServers) {
         for (const tool of server.tools) {
@@ -134,7 +131,7 @@ export function SubAgentSettingsPanel({
         setIsToolCatalogLoading(false);
       }
     }
-  }, [projectId, t]);
+  }, [scopeProjectId, t]);
 
   useEffect(() => {
     void load();
@@ -149,8 +146,8 @@ export function SubAgentSettingsPanel({
   }, [activeDirectory]);
 
   useEffect(() => {
-    void loadProjectTools();
-  }, [loadProjectTools]);
+    void loadToolCatalog();
+  }, [loadToolCatalog]);
 
   useEffect(() => {
     const generation = modelCatalogGenerationRef.current + 1;
@@ -252,18 +249,10 @@ export function SubAgentSettingsPanel({
       return;
     }
     const allToolsEnabled = usesAllTools(draft.toolNames);
-    if (!projectId && draft.toolNames.length > 0 && !allToolsEnabled) {
-      setError(
-        t("settings.subAgentToolsNoProject", {
-          defaultValue: "Select a project before choosing MCP tools.",
-        }),
-      );
-      return;
-    }
     if (isToolCatalogLoading && !allToolsEnabled) {
       setError(
         t("settings.subAgentToolsLoading", {
-          defaultValue: "Loading project MCP tools...",
+          defaultValue: "Loading MCP tools...",
         }),
       );
       return;
@@ -279,8 +268,7 @@ export function SubAgentSettingsPanel({
     ) {
       setError(
         t("settings.subAgentToolsUnavailable", {
-          defaultValue:
-            "Some saved MCP tools are not enabled for the current project.",
+          defaultValue: "Some saved MCP tools are unavailable.",
         }),
       );
       return;
@@ -495,12 +483,12 @@ export function SubAgentSettingsPanel({
             apiConfigs={apiConfigs}
             draft={draft}
             isBusy={isBusy}
+            isGlobalScope={isGlobalScope}
             isSaving={isSaving}
             isToolCatalogLoading={isToolCatalogLoading}
             isModelCatalogLoading={isModelCatalogLoading}
             modelCatalogError={modelCatalogError}
             modelOptions={modelOptions}
-            projectId={projectId}
             toolCatalogError={toolCatalogError}
             toolOptions={toolOptions}
             onDraftChange={(patch) =>

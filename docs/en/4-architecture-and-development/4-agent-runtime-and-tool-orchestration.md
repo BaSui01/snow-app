@@ -474,7 +474,7 @@ flowchart TD
     H --> I[Discover external MCP stdio/HTTP tools in parallel<br/>one failure is logged, not fatal]
 ```
 
-Sub-agents use `collect_allowed_mcp_tools`. Their `tools_json` must be a string array; only built-in sub-agents may use `*`. Missing or globally/project-disabled tools are rejected rather than silently expanding authority. External MCP supports `server/discover` with a legacy initialize fallback.
+Sub-agents use `collect_allowed_mcp_tools_for_workspace`. Their `tools_json` must be a string array; `*` expands to every tool available in the current project. Configured tools that are globally or project-disabled, unavailable, or missing are skipped with a log entry, without expanding authority. External MCP supports `server/discover` with a legacy initialize fallback.
 
 **Tool-domain system-prompt injection**: beyond tool visibility, system-prompt construction (`native/src/api/conversation/context.rs`) dynamically appends per-domain guidance sections, with **injection conditions kept consistent with tool visibility** — a disabled domain is never injected, so the prompt never steers the model toward invisible tools:
 

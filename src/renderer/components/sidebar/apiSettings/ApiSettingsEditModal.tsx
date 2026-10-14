@@ -146,6 +146,7 @@ export function ApiSettingsEditModal({
       {editForm && (
         <ApiSettingsFormPanel
           data={editForm}
+          savedConfig={config}
           isSaving={isSaving}
           onChange={onFieldChange}
           onCancel={onClose}

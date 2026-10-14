@@ -192,7 +192,7 @@ fn parse_code_assist_status(payload: &Value) -> (String, String) {
     (project, plan)
 }
 
-async fn post_code_assist(
+pub(crate) async fn post_code_assist(
     client: &reqwest::Client,
     method: &str,
     access_token: &str,

@@ -489,7 +489,7 @@ flowchart TD
     H --> I[并行发现外部 MCP stdio/HTTP 工具<br/>单服务失败只记录错误]
 ```
 
-子代理使用 `collect_allowed_mcp_tools`。其 `tools_json` 必须是字符串数组；仅内置子代理可使用 `*`。全局或项目禁用的工具会被拒绝，而不是静默扩大权限。外部 MCP 支持 `server/discover`，并保留 legacy initialize fallback。
+子代理使用 `collect_allowed_mcp_tools_for_workspace`。其 `tools_json` 必须是字符串数组；`*` 展开为当前项目全部可用工具。配置的工具若被全局或项目禁用、不可用或已不存在，会被跳过并记录日志，不会扩大权限。外部 MCP 支持 `server/discover`，并保留 legacy initialize fallback。
 
 **工具域系统提示词注入**：工具可见性之外，系统提示词构建（`native/src/api/conversation/context.rs`）还会按工具域动态追加指引章节，且**注入条件与工具可见性保持一致**——用户禁用的工具域绝不注入，避免诱导调用不可见工具：
 

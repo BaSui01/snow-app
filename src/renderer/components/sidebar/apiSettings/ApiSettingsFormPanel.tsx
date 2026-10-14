@@ -1,5 +1,6 @@
 import { Loader2, Save, X } from "lucide-react";
 import { useI18n } from "../../../i18n";
+import type { ApiConfigRecord } from "../../../../preload";
 import { ApiSettingsFormFields } from "./ApiSettingsFormFields";
 import type { ApiConfigFormData } from "./types";
 
@@ -11,6 +12,8 @@ type ApiSettingsFormPanelProps = {
   onSave: () => void;
   saveLabel: string;
   asForm?: boolean;
+  /** 已保存的配置（编辑时传入），用于展示 OAuth 配额。 */
+  savedConfig?: ApiConfigRecord | null;
 };
 
 export function ApiSettingsFormPanel({
@@ -21,6 +24,7 @@ export function ApiSettingsFormPanel({
   onSave,
   saveLabel,
   asForm = false,
+  savedConfig = null,
 }: ApiSettingsFormPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const fields = (
@@ -28,6 +32,7 @@ export function ApiSettingsFormPanel({
       data={data}
       onChange={onChange}
       disabled={isSaving}
+      savedConfig={savedConfig}
     />
   );
 

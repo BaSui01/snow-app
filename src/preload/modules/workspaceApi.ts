@@ -316,21 +316,35 @@ export const workspaceApi = {
       ipcRenderer.removeListener("workspace-directory-list:changed", handler);
     };
   },
-  searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
-    ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
+  /** linked 默认 true：项目属于关联项目组时一次覆盖组内全部根；
+   *  false 只搜索给定根目录（`@:项目/` 显式限定的成员）。 */
+  searchFiles: (
+    dirPath: string,
+    query: string,
+    linked?: boolean,
+  ): Promise<FileSearchResult[]> =>
+    ipcRenderer.invoke(
+      "workspace-directories:search-files",
+      dirPath,
+      query,
+      linked,
+    ),
   searchFileContents: (
     dirPath: string,
     query: string,
+    linked?: boolean,
   ): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke(
       "workspace-directories:search-file-contents",
       dirPath,
       query,
+      linked,
     ),
   searchFilesByAgent: (
     query: string,
     workspacePath: string,
     onProgress?: (chunk: FileSearchAgentProgress) => void,
+    linked?: boolean,
   ): Promise<FileSearchResult[]> => {
     const streamId = createAgentSearchStreamId();
     ensureAgentSearchProgressListener();
@@ -345,6 +359,7 @@ export const workspaceApi = {
         query,
         workspacePath,
         streamId,
+        linked,
       )
       .finally(() => {
         agentSearchProgressCallbacks.delete(streamId);

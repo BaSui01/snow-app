@@ -84,6 +84,8 @@ const requiredExports = [
   "listMemorySourceConversations",
   // MCP 设置面板保存链路（快速列表：只读发现缓存，保存不再等全量工具发现）
   "listMcpProjectServersCached",
+  // 全局子代理工具目录（不依赖项目）
+  "listMcpGlobalServers",
   // 敏感命令决策模型辅助（拦截提示展示判定 / 托管执行）
   "evaluateSensitiveCommandDecision",
   // 手机远控（原生 HTTP 服务 / 鉴权 / 附件）
@@ -122,6 +124,8 @@ const requiredExports = [
   "getOAuthLoginStatus",
   "submitOAuthCallback",
   "cancelOAuthLogin",
+  // OAuth 订阅配额（模型列表配额面板）
+  "getOAuthQuota",
   // 应用任务管理器（进程树快照采集与结束进程）
   "listProcessTree",
   "killProcessTree",

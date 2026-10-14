@@ -13,17 +13,17 @@ Snow App stores Hooks and sub-agent configuration in the app SQLite database, sh
 
 ### 1.2 Hook types
 
-| `hookType` | Trigger | Allowed actions |
-| --- | --- | --- |
-| `onUserMessage` | Before a user message reaches the AI | `command`, `context` |
-| `beforeToolCall` | Before a tool call | `command` |
-| `toolConfirmation` | When a tool enters confirmation | `command` |
-| `afterToolCall` | After a tool call completes | `command` |
-| `onSubAgentComplete` | After a sub-agent completes | `command`, `prompt` |
-| `beforeSubAgentStart` | Before a sub-agent starts | `command`, `context` |
-| `beforeCompress` | Before context compaction | `command` |
-| `onSessionStart` | When an existing conversation opens; fire-and-forget | `command`, `context` |
-| `onStop` | When a conversation stops or is cleaned up; fire-and-forget | `command`, `prompt` |
+| `hookType`            | Trigger                                                     | Allowed actions      |
+| --------------------- | ----------------------------------------------------------- | -------------------- |
+| `onUserMessage`       | Before a user message reaches the AI                        | `command`, `context` |
+| `beforeToolCall`      | Before a tool call                                          | `command`            |
+| `toolConfirmation`    | When a tool enters confirmation                             | `command`            |
+| `afterToolCall`       | After a tool call completes                                 | `command`            |
+| `onSubAgentComplete`  | After a sub-agent completes                                 | `command`, `prompt`  |
+| `beforeSubAgentStart` | Before a sub-agent starts                                   | `command`, `context` |
+| `beforeCompress`      | Before context compaction                                   | `command`            |
+| `onSessionStart`      | When an existing conversation opens; fire-and-forget        | `command`, `context` |
+| `onStop`              | When a conversation stops or is cleaned up; fire-and-forget | `command`, `prompt`  |
 
 > `prompt` is a valid configuration type, but the current native executor does not make a model call; it returns an unsupported failure record. Do not depend on a `prompt` action for production automation. Prefer a verifiable `command`, or `context` where allowed. A `beforeSubAgentStart` context result is currently recorded but is not appended to the child agent prompt by the caller.
 
@@ -44,25 +44,25 @@ Snow App stores Hooks and sub-agent configuration in the app SQLite database, sh
 }
 ```
 
-| Field | Location | Meaning |
-| --- | --- | --- |
-| `description` | rule | Must be present; describe intent and failure impact. |
-| `matcher` | rule | Optional. Commas mean OR; `key:glob` is supported, such as `toolName:bash-*`. Without a key, matching checks `toolName` first, then context text. |
-| `hooks` | rule | Required action array. |
-| `type` | action | `command`, `context`, or `prompt` where allowed. |
-| `command` | command | Runs through the shell selected in terminal settings. |
-| `content` | context | Static text. JSON fields `additionalContext` or `prompt` are extracted; otherwise the whole text is used. |
-| `prompt` | prompt | The current native executor does not run a model call. |
-| `timeout` | command | Milliseconds; defaults to `5000`. Timeout kills the child and returns an error. |
-| `enabled` | action | **Must be `true` to execute**; missing means skipped. |
+| Field         | Location | Meaning                                                                                                                                           |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description` | rule     | Must be present; describe intent and failure impact.                                                                                              |
+| `matcher`     | rule     | Optional. Commas mean OR; `key:glob` is supported, such as `toolName:bash-*`. Without a key, matching checks `toolName` first, then context text. |
+| `hooks`       | rule     | Required action array.                                                                                                                            |
+| `type`        | action   | `command`, `context`, or `prompt` where allowed.                                                                                                  |
+| `command`     | command  | Runs through the shell selected in terminal settings.                                                                                             |
+| `content`     | context  | Static text. JSON fields `additionalContext` or `prompt` are extracted; otherwise the whole text is used.                                         |
+| `prompt`      | prompt   | The current native executor does not run a model call.                                                                                            |
+| `timeout`     | command  | Milliseconds; defaults to `5000`. Timeout kills the child and returns an error.                                                                   |
+| `enabled`     | action   | **Must be `true` to execute**; missing means skipped.                                                                                             |
 
 A command receives event context JSON on stdin and uses `cwd` from context when present. stdout/stderr are interpreted by exit code:
 
-| Exit code | Result |
-| --- | --- |
-| `0` | Pass; non-empty stdout becomes additional context. JSON stdout can supply `additionalContext` or `prompt`. |
-| `1` | Soft warning and warning log. stdout shaped as `{"decision":{"message":"..."}}` requests an interactive user decision. |
-| `2+` or no valid exit code | Block the current blockable flow, preferring stderr and then stdout as the message. |
+| Exit code                  | Result                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `0`                        | Pass; non-empty stdout becomes additional context. JSON stdout can supply `additionalContext` or `prompt`.             |
+| `1`                        | Soft warning and warning log. stdout shaped as `{"decision":{"message":"..."}}` requests an interactive user decision. |
+| `2+` or no valid exit code | Block the current blockable flow, preferring stderr and then stdout as the message.                                    |
 
 `onSessionStart` and `onStop` are fire-and-forget. Their caller downgrades interactive decisions to ordinary warnings, so they cannot be relied on to block a flow.
 
@@ -182,28 +182,29 @@ Hook database writes create a temporary backup during the operation and remove i
 
 A sub-agent runs through `sub-agents-activate` in an independent execution loop with no main-conversation history. Configuration fields:
 
-| Field | Meaning |
-| --- | --- |
-| `name` | Required display name. |
-| `description` | Tells the main Agent when to delegate. |
-| `systemPrompt` | Must be self-contained: mission, inputs, workflow, tools, safety, and output. |
-| `toolsJson` | JSON string or tool-name array. `["*"]` means all tools; `[]` means no tools. |
-| `configProfile` | Empty inherits the API profile and current model used by the parent conversation's current run; non-empty pins the named profile. |
-| `model` | Applies only with a pinned profile. A non-empty value pins the model; an omitted, empty, or trim-empty value uses that profile's `advancedModel`. If that profile's `advancedModel` is also empty, activation fails; it never falls back to `basicModel`. |
+| Field           | Meaning                                                                                                                                                                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | Required display name.                                                                                                                                                                                                                                    |
+| `description`   | Tells the main Agent when to delegate.                                                                                                                                                                                                                    |
+| `systemPrompt`  | Must be self-contained: mission, inputs, workflow, tools, safety, and output.                                                                                                                                                                             |
+| `toolsJson`     | JSON string or tool-name array. `["*"]` means every tool available in the current project. An explicit list must include at least one read tool (`filesystem-read` or `grep-search`); an empty array is rejected.                                         |
+| `configProfile` | Empty inherits the API profile and current model used by the parent conversation's current run; non-empty pins the named profile.                                                                                                                         |
+| `model`         | Applies only with a pinned profile. A non-empty value pins the model; an omitted, empty, or trim-empty value uses that profile's `advancedModel`. If that profile's `advancedModel` is also empty, activation fails; it never falls back to `basicModel`. |
 
 Activation looks up the current project's same-ID configuration first and falls back to global only when it is absent. Built-in `agent_general` cannot be modified or deleted through config.
 
 The main agent's system prompt now **dynamically injects the list of available sub-agents** (with `agentId`, name, and purpose description). When calling `sub-agents-activate`, the main agent must pick the `agentId` that best matches the task from that list — it must **not default to the built-in `agent_general`** when a more specific agent is configured (the built-in remains a generic fallback). The list follows the same resolution rules as activation: **project-scoped sub-agents of the current project come first** and override the global one on the same `agentId`; agents without a project-level config fall back to global/built-in. Sub-agents of other projects are not injected. New sessions pick up configuration changes immediately.
 
-Before creating a sub-session, Snow validates the tools, profile, and model once and creates a runtime snapshot. The normal loop, recursive tool loop, automatic compaction, and post-compaction resume all reuse that snapshot instead of following later global changes. Each request still reloads current credentials by the fixed profile name, but deleting that profile causes a strict failure rather than switching providers. The sub-session persists the profile and model actually selected at startup, so history display is not affected by later sub-agent or API configuration edits.
+Before creating a sub-session, Snow validates the tool-list format, profile, and model once and creates a runtime snapshot. The normal loop, recursive tool loop, automatic compaction, and post-compaction resume all reuse that snapshot instead of following later global changes. Each request still reloads current credentials by the fixed profile name, but deleting that profile causes a strict failure rather than switching providers. The sub-session persists the profile and model actually selected at startup, so history display is not affected by later sub-agent or API configuration edits.
 
 Tool rules:
 
-- An **explicit tool-name list requires `projectId`**, so that sub-agent is project-scoped;
-- A global sub-agent may use only `["*"]` or `[]`;
-- Every tool in a project list must be an exact full tool name enabled for that project;
-- An external MCP tool's public server-name prefix must belong to a server enabled for the project;
-- Activation returns an error when configured tools are unavailable or disabled; it does not silently expand permissions.
+- When `projectId` is omitted in a project conversation, the current project is used, which makes the sub-agent project-scoped. To create a **global** sub-agent, pass `projectId=""` explicitly;
+- A global sub-agent's explicit tool list draws its candidates from system and global MCP servers, independent of any project, so you do not need to select a project first. A project sub-agent's candidates are the tools enabled for that project;
+- `["*"]` expands at runtime to every tool available in the current project;
+- An explicit list must include `filesystem-read` or `grep-search`, otherwise saving fails;
+- A project-scoped sub-agent written through config must name built-in tools or tools from configured, enabled MCP servers; global sub-agents skip project validation;
+- At runtime only tools actually available in the current conversation's project are used. Configured tools that are globally or project-disabled, unavailable, or missing are skipped and logged. The sub-agent continues with the remaining tools; it does not fail and does not gain extra permissions.
 
 ### 2.2 Sub-agent Conversation View
 
@@ -218,20 +219,20 @@ A sub-agent runs in its own conversation. Opening it shows:
 1. Open **Settings → Sub-agent Settings** (settings page id: `sub-agent-settings`);
 2. Select Global or Project scope;
 3. Enter the name, description, and a complete system prompt;
-4. Choose all/no tools for a global agent, or select explicit tools for a project agent;
+4. In the MCP tools list, check at least one read tool (`filesystem-read` or `grep-search`). The Global tab lists tools from system and global MCP servers, independent of the current project, so you do not need to select a project first. The Project tab lists only tools enabled for the current project. The UI has no all-tools switch; write `["*"]` through config;
 5. Keep **Follow the parent conversation (recommended)**, or select a pinned API profile. With a pinned profile, optionally select an independent model; leaving it empty uses the profile's advanced model;
 6. Save, then delegate one narrowly scoped test task from the main conversation.
 
 ### 2.4 Configure through `config`
 
-Valid global sub-agent:
+Global sub-agent example (`projectId=""` means global):
 
 ```jsonc
-config-set scope=subAgents key=agent_readonly_reviewer value={
+config-set scope=subAgents key=agent_readonly_reviewer projectId="" value={
   "name": "Read-only Reviewer",
   "description": "Use for an independent review and issue list",
-  "systemPrompt": "You are a read-only reviewer. Verify inputs and files first, then report issues and evidence by severity. Never modify files, run commands, or guess missing business rules. With no tools, identify what cannot be verified.",
-  "toolsJson": [],
+  "systemPrompt": "You are a read-only reviewer. Verify inputs and files first, then report issues and evidence by severity. Never modify files, run commands, or guess missing business rules. If a tool is unavailable, identify what cannot be verified.",
+  "toolsJson": ["filesystem-read", "grep-search"],
   "configProfile": "",
   "model": ""
 }
@@ -298,16 +299,18 @@ If `beforeSubAgentStart` Hook execution itself throws, the current caller contin
 
 ## 3. Validation and troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| Hook saves but never runs | Ensure the action explicitly has `"enabled": true`; a missing value is skipped by the native executor. |
-| Project Hook does not fall back globally | A non-empty project array replaces global rules; delete the project config or use an empty rule array to fall back. |
-| Matcher does not match | Verify context keys and full tool name; use `toolName:<glob>` when appropriate. |
-| Command times out | Default is 5000 ms; inspect shell, PATH, cwd, stdin handling, and a reasonable positive `timeout`. |
-| Exit 1 shows no decision card | stdout must be valid JSON with a string `decision.message`; fire-and-forget Hooks only show a warning. |
-| Prompt action has no effect | The current native executor does not execute prompt model calls; use command or supported context. |
-| Context does not reach the child prompt | `beforeSubAgentStart` currently records context but does not append it to the child prompt; put required content in `systemPrompt`. |
-| Global sub-agent explicit list is rejected | Explicit lists require `projectId`; make it project-scoped or use global `["*"]`/`[]`. |
-| Sub-agent cannot find a tool | Use the exact project-enabled full tool name and inspect MCP server and tool toggles (global + project). |
-| Sub-agent depends on main conversation | It has no main history; place context in the task prompt or self-contained `systemPrompt`. |
-| Wrong same-ID config activates | Project scope wins over global; query both scopes and verify `projectId`. |
+| Symptom                                                                 | Check                                                                                                                                                                            |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hook saves but never runs                                               | Ensure the action explicitly has `"enabled": true`; a missing value is skipped by the native executor.                                                                           |
+| Project Hook does not fall back globally                                | A non-empty project array replaces global rules; delete the project config or use an empty rule array to fall back.                                                              |
+| Matcher does not match                                                  | Verify context keys and full tool name; use `toolName:<glob>` when appropriate.                                                                                                  |
+| Command times out                                                       | Default is 5000 ms; inspect shell, PATH, cwd, stdin handling, and a reasonable positive `timeout`.                                                                               |
+| Exit 1 shows no decision card                                           | stdout must be valid JSON with a string `decision.message`; fire-and-forget Hooks only show a warning.                                                                           |
+| Prompt action has no effect                                             | The current native executor does not execute prompt model calls; use command or supported context.                                                                               |
+| Context does not reach the child prompt                                 | `beforeSubAgentStart` currently records context but does not append it to the child prompt; put required content in `systemPrompt`.                                              |
+| Saving a sub-agent is rejected (empty list or no read tool)             | Include `filesystem-read` or `grep-search` in an explicit list, or use `["*"]` for every available tool.                                                                         |
+| A sub-agent stops using a service's tools after the project disables it | Runtime skips tools disabled for the current conversation's project and logs them. Re-enable the service in that project to restore them; the global configuration is unchanged. |
+| A global sub-agent cannot find a project-owned service's tool           | The Global tab lists only system and global MCP server tools. Use a project-scoped sub-agent for project-owned services.                                                         |
+| Sub-agent cannot find a tool                                            | Use the exact project-enabled full tool name and inspect MCP server and tool toggles (global + project).                                                                         |
+| Sub-agent depends on main conversation                                  | It has no main history; place context in the task prompt or self-contained `systemPrompt`.                                                                                       |
+| Wrong same-ID config activates                                          | Project scope wins over global; query both scopes and verify `projectId`.                                                                                                        |

@@ -20,6 +20,7 @@ import { DoubleZapIcon } from "../../common/DoubleZapIcon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useI18n } from "../../../i18n";
+import { OAuthQuotaPanel } from "../../common/OAuthQuotaPanel";
 import { ThinkingStrengthMenu } from "./ThinkingStrengthMenu";
 import { useDropdownDirection } from "./useDropdownDirection";
 import type { MainContentView } from "../types";
@@ -163,6 +164,10 @@ export const ModelSelector = ({
     setApiConfigsOverride(null);
   }, [apiConfigs]);
   const effectiveApiConfigs = apiConfigsOverride ?? apiConfigs;
+  const selectedApiConfig =
+    effectiveApiConfigs.find(
+      (config) => config.profileName === selectedApiProfile,
+    ) ?? null;
 
   useEffect(() => {
     if (menuHidden || displayView !== "model") {
@@ -538,6 +543,9 @@ export const ModelSelector = ({
                 </button>
               )}
             </div>
+          )}
+          {displayView === "root" && (
+            <OAuthQuotaPanel config={selectedApiConfig} />
           )}
           {displayView === "apiProfile" && (
             <>

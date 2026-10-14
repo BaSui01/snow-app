@@ -203,7 +203,7 @@ pub async fn list_mcp_server_tools(config_server_id: String) -> napi::Result<Vec
 pub async fn list_mcp_project_servers(
     project_id: String,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
-    collect_project_server_statuses(project_id, true).await
+    collect_server_statuses(Some(project_id), true).await
 }
 
 /// 项目 MCP 服务器快速列表：外部服务器工具**只读进程内缓存**（不连接
@@ -214,22 +214,25 @@ pub async fn list_mcp_project_servers(
 pub async fn list_mcp_project_servers_cached(
     project_id: String,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
-    collect_project_server_statuses(project_id, false).await
+    collect_server_statuses(Some(project_id), false).await
 }
 
-async fn collect_project_server_statuses(
-    project_id: String,
+/// 全局 MCP 服务器目录（不依赖项目，供全局子代理选择工具）：只含系统服务与
+/// 全局 MCP 服务器，只叠加全局层开关（精简模式、服务器启用态、全局工具黑名单）。
+pub async fn list_mcp_global_servers() -> napi::Result<Vec<McpProjectServerStatus>> {
+    collect_server_statuses(None, true).await
+}
+
+/// `project_id` 为 None 时输出全局目录：不读取项目 scope，也不含项目专属服务器。
+async fn collect_server_statuses(
+    project_id: Option<String>,
     discover_missing_tools: bool,
 ) -> napi::Result<Vec<McpProjectServerStatus>> {
-    let project_id = required_value(project_id, "Project id")?;
-    let scope = load_project_scope(Some(&project_id))
-        .await?
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "Project id is required to list project MCP servers".to_string(),
-            )
-        })?;
+    let project_id = project_id
+        .map(|value| required_value(value, "Project id"))
+        .transpose()?;
+    let scope = load_project_scope(project_id.as_deref()).await?;
+    let global_scope = load_global_scope().await?;
 
     // Image generation tool is only globally available when at least one
     // channel (OpenAI / Gemini) is configured and enabled in Settings ->
@@ -258,7 +261,9 @@ async fn collect_project_server_statuses(
         .into_iter()
         .map(|(server_id, tools)| {
             let scope_server_id = builtin_scope_server_id(&server_id);
-            let mut enabled = scope.is_server_enabled(&scope_server_id);
+            let mut enabled = scope
+                .as_ref()
+                .is_none_or(|scope| scope.is_server_enabled(&scope_server_id));
             // 精简模式生效：相关服务器全局禁用（前端据此显示为关闭状态；
             // 手动重新启用任一服务器会自动关闭精简模式，见
             // set_mcp_project_server_enabled）。
@@ -280,7 +285,7 @@ async fn collect_project_server_statuses(
                 source: "system".to_string(),
                 global_enabled,
                 enabled,
-                tools: to_project_tool_statuses(&tools, &scope),
+                tools: to_server_tool_statuses(&tools, scope.as_ref(), global_scope.as_ref()),
                 // 内置服务器工具来自进程内注册表，无需发现。
                 tools_pending: false,
                 error,
@@ -294,44 +299,60 @@ async fn collect_project_server_statuses(
     // 单个服务器发现失败只记录 error、工具留空，不影响其他服务器
     // 与整体列表——避免「一个服务器连不上，全部工具加载失败」。
     let discovered = stream::iter(
-        super::external::discover_project_servers(&project_id)
+        super::external::discover_project_servers(project_id.as_deref())
             .await?
             .into_iter()
             .map(|external_server| {
                 let project_id = project_id.clone();
                 let scope = scope.clone();
+                let global_scope = global_scope.clone();
                 let scope_server_id =
                     super::external::project_scope_server_id(&external_server.config_server_id);
                 let project_owned = external_server.source == "project";
                 let enabled = external_server.enabled
-                    && (project_owned || scope.is_server_enabled(&scope_server_id));
+                    && (project_owned
+                        || scope
+                            .as_ref()
+                            .is_none_or(|scope| scope.is_server_enabled(&scope_server_id)));
                 let global_enabled = external_server.global_enabled;
                 async move {
                     let (tools, tools_pending, error) = if enabled && global_enabled {
                         if discover_missing_tools {
                             match super::external::discover_server_tools(
-                                Some(&project_id),
+                                project_id.as_deref(),
                                 &external_server.config_server_id,
                                 false,
                             )
                             .await
                             {
-                                Ok(found) => {
-                                    (to_project_tool_statuses(&found, &scope), false, None)
-                                }
+                                Ok(found) => (
+                                    to_server_tool_statuses(
+                                        &found,
+                                        scope.as_ref(),
+                                        global_scope.as_ref(),
+                                    ),
+                                    false,
+                                    None,
+                                ),
                                 Err(discovery_error) => {
                                     (Vec::new(), false, Some(discovery_error.reason.clone()))
                                 }
                             }
                         } else {
                             match super::external::cached_discovery_tools(
-                                Some(&project_id),
+                                project_id.as_deref(),
                                 &external_server.config_server_id,
                                 &external_server.public_name,
                             ) {
-                                Some(cached) => {
-                                    (to_project_tool_statuses(&cached, &scope), false, None)
-                                }
+                                Some(cached) => (
+                                    to_server_tool_statuses(
+                                        &cached,
+                                        scope.as_ref(),
+                                        global_scope.as_ref(),
+                                    ),
+                                    false,
+                                    None,
+                                ),
                                 None => (Vec::new(), true, None),
                             }
                         }
@@ -412,7 +433,7 @@ pub async fn set_mcp_project_server_enabled(
             .iter()
             .any(|(known_server_id, _)| known_server_id == builtin_server_id)
     } else if let Some(external_server_id) = server_id.strip_prefix("external:") {
-        super::external::discover_project_servers(&project_id)
+        super::external::discover_project_servers(Some(&project_id))
             .await?
             .iter()
             .any(|server| server.config_server_id == external_server_id)
@@ -451,7 +472,8 @@ pub async fn set_mcp_project_server_enabled(
     // 因此这里不失效缓存——避免启停一台服务器把其他服务器也拖进重连。
 
     if let Some(external_server_id) = server_id.strip_prefix("external:") {
-        let project_servers = super::external::discover_project_servers(&project_id).await?;
+        let project_servers =
+            super::external::discover_project_servers(Some(&project_id)).await?;
         if project_servers.iter().any(|server| {
             server.config_server_id == external_server_id && server.source == "project"
         }) {
@@ -653,6 +675,30 @@ fn to_project_tool_statuses(
             }
         })
         .collect()
+}
+
+/// 服务器工具开关：有项目 scope 时与项目列表一致；无项目（全局目录）时只看全局黑名单。
+fn to_server_tool_statuses(
+    tools: &[McpTool],
+    scope: Option<&McpProjectScopeSettings>,
+    global_scope: Option<&McpGlobalScopeSettings>,
+) -> Vec<McpProjectToolStatus> {
+    let Some(scope) = scope else {
+        return tools
+            .iter()
+            .map(|tool| {
+                let full_name = tool.full_name();
+                McpProjectToolStatus {
+                    enabled: !global_scope
+                        .is_some_and(|global| global.disabled_tool_names.contains(&full_name)),
+                    name: full_name,
+                    description: tool.description.clone(),
+                    input_schema_json: serialize_input_schema(tool),
+                }
+            })
+            .collect();
+    };
+    to_project_tool_statuses(tools, scope)
 }
 
 /// 工具状态转换：enabled 反映全局 scope 黑名单（默认全部启用）。

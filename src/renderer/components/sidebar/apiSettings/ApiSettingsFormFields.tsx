@@ -36,10 +36,12 @@ import {
 } from "./toolResultLimit";
 import { resolveThinkingValue } from "./apiSettingsUtils";
 import type {
+  ApiConfigRecord,
   Model,
   SystemPromptItemRecord,
   CustomHeaderSchemeRecord,
 } from "../../../../preload";
+import { OAuthQuotaPanel } from "../../common/OAuthQuotaPanel";
 import type { ApiConfigFormData } from "./types";
 
 type ModelField = "advancedModel" | "basicModel";
@@ -71,12 +73,15 @@ type ApiSettingsFormFieldsProps = {
   data: ApiConfigFormData;
   onChange: (field: keyof ApiConfigFormData, value: string | boolean) => void;
   disabled: boolean;
+  /** 已保存的配置（编辑时传入），仅 OAuth 档案展示配额。 */
+  savedConfig?: ApiConfigRecord | null;
 };
 
 export function ApiSettingsFormFields({
   data,
   onChange,
   disabled,
+  savedConfig = null,
 }: ApiSettingsFormFieldsProps): React.JSX.Element {
   const { t } = useI18n();
   const [showApiKey, setShowApiKey] = useState(false);
@@ -304,6 +309,7 @@ export function ApiSettingsFormFields({
 
   return (
     <div className="api-settings-form-body">
+      <OAuthQuotaPanel config={savedConfig} />
       <div className="api-settings-form-section">
         <strong className="api-settings-form-section-title">
           {t("settings.formBasic", { defaultValue: "Basic" })}

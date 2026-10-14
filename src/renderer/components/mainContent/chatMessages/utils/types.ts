@@ -49,6 +49,8 @@ export type AiResponseProps = {
   retryError?: string;
   /** 最近一次重试的退避时长（毫秒），驱动重试提示的倒计时。 */
   retryBackoffMs?: number;
+  /** 本轮退避的起始时刻（epoch ms）：重试提示重新挂载后据此续算剩余时间。 */
+  retryBackoffStartedAt?: number;
   /** True when the persisted assistant response represents a terminal
    *  failure; the body renders as an error notice instead of markdown. */
   isError?: boolean;

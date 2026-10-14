@@ -341,6 +341,9 @@ export const FileMentionPopup = forwardRef<
   const searchQuery = directoryScope
     ? directoryScope.inner.trim()
     : query.trim();
+  // `@:项目/` 显式限定了关联项目组的某个成员：搜索只覆盖该根目录，不再并入
+  // 组内其他项目；普通 `@` 搜索保持「一次覆盖关联项目组全部根」的行为。
+  const includeLinkedRoots = scopedDirectory ? false : undefined;
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
@@ -573,6 +576,7 @@ export const FileMentionPopup = forwardRef<
           const results = await window.snow.searchFileContents(
             searchRoot.path,
             contentQuery,
+            includeLinkedRoots,
           );
 
           if (seq !== searchSeqRef.current) {
@@ -659,6 +663,7 @@ export const FileMentionPopup = forwardRef<
               // 只保留最近若干条，避免进度区溢出。
               setAgentProgress((prev) => [...prev.slice(-7), chunk]);
             },
+            includeLinkedRoots,
           );
 
           if (seq !== searchSeqRef.current) {
@@ -717,7 +722,11 @@ export const FileMentionPopup = forwardRef<
               query: searchQuery,
               listChildren: false,
             })
-          : await window.snow.searchFiles(searchRoot.path, searchQuery);
+          : await window.snow.searchFiles(
+              searchRoot.path,
+              searchQuery,
+              includeLinkedRoots,
+            );
 
         if (seq !== searchSeqRef.current) {
           return;
@@ -746,6 +755,7 @@ export const FileMentionPopup = forwardRef<
     searchRoot,
     directoryScope,
     scopedDirectory,
+    includeLinkedRoots,
     projectId,
     isContentMode,
     contentQuery,

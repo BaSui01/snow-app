@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.25
+
+## New Features
+
+- **Separate Windows**: Right-panel tabs and sessions can open in their own windows, kept in sync with the main window, with new shortcuts.
+- **OAuth Quota Panel**: Subscription channels show their remaining quota in API settings; the panel collapses and remembers its state.
+- **System App Open**: Files in the explorer can be opened with the system default application.
+- **`/help` Command**: A new `/help` guide for built-in commands and features.
+- **Tool-Call Watchdog**: Tool calls are monitored for stalls, and the decision model's verdict appears on the card.
+- **API Key Visibility Toggle**: The API key field can be shown or hidden.
+
+## Improvements
+
+- Every MCP call is bound by a per-call timeout.
+- Codebase embedding dimensions can be left empty.
+- Plugin input-bar Actions drop the persistent diff and preview buttons; Restore moves into the more menu.
+- Drawing models and their capabilities are driven by each channel's model configuration.
+- Connection establishment has an idle timeout, and retry parameters are capped.
+
+## Bug Fixes
+
+- Fixed the Linux install script being packaged with CRLF line endings in Windows builds.
+
 ## v0.4.24
 
 ## New Features

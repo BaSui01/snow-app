@@ -17503,6 +17503,111 @@ body.is-panel-resizing * {
   );
 }
 
+/* 决策模型判定徽章（卡片头部）：托管自动放行/拒绝的敏感命令 */
+.tool-call-bash-decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.tool-call-bash-decision-badge em {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+.tool-call-bash-decision-allow {
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.tool-call-bash-decision-deny {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
+/* Tooltip 内容：判定标题 / 理由 / 判定模型 */
+.tool-call-bash-decision-tip-title {
+  display: block;
+  font-weight: 600;
+}
+
+.tool-call-bash-decision-tip-reason {
+  display: block;
+  margin-top: 2px;
+}
+
+.tool-call-bash-decision-tip-model {
+  display: block;
+  margin-top: 2px;
+  opacity: 0.75;
+}
+
+/* 决策模型判定详情（卡片内部） */
+.tool-call-bash-decision {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.tool-call-bash-decision-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tool-call-bash-decision-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tool-call-bash-decision-is-allow .tool-call-bash-decision-verdict {
+  color: var(--accent-green-text);
+}
+
+.tool-call-bash-decision-is-deny .tool-call-bash-decision-verdict {
+  color: var(--accent-red-text);
+}
+
+.tool-call-bash-decision-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  font-size: 10.5px;
+}
+
+.tool-call-bash-decision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tool-call-bash-decision-reason {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+}
+
 .tool-call-bash-logpath {
   display: flex;
   align-items: center;

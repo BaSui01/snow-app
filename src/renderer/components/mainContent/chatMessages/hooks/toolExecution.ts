@@ -13,6 +13,11 @@ import {
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
+  ToolWatchdogTimeoutError,
+  resolveToolWatchdogMs,
+  withToolWatchdog,
+} from "./toolWatchdog";
+import {
   extractFileChangesFromTool,
   extractFileChangeCoverageFromTool,
 } from "./fileChangeTracking";
@@ -183,6 +188,27 @@ export function createToolExecutor(
       });
       if (allUserQuestionsRefused()) {
         userQuestionCancelled = true;
+      }
+    };
+
+    // 看门狗超时后中止后端仍在运行的执行（bash 进程 / SSH 通道），主循环不再等待。
+    const findLiveToolCall = (toolCall: ToolCallInfo) =>
+      ctx.sessionsRef.current?.[effectiveKey]?.messages
+        ?.find((m) => m.id === currentAssistantMessageId)
+        ?.toolCalls?.find(
+          (tc) =>
+            tc.interactionId === toolCall.interactionId &&
+            tc.name === toolCall.name,
+        );
+    const abortTimedOutExecution = (toolCall: ToolCallInfo, err: unknown) => {
+      if (!(err instanceof ToolWatchdogTimeoutError)) {
+        return;
+      }
+      const executionId = findLiveToolCall(toolCall)?.toolExecutionId;
+      if (executionId) {
+        void window.snow
+          .abortToolExecution(executionId, "timeout")
+          .catch(() => undefined);
       }
     };
 
@@ -558,24 +584,31 @@ export function createToolExecutor(
                 checkpointIds,
               );
             } else {
-              parallelResult = await window.snow.callMcpTool(
-                parallelToolCall.name,
-                parallelToolCall.arguments,
-                sessionDirId,
-                checkpointIds,
-                checkpointIds.length > 0 ? sessionDirPath : undefined,
-                undefined,
-                buildToolChunkHandler(parallelToolCall),
-                parallelToolCall.interactionId,
-                undefined,
-                sessionPlanMode(effectiveKey),
-                planApprovedSessionKeysRef.current.has(effectiveKey),
-                // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
-                // PENDING 会话没有真实会话 id，传 undefined。
-                isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+              parallelResult = await withToolWatchdog(
+                window.snow.callMcpTool(
+                  parallelToolCall.name,
+                  parallelToolCall.arguments,
+                  sessionDirId,
+                  checkpointIds,
+                  checkpointIds.length > 0 ? sessionDirPath : undefined,
+                  undefined,
+                  buildToolChunkHandler(parallelToolCall),
+                  parallelToolCall.interactionId,
+                  undefined,
+                  sessionPlanMode(effectiveKey),
+                  planApprovedSessionKeysRef.current.has(effectiveKey),
+                  // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
+                  // PENDING 会话没有真实会话 id，传 undefined。
+                  isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+                ),
+                resolveToolWatchdogMs(
+                  parallelToolCall.name,
+                  parallelToolCall.arguments,
+                ),
               );
             }
           } catch (err) {
+            abortTimedOutExecution(parallelToolCall, err);
             parallelResult = JSON.stringify({
               error: getErrorMessage(err),
             });
@@ -1209,21 +1242,26 @@ export function createToolExecutor(
                   checkpointIds,
                 );
               } else if (result === undefined) {
-                result = await window.snow.callMcpTool(
-                  toolCall.name,
-                  toolArgs,
-                  sessionDirId,
-                  checkpointIds,
-                  checkpointIds.length > 0 ? sessionDirPath : undefined,
-                  sensitiveAuthorizationToken,
-                  buildToolChunkHandler(toolCall),
-                  toolCall.interactionId,
-                  undefined,
-                  sessionPlanMode(effectiveKey),
-                  planApprovedSessionKeysRef.current.has(effectiveKey),
-                  // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
-                  // PENDING 会话没有真实会话 id，传 undefined。
-                  isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+                result = await withToolWatchdog(
+                  window.snow.callMcpTool(
+                    toolCall.name,
+                    toolArgs,
+                    sessionDirId,
+                    checkpointIds,
+                    checkpointIds.length > 0 ? sessionDirPath : undefined,
+                    sensitiveAuthorizationToken,
+                    buildToolChunkHandler(toolCall),
+                    toolCall.interactionId,
+                    undefined,
+                    sessionPlanMode(effectiveKey),
+                    planApprovedSessionKeysRef.current.has(effectiveKey),
+                    // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
+                    // PENDING 会话没有真实会话 id，传 undefined。
+                    isPendingSessionKey(effectiveKey)
+                      ? undefined
+                      : effectiveKey,
+                  ),
+                  resolveToolWatchdogMs(toolCall.name, toolArgs),
                 );
               }
 
@@ -1305,22 +1343,14 @@ export function createToolExecutor(
             }
           } catch (err) {
             const errorMessage = getErrorMessage(err);
+            abortTimedOutExecution(toolCall, err);
             // For streaming tools (e.g. terminal-execute) the process
             // may have produced partial output before failing/timing
             // out. Recover that output from the session state so the
             // AI receives it together with the error and can reason
             // about the situation instead of the loop stalling.
             if (toolCall.name === "bash-terminal-execute") {
-              const sessionMessages =
-                ctx.sessionsRef.current?.[effectiveKey]?.messages ?? [];
-              const assistantMessage = sessionMessages.find(
-                (m) => m.id === currentAssistantMessageId,
-              );
-              const liveToolCall = assistantMessage?.toolCalls?.find(
-                (tc) =>
-                  tc.interactionId === toolCall.interactionId &&
-                  tc.name === toolCall.name,
-              );
+              const liveToolCall = findLiveToolCall(toolCall);
               const partialStdout = liveToolCall?.streamingStdout ?? "";
               const partialStderr = liveToolCall?.streamingStderr ?? "";
               const partialOutput = [partialStdout, partialStderr]

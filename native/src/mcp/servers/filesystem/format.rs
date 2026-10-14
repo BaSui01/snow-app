@@ -29,6 +29,12 @@ const EDIT_QUIET: Duration = Duration::from_millis(1200);
 /// 定时器最小步长，避免密集轮询。
 const MIN_TICK: Duration = Duration::from_millis(50);
 
+/// Prettier 单次执行上限：超时即结束进程并放弃本次格式化，释放文件写锁。
+const PRETTIER_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 子进程退出状态轮询间隔。
+const PRETTIER_POLL: Duration = Duration::from_millis(50);
+
 /// 待格式化文件 -> 该文件最后一次写入时刻（在册即代表有待格式化的内容）。
 static PENDING: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
 static NOTIFY: OnceLock<Notify> = OnceLock::new();
@@ -213,6 +219,22 @@ async fn format_file(file_path: &str) {
     .await;
 }
 
+/// 等待子进程退出：超时则强制结束并回收，返回 None；否则返回是否成功。
+fn wait_child_with_timeout(child: &mut std::process::Child, timeout: Duration) -> Option<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status.success()),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(PRETTIER_POLL),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
 /// 自动格式化全局开关（默认开启）；读取失败按开启处理。
 pub(super) async fn auto_format_enabled() -> bool {
     tokio::task::spawn_blocking(get_auto_format)
@@ -273,8 +295,8 @@ fn find_prettier_bin(file_path: &Path) -> Option<PathBuf> {
 
 /// 对文件执行一次 Prettier 格式化，返回被改写前内容的对象 id（BLAKE3）。
 ///
-/// 返回 None 表示未执行、执行失败或输出与原文一致（Prettier 不写盘），调用
-/// 方据此决定是否补记检查点 expected。任何一步失败都静默跳过，不影响已经
+/// 返回 None 表示未执行、执行失败、超时或输出与原文一致（Prettier 不写盘），
+/// 调用方据此决定是否补记检查点 expected。任何一步失败都静默跳过，不影响已经
 /// 写盘的编辑结果；非 UTF-8（GBK / UTF-16 等）文件会被 Prettier 按 UTF-8
 /// 重写而损坏，因此直接跳过。
 fn run_prettier(file_path: &Path) -> Option<String> {
@@ -285,18 +307,21 @@ fn run_prettier(file_path: &Path) -> Option<String> {
     let prettier_bin = find_prettier_bin(file_path)?;
 
     let mut command = std::process::Command::new("node");
-    command.arg(&prettier_bin).arg("--write").arg(file_path);
+    command
+        .arg(&prettier_bin)
+        .arg("--write")
+        .arg(file_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         // CREATE_NO_WINDOW：避免格式化时控制台窗口一闪而过。
         command.creation_flags(0x0800_0000);
     }
-    if !command
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-    {
+    let mut child = command.spawn().ok()?;
+    if !wait_child_with_timeout(&mut child, PRETTIER_TIMEOUT)? {
         return None;
     }
     let after = fs::read(file_path).ok()?;

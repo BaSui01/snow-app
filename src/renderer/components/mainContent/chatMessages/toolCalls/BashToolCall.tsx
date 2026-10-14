@@ -8,6 +8,8 @@ import {
   FileText,
   Info,
   Send,
+  ShieldAlert,
+  ShieldCheck,
   Square,
   Timer,
 } from "lucide-react";
@@ -531,6 +533,18 @@ export const BashToolCall = ({
         : "toolCall.bash.waiting",
   );
 
+  // 决策模型判定（托管自动放行/拒绝的命令）：卡片头部给结论与置信度，
+  // 卡片内部给完整判定（理由与判定模型）。
+  const decision = toolCall.sensitiveCommandDecision;
+  const decisionConfidencePercent = decision
+    ? Math.round(decision.confidence * 100)
+    : 0;
+  const decisionReason = decision
+    ? t(`sensitiveCommand.decision.reason.${decision.reason}`, {
+        defaultValue: decision.reason,
+      })
+    : "";
+
   return (
     <ToolCallNode
       toolName={toolCall.name}
@@ -546,6 +560,58 @@ export const BashToolCall = ({
             <span className="tool-call-bash-interactive-badge">
               {t("toolCall.bash.interactive")}
             </span>
+          ) : null}
+          {decision ? (
+            <Tooltip
+              placement="top"
+              content={
+                <>
+                  <span className="tool-call-bash-decision-tip-title">
+                    {t("toolCall.bash.decisionTitle", {
+                      defaultValue: "决策模型判定",
+                    })}
+                  </span>
+                  <span className="tool-call-bash-decision-tip-reason">
+                    {decisionReason}
+                  </span>
+                  {decision.modelName ? (
+                    <span className="tool-call-bash-decision-tip-model">
+                      {t("sensitiveCommand.decisionModel", {
+                        values: { name: decision.modelName },
+                      })}
+                    </span>
+                  ) : null}
+                </>
+              }
+            >
+              <span
+                className={`tool-call-bash-decision-badge ${
+                  decision.allow
+                    ? "tool-call-bash-decision-allow"
+                    : "tool-call-bash-decision-deny"
+                }`}
+              >
+                {decision.allow ? (
+                  <ShieldCheck size={11} aria-hidden="true" />
+                ) : (
+                  <ShieldAlert size={11} aria-hidden="true" />
+                )}
+                {decision.allow
+                  ? t("toolCall.bash.decisionAllow", {
+                      defaultValue: "决策模型放行",
+                    })
+                  : t("toolCall.bash.decisionDeny", {
+                      defaultValue: "决策模型拒绝",
+                    })}
+                {decision.confidence > 0 ? (
+                  <em>
+                    {t("sensitiveCommand.decisionConfidence", {
+                      values: { value: decisionConfidencePercent },
+                    })}
+                  </em>
+                ) : null}
+              </span>
+            </Tooltip>
           ) : null}
           {parsedResult.type === "success" ? (
             <span
@@ -654,6 +720,65 @@ export const BashToolCall = ({
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
             <span>{localizeToolError(t, parsedResult.message)}</span>
+          </div>
+        ) : null}
+
+        {decision ? (
+          <div
+            className={`tool-call-bash-decision ${
+              decision.allow
+                ? "tool-call-bash-decision-is-allow"
+                : "tool-call-bash-decision-is-deny"
+            }`}
+          >
+            <div className="tool-call-bash-decision-head">
+              <span className="tool-call-bash-decision-verdict">
+                {decision.allow ? (
+                  <ShieldCheck size={13} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <ShieldAlert size={13} strokeWidth={2} aria-hidden="true" />
+                )}
+                <strong>
+                  {decision.allow
+                    ? t("toolCall.bash.decisionAllow", {
+                        defaultValue: "决策模型放行",
+                      })
+                    : t("toolCall.bash.decisionDeny", {
+                        defaultValue: "决策模型拒绝",
+                      })}
+                </strong>
+              </span>
+              <span className="tool-call-bash-decision-tag">
+                {toolCall.sensitiveCommandDelegated
+                  ? t("toolCall.bash.decisionDelegated", {
+                      defaultValue: "托管判定",
+                    })
+                  : t("toolCall.bash.decisionHumanConfirmed", {
+                      defaultValue: "人工确认",
+                    })}
+              </span>
+            </div>
+            <div className="tool-call-bash-decision-meta">
+              {decision.confidence > 0 ? (
+                <span>
+                  {t("sensitiveCommand.decisionConfidence", {
+                    values: { value: decisionConfidencePercent },
+                  })}
+                </span>
+              ) : null}
+              {decision.modelName ? (
+                <span>
+                  {t("sensitiveCommand.decisionModel", {
+                    values: { name: decision.modelName },
+                  })}
+                </span>
+              ) : null}
+            </div>
+            {decisionReason ? (
+              <div className="tool-call-bash-decision-reason">
+                {decisionReason}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

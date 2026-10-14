@@ -974,6 +974,11 @@ export const en = {
   "toolCall.bash.killConfirmHint":
     'Click "Stop" again to interrupt the running command now',
   "toolCall.bash.killConfirmAction": "Confirm stop",
+  "toolCall.bash.decisionTitle": "Decision model verdict",
+  "toolCall.bash.decisionAllow": "Allowed by decision model",
+  "toolCall.bash.decisionDeny": "Denied by decision model",
+  "toolCall.bash.decisionDelegated": "Delegated",
+  "toolCall.bash.decisionHumanConfirmed": "Human confirmed",
   "toolCall.bash.status.pending": "Pending",
   "toolCall.bash.status.running": "Running",
   "toolCall.bash.status.completed": "Completed",

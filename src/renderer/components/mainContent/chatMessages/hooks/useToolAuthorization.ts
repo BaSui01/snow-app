@@ -6,7 +6,10 @@ import type {
   ToolAuthorizationDecision,
 } from "../utils/conversationTypes";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
-import { directoryIdToPath } from "../utils/conversationHelpers";
+import {
+  directoryIdToPath,
+  updateFirstMatchingToolCall,
+} from "../utils/conversationHelpers";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
 
@@ -601,9 +604,42 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.setPendingToolAuthorizations((current) =>
         current.filter((item) => item.authorizationId !== authorizationId),
       );
+
+      // 敏感命令的决策模型判定只存在于待授权项上（拦截提示里展示），
+      // 结算时回写到工具卡片，让用户在卡片上也能看到判定与置信度。
+      const decisionInfo = toolCall.sensitiveCommandDecision;
+      if (decisionInfo) {
+        ctx.updateSessionMessages(
+          toolCall.authorizationConversationId ?? "",
+          (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.toolCalls
+                ? {
+                    ...currentMessage,
+                    toolCalls: updateFirstMatchingToolCall(
+                      currentMessage.toolCalls,
+                      toolCall,
+                      ["pending", "running"],
+                      (currentToolCall) => ({
+                        ...currentToolCall,
+                        sensitiveCommandMatches:
+                          toolCall.sensitiveCommandMatches,
+                        sensitiveCommandDecision: decisionInfo,
+                      }),
+                    ),
+                  }
+                : currentMessage,
+            ),
+        );
+      }
+
       pending.resolve(decision);
     },
-    [ctx.pendingToolAuthorizationRef, ctx.setPendingToolAuthorizations],
+    [
+      ctx.pendingToolAuthorizationRef,
+      ctx.setPendingToolAuthorizations,
+      ctx.updateSessionMessages,
+    ],
   );
 
   /**
@@ -752,16 +788,49 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             // 用户点了「确认执行」）；拒绝则只拒绝这条命令并把模型的理由交回
             // AI，AI 流程继续（模型可换一种做法），任何情况下都不中断会话。
             if (decision?.delegate) {
+              // 判定不经过拦截提示，直接回写到工具卡片上，让用户能看到
+              // 这条命令是被决策模型放行/拒绝的、置信度与理由。
+              const delegatedDecision = {
+                allow: decision.allow,
+                reason: decision.reason,
+                confidence: decision.confidence,
+                modelName: decision.modelName,
+              };
+              ctx.updateSessionMessages(conversationId, (currentMessages) =>
+                currentMessages.map((currentMessage) =>
+                  currentMessage.toolCalls
+                    ? {
+                        ...currentMessage,
+                        toolCalls: updateFirstMatchingToolCall(
+                          currentMessage.toolCalls,
+                          toolCall,
+                          ["pending", "running"],
+                          (currentToolCall) => ({
+                            ...currentToolCall,
+                            sensitiveCommandMatches: matches,
+                            sensitiveCommandDecision: delegatedDecision,
+                            sensitiveCommandDelegated: true,
+                          }),
+                        ),
+                      }
+                    : currentMessage,
+                ),
+              );
+
               if (decision.allow) {
                 return {
                   status: "approved",
                   sensitiveCommandConfirmed: true,
+                  sensitiveCommandDecision: delegatedDecision,
+                  sensitiveCommandDelegated: true,
                 };
               }
 
               return {
                 status: "rejected",
                 reasonForModel: true,
+                sensitiveCommandDecision: delegatedDecision,
+                sensitiveCommandDelegated: true,
                 reason: t("sensitiveCommand.decisionRejectedReason", {
                   values: {
                     model: decision.modelName,

@@ -102,8 +102,7 @@ export type ToolCallInfo = {
     pattern: string;
     description: string;
   }>;
-  /** 决策模型辅助：对这条敏感命令的判定（在拦截提示中展示；托管模式下判定
-   *  已直接生效，不会再生成待授权项，因此不会出现在这里）。 */
+  /** 决策模型辅助：对这条敏感命令的判定（拦截提示与工具卡片共用）。 */
   sensitiveCommandDecision?: {
     /** true = 决策模型认为可以直接放行。 */
     allow: boolean;
@@ -114,6 +113,8 @@ export type ToolCallInfo = {
     /** 参与判定的决策模型名称。 */
     modelName: string;
   };
+  /** 判定由决策模型托管生效（未弹拦截提示，直接放行或拒绝）。 */
+  sensitiveCommandDelegated?: boolean;
   /** Epoch milliseconds when the tool transitioned to "running".
    *  Used by the Bash tool UI to render a live timeout countdown. */
   startedAt?: number;
@@ -501,11 +502,34 @@ export type RollbackPreview = {
   summaryPromise: Promise<unknown> | null;
 };
 
+/** 决策模型对命中敏感规则的命令的判定（供拦截提示与工具卡片展示）。 */
+export type SensitiveCommandDecisionInfo = {
+  /** true = 决策模型认为可以直接放行。 */
+  allow: boolean;
+  /** 判定理由的分类 key，由渲染层本地化展示。 */
+  reason: string;
+  /** 模型对判定的置信度（0-1）。 */
+  confidence: number;
+  /** 参与判定的决策模型名称。 */
+  modelName: string;
+};
+
 export type ToolAuthorizationDecision =
-  | { status: "approved"; sensitiveCommandConfirmed?: boolean }
+  | {
+      status: "approved";
+      sensitiveCommandConfirmed?: boolean;
+      /** 决策模型判定（托管放行时携带，工具卡片据此展示判定情况）。 */
+      sensitiveCommandDecision?: SensitiveCommandDecisionInfo;
+      /** 判定由决策模型托管生效（未弹拦截提示）。 */
+      sensitiveCommandDelegated?: boolean;
+    }
   | {
       status: "rejected";
       reason: string;
+      /** 决策模型判定（托管拒绝或人工确认前已判定时携带）。 */
+      sensitiveCommandDecision?: SensitiveCommandDecisionInfo;
+      /** 判定由决策模型托管生效（未弹拦截提示）。 */
+      sensitiveCommandDelegated?: boolean;
       /** 用户是否主动填写了拒绝理由（UI 层信号）。 */
       userProvidedReason?: boolean;
       /** 拒绝理由是否作为工具结果回传 AI 并继续 Loop（而不是终止 AI 流程）：

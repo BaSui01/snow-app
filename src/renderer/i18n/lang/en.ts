@@ -4970,6 +4970,7 @@ export const en = {
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
   "rightPanel.tabContextNewTasks": "Task manager",
   "rightPanel.openInNewWindow": "Open in new window",
+  "rightPanel.returnToMainWindow": "Return to main window",
   "rightPanel.openInLocalBrowser": "Open in local browser",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",
   "rightPanel.noRepositorySelected": "No repository selected",

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: theme-bg: img-proxy:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:* img-proxy:; frame-src 'self' blob: data:;"
+    />
+    <title>Snow</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+      #detached-panel-root {
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="detached-panel-root"></div>
+    <script type="module" src="./detachedPanelMain.tsx"></script>
+  </body>
+</html>

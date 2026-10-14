@@ -29,8 +29,10 @@ import {
   TERMINAL_COMMAND_RESPONSE_CHANNEL,
   dispatchTerminalCommand,
   registerTerminalRenderer,
+  registerTerminalTabRenderer,
   resolveTerminalCommand,
   unregisterTerminalRenderer,
+  unregisterTerminalTabRenderer,
 } from "../terminalCommandBroker";
 import {
   dispatchUserQuestion,
@@ -939,6 +941,17 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   });
   ipcMain.handle("terminal:renderer-unregister", (event) => {
     unregisterTerminalRenderer(event.sender);
+  });
+  // 终端 tab 挂载/卸载时上报归属（tab 迁移到独立面板窗口后据此路由 MCP 命令）。
+  ipcMain.on("terminal:tab-registered", (event, tabId: unknown) => {
+    if (typeof tabId === "string" && tabId.trim()) {
+      registerTerminalTabRenderer(tabId.trim(), event.sender);
+    }
+  });
+  ipcMain.on("terminal:tab-unregistered", (event, tabId: unknown) => {
+    if (typeof tabId === "string" && tabId.trim()) {
+      unregisterTerminalTabRenderer(tabId.trim(), event.sender);
+    }
   });
   ipcMain.on(
     TERMINAL_COMMAND_RESPONSE_CHANNEL,

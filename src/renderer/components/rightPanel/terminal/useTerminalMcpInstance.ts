@@ -151,10 +151,14 @@ export const useTerminalMcpInstance = (
       },
       { title: cwd || "Terminal", cwd: cwd || "" },
     );
+    // 上报 tab 归属：tab 迁移到独立面板窗口后，主进程据此把带 tabId 的终端命令
+    // 路由到持有该 tab 的渲染进程。
+    window.snow.notifyTerminalTabRegistered(tabId);
 
     return () => {
       checkpointMarkerRef.current?.dispose();
       checkpointMarkerRef.current = null;
+      window.snow.notifyTerminalTabUnregistered(tabId);
       unregister();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

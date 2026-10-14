@@ -43,6 +43,11 @@ export type TerminalTabData = {
   ptyId?: string;
   shellPath?: string;
   sessionId?: string;
+  /**
+   * 迁移到独立面板窗口时携带的屏幕 + 回滚缓冲纯文本快照：挂载时先写入新
+   * xterm 实例，使迁移前的输出历史保留可见。
+   */
+  snapshot?: string;
 };
 
 export type BrowserTabData = {

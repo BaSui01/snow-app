@@ -20,7 +20,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { BrowserRestorePayload } from "../../preload";
 
 import { useI18n } from "../i18n";
 import { useShortcutLabel } from "../hooks/useShortcutLabel";
@@ -91,6 +90,11 @@ import {
   type TerminalDragPayload,
 } from "./rightPanel/terminal/terminalMonitor";
 import type { MainContentView } from "./mainContent/types";
+import type { DetachedPanelTabPayload } from "../../shared/detachedPanel";
+import {
+  toDetachedTabPayload,
+  toRightPanelTab,
+} from "./rightPanel/detachedPanelTab";
 
 /** 可拖拽到聊天输入框的 tab 类型（git / codebase 为固定面板，不参与） */
 const DRAGGABLE_TAB_TYPES = new Set([
@@ -265,6 +269,13 @@ type RightPanelProps = RightPanelContentProps & {
   onSelectMainView?: (view: MainContentView) => void;
   /** 切换右面板全屏（Windows 下由 tab 操作区的最大化按钮触发）。 */
   onToggleRightPanelFullscreen?: () => void;
+  /**
+   * 独立面板窗口模式：窗口只承载本面板实例，初始 tab 由主进程交付。
+   * 不提供 Git 固定 tab；最后一个 tab 关闭后关闭窗口。
+   */
+  detachedWindow?: { initialTab: RightPanelTab };
+  /** 独立面板窗口模式：活动 tab 标题变化时回调（顶部操作栏显示用）。 */
+  onActiveTabTitleChange?: (title: string) => void;
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
@@ -275,6 +286,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       activeDirectory,
       onSelectMainView,
       onToggleRightPanelFullscreen,
+      detachedWindow,
+      onActiveTabTitleChange,
     },
     ref,
   ): React.JSX.Element => {
@@ -283,10 +296,18 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const fullscreenShortcutLabel = useShortcutLabel(
       "toggleRightPanelFullscreen",
     );
-    const [tabs, setTabs] = useState<RightPanelTab[]>([
-      { id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") },
-    ]);
-    const [activeTabId, setActiveTabId] = useState<string>(GIT_TAB_ID);
+    const isDetachedWindow = detachedWindow !== undefined;
+    const [tabs, setTabs] = useState<RightPanelTab[]>(() =>
+      detachedWindow
+        ? [detachedWindow.initialTab]
+        : [{ id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") }],
+    );
+    const [activeTabId, setActiveTabId] = useState<string>(() =>
+      detachedWindow ? detachedWindow.initialTab.id : GIT_TAB_ID,
+    );
+    // 终端 tab 当前绑定的 PTY id（会话建立时上报）。仅用于 tab 迁移时交接会话，
+    // 不放进 tab.data：tab.data 变化会触发终端重建。
+    const terminalPtyIdsRef = useRef(new Map<string, string>());
     const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
     // 浏览器 tab 的 Agent 共享状态来自 browserAgentAccess 注册表（非 React 状态），
     // 用版本号驱动重渲染以刷新标签栏徽标。
@@ -1052,12 +1073,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
 
     const handleCloseTab = useCallback(
       (tabId: string) => {
+        terminalPtyIdsRef.current.delete(tabId);
         setTabs((prev) => {
           if (tabId === GIT_TAB_ID) {
             return prev;
           }
           const filtered = prev.filter((t) => t.id !== tabId);
-          if (filtered.length === 0) {
+          // 独立面板窗口允许清空（清空即关闭窗口）；主面板至少保留一个 tab。
+          if (filtered.length === 0 && !isDetachedWindow) {
             return prev;
           }
           return filtered;
@@ -1085,11 +1108,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           return gitTab ? GIT_TAB_ID : (tabs[1]?.id ?? currentActive);
         });
       },
-      [tabs],
+      [tabs, isDetachedWindow],
     );
 
     // 关闭所有可关闭的 tab（Git 为固定 tab，始终保留），回到 Git 视图。
     const handleCloseAllTabs = useCallback(() => {
+      terminalPtyIdsRef.current.clear();
       setTabs((prev) => prev.filter((t) => t.id === GIT_TAB_ID));
       setDirtyTabs(new Set());
       setActiveTabId(GIT_TAB_ID);
@@ -1103,6 +1127,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           return;
         }
         const closedIds = new Set(closed.map((t) => t.id));
+        closed.forEach((t) => terminalPtyIdsRef.current.delete(t.id));
         setTabs((prev) => prev.filter((t) => !closedIds.has(t.id)));
         setDirtyTabs((prev) => {
           const next = new Set(prev);
@@ -1171,38 +1196,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [tabs, handleCloseTab],
     );
 
-    // 浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow 承载
-    // 同一实例（继承 instanceId，browser.rs 工具仍可继续操作），携带当前
-    // 页面 URL，独立窗口重建浏览器；成功后关闭原 tab 完成迁移。
-    const handleOpenBrowserInNewWindow = useCallback(
-      (tabId: string): void => {
-        const tab = tabs.find((t) => t.id === tabId && t.type === "browser");
-        if (!tab) {
-          return;
-        }
-        const browserTab = tab.data as BrowserTabData;
-        const access = getBrowserAgentAccess(browserTab.instanceId);
-        void window.snow
-          .openDetachedBrowserWindow(
-            browserTab.instanceId,
-            browserTab.url,
-            {
-              shared: access?.shared ?? false,
-              isolated: access?.isolated ?? false,
-              origin: access?.origin ?? "user",
-            },
-            activeDirectory?.directoryId,
-          )
-          .then(() => {
-            handleCloseTab(tabId);
-          })
-          .catch((error) => {
-            console.error("Failed to open browser in new window", error);
-          });
-      },
-      [tabs, handleCloseTab, activeDirectory?.directoryId],
-    );
-
     const handleOpenBrowserInLocalBrowser = useCallback(
       (tabId: string): void => {
         const tab = tabs.find((t) => t.id === tabId && t.type === "browser");
@@ -1217,73 +1210,91 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [tabs],
     );
 
-    // 独立浏览器窗口「还原为标签页」：主进程转发还原请求后，把该实例恢复
-    // 为右侧面板浏览器 tab。保持原 instanceId（MCP 浏览器工具按实例路由，
-    // 新 tab 挂载上报后自动接管）；携带的页面 URL / 标题经 initialUrl
-    // 重建浏览器。
-    const handleRestoreBrowserFromDetachedWindow = useCallback(
-      (payload: BrowserRestorePayload): void => {
-        const instanceId = payload.instanceId.trim();
-        if (!instanceId) {
+    // 右侧面板 tab「在新窗口中打开」（所有类型统一）：tab 快照交给主进程创建独立面板窗口，
+    // 成功后从本面板移除。Git 为固定 tab，主面板保留它，新窗口内得到一份副本。
+    const handleOpenTabInNewWindow = useCallback(
+      (tabId: string): void => {
+        const tab = tabs.find((t) => t.id === tabId);
+        if (!tab) {
           return;
         }
-        const url = payload.url.trim();
-        const restoredTitle = payload.title.trim();
-        const agentAccess: BrowserAgentAccess = {
-          shared: payload.shared === true,
-          isolated: payload.isolated === true,
-          origin: payload.origin === "agent" ? "agent" : "user",
-          url,
-        };
-        setTabs((prev) => {
-          const existing = prev.find(
-            (t) => t.id === instanceId && t.type === "browser",
-          );
-          if (existing) {
-            // 同实例 tab 已存在（极端竞态）：刷新页面数据并激活，不重复创建。
-            const existingData = existing.data as BrowserTabData;
-            return prev.map((t) =>
-              t.id === instanceId && t.type === "browser"
-                ? {
-                    ...t,
-                    title: restoredTitle || existing.title,
-                    data: {
-                      ...existingData,
-                      url: url || existingData.url,
-                      agentAccess,
-                    },
-                  }
-                : t,
-            );
-          }
-          return [
-            ...prev,
-            {
-              id: instanceId,
-              type: "browser",
-              title: restoredTitle || t("rightPanel.browserTab"),
-              data: {
-                instanceId,
-                url,
-                agentAccess,
-              },
-            },
-          ];
-        });
-        setActiveTabId(instanceId);
-        rightPanelEvents.emit("request-expand");
+        void toDetachedTabPayload(tab, terminalPtyIdsRef.current.get(tab.id))
+          .then((snapshot) =>
+            window.snow.openDetachedPanelWindow({
+              tab: snapshot,
+              activeDirectory: activeDirectory ?? null,
+            }),
+          )
+          .then(() => {
+            if (tab.id !== GIT_TAB_ID) {
+              handleCloseTab(tab.id);
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to open tab in new window", error);
+          });
       },
-      [t],
+      [tabs, activeDirectory, handleCloseTab],
     );
 
-    useEffect(() => {
-      return window.snow.onRestoreBrowserToMain(
-        handleRestoreBrowserFromDetachedWindow,
-      );
-    }, [handleRestoreBrowserFromDetachedWindow]);
+    // 独立面板窗口「移回主窗口」：快照经主进程转发给主窗口恢复为 tab；主进程确认
+    // 投递后才从本窗口移除，避免主窗口不可用时 tab 丢失。
+    const handleReturnTabToMain = useCallback(
+      (tabId: string): void => {
+        const tab = tabs.find((t) => t.id === tabId);
+        if (!tab) {
+          return;
+        }
+        void toDetachedTabPayload(tab, terminalPtyIdsRef.current.get(tab.id))
+          .then((snapshot) => window.snow.returnDetachedPanelTab(snapshot))
+          .then((delivered) => {
+            if (delivered) {
+              handleCloseTab(tab.id);
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to return tab to main window", error);
+          });
+      },
+      [tabs, handleCloseTab],
+    );
 
-    // 独立浏览器窗口内 guest 页面请求打开新标签页（target=_blank /
-    // window.open）：经主进程转发到主窗口后，在右侧面板新建浏览器 tab。
+    // 独立面板窗口移回的 tab：恢复为主面板 tab（同 id 已存在则仅激活，如 Git 固定 tab）。
+    const handleDetachedTabReturn = useCallback(
+      (payload: DetachedPanelTabPayload): void => {
+        const restored = toRightPanelTab(payload);
+        setTabs((prev) =>
+          prev.some((t) => t.id === restored.id) ? prev : [...prev, restored],
+        );
+        setActiveTabId(restored.id);
+        rightPanelEvents.emit("request-expand");
+      },
+      [],
+    );
+
+    useEffect(
+      () => window.snow.onDetachedPanelReturn(handleDetachedTabReturn),
+      [handleDetachedTabReturn],
+    );
+
+    // 独立面板窗口：窗口标题（任务栏）与顶部操作栏跟随当前活动 tab；清空所有 tab 后关闭窗口。
+    useEffect(() => {
+      if (!isDetachedWindow) {
+        return;
+      }
+      const activeTitle =
+        tabs.find((tab) => tab.id === activeTabId)?.title || "Snow";
+      document.title = activeTitle;
+      onActiveTabTitleChange?.(activeTitle);
+    }, [isDetachedWindow, tabs, activeTabId, onActiveTabTitleChange]);
+
+    useEffect(() => {
+      if (isDetachedWindow && tabs.length === 0) {
+        void window.snow.closeWindow();
+      }
+    }, [isDetachedWindow, tabs.length]);
+
+    // 主窗口外部请求新建浏览器 tab（设置页历史记录等经主进程转发）：在右侧面板新建浏览器 tab。
     useEffect(() => {
       return window.snow.onOpenBrowserTabInMain((payload) => {
         const url = payload.url.trim();
@@ -1610,6 +1621,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       "right-panel",
       isCollapsed ? "collapsed" : "",
       isFullscreen ? "fullscreen" : "",
+      isDetachedWindow ? "right-panel-detached" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -1642,6 +1654,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 handleTerminalTitleChange(tab.id, title)
               }
               onOpenLink={(url) => handleOpenBrowserTab(url)}
+              initialSnapshot={(tab.data as TerminalTabData).snapshot}
+              onPtyChange={(ptyId) => {
+                if (ptyId) {
+                  terminalPtyIdsRef.current.set(tab.id, ptyId);
+                } else {
+                  terminalPtyIdsRef.current.delete(tab.id);
+                }
+              }}
               // 用户显式 exit（exitCode 0）后延迟自动关闭 tab（对齐 VS Code
               // 终端行为）；异常退出（非 0）保留现场供排查。
               onProcessExit={(exitCode) => {
@@ -1657,6 +1677,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               isActive={activeTabId === tab.id}
               projectId={activeDirectory?.directoryId}
               agentAccess={(tab.data as BrowserTabData).agentAccess}
+              detached={isDetachedWindow}
+              onRestoreToTabs={
+                isDetachedWindow
+                  ? () => handleReturnTabToMain(tab.id)
+                  : undefined
+              }
               onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
               onUrlChange={(url) => handleBrowserUrlChange(tab.id, url)}
               onOpenNewTab={(url, activate) =>
@@ -1769,7 +1795,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       tabContextMenu !== null &&
       tabContextMenu.tabId !== null &&
       tabContextMenu.tabId !== GIT_TAB_ID;
-    // 目标 tab 是否为浏览器 tab：决定是否提供「在新窗口中打开」。
+    // 目标 tab 是否存在：决定是否提供「在新窗口中打开」（所有类型通用）。
+    const contextMenuTargetExists =
+      tabContextMenu !== null &&
+      tabContextMenu.tabId !== null &&
+      tabs.some((t) => t.id === tabContextMenu.tabId);
+    // 目标 tab 是否为浏览器 tab：决定是否提供「在本地浏览器中打开」。
     const contextMenuTargetIsBrowser =
       tabContextMenu !== null && tabContextMenu.tabId !== null
         ? tabs.some(
@@ -1889,25 +1920,27 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 </div>
               ))}
             </OverlayScrollbar>
-            {isWindows && (
+            {(isWindows || isDetachedWindow) && (
               <div className="right-panel-tab-actions">
                 <PlusMenuButton
                   items={plusMenuItems}
                   onAction={handlePlusMenuAction}
                 />
-                <button
-                  className="icon-btn ghost right-panel-fullscreen-btn"
-                  type="button"
-                  aria-label={fullscreenToggleLabel}
-                  title={
-                    fullscreenShortcutLabel
-                      ? `${fullscreenToggleLabel} (${fullscreenShortcutLabel})`
-                      : fullscreenToggleLabel
-                  }
-                  onClick={() => onToggleRightPanelFullscreen?.()}
-                >
-                  <FullscreenToggleIcon size={16} strokeWidth={1.8} />
-                </button>
+                {!isDetachedWindow && (
+                  <button
+                    className="icon-btn ghost right-panel-fullscreen-btn"
+                    type="button"
+                    aria-label={fullscreenToggleLabel}
+                    title={
+                      fullscreenShortcutLabel
+                        ? `${fullscreenToggleLabel} (${fullscreenShortcutLabel})`
+                        : fullscreenToggleLabel
+                    }
+                    onClick={() => onToggleRightPanelFullscreen?.()}
+                  >
+                    <FullscreenToggleIcon size={16} strokeWidth={1.8} />
+                  </button>
+                )}
               </div>
             )}
             {closeConfirm && (
@@ -2080,11 +2113,21 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               handleOpenTaskManagerTab();
             }}
             onOpenInNewWindow={
-              contextMenuTargetIsBrowser
+              contextMenuTargetExists
                 ? () => {
                     setTabContextMenu(null);
                     if (tabContextMenu.tabId !== null) {
-                      handleOpenBrowserInNewWindow(tabContextMenu.tabId);
+                      handleOpenTabInNewWindow(tabContextMenu.tabId);
+                    }
+                  }
+                : undefined
+            }
+            onReturnToMain={
+              isDetachedWindow && contextMenuTargetExists
+                ? () => {
+                    setTabContextMenu(null);
+                    if (tabContextMenu.tabId !== null) {
+                      handleReturnTabToMain(tabContextMenu.tabId);
                     }
                   }
                 : undefined

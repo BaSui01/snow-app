@@ -75,12 +75,16 @@ export type BrowserPanelContentProps = {
   onUrlChange?: (url: string) => void;
   /**
    * guest 页面请求打开新标签页（window.open / target=_blank）时的回调：
-   * 上层据此新建一个浏览器 tab（RightPanel 模式直接新建；独立窗口模式
-   * 经主进程转发回主窗口新建）。activate=false 时后台打开不切换。
+   * 上层据此新建一个浏览器 tab。activate=false 时后台打开不切换。
    */
   onOpenNewTab?: (url: string, activate: boolean) => void;
-  /** 独立浏览器窗口模式：工具栏菜单显示「还原为标签页」（主面板 tab 内为 false/缺省） */
+  /**
+   * 独立面板窗口模式（主面板 tab 内为 false/缺省）：窗口内没有聊天输入框与侧边栏，
+   * 「发送给 Agent」与门禁横幅等需转发到主窗口的操作经主进程转发。
+   */
   detached?: boolean;
+  /** 工具栏菜单「还原为标签页」：仅独立面板窗口传入（由上层把 tab 移回主窗口），缺省则不显示该项。 */
+  onRestoreToTabs?: () => void;
   /** 当前项目 id：用于未开启浏览器控制 MCP 时的横幅提示 */
   projectId?: string;
   /** 标签页创建时的 Agent 授权初始值（运行时以 browserAgentAccess 注册表为准） */
@@ -245,7 +249,7 @@ const normalizeUrlForCompare = (url: string): string => url.replace(/\/+$/, "");
  * 侧边浏览器的实现说明（单 webview 模型）：
  *
  * 每个 BrowserPanelContent 承载一个浏览器 tab（右侧面板 RightPanel 的 tab
- * 即浏览器标签页，独立浏览器窗口固定承载一个实例），内部只有一个
+ * 即浏览器标签页），内部只有一个
  * <webview>，不再有实例内部的二级标签页。标签页的增删 / 切换由上层
  * RightPanel 的 tab 体系承担，实例 id 与 RightPanel tab id 一致。
  *
@@ -269,6 +273,7 @@ export const BrowserPanelContent = ({
   onUrlChange,
   onOpenNewTab,
   detached = false,
+  onRestoreToTabs,
   projectId,
   agentAccess,
 }: BrowserPanelContentProps): React.JSX.Element => {
@@ -391,8 +396,7 @@ export const BrowserPanelContent = ({
   }, [picked]);
 
   /**
-   * 静音状态对齐 Chrome 后台标签页：仅当右侧面板 tab 激活（独立窗口固定
-   * isActive）时允许出声，其余静音（避免多个浏览器 tab 同时播放音频）。
+   * 静音状态对齐 Chrome 后台标签页：仅当所在面板的 tab 激活时允许出声，其余静音（避免多个浏览器 tab 同时播放音频）。
    * webview 方法要求 guest 已 dom-ready，未就绪会抛异常，调用方需
    * try/catch；dom-ready 事件里也会补一次。
    */
@@ -1029,7 +1033,7 @@ export const BrowserPanelContent = ({
   };
 
   // 门禁横幅「去开启」：主窗口请求打开项目 MCP 弹窗（只显示对应服务器）；
-  // 独立浏览器窗口没有聊天输入框，经主进程转发给主窗口打开。
+  // 独立面板窗口没有聊天输入框，经主进程转发给主窗口打开。
   const handleOpenMcpPanel = useCallback(
     (serverId: string): void => {
       if (detached) {
@@ -1040,21 +1044,6 @@ export const BrowserPanelContent = ({
     },
     [detached],
   );
-
-  // 独立窗口「还原为标签页」：把当前页面（URL + 标题）连同 instanceId 经
-  // 主进程转发给主窗口 RightPanel，恢复为右侧面板浏览器 tab（保持实例
-  // id，MCP 路由不受影响），随后主进程关闭本独立窗口。
-  const handleRestoreToTabs = useCallback((): void => {
-    const access = getBrowserAgentAccess(instanceId);
-    window.snow.restoreBrowserToMainWindow({
-      instanceId,
-      url: addressInput || src,
-      title,
-      shared: access?.shared ?? false,
-      isolated: access?.isolated ?? false,
-      origin: access?.origin ?? "user",
-    });
-  }, [instanceId, addressInput, src, title]);
 
   const applyZoom = (next: number): void => {
     setZoomFactor(next);
@@ -1277,7 +1266,7 @@ export const BrowserPanelContent = ({
         onOpenDevTools={handleOpenDevTools}
         onSetHomepage={setHomepage}
         onSetDeviceSize={handleSetDeviceSize}
-        onRestoreToTabs={detached ? handleRestoreToTabs : undefined}
+        onRestoreToTabs={onRestoreToTabs}
         sharedWithAgent={agentShared}
         isolatedSession={agentIsolated}
         onToggleShareWithAgent={handleToggleShareWithAgent}

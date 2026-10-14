@@ -8,6 +8,7 @@ import {
   MonitorUp,
   Paintbrush,
   Terminal,
+  Undo2,
   X,
   XCircle,
 } from "lucide-react";
@@ -28,8 +29,10 @@ type RightPanelTabContextMenuProps = {
   onCloseToLeft?: () => void;
   /** 关闭所有标签页（tab 栏空白处右键，或存在可关闭 tab 时提供）。 */
   onCloseAllTabs?: () => void;
-  /** 浏览器 tab 专属：在新窗口中打开该浏览器实例（打开后原 tab 关闭）。 */
+  /** 在新窗口中打开该 tab（所有类型通用，弹出为独立面板窗口）。 */
   onOpenInNewWindow?: () => void;
+  /** 独立面板窗口专属：把该 tab 移回主窗口。 */
+  onReturnToMain?: () => void;
   onOpenInLocalBrowser?: () => void;
   localBrowserUrl?: string;
   onNewTerminal: () => void;
@@ -56,6 +59,7 @@ export function RightPanelTabContextMenu({
   onCloseToLeft,
   onCloseAllTabs,
   onOpenInNewWindow,
+  onReturnToMain,
   onOpenInLocalBrowser,
   localBrowserUrl,
   onNewTerminal,
@@ -103,8 +107,7 @@ export function RightPanelTabContextMenu({
     },
   ];
 
-  // 浏览器 tab 专属：把当前实例弹出到独立浏览器窗口（继承实例 id，
-  // 原 tab 在打开成功后关闭）。与新建类项、插件区域之间以分隔线隔开。
+  // 通用：在新窗口中打开（弹出为独立面板窗口；打开成功后原 tab 移出）。与新建类项、插件区域之间以分隔线隔开。
   if (onOpenInNewWindow) {
     items.push({
       id: "open-in-new-window",
@@ -114,6 +117,18 @@ export function RightPanelTabContextMenu({
       icon: <ExternalLink size={13} strokeWidth={1.8} />,
       separator: true,
       onClick: onOpenInNewWindow,
+    });
+  }
+
+  // 独立面板窗口专属：把 tab 移回主窗口。
+  if (onReturnToMain) {
+    items.push({
+      id: "return-to-main",
+      label: t("rightPanel.returnToMainWindow", {
+        defaultValue: "Return to main window",
+      }),
+      icon: <Undo2 size={13} strokeWidth={1.8} />,
+      onClick: onReturnToMain,
     });
   }
 

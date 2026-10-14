@@ -4678,6 +4678,7 @@ export const zhCN = {
   "rightPanel.tabContextNewDrawing": "新建绘图工作台",
   "rightPanel.tabContextNewTasks": "任务管理器",
   "rightPanel.openInNewWindow": "在新窗口中打开",
+  "rightPanel.returnToMainWindow": "移回主窗口",
   "rightPanel.openInLocalBrowser": "在本地浏览器打开",
   "rightPanel.selectFileToViewDiff": "选择文件以查看差异",
   "rightPanel.noRepositorySelected": "未选择仓库",

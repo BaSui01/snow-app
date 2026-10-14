@@ -1,5 +1,9 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
 import { join } from "node:path";
+import type {
+  DetachedPanelPayload,
+  DetachedPanelTabPayload,
+} from "../../shared/detachedPanel";
 import {
   isNotificationConversationTarget,
   type AppNotificationOptions,
@@ -7,11 +11,9 @@ import {
 } from "../../shared/notification";
 import type {
   BashStreamChunk,
-  BrowserAgentAccessPayload,
   BrowserCommandRequest,
   BrowserCommandResponse,
   BrowserFrameOperationArgs,
-  BrowserRestorePayload,
   CheckpointFileChange,
   CheckpointFileDiff,
   CodebaseEmbedProgress,
@@ -44,14 +46,13 @@ const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
-// 独立浏览器窗口「还原为标签页」：窗口 → 主进程 → 主窗口（broadcast）。
-const BROWSER_RESTORE_TO_MAIN_CHANNEL = "browser:restore-to-main";
-const BROWSER_RESTORE_TO_MAIN_BROADCAST_CHANNEL =
-  "browser:restore-to-main-broadcast";
-// 独立浏览器窗口内 guest 页面请求打开新标签页：窗口 → 主进程 → 主窗口（broadcast）。
+// 渲染端请求在主窗口右侧面板新建浏览器 tab：窗口 → 主进程 → 主窗口（broadcast）。
 const BROWSER_OPEN_TAB_IN_MAIN_CHANNEL = "browser:open-tab-in-main";
 const BROWSER_OPEN_TAB_IN_MAIN_BROADCAST_CHANNEL =
   "browser:open-tab-in-main-broadcast";
+// 独立面板窗口「移回主窗口」：主进程转发 tab 快照给主窗口（broadcast）。
+const DETACHED_PANEL_RETURN_BROADCAST_CHANNEL =
+  "detached-panel:return-broadcast";
 // 独立浏览器窗口确认元素选择后转发到主窗口聊天输入框。
 const ELEMENT_TAG_FORWARD_CHANNEL = "element-tag:forward";
 const ELEMENT_TAG_INSERT_CHANNEL = "element-tag:insert";
@@ -274,45 +275,6 @@ ipcRenderer.on(
       } catch (error) {
         console.error("[browser] Download subscriber failed", error);
       }
-    }
-  },
-);
-
-type BrowserRestoreSubscriber = (payload: BrowserRestorePayload) => void;
-
-const browserRestoreSubscribers = new Set<BrowserRestoreSubscriber>();
-
-const deliverBrowserRestore = (
-  subscriber: BrowserRestoreSubscriber,
-  payload: BrowserRestorePayload,
-): void => {
-  try {
-    subscriber(payload);
-  } catch (error) {
-    console.error("[browser] Restore subscriber failed", error);
-  }
-};
-
-const isBrowserRestorePayload = (
-  value: unknown,
-): value is BrowserRestorePayload => {
-  return (
-    isRecord(value) &&
-    typeof value.instanceId === "string" &&
-    typeof value.url === "string" &&
-    typeof value.title === "string"
-  );
-};
-
-// 主进程转发独立浏览器窗口「还原为标签页」请求（仅发送到主窗口）。
-ipcRenderer.on(
-  BROWSER_RESTORE_TO_MAIN_BROADCAST_CHANNEL,
-  (_event: IpcRendererEvent, payload: unknown): void => {
-    if (!isBrowserRestorePayload(payload)) {
-      return;
-    }
-    for (const subscriber of browserRestoreSubscribers) {
-      deliverBrowserRestore(subscriber, payload);
     }
   },
 );
@@ -1100,46 +1062,8 @@ export const systemApi = {
     };
   },
   /**
-   * 右侧面板浏览器 tab「在新窗口中打开」：主进程创建独立 BrowserWindow
-   * 承载同一实例（继承 instanceId），携带当前页面 URL，独立窗口据此
-   * 重建浏览器。返回后原 tab 由渲染端关闭。
-   */
-  openDetachedBrowserWindow: (
-    instanceId: string,
-    url: string,
-    access?: BrowserAgentAccessPayload,
-    projectId?: string,
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "browser:open-detached-window",
-      instanceId,
-      url,
-      access ?? null,
-      projectId ?? "",
-    ),
-  /**
-   * 独立浏览器窗口「还原为标签页」：把当前实例（页面 URL + 标题）
-   * 经主进程转发给主窗口，由 RightPanel 恢复为右侧面板浏览器 tab，
-   * 随后主进程关闭本窗口。保持原 instanceId，MCP 工具路由不受影响。
-   */
-  restoreBrowserToMainWindow: (payload: BrowserRestorePayload): void => {
-    ipcRenderer.send(BROWSER_RESTORE_TO_MAIN_CHANNEL, payload);
-  },
-  /**
-   * 订阅主进程转发过来的「还原为标签页」请求（主窗口 RightPanel 使用）。
-   * 返回取消订阅函数。
-   */
-  onRestoreBrowserToMain: (
-    callback: (payload: BrowserRestorePayload) => void,
-  ): (() => void) => {
-    browserRestoreSubscribers.add(callback);
-    return () => {
-      browserRestoreSubscribers.delete(callback);
-    };
-  },
-  /**
-   * 独立浏览器窗口内 guest 页面（target=_blank / window.open）请求打开
-   * 新标签页：经主进程转发给主窗口，由 RightPanel 新建浏览器 tab。
+   * 渲染端请求在主窗口右侧面板新建浏览器 tab（如设置页历史记录）：经主进程转发给主窗口，
+   * 由 RightPanel 新建浏览器 tab。
    */
   openBrowserTabInMainWindow: (payload: OpenBrowserTabInMainPayload): void => {
     ipcRenderer.send(BROWSER_OPEN_TAB_IN_MAIN_CHANNEL, payload);
@@ -1162,6 +1086,48 @@ export const systemApi = {
   },
   notifyBrowserInstanceUnregistered: (instanceId: string): void => {
     ipcRenderer.send("browser:instance-unregistered", instanceId);
+  },
+  /**
+   * 右侧面板 tab「在新窗口中打开」：主进程创建独立面板窗口承载该 tab，
+   * 终端会话随之交接保留。返回后由调用方从源面板移除该 tab。
+   */
+  openDetachedPanelWindow: (payload: DetachedPanelPayload): Promise<void> =>
+    ipcRenderer.invoke("detached-panel:open", payload),
+  /** 独立面板窗口渲染后凭 token 取回初始化 payload。 */
+  takeDetachedPanelPayload: (
+    token: string,
+  ): Promise<DetachedPanelPayload | null> =>
+    ipcRenderer.invoke("detached-panel:take", token),
+  /**
+   * 独立面板窗口 tab「移回主窗口」：主进程转发给主窗口恢复为 tab。
+   * 返回 false 表示主窗口不可用，调用方应保留源窗口中的 tab。
+   */
+  returnDetachedPanelTab: (tab: DetachedPanelTabPayload): Promise<boolean> =>
+    ipcRenderer.invoke("detached-panel:return", tab),
+  /** 订阅移回主窗口的 tab（主窗口 RightPanel 使用）。返回取消订阅函数。 */
+  onDetachedPanelReturn: (
+    callback: (tab: DetachedPanelTabPayload) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      tab: DetachedPanelTabPayload,
+    ): void => {
+      callback(tab);
+    };
+    ipcRenderer.on(DETACHED_PANEL_RETURN_BROADCAST_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_RETURN_BROADCAST_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /** 终端 tab 挂载/卸载时上报归属（MCP 终端命令据此路由到持有者）。 */
+  notifyTerminalTabRegistered: (tabId: string): void => {
+    ipcRenderer.send("terminal:tab-registered", tabId);
+  },
+  notifyTerminalTabUnregistered: (tabId: string): void => {
+    ipcRenderer.send("terminal:tab-unregistered", tabId);
   },
   registerTerminalCommandHandler: (
     handler: (request: TerminalCommandRequest) => Promise<string>,
@@ -1439,6 +1405,12 @@ export const ptyApi = {
   ptyResize: (id: string, cols: number, rows: number): Promise<void> =>
     ipcRenderer.invoke("pty:resize", id, cols, rows),
   ptyKill: (id: string): Promise<void> => ipcRenderer.invoke("pty:kill", id),
+  /**
+   * 接管已有会话（终端 tab 迁移到其他窗口后挂载）：转移输出通道与回收归属，
+   * 返回 false 表示会话已不存在。
+   */
+  ptyAttach: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke("pty:attach", id),
   onPtyOutput: (
     callback: (data: { id: string; data: string }) => void,
   ): (() => void) => {

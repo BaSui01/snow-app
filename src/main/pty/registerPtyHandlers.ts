@@ -1,5 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import {
+  claimPtyForWebContents,
   createPtySession,
   killPty,
   resizePty,
@@ -30,7 +31,7 @@ export const registerPtyHandlers = (): void => {
     async (event: IpcMainInvokeEvent, options: unknown) => {
       const opts = normalizePtySessionOptions(options);
       return await createPtySession(event.sender, opts);
-    }
+    },
   );
 
   ipcMain.handle(
@@ -41,7 +42,7 @@ export const registerPtyHandlers = (): void => {
       }
       writePtyInput(id, data);
       return undefined;
-    }
+    },
   );
 
   ipcMain.handle(
@@ -56,7 +57,7 @@ export const registerPtyHandlers = (): void => {
       }
       resizePty(id, cols, rows);
       return undefined;
-    }
+    },
   );
 
   ipcMain.handle("pty:kill", (_event: IpcMainInvokeEvent, id: unknown) => {
@@ -66,4 +67,16 @@ export const registerPtyHandlers = (): void => {
     killPty(id);
     return undefined;
   });
+
+  // 目标渲染进程接管已有会话（独立面板窗口 / 还原到主窗口）：转移输出通道与
+  // 回收归属。返回 false 表示会话已不存在。
+  ipcMain.handle(
+    "pty:attach",
+    (event: IpcMainInvokeEvent, id: unknown): boolean => {
+      if (typeof id !== "string") {
+        throw new Error("Invalid PTY attach argument");
+      }
+      return claimPtyForWebContents(id, event.sender);
+    },
+  );
 };

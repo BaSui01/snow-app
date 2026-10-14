@@ -1,8 +1,3 @@
-/**
- * 独立浏览器窗口「还原为标签页」：把窗口内实例（当前页面）还原回
- * 主窗口右侧面板的浏览器 tab（保持原 instanceId）。
- */
-
 /** 主进程 frame 操作参数，省略 frameId 时选择主 frame。 */
 export type BrowserFrameOperationArgs = Record<string, unknown> & {
   frameId?: string | null;
@@ -22,20 +17,7 @@ export type BrowserFramesResult = {
   unavailable: { frameTreeNodeId: number; error: string }[];
 };
 
-/** 浏览器标签页的 Agent 授权信息（跨窗口迁移时随载荷传递）。 */
-export type BrowserAgentAccessPayload = {
-  shared?: boolean;
-  isolated?: boolean;
-  origin?: "user" | "agent";
-};
-
-export type BrowserRestorePayload = BrowserAgentAccessPayload & {
-  instanceId: string;
-  url: string;
-  title: string;
-};
-
-/** 独立浏览器窗口内 guest 页面请求打开新标签页 → 主窗口新建浏览器 tab。 */
+/** 渲染端请求在主窗口右侧面板新建浏览器 tab（经主进程转发给主窗口）。 */
 export type OpenBrowserTabInMainPayload = {
   url: string;
 };

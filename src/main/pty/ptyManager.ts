@@ -67,6 +67,13 @@ const PTY_EXIT_CHANNEL = "pty:exit";
 
 const sessions = new Map<string, PtySession>();
 
+/**
+ * 交接中的会话：终端 tab 迁移到独立面板窗口（或从独立窗口还原）时，源端 tab
+ * 卸载会触发 kill，这里先登记保留，目标端挂载并 claim 后才解除。保留期间
+ * killPty / killAllPtyForWebContents 一律跳过，避免迁移途中误杀正在运行的 shell。
+ */
+const handoffPtyIds = new Set<string>();
+
 const generatePtyId = (): string =>
   `pty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -587,6 +594,7 @@ export const createPtySession = async (
       wc.send(PTY_EXIT_CHANNEL, { id, exitCode });
     }
     sessions.delete(id);
+    handoffPtyIds.delete(id);
     sshConfig?.dispose();
   });
 
@@ -622,6 +630,10 @@ export const resizePty = (id: string, cols: number, rows: number): void => {
 };
 
 export const killPty = (id: string): void => {
+  // 交接中的会话归属尚未转移，由目标窗口 claim 后再决定去留。
+  if (handoffPtyIds.has(id)) {
+    return;
+  }
   const session = sessions.get(id);
   if (!session) {
     return;
@@ -634,12 +646,44 @@ export const killPty = (id: string): void => {
   sessions.delete(id);
 };
 
+/**
+ * 登记会话进入交接状态（tab 即将从源渲染进程移除，目标渲染进程随后 claim）。
+ * 仅标记，不改变会话归属与输出通道。
+ */
+export const reservePtyForHandoff = (id: string): void => {
+  if (sessions.has(id)) {
+    handoffPtyIds.add(id);
+  }
+};
+
+/**
+ * 目标渲染进程挂载已有会话时调用：解除交接标记，并把输出通道与回收归属
+ * 切换到该 webContents。会话不存在（进程已退出）时返回 false。
+ */
+export const claimPtyForWebContents = (
+  id: string,
+  webContents: WebContents,
+): boolean => {
+  const session = sessions.get(id);
+  if (!session) {
+    handoffPtyIds.delete(id);
+    return false;
+  }
+  handoffPtyIds.delete(id);
+  session.webContents = webContents;
+  return true;
+};
+
 /** 当前存活的终端会话数（供托盘 tooltip 等模块展示）。 */
 export const getActivePtyCount = (): number => sessions.size;
 
+/**
+ * 回收某个渲染进程名下的会话（窗口关闭时调用）。交接中的会话保留，等待
+ * 目标窗口 claim，避免迁移途中被误杀。
+ */
 export const killAllPtyForWebContents = (webContents: WebContents): void => {
   for (const [id, session] of sessions) {
-    if (session.webContents === webContents) {
+    if (session.webContents === webContents && !handoffPtyIds.has(id)) {
       try {
         session.pty.kill();
       } catch {

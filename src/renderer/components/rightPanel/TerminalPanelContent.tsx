@@ -57,7 +57,18 @@ export type TerminalPanelContentProps = {
   onOpenLink?: (url: string) => void;
   /** PTY 会话退出时回调（exitCode === 0 视为用户显式 exit）。 */
   onProcessExit?: (exitCode: number) => void;
+  /** 迁移携带的屏幕快照：挂载时先写入新 xterm 实例，再接管 PTY 输出。 */
+  initialSnapshot?: string;
+  /** PTY 会话建立（传入 id）或退出（传入 null）时回调，供父级记录迁移所需的会话。 */
+  onPtyChange?: (ptyId: string | null) => void;
 };
+
+/**
+ * 当前由挂载实例接管（attach）的 PTY。StrictMode 开发模式下 effect 会同步执行
+ * cleanup 后立即重跑；接管的会话若在 cleanup 中直接 kill 会被误杀。因此接管会话的
+ * kill 延后到微任务再判定：重跑已重新登记则不杀，真正卸载则回收。
+ */
+const liveAttachedPtyIds = new Set<string>();
 
 // 深色主题 ANSI 16 色：Windows Terminal 默认 (Campbell) 配色，
 // 保证 git diff / ls --color / 各类 CLI 输出在终端里可读。
@@ -166,6 +177,8 @@ export const TerminalPanelContent = ({
   onTitleChange,
   onOpenLink,
   onProcessExit,
+  initialSnapshot,
+  onPtyChange,
 }: TerminalPanelContentProps): React.JSX.Element => {
   const { t } = useI18n();
   const settings = useTerminalSettings();
@@ -241,6 +254,11 @@ export const TerminalPanelContent = ({
   useEffect(() => {
     onProcessExitRef.current = onProcessExit;
   }, [onProcessExit]);
+
+  const onPtyChangeRef = useRef(onPtyChange);
+  useEffect(() => {
+    onPtyChangeRef.current = onPtyChange;
+  }, [onPtyChange]);
 
   /** 复制终端选中文本（剪贴板走主进程 IPC，渲染进程无权限限制）。 */
   const copySelection = useCallback((): void => {
@@ -525,6 +543,10 @@ export const TerminalPanelContent = ({
       try {
         const cols = term.cols > 0 ? term.cols : 80;
         const rows = term.rows > 0 ? term.rows : 24;
+        if (initialSnapshot) {
+          // 迁移快照先于 PTY 输出写入：历史在前、实时输出在后。
+          term.write(initialSnapshot.replace(/\r?\n/g, "\r\n"));
+        }
         const id =
           attachedPtyId ??
           (await window.snow.ptyCreate({
@@ -538,7 +560,13 @@ export const TerminalPanelContent = ({
           void window.snow.ptyKill(id);
           return;
         }
+        if (attachedPtyId) {
+          // 接管已有会话：同步登记并转移输出通道与回收归属（见 liveAttachedPtyIds）。
+          liveAttachedPtyIds.add(id);
+          void window.snow.ptyAttach(id);
+        }
         ptyIdRef.current = id;
+        onPtyChangeRef.current?.(id);
 
         disposeOutput = window.snow.onPtyOutput((payload) => {
           if (payload.id === id && !disposed) {
@@ -562,6 +590,7 @@ export const TerminalPanelContent = ({
         disposeExit = window.snow.onPtyExit((payload) => {
           if (payload.id === id && !disposed) {
             exited = true;
+            onPtyChangeRef.current?.(null);
             term.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
             setAwaitingInput(null);
             onProcessExitRef.current?.(payload.exitCode);
@@ -632,8 +661,18 @@ export const TerminalPanelContent = ({
       disposeOutput?.();
       disposeExit?.();
       if (ptyIdRef.current) {
-        void window.snow.ptyKill(ptyIdRef.current);
+        const killedPtyId = ptyIdRef.current;
         ptyIdRef.current = null;
+        if (attachedPtyId) {
+          liveAttachedPtyIds.delete(killedPtyId);
+          queueMicrotask(() => {
+            if (!liveAttachedPtyIds.has(killedPtyId)) {
+              void window.snow.ptyKill(killedPtyId);
+            }
+          });
+        } else {
+          void window.snow.ptyKill(killedPtyId);
+        }
       }
       term.dispose();
       // term.dispose() 会连带销毁已挂载的 WebGL addon，这里只需清引用；

@@ -65,9 +65,11 @@ import {
 } from "./browserTrace";
 import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
 import {
-  createDetachedBrowserWindow,
-  type BrowserAgentAccessQuery,
-} from "../../browser/browserWindow";
+  openDetachedPanelWindow,
+  parseDetachedTabPayload,
+  reserveDetachedTabPty,
+  takeDetachedPanelPayload,
+} from "../../app/detachedPanelWindow";
 import {
   applyBrowserEmulation,
   resizeBrowserViewport,
@@ -503,82 +505,7 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     deleteCookieAutoBackup();
   });
 
-  // 右侧面板浏览器 tab「在新窗口中打开」：创建独立 BrowserWindow 承载
-  // 同一实例（继承 instanceId），当前页面 URL 经 query 传给独立窗口入口
-  // 重建浏览器。原 tab 由渲染端在成功后关闭。
-  ipcMain.handle(
-    "browser:open-detached-window",
-    (
-      _event,
-      instanceId: unknown,
-      url: unknown,
-      access: unknown,
-      projectId: unknown,
-    ) => {
-      if (typeof instanceId !== "string" || !instanceId.trim()) {
-        throw new Error("A valid browser instanceId is required");
-      }
-      if (typeof url !== "string") {
-        throw new Error("A valid browser URL is required");
-      }
-      let resolvedAccess: BrowserAgentAccessQuery | undefined;
-      if (access && typeof access === "object" && !Array.isArray(access)) {
-        const record = access as Record<string, unknown>;
-        resolvedAccess = {
-          shared: record.shared === true,
-          isolated: record.isolated === true,
-          origin: record.origin === "agent" ? "agent" : "user",
-        };
-      }
-      createDetachedBrowserWindow(
-        instanceId.trim(),
-        url.trim(),
-        resolvedAccess,
-        typeof projectId === "string" && projectId.trim()
-          ? projectId.trim()
-          : undefined,
-      );
-    },
-  );
-
-  // 独立浏览器窗口「还原为标签页」：把实例（当前页面）转发给主窗口恢复为
-  // 右侧面板浏览器 tab，随后关闭发起请求的独立窗口。实例保持原
-  // instanceId，浏览器命令经 browserCommandBroker 按实例归属路由，
-  // 主窗口新 tab 挂载上报后自动接管。
-  ipcMain.on("browser:restore-to-main", (event, payload: unknown) => {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return;
-    }
-    const record = payload as Record<string, unknown>;
-    const instanceId = record.instanceId;
-    if (typeof instanceId !== "string" || !instanceId.trim()) {
-      return;
-    }
-    if (typeof record.url !== "string" || typeof record.title !== "string") {
-      return;
-    }
-    const mainWindow = getMainWindow();
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-    if (!mainWindow.isVisible()) {
-      mainWindow.show();
-    }
-    mainWindow.focus();
-    mainWindow.webContents.send("browser:restore-to-main-broadcast", payload);
-    // 关闭发起请求的独立浏览器窗口（还原即迁移，原窗口使命结束）。
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    if (
-      senderWindow &&
-      !senderWindow.isDestroyed() &&
-      senderWindow !== mainWindow
-    ) {
-      senderWindow.close();
-    }
-  });
-
-  // 独立浏览器窗口内 guest 页面（target=_blank / window.open）请求打开新
-  // 标签页：转发给主窗口由 RightPanel 新建浏览器 tab（独立窗口没有 tab 栏）。
+  // 渲染端请求在主窗口右侧面板新建浏览器 tab（如设置页历史记录）：转发给主窗口，由 RightPanel 新建。
   ipcMain.on("browser:open-tab-in-main", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return;
@@ -1237,5 +1164,50 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   });
   ipcMain.handle("browser:download-cancel", (_event, id: unknown) =>
     cancelDownload(typeof id === "number" ? id : -1),
+  );
+
+  // ===== 独立面板窗口（右侧面板 tab「在新窗口中打开」/「移回主窗口」）=====
+  // 打开：主窗口已把 tab 快照交给主进程，这里创建承载窗口（终端会话随之交接保留）。
+  ipcMain.handle("detached-panel:open", (_event, payload: unknown): void => {
+    const record =
+      payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : null;
+    const tab = parseDetachedTabPayload(record?.tab);
+    if (!tab) {
+      throw new Error("A valid detached panel tab is required");
+    }
+    openDetachedPanelWindow({
+      tab,
+      activeDirectory: record?.activeDirectory ?? null,
+    });
+  });
+
+  // 面板窗口渲染后凭 token 取回初始化 payload。
+  ipcMain.handle("detached-panel:take", (_event, token: unknown) =>
+    typeof token === "string" ? takeDetachedPanelPayload(token) : null,
+  );
+
+  // 移回主窗口：转发 tab 快照给主窗口恢复为 tab。返回 false 表示主窗口不可用，
+  // 调用方据此保留源窗口中的 tab。
+  ipcMain.handle(
+    "detached-panel:return",
+    (_event, payload: unknown): boolean => {
+      const tab = parseDetachedTabPayload(payload);
+      if (!tab) {
+        return false;
+      }
+      const mainWindow = getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false;
+      }
+      reserveDetachedTabPty(tab);
+      if (!mainWindow.isVisible()) {
+        mainWindow.show();
+      }
+      mainWindow.focus();
+      safeSend(mainWindow.webContents, "detached-panel:return-broadcast", tab);
+      return true;
+    },
   );
 };

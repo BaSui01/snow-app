@@ -28,12 +28,17 @@ type PlusMenuButtonProps = {
   onOpenChange?: (open: boolean) => void;
 };
 
+/** 下拉菜单最大宽度（与 .top-bar-plus-dropdown 的 max-width 保持一致）。 */
+const DROPDOWN_MAX_WIDTH = 240;
+
 export const PlusMenuButton = ({
   items,
   onAction,
   onOpenChange,
 }: PlusMenuButtonProps): React.JSX.Element => {
   const [isOpen, setIsOpen] = useState(false);
+  // 按钮右侧空间不足以容纳下拉菜单时，改为从左边缘向右展开，避免溢出窗口。
+  const [isAlignedStart, setIsAlignedStart] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,6 +61,10 @@ export const PlusMenuButton = ({
 
   const toggleOpen = (): void => {
     const next = !isOpen;
+    if (next && menuRef.current) {
+      const { right } = menuRef.current.getBoundingClientRect();
+      setIsAlignedStart(right < DROPDOWN_MAX_WIDTH);
+    }
     setIsOpen(next);
     onOpenChange?.(next);
   };
@@ -79,7 +88,9 @@ export const PlusMenuButton = ({
         <Plus size={16} strokeWidth={1.8} />
       </button>
       {isOpen && (
-        <div className="top-bar-plus-dropdown">
+        <div
+          className={`top-bar-plus-dropdown${isAlignedStart ? " is-align-start" : ""}`}
+        >
           {items.map((item, index) => {
             const ItemIcon = item.icon;
             const previousSection = items[index - 1]?.section;

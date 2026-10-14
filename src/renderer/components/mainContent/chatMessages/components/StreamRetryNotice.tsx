@@ -61,15 +61,22 @@ export const StreamRetryNotice = ({
     const end = startedAt + totalMs;
     const initialLeft = end - Date.now();
     setRemainingSec(initialLeft > 0 ? Math.ceil(initialLeft / 1000) : 0);
-    // 200ms 刷新：与 Bash/Terminal 工具卡片的倒计时节奏保持一致。
+    if (initialLeft <= 0) {
+      return;
+    }
+    // 200ms 刷新；归零后进入等待响应阶段，停止空转的倒计时。
     const timer = window.setInterval(() => {
       const left = end - Date.now();
       setRemainingSec(left > 0 ? Math.ceil(left / 1000) : 0);
+      if (left <= 0) {
+        window.clearInterval(timer);
+      }
     }, 200);
     return () => window.clearInterval(timer);
   }, [hasCountdown, backoffMs, attempt, backoffStartedAt]);
 
-  const isUrgent = remainingSec !== null && remainingSec <= 3;
+  const isWaiting = hasCountdown && remainingSec !== null && remainingSec > 0;
+  const isUrgent = isWaiting && remainingSec <= 3;
 
   return (
     <div className="stream-retry-notice">
@@ -87,27 +94,40 @@ export const StreamRetryNotice = ({
             size={13}
           />
         )}
-        <span className="stream-retry-notice-title">
+        <span className="stream-retry-notice-title" role="status">
           {isExhausted
             ? t("chat.retryExhausted", { defaultValue: "Retries exhausted" })
-            : t("chat.retrying", { defaultValue: "Retrying" })}
+            : isWaiting
+              ? t("chat.retryWaiting", { defaultValue: "Waiting to retry" })
+              : t("chat.retrying", { defaultValue: "Retrying" })}
           {attempt != null ? (
             <span className="stream-retry-notice-attempt">({attempt})</span>
           ) : null}
         </span>
-        {remainingSec !== null ? (
+        {!isExhausted ? (
           <span
             className={`stream-retry-notice-countdown${
               isUrgent ? " stream-retry-notice-countdown-urgent" : ""
             }`}
-            title={t("chat.retryCountdownHint", {
-              defaultValue: "Waiting before the next attempt",
-            })}
+            title={
+              isWaiting
+                ? t("chat.retryCountdownHint", {
+                    defaultValue: "Waiting before the next attempt",
+                  })
+                : t("chat.retryAwaitingResponseHint", {
+                    defaultValue:
+                      "Retry in progress, waiting for the upstream response",
+                  })
+            }
           >
-            {t("chat.retryCountdown", {
-              defaultValue: "in {{seconds}}s",
-              values: { seconds: remainingSec },
-            })}
+            {isWaiting
+              ? t("chat.retryCountdown", {
+                  defaultValue: "in {{seconds}}s",
+                  values: { seconds: remainingSec },
+                })
+              : t("chat.retryAwaitingResponse", {
+                  defaultValue: "Awaiting response",
+                })}
           </span>
         ) : null}
         {errorText ? (

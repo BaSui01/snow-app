@@ -4460,6 +4460,10 @@ export const en = {
   "chat.streamMetrics.tokensTitle": "Cumulative output tokens",
   "chat.streamMetrics.tpsTitle": "Output speed (tokens per second)",
   "chat.retrying": "Retrying",
+  "chat.retryWaiting": "Waiting to retry",
+  "chat.retryAwaitingResponse": "Awaiting response",
+  "chat.retryAwaitingResponseHint":
+    "Retry in progress, waiting for the upstream response",
   "chat.retryExhausted": "Retries exhausted",
   "chat.retryCountdown": "in {{seconds}}s",
   "chat.retryCountdownHint": "Waiting before the next attempt",

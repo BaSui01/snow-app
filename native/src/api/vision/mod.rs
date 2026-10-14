@@ -189,6 +189,7 @@ pub(crate) struct VisionApiConfig {
     base_url: String,
     base_url_mode: String,
     api_key: String,
+    system_prompt_ids_json: String,
     model: String,
     custom_headers: HashMap<String, String>,
     /// gemini 视觉请求是否注入 google_search 工具（snowcfg.visionGoogleSearch）
@@ -305,6 +306,7 @@ impl VisionApiConfig {
             base_url,
             base_url_mode,
             api_key,
+            system_prompt_ids_json: api_config.system_prompt_ids_json.clone(),
             model,
             custom_headers: custom_headers.clone(),
             google_search,

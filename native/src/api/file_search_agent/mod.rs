@@ -6,6 +6,7 @@ pub(crate) use napi_derive::napi;
 pub(crate) use serde_json::{json, Value};
 pub(crate) use tokio_util::sync::CancellationToken;
 
+use crate::api::conversation::context::resolve_configured_system_prompts;
 pub(crate) use crate::api::anthropic::payload::{
     apply_last_user_message_cache_control, build_anthropic_thinking,
     config_json_enables_one_m_context, get_persistent_user_id, has_one_m_context_marker,
@@ -186,8 +187,19 @@ pub async fn run_file_search_agent(
         api_config.partial_retry_max_chars,
     );
     let tools = build_agent_tools();
-    let system_prompt = build_system_prompt(&roots);
+    let own_system_prompt = build_system_prompt(&roots);
+    let configured_system_prompts =
+        resolve_configured_system_prompts(&api_config.system_prompt_ids_json, None).await;
     let user_prompt = format!("Find files matching this description: {trimmed_query}");
+    // 与主流程一致：配置了系统提示词时它们占用 system，原有的搜索提示词降级为开头的 user 消息。
+    let (system_prompts, user_prompt) = if configured_system_prompts.is_empty() {
+        (vec![own_system_prompt], user_prompt)
+    } else {
+        (
+            configured_system_prompts,
+            format!("{own_system_prompt}\n\n{user_prompt}"),
+        )
+    };
 
     // 各协议的初始用户消息。协议内部的消息形状不同，后续轮次追加的消息
     // 也由各协议对应的 round 函数自行生成，互不通用。
@@ -210,22 +222,22 @@ pub async fn run_file_search_agent(
             result = async {
                 match api_config.request_method.as_str() {
                     "responses" => run_responses_round(
-                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompts,
                         &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     "anthropic" => run_anthropic_round(
-                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompts,
                         &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     "gemini" | "interactions" => run_gemini_round(
-                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompts,
                         &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,
                     _ => run_chat_round(
-                        &api_config, &api_key, &custom_headers, &model, &system_prompt,
+                        &api_config, &api_key, &custom_headers, &model, &system_prompts,
                         &messages, &tools, &retry_options, &roots,
                         round, on_progress.as_ref(),
                     ).await,

@@ -6,8 +6,10 @@
 //!
 //! Unlike the normal chat flow this module:
 //! - Uses the **basic model** instead of the advanced model.
-//! - Does **not** persist anything to the conversation database.
-//! - Does **not** inject the built-in system prompt or load context history.
+//! - Sets `skip_context`, so providers do not persist anything to the
+//!   conversation database, do not load context history, do not inject the
+//!   built-in system prompt and do not resolve MCP tools.
+//! - Only adds the user's configured API profile system prompts, if any.
 
 use napi::bindgen_prelude::*;
 use tokio_util::sync::CancellationToken;
@@ -15,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
 use crate::api::config::{get_active_api_request_context, resolve_basic_model};
+use crate::api::conversation::context::apply_configured_system_prompts;
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest, ResponsesApiResult,
@@ -77,7 +80,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
         sub_agent_tools_json: None,
         sub_agent_system_prompt: None,
         sub_agent_config_profile: None,
-        skip_context: None,
+        skip_context: Some(true),
         disable_tools: None,
         internal_recovery_prompt: None,
         plan_mode: None,
@@ -125,13 +128,17 @@ pub async fn generate_commit_message_stream(
     // --- 3. Build request with basic model ---
     let mut request = build_request(&staged_diff);
     request.model = Some(basic_model);
+    apply_configured_system_prompts(
+        &mut request.messages,
+        &api_config.system_prompt_ids_json,
+        None,
+    )
+    .await;
 
     // --- 4. Dispatch to the correct provider ---
-    // We reuse the four provider stream functions directly.  Each one calls
-    // prepare_context_request internally, which will create a throwaway
-    // conversation id (no history loaded).  The store_chat_exchange call at
-    // the end of each provider will persist a conversation, but that is
-    // acceptable — it is a lightweight single exchange.
+    // We reuse the four provider stream functions directly. With
+    // `skip_context` set, each provider skips history loading, built-in
+    // prompt injection and conversation persistence.
     let request_method = context.api_config.request_method.clone();
     let database_path = context.database_path;
     let mut api_config = context.api_config;

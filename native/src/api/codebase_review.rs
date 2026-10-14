@@ -32,6 +32,7 @@ use serde_json::Value;
 
 use crate::api::common::truncate_chars;
 use crate::api::config::{get_active_api_request_context, resolve_basic_model};
+use crate::api::conversation::context::apply_configured_system_prompts;
 use crate::api::jev::JevConfig;
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::services::codebase_index::SearchResult;
@@ -392,25 +393,32 @@ async fn request_review_text(
     system_prompt: &str,
     user_content: &str,
 ) -> Result<String> {
+    let mut review_messages = vec![
+        ResponsesApiMessage {
+            role: "system".to_string(),
+            content: system_prompt.to_string(),
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+            tool_calls_json: None,
+        },
+        ResponsesApiMessage {
+            role: "user".to_string(),
+            content: user_content.to_string(),
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+            tool_calls_json: None,
+        },
+    ];
+    apply_configured_system_prompts(
+        &mut review_messages,
+        &api_config.system_prompt_ids_json,
+        None,
+    )
+    .await;
     let request = ResponsesApiRequest {
-        messages: vec![
-            ResponsesApiMessage {
-                role: "system".to_string(),
-                content: system_prompt.to_string(),
-                tool_results_json: None,
-                thinking: None,
-                thinking_blocks_json: None,
-                tool_calls_json: None,
-            },
-            ResponsesApiMessage {
-                role: "user".to_string(),
-                content: user_content.to_string(),
-                tool_results_json: None,
-                thinking: None,
-                thinking_blocks_json: None,
-                tool_calls_json: None,
-            },
-        ],
+        messages: review_messages,
         model: Some(model.to_string()),
         api_profile: None,
         conversation_id: None,

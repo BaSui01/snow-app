@@ -11,7 +11,7 @@ pub(crate) async fn run_chat_round(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    system_prompt: &str,
+    system_prompts: &[String],
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
@@ -26,7 +26,15 @@ pub(crate) async fn run_chat_round(
         ));
     }
 
-    let mut chat_messages = vec![json!({"role": "system", "content": system_prompt})];
+    // 与主流程（api/chat/payload.rs）一致：单条系统提示词用字符串，多条作为同一条 system 消息的多个内容块。
+    let system_content = match system_prompts {
+        [only] => json!(only),
+        many => json!(many
+            .iter()
+            .map(|text| json!({"type": "text", "text": text}))
+            .collect::<Vec<_>>()),
+    };
+    let mut chat_messages = vec![json!({"role": "system", "content": system_content})];
     chat_messages.extend(messages.iter().cloned());
 
     let mut payload = json!({
@@ -262,7 +270,7 @@ pub(crate) async fn run_responses_round(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    system_prompt: &str,
+    system_prompts: &[String],
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
@@ -296,7 +304,8 @@ pub(crate) async fn run_responses_round(
     // instructions 字段、max_output_tokens 遵循用户配置、
     // reasoning 跟随 responsesReasoning 配置，避免 agent 请求与正常聊天
     // 行为产生差异。
-    payload["instructions"] = json!(system_prompt);
+    // 与主流程（api/responses/payload.rs）一致：多条系统提示词以空行合并进 instructions。
+    payload["instructions"] = json!(system_prompts.join("\n\n"));
     if let Some(max_tokens) = api_config.max_tokens {
         if max_tokens > 0 {
             payload["max_output_tokens"] = json!(max_tokens);
@@ -470,7 +479,7 @@ pub(crate) async fn run_anthropic_round(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    system_prompt: &str,
+    system_prompts: &[String],
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
@@ -510,11 +519,20 @@ pub(crate) async fn run_anthropic_round(
     // system 以数组形式携带 cache_control 启用 prompt 缓存、携带
     // metadata.user_id 用于跟踪与缓存路由、thinking 跟随 thinking 配置，
     // 避免 agent 请求与正常聊天行为产生差异。
-    payload["system"] = json!([{
-        "type": "text",
-        "text": system_prompt,
-        "cache_control": { "type": "ephemeral", "ttl": "5m" },
-    }]);
+    // 与主流程（api/anthropic/payload.rs）一致：每条系统提示词各自一个 text 块，最后一块带 cache_control。
+    let last_system_index = system_prompts.len().saturating_sub(1);
+    let system_blocks: Vec<Value> = system_prompts
+        .iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let mut block = json!({"type": "text", "text": text});
+            if index == last_system_index {
+                block["cache_control"] = json!({"type": "ephemeral", "ttl": "5m"});
+            }
+            block
+        })
+        .collect();
+    payload["system"] = json!(system_blocks);
     payload["metadata"] = json!({ "user_id": get_persistent_user_id() });
     if let Some((thinking, effort)) = build_anthropic_thinking(&api_config.config_json) {
         payload["thinking"] = thinking;
@@ -706,7 +724,7 @@ pub(crate) async fn run_gemini_round(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     model: &str,
-    system_prompt: &str,
+    system_prompts: &[String],
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
@@ -734,8 +752,13 @@ pub(crate) async fn run_gemini_round(
         generation_config["thinkingConfig"] = thinking_config;
     }
 
+    // 与主流程（api/gemini/payload.rs）一致：每条系统提示词各自一个 part。
+    let system_parts: Vec<Value> = system_prompts
+        .iter()
+        .map(|text| json!({"text": text}))
+        .collect();
     let payload = json!({
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "systemInstruction": {"parts": system_parts},
         "contents": messages,
         "tools": tools_as_gemini_json(tools),
         "generationConfig": generation_config,

@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 
@@ -8,8 +8,10 @@ use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::prompt::workflow_mode_system_prompt::build_workflow_mode_system_prompt;
 use crate::prompt::worktree_mode_system_prompt::build_worktree_mode_system_prompt;
+use crate::storage::initialize_app_storage;
 use crate::storage::services::chat_conversations::{
-    get_conversation_modes, load_context_messages, resolve_conversation_id, ChatContextMessage,
+    get_conversation_directory_id, get_conversation_modes, load_context_messages,
+    resolve_conversation_id, ChatContextMessage,
 };
 use crate::storage::services::sub_agent_configs::list_sub_agent_configs;
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
@@ -18,6 +20,7 @@ use crate::storage::services::workspace_directories::get_workspace_directory_pat
 use crate::storage::SubAgentConfigRecord;
 
 use super::tool_messages::ensure_tool_pairing;
+use crate::api::responses::ResponsesApiMessage;
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
 
 pub struct PreparedConversationRequest {
@@ -119,6 +122,253 @@ fn build_sub_agents_section(database_path: &Path, directory_id: Option<&str>) ->
             rendered.join("\n")
         }
         Err(_) => String::new(),
+    }
+}
+
+/// 构造与主流程一致的内置系统提示词（工作目录、模式、项目组、LSP、生图、项目记忆等章节）。
+/// 不含历史消息与用户自定义系统提示词（后者由 `prepare_context_request` 单独解析）。
+pub(crate) async fn build_builtin_system_prompt(
+    request: &ConversationContextRequest<'_>,
+    conversation_id: &str,
+) -> String {
+    let working_directory = if let Some(exec_root) = request.execution_workspace_root {
+        exec_root.trim().to_string()
+    } else if let Some(root) = request.analysis_workspace_root {
+        crate::mcp::servers::lsp::prompt_context::resolve_analysis_workspace_root(
+            request.directory_id,
+            Some(Path::new(root)),
+        )
+        .await
+        .ok()
+        .flatten()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
+    } else {
+        let worktree_path = if let Some(wt_id) = request.worktree_id {
+            crate::storage::services::git::get_worktree_by_id(request.database_path, wt_id)
+                .ok()
+                .flatten()
+                .map(|w| w.worktree_path)
+        } else if let Some(conv_id) = request.conversation_id {
+            crate::storage::services::git::get_conversation_worktree(request.database_path, conv_id)
+                .ok()
+                .flatten()
+                .map(|w| w.worktree_path)
+        } else {
+            None
+        };
+
+        if let Some(path) = worktree_path {
+            path
+        } else {
+            request
+                .directory_id
+                .and_then(|id| {
+                    get_workspace_directory_path(request.database_path, id)
+                        .ok()
+                        .flatten()
+                })
+                .unwrap_or_default()
+        }
+    };
+
+    // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
+    // that instructs the AI to analyze, plan, and get user approval before
+    // executing any changes.
+    let shell_type = resolve_default_shell(request.database_path);
+    let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
+    // The final request list already includes project switches, sub-agent
+    // whitelist and tool-less modes. Do not independently rediscover tools.
+    let tool_snapshot =
+        crate::mcp::servers::lsp::prompt_context::ToolSnapshot::from_tools(request.allowed_tools);
+    let analysis_tools_section = if request.plan_mode || request.goal_mode || request.workflow_mode
+    {
+        crate::prompt::tool_hints::analysis_tools_lines(&tool_snapshot).join("\n")
+    } else {
+        String::new()
+    };
+    let system_prompt = if request.worktree_mode {
+        build_worktree_mode_system_prompt(
+            &working_directory,
+            &shell_type,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &sub_agents_section,
+        )
+    } else if request.workflow_mode {
+        build_workflow_mode_system_prompt(
+            &working_directory,
+            &shell_type,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &analysis_tools_section,
+        )
+    } else if request.plan_mode {
+        build_plan_mode_system_prompt(
+            &working_directory,
+            &shell_type,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &sub_agents_section,
+            &analysis_tools_section,
+        )
+    } else if request.goal_mode {
+        // Per-conversation budget isolation: the conversation's own override
+        // wins; conversations without one use the built-in default.
+        let goal_token_budget = if !conversation_id.is_empty() {
+            get_conversation_modes(request.database_path, conversation_id)
+                .ok()
+                .and_then(|modes| modes.goal_mode_token_budget)
+                .unwrap_or(2000000)
+        } else {
+            2000000
+        };
+        build_goal_mode_system_prompt(
+            &working_directory,
+            &shell_type,
+            goal_token_budget,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &analysis_tools_section,
+        )
+    } else {
+        build_system_prompt(
+            &working_directory,
+            &shell_type,
+            request.remote_role_content,
+            request.remote_include_global_rules,
+            &sub_agents_section,
+        )
+    };
+    // 关联项目组章节（2026-10-02，仿 imagegen / Project Memory 方案 B）：
+    // 项目属于「关联项目组」（合集收纳的 ≥ 2 个本地目录）时，注入组名与全部
+    // 根目录，声明 grep / 文件搜索把组内目录当成同一个统一项目。WorkTree 模式
+    // 运行在单一工作树上，不注入。查询失败静默降级为空串。
+    let linked_projects_section = if request.worktree_mode {
+        String::new()
+    } else {
+        crate::prompt::linked_projects::build_linked_projects_section(
+            request.database_path,
+            request.directory_id,
+        )
+        .await
+    };
+    let system_prompt = if linked_projects_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{linked_projects_section}")
+    };
+    // Pure rendering of the exact tools serialized by this provider request.
+    let lsp_section = tool_snapshot.system_prompt_section();
+    let system_prompt = if lsp_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{lsp_section}")
+    };
+    // Image Generation 指引（2026-08-16，仿 LSP 方案 B）：配置了生图渠道且
+    // 域 scope 允许时，在系统提示词末尾追加「Image Generation」章节，引导
+    // 并行多次调用是唯一多图路径（≥2 个并行调用由 UI 自动合并为
+    // ImageGenGallery 统一网格）。查询失败返回空字符串（静默降级，不打断
+    // 请求）。追加在末尾：与 LSP 章节同理，最小化 prompt cache 前缀失效
+    // 范围。普通 / Plan / Goal 三种模式统一注入。
+    let imagegen_section =
+        crate::mcp::servers::imagegen::build_system_prompt_section(request.directory_id).await;
+    let system_prompt = if imagegen_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{imagegen_section}")
+    };
+    // 项目记忆章节（2026-09-01，仿 LSP/imagegen 方案 B）：项目启用
+    // builtin:memory（默认启用）且记忆库可用时，在系统提示词末尾追加
+    // 「Project Memory」章节——importance 头部条目 + memory-search/save
+    // 工具指引。查询失败静默降级为空串。子代理不注入：任务短且上下文
+    // 昂贵，记忆操作由主会话统一决策。章节按会话冻结（首轮渲染后存入
+    // 快照，之后每轮复用同一份文本）：会话中新增/修改记忆不改动提示词
+    // 前缀，整个会话的 prompt cache 始终有效，新记忆只对之后新建的会话
+    // 生效。
+    let memory_section = if request.is_sub_agent {
+        String::new()
+    } else {
+        crate::mcp::servers::memory::build_system_prompt_section(
+            request.directory_id,
+            Some(conversation_id),
+        )
+        .await
+    };
+    let system_prompt = if memory_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{memory_section}")
+    };
+    system_prompt
+}
+
+/// 解析 API 档案配置的用户系统提示词（`system_prompt_ids_json`，按会话工作目录解析），
+/// 与主流程 `prepare_context_request` 使用同一套解析。每条提示词单独返回，各自成为一个
+/// 系统提示词块。未配置或读取失败时返回空。数据库读取放在阻塞线程执行。
+pub(crate) async fn resolve_configured_system_prompts(
+    system_prompt_ids_json: &str,
+    conversation_id: Option<&str>,
+) -> Vec<String> {
+    let system_prompt_ids_json = system_prompt_ids_json.to_string();
+    let conversation_id = conversation_id.map(str::to_string);
+    tokio::task::spawn_blocking(move || {
+        let Ok(storage_info) = initialize_app_storage() else {
+            return Vec::new();
+        };
+        let database_path = PathBuf::from(storage_info.database_path);
+        let directory_id = conversation_id
+            .as_deref()
+            .and_then(|id| get_conversation_directory_id(&database_path, id).ok().flatten());
+        resolve_active_system_prompt_contents(
+            &database_path,
+            &system_prompt_ids_json,
+            directory_id.as_deref(),
+        )
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// 与主流程一致地应用 API 档案的用户系统提示词：配置了提示词时，它们各自成为系统消息，
+/// 请求原有的系统消息降级为其后的一条 user 消息；未配置时保持请求原样。
+pub(crate) async fn apply_configured_system_prompts(
+    messages: &mut Vec<ResponsesApiMessage>,
+    system_prompt_ids_json: &str,
+    conversation_id: Option<&str>,
+) {
+    let configured =
+        resolve_configured_system_prompts(system_prompt_ids_json, conversation_id).await;
+    if configured.is_empty() {
+        return;
+    }
+    let demoted: Vec<String> = messages
+        .iter()
+        .filter(|message| message.role == "system")
+        .map(|message| message.content.clone())
+        .collect();
+    messages.retain(|message| message.role != "system");
+    let mut result: Vec<ResponsesApiMessage> = configured
+        .into_iter()
+        .map(|content| text_message("system", content))
+        .collect();
+    result.extend(
+        demoted
+            .into_iter()
+            .map(|content| text_message("user", content)),
+    );
+    result.append(messages);
+    *messages = result;
+}
+
+fn text_message(role: &str, content: String) -> ResponsesApiMessage {
+    ResponsesApiMessage {
+        role: role.to_string(),
+        content,
+        tool_results_json: None,
+        thinking: None,
+        thinking_blocks_json: None,
+        tool_calls_json: None,
     }
 }
 
@@ -233,175 +483,7 @@ pub async fn prepare_context_request(
     );
 
     // Inject the built-in system prompt as the first message.
-    let working_directory = if let Some(exec_root) = request.execution_workspace_root {
-        exec_root.trim().to_string()
-    } else if let Some(root) = request.analysis_workspace_root {
-        crate::mcp::servers::lsp::prompt_context::resolve_analysis_workspace_root(
-            request.directory_id,
-            Some(Path::new(root)),
-        )
-        .await
-        .ok()
-        .flatten()
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_default()
-    } else {
-        let worktree_path = if let Some(wt_id) = request.worktree_id {
-            crate::storage::services::git::get_worktree_by_id(request.database_path, wt_id)
-                .ok()
-                .flatten()
-                .map(|w| w.worktree_path)
-        } else if let Some(conv_id) = request.conversation_id {
-            crate::storage::services::git::get_conversation_worktree(request.database_path, conv_id)
-                .ok()
-                .flatten()
-                .map(|w| w.worktree_path)
-        } else {
-            None
-        };
-
-        if let Some(path) = worktree_path {
-            path
-        } else {
-            request
-                .directory_id
-                .and_then(|id| {
-                    get_workspace_directory_path(request.database_path, id)
-                        .ok()
-                        .flatten()
-                })
-                .unwrap_or_default()
-        }
-    };
-
-    // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
-    // that instructs the AI to analyze, plan, and get user approval before
-    // executing any changes.
-    let shell_type = resolve_default_shell(request.database_path);
-    let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
-    // The final request list already includes project switches, sub-agent
-    // whitelist and tool-less modes. Do not independently rediscover tools.
-    let tool_snapshot =
-        crate::mcp::servers::lsp::prompt_context::ToolSnapshot::from_tools(request.allowed_tools);
-    let analysis_tools_section = if request.plan_mode || request.goal_mode || request.workflow_mode
-    {
-        crate::prompt::tool_hints::analysis_tools_lines(&tool_snapshot).join("\n")
-    } else {
-        String::new()
-    };
-    let system_prompt = if request.worktree_mode {
-        build_worktree_mode_system_prompt(
-            &working_directory,
-            &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
-            &sub_agents_section,
-        )
-    } else if request.workflow_mode {
-        build_workflow_mode_system_prompt(
-            &working_directory,
-            &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
-            &analysis_tools_section,
-        )
-    } else if request.plan_mode {
-        build_plan_mode_system_prompt(
-            &working_directory,
-            &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
-            &sub_agents_section,
-            &analysis_tools_section,
-        )
-    } else if request.goal_mode {
-        // Per-conversation budget isolation: the conversation's own override
-        // wins; conversations without one use the built-in default.
-        let goal_token_budget = if !conversation_id.is_empty() {
-            get_conversation_modes(request.database_path, &conversation_id)
-                .ok()
-                .and_then(|modes| modes.goal_mode_token_budget)
-                .unwrap_or(2000000)
-        } else {
-            2000000
-        };
-        build_goal_mode_system_prompt(
-            &working_directory,
-            &shell_type,
-            goal_token_budget,
-            request.remote_role_content,
-            request.remote_include_global_rules,
-            &analysis_tools_section,
-        )
-    } else {
-        build_system_prompt(
-            &working_directory,
-            &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
-            &sub_agents_section,
-        )
-    };
-    // 关联项目组章节（2026-10-02，仿 imagegen / Project Memory 方案 B）：
-    // 项目属于「关联项目组」（合集收纳的 ≥ 2 个本地目录）时，注入组名与全部
-    // 根目录，声明 grep / 文件搜索把组内目录当成同一个统一项目。WorkTree 模式
-    // 运行在单一工作树上，不注入。查询失败静默降级为空串。
-    let linked_projects_section = if request.worktree_mode {
-        String::new()
-    } else {
-        crate::prompt::linked_projects::build_linked_projects_section(
-            request.database_path,
-            request.directory_id,
-        )
-        .await
-    };
-    let system_prompt = if linked_projects_section.is_empty() {
-        system_prompt
-    } else {
-        format!("{system_prompt}\n\n{linked_projects_section}")
-    };
-    // Pure rendering of the exact tools serialized by this provider request.
-    let lsp_section = tool_snapshot.system_prompt_section();
-    let system_prompt = if lsp_section.is_empty() {
-        system_prompt
-    } else {
-        format!("{system_prompt}\n\n{lsp_section}")
-    };
-    // Image Generation 指引（2026-08-16，仿 LSP 方案 B）：配置了生图渠道且
-    // 域 scope 允许时，在系统提示词末尾追加「Image Generation」章节，引导
-    // 并行多次调用是唯一多图路径（≥2 个并行调用由 UI 自动合并为
-    // ImageGenGallery 统一网格）。查询失败返回空字符串（静默降级，不打断
-    // 请求）。追加在末尾：与 LSP 章节同理，最小化 prompt cache 前缀失效
-    // 范围。普通 / Plan / Goal 三种模式统一注入。
-    let imagegen_section =
-        crate::mcp::servers::imagegen::build_system_prompt_section(request.directory_id).await;
-    let system_prompt = if imagegen_section.is_empty() {
-        system_prompt
-    } else {
-        format!("{system_prompt}\n\n{imagegen_section}")
-    };
-    // 项目记忆章节（2026-09-01，仿 LSP/imagegen 方案 B）：项目启用
-    // builtin:memory（默认启用）且记忆库可用时，在系统提示词末尾追加
-    // 「Project Memory」章节——importance 头部条目 + memory-search/save
-    // 工具指引。查询失败静默降级为空串。子代理不注入：任务短且上下文
-    // 昂贵，记忆操作由主会话统一决策。章节按会话冻结（首轮渲染后存入
-    // 快照，之后每轮复用同一份文本）：会话中新增/修改记忆不改动提示词
-    // 前缀，整个会话的 prompt cache 始终有效，新记忆只对之后新建的会话
-    // 生效。
-    let memory_section = if request.is_sub_agent {
-        String::new()
-    } else {
-        crate::mcp::servers::memory::build_system_prompt_section(
-            request.directory_id,
-            Some(conversation_id.as_str()),
-        )
-        .await
-    };
-    let system_prompt = if memory_section.is_empty() {
-        system_prompt
-    } else {
-        format!("{system_prompt}\n\n{memory_section}")
-    };
+    let system_prompt = build_builtin_system_prompt(&request, &conversation_id).await;
     let user_system_prompts = if request.is_sub_agent {
         compose_sub_agent_system_prompts(
             &system_prompt,

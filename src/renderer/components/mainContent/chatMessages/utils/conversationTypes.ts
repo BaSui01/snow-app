@@ -1131,6 +1131,8 @@ export type UseChatConversationResult = {
   getUserQuestionDraft: (questionId: string) => UserQuestionDraft | undefined;
   saveUserQuestionDraft: (questionId: string, draft: UserQuestionDraft) => void;
   clearUserQuestionDraft: (questionId: string) => void;
+  /** 当前运行时是否位于独立面板窗口（独立窗口隐藏不可用的入口卡片等）。 */
+  isDetachedWindow: boolean;
 };
 
 // Re-export preload types for convenience

@@ -1285,5 +1285,6 @@ export const useChatConversation = (
     getUserQuestionDraft: userQuestionApi.getUserQuestionDraft,
     saveUserQuestionDraft: userQuestionApi.saveUserQuestionDraft,
     clearUserQuestionDraft: userQuestionApi.clearUserQuestionDraft,
+    isDetachedWindow,
   };
 };

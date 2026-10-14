@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::api::conversation::context::resolve_configured_system_prompts;
+
 /// 单个 SSE 事件的解析结果。
 #[derive(Debug)]
 enum VisionStreamEvent {
@@ -211,6 +213,15 @@ async fn describe_image_via_anthropic(
         }],
     });
 
+    let system_prompts =
+        resolve_configured_system_prompts(&vision_config.system_prompt_ids_json, None).await;
+    if !system_prompts.is_empty() {
+        let blocks: Vec<_> = system_prompts
+            .into_iter()
+            .map(|text| json!({ "type": "text", "text": text }))
+            .collect();
+        payload["system"] = json!(blocks);
+    }
     let headers = build_anthropic_headers(&vision_config.api_key, &vision_config.custom_headers)?;
     vision_request_with_retry(
         client,

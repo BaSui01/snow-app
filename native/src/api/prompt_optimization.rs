@@ -3,6 +3,7 @@
 use crate::api::config::{
     get_api_request_context_for_profile, get_api_request_context_with_fallback, resolve_basic_model,
 };
+use crate::api::conversation::context::apply_configured_system_prompts;
 use crate::api::responses::{
     ResponsesApiMessage, ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
@@ -302,6 +303,7 @@ async fn send_auxiliary(
     for message in &mut request.messages {
         message.content = crate::mcp::privacy_mask::mask_local(&message.content);
     }
+    apply_configured_system_prompts(&mut request.messages, &context.api_config.system_prompt_ids_json, None).await;
     // Disable thinking in the in-memory copy only, matching the auxiliary
     // commit generation path without altering the saved API profile.
     let mut config = context.api_config;

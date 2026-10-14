@@ -59,8 +59,12 @@ export function EmptyChatGreeting({
   onNavigateToView,
 }: EmptyChatGreetingProps): React.JSX.Element {
   const { t } = useI18n();
-  const { pendingWorktreeId, setPendingWorktreeId, prefillComposer } =
-    useChatConversationContext();
+  const {
+    pendingWorktreeId,
+    setPendingWorktreeId,
+    prefillComposer,
+    isDetachedWindow,
+  } = useChatConversationContext();
   const showHelpHint = useHelpGuideHint();
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
@@ -364,76 +368,78 @@ export function EmptyChatGreeting({
           </div>
         </div>
       )}
-      <div className="chat-empty-quick-actions">
-        <button
-          className="chat-empty-quick-card"
-          type="button"
-          disabled={isAddingProject}
-          onClick={() => void handleAddProject()}
-        >
-          <span className="chat-empty-quick-card-icon">
-            {isAddingProject ? (
-              <Loader2 size={15} strokeWidth={1.8} className="spin" />
-            ) : (
-              <FolderPlus size={15} strokeWidth={1.8} />
-            )}
-          </span>
-          <span className="chat-empty-quick-card-text">
-            <span className="chat-empty-quick-card-title">
-              {t("chat.quickActionAddProject", {
-                defaultValue: "Add a project",
-              })}
+      {!isDetachedWindow && (
+        <div className="chat-empty-quick-actions">
+          <button
+            className="chat-empty-quick-card"
+            type="button"
+            disabled={isAddingProject}
+            onClick={() => void handleAddProject()}
+          >
+            <span className="chat-empty-quick-card-icon">
+              {isAddingProject ? (
+                <Loader2 size={15} strokeWidth={1.8} className="spin" />
+              ) : (
+                <FolderPlus size={15} strokeWidth={1.8} />
+              )}
             </span>
-            <span className="chat-empty-quick-card-desc">
-              {t("chat.quickActionAddProjectDesc", {
-                defaultValue: "Open a local workspace directory",
-              })}
+            <span className="chat-empty-quick-card-text">
+              <span className="chat-empty-quick-card-title">
+                {t("chat.quickActionAddProject", {
+                  defaultValue: "Add a project",
+                })}
+              </span>
+              <span className="chat-empty-quick-card-desc">
+                {t("chat.quickActionAddProjectDesc", {
+                  defaultValue: "Open a local workspace directory",
+                })}
+              </span>
             </span>
-          </span>
-        </button>
-        <button
-          className="chat-empty-quick-card is-api"
-          type="button"
-          onClick={() => onNavigateToView?.("api-settings")}
-        >
-          <span className="chat-empty-quick-card-icon">
-            <Plug size={15} strokeWidth={1.8} />
-          </span>
-          <span className="chat-empty-quick-card-text">
-            <span className="chat-empty-quick-card-title">
-              {t("chat.quickActionConfigApi", {
-                defaultValue: "Configure AI API",
-              })}
+          </button>
+          <button
+            className="chat-empty-quick-card is-api"
+            type="button"
+            onClick={() => onNavigateToView?.("api-settings")}
+          >
+            <span className="chat-empty-quick-card-icon">
+              <Plug size={15} strokeWidth={1.8} />
             </span>
-            <span className="chat-empty-quick-card-desc">
-              {t("chat.quickActionConfigApiDesc", {
-                defaultValue: "Set up providers, models and credentials",
-              })}
+            <span className="chat-empty-quick-card-text">
+              <span className="chat-empty-quick-card-title">
+                {t("chat.quickActionConfigApi", {
+                  defaultValue: "Configure AI API",
+                })}
+              </span>
+              <span className="chat-empty-quick-card-desc">
+                {t("chat.quickActionConfigApiDesc", {
+                  defaultValue: "Set up providers, models and credentials",
+                })}
+              </span>
             </span>
-          </span>
-        </button>
-        <button
-          className="chat-empty-quick-card is-theme"
-          type="button"
-          onClick={() => onNavigateToView?.("theme-settings")}
-        >
-          <span className="chat-empty-quick-card-icon">
-            <Palette size={15} strokeWidth={1.8} />
-          </span>
-          <span className="chat-empty-quick-card-text">
-            <span className="chat-empty-quick-card-title">
-              {t("chat.quickActionCustomizeTheme", {
-                defaultValue: "Customize appearance",
-              })}
+          </button>
+          <button
+            className="chat-empty-quick-card is-theme"
+            type="button"
+            onClick={() => onNavigateToView?.("theme-settings")}
+          >
+            <span className="chat-empty-quick-card-icon">
+              <Palette size={15} strokeWidth={1.8} />
             </span>
-            <span className="chat-empty-quick-card-desc">
-              {t("chat.quickActionCustomizeThemeDesc", {
-                defaultValue: "Choose theme, light or dark mode",
-              })}
+            <span className="chat-empty-quick-card-text">
+              <span className="chat-empty-quick-card-title">
+                {t("chat.quickActionCustomizeTheme", {
+                  defaultValue: "Customize appearance",
+                })}
+              </span>
+              <span className="chat-empty-quick-card-desc">
+                {t("chat.quickActionCustomizeThemeDesc", {
+                  defaultValue: "Choose theme, light or dark mode",
+                })}
+              </span>
             </span>
-          </span>
-        </button>
-      </div>
+          </button>
+        </div>
+      )}
       {addProjectError ? (
         <p className="chat-empty-quick-error">{addProjectError}</p>
       ) : null}

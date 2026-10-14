@@ -912,6 +912,35 @@ pub fn get_conversation_api_profile(
         })
 }
 
+/// Reads the workspace directory a conversation is bound to, if any. Returns
+/// `Ok(None)` when the conversation does not exist or has no directory.
+pub fn get_conversation_directory_id(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<Option<String>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT directory_id
+                       FROM chat_conversations
+                      WHERE conversation_id = ?1
+                      LIMIT 1",
+                    params![conversation_id],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map(|directory_id| {
+                    directory_id
+                        .flatten()
+                        .filter(|value| !value.trim().is_empty())
+                })
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "get conversation directory", error)
+        })
+}
+
 /// 收集消息中的内联图片标签路径（`@@image:upload/...@@`），去重。
 /// 仅匹配 `upload/` 前缀标签；图库图片标签（`@@image:image/...@@`）由
 /// image_library 的级联删除单独处理。

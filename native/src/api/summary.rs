@@ -5,6 +5,7 @@ use crate::api::config::{
     get_api_request_context_with_fallback, normalize_base_url, resolve_basic_model,
     resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::conversation::context::apply_configured_system_prompts;
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::initialize_app_storage;
 use crate::storage::services::app_logs::{log_api_error, log_api_warning};
@@ -87,15 +88,25 @@ pub async fn generate_conversation_summary(
         ));
     }
 
+    let mut request_messages = Vec::new();
+    request_messages.push(ResponsesApiMessage {
+        role: "user".to_string(),
+        content: build_structured_user_content(&build_conversation_text(&messages)),
+        tool_results_json: None,
+        thinking: None,
+        thinking_blocks_json: None,
+        tool_calls_json: None,
+    });
+
+    apply_configured_system_prompts(
+        &mut request_messages,
+        &api_config.system_prompt_ids_json,
+        Some(conversation_id.as_str()),
+    )
+    .await;
+
     let request = ResponsesApiRequest {
-        messages: vec![ResponsesApiMessage {
-            role: "user".to_string(),
-            content: build_structured_user_content(&build_conversation_text(&messages)),
-            tool_results_json: None,
-            thinking: None,
-            thinking_blocks_json: None,
-            tool_calls_json: None,
-        }],
+        messages: request_messages,
         model: Some(model.clone()),
         api_profile: None,
         conversation_id: None,
@@ -294,7 +305,7 @@ pub(crate) fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigR
     }
 
     let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
-    format!("{}/messages", resolved_base)
+    crate::api::oauth::anthropic::resolve_messages_endpoint(&resolved_base, &api_config.api_key)
 }
 
 pub(crate) fn build_anthropic_header_map(
@@ -305,12 +316,15 @@ pub(crate) fn build_anthropic_header_map(
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        HeaderValue::from_str(api_key).map_err(|error| {
-            Error::from_reason(format!("Invalid API key header value: {}", error))
-        })?,
-    );
+    // 订阅（OAuth）令牌不发送 x-api-key，与主流程 api/anthropic/stream.rs 的 build_header_map 一致。
+    if !crate::api::oauth::anthropic::is_oauth_access_token(api_key) {
+        headers.insert(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(api_key).map_err(|error| {
+                Error::from_reason(format!("Invalid API key header value: {}", error))
+            })?,
+        );
+    }
     // Anthropic requires both `x-api-key` and `Authorization: Bearer` headers
     // (the latter for compatibility with relay proxies that expect
     // OpenAI-style auth). Matches the main conversation flow in

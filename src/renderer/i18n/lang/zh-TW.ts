@@ -1909,9 +1909,6 @@ export const zhTW = {
   "settings.imagegenTemplateReplaceConfirm":
     "套用該範本會整體替換本渠道目前已配置的全部模型，是否繼續？",
   "settings.imagegenTemplateSelect": "選擇範本快速填入配置...",
-  "settings.imagegenDefaultThinking": "預設思考強度",
-  "settings.imagegenDefaultThinkingHint":
-    "寫入 generation_config.thinking_level；各模型支援檔位不同（OpenAI 圖像介面無此參數）",
   "settings.imagegenThinkingAuto": "自動",
   "settings.imagegenThinkingMinimal": "minimal",
   "settings.imagegenThinkingLow": "low",
@@ -1939,6 +1936,9 @@ export const zhTW = {
   "settings.imagegenSupportedThinking": "支援的思考強度",
   "settings.imagegenSupportedThinkingHint":
     "告知 AI 該模型支援的 thinking_level 檔位（如 minimal, medium, high）",
+  "settings.imagegenSupportedQualities": "支援的畫質/品質",
+  "settings.imagegenSupportedQualitiesHint":
+    "告知 AI 與工作台該模型支援的 quality 檔位（如 low, medium, high, xhigh, max）",
   "settings.imagegenCustomPrompt": "渠道提示詞說明/補充指引",
   "settings.imagegenCustomPromptPlaceholder":
     "為 AI 注入此渠道的專屬要求、參數規範或風格說明...",
@@ -4142,6 +4142,9 @@ export const zhTW = {
   "chat.streamMetrics.tokensTitle": "累計輸出 Token 數",
   "chat.streamMetrics.tpsTitle": "輸出速度（每秒 Token 數）",
   "chat.retrying": "重試中",
+  "chat.retryWaiting": "等待重試",
+  "chat.retryAwaitingResponse": "等待回應",
+  "chat.retryAwaitingResponseHint": "已進入重試階段，正在等待上游回應",
   "chat.retryExhausted": "重試已耗盡",
   "chat.retryCountdown": "{{seconds}} 秒後重試",
   "chat.retryCountdownHint": "正在等待下一次重試",
@@ -4650,9 +4653,7 @@ export const zhTW = {
   "rightPanel.aiDrawing.model": "模型",
   "rightPanel.aiDrawing.modelPlaceholder": "渠道預設模型",
   "rightPanel.aiDrawing.modelHint":
-    "模型清單來自已設定渠道的模型 API（自動聚合）；選擇模型自動匹配對應服務商",
-  "rightPanel.aiDrawing.modelsLoading": "載入模型中…",
-  "rightPanel.aiDrawing.modelsLoadFailed": "取得模型清單失敗",
+    "模型清單來自「API 設定 → 生圖模型」中已啟用渠道的設定；同一模型多渠道並存，選擇即鎖定渠道",
   "rightPanel.aiDrawing.ratio": "寬高比",
   "rightPanel.aiDrawing.tier": "尺寸",
   "rightPanel.aiDrawing.sizeControlHint":
@@ -4683,6 +4684,7 @@ export const zhTW = {
   "rightPanel.aiDrawing.thinkingLevel": "思考等級",
   "rightPanel.aiDrawing.thinkingDefault": "預設",
   "rightPanel.aiDrawing.thinkingMinimal": "最小（快速）",
+  "rightPanel.aiDrawing.thinkingMedium": "中等（平衡）",
   "rightPanel.aiDrawing.thinkingHigh": "高（更精細）",
   "rightPanel.aiDrawing.personGeneration": "人物生成",
   "rightPanel.aiDrawing.personDefault": "預設",
@@ -4695,11 +4697,18 @@ export const zhTW = {
   "rightPanel.aiDrawing.seedPlaceholder": "留空隨機",
   "rightPanel.aiDrawing.seedHint": "相同種子可重現相似結果",
   "rightPanel.aiDrawing.count": "數量",
-  "rightPanel.aiDrawing.stream": "串流預覽",
+  "rightPanel.aiDrawing.countRandom": "隨機 (1~8)",
+  "rightPanel.aiDrawing.randomCountHint": "隨機抽取 1~8 張",
+  "rightPanel.aiDrawing.simulatingPhase1": "潛空間採樣",
+  "rightPanel.aiDrawing.simulatingPhase2": "結構合成",
+  "rightPanel.aiDrawing.simulatingPhase3": "細節渲染",
+  "rightPanel.aiDrawing.stream": "是否開啟流",
   "rightPanel.aiDrawing.qualityAuto": "自動",
   "rightPanel.aiDrawing.qualityLow": "低",
   "rightPanel.aiDrawing.qualityMedium": "中",
   "rightPanel.aiDrawing.qualityHigh": "高",
+  "rightPanel.aiDrawing.qualityXhigh": "超高",
+  "rightPanel.aiDrawing.qualityMax": "極致",
   "rightPanel.aiDrawing.qualityDefault": "預設",
   "rightPanel.aiDrawing.qualityStandard": "標準",
   "rightPanel.aiDrawing.qualityHd": "高清",
@@ -4775,7 +4784,6 @@ export const zhTW = {
     "放棄等待並丟棄本次結果（後台請求會繼續完成，但結果將被忽略）",
   "rightPanel.aiDrawing.streamOffCount": "數量大於 1 時不支援串流預覽",
   "rightPanel.aiDrawing.streamOffRef": "圖生圖不支援串流預覽",
-  "rightPanel.aiDrawing.retryModels": "重試模型清單",
   "rightPanel.aiDrawing.examplesTitle": "試試這些",
   "rightPanel.aiDrawing.example1":
     "賽博龐克風格的雨夜城市，霓虹燈倒影，電影感構圖",

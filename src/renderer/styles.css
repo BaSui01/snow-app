@@ -20752,6 +20752,13 @@ body.is-panel-resizing * {
   line-height: 1;
 }
 
+/* 模型品牌图标：渠道内多模型 Tab 与渠道表格「模型」列，复用全局 ModelBrandIcon */
+.imagegen-model-tab-icon,
+.imagegen-table-model-icon {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
 .imagegen-model-tab-close {
   display: inline-flex;
   align-items: center;
@@ -39493,7 +39500,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--surface-island-muted);
+  background: var(--surface-island-muted, var(--bg-secondary));
   padding: 12px;
 }
 
@@ -39516,11 +39523,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-primary);
   padding: 10px 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -39528,6 +39535,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .ai-drawing-composer:focus-within {
   border-color: var(--accent-color);
+  box-shadow:
+    0 0 0 1px var(--accent-color),
+    0 2px 8px color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .ai-drawing-prompt {
@@ -39952,10 +39962,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-wrap: wrap;
   gap: 10px 14px;
   flex-shrink: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 10px);
   background: var(--bg-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .ai-drawing-param {
@@ -40008,6 +40019,50 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .ai-drawing-param-model .custom-select {
   max-width: 280px;
+}
+
+.ai-drawing-count-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-drawing-random-count-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background-color 0.15s,
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ai-drawing-random-count-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-tertiary));
+}
+
+.ai-drawing-random-count-btn:active:not(:disabled) {
+  transform: rotate(45deg) scale(0.92);
+}
+
+.ai-drawing-random-count-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .ai-drawing-seed-input {
@@ -40115,29 +40170,28 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 220px;
+  max-width: 240px;
   padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: 7px;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    border-color 0.12s,
-    color 0.12s,
-    background 0.12s;
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-size-trigger:hover,
 .ai-drawing-size-trigger.open {
-  color: var(--text-primary);
-  border-color: color-mix(
-    in srgb,
-    var(--accent-color) 40%,
-    var(--border-color)
-  );
-  background: var(--bg-hover);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-tertiary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
 .ai-drawing-size-summary {
@@ -40158,21 +40212,23 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   z-index: 39;
 }
 
-/* 尺寸弹层 */
+/* 尺寸/质量弹层：放宽宽度以舒适展示比例与质量全集，优化毛玻璃与阴影 */
 .ai-drawing-size-popover {
   position: fixed;
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(272px, calc(100vw - 24px));
+  gap: 12px;
+  width: min(320px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
-  max-height: min(420px, calc(100vh - 24px));
-  padding: 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  max-height: min(450px, calc(100vh - 24px));
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 10px);
   background: var(--bg-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.36),
+    0 0 0 1px var(--border-light);
   overflow-y: auto;
 }
 
@@ -40183,13 +40239,15 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .ai-drawing-size-row-title {
-  font-size: 11px;
-  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
 }
 
 .ai-drawing-size-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -40203,26 +40261,28 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   justify-content: center;
   gap: 2px;
   min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 6px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  line-height: 1;
+  line-height: 1.1;
   cursor: pointer;
   transition:
     border-color 0.12s,
     color 0.12s,
-    background 0.12s;
+    background 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-size-option:hover {
   color: var(--text-primary);
+  background: var(--bg-hover);
   border-color: color-mix(
     in srgb,
-    var(--accent-color) 40%,
+    var(--accent-color) 45%,
     var(--border-color)
   );
 }
@@ -40230,7 +40290,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .ai-drawing-size-option.active {
   color: var(--accent-color);
   border-color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary));
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-primary));
+  box-shadow: 0 0 0 1px var(--accent-color) inset;
   font-weight: 600;
 }
 
@@ -40241,15 +40302,19 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   white-space: nowrap;
 }
 
+.ai-drawing-size-option.active .ai-drawing-size-hint {
+  color: color-mix(in srgb, var(--accent-color) 75%, var(--text-secondary));
+}
+
 .ai-drawing-advanced {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 14px;
   padding: 10px 12px;
-  border: 1px dashed var(--border-light);
+  border: 1px dashed var(--border-color);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, var(--bg-primary));
   flex-shrink: 0;
 }
 
@@ -40258,88 +40323,145 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: var(--warning-color, #d29922);
 }
 
+/* 是否开启流：现代精致 Switch 切换胶囊设计，与工作台高度完美对齐 */
 .ai-drawing-param-stream {
-  gap: 5px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.ai-drawing-param-stream input[type="checkbox"] {
-  accent-color: var(--accent-color);
-  cursor: pointer;
-}
-
-.ai-drawing-param-stream input[type="checkbox"]:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* 参考图（图生图，最多 5 张） */
-.ai-drawing-refs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-self: flex-start;
-  flex-shrink: 0;
-}
-
-.ai-drawing-ref {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: 4px 6px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  flex-shrink: 0;
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
-}
-
-.ai-drawing-ref:hover {
-  border-color: var(--accent-color, #4f8cff);
-  background: var(--bg-hover);
-}
-
-/* 参考图编号角标（= 提示词中 {{Image N}} 的引用号） */
-.ai-drawing-ref-badge {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent-color, #4f8cff);
-  color: var(--text-on-accent, #fff);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  pointer-events: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-}
-
-/* 参考图变量引用提示行（{{Image N}} 注入提示词） */
-.ai-drawing-ref-hint {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  align-self: flex-start;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-  flex-shrink: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
-.ai-drawing-ref-hint code {
+.ai-drawing-param-stream:hover:not(.is-disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
+}
+
+.ai-drawing-param-stream.is-active {
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-tertiary));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 50%,
+    var(--border-color)
+  );
+  color: var(--text-primary);
+}
+
+.ai-drawing-param-stream.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-drawing-param-stream input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  margin: 0;
+}
+
+.ai-drawing-switch-pill {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-color) 80%, var(--bg-secondary));
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.ai-drawing-param-stream.is-active .ai-drawing-switch-pill {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.ai-drawing-switch-dot {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-drawing-param-stream.is-active .ai-drawing-switch-dot {
+  transform: translateX(12px);
+}
+
+/* 参考图缩略图条（画布区顶部常驻；图生图入口） */
+.ai-drawing-ref-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  /* 常驻画布顶部：画布滚动时缩略图条保持可见（不随生成结果滚走） */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 10px);
+  background: var(--bg-secondary);
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--bg-primary) 35%, transparent);
+}
+
+/* 条头：标题 + 计数 + 引用语法提示 + 上传入口 */
+.ai-drawing-ref-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-drawing-ref-strip-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.ai-drawing-ref-strip-count {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+
+.ai-drawing-ref-strip-affordance {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: auto;
+  color: var(--text-tertiary);
   font-family: var(
     --font-mono,
     ui-monospace,
@@ -40347,35 +40469,248 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
     Consolas,
     monospace
   );
-  background: var(--bg-hover);
-  border-radius: 4px;
-  padding: 0 4px;
+  font-size: 10.5px;
+  cursor: help;
 }
 
-.ai-drawing-ref-thumb {
-  width: 34px;
-  height: 34px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-light);
-}
-
-.ai-drawing-ref-remove {
+.ai-drawing-ref-strip-upload {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
+  gap: 5px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ai-drawing-ref-strip-upload:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 35%,
+    var(--border-color)
+  );
+}
+
+.ai-drawing-ref-strip-upload:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 缩略图轨道：横向滚动，卡片不换行不压缩 */
+.ai-drawing-ref-strip-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 4px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.ai-drawing-ref-card {
+  position: relative;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+
+.ai-drawing-ref-card:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 55%,
+    var(--border-color)
+  );
+  box-shadow: 0 2px 10px
+    color-mix(in srgb, var(--accent-color) 20%, transparent);
+  transform: translateY(-1px);
+}
+
+/* 缩略图本体按钮（点击 = 插入 {{Image N}} 引用） */
+.ai-drawing-ref-card-main {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
   background: transparent;
-  color: var(--text-tertiary);
   cursor: pointer;
 }
 
-.ai-drawing-ref-remove:hover {
+.ai-drawing-ref-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 编号角标 = 提示词 {{Image N}} 的引用号 */
+.ai-drawing-ref-card-badge {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+/* 卡片悬浮操作：放大 / 移除 */
+.ai-drawing-ref-card-actions {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  gap: 3px;
+  opacity: 0;
+  transition: opacity 0.14s;
+}
+
+.ai-drawing-ref-card:hover .ai-drawing-ref-card-actions,
+.ai-drawing-ref-card:focus-within .ai-drawing-ref-card-actions {
+  opacity: 1;
+}
+
+.ai-drawing-ref-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-primary) 84%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  backdrop-filter: blur(2px);
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.ai-drawing-ref-card-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.ai-drawing-ref-card-action-remove:hover {
+  background: color-mix(in srgb, var(--danger-color) 22%, transparent);
+  color: var(--danger-color);
+}
+
+/* 末位「添加」磁贴（虚线，与缩略图同尺寸） */
+.ai-drawing-ref-card-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    color 0.14s,
+    border-color 0.14s,
+    background 0.14s;
+}
+
+.ai-drawing-ref-card-add:hover:not(:disabled) {
+  color: var(--accent-color);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 55%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-tertiary));
+}
+
+.ai-drawing-ref-card-add:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 空态：虚线拖拽 / 上传引导框 */
+.ai-drawing-ref-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.ai-drawing-ref-dropzone:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 55%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 7%, var(--bg-tertiary));
+  color: var(--text-primary);
+}
+
+.ai-drawing-ref-dropzone-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+}
+
+.ai-drawing-ref-dropzone-title {
+  font-weight: 500;
+}
+
+/* 模型下拉的品牌图标行（trigger 与 option 共用；复用全局 ModelBrandIcon） */
+.ai-drawing-model-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-drawing-model-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 模型能力警告条（如当前模型不支持图生图） */
@@ -40580,7 +40915,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .ai-drawing-example-chip {
   max-width: 100%;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-tertiary);
@@ -40591,10 +40926,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition:
-    background 0.12s,
-    color 0.12s,
-    border-color 0.12s;
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-example-chip:hover {
@@ -40602,9 +40940,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: var(--text-primary);
   border-color: color-mix(
     in srgb,
-    var(--accent-color) 40%,
+    var(--accent-color) 45%,
     var(--border-color)
   );
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent-color) 15%, transparent);
 }
 
 /* `@` 唤起的参考图选择弹窗：贴住提示词输入框宽度，窄容器自动降列 */
@@ -40891,6 +41231,306 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
     box-shadow: 0 0 0 3px
       color-mix(in srgb, var(--accent-color) 18%, transparent);
   }
+}
+
+/* 宽高比控制（严格集中在 styles.css，杜绝内联 style） */
+.ai-drawing-ratio-1-1 {
+  aspect-ratio: 1 / 1;
+}
+.ai-drawing-ratio-16-9 {
+  aspect-ratio: 16 / 9;
+}
+.ai-drawing-ratio-9-16 {
+  aspect-ratio: 9 / 16;
+}
+.ai-drawing-ratio-4-3 {
+  aspect-ratio: 4 / 3;
+}
+.ai-drawing-ratio-3-4 {
+  aspect-ratio: 3 / 4;
+}
+.ai-drawing-ratio-3-2 {
+  aspect-ratio: 3 / 2;
+}
+.ai-drawing-ratio-2-3 {
+  aspect-ratio: 2 / 3;
+}
+.ai-drawing-ratio-21-9 {
+  aspect-ratio: 21 / 9;
+}
+.ai-drawing-ratio-2-1 {
+  aspect-ratio: 2 / 1;
+}
+.ai-drawing-ratio-1-2 {
+  aspect-ratio: 1 / 2;
+}
+.ai-drawing-ratio-5-4 {
+  aspect-ratio: 5 / 4;
+}
+.ai-drawing-ratio-4-5 {
+  aspect-ratio: 4 / 5;
+}
+
+/* 动态骨架卡片（先渲染卡片形状，再动态模拟渲染） */
+.ai-drawing-skeleton-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-color) 25%, var(--border-light));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-tertiary) 92%, var(--bg-secondary));
+  overflow: hidden;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-color) 6%, transparent);
+  animation: ai-drawing-skeleton-border-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes ai-drawing-skeleton-border-pulse {
+  0%,
+  100% {
+    border-color: color-mix(
+      in srgb,
+      var(--accent-color) 22%,
+      var(--border-light)
+    );
+    box-shadow: 0 2px 8px
+      color-mix(in srgb, var(--accent-color) 4%, transparent);
+  }
+  50% {
+    border-color: color-mix(
+      in srgb,
+      var(--accent-color) 55%,
+      var(--border-light)
+    );
+    box-shadow: 0 4px 18px
+      color-mix(in srgb, var(--accent-color) 16%, transparent);
+  }
+}
+
+/* 极光流光扫射光带（Shimmer Wave） */
+.ai-drawing-skeleton-shimmer {
+  position: absolute;
+  inset: -50%;
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    color-mix(in srgb, var(--accent-color) 10%, transparent) 42%,
+    color-mix(in srgb, var(--accent-color) 24%, transparent) 50%,
+    color-mix(in srgb, var(--accent-color) 10%, transparent) 58%,
+    transparent 75%
+  );
+  animation: ai-drawing-shimmer-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes ai-drawing-shimmer-sweep {
+  0% {
+    transform: translate(-100%, -100%) rotate(25deg);
+  }
+  100% {
+    transform: translate(100%, 100%) rotate(25deg);
+  }
+}
+
+/* 潜空间微细扫描线 */
+.ai-drawing-skeleton-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    color-mix(in srgb, var(--text-tertiary) 4%, transparent) 4px
+  );
+  pointer-events: none;
+  opacity: 0.65;
+  z-index: 1;
+}
+
+/* 潜空间凝聚中心波纹与微光 */
+.ai-drawing-skeleton-core {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.ai-drawing-skeleton-ring {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.ai-drawing-skeleton-ring-outer {
+  inset: 4px;
+  border: 1px dashed color-mix(in srgb, var(--accent-color) 32%, transparent);
+  animation: ai-drawing-ring-spin 9s linear infinite;
+}
+
+.ai-drawing-skeleton-ring-inner {
+  inset: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 45%, transparent);
+  animation: ai-drawing-ring-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes ai-drawing-ring-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ai-drawing-ring-pulse {
+  0%,
+  100% {
+    transform: scale(0.88);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.95;
+  }
+}
+
+.ai-drawing-skeleton-sparkle {
+  color: var(--accent-color);
+  animation: ai-drawing-sparkle-float 2.2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes ai-drawing-sparkle-float {
+  0%,
+  100% {
+    transform: scale(0.92);
+    filter: drop-shadow(
+      0 0 4px color-mix(in srgb, var(--accent-color) 40%, transparent)
+    );
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(
+      0 0 10px color-mix(in srgb, var(--accent-color) 75%, transparent)
+    );
+  }
+}
+
+/* 仿真阶段状态徽标与角标 */
+.ai-drawing-skeleton-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--accent-color) 25%, var(--border-light));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--bg-primary) 50%, transparent);
+}
+
+.ai-drawing-skeleton-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent-color);
+  box-shadow: 0 0 6px var(--accent-color);
+  animation: ai-drawing-dot-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes ai-drawing-dot-blink {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.ai-drawing-skeleton-bottom-glow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 38%;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--accent-color) 8%, transparent),
+    transparent
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 成品图片揭示入场动画（Progressive Reveal） */
+.ai-drawing-card-reveal {
+  animation: ai-drawing-card-reveal 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes ai-drawing-card-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+    filter: brightness(1.18) blur(5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1) blur(0);
+  }
+}
+
+/* 成品卡片左上角序号角标 */
+.ai-drawing-gallery-item-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-primary) 85%, transparent);
+  border: 1px solid var(--border-light);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  z-index: 2;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
+}
+
+.ai-drawing-gallery-item:hover .ai-drawing-gallery-item-badge {
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-light)
+  );
 }
 
 .ai-drawing-gallery-item img {

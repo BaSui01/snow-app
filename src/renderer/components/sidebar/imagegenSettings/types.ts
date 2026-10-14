@@ -13,14 +13,14 @@ export type ImageGenModelItem = {
   defaultSize?: string;
   /** 默认质量（如 "xhigh"） */
   defaultQuality?: string;
-  /** 默认思考强度（如 "high"） */
-  defaultThinking?: string;
   /** 该模型支持的比例列表（如 "1:1, 16:9, 9:16..."） */
   supportedRatios?: string;
   /** 该模型支持的分辨率列表（如 "1K, 2K, 4K"） */
   supportedResolutions?: string;
   /** 该模型支持的思考强度选项（如 "low, medium, high"） */
   supportedThinking?: string;
+  /** 该模型支持的画质/质量选项列表（如 "low, medium, high, xhigh, max"） */
+  supportedQualities?: string;
   /** 专属提示词说明/指引（注入给生图工具描述） */
   customPrompt?: string;
   /** 是否启用（可选，默认 true） */
@@ -49,14 +49,14 @@ export type ImageGenChannelValue = {
   webSearch: boolean;
   /** 默认流式预览（生成过程实时显示中间图），工具参数 stream 可覆盖。 */
   defaultStream: boolean;
-  /** 默认思考强度 / 推理深度（OpenAI: low/medium/high; Gemini: minimal/high; 留空 = auto）。 */
-  defaultThinking: string;
   /** 用户配置的模型支持的宽高比（例如 "1:1, 16:9, 9:16, 4:3, 3:4, 21:9" 等）。 */
   supportedRatios?: string;
   /** 用户配置的模型支持的分辨率档位（例如 "1K, 2K, 4K" 或 "1024x1024, 1792x1024" 等）。 */
   supportedResolutions?: string;
   /** 用户配置的模型支持的思考强度选项（例如 "low, medium, high" 或 "minimal, high" 等）。 */
   supportedThinking?: string;
+  /** 用户配置的模型支持的画质选项（例如 "low, medium, high, xhigh, max" 等）。 */
+  supportedQualities?: string;
   /** 用户自定义的渠道/模型能力说明与提示词模板（动态注入到 imagegen-generate 工具提示词中）。 */
   customPrompt?: string;
   /** 渠道内配置的多个绘图模型列表（每个模型有独立的尺寸/画质/思考强度/提示词配置）。 */
@@ -72,10 +72,10 @@ export type ImageGenTemplate = {
   model: string;
   defaultSize?: string;
   defaultQuality?: string;
-  defaultThinking?: string;
   supportedRatios?: string;
   supportedResolutions?: string;
   supportedThinking?: string;
+  supportedQualities?: string;
   customPrompt?: string;
   outputFormat?: string;
   webSearch?: boolean;

@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, Loader2, Settings, Undo2, X } from "lucide-react";
+import { ChevronDown, Loader2, Settings, Undo2, X } from "lucide-react";
 import { PromptContextReview } from "./PromptContextReview";
 import {
   useCallback,
@@ -50,10 +50,6 @@ const LABELS = {
     openConfiguration: "Open configuration",
     more: "More actions",
     undo: "Undo",
-    apply: "Apply",
-    preview: "Preview",
-    copy: "Copy",
-    copied: "Copied",
     confirm: "Confirm",
     close: "Close",
     failed: "Action failed",
@@ -64,10 +60,6 @@ const LABELS = {
     openConfiguration: "打开配置",
     more: "更多操作",
     undo: "还原",
-    apply: "应用",
-    preview: "预览",
-    copy: "复制",
-    copied: "已复制",
     confirm: "确认",
     close: "关闭",
     failed: "操作失败",
@@ -78,10 +70,6 @@ const LABELS = {
     openConfiguration: "開啟設定",
     more: "更多操作",
     undo: "還原",
-    apply: "套用",
-    preview: "預覽",
-    copy: "複製",
-    copied: "已複製",
     confirm: "確認",
     close: "關閉",
     failed: "操作失敗",
@@ -707,10 +695,10 @@ export const ChatInputPluginAction = ({
       false,
     );
   };
-  const useResult = (kind: "apply" | "undo"): void => {
+  const restoreDraft = (): void => {
     const task = sessionKey ? getSessionActionTask(sessionKey) : undefined;
     const activeResult = result ?? task?.result ?? null;
-    const operation = activeResult?.[kind];
+    const operation = activeResult?.undo;
     if (!operation || busyRef.current) return;
     let run = runRef.current;
     if (!run) {
@@ -724,41 +712,15 @@ export const ChatInputPluginAction = ({
     }
     void perform(run, async () => {
       check(run);
-      if (kind === "apply")
-        return await (
-          operation as NonNullable<PluginChatInputActionResult["apply"]>
-        )();
-      await (operation as NonNullable<PluginChatInputActionResult["undo"]>)();
+      await operation();
+      // A successful restore drops the single-use result entirely: the menu
+      // entry disappears and the toolbar stays silent (no status text).
       if (sessionKey) {
         setSessionActionTask(sessionKey, { result: null, status: "" });
       }
-      return {
-        message: labels.undo,
-        preview: activeResult?.preview,
-        details: activeResult?.details,
-      };
+      return null;
     });
   };
-  const copyPreview = async (): Promise<void> => {
-    const preview = result?.preview;
-    if (typeof preview !== "string") return;
-    const capturedIdentity = identityRef.current;
-    const capturedContext = getPluginDraftContextRevision();
-    const capturedRun = runRef.current;
-    const stillCurrent = (): boolean =>
-      mountedRef.current &&
-      identityRef.current.plugin === capturedIdentity.plugin &&
-      identityRef.current.parametersKey === capturedIdentity.parametersKey &&
-      getPluginDraftContextRevision() === capturedContext &&
-      runRef.current === capturedRun;
-    try {
-      await navigator.clipboard.writeText(preview);
-      if (stillCurrent()) setStatus(labels.copied);
-    } catch {
-      if (stillCurrent()) setStatus(labels.failed);
-    }
-  };
-
   const chooseMenuItem = (operation: () => void, executes = false): void => {
     if (
       !menuIsCurrent() ||
@@ -772,6 +734,10 @@ export const ChatInputPluginAction = ({
     operation();
   };
   const menuOpen = menuIsCurrent();
+  // The previous diff/preview popovers crowded the input toolbar, so only the
+  // dropdown keeps those affordances: restore appears here as a menu item and
+  // runs the plugin's undo closure directly.
+  const restoreAvailable = !busy && !!result?.undo;
   const menuItems: ContextMenuItem[] = [
     {
       id: "host:default",
@@ -788,11 +754,22 @@ export const ChatInputPluginAction = ({
       disabled: busy || disabled,
       onClick: () => chooseMenuItem(() => start(item.id, true), true),
     })),
+    ...(restoreAvailable
+      ? [
+          {
+            id: "host:restore",
+            label: labels.undo,
+            icon: <Undo2 size={14} />,
+            separator: true,
+            onClick: () => chooseMenuItem(restoreDraft, true),
+          } satisfies ContextMenuItem,
+        ]
+      : []),
     {
       id: "host:configure",
       label: labels.openConfiguration,
       icon: <Settings size={14} />,
-      separator: true,
+      separator: !restoreAvailable,
       onClick: () => chooseMenuItem(openConfiguration),
     },
   ];
@@ -911,7 +888,7 @@ export const ChatInputPluginAction = ({
           {status}
         </span>
       )}
-      {!busy && result && (result.details || result.sourceSelection) && (
+      {!busy && result?.sourceSelection && (
         <PromptContextReview
           result={result}
           locale={locale}
@@ -927,82 +904,6 @@ export const ChatInputPluginAction = ({
               });
           }}
         />
-      )}
-      {!busy && result?.undo && (
-        <button
-          className="toolbar-btn"
-          type="button"
-          disabled={busy || disabled}
-          onClick={() => useResult("undo")}
-          title={labels.undo}
-          style={{ whiteSpace: "nowrap", flex: "0 0 auto" }}
-        >
-          <Undo2 size={14} />
-          {labels.undo}
-        </button>
-      )}
-      {!busy && typeof result?.preview === "string" && (
-        <details>
-          <summary style={{ cursor: "pointer", fontSize: 12 }}>
-            {labels.preview}
-          </summary>
-          <div
-            style={{
-              position: "absolute",
-              bottom: "100%",
-              right: 0,
-              width: "min(420px, 80vw)",
-              padding: 12,
-              border: "1px solid currentColor",
-              borderRadius: 8,
-              background: "var(--bg-secondary, Canvas)",
-              color: "var(--text-primary, CanvasText)",
-              zIndex: 30,
-            }}
-          >
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                overflowWrap: "anywhere",
-                maxHeight: 260,
-                overflow: "auto",
-                fontFamily: "inherit",
-              }}
-            >
-              {result.preview}
-            </pre>
-            <button
-              className="toolbar-btn"
-              type="button"
-              onClick={() => {
-                void copyPreview();
-              }}
-            >
-              <Copy size={14} />
-              {labels.copy}
-            </button>
-            {result.apply && (
-              <button
-                className="toolbar-btn"
-                type="button"
-                disabled={busy || disabled}
-                onClick={() => useResult("apply")}
-              >
-                {labels.apply}
-              </button>
-            )}
-          </div>
-        </details>
-      )}
-      {!busy && result?.apply && result.preview === undefined && (
-        <button
-          className="toolbar-btn"
-          type="button"
-          disabled={busy || disabled}
-          onClick={() => useResult("apply")}
-        >
-          {labels.apply}
-        </button>
       )}
       <Modal
         open={confirmation !== null}

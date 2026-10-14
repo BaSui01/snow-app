@@ -56,10 +56,10 @@ export const readModelItem = (source: unknown): ImageGenModelItem => {
     name: toText(source.name, ""),
     defaultSize: toText(source.defaultSize, ""),
     defaultQuality: toText(source.defaultQuality, ""),
-    defaultThinking: toText(source.defaultThinking, ""),
     supportedRatios: toText(source.supportedRatios, ""),
     supportedResolutions: toText(source.supportedResolutions, ""),
     supportedThinking: toText(source.supportedThinking, ""),
+    supportedQualities: toText(source.supportedQualities, ""),
     customPrompt: toText(source.customPrompt, ""),
     enabled: source.enabled !== false,
   };
@@ -104,10 +104,6 @@ const readChannel = (source: unknown): ImageGenChannelValue => {
       source.defaultStream,
       DEFAULT_IMAGE_GEN_CHANNEL.defaultStream,
     ),
-    defaultThinking: toText(
-      source.defaultThinking,
-      DEFAULT_IMAGE_GEN_CHANNEL.defaultThinking,
-    ),
     supportedRatios: toText(
       source.supportedRatios,
       DEFAULT_IMAGE_GEN_CHANNEL.supportedRatios ?? "",
@@ -119,6 +115,10 @@ const readChannel = (source: unknown): ImageGenChannelValue => {
     supportedThinking: toText(
       source.supportedThinking,
       DEFAULT_IMAGE_GEN_CHANNEL.supportedThinking ?? "",
+    ),
+    supportedQualities: toText(
+      source.supportedQualities,
+      DEFAULT_IMAGE_GEN_CHANNEL.supportedQualities ?? "",
     ),
     customPrompt: toText(
       source.customPrompt,
@@ -253,10 +253,10 @@ export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
       outputFormat: channel.outputFormat.trim(),
       webSearch: channel.webSearch,
       defaultStream: channel.defaultStream,
-      defaultThinking: (channel.defaultThinking ?? "").trim(),
       supportedRatios: (channel.supportedRatios ?? "").trim(),
       supportedResolutions: (channel.supportedResolutions ?? "").trim(),
       supportedThinking: (channel.supportedThinking ?? "").trim(),
+      supportedQualities: (channel.supportedQualities ?? "").trim(),
       customPrompt: (channel.customPrompt ?? "").trim(),
       models:
         channel.models && channel.models.length > 0
@@ -268,10 +268,10 @@ export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
                 name: (m.name ?? "").trim(),
                 defaultSize: (m.defaultSize ?? "").trim(),
                 defaultQuality: (m.defaultQuality ?? "").trim(),
-                defaultThinking: (m.defaultThinking ?? "").trim(),
                 supportedRatios: (m.supportedRatios ?? "").trim(),
                 supportedResolutions: (m.supportedResolutions ?? "").trim(),
                 supportedThinking: (m.supportedThinking ?? "").trim(),
+                supportedQualities: (m.supportedQualities ?? "").trim(),
                 customPrompt: (m.customPrompt ?? "").trim(),
                 enabled: m.enabled !== false,
               }))

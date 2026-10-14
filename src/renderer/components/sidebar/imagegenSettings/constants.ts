@@ -24,7 +24,6 @@ export const DEFAULT_IMAGE_GEN_CHANNEL: ImageGenChannelValue = {
   outputFormat: "",
   webSearch: false,
   defaultStream: false,
-  defaultThinking: "",
   supportedRatios: "",
   supportedResolutions: "",
   supportedThinking: "",
@@ -98,7 +97,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-nano-banana-2.1",
     defaultSize: "16:9@2K",
-    defaultThinking: "medium",
     supportedRatios:
       "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
@@ -118,12 +116,12 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "gpt-image-2.5-flare",
     defaultSize: "1792x1008",
     defaultQuality: "high",
-    defaultThinking: "",
     // gpt-image-2 系尺寸/比例空间开放（任意 16 倍数、两边 ≤3840px、比例 1:3~3:1）
     // → supported_* 留空 = 未声明 = 放行；声明不完整会被 Rust 精确白名单误拦。
     supportedRatios: "",
     supportedResolutions: "",
     supportedThinking: "",
+    supportedQualities: "low, medium, high, xhigh, max",
     customPrompt:
       "OpenAI 高性价比生图模型。支持 1K/2K/4K 比例尺寸（最大 3840px，16倍数，比例 1:3~3:1，可传任意 WIDTHxHEIGHT）；画质支持 low/medium/high/xhigh/max；支持参考图多模态图生图。",
     outputFormat: "png",
@@ -138,10 +136,10 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "gpt-image-2.5-sunburst",
     defaultSize: "2560x1440",
     defaultQuality: "xhigh",
-    defaultThinking: "",
     supportedRatios: "",
     supportedResolutions: "",
     supportedThinking: "",
+    supportedQualities: "low, medium, high, xhigh, max",
     customPrompt:
       "OpenAI 旗舰画质生图模型。具备复杂指令遵循与高保真编辑能力；画质支持 xhigh 与 max 顶级档位；支持 1K/2K/4K 各比例尺寸（最大 3840px，比例 1:3~3:1）。",
     outputFormat: "png",
@@ -156,10 +154,10 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "gpt-image-2",
     defaultSize: "1792x1008",
     defaultQuality: "high",
-    defaultThinking: "",
     supportedRatios: "",
     supportedResolutions: "",
     supportedThinking: "",
+    supportedQualities: "low, medium, high",
     customPrompt:
       "经典 GPT 多模态生图模型。支持 1K/2K/4K 各比例尺寸（最大 3840px，16 倍数，比例 1:3~3:1）；支持参考图多模态图生图；注意 transparent 背景仅 gpt-image-1 支持。",
     outputFormat: "png",
@@ -174,10 +172,10 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "dall-e-3",
     defaultSize: "1024x1024",
     defaultQuality: "standard",
-    defaultThinking: "",
     supportedRatios: "1:1, 16:9, 9:16",
     supportedResolutions: "1024x1024, 1792x1024, 1024x1792",
     supportedThinking: "",
+    supportedQualities: "standard, hd",
     customPrompt:
       "经典文本生图模型（纯文生图，不支持参考图输入）。固定支持 1024x1024 (1:1)、1792x1024 (16:9 横屏)、1024x1792 (9:16 竖屏)；质量仅 standard 与 hd。",
     outputFormat: "png",
@@ -191,9 +189,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-3.1-flash-image",
     defaultSize: "16:9@2K",
-    // Nano Banana 2（Gemini 3.1 Flash Image）官方只有 minimal / high 两档，
-    // medium 是 2.1 新增 —— 此处不可声明，否则上游 400。
-    defaultThinking: "minimal",
     supportedRatios:
       "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9, 1:4, 1:8, 4:1, 8:1",
     supportedResolutions: "512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)",
@@ -211,7 +206,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-3-pro-image",
     defaultSize: "16:9@2K",
-    defaultThinking: "high",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9",
     supportedResolutions: "1K, 2K, 4K (支持 16:9@2K 组合语法)",
     supportedThinking: "minimal, high",
@@ -228,7 +222,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     model: "gemini-2.5-flash-image",
     defaultSize: "16:9",
-    defaultThinking: "minimal",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9",
     supportedResolutions: "1K",
     supportedThinking: "minimal, high",
@@ -246,7 +239,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "grok-imagine-image-2.0",
     defaultSize: "16:9@2k",
     defaultQuality: "medium",
-    defaultThinking: "",
     // ⚠️ xAI 官方比例清单无法完全核实（第三方文档口径 13~14 种不一致），
     // 而 supported_* 一经声明即被 Rust 侧当作精确白名单**拦截**越界值 →
     // 声明不完整会误拦合法比例，故留空（未声明 = 放行）。
@@ -254,6 +246,7 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     supportedRatios: "",
     supportedResolutions: "1k, 2k",
     supportedThinking: "",
+    supportedQualities: "low, medium",
     customPrompt:
       "xAI 官方 Grok 生图模型（OpenAI 兼容端点）。尺寸采用 aspect_ratio 宽高比 + resolution 分辨率（1k/2k）；质量支持 low 与 medium。",
     outputFormat: "",
@@ -268,7 +261,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "qwen-image-2.1",
     defaultSize: "1024x1024",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9",
     supportedResolutions:
       "1024x1024 (1:1), 1280x720 / 1920x1080 (16:9), 720x1280 / 1080x1920 (9:16), 1280x960 (4:3), 960x1280 (3:4), 2048x2048 (原生2K)",
@@ -288,7 +280,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "wanx2.1-t2i-plus",
     defaultSize: "1024x1024",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4",
     supportedResolutions: "1024x1024, 1280x720, 720x1280, 1280x960, 960x1280",
     supportedThinking: "",
@@ -305,7 +296,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "niji-6",
     defaultSize: "1024x1536",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "1:1, 2:3, 3:2, 9:16, 16:9, 4:3, 3:4, 21:9",
     supportedResolutions:
       "1024x1024 (1:1), 1024x1536 (2:3 立绘), 1536x1024 (3:2 插画), 1080x1920 (9:16 壁纸), 1920x1080 (16:9 壁纸)",
@@ -324,7 +314,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "nai-diffusion-4-full",
     defaultSize: "832x1216",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "2:3, 3:2, 1:1, 9:16, 16:9",
     supportedResolutions:
       "832x1216 (标准立绘), 1216x832 (横向插画), 1024x1024 (方形头像), 1024x1536 (高清立绘)",
@@ -343,7 +332,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "animagine-xl-3.1",
     defaultSize: "832x1216",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "2:3, 3:2, 3:4, 4:3, 1:1, 9:16, 16:9",
     supportedResolutions:
       "832x1216 (9:16/立绘), 1216x832 (16:9/横屏), 896x1152 (3:4), 1152x896 (4:3), 1024x1024 (1:1)",
@@ -361,7 +349,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "flux-1.1-pro",
     defaultSize: "1536x1024",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9",
     supportedResolutions:
       "1024x1024, 1536x1024 (3:2), 1024x1536 (2:3), 1792x1008 (16:9), 2048x2048 (4MP 超清)",
@@ -381,7 +368,6 @@ export const IMAGE_GEN_TEMPLATES: ImageGenTemplate[] = [
     model: "cogview-3-plus",
     defaultSize: "1024x1024",
     defaultQuality: "",
-    defaultThinking: "",
     supportedRatios: "1:1, 16:9, 9:16, 4:3, 3:4, 21:9",
     supportedResolutions:
       "1024x1024, 768x1344 (9:16), 1344x768 (16:9), 864x1152 (3:4), 1152x864 (4:3), 1440x720 (2:1)",

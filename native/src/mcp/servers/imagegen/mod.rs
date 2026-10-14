@@ -102,8 +102,6 @@ pub struct ImageGenModelItem {
     #[serde(default)]
     pub default_quality: String,
     #[serde(default)]
-    pub default_thinking: String,
-    #[serde(default)]
     pub supported_ratios: String,
     #[serde(default)]
     pub supported_resolutions: String,
@@ -164,9 +162,6 @@ struct ImageGenChannel {
     web_search: bool,
     /// 默认流式预览（partial image 实时推送到会话页），工具参数 stream 可覆盖
     default_stream: bool,
-    /// 默认思考强度（Gemini: minimal/high；OpenAI: low/medium/high），留空 = auto/默认
-    #[serde(default)]
-    default_thinking: String,
     /// 用户配置的模型支持的宽高比（逗号分隔，如 "1:1, 16:9, 9:16, 4:3, 3:4, 21:9"）
     #[serde(default)]
     supported_ratios: String,
@@ -224,7 +219,6 @@ impl ImageGenChannel {
                 name: self.name.clone(),
                 default_size: self.default_size.clone(),
                 default_quality: self.default_quality.clone(),
-                default_thinking: self.default_thinking.clone(),
                 supported_ratios: self.supported_ratios.clone(),
                 supported_resolutions: self.supported_resolutions.clone(),
                 supported_thinking: self.supported_thinking.clone(),
@@ -568,7 +562,6 @@ impl ImageGenService {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string)
-                .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_thinking)))
                 // 发送前按模型声明的 supported_thinking 校验：已声明但不在列表内
                 // 则不下发（上游会 400）；未声明 = 放行合法取值。
                 .and_then(|value| sanitize_thinking_level(Some(&value), &supported_thinking))
@@ -1727,16 +1720,8 @@ fn format_model_item_capabilities(item: &ImageGenModelItem) -> Vec<String> {
         lines.push(format!("  default quality: {quality}"));
     }
     let thinking = item.supported_thinking.trim();
-    let default_thinking = item.default_thinking.trim();
     if !thinking.is_empty() {
-        let def = if default_thinking.is_empty() {
-            String::new()
-        } else {
-            format!(" (default: {default_thinking})")
-        };
-        lines.push(format!("  thinking: {thinking}{def}"));
-    } else if !default_thinking.is_empty() {
-        lines.push(format!("  thinking: default {default_thinking}"));
+        lines.push(format!("  thinking: {thinking}"));
     }
     let ratios = item.supported_ratios.trim();
     let resolutions = item.supported_resolutions.trim();
@@ -1787,9 +1772,6 @@ fn channel_model_summaries(channel: &ImageGenChannel) -> Vec<String> {
             }
             if !item.default_quality.trim().is_empty() {
                 traits.push(format!("quality={}", item.default_quality.trim()));
-            }
-            if !item.default_thinking.trim().is_empty() {
-                traits.push(format!("thinking={}", item.default_thinking.trim()));
             }
             if !traits.is_empty() {
                 line.push_str(&format!(" [{}]", traits.join(", ")));
@@ -1872,19 +1854,9 @@ fn format_channel_capabilities(
     let thinking = model_item
         .map(|item| item.supported_thinking.trim())
         .unwrap_or("");
-    let default_thinking = model_item
-        .map(|item| item.default_thinking.trim())
-        .unwrap_or("");
     if channel.provider == "gemini" {
         if !thinking.is_empty() {
-            let def = if default_thinking.is_empty() {
-                "".to_string()
-            } else {
-                format!(" (configured default: {default_thinking})")
-            };
-            lines.push(format!("Supported thinking_level: {thinking}{def}"));
-        } else if !default_thinking.is_empty() {
-            lines.push(format!("Configured default thinking_level: {default_thinking}"));
+            lines.push(format!("Supported thinking_level: {thinking}"));
         } else {
             lines.push("Thinking level (parameter: thinking_level in generation_config): minimal (fast), medium (balanced), high (deep thinking)".to_string());
         }
@@ -1939,16 +1911,6 @@ pub fn default_channel_context() -> napi::Result<Option<String>> {
         .unwrap_or("");
     if !default_quality.is_empty() {
         parts.push(format!("Default quality: {default_quality}"));
-    }
-    // 思考强度仅 Gemini 图像模型有官方请求参数（thinking_level），
-    // OpenAI Images API 无此字段 → 仅 Gemini 渠道注入默认值。
-    if channel.provider == "gemini" {
-        let default_thinking = primary_item_ref
-            .map(|item| item.default_thinking.trim())
-            .unwrap_or("");
-        if !default_thinking.is_empty() {
-            parts.push(format!("Default thinking: {default_thinking}"));
-        }
     }
 
     parts.push("Model capabilities & dynamic parameters:".to_string());
@@ -2163,9 +2125,6 @@ fn available_channels_summary(settings: &ImageGenSettings) -> String {
                 channel.provider,
                 channel.primary_model()
             );
-            if !channel.default_thinking.trim().is_empty() {
-                summary.push_str(&format!(" [thinking={}]", channel.default_thinking.trim()));
-            }
             // 多模型渠道：把子模型 ID 一并列出，Agent 才能用 model 参数指定它们。
             let items = channel.get_model_items();
             if items.len() > 1 {

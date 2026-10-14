@@ -2002,9 +2002,6 @@ export const en = {
     "Applying this template will REPLACE all models currently configured in this channel. Continue?",
   "settings.imagegenTemplateSelect":
     "Select a template to auto-fill settings...",
-  "settings.imagegenDefaultThinking": "Default thinking strength",
-  "settings.imagegenDefaultThinkingHint":
-    "Written to generation_config.thinking_level; supported levels differ per model (no such parameter on OpenAI image endpoints)",
   "settings.imagegenThinkingAuto": "Auto",
   "settings.imagegenThinkingMinimal": "Minimal",
   "settings.imagegenThinkingLow": "Low",
@@ -2032,6 +2029,9 @@ export const en = {
   "settings.imagegenSupportedThinking": "Supported thinking strength",
   "settings.imagegenSupportedThinkingHint":
     "thinking_level values supported by this model (e.g. minimal, medium, high)",
+  "settings.imagegenSupportedQualities": "Supported qualities",
+  "settings.imagegenSupportedQualitiesHint":
+    "Qualities available for this model (comma-separated, e.g. low, medium, high, xhigh, max)",
   "settings.imagegenCustomPrompt": "Channel prompt instructions",
   "settings.imagegenCustomPromptPlaceholder":
     "Custom instructions and capability notes injected into imagegen-generate tool description...",
@@ -4460,6 +4460,10 @@ export const en = {
   "chat.streamMetrics.tokensTitle": "Cumulative output tokens",
   "chat.streamMetrics.tpsTitle": "Output speed (tokens per second)",
   "chat.retrying": "Retrying",
+  "chat.retryWaiting": "Waiting to retry",
+  "chat.retryAwaitingResponse": "Awaiting response",
+  "chat.retryAwaitingResponseHint":
+    "Retry in progress, waiting for the upstream response",
   "chat.retryExhausted": "Retries exhausted",
   "chat.retryCountdown": "in {{seconds}}s",
   "chat.retryCountdownHint": "Waiting before the next attempt",
@@ -5109,9 +5113,7 @@ export const en = {
   "rightPanel.aiDrawing.model": "Model",
   "rightPanel.aiDrawing.modelPlaceholder": "Channel default model",
   "rightPanel.aiDrawing.modelHint":
-    "Model list is aggregated from the model APIs of configured channels; selecting a model automatically matches its provider",
-  "rightPanel.aiDrawing.modelsLoading": "Loading models…",
-  "rightPanel.aiDrawing.modelsLoadFailed": "Failed to load model list",
+    "Model list comes from enabled channels configured in API Settings → Image models; the same model across channels coexists, and selecting an entry locks its channel",
   "rightPanel.aiDrawing.ratio": "Aspect ratio",
   "rightPanel.aiDrawing.tier": "Size",
   "rightPanel.aiDrawing.sizeControlHint":
@@ -5142,6 +5144,7 @@ export const en = {
   "rightPanel.aiDrawing.thinkingLevel": "Thinking level",
   "rightPanel.aiDrawing.thinkingDefault": "Default",
   "rightPanel.aiDrawing.thinkingMinimal": "Minimal (fast)",
+  "rightPanel.aiDrawing.thinkingMedium": "Medium (balanced)",
   "rightPanel.aiDrawing.thinkingHigh": "High (more detailed)",
   "rightPanel.aiDrawing.personGeneration": "Person generation",
   "rightPanel.aiDrawing.personDefault": "Default",
@@ -5154,11 +5157,18 @@ export const en = {
   "rightPanel.aiDrawing.seedPlaceholder": "Leave empty for random",
   "rightPanel.aiDrawing.seedHint": "The same seed reproduces similar results",
   "rightPanel.aiDrawing.count": "Count",
-  "rightPanel.aiDrawing.stream": "Stream preview",
+  "rightPanel.aiDrawing.countRandom": "Random (1-8)",
+  "rightPanel.aiDrawing.randomCountHint": "Randomize count (1-8)",
+  "rightPanel.aiDrawing.simulatingPhase1": "Latent sampling",
+  "rightPanel.aiDrawing.simulatingPhase2": "Synthesizing",
+  "rightPanel.aiDrawing.simulatingPhase3": "Refining details",
+  "rightPanel.aiDrawing.stream": "Enable stream",
   "rightPanel.aiDrawing.qualityAuto": "Auto",
   "rightPanel.aiDrawing.qualityLow": "Low",
   "rightPanel.aiDrawing.qualityMedium": "Medium",
   "rightPanel.aiDrawing.qualityHigh": "High",
+  "rightPanel.aiDrawing.qualityXhigh": "Ultra High",
+  "rightPanel.aiDrawing.qualityMax": "Max",
   "rightPanel.aiDrawing.qualityDefault": "Default",
   "rightPanel.aiDrawing.qualityStandard": "Standard",
   "rightPanel.aiDrawing.qualityHd": "HD",
@@ -5243,7 +5253,6 @@ export const en = {
     "Stream preview is not supported when count is greater than 1",
   "rightPanel.aiDrawing.streamOffRef":
     "Stream preview is not supported for image-to-image",
-  "rightPanel.aiDrawing.retryModels": "Retry model list",
   "rightPanel.aiDrawing.examplesTitle": "Try these",
   "rightPanel.aiDrawing.example1":
     "Cyberpunk rainy city at night, neon reflections, cinematic composition",

@@ -29276,6 +29276,30 @@ body.is-panel-resizing * {
   cursor: default;
 }
 
+.oauth-quota-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+}
+
+.oauth-quota-chevron {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.oauth-quota-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.oauth-quota-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* 表单内的配额面板：卡片样式，去掉下拉菜单中的分隔线与外边距 */
 .api-settings-form-body > .oauth-quota {
   margin-top: 0;

@@ -816,6 +816,8 @@ export const en = {
   "chat.model": "Model",
   "chat.oauthQuota.title": "Subscription quota",
   "chat.oauthQuota.refresh": "Check quota",
+  "chat.oauthQuota.expand": "Expand quota",
+  "chat.oauthQuota.collapse": "Collapse quota",
   "chat.oauthQuota.empty": "No quota data available",
   "chat.oauthQuota.failed": "Quota check failed: {{value}}",
   "chat.oauthQuota.remaining": "{{value}}% left",

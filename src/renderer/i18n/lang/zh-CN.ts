@@ -769,6 +769,8 @@ export const zhCN = {
   "chat.model": "模型",
   "chat.oauthQuota.title": "订阅配额",
   "chat.oauthQuota.refresh": "查询配额",
+  "chat.oauthQuota.expand": "展开配额",
+  "chat.oauthQuota.collapse": "收起配额",
   "chat.oauthQuota.empty": "暂无配额数据",
   "chat.oauthQuota.failed": "配额查询失败：{{value}}",
   "chat.oauthQuota.remaining": "剩余 {{value}}%",

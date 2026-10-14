@@ -770,6 +770,8 @@ export const zhTW = {
   "chat.model": "模型",
   "chat.oauthQuota.title": "訂閱配額",
   "chat.oauthQuota.refresh": "查詢配額",
+  "chat.oauthQuota.expand": "展開配額",
+  "chat.oauthQuota.collapse": "收起配額",
   "chat.oauthQuota.empty": "暫無配額資料",
   "chat.oauthQuota.failed": "配額查詢失敗：{{value}}",
   "chat.oauthQuota.remaining": "剩餘 {{value}}%",

@@ -1,5 +1,5 @@
-import { AlertCircle, ChartPie, RefreshCw } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { AlertCircle, ChartPie, ChevronDown, RefreshCw } from "lucide-react";
+import { useState, useSyncExternalStore } from "react";
 import type {
   ApiConfigRecord,
   OAuthQuotaBucket,
@@ -16,6 +16,7 @@ type QuotaState = {
 };
 
 const OAUTH_SOURCE_PREFIX = "oauth-";
+const EXPANDED_STORAGE_KEY = "snow:oauth-quota-expanded";
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
   plus: "Plus",
@@ -54,6 +55,23 @@ const patchQuotaState = (
 ): void => {
   quotaStates.set(profileName, { ...getQuotaState(profileName), ...patch });
   quotaListeners.forEach((listener) => listener());
+};
+
+/** 展开状态持久化；未存储过视为展开。 */
+const readExpanded = (): boolean => {
+  try {
+    return localStorage.getItem(EXPANDED_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+};
+
+const writeExpanded = (expanded: boolean): void => {
+  try {
+    localStorage.setItem(EXPANDED_STORAGE_KEY, String(expanded));
+  } catch {
+    // ignore storage errors
+  }
 };
 
 const toErrorMessage = (cause: unknown): string =>
@@ -155,6 +173,20 @@ export const OAuthQuotaPanel = ({
     subscribeQuota,
     () => getQuotaState(profileName),
   );
+  const [expanded, setExpanded] = useState<boolean>(readExpanded);
+
+  const applyExpanded = (next: boolean): void => {
+    setExpanded(next);
+    writeExpanded(next);
+  };
+
+  /** 查询即展开，便于看到结果。 */
+  const handleRefresh = (): void => {
+    if (!expanded) {
+      applyExpanded(true);
+    }
+    void refreshQuota(profileName);
+  };
 
   if (!config || !isOAuthApiConfig(config)) {
     return null;
@@ -167,12 +199,30 @@ export const OAuthQuotaPanel = ({
   return (
     <div className="oauth-quota">
       <div className="oauth-quota-header">
-        <ChartPie size={14} />
-        <span className="oauth-quota-title">{t("chat.oauthQuota.title")}</span>
-        {planLabel && <span className="oauth-quota-plan">{planLabel}</span>}
+        <button
+          className="oauth-quota-toggle"
+          onClick={() => applyExpanded(!expanded)}
+          aria-expanded={expanded}
+          title={
+            expanded
+              ? t("chat.oauthQuota.collapse")
+              : t("chat.oauthQuota.expand")
+          }
+          type="button"
+        >
+          <ChevronDown
+            size={14}
+            className={`oauth-quota-chevron${expanded ? "" : " is-collapsed"}`}
+          />
+          <ChartPie size={14} />
+          <span className="oauth-quota-title">
+            {t("chat.oauthQuota.title")}
+          </span>
+          {planLabel && <span className="oauth-quota-plan">{planLabel}</span>}
+        </button>
         <button
           className="model-dropdown-action oauth-quota-refresh"
-          onClick={() => void refreshQuota(profileName)}
+          onClick={handleRefresh}
           disabled={loading}
           title={t("chat.oauthQuota.refresh")}
           type="button"
@@ -181,74 +231,83 @@ export const OAuthQuotaPanel = ({
           <span>{t("chat.oauthQuota.refresh")}</span>
         </button>
       </div>
-      {error && (
-        <div className="oauth-quota-error" role="alert">
-          <AlertCircle size={13} />
-          <span>
-            {t("chat.oauthQuota.failed", { values: { value: error } })}
-          </span>
-        </div>
-      )}
-      {snapshot && groups.length === 0 && (
-        <div className="oauth-quota-status">{t("chat.oauthQuota.empty")}</div>
-      )}
-      {groups.map((group) => (
-        <div key={group.id} className="oauth-quota-group">
-          <div className="oauth-quota-group-label">
-            {group.id === "code_review"
-              ? t("chat.oauthQuota.group.codeReview")
-              : group.label}
-          </div>
-          {group.buckets.map((bucket, index) => {
-            const label = bucketLabel(bucket, t);
-            const remaining =
-              typeof bucket.remainingPercent === "number"
-                ? bucket.remainingPercent
-                : null;
-            return (
-              <div key={`${bucket.key}-${index}`} className="oauth-quota-row">
-                <div className="oauth-quota-row-head">
-                  <span className="oauth-quota-row-label">{label}</span>
-                  <span className="oauth-quota-row-value">
-                    {remaining === null
-                      ? "--"
-                      : t("chat.oauthQuota.remaining", {
-                          values: { value: Math.round(remaining) },
-                        })}
-                  </span>
-                </div>
-                <div
-                  className="oauth-quota-bar"
-                  role="progressbar"
-                  aria-label={label}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={remaining ?? undefined}
-                >
-                  <div
-                    className={`oauth-quota-bar-fill ${barTone(remaining)}`}
-                    style={{ width: `${remaining ?? 0}%` }}
-                  />
-                </div>
-                {typeof bucket.resetAtMs === "number" && (
-                  <div className="oauth-quota-row-reset">
-                    {t("chat.oauthQuota.resetAt", {
-                      values: {
-                        value: formatDateTime(bucket.resetAtMs, locale),
-                      },
-                    })}
-                  </div>
-                )}
+      {expanded && (
+        <div className="oauth-quota-body">
+          {error && (
+            <div className="oauth-quota-error" role="alert">
+              <AlertCircle size={13} />
+              <span>
+                {t("chat.oauthQuota.failed", { values: { value: error } })}
+              </span>
+            </div>
+          )}
+          {snapshot && groups.length === 0 && (
+            <div className="oauth-quota-status">
+              {t("chat.oauthQuota.empty")}
+            </div>
+          )}
+          {groups.map((group) => (
+            <div key={group.id} className="oauth-quota-group">
+              <div className="oauth-quota-group-label">
+                {group.id === "code_review"
+                  ? t("chat.oauthQuota.group.codeReview")
+                  : group.label}
               </div>
-            );
-          })}
-        </div>
-      ))}
-      {snapshot && (
-        <div className="oauth-quota-footer">
-          {t("chat.oauthQuota.fetchedAt", {
-            values: { value: formatDateTime(snapshot.fetchedAtMs, locale) },
-          })}
+              {group.buckets.map((bucket, index) => {
+                const label = bucketLabel(bucket, t);
+                const remaining =
+                  typeof bucket.remainingPercent === "number"
+                    ? bucket.remainingPercent
+                    : null;
+                return (
+                  <div
+                    key={`${bucket.key}-${index}`}
+                    className="oauth-quota-row"
+                  >
+                    <div className="oauth-quota-row-head">
+                      <span className="oauth-quota-row-label">{label}</span>
+                      <span className="oauth-quota-row-value">
+                        {remaining === null
+                          ? "--"
+                          : t("chat.oauthQuota.remaining", {
+                              values: { value: Math.round(remaining) },
+                            })}
+                      </span>
+                    </div>
+                    <div
+                      className="oauth-quota-bar"
+                      role="progressbar"
+                      aria-label={label}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={remaining ?? undefined}
+                    >
+                      <div
+                        className={`oauth-quota-bar-fill ${barTone(remaining)}`}
+                        style={{ width: `${remaining ?? 0}%` }}
+                      />
+                    </div>
+                    {typeof bucket.resetAtMs === "number" && (
+                      <div className="oauth-quota-row-reset">
+                        {t("chat.oauthQuota.resetAt", {
+                          values: {
+                            value: formatDateTime(bucket.resetAtMs, locale),
+                          },
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {snapshot && (
+            <div className="oauth-quota-footer">
+              {t("chat.oauthQuota.fetchedAt", {
+                values: { value: formatDateTime(snapshot.fetchedAtMs, locale) },
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

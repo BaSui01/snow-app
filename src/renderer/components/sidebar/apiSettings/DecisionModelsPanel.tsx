@@ -1,4 +1,13 @@
-import { Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../../i18n";
 import {
@@ -42,6 +51,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
     useState<DecisionModelConfig | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +119,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
     setStatus("");
     setDraft(createDecisionModel());
     setIsNewDraft(true);
+    setShowApiKey(false);
   };
 
   const openEditDraft = (model: DecisionModelConfig): void => {
@@ -116,6 +127,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
     setStatus("");
     setDraft({ ...model });
     setIsNewDraft(false);
+    setShowApiKey(false);
   };
 
   const closeDraft = (): void => {
@@ -508,12 +520,24 @@ export function DecisionModelsPanel(): React.JSX.Element {
                   defaultValue: "API key",
                 })}
               </span>
-              <input
-                type="password"
-                value={draft.apiKey}
-                onChange={(event) => updateDraft("apiKey", event.target.value)}
-                disabled={isSaving}
-              />
+              <div className="api-settings-password-wrap">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={draft.apiKey}
+                  onChange={(event) =>
+                    updateDraft("apiKey", event.target.value)
+                  }
+                  disabled={isSaving}
+                />
+                <button
+                  type="button"
+                  className="api-settings-password-toggle"
+                  onClick={() => setShowApiKey((value) => !value)}
+                  tabIndex={-1}
+                >
+                  {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </label>
           </div>
         )}

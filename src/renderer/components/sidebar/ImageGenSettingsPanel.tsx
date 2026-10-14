@@ -4,6 +4,8 @@ import {
   CircleCheck,
   Clock,
   Copy,
+  Eye,
+  EyeOff,
   Gauge,
   ImageIcon,
   Layers,
@@ -624,6 +626,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
   const [isNewChannel, setIsNewChannel] = useState(false);
   const [draft, setDraft] = useState<ImageGenChannelValue | null>(null);
   const [draftSaving, setDraftSaving] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [activeModelIndex, setActiveModelIndex] = useState(0);
 
   // 弹窗内模型列表（基于草稿的 baseUrl/apiKey）
@@ -822,6 +825,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     });
     setActiveModelIndex(0);
     setIsNewChannel(true);
+    setShowApiKey(false);
     setDraftModels([]);
     setDraftModelsError(null);
     setEditorOpen(true);
@@ -880,6 +884,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     setDraft(syncedDraft);
     setActiveModelIndex(targetIndex);
     setIsNewChannel(false);
+    setShowApiKey(false);
     setDraftModels([]);
     setDraftModelsError(null);
     setEditorOpen(true);
@@ -1721,15 +1726,25 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                 <span className="api-settings-field-label">
                   {t("settings.imagegenApiKey", { defaultValue: "API key" })}
                 </span>
-                <input
-                  type="password"
-                  value={draft.apiKey}
-                  onChange={updateDraftEvent("apiKey")}
-                  placeholder="sk-..."
-                  disabled={draftSaving}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
+                <div className="api-settings-password-wrap">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={draft.apiKey}
+                    onChange={updateDraftEvent("apiKey")}
+                    placeholder="sk-..."
+                    disabled={draftSaving}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="api-settings-password-toggle"
+                    onClick={() => setShowApiKey((value) => !value)}
+                    tabIndex={-1}
+                  >
+                    {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </label>
             </div>
           </section>

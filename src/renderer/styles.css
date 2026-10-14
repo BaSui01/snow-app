@@ -7051,8 +7051,9 @@ body.is-panel-resizing * {
   min-width: 0;
 }
 
+/* 块级 flex：内联图标会按基线撑高下拉框 */
 .request-method-option {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
@@ -8632,7 +8633,8 @@ body.is-panel-resizing * {
   align-items: center;
 }
 
-.api-settings-password-wrap input {
+/* 与 .api-settings-field input 同特异性，确保右侧留白生效 */
+.api-settings-password-wrap input:not([type="checkbox"]):not([type="range"]) {
   width: 100%;
   padding-right: 30px;
 }

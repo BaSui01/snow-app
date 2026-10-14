@@ -3,8 +3,10 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
   DetachedPanelPayload,
+  DetachedPanelRuntimeMirror,
   DetachedPanelTabPayload,
 } from "../../shared/detachedPanel";
+import { DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL } from "../../shared/detachedPanel";
 import { snowLog } from "../../utils/snowLogger";
 import {
   killAllPtyForWebContents,
@@ -39,6 +41,12 @@ type DetachedPanelEntry = {
 
 /** token -> 面板窗口与其初始化 payload（窗口关闭时移除）。 */
 const panelEntries = new Map<string, DetachedPanelEntry>();
+
+/**
+ * 主窗口运行时快照镜像的最近一份：新开的独立窗口挂载时凭此补齐会话 / 项目状态。
+ * 镜像只在主进程内存中保存，不落盘。
+ */
+let latestRuntimeMirror: DetachedPanelRuntimeMirror | null = null;
 
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
@@ -188,6 +196,26 @@ export const openDetachedPanelWindow = (
 export const takeDetachedPanelPayload = (
   token: string,
 ): DetachedPanelPayload | null => panelEntries.get(token)?.payload ?? null;
+
+/** 记录主窗口发来的运行时快照镜像，并转发给所有已打开的独立面板窗口。 */
+export const publishDetachedRuntimeMirror = (
+  mirror: DetachedPanelRuntimeMirror,
+): void => {
+  latestRuntimeMirror = mirror;
+  for (const { window } of panelEntries.values()) {
+    if (!window.isDestroyed()) {
+      safeSend(
+        window.webContents,
+        DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL,
+        mirror,
+      );
+    }
+  }
+};
+
+/** 取回最近一份运行时快照镜像（独立窗口挂载时调用）。 */
+export const takeDetachedRuntimeMirror =
+  (): DetachedPanelRuntimeMirror | null => latestRuntimeMirror;
 
 /** 关闭所有独立面板窗口（主窗口关闭时调用，避免残留孤儿窗口）。 */
 export const closeAllDetachedPanelWindows = (): void => {

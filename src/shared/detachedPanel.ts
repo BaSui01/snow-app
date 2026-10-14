@@ -19,3 +19,14 @@ export type DetachedPanelPayload = {
   /** 打开时主窗口的活动工作区目录快照（Git / 资源管理器 / 终端 cwd 等依赖）。 */
   activeDirectory: unknown | null;
 };
+
+/**
+ * 主窗口运行时快照的镜像（不含 panels，panels 由各窗口的右侧面板自行维护）。
+ * 插件面板读取的会话 / 项目等实时状态只由主窗口的 App 级组件写入，独立窗口需经主进程同步。
+ * 字段结构与渲染层 RuntimeSnapshot 一致，此处以纯数据对象传输。
+ */
+export type DetachedPanelRuntimeMirror = Record<string, unknown>;
+
+/** 主进程向独立面板窗口广播运行时快照镜像的通道。 */
+export const DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL =
+  "detached-panel:runtime-mirror-broadcast";

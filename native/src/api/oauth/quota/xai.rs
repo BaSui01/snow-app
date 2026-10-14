@@ -6,8 +6,8 @@ use napi::bindgen_prelude::*;
 use serde_json::Value;
 
 use super::{
-    first_value, get_json, json_f64, parse_reset_ms, remaining_from_used, QuotaBucket, QuotaGroup,
-    QuotaParts,
+    first_value, get_json, json_f64, json_text, parse_reset_ms, remaining_from_used, QuotaBucket,
+    QuotaGroup, QuotaParts,
 };
 
 const WEEKLY_BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
@@ -25,7 +25,7 @@ pub async fn fetch(token: &str, account_id: &str) -> Result<QuotaParts> {
     let mut buckets = Vec::new();
     let mut first_error = None;
     match weekly {
-        Ok(payload) => buckets.extend(weekly_bucket(&payload)),
+        Ok(payload) => buckets.extend(weekly_buckets(&payload)),
         Err(error) => first_error = Some(error),
     }
     match monthly {
@@ -80,17 +80,56 @@ fn config_of(payload: &Value) -> &Value {
         .unwrap_or(payload)
 }
 
-fn weekly_bucket(payload: &Value) -> Option<QuotaBucket> {
+fn weekly_buckets(payload: &Value) -> Vec<QuotaBucket> {
     let config = config_of(payload);
-    let used = json_f64(first_value(config, &["creditUsagePercent", "credit_usage_percent"]))?;
-    let period_end = first_value(config, &["currentPeriod", "current_period"])
-        .and_then(|period| period.get("end"));
-    Some(QuotaBucket {
-        key: "weekly".to_string(),
-        label: String::new(),
-        remaining_percent: Some(remaining_from_used(used)),
-        reset_at_ms: parse_reset_ms(period_end),
-    })
+    let period = first_value(config, &["currentPeriod", "current_period"]);
+    let reset_at_ms = parse_reset_ms(period.and_then(|period| period.get("end")));
+    let period_is_weekly = period
+        .and_then(|period| json_text(period.get("type")))
+        .is_some_and(|kind| kind.to_lowercase().contains("weekly"));
+
+    let mut buckets = Vec::new();
+    // 统一账单为 proto3 JSON：零值标量会被省略，周用量为 0 时没有
+    // creditUsagePercent。此时仍按 currentPeriod 判定周额度存在，百分比保持未知。
+    let used = json_f64(first_value(
+        config,
+        &["creditUsagePercent", "credit_usage_percent"],
+    ));
+    if used.is_some() || period_is_weekly {
+        buckets.push(QuotaBucket {
+            key: "weekly".to_string(),
+            label: String::new(),
+            remaining_percent: used.map(remaining_from_used),
+            reset_at_ms,
+        });
+    }
+
+    for (index, (product, product_used)) in product_usage(config).into_iter().enumerate() {
+        buckets.push(QuotaBucket {
+            key: "model_weekly".to_string(),
+            label: product.unwrap_or_else(|| format!("Product {}", index + 1)),
+            remaining_percent: product_used.map(remaining_from_used),
+            reset_at_ms,
+        });
+    }
+    buckets
+}
+
+fn product_usage(config: &Value) -> Vec<(Option<String>, Option<f64>)> {
+    let Some(items) = first_value(config, &["productUsage", "product_usage"]).and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter(|item| item.is_object())
+        .map(|item| {
+            (
+                json_text(first_value(item, &["product", "name"])),
+                json_f64(first_value(item, &["usagePercent", "usage_percent"])),
+            )
+        })
+        .collect()
 }
 
 fn monthly_buckets(payload: &Value) -> Vec<QuotaBucket> {

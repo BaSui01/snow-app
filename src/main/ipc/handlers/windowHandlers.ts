@@ -67,8 +67,10 @@ import { registerBrowserFrameHandlers } from "../../browser/browserFrames";
 import {
   openDetachedPanelWindow,
   parseDetachedTabPayload,
+  publishDetachedRuntimeMirror,
   reserveDetachedTabPty,
   takeDetachedPanelPayload,
+  takeDetachedRuntimeMirror,
 } from "../../app/detachedPanelWindow";
 import {
   applyBrowserEmulation,
@@ -1186,6 +1188,26 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   // 面板窗口渲染后凭 token 取回初始化 payload。
   ipcMain.handle("detached-panel:take", (_event, token: unknown) =>
     typeof token === "string" ? takeDetachedPanelPayload(token) : null,
+  );
+
+  // 运行时快照镜像：仅主窗口可以发布（独立窗口只消费），主进程缓存并转发给所有独立窗口。
+  ipcMain.handle(
+    "detached-panel:runtime-mirror-publish",
+    (event, mirror: unknown): void => {
+      const mainWindow = getMainWindow();
+      if (!mainWindow || event.sender !== mainWindow.webContents) {
+        return;
+      }
+      if (!mirror || typeof mirror !== "object" || Array.isArray(mirror)) {
+        return;
+      }
+      publishDetachedRuntimeMirror(mirror as Record<string, unknown>);
+    },
+  );
+
+  // 独立窗口挂载时取回最近一份运行时快照镜像。
+  ipcMain.handle("detached-panel:runtime-mirror-take", () =>
+    takeDetachedRuntimeMirror(),
   );
 
   // 移回主窗口：转发 tab 快照给主窗口恢复为 tab。返回 false 表示主窗口不可用，

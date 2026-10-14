@@ -2,8 +2,10 @@ import { ipcRenderer, type IpcRendererEvent } from "electron";
 import { join } from "node:path";
 import type {
   DetachedPanelPayload,
+  DetachedPanelRuntimeMirror,
   DetachedPanelTabPayload,
 } from "../../shared/detachedPanel";
+import { DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL } from "../../shared/detachedPanel";
 import {
   isNotificationConversationTarget,
   type AppNotificationOptions,
@@ -1118,6 +1120,35 @@ export const systemApi = {
     return () => {
       ipcRenderer.removeListener(
         DETACHED_PANEL_RETURN_BROADCAST_CHANNEL,
+        handler,
+      );
+    };
+  },
+  /**
+   * 主窗口的运行时快照镜像（不含 panels）变化时调用：主进程缓存并转发给所有独立面板窗口。
+   * 仅主窗口有效，独立窗口调用会被主进程忽略。
+   */
+  publishDetachedRuntimeMirror: (
+    mirror: DetachedPanelRuntimeMirror,
+  ): Promise<void> =>
+    ipcRenderer.invoke("detached-panel:runtime-mirror-publish", mirror),
+  /** 独立面板窗口挂载时取回最近一份运行时快照镜像（尚未发布过则为 null）。 */
+  takeDetachedRuntimeMirror: (): Promise<DetachedPanelRuntimeMirror | null> =>
+    ipcRenderer.invoke("detached-panel:runtime-mirror-take"),
+  /** 订阅运行时快照镜像广播（独立面板窗口使用）。返回取消订阅函数。 */
+  onDetachedRuntimeMirror: (
+    callback: (mirror: DetachedPanelRuntimeMirror) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      mirror: DetachedPanelRuntimeMirror,
+    ): void => {
+      callback(mirror);
+    };
+    ipcRenderer.on(DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(
+        DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL,
         handler,
       );
     };

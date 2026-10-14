@@ -32,6 +32,7 @@ import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { DetachedPanelTitleBar } from "./components/DetachedPanelTitleBar";
 import { RightPanel } from "./components/RightPanel";
 import { toRightPanelTab } from "./components/rightPanel/detachedPanelTab";
+import { applyPluginRuntimeMirror } from "./plugins/runtimeMirror";
 import {
   INSERT_ELEMENT_TAG_EVENT,
   type ElementTag,
@@ -88,6 +89,27 @@ function DetachedPanelWindowApp(): React.JSX.Element | null {
         APP_CONTROL_OPEN_SETTINGS_EVENT,
         handleOpenSettings,
       );
+    };
+  }, []);
+
+  // 插件面板依赖的会话 / 项目等实时状态由主窗口镜像推送（见 plugins/runtimeMirror.ts）。
+  // 先订阅广播再取回最近一份镜像：广播与取回回复按主进程发送顺序到达，后到的快照不会被旧值覆盖。
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = window.snow.onDetachedRuntimeMirror((mirror) => {
+      applyPluginRuntimeMirror(mirror);
+    });
+    void window.snow
+      .takeDetachedRuntimeMirror()
+      .then((mirror) => {
+        if (mirror && !cancelled) {
+          applyPluginRuntimeMirror(mirror);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, []);
 

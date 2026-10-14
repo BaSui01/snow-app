@@ -9,6 +9,7 @@ import {
   type RuntimeConversationState,
   type RuntimeStreamingSession,
 } from "./runtimeSnapshot";
+import { startPluginRuntimeMirrorPublisher } from "./runtimeMirror";
 
 type PluginRuntimeBridgeProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -24,6 +25,9 @@ export const PluginRuntimeBridge = ({
 }: PluginRuntimeBridgeProps): null => {
   const conversation = useChatConversationContext();
   const todoPanel = useTodoPanel(conversation.messages);
+
+  // 独立面板窗口没有本组件，插件面板在那边读取的会话 / 项目状态经主进程镜像获得。
+  useEffect(() => startPluginRuntimeMirrorPublisher(), []);
 
   useEffect(() => {
     runtimeSnapshot.patch({ activeDirectory: activeDirectory ?? null });

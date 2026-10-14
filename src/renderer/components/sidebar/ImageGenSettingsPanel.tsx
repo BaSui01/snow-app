@@ -1,6 +1,5 @@
 import {
   BadgeCheck,
-  Brain,
   CircleCheck,
   Clock,
   Copy,
@@ -66,7 +65,6 @@ import {
 import {
   isGeminiFamilyModel,
   resolveModelCapability,
-  resolveThinkingLevels,
 } from "./imagegenSettings/modelCapabilities";
 import type {
   ImageGenChannelValue,
@@ -83,46 +81,34 @@ import type {
  * gpt-image-2 系支持 `auto` 与任意分辨率，尺寸预设走「比例 × 档位」联动
  * （OPENAI_SIZE_PRESETS 推荐表）。
  */
-const OPENAI_STANDARD_CAPS: Array<{
-  match: (id: string) => boolean;
-  sizes: string[];
-  quality: string[];
-}> = [
-  {
-    match: (id) => id.includes("gpt-image-2.5"),
-    sizes: ["1024x1024", "1536x1024", "1024x1536"],
-    quality: ["", "low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    match: (id) => id.includes("dall-e-3"),
-    sizes: ["1024x1024", "1792x1024", "1024x1792"],
-    quality: ["", "hd", "standard"],
-  },
-  {
-    match: (id) => id.includes("dall-e-2"),
-    sizes: ["256x256", "512x512", "1024x1024"],
-    quality: ["standard"],
-  },
-  {
-    match: () => true,
-    sizes: ["1024x1024", "1536x1024", "1024x1536"],
-    quality: ["", "low", "medium", "high"],
-  },
-];
-
 /** gpt-image-2 / 2.5 系（含兼容中转）支持任意分辨率判定。 */
 const supportsArbitraryOpenAISize = (modelId: string): boolean => {
   const id = modelId.toLowerCase();
-  return id.includes("gpt-image-2") || id.includes("gpt-image-2.5");
+  return (
+    id.includes("gpt-image-2") ||
+    id.includes("gpt-image-2.5") ||
+    id.includes("image-2.5")
+  );
 };
 
-/** 查询某 OpenAI 模型的标准能力（未识别模型使用默认规则）。 */
+/** 查询某 OpenAI 模型的标准能力（配置库优先，未收录模型使用宽松全集）。 */
 const openaiStandardCaps = (modelId: string) => {
-  const id = modelId.toLowerCase();
-  return (
-    OPENAI_STANDARD_CAPS.find((rule) => rule.match(id)) ??
-    OPENAI_STANDARD_CAPS[OPENAI_STANDARD_CAPS.length - 1]
-  );
+  const cap = resolveModelCapability(modelId);
+  if (cap?.supportedQualities) {
+    const rawTokens = cap.supportedQualities
+      .split(/[,\s;/]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return {
+      sizes: ["1024x1024", "1536x1024", "1024x1536"],
+      quality: ["", ...new Set(rawTokens)],
+    };
+  }
+  // 未在能力库显式声明质量的模型：默认开放标准质量选项（含高画质档位）
+  return {
+    sizes: ["1024x1024", "1536x1024", "1024x1536"],
+    quality: ["", "low", "medium", "high", "xhigh", "max"],
+  };
 };
 
 /**
@@ -155,14 +141,11 @@ const resolvePrimaryIndex = (
 const CAPABILITY_FIELDS = [
   "defaultSize",
   "defaultQuality",
-  "defaultThinking",
   "supportedRatios",
   "supportedResolutions",
   "supportedThinking",
+  "supportedQualities",
 ] as const satisfies readonly (keyof ImageGenModelItem)[];
-
-/** 能力字段名（同时是 ImageGenModelCapability 的键）。 */
-type CapabilityField = (typeof CAPABILITY_FIELDS)[number];
 
 /**
  * 用内置能力库填充模型项的能力字段（默认尺寸/质量/思考强度/支持范围）。
@@ -200,10 +183,10 @@ const applyCapability = (
     ...item,
     defaultSize: next.defaultSize,
     defaultQuality: next.defaultQuality,
-    defaultThinking: next.defaultThinking,
     supportedRatios: next.supportedRatios,
     supportedResolutions: next.supportedResolutions,
     supportedThinking: next.supportedThinking,
+    supportedQualities: next.supportedQualities ?? "",
   };
 };
 
@@ -225,10 +208,10 @@ const forceApplyCapability = (
     ...item,
     defaultSize: next.defaultSize,
     defaultQuality: next.defaultQuality,
-    defaultThinking: next.defaultThinking,
     supportedRatios: next.supportedRatios,
     supportedResolutions: next.supportedResolutions,
     supportedThinking: next.supportedThinking,
+    supportedQualities: next.supportedQualities ?? "",
   };
 };
 
@@ -810,7 +793,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       name: "",
       defaultSize: "",
       defaultQuality: "",
-      defaultThinking: "",
       supportedRatios: "",
       supportedResolutions: "",
       supportedThinking: "",
@@ -850,10 +832,10 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
               name: "",
               defaultSize: channel.defaultSize || "",
               defaultQuality: channel.defaultQuality || "",
-              defaultThinking: channel.defaultThinking || "",
               supportedRatios: channel.supportedRatios || "",
               supportedResolutions: channel.supportedResolutions || "",
               supportedThinking: channel.supportedThinking || "",
+              supportedQualities: channel.supportedQualities || "",
               customPrompt: channel.customPrompt || "",
               enabled: true,
             },
@@ -872,12 +854,13 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       model: primaryItem?.model ?? channel.model,
       defaultSize: primaryItem?.defaultSize ?? channel.defaultSize,
       defaultQuality: primaryItem?.defaultQuality ?? channel.defaultQuality,
-      defaultThinking: primaryItem?.defaultThinking ?? channel.defaultThinking,
       supportedRatios: primaryItem?.supportedRatios ?? channel.supportedRatios,
       supportedResolutions:
         primaryItem?.supportedResolutions ?? channel.supportedResolutions,
       supportedThinking:
         primaryItem?.supportedThinking ?? channel.supportedThinking,
+      supportedQualities:
+        primaryItem?.supportedQualities ?? channel.supportedQualities,
       customPrompt: primaryItem?.customPrompt ?? channel.customPrompt,
     };
 
@@ -911,7 +894,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         model: draft.model,
         defaultSize: draft.defaultSize,
         defaultQuality: draft.defaultQuality,
-        defaultThinking: draft.defaultThinking,
         supportedRatios: draft.supportedRatios,
         supportedResolutions: draft.supportedResolutions,
         supportedThinking: draft.supportedThinking,
@@ -949,7 +931,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                 model: prev.model,
                 defaultSize: prev.defaultSize,
                 defaultQuality: prev.defaultQuality,
-                defaultThinking: prev.defaultThinking,
                 supportedRatios: prev.supportedRatios,
                 supportedResolutions: prev.supportedResolutions,
                 supportedThinking: prev.supportedThinking,
@@ -989,10 +970,10 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         nextDraft.model = updatedItem.model ?? "";
         nextDraft.defaultSize = updatedItem.defaultSize ?? "";
         nextDraft.defaultQuality = updatedItem.defaultQuality ?? "";
-        nextDraft.defaultThinking = updatedItem.defaultThinking ?? "";
         nextDraft.supportedRatios = updatedItem.supportedRatios ?? "";
         nextDraft.supportedResolutions = updatedItem.supportedResolutions ?? "";
         nextDraft.supportedThinking = updatedItem.supportedThinking ?? "";
+        nextDraft.supportedQualities = updatedItem.supportedQualities ?? "";
         nextDraft.customPrompt = updatedItem.customPrompt ?? "";
       }
 
@@ -1046,10 +1027,10 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         nextDraft.model = filled.model ?? "";
         nextDraft.defaultSize = filled.defaultSize ?? "";
         nextDraft.defaultQuality = filled.defaultQuality ?? "";
-        nextDraft.defaultThinking = filled.defaultThinking ?? "";
         nextDraft.supportedRatios = filled.supportedRatios ?? "";
         nextDraft.supportedResolutions = filled.supportedResolutions ?? "";
         nextDraft.supportedThinking = filled.supportedThinking ?? "";
+        nextDraft.supportedQualities = filled.supportedQualities ?? "";
       }
       return nextDraft;
     });
@@ -1076,11 +1057,12 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         model: target.model,
         defaultSize: target.defaultSize ?? prev.defaultSize,
         defaultQuality: target.defaultQuality ?? prev.defaultQuality,
-        defaultThinking: target.defaultThinking ?? prev.defaultThinking,
         supportedRatios: target.supportedRatios ?? prev.supportedRatios,
         supportedResolutions:
           target.supportedResolutions ?? prev.supportedResolutions,
         supportedThinking: target.supportedThinking ?? prev.supportedThinking,
+        supportedQualities:
+          target.supportedQualities ?? prev.supportedQualities,
         customPrompt: target.customPrompt ?? prev.customPrompt,
       };
     });
@@ -1146,7 +1128,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         name: template.name.replace(/^[^ -]+ - /, ""),
         defaultSize: template.defaultSize ?? "",
         defaultQuality: template.defaultQuality ?? "",
-        defaultThinking: template.defaultThinking ?? "",
         supportedRatios: template.supportedRatios ?? "",
         supportedResolutions: template.supportedResolutions ?? "",
         supportedThinking: template.supportedThinking ?? "",
@@ -1175,7 +1156,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         // 留空而非套用协议默认尺寸：避免「已有值」判定阻断后续能力库自动填充。
         defaultSize: "",
         defaultQuality: "",
-        defaultThinking: "",
         supportedRatios: "",
         supportedResolutions: "",
         supportedThinking: "",
@@ -1217,8 +1197,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         model: nextPrimary,
         defaultSize: nextPrimaryItem?.defaultSize ?? prev.defaultSize,
         defaultQuality: nextPrimaryItem?.defaultQuality ?? prev.defaultQuality,
-        defaultThinking:
-          nextPrimaryItem?.defaultThinking ?? prev.defaultThinking,
         supportedRatios:
           nextPrimaryItem?.supportedRatios ?? prev.supportedRatios,
         supportedResolutions:
@@ -1245,7 +1223,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       name: tmpl.name.replace(/^[^ -]+ - /, ""),
       defaultSize: tmpl.defaultSize ?? "",
       defaultQuality: tmpl.defaultQuality ?? "",
-      defaultThinking: tmpl.defaultThinking ?? "",
       supportedRatios: tmpl.supportedRatios ?? "",
       supportedResolutions: tmpl.supportedResolutions ?? "",
       supportedThinking: tmpl.supportedThinking ?? "",
@@ -1264,7 +1241,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         model: tmpl.model,
         defaultSize: tmpl.defaultSize ?? prev.defaultSize,
         defaultQuality: tmpl.defaultQuality ?? "",
-        defaultThinking: tmpl.defaultThinking ?? "",
         supportedRatios: tmpl.supportedRatios ?? "",
         supportedResolutions: tmpl.supportedResolutions ?? "",
         supportedThinking: tmpl.supportedThinking ?? "",
@@ -1317,27 +1293,21 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
             : "",
         };
       }
-      if (supportsArbitraryOpenAISize(previous.model)) {
-        // gpt-image-2 / 2.5：auto / 任意分辨率均合法，仅修正质量
-        const allowedQuality = previous.model
-          .toLowerCase()
-          .includes("gpt-image-2.5")
-          ? ["", "low", "medium", "high", "xhigh", "max"]
-          : ["", "low", "medium", "high"];
-        return allowedQuality.includes(previous.defaultQuality)
-          ? previous
-          : { ...previous, defaultQuality: "" };
-      }
       const caps = openaiStandardCaps(previous.model);
+      const isArbitrary = supportsArbitraryOpenAISize(previous.model);
       const currentSize = previous.defaultSize.trim();
       return {
         ...previous,
-        defaultSize: caps.sizes.includes(currentSize)
+        defaultSize: isArbitrary
           ? previous.defaultSize
-          : (caps.sizes[0] ?? ""),
-        defaultQuality: caps.quality.includes(previous.defaultQuality)
-          ? previous.defaultQuality
-          : "",
+          : caps.sizes.includes(currentSize)
+            ? previous.defaultSize
+            : (caps.sizes[0] ?? ""),
+        defaultQuality:
+          caps.quality.includes(previous.defaultQuality) ||
+          previous.defaultQuality === ""
+            ? previous.defaultQuality
+            : "",
       };
     });
   }, [draft?.model, draft?.provider]);
@@ -1359,7 +1329,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
         name: (m.name ?? "").trim(),
         defaultSize: (m.defaultSize ?? "").trim(),
         defaultQuality: (m.defaultQuality ?? "").trim(),
-        defaultThinking: (m.defaultThinking ?? "").trim(),
         supportedRatios: (m.supportedRatios ?? "").trim(),
         supportedResolutions: (m.supportedResolutions ?? "").trim(),
         supportedThinking: (m.supportedThinking ?? "").trim(),
@@ -1393,8 +1362,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       defaultSize: primaryItem?.defaultSize ?? draft.defaultSize.trim(),
       defaultQuality:
         primaryItem?.defaultQuality ?? draft.defaultQuality.trim(),
-      defaultThinking:
-        primaryItem?.defaultThinking ?? (draft.defaultThinking ?? "").trim(),
       supportedRatios:
         primaryItem?.supportedRatios ?? (draft.supportedRatios ?? "").trim(),
       supportedResolutions:
@@ -1403,6 +1370,9 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       supportedThinking:
         primaryItem?.supportedThinking ??
         (draft.supportedThinking ?? "").trim(),
+      supportedQualities:
+        primaryItem?.supportedQualities ??
+        (draft.supportedQualities ?? "").trim(),
       customPrompt:
         primaryItem?.customPrompt ?? (draft.customPrompt ?? "").trim(),
       outputFormat: draft.outputFormat.trim(),
@@ -2170,64 +2140,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                   </small>
                 </label>
 
-                {/* 默认思考强度（仅 Gemini：官方图像模型唯一支持该请求参数的协议） */}
-                {isGeminiModel ? (
-                  <label className="api-settings-field">
-                    <span className="api-settings-field-label">
-                      <Brain
-                        size={13}
-                        style={{
-                          display: "inline-block",
-                          marginRight: 4,
-                          verticalAlign: -1,
-                        }}
-                      />
-                      {t("settings.imagegenDefaultThinking", {
-                        defaultValue: "Default thinking strength",
-                      })}
-                      <code className="imagegen-thinking-field">
-                        thinking_level
-                      </code>
-                    </span>
-                    <CustomSelect
-                      value={activeModelItem.defaultThinking ?? ""}
-                      options={[
-                        "",
-                        ...resolveThinkingLevels(currentModelId),
-                      ].map((value) => ({
-                        value,
-                        label:
-                          value === ""
-                            ? t("settings.imagegenThinkingAuto", {
-                                defaultValue: "Auto",
-                              })
-                            : value === "minimal"
-                              ? t("settings.imagegenThinkingMinimal", {
-                                  defaultValue: "minimal",
-                                })
-                              : value === "medium"
-                                ? t("settings.imagegenThinkingMedium", {
-                                    defaultValue: "medium",
-                                  })
-                                : t("settings.imagegenThinkingHigh", {
-                                    defaultValue: "high",
-                                  }),
-                      }))}
-                      onChange={(value) =>
-                        updateActiveModelItem("defaultThinking", value)
-                      }
-                      disabled={draftSaving}
-                      portal
-                    />
-                    <small className="api-settings-field-hint">
-                      {t("settings.imagegenDefaultThinkingHint", {
-                        defaultValue:
-                          "Written to generation_config.thinking_level; supported levels differ per model",
-                      })}
-                    </small>
-                  </label>
-                ) : null}
-
                 {/* 默认质量（仅 OpenAI） */}
                 {!isGemini ? (
                   <label className="api-settings-field">
@@ -2239,15 +2151,41 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     <CustomSelect
                       value={activeModelItem.defaultQuality ?? ""}
                       options={openaiStandardCaps(currentModelId).quality.map(
-                        (value) => ({
-                          value,
-                          label:
-                            value === ""
-                              ? t("settings.imagegenQualityAuto", {
-                                  defaultValue: "Auto",
-                                })
-                              : value,
-                        }),
+                        (value) => {
+                          const labelMap: Record<string, string> = {
+                            "": t("settings.imagegenQualityAuto", {
+                              defaultValue: "Auto",
+                            }),
+                            low: t("rightPanel.aiDrawing.qualityLow", {
+                              defaultValue: "Low",
+                            }),
+                            medium: t("rightPanel.aiDrawing.qualityMedium", {
+                              defaultValue: "Medium",
+                            }),
+                            high: t("rightPanel.aiDrawing.qualityHigh", {
+                              defaultValue: "High",
+                            }),
+                            xhigh: t("rightPanel.aiDrawing.qualityXhigh", {
+                              defaultValue: "Ultra High",
+                            }),
+                            max: t("rightPanel.aiDrawing.qualityMax", {
+                              defaultValue: "Max",
+                            }),
+                            standard: t(
+                              "rightPanel.aiDrawing.qualityStandard",
+                              {
+                                defaultValue: "Standard",
+                              },
+                            ),
+                            hd: t("rightPanel.aiDrawing.qualityHd", {
+                              defaultValue: "HD",
+                            }),
+                          };
+                          return {
+                            value,
+                            label: labelMap[value.toLowerCase()] ?? value,
+                          };
+                        },
                       )}
                       onChange={(value) =>
                         updateActiveModelItem("defaultQuality", value)
@@ -2356,6 +2294,41 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                   </label>
                 ) : null}
 
+                {/* 支持画质 / 质量选项（仅 OpenAI：Gemini 无 quality 请求参数） */}
+                {!isGemini ? (
+                  <label className="api-settings-field imagegen-field-wide">
+                    <span className="api-settings-field-label">
+                      {t("settings.imagegenSupportedQualities", {
+                        defaultValue: "Supported qualities",
+                      })}
+                    </span>
+                    <input
+                      type="text"
+                      value={activeModelItem.supportedQualities ?? ""}
+                      onChange={(e) =>
+                        updateActiveModelItem(
+                          "supportedQualities",
+                          e.target.value,
+                        )
+                      }
+                      placeholder="low, medium, high, xhigh, max"
+                      disabled={draftSaving}
+                      spellCheck={false}
+                    />
+                    <small className="api-settings-field-hint">
+                      {activeModelItem.supportedQualities?.trim()
+                        ? t("settings.imagegenSupportedQualitiesHint", {
+                            defaultValue:
+                              "Qualities available for this model (comma-separated, e.g. low, medium, high, xhigh, max)",
+                          })
+                        : t("settings.imagegenCapabilityEmptyHint", {
+                            defaultValue:
+                              "Empty = unrestricted: the backend skips the check and lets any valid value through.",
+                          })}
+                    </small>
+                  </label>
+                ) : null}
+
                 {/* 自定义提示词说明与自动生成 */}
                 <label className="api-settings-field imagegen-field-wide">
                   <div
@@ -2397,11 +2370,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                         }
                         if (activeModelItem.supportedThinking?.trim()) {
                           parts.push(
-                            `支持思考强度：${activeModelItem.supportedThinking.trim()}${
-                              activeModelItem.defaultThinking
-                                ? ` (默认: ${activeModelItem.defaultThinking})`
-                                : ""
-                            }`,
+                            `支持思考强度：${activeModelItem.supportedThinking.trim()}`,
                           );
                         }
                         if (activeModelItem.defaultSize?.trim()) {
@@ -2936,25 +2905,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                                   "{count}",
                                   String(channel.models.length - 1),
                                 )}
-                              </span>
-                            ) : null}
-                            {channel.defaultThinking ? (
-                              <span
-                                className="badge"
-                                style={{
-                                  fontSize: 10,
-                                  padding: "1px 5px",
-                                  opacity: 0.85,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: 3,
-                                }}
-                                title={t("settings.imagegenDefaultThinking", {
-                                  defaultValue: "Thinking",
-                                })}
-                              >
-                                <Brain size={10} />
-                                <span>{channel.defaultThinking}</span>
                               </span>
                             ) : null}
                           </div>

@@ -45,10 +45,10 @@ import { useI18n } from "../../i18n";
 import { CustomSelect } from "../common/CustomSelect";
 import {
   collectChannelModelEntries,
-  isGrokModel,
   openaiFixedSizePresets,
   resolveChannelModelCapabilities,
   supportsSizeTier,
+  QUALITY_LEVEL_LABEL_KEYS,
 } from "./modelCapabilities";
 import { DrawingPromptExamples } from "./DrawingPromptExamples";
 import type { ModelCapabilities } from "./modelCapabilities";
@@ -1295,11 +1295,17 @@ export function DrawingPanelContent({
     return "";
   }, [effectiveChannel, ratio, tier, showTier, effectiveModel, capabilities]);
 
-  /** 渠道默认尺寸原文（空 = 未配置，如渠道使用服务商默认）。 */
-  const channelDefaultSize = (effectiveChannel?.defaultSize ?? "").trim();
+  /** 当前配置模型的默认尺寸（模型项配置优先，渠道级回退）。 */
+  const channelDefaultSize =
+    selectedEntry?.item?.defaultSize?.trim() ||
+    effectiveChannel?.defaultSize?.trim() ||
+    "";
 
-  /** 渠道默认质量原文（空 = 未配置；「默认」选项展示用，实际参数由 Rust 侧应用）。 */
-  const channelDefaultQuality = (effectiveChannel?.defaultQuality ?? "").trim();
+  /** 当前配置模型的默认质量（模型项配置优先，渠道级回退）。 */
+  const channelDefaultQuality =
+    selectedEntry?.item?.defaultQuality?.trim() ||
+    effectiveChannel?.defaultQuality?.trim() ||
+    "";
 
   /** 宽高比下拉「默认」选项的展示文本：优先显示渠道默认解析出的比例，否则显示默认尺寸原文。 */
   const defaultRatioLabel = useMemo((): string => {
@@ -1346,10 +1352,14 @@ export function DrawingPanelContent({
     return getGeminiSizePresets(effectiveModel || effectiveChannel.model);
   }, [effectiveChannel, effectiveModel]);
 
-  /** 三位一体控件：比例候选（按尺寸体系裁剪；空 = 不显示比例选择）。 */
+  /** 三位一体控件：比例候选（配置优先；空 = 不显示比例选择）。 */
   const sizeRatioOptions = useMemo((): string[] => {
     if (!capabilities) {
       return [];
+    }
+    // 配置驱动：若模型配置了有效比例集合，严格以配置为准
+    if (capabilities.ratios && capabilities.ratios.length > 0) {
+      return capabilities.ratios;
     }
     if (
       capabilities.sizeSystem === "ratio-resolution" ||
@@ -1357,17 +1367,20 @@ export function DrawingPanelContent({
     ) {
       return capabilities.ratios;
     }
-    // openai-size：档位模型显示全部比例（gpt-image-2），
-    // 无档位模型仅显示固定预设支持的比例（dall-e-3 / gpt-image-1）。
+    // 未声明比例时按体系基线开放
     return showTier
       ? Object.keys(OPENAI_SIZE_PRESETS)
       : fixedSizePresets.map((preset) => preset.ratio);
   }, [capabilities, showTier, fixedSizePresets]);
 
-  /** 三位一体控件：尺寸候选（档位/分辨率；空 = 隐藏尺寸行，比例定尺寸）。 */
+  /** 三位一体控件：尺寸候选（配置优先；空 = 隐藏尺寸行，比例定尺寸）。 */
   const sizeTierOptions = useMemo((): string[] => {
     if (!capabilities) {
       return [];
+    }
+    // 配置驱动：若模型配置了有效分辨率/档位集合，严格以配置为准
+    if (capabilities.resolutions && capabilities.resolutions.length > 0) {
+      return [...capabilities.resolutions];
     }
     if (capabilities.sizeSystem === "gemini-tier") {
       return geminiTierOptions;
@@ -1443,9 +1456,18 @@ export function DrawingPanelContent({
     }
     if (qualityOptions.length > 0) {
       const option = qualityOptions.find((item) => item.value === quality);
-      parts.push(
-        option ? t(option.labelKey) : t("rightPanel.aiDrawing.qualityDefault"),
-      );
+      let qualityText = "";
+      if (option) {
+        qualityText = t(option.labelKey) || option.value;
+      } else if (quality && quality !== "auto") {
+        qualityText =
+          t(QUALITY_LEVEL_LABEL_KEYS[quality.toLowerCase()] || "") || quality;
+      } else {
+        qualityText = t("rightPanel.aiDrawing.qualityDefault");
+      }
+      if (qualityText) {
+        parts.push(qualityText);
+      }
     }
     return parts.length > 0
       ? parts.join(" · ")
@@ -1495,22 +1517,60 @@ export function DrawingPanelContent({
     }
   }, [capabilities, count, background, webSearch, imageSearch]);
 
-  /** 质量选项联动：模型变化后当前值不在选项内时回退（默认 → auto → high → 首项）。 */
+  /** 质量选项联动：切换配置模型时，优先激活该模型在配置中指定的 defaultQuality！ */
   useEffect(() => {
     const options = qualityOptions;
     if (options.length === 0) {
-      return; // 无质量参数的模型：保留当前值但不发送
+      return;
+    }
+    // 优先匹配当前模型在配置中声明的默认画质
+    if (channelDefaultQuality) {
+      const matched = options.find(
+        (option) =>
+          option.value.toLowerCase() === channelDefaultQuality.toLowerCase(),
+      );
+      if (matched) {
+        setQuality(matched.value);
+        return;
+      }
     }
     if (options.some((option) => option.value === quality)) {
       return;
     }
     const fallback =
-      options.find((option) => option.value === "")?.value ??
       options.find((option) => option.value === "auto")?.value ??
-      options.find((option) => option.value === "high")?.value ??
-      options[0].value;
+      options.find((option) => option.value === "")?.value ??
+      options[0]?.value ??
+      "auto";
     setQuality(fallback);
-  }, [qualityOptions, quality]);
+  }, [qualityOptions, selectedEntryKey, channelDefaultQuality]);
+
+  /** 尺寸联动：切换配置模型时，自动解析并激活该模型配置的 defaultSize！ */
+  useEffect(() => {
+    if (!channelDefaultSize) {
+      return;
+    }
+    if (effectiveChannel?.provider === "gemini") {
+      const preset = matchGeminiSizePreset(channelDefaultSize);
+      if (preset.ratio) setRatio(preset.ratio);
+      if (preset.imageSize) setTier(preset.imageSize);
+    } else if (capabilities?.sizeSystem === "ratio-resolution") {
+      const preset = matchGrokSizePreset(channelDefaultSize);
+      if (preset.ratio) setRatio(preset.ratio);
+      if (preset.resolution) setResolution(preset.resolution);
+    } else {
+      const preset = matchOpenAISizePreset(channelDefaultSize);
+      if (preset) {
+        if (preset.ratio) setRatio(preset.ratio);
+        if (preset.tier) setTier(preset.tier);
+      }
+    }
+  }, [
+    selectedEntryKey,
+    channelDefaultSize,
+    effectiveChannel?.provider,
+    capabilities?.sizeSystem,
+  ]);
 
   useEffect(() => {
     if (isGemini && tier && geminiTierOptions.length > 0) {
@@ -2967,11 +3027,14 @@ export function DrawingPanelContent({
                                   }`}
                                   onClick={() => setQuality(option.value)}
                                 >
-                                  {(option.value === "" ||
-                                    option.value === "auto") &&
-                                  channelDefaultQuality
-                                    ? `${t(option.labelKey)} (${channelDefaultQuality})`
-                                    : t(option.labelKey)}
+                                  <span>
+                                    {t(option.labelKey) ||
+                                      (option.value
+                                        ? option.value.toUpperCase()
+                                        : t(
+                                            "rightPanel.aiDrawing.qualityDefault",
+                                          ))}
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -3009,22 +3072,29 @@ export function DrawingPanelContent({
             />
           </label>
 
-          {/* 流式预览：模型不支持时隐藏（如 xAI Grok） */}
+          {/* 流式预览（是否开启流）：模型不支持时隐藏（如 xAI Grok） */}
           {capabilities?.supportsStream !== false && (
-            <label className="ai-drawing-param ai-drawing-param-stream">
+            <label
+              className={`ai-drawing-param ai-drawing-param-stream${
+                effectiveStream ? " is-active" : ""
+              }${streamDisabled ? " is-disabled" : ""}`}
+              title={
+                streamDisabled
+                  ? count > 1
+                    ? t("rightPanel.aiDrawing.streamOffCount")
+                    : t("rightPanel.aiDrawing.streamOffRef")
+                  : undefined
+              }
+            >
               <input
                 type="checkbox"
                 checked={effectiveStream}
                 disabled={streamDisabled}
-                title={
-                  streamDisabled
-                    ? count > 1
-                      ? t("rightPanel.aiDrawing.streamOffCount")
-                      : t("rightPanel.aiDrawing.streamOffRef")
-                    : undefined
-                }
                 onChange={(event) => setStream(event.target.checked)}
               />
+              <span className="ai-drawing-switch-pill" aria-hidden="true">
+                <span className="ai-drawing-switch-dot" />
+              </span>
               <span className="ai-drawing-param-label">
                 {t("rightPanel.aiDrawing.stream")}
               </span>

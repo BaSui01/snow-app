@@ -2002,9 +2002,6 @@ export const en = {
     "Applying this template will REPLACE all models currently configured in this channel. Continue?",
   "settings.imagegenTemplateSelect":
     "Select a template to auto-fill settings...",
-  "settings.imagegenDefaultThinking": "Default thinking strength",
-  "settings.imagegenDefaultThinkingHint":
-    "Written to generation_config.thinking_level; supported levels differ per model (no such parameter on OpenAI image endpoints)",
   "settings.imagegenThinkingAuto": "Auto",
   "settings.imagegenThinkingMinimal": "Minimal",
   "settings.imagegenThinkingLow": "Low",
@@ -2032,6 +2029,9 @@ export const en = {
   "settings.imagegenSupportedThinking": "Supported thinking strength",
   "settings.imagegenSupportedThinkingHint":
     "thinking_level values supported by this model (e.g. minimal, medium, high)",
+  "settings.imagegenSupportedQualities": "Supported qualities",
+  "settings.imagegenSupportedQualitiesHint":
+    "Qualities available for this model (comma-separated, e.g. low, medium, high, xhigh, max)",
   "settings.imagegenCustomPrompt": "Channel prompt instructions",
   "settings.imagegenCustomPromptPlaceholder":
     "Custom instructions and capability notes injected into imagegen-generate tool description...",
@@ -5152,11 +5152,13 @@ export const en = {
   "rightPanel.aiDrawing.seedPlaceholder": "Leave empty for random",
   "rightPanel.aiDrawing.seedHint": "The same seed reproduces similar results",
   "rightPanel.aiDrawing.count": "Count",
-  "rightPanel.aiDrawing.stream": "Stream preview",
+  "rightPanel.aiDrawing.stream": "Enable stream",
   "rightPanel.aiDrawing.qualityAuto": "Auto",
   "rightPanel.aiDrawing.qualityLow": "Low",
   "rightPanel.aiDrawing.qualityMedium": "Medium",
   "rightPanel.aiDrawing.qualityHigh": "High",
+  "rightPanel.aiDrawing.qualityXhigh": "Ultra High",
+  "rightPanel.aiDrawing.qualityMax": "Max",
   "rightPanel.aiDrawing.qualityDefault": "Default",
   "rightPanel.aiDrawing.qualityStandard": "Standard",
   "rightPanel.aiDrawing.qualityHd": "HD",

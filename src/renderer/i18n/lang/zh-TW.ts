@@ -1909,9 +1909,6 @@ export const zhTW = {
   "settings.imagegenTemplateReplaceConfirm":
     "套用該範本會整體替換本渠道目前已配置的全部模型，是否繼續？",
   "settings.imagegenTemplateSelect": "選擇範本快速填入配置...",
-  "settings.imagegenDefaultThinking": "預設思考強度",
-  "settings.imagegenDefaultThinkingHint":
-    "寫入 generation_config.thinking_level；各模型支援檔位不同（OpenAI 圖像介面無此參數）",
   "settings.imagegenThinkingAuto": "自動",
   "settings.imagegenThinkingMinimal": "minimal",
   "settings.imagegenThinkingLow": "low",
@@ -1939,6 +1936,9 @@ export const zhTW = {
   "settings.imagegenSupportedThinking": "支援的思考強度",
   "settings.imagegenSupportedThinkingHint":
     "告知 AI 該模型支援的 thinking_level 檔位（如 minimal, medium, high）",
+  "settings.imagegenSupportedQualities": "支援的畫質/品質",
+  "settings.imagegenSupportedQualitiesHint":
+    "告知 AI 與工作台該模型支援的 quality 檔位（如 low, medium, high, xhigh, max）",
   "settings.imagegenCustomPrompt": "渠道提示詞說明/補充指引",
   "settings.imagegenCustomPromptPlaceholder":
     "為 AI 注入此渠道的專屬要求、參數規範或風格說明...",
@@ -4694,11 +4694,13 @@ export const zhTW = {
   "rightPanel.aiDrawing.seedPlaceholder": "留空隨機",
   "rightPanel.aiDrawing.seedHint": "相同種子可重現相似結果",
   "rightPanel.aiDrawing.count": "數量",
-  "rightPanel.aiDrawing.stream": "串流預覽",
+  "rightPanel.aiDrawing.stream": "是否開啟流",
   "rightPanel.aiDrawing.qualityAuto": "自動",
   "rightPanel.aiDrawing.qualityLow": "低",
   "rightPanel.aiDrawing.qualityMedium": "中",
   "rightPanel.aiDrawing.qualityHigh": "高",
+  "rightPanel.aiDrawing.qualityXhigh": "超高",
+  "rightPanel.aiDrawing.qualityMax": "極致",
   "rightPanel.aiDrawing.qualityDefault": "預設",
   "rightPanel.aiDrawing.qualityStandard": "標準",
   "rightPanel.aiDrawing.qualityHd": "高清",

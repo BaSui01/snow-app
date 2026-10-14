@@ -22,8 +22,10 @@ import type {
 import {
   GROK_ASPECT_RATIOS as GROK_RATIOS,
   GROK_SIZE_PRESETS,
+  OPENAI_SIZE_PRESETS,
   getGeminiAspectRatios,
 } from "../sidebar/imagegenSettings/constants";
+import { resolveModelCapability } from "../sidebar/imagegenSettings/modelCapabilities";
 
 /** 尺寸体系。 */
 export type SizeSystem = "openai-size" | "gemini-tier" | "ratio-resolution";
@@ -79,12 +81,35 @@ export type ModelCapabilities = {
   qualityOptions: QualityOption[];
 };
 
-/** 通用质量选项（OpenAI gpt-image 系）。 */
+/** 官方质量选项取值 → i18n 标签 */
+export const QUALITY_LEVEL_LABEL_KEYS: Record<string, string> = {
+  auto: "rightPanel.aiDrawing.qualityAuto",
+  low: "rightPanel.aiDrawing.qualityLow",
+  medium: "rightPanel.aiDrawing.qualityMedium",
+  high: "rightPanel.aiDrawing.qualityHigh",
+  xhigh: "rightPanel.aiDrawing.qualityXhigh",
+  max: "rightPanel.aiDrawing.qualityMax",
+  standard: "rightPanel.aiDrawing.qualityStandard",
+  hd: "rightPanel.aiDrawing.qualityHd",
+  "": "rightPanel.aiDrawing.qualityDefault",
+};
+
+/** 通用质量选项（OpenAI gpt-image 系基础档位）。 */
 const QUALITY_OPTIONS: QualityOption[] = [
   { value: "auto", labelKey: "rightPanel.aiDrawing.qualityAuto" },
   { value: "low", labelKey: "rightPanel.aiDrawing.qualityLow" },
   { value: "medium", labelKey: "rightPanel.aiDrawing.qualityMedium" },
   { value: "high", labelKey: "rightPanel.aiDrawing.qualityHigh" },
+];
+
+/** OpenAI gpt-image-2.5 质量选项（官方支持 low / medium / high / xhigh / max 与 auto）。 */
+export const GPT_IMAGE_25_QUALITY_OPTIONS: QualityOption[] = [
+  { value: "auto", labelKey: "rightPanel.aiDrawing.qualityAuto" },
+  { value: "low", labelKey: "rightPanel.aiDrawing.qualityLow" },
+  { value: "medium", labelKey: "rightPanel.aiDrawing.qualityMedium" },
+  { value: "high", labelKey: "rightPanel.aiDrawing.qualityHigh" },
+  { value: "xhigh", labelKey: "rightPanel.aiDrawing.qualityXhigh" },
+  { value: "max", labelKey: "rightPanel.aiDrawing.qualityMax" },
 ];
 
 /** 思考强度官方取值（与 native sanitize_thinking_level 归一化后的集合一致）。 */
@@ -179,11 +204,28 @@ export const supportsSizeTier = (
 // 配置化声明解析（与 Rust capability_tokens / capability_declared 同构）
 // ------------------------------------------------------------------
 
+/** 中文别名归一化映射表（支持用户配置中文画质） */
+const NORMALIZE_QUALITY_ALIAS: Record<string, string> = {
+  低: "low",
+  中: "medium",
+  高: "high",
+  超高: "xhigh",
+  极致: "max",
+  极高: "max",
+  最高: "max",
+  标准: "standard",
+  高清: "hd",
+  自动: "auto",
+};
+
 /** 配置化支持范围声明（模型项与渠道级同名字段的最小切片）。 */
 export type DeclaredCapabilityFields = {
   supportedRatios?: string;
   supportedResolutions?: string;
   supportedThinking?: string;
+  supportedQualities?: string;
+  defaultQuality?: string;
+  customPrompt?: string;
 };
 
 /** 把「支持范围」说明文本切分为小写词元集合（分隔符语义与 Rust 一致）。 */
@@ -223,6 +265,33 @@ export const declaredList = (raw: string | undefined): string[] => {
     return [];
   }
   return [...new Set(capabilityTokens(raw ?? ""))];
+};
+
+/** 从配置文本（以逗号/分号/空格等切分）构建质量选项数组（纯配置驱动）。 */
+export const buildQualityOptionsFromDeclared = (
+  raw: string,
+  includeAuto = true,
+): QualityOption[] => {
+  const tokens = declaredList(raw).map((token) => {
+    const lower = token.toLowerCase();
+    return NORMALIZE_QUALITY_ALIAS[lower] ?? lower;
+  });
+  const options: QualityOption[] = [];
+  if (includeAuto) {
+    options.push({
+      value: "auto",
+      labelKey: "rightPanel.aiDrawing.qualityAuto",
+    });
+  }
+  for (const q of tokens) {
+    if (!options.some((opt) => opt.value === q)) {
+      options.push({
+        value: q,
+        labelKey: QUALITY_LEVEL_LABEL_KEYS[q] ?? q,
+      });
+    }
+  }
+  return options;
 };
 
 /**
@@ -356,18 +425,27 @@ export const inferModelCapabilities = (
     };
   }
 
-  // OpenAI 官方系（gpt-image-1 / 1.5 / 2 / mini / dall-e-3）
+  // OpenAI 兼容系（gpt-image / dall-e 等）
   const isDalle3 = id.includes("dall-e-3");
   const isDalle = id.startsWith("dall-e");
   const isGptImage2 = id.includes("gpt-image-2");
   const isGptImage1 = id.includes("gpt-image-1") && !isGptImage2;
-  // 参考图上限：官方文档未给硬性数字（示例 4 张、第三方文档 16 张），
-  // 取后端 imagegen 工具的全局契约上限 14（MAX_IMAGES），最大化利用。
   const openaiMaxRef = 14;
+
+  // 从内置能力库获取模型默认能力配置（配置驱动）
+  const cap = resolveModelCapability(model);
+
+  const openaiRatios = cap?.supportedRatios
+    ? declaredList(cap.supportedRatios)
+    : Object.keys(OPENAI_SIZE_PRESETS);
+  const openaiResolutions = cap?.supportedResolutions
+    ? declaredList(cap.supportedResolutions)
+    : ["1K", "2K", "4K"];
+
   return {
     sizeSystem: "openai-size",
-    ratios: [],
-    resolutions: [],
+    ratios: openaiRatios,
+    resolutions: openaiResolutions,
     tiers: ["", "1K", "2K", "4K"],
     fixedSizePresets: isGptImage2 ? [] : openaiFixedSizePresets(model),
     supportsReference: !isDalle3,
@@ -386,18 +464,20 @@ export const inferModelCapabilities = (
     supportsSeed: !isDalle,
     supportsNegativePrompt: false,
     supportsStream: !isDalle,
-    qualityOptions: isDalle3
-      ? [
-          { value: "", labelKey: "rightPanel.aiDrawing.qualityDefault" },
-          {
-            value: "standard",
-            labelKey: "rightPanel.aiDrawing.qualityStandard",
-          },
-          { value: "hd", labelKey: "rightPanel.aiDrawing.qualityHd" },
-        ]
-      : isDalle
-        ? []
-        : QUALITY_OPTIONS,
+    qualityOptions: cap?.supportedQualities
+      ? buildQualityOptionsFromDeclared(cap.supportedQualities, true)
+      : isDalle3
+        ? [
+            { value: "", labelKey: "rightPanel.aiDrawing.qualityDefault" },
+            {
+              value: "standard",
+              labelKey: "rightPanel.aiDrawing.qualityStandard",
+            },
+            { value: "hd", labelKey: "rightPanel.aiDrawing.qualityHd" },
+          ]
+        : isDalle
+          ? []
+          : QUALITY_OPTIONS,
   };
 };
 
@@ -410,7 +490,8 @@ export const inferModelCapabilities = (
  *      并补充内置预设之外的自定义比例）；
  *    - 声明分辨率 → 作为 ratio-resolution 体系候选（grok 等）；
  *    - 声明思考强度 → 开启思考控件并按声明构建选项（仅接受官方取值；
- *      「low」声明与 native 归一化（low→minimal）后的词元匹配不一致，忽略）。
+ *      「low」声明与 native 归一化（low→minimal）后的词元匹配不一致，忽略）；
+ *    - 质量选项 → 根据模型项 defaultQuality、渠道 defaultQuality 以及模型特征动态完善。
  */
 export const resolveChannelModelCapabilities = (
   provider: ImageGenChannelValue["provider"],
@@ -432,14 +513,10 @@ export const resolveChannelModelCapabilities = (
     channel?.supportedThinking,
   );
 
-  // 比例声明仅对消费比例列表的体系生效（gemini-tier / ratio-resolution）；
-  // openai-size 体系以固定预设组装尺寸，比例声明不参与下拉组装。
-  const usesRatioList =
-    base.sizeSystem === "gemini-tier" || base.sizeSystem === "ratio-resolution";
-  const ratios =
-    usesRatioList && capabilityDeclared(ratiosRaw)
-      ? filterDeclared(base.ratios, declaredList(ratiosRaw))
-      : base.ratios;
+  // 比例与分辨率声明按配置解析：声明优先裁剪，未声明则继承基线
+  const ratios = capabilityDeclared(ratiosRaw)
+    ? filterDeclared(base.ratios, declaredList(ratiosRaw))
+    : base.ratios;
   const resolutions = capabilityDeclared(resolutionsRaw)
     ? declaredList(resolutionsRaw)
     : base.resolutions;
@@ -458,12 +535,50 @@ export const resolveChannelModelCapabilities = (
         ]
       : base.thinkingOptions;
 
+  // 质量选项按配置声明解析：
+  // 1. 用户配置声明优先（模型项 supportedQualities > 渠道 supportedQualities）；
+  // 2. 未声明时从模型能力库读取（base.qualityOptions 已由 resolveModelCapability 解析）；
+  // 3. 用户配置的 defaultQuality 必须能够在工作台中选中（若不在列表中则动态补全）。
+  const declaredQualitiesRaw = effectiveDeclared(
+    item?.supportedQualities,
+    channel?.supportedQualities,
+  );
+
+  const rawConfiguredQuality = (
+    item?.defaultQuality?.trim() ||
+    channel?.defaultQuality?.trim() ||
+    ""
+  ).toLowerCase();
+
+  const resolvedQualityOptions: QualityOption[] = capabilityDeclared(
+    declaredQualitiesRaw,
+  )
+    ? buildQualityOptionsFromDeclared(declaredQualitiesRaw!, true)
+    : [...base.qualityOptions];
+
+  // 若配置指明了不在预设选项中的有效自定义质量（非 auto），动态追加
+  if (
+    rawConfiguredQuality &&
+    rawConfiguredQuality !== "auto" &&
+    resolvedQualityOptions.length > 0 &&
+    !resolvedQualityOptions.some(
+      (opt) => opt.value.toLowerCase() === rawConfiguredQuality,
+    )
+  ) {
+    resolvedQualityOptions.push({
+      value: rawConfiguredQuality,
+      labelKey:
+        QUALITY_LEVEL_LABEL_KEYS[rawConfiguredQuality] ?? rawConfiguredQuality,
+    });
+  }
+
   return {
     ...base,
     ratios,
     resolutions,
     supportsThinking: thinkingTokens.length > 0 || base.supportsThinking,
     thinkingOptions,
+    qualityOptions: resolvedQualityOptions,
   };
 };
 

@@ -39424,7 +39424,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--surface-island-muted);
+  background: var(--surface-island-muted, var(--bg-secondary));
   padding: 12px;
 }
 
@@ -39447,11 +39447,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-primary);
   padding: 10px 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -39459,6 +39459,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .ai-drawing-composer:focus-within {
   border-color: var(--accent-color);
+  box-shadow:
+    0 0 0 1px var(--accent-color),
+    0 2px 8px color-mix(in srgb, var(--accent-color) 18%, transparent);
 }
 
 .ai-drawing-prompt {
@@ -39883,10 +39886,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-wrap: wrap;
   gap: 10px 14px;
   flex-shrink: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 10px);
   background: var(--bg-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .ai-drawing-param {
@@ -40046,29 +40050,28 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 220px;
+  max-width: 240px;
   padding: 0 10px;
   border: 1px solid var(--border-color);
   border-radius: 7px;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    border-color 0.12s,
-    color 0.12s,
-    background 0.12s;
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-size-trigger:hover,
 .ai-drawing-size-trigger.open {
-  color: var(--text-primary);
-  border-color: color-mix(
-    in srgb,
-    var(--accent-color) 40%,
-    var(--border-color)
-  );
-  background: var(--bg-hover);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-tertiary));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
 .ai-drawing-size-summary {
@@ -40089,21 +40092,23 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   z-index: 39;
 }
 
-/* 尺寸弹层 */
+/* 尺寸/质量弹层：放宽宽度以舒适展示比例与质量全集，优化毛玻璃与阴影 */
 .ai-drawing-size-popover {
   position: fixed;
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(272px, calc(100vw - 24px));
+  gap: 12px;
+  width: min(320px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
-  max-height: min(420px, calc(100vh - 24px));
-  padding: 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  max-height: min(450px, calc(100vh - 24px));
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 10px);
   background: var(--bg-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.36),
+    0 0 0 1px var(--border-light);
   overflow-y: auto;
 }
 
@@ -40114,13 +40119,15 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 .ai-drawing-size-row-title {
-  font-size: 11px;
-  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
 }
 
 .ai-drawing-size-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
   gap: 6px;
   min-width: 0;
 }
@@ -40134,26 +40141,28 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   justify-content: center;
   gap: 2px;
   min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 6px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   font-size: 11.5px;
-  line-height: 1;
+  line-height: 1.1;
   cursor: pointer;
   transition:
     border-color 0.12s,
     color 0.12s,
-    background 0.12s;
+    background 0.12s,
+    box-shadow 0.12s;
 }
 
 .ai-drawing-size-option:hover {
   color: var(--text-primary);
+  background: var(--bg-hover);
   border-color: color-mix(
     in srgb,
-    var(--accent-color) 40%,
+    var(--accent-color) 45%,
     var(--border-color)
   );
 }
@@ -40161,7 +40170,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .ai-drawing-size-option.active {
   color: var(--accent-color);
   border-color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-primary));
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-primary));
+  box-shadow: 0 0 0 1px var(--accent-color) inset;
   font-weight: 600;
 }
 
@@ -40172,15 +40182,19 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   white-space: nowrap;
 }
 
+.ai-drawing-size-option.active .ai-drawing-size-hint {
+  color: color-mix(in srgb, var(--accent-color) 75%, var(--text-secondary));
+}
+
 .ai-drawing-advanced {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 14px;
   padding: 10px 12px;
-  border: 1px dashed var(--border-light);
+  border: 1px dashed var(--border-color);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, var(--bg-primary));
   flex-shrink: 0;
 }
 
@@ -40189,20 +40203,94 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: var(--warning-color, #d29922);
 }
 
+/* 是否开启流：现代精致 Switch 切换胶囊设计，与工作台高度完美对齐 */
 .ai-drawing-param-stream {
-  gap: 5px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
   cursor: pointer;
   user-select: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.ai-drawing-param-stream:hover:not(.is-disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
+}
+
+.ai-drawing-param-stream.is-active {
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-tertiary));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 50%,
+    var(--border-color)
+  );
+  color: var(--text-primary);
+}
+
+.ai-drawing-param-stream.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .ai-drawing-param-stream input[type="checkbox"] {
-  accent-color: var(--accent-color);
-  cursor: pointer;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  margin: 0;
 }
 
-.ai-drawing-param-stream input[type="checkbox"]:disabled {
-  opacity: 0.4;
-  cursor: default;
+.ai-drawing-switch-pill {
+  position: relative;
+  display: inline-block;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-color) 80%, var(--bg-secondary));
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.ai-drawing-param-stream.is-active .ai-drawing-switch-pill {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.ai-drawing-switch-dot {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ai-drawing-param-stream.is-active .ai-drawing-switch-dot {
+  transform: translateX(12px);
 }
 
 /* 参考图（图生图，最多 5 张） */
@@ -40511,7 +40599,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .ai-drawing-example-chip {
   max-width: 100%;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-tertiary);
@@ -40522,10 +40610,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition:
-    background 0.12s,
-    color 0.12s,
-    border-color 0.12s;
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 
 .ai-drawing-example-chip:hover {
@@ -40533,9 +40624,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: var(--text-primary);
   border-color: color-mix(
     in srgb,
-    var(--accent-color) 40%,
+    var(--accent-color) 45%,
     var(--border-color)
   );
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent-color) 15%, transparent);
 }
 
 /* `@` 唤起的参考图选择弹窗：贴住提示词输入框宽度，窄容器自动降列 */

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use napi::bindgen_prelude::*;
 
-use super::{is_git_repo, run_git, run_git_raw, GitBranch, GitWorktree};
+use super::{is_git_repo, prune_worktree_registry, run_git, run_git_raw, GitBranch, GitWorktree};
 
 fn normalize_repo_path(path: &str) -> String {
     path.replace('\\', "/")
@@ -18,6 +18,8 @@ pub fn get_git_worktrees(repo_path: &str) -> Result<Vec<GitWorktree>> {
     if !is_git_repo(repo_path) {
         return Ok(Vec::new());
     }
+
+    let _ = prune_worktree_registry(repo_path);
 
     let output = match run_git(repo_path, &["worktree", "list", "--porcelain"]) {
         Ok(out) => out,

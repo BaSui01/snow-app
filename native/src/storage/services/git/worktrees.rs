@@ -139,8 +139,14 @@ fn canonical(path: &str) -> String {
     std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path)).to_string_lossy().into_owned()
 }
 
+/// 清除目录已删除但 git 仍保留的工作树登记（git worktree prune）。
+pub fn prune_worktree_registry(repository_path: &str) -> Result<()> {
+    run_git(repository_path, &["worktree", "prune"]).map(|_| ())
+}
+
 pub fn list_worktrees(database_path: &Path, directory_id: &str) -> Result<Vec<GitWorktreeInfo>> {
     let repository_path = project_repository(database_path, directory_id)?;
+    prune_worktree_registry(&repository_path)?;
     let entries = list_git_worktree_entries(&repository_path)?;
     let mut actual_paths = Vec::new();
     let mut result = Vec::new();
@@ -186,22 +192,15 @@ pub fn list_worktrees(database_path: &Path, directory_id: &str) -> Result<Vec<Gi
         .map_err(|error| database::database_error(database_path, "read worktree registry", error))?;
     drop(statement);
     for (id, path) in saved {
-        if !actual_paths.contains(&path) {
-            let row = transaction.query_row(
-                "SELECT repository_path, branch_name FROM git_worktrees WHERE worktree_id = ?1",
-                [&id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-            ).map_err(|error| database::database_error(database_path, "read stale worktree", error))?;
-            result.push(GitWorktreeInfo {
-                worktree_id: id,
-                directory_id: directory_id.to_string(),
-                repository_path: row.0,
-                worktree_path: path,
-                branch_name: row.1,
-                head_oid: String::new(),
-                is_detached: false,
-                is_dirty: false,
-                is_valid: false,
-            });
+        if !actual_paths.contains(&path) && !is_team_worktree(&path) {
+            transaction.execute(
+                "DELETE FROM conversation_worktree_bindings WHERE worktree_id = ?1",
+                params![id],
+            ).map_err(|error| database::database_error(database_path, "delete orphan worktree binding", error))?;
+            transaction.execute(
+                "DELETE FROM git_worktrees WHERE worktree_id = ?1",
+                params![id],
+            ).map_err(|error| database::database_error(database_path, "delete orphan worktree registry entry", error))?;
         }
     }
     transaction.commit().map_err(|error| database::database_error(database_path, "finish worktree reconciliation", error))?;

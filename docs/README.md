@@ -51,6 +51,8 @@
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
+- [异步生图任务生命周期 ADR](zh-CN/4-架构与开发/9-异步生图任务生命周期ADR.md) / [Asynchronous image-generation lifecycle ADR](en/4-architecture-and-development/9-async-image-generation-lifecycle-adr.md)：任务持久化、终态交付与批次通知 / Durable tasks, terminal delivery and batch notifications.
+
 - [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、25 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。
 - [文档治理指南 / Documentation Governance Guide](DOCUMENTATION_GUIDE.md)：信息架构、双语同步、代码锚点、Mermaid 规范与功能变更完成标准。
 - 任何产品功能变更都必须同步更新对应中英文文档、覆盖矩阵与本索引，并运行 `npm run check:docs`。

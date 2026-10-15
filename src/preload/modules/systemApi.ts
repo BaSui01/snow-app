@@ -5,20 +5,20 @@ import type {
   DetachedPanelRuntimeMirror,
   DetachedPanelTabPayload,
 } from "../../shared/detachedPanel";
-import { DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL } from "../../shared/detachedPanel";
 import {
+  DETACHED_PANEL_RUNTIME_MIRROR_BROADCAST_CHANNEL,
   DETACHED_PANEL_CLOSE_REQUESTED_CHANNEL,
   DETACHED_PANEL_CONVERSATION_ACTIVATE_BROADCAST_CHANNEL,
   DETACHED_PANEL_CONVERSATION_LIST_BROADCAST_CHANNEL,
   DETACHED_PANEL_CONVERSATION_OWNERS_BROADCAST_CHANNEL,
 } from "../../shared/detachedPanel";
+import { callMcpTool } from "./mcpToolStream";
 import {
   isNotificationConversationTarget,
   type AppNotificationOptions,
   type NotificationConversationTarget,
 } from "../../shared/notification";
 import type {
-  BashStreamChunk,
   BrowserCommandRequest,
   BrowserCommandResponse,
   BrowserFrameOperationArgs,
@@ -50,7 +50,6 @@ import type {
   UserQuestionResponse,
 } from "../types";
 
-const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const BROWSER_OPEN_TAB_CHANNEL = "browser:open-tab";
@@ -134,9 +133,6 @@ ipcRenderer.on(
     }
   },
 );
-
-const createMcpToolStreamId = (): string =>
-  `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
  * 侧边浏览器内新建标签页事件（broadcast 模型）。
@@ -472,51 +468,6 @@ ipcRenderer.on(
     }
   },
 );
-
-const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
-  if (
-    !isRecord(value) ||
-    (value.stream !== "stdout" &&
-      value.stream !== "stderr" &&
-      value.stream !== "interactive_session" &&
-      value.stream !== "tool_execution") ||
-    typeof value.data !== "string"
-  ) {
-    return null;
-  }
-
-  return { stream: value.stream, data: value.data };
-};
-
-const mcpToolChunkCallbacks = new Map<
-  string,
-  (chunk: BashStreamChunk) => void
->();
-let mcpToolChunkListenerRegistered = false;
-
-const ensureMcpToolChunkListener = (): void => {
-  if (mcpToolChunkListenerRegistered) {
-    return;
-  }
-  mcpToolChunkListenerRegistered = true;
-  ipcRenderer.on(MCP_TOOL_CHUNK_CHANNEL, (_event, payload: unknown) => {
-    if (!isRecord(payload)) {
-      return;
-    }
-    const streamId = payload.streamId;
-    if (typeof streamId !== "string") {
-      return;
-    }
-    const callback = mcpToolChunkCallbacks.get(streamId);
-    if (!callback) {
-      return;
-    }
-    const chunk = normalizeBashStreamChunk(payload.chunk);
-    if (chunk) {
-      callback(chunk);
-    }
-  });
-};
 
 // Codebase embed progress: broadcast model.
 // The main process sends progress events with { sessionId, projectId, progress }.
@@ -1378,47 +1329,7 @@ export const systemApi = {
     reason?: string,
   ): Promise<boolean> =>
     ipcRenderer.invoke("mcp:abort-tool-execution", toolExecutionId, reason),
-  callMcpTool: (
-    toolFullName: string,
-    argsJson: string,
-    projectId?: string,
-    checkpointIds?: string[],
-    checkpointWorkDir?: string,
-    sensitiveAuthorizationToken?: string,
-    onChunk?: (chunk: BashStreamChunk) => void,
-    interactionId?: string,
-    subAgentAllowedTools?: string[],
-    planMode?: boolean,
-    planApproved?: boolean,
-    conversationId?: string,
-  ): Promise<string> => {
-    const streamId = createMcpToolStreamId();
-    ensureMcpToolChunkListener();
-
-    if (onChunk) {
-      mcpToolChunkCallbacks.set(streamId, onChunk);
-    }
-
-    return ipcRenderer
-      .invoke(
-        "mcp:call-tool",
-        toolFullName,
-        argsJson,
-        projectId,
-        checkpointIds,
-        checkpointWorkDir,
-        sensitiveAuthorizationToken,
-        streamId,
-        interactionId ?? streamId,
-        subAgentAllowedTools,
-        planMode,
-        planApproved,
-        conversationId,
-      )
-      .finally(() => {
-        mcpToolChunkCallbacks.delete(streamId);
-      });
-  },
+  callMcpTool,
   createCheckpoint: (workDir: string): Promise<string> =>
     ipcRenderer.invoke("checkpoint:create", workDir),
   restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>

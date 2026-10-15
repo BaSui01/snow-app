@@ -57,6 +57,7 @@ import {
   DEFAULT_IMAGE_GEN_CHANNEL,
   DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
   DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+  DEFAULT_IMAGE_GEN_EXECUTION_MODE,
   DEFAULT_OPENAI_BASE_URL,
   GEMINI_MODEL_EXAMPLES,
   GEMINI_ASPECT_RATIOS,
@@ -84,6 +85,7 @@ import {
 } from "./imagegenSettings/modelCapabilities";
 import type {
   ImageGenChannelValue,
+  ImageGenExecutionMode,
   ImageGenModelItem,
   ImageGenProvider,
   ImageGenTemplate,
@@ -236,6 +238,14 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
   );
   /** persistChannels 闭包内读取最新超时（避免 state 过期）。 */
   const timeoutSecsRef = useRef(DEFAULT_IMAGE_GEN_TIMEOUT_SECS);
+  /** 生图执行模式（auto / sync / async，立即保存）。 */
+  const [executionMode, setExecutionMode] = useState<ImageGenExecutionMode>(
+    DEFAULT_IMAGE_GEN_EXECUTION_MODE,
+  );
+  /** persistChannels 闭包内读取最新执行模式（避免 state 过期）。 */
+  const executionModeRef = useRef<ImageGenExecutionMode>(
+    DEFAULT_IMAGE_GEN_EXECUTION_MODE,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -293,6 +303,8 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
       maxConcurrentRef.current = settings.maxConcurrentImages;
       setTimeoutSecs(settings.timeoutSecs);
       timeoutSecsRef.current = settings.timeoutSecs;
+      setExecutionMode(settings.executionMode);
+      executionModeRef.current = settings.executionMode;
     } catch (e) {
       setError(
         e instanceof Error
@@ -325,6 +337,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
           channels: next,
           maxConcurrentImages: maxConcurrentRef.current,
           timeoutSecs: timeoutSecsRef.current,
+          executionMode: executionModeRef.current,
         }),
       );
       setChannels(next);
@@ -367,6 +380,16 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
     const next = Math.min(max, Math.max(min, Math.round(rawValue)));
     setTimeoutSecs(next);
     timeoutSecsRef.current = next;
+    await persistChannels(channels);
+  };
+
+  /** 更新生图执行模式（立即保存）。 */
+  const updateExecutionMode = async (mode: ImageGenExecutionMode) => {
+    if (isSaving) {
+      return;
+    }
+    setExecutionMode(mode);
+    executionModeRef.current = mode;
     await persistChannels(channels);
   };
 
@@ -2386,6 +2409,44 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                 "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",
             })}
           </small>
+        </div>
+        <div className="api-settings-summary-card imagegen-concurrency-card imagegen-mode-card">
+          <span className="imagegen-concurrency-head">
+            <Layers size={14} strokeWidth={1.8} />
+            {t("settings.imagegenExecutionMode", {
+              defaultValue: "Execution mode",
+            })}
+          </span>
+          <div className="imagegen-concurrency-control">
+            <select
+              value={executionMode}
+              onChange={(e) =>
+                void updateExecutionMode(
+                  e.target.value as ImageGenExecutionMode,
+                )
+              }
+              disabled={isBusy}
+              aria-label={t("settings.imagegenExecutionMode", {
+                defaultValue: "Execution mode",
+              })}
+            >
+              <option value="auto">
+                {t("settings.imagegenExecutionModeAuto", {
+                  defaultValue: "Auto",
+                })}
+              </option>
+              <option value="sync">
+                {t("settings.imagegenExecutionModeSync", {
+                  defaultValue: "Sync",
+                })}
+              </option>
+              <option value="async">
+                {t("settings.imagegenExecutionModeAsync", {
+                  defaultValue: "Async",
+                })}
+              </option>
+            </select>
+          </div>
         </div>
       </div>
 

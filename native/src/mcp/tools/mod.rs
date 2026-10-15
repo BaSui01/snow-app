@@ -938,6 +938,17 @@ async fn resolve_local_workspace_args(
         return Ok(args);
     }
 
+    // 主目录写法（`~/.snowapp/docs/...`，内置文档与技能普遍如此记录路径）先展开为
+    // 绝对路径：否则会被当作相对路径拼到项目根下，得到 `<项目根>/~/.snowapp/...`，
+    // 而下游的 `~` 展开（只识别开头字符）此时已不生效，最终报「找不到指定路径」。
+    let requested_path = {
+        let expanded = crate::utils::paths::expand_home_dir(&requested_path);
+        if expanded != requested_path {
+            args[path_field] = Value::String(expanded.clone());
+        }
+        expanded
+    };
+
     // 绝对路径本身无需重写，但 grep 直接指向项目根时仍要覆盖关联项目组；
     // 其余绝对路径调用（filesystem-read 等）保持原样、省掉一次项目根解析。
     if Path::new(&requested_path).is_absolute() {

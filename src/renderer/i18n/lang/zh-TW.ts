@@ -97,7 +97,7 @@ export const zhTW = {
   "chatInput.lspBadgeLoading": "正在取得 LSP 程序狀態",
   "chatInput.lspBadgeStale": "狀態取得失敗；上次快照已過期",
   "chatInput.lspBadgeUnknown": "目前程序狀態未知",
-  "chatInput.lspBadgeUpdated": "上次成功更新：{{time}}",
+  "chatInput.lspBadgeUpdated": "更新於 {{time}}",
   "chatInput.lspBadgeProcessOnly":
     "僅表示語言伺服器程序狀態，不代表索引或語意分析已就緒。",
   "settings.lspStatusUnknown": "狀態未知 / 快照已過期",
@@ -2016,6 +2016,12 @@ export const zhTW = {
     "單次生圖/編輯請求（含串流）的最長等待時間，逾時後請求會被中斷。複雜提示詞或 2K/4K 高解析度生成可能耗時數分鐘，請求經常逾時請調大此值（預設 300 秒）。",
   "settings.imagegenTimeoutDecrease": "減少生成逾時時間",
   "settings.imagegenTimeoutIncrease": "增加生成逾時時間",
+  "settings.imagegenExecutionMode": "執行模式",
+  "settings.imagegenExecutionModeAuto": "自動判定（Agent 自主決策）",
+  "settings.imagegenExecutionModeSync": "總是同步（阻塞等待完成）",
+  "settings.imagegenExecutionModeAsync": "總是異步（後台生成後喚起）",
+  "toolCall.imagegen.asyncPendingNotice":
+    "任務已提交至後台隊列異步生成，生成完成後將自動通知。",
   "settings.imageLibrary": "圖片庫",
   "settings.imageLibraryAlbums": "相冊",
   "settings.imageLibraryDescription":
@@ -4194,14 +4200,13 @@ export const zhTW = {
   "chatInput.webChipRemove": "移除引用",
   "chatInput.lspBadgeTitle": "LSP 語言伺服器",
   "chatInput.lspBadgeRunning": "{{running}}/{{total}} 執行中",
-  "chatInput.lspBadgeEmpty":
-    "目前沒有執行中的工作階段 — 首次工具呼叫時自動啟動",
+  "chatInput.lspBadgeEmpty": "暫無執行中的服務",
   "chatInput.lspBadgeStatusRunning": "執行中",
   "chatInput.lspBadgeStatusDead": "已停止",
   "chatInput.lspBadgeStatusExited": "程序已退出",
   "chatInput.lspBadgeOpenSettings": "開啟 LSP 設定",
   "chatInput.lspBadgeOpenProjectSettings": "開啟專案 LSP 設定",
-  "chatInput.lspBadgeTitleIdle": "LSP 待機(首次工具呼叫時自動啟動)",
+  "chatInput.lspBadgeTitleIdle": "LSP 待機",
   "chatInput.lspBadgeTitleRunning": "{{count}} 個語言伺服器執行中",
   "chatInput.lspBadgeTitleProblems": "{{count}} 個語言伺服器異常",
   "browser.moreActions": "更多操作",

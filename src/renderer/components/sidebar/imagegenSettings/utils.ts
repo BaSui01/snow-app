@@ -2,11 +2,13 @@ import {
   DEFAULT_IMAGE_GEN_CHANNEL,
   DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
   DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+  DEFAULT_IMAGE_GEN_EXECUTION_MODE,
   IMAGE_GEN_MAX_CONCURRENT_RANGE,
   IMAGE_GEN_TIMEOUT_RANGE,
 } from "./constants";
 import type {
   ImageGenChannelValue,
+  ImageGenExecutionMode,
   ImageGenModelItem,
   ImageGenProvider,
   ImageGenSettingsForm,
@@ -44,6 +46,17 @@ const readProvider = (
   value: unknown,
   fallback: ImageGenProvider,
 ): ImageGenProvider => (value === "gemini" ? "gemini" : fallback);
+
+/** 解析生图执行模式：合法值 auto/sync/async，非法回退默认 auto。 */
+export const readExecutionMode = (
+  value: unknown,
+  fallback: ImageGenExecutionMode = DEFAULT_IMAGE_GEN_EXECUTION_MODE,
+): ImageGenExecutionMode => {
+  if (value === "sync" || value === "async" || value === "auto") {
+    return value;
+  }
+  return fallback;
+};
 
 /** 解析单个模型的配置。 */
 export const readModelItem = (source: unknown): ImageGenModelItem => {
@@ -124,6 +137,12 @@ const readChannel = (source: unknown): ImageGenChannelValue => {
       source.customPrompt,
       DEFAULT_IMAGE_GEN_CHANNEL.customPrompt ?? "",
     ),
+    executionMode:
+      source.executionMode === "sync" ||
+      source.executionMode === "async" ||
+      source.executionMode === "auto"
+        ? source.executionMode
+        : undefined,
     models: models.length > 0 ? models : undefined,
   };
 };
@@ -159,6 +178,7 @@ export const readImageGenSettingsJson = (
       channels: [],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
       timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+      executionMode: DEFAULT_IMAGE_GEN_EXECUTION_MODE,
     };
   }
   try {
@@ -168,6 +188,7 @@ export const readImageGenSettingsJson = (
         channels: [],
         maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
         timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+        executionMode: DEFAULT_IMAGE_GEN_EXECUTION_MODE,
       };
     }
 
@@ -184,6 +205,7 @@ export const readImageGenSettingsJson = (
         channels,
         maxConcurrentImages: toConcurrentCount(parsed.maxConcurrentImages),
         timeoutSecs: toTimeoutSecs(parsed.timeoutSecs),
+        executionMode: readExecutionMode(parsed.executionMode),
       };
     }
 
@@ -200,6 +222,7 @@ export const readImageGenSettingsJson = (
         channels,
         maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
         timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+        executionMode: readExecutionMode(parsed.executionMode),
       };
     }
 
@@ -218,12 +241,14 @@ export const readImageGenSettingsJson = (
       channels: [legacy],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
       timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+      executionMode: readExecutionMode(parsed.executionMode),
     };
   } catch {
     return {
       channels: [],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
       timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+      executionMode: DEFAULT_IMAGE_GEN_EXECUTION_MODE,
     };
   }
 };
@@ -235,9 +260,10 @@ export const toImageGenForm = (
   channels: settings.channels.map((channel) => ({ ...channel })),
   maxConcurrentImages: settings.maxConcurrentImages,
   timeoutSecs: settings.timeoutSecs,
+  executionMode: settings.executionMode,
 });
 
-/** 表单 -> 存储 JSON 字符串（channels 数组 + 最大并发生成数）。 */
+/** 表单 -> 存储 JSON 字符串（channels 数组 + 最大并发生成数 + 执行模式）。 */
 export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
   JSON.stringify({
     channels: form.channels.map((channel) => ({
@@ -258,6 +284,7 @@ export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
       supportedThinking: (channel.supportedThinking ?? "").trim(),
       supportedQualities: (channel.supportedQualities ?? "").trim(),
       customPrompt: (channel.customPrompt ?? "").trim(),
+      executionMode: channel.executionMode,
       models:
         channel.models && channel.models.length > 0
           ? channel.models
@@ -279,4 +306,5 @@ export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
     })),
     maxConcurrentImages: toConcurrentCount(form.maxConcurrentImages),
     timeoutSecs: toTimeoutSecs(form.timeoutSecs),
+    executionMode: readExecutionMode(form.executionMode),
   });

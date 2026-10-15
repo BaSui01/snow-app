@@ -154,11 +154,13 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       ctx.setSessions((prev) => {
         const session = prev[key];
         if (!session) return prev;
+        const messages = updater(session.messages);
+        if (messages === session.messages) return prev;
         return {
           ...prev,
           [key]: {
             ...session,
-            messages: updater(session.messages),
+            messages,
             lastAccessedAt: Date.now(),
           },
         };

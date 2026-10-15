@@ -90,7 +90,11 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                     .get("timeoutSecs")
                     .cloned()
                     .unwrap_or_else(|| json!(300)),
-                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. MULTI-MODEL CHANNELS: one channel (a single baseUrl + apiKey, e.g. a relay service) can host several image models — each channel entry's `models` array lists them with their own defaultSize / defaultQuality / supportedRatios / supportedResolutions / supportedThinking / customPrompt, and the entry's top-level `model` is the default primary model. `configured` is true when the channel is enabled, has an apiKey, and has at least one model (either the top-level `model` or an enabled child in `models`). Pass `model` to imagegen-generate with an exact child model id to use that model's own defaults. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read it with config-get key=maxConcurrentImages, and write it with config-set value={\"maxConcurrentImages\": N} — the value MUST be an object (a bare number is rejected, and the key argument does not select this global field for writes). timeoutSecs (top-level global field, 60-3600, default 300) is the per-request timeout for image generation (including streaming); raise it if complex/high-resolution prompts time out. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel. IMPORTANT when writing: an openai channel's baseUrl MUST include the /v1 path segment (e.g. https://api.openai.com/v1, or http://host:port/v1 — the same rule as the conversation API baseUrl); generation requests are built as {baseUrl}/images/generations and {baseUrl}/images/edits, so a bare host root without /v1 returns 404. A gemini channel's baseUrl must include its version segment (default https://generativelanguage.googleapis.com/v1beta). Writing `models` via {<channelId>: {models:[...]}} is a DEEP merge by model id (only the fields you pass change; other models and fields are preserved) — to fully replace the list, use the {channels:[...]} form instead.",
+                "executionMode": settings
+                    .get("executionMode")
+                    .cloned()
+                    .unwrap_or_else(|| json!("auto")),
+                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. MULTI-MODEL CHANNELS: one channel (a single baseUrl + apiKey, e.g. a relay service) can host several image models — each channel entry's `models` array lists them with their own defaultSize / defaultQuality / supportedRatios / supportedResolutions / supportedThinking / customPrompt, and the entry's top-level `model` is the default primary model. `configured` is true when the channel is enabled, has an apiKey, and has at least one model (either the top-level `model` or an enabled child in `models`). Pass `model` to imagegen-generate with an exact child model id to use that model's own defaults. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read it with config-get key=maxConcurrentImages, and write it with config-set value={\"maxConcurrentImages\": N} — the value MUST be an object (a bare number is rejected, and the key argument does not select this global field for writes). timeoutSecs (top-level global field, 60-3600, default 300) is the per-request timeout for image generation (including streaming); raise it if complex/high-resolution prompts time out. executionMode (top-level global field, \"auto\" | \"sync\" | \"async\", default \"auto\") configures whether generation blocks the agent loop (sync) or yields immediately and wakes up upon completion (async). Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel. IMPORTANT when writing: an openai channel's baseUrl MUST include the /v1 path segment (e.g. https://api.openai.com/v1, or http://host:port/v1 — the same rule as the conversation API baseUrl); generation requests are built as {baseUrl}/images/generations and {baseUrl}/images/edits, so a bare host root without /v1 returns 404. A gemini channel's baseUrl must include its version segment (default https://generativelanguage.googleapis.com/v1beta). Writing `models` via {<channelId>: {models:[...]}} is a DEEP merge by model id (only the fields you pass change; other models and fields are preserved) — to fully replace the list, use the {channels:[...]} form instead.",
             }))
         }
         TOOL_GET => {
@@ -123,6 +127,17 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                             .get("timeoutSecs")
                             .cloned()
                             .unwrap_or_else(|| json!(300)),
+                    }))
+                }
+                // 顶层全局字段：生图执行模式（"auto" | "sync" | "async"，默认 "auto"）
+                Some(key) if key.eq_ignore_ascii_case("executionMode") => {
+                    Ok(json!({
+                        "scope": SCOPE_IMAGEGEN,
+                        "key": "executionMode",
+                        "value": settings
+                            .get("executionMode")
+                            .cloned()
+                            .unwrap_or_else(|| json!("auto")),
                     }))
                 }
                 Some(key) => {
@@ -215,6 +230,14 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                 .cloned()
                 .or_else(|| settings.get("timeoutSecs").cloned())
                 .map(clamp_imagegen_timeout_secs);
+            // 保留「生图执行模式」（顶层全局字段，设置面板可调）：本次
+            // value 中显式提供时采用新值（规范化到 auto/sync/async），否则沿用现有
+            // 存储值。
+            let execution_mode = value
+                .get("executionMode")
+                .cloned()
+                .or_else(|| settings.get("executionMode").cloned())
+                .map(normalize_imagegen_execution_mode);
             if let Some(channels_value) = value.get("channels") {
                 // 全量替换
                 if !channels_value.is_array() {
@@ -229,6 +252,9 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                 }
                 if let Some(timeout_secs) = timeout_secs {
                     settings["timeoutSecs"] = timeout_secs;
+                }
+                if let Some(execution_mode) = execution_mode {
+                    settings["executionMode"] = execution_mode;
                 }
             } else if let Some(value_map) = value.as_object() {
                 // 按渠道 id / 名称合并更新；不存在则追加为新渠道
@@ -307,6 +333,9 @@ pub(crate) fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Res
                 }
                 if let Some(timeout_secs) = timeout_secs {
                     settings["timeoutSecs"] = timeout_secs;
+                }
+                if let Some(execution_mode) = execution_mode {
+                    settings["executionMode"] = execution_mode;
                 }
             }
 
@@ -414,6 +443,15 @@ fn clamp_imagegen_timeout_secs(value: Value) -> Value {
         return json!(300);
     };
     json!(number.round().clamp(60.0, 3600.0) as i64)
+}
+
+/// 规范化「生图执行模式」：必须是 "auto" | "sync" | "async"；非法值回退默认 "auto"。
+fn normalize_imagegen_execution_mode(value: Value) -> Value {
+    match value.as_str().map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+        Some("sync") => json!("sync"),
+        Some("async") => json!("async"),
+        _ => json!("auto"),
+    }
 }
 
 /// 将任意 imagegen 存储格式迁移为 { channels: [...] } 新格式：

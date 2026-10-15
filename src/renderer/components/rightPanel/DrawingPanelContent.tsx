@@ -1445,6 +1445,9 @@ export function DrawingPanelContent({
       }
     }
 
+    // The drawing panel has local result state, not a conversation task
+    // coordinator. Keep direct requests synchronous instead of losing pending.
+    args.mode = "sync";
     cancelledRef.current = false;
     genStartedAtRef.current = Date.now();
     const mySeq = ++genSeqRef.current;

@@ -5,6 +5,7 @@ mod engine;
 mod formatting;
 mod git;
 mod ide;
+mod image_generation;
 mod images;
 mod market;
 mod oauth;

@@ -57,8 +57,11 @@ import {
 } from "../../ssh/sshCommandRegistry";
 import { safeSend } from "../../utils/safeSend";
 import { dispatchWebSearchCommand } from "../../websearch/webSearchRegistry";
-
-const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
+import { registerImageGenerationHandlers } from "./imageGenerationHandlers";
+import {
+  forwardMcpToolChunk,
+  injectImageGenerationContext,
+} from "./imageGenerationToolBridge";
 
 /** 解析 config-* 工具参数中的 scope（非法 JSON 或缺失时返回 null）。 */
 const readConfigScope = (argsJson: string): string | null => {
@@ -75,6 +78,7 @@ const readConfigScope = (argsJson: string): string | null => {
 };
 
 export const registerNativeHandlers = (native: NativeBridge): void => {
+  registerImageGenerationHandlers(native);
   // SSH checkpoint 需要一个独立于工具调用链的远程命令通道：renderer 的
   // checkpoint 导出 API（create/restore/list）不经过 callMcpTool，无法把
   // onRemoteWorkspaceCommand 传入 Rust。这里注册一次全局回调，复用与
@@ -1118,9 +1122,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       const sshAbortController = new AbortController();
       const remoteExecutionIds = new Set<string>();
       const normalizedProjectId = (projectId as string | undefined)?.trim();
-      const callPromise = native.callMcpTool(
+      const normalizedConversationId = (
+        conversationId as string | undefined
+      )?.trim();
+      const runtimeArgsJson = injectImageGenerationContext(
         toolFullName.trim(),
         argsJson,
+        normalizedConversationId ?? "",
+        normalizedInteractionId,
+      );
+      const callPromise = native.callMcpTool(
+        toolFullName.trim(),
+        runtimeArgsJson,
         normalizedProjectId,
         (checkpointIds as string[] | undefined)?.map((id) => id.trim()),
         (checkpointWorkDir as string | undefined)?.trim(),
@@ -1135,10 +1148,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
             remoteExecutionIds.add(executionId);
             registerSshCommandAbort(executionId, sshAbortController);
           }
-          safeSend(event.sender, MCP_TOOL_CHUNK_CHANNEL, {
-            streamId: normalizedStreamId,
+          forwardMcpToolChunk(
+            event.sender,
+            normalizedStreamId,
+            normalizedConversationId ?? "",
             chunk,
-          });
+          );
         },
         (command: BrowserCommand) =>
           dispatchBrowserCommand(event.sender, command),
@@ -1157,7 +1172,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         normalizedSubAgentAllowedTools,
         planMode as boolean | undefined,
         planApproved as boolean | undefined,
-        (conversationId as string | undefined)?.trim(),
+        normalizedConversationId,
       );
 
       try {

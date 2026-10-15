@@ -107,7 +107,7 @@ export const en = {
   "chatInput.lspBadgeLoading": "Loading LSP process status",
   "chatInput.lspBadgeStale": "Refresh failed; the last snapshot is stale",
   "chatInput.lspBadgeUnknown": "Current process status unknown",
-  "chatInput.lspBadgeUpdated": "Last successful update: {{time}}",
+  "chatInput.lspBadgeUpdated": "Updated at {{time}}",
   "chatInput.lspBadgeProcessOnly":
     "Process status only; indexing or semantic analysis may not be ready.",
   "settings.lspStatusUnknown": "Unknown / stale status",
@@ -2114,6 +2114,13 @@ export const en = {
     "Max wait time per generation/edit request (including streaming); requests are aborted once this elapses. Complex prompts or 2K/4K output can take several minutes — raise this if requests time out (default 300 s).",
   "settings.imagegenTimeoutDecrease": "Decrease generation timeout",
   "settings.imagegenTimeoutIncrease": "Increase generation timeout",
+  "settings.imagegenExecutionMode": "Execution Mode",
+  "settings.imagegenExecutionModeAuto": "Auto (Agent decides)",
+  "settings.imagegenExecutionModeSync": "Always Sync (Block until ready)",
+  "settings.imagegenExecutionModeAsync":
+    "Always Async (Background with wakeup)",
+  "toolCall.imagegen.asyncPendingNotice":
+    "Task submitted to background queue for async generation; you will be notified upon completion.",
   "settings.imageLibrary": "Image library",
   "settings.imageLibraryAlbums": "Albums",
   "settings.imageLibraryDescription":
@@ -4518,14 +4525,13 @@ export const en = {
   "chatInput.webChipRemove": "Remove",
   "chatInput.lspBadgeTitle": "LSP language servers",
   "chatInput.lspBadgeRunning": "{{running}}/{{total}} running",
-  "chatInput.lspBadgeEmpty":
-    "No sessions yet — servers auto-start on first tool call.",
+  "chatInput.lspBadgeEmpty": "No active servers",
   "chatInput.lspBadgeStatusRunning": "Running",
   "chatInput.lspBadgeStatusDead": "Stopped",
   "chatInput.lspBadgeStatusExited": "Process exited",
   "chatInput.lspBadgeOpenSettings": "Open LSP settings",
   "chatInput.lspBadgeOpenProjectSettings": "Open project LSP settings",
-  "chatInput.lspBadgeTitleIdle": "LSP idle (auto-starts on first tool call)",
+  "chatInput.lspBadgeTitleIdle": "LSP idle",
   "chatInput.lspBadgeTitleRunning": "{{count}} language server(s) running",
   "chatInput.lspBadgeTitleProblems": "{{count}} language server(s) unhealthy",
   "browser.moreActions": "More actions",

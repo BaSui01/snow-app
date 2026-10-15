@@ -1,3 +1,4 @@
+import type { ImageGenerationNativeApi } from "../../shared/imageGeneration";
 import type {
   PromptOptimizationRequest,
   PromptOptimizationResult,
@@ -1527,7 +1528,8 @@ export type McpProjectServerStatus = {
 };
 
 export type BashStreamChunk = {
-  stream: "stdout" | "stderr" | "interactive_session" | "tool_execution";
+  stream:
+    "stdout" | "stderr" | "interactive_session" | "tool_execution" | "imagegen";
   data: string;
 };
 
@@ -1856,7 +1858,7 @@ export type AppLockTotpBinding = {
   otpauthUri: string;
 };
 
-export type NativeBridge = {
+export type NativeBridge = ImageGenerationNativeApi & {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
   getSystemSettingValue: (settingCode: string) => Promise<string | null>;

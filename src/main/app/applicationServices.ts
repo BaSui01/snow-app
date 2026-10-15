@@ -26,10 +26,25 @@ export const initializeApplicationServices = async (
 ): Promise<AppStorageInfo> => {
   try {
     const storageInfo = await native.initializeAppStorage();
+    // Run once behind the startup gate: no new renderer task may be accepted
+    // until the previous process's interrupted work has reached a durable terminal.
+    const recoveredImageTaskCount =
+      await native.recoverInterruptedImageGenerationTasks();
     // 数据库已可用：立即解除门控。渲染进程的首次数据请求（项目列表、
     // 会话列表等）从此各自返回，不再被后续启动整理动作拖到同一时刻
     // 一起完成；与数据库无关的 git / 文件请求更是不受门控影响。
     markStorageReady();
+    if (recoveredImageTaskCount > 0) {
+      snowLog.warn({
+        module: "app/storage",
+        func: "initializeApplicationServices",
+        message:
+          "Recovered interrupted image generation tasks from previous run",
+        context: JSON.stringify({
+          recoveredTaskCount: recoveredImageTaskCount,
+        }),
+      });
+    }
 
     console.info("Snow App storage initialized:", storageInfo.databasePath);
     snowLog.info({

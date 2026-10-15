@@ -32,6 +32,7 @@ import { useCompaction } from "./useCompaction";
 import { useRollback } from "./useRollback";
 import { useAgentLoop } from "./useAgentLoop";
 import { useConversationManagement } from "./useConversationManagement";
+import { useImageGenerationRuntime } from "./imageGenerationRuntime";
 
 export const useChatConversation = (
   directoryId?: string,
@@ -852,6 +853,10 @@ export const useChatConversation = (
     rejectToolAuthorizations: toolAuthApi.rejectToolAuthorizations,
     rejectPendingUserQuestions: userQuestionApi.rejectPendingUserQuestions,
   });
+
+  // Subscribe only after the sender ref is installed; idle notifications must
+  // never be claimed while handleSendMessageRef still contains its initial noop.
+  useImageGenerationRuntime(ctx);
 
   // --- 6. Conversation management (select, new, abort, fork, etc.) ---
   const conversationManagementApi = useConversationManagement({

@@ -17,6 +17,7 @@ import { scheduledTaskApi } from "./modules/scheduledTaskApi";
 import { personalizationApi } from "./modules/personalizationApi";
 import { userscriptsApi } from "./modules/userscriptsApi";
 import { pluginsApi } from "./modules/pluginsApi";
+import { imageGenerationApi } from "./modules/imageGenerationApi";
 import { imageLibraryApi } from "./modules/imageLibraryApi";
 import { storageApi } from "./modules/storageApi";
 import { resourceApi } from "./modules/resourceApi";
@@ -47,6 +48,7 @@ const api = {
   ...personalizationApi,
   ...userscriptsApi,
   ...pluginsApi,
+  ...imageGenerationApi,
   ...imageLibraryApi,
   ...storageApi,
   ...resourceApi,

@@ -40,6 +40,8 @@ export type ChatInputSendOptions = {
   /** 内部字段：程序化发送（pending 队列自动冲刷）显式指定目标会话 key，
    *  覆盖当前视图会话。仅渲染进程内部使用，用户发送路径不设置。 */
   targetSessionKey?: string;
+  /** Renderer-owned batch delivery trace, never supplied by the model. */
+  imageGenerationBatchId?: string;
 };
 export type ChatInputProps = {
   placeholder?: string;

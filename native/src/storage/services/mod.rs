@@ -26,6 +26,7 @@ pub mod git;
 pub mod git_watcher;
 pub mod gitignore;
 pub mod hooks_configs;
+pub mod image_generation;
 pub mod image_library;
 pub mod keyboard_shortcuts;
 pub mod mcp_server_configs;

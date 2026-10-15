@@ -1,6 +1,9 @@
 /** 渠道协议类型：openai = OpenAI 兼容 Images API；gemini = Google Gemini Imagen。 */
 export type ImageGenProvider = "openai" | "gemini";
 
+/** 生图执行模式：auto = Agent 自主判定；sync = 总是同步阻塞；async = 总是异步后台生成。 */
+export type ImageGenExecutionMode = "auto" | "sync" | "async";
+
 /** 渠道内单个绘图模型的独立参数配置 */
 export type ImageGenModelItem = {
   /** 唯一标识（例如 modelId 或生成 id） */
@@ -59,6 +62,8 @@ export type ImageGenChannelValue = {
   supportedQualities?: string;
   /** 用户自定义的渠道/模型能力说明与提示词模板（动态注入到 imagegen-generate 工具提示词中）。 */
   customPrompt?: string;
+  /** 渠道专属执行模式（可选覆写全局设置：auto / sync / async）。 */
+  executionMode?: ImageGenExecutionMode;
   /** 渠道内配置的多个绘图模型列表（每个模型有独立的尺寸/画质/思考强度/提示词配置）。 */
   models?: ImageGenModelItem[];
 };
@@ -98,6 +103,13 @@ export type ImageGenSettingsValue = {
    * 可能超过 3 分钟，默认 300 秒（5 分钟）；旧数据缺失时回退默认值。
    */
   timeoutSecs: number;
+  /**
+   * 生图执行模式：
+   * - "auto": Agent 根据提示词、批次与依赖自主判断走同步还是异步（默认）；
+   * - "sync": 强制同步等待全部图片生成完毕才继续会话；
+   * - "async": 强制提交后台生成并立即释放主代理，出图后自动唤起。
+   */
+  executionMode: ImageGenExecutionMode;
 };
 
 /** 设置表单（与存储值同构）。 */

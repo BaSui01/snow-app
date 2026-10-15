@@ -157,9 +157,7 @@ pub async fn call_mcp_tool(
     let worktree_mode = conversation_modes
         .as_ref()
         .is_some_and(|modes| modes.worktree_mode.unwrap_or(false));
-    let worktree_binding = if worktree_mode
-        || (requires_workspace_context && has_conversation)
-    {
+    let worktree_binding = if worktree_mode || (requires_workspace_context && has_conversation) {
         let conversation_id = conversation_id
             .as_deref()
             .map(str::trim)
@@ -522,8 +520,19 @@ pub async fn call_mcp_tool(
     } else if tool_full_name == "websearch-websearch-fetch" {
         WebSearchService::new().execute_fetch(&args).await?
     } else if tool_full_name == "imagegen-generate" {
+        // Main injects the interaction anchor; conversation ownership is always the real executor scope.
+        let interaction_id = args
+            .get("__snowImageGeneration")
+            .and_then(|context| context.get("interactionId"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        args["__snowImageGeneration"] = serde_json::json!({
+            "conversationId": conversation_id.as_deref().unwrap_or(""),
+            "interactionId": interaction_id,
+        });
         ImageGenService::new()
-            .execute_generate(&args, &on_chunk)
+            .execute_generate(&args, on_chunk)
             .await?
     } else if tool_full_name == "imagegen-image-describe" {
         ImageGenService::new()
@@ -729,6 +738,11 @@ pub async fn call_mcp_tool(
             format!("Failed to serialize result: {error}"),
         )
     })?;
+    // Image generation already masked its free text before persisting the task.
+    // Never send its routing UUIDs, image refs or snapshot JSON through a text masker/truncator.
+    if masking_tool_name == "imagegen-generate" {
+        return Ok(serialized);
+    }
     let masked =
         super::super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized)
             .await?;

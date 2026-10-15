@@ -23,7 +23,7 @@ import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getErrorMessage } from "../utils/conversationHelpers";
 import { ToolCallNode } from "./shared/ToolCallNode";
-import { useChatConversationContext } from "../components/ChatConversationContext";
+import { imageGenerationStatusKey } from "../utils/imageGenerationState";
 import {
   classifyImageGenError,
   columnsForCount,
@@ -82,9 +82,12 @@ export const ImageGenToolCall = ({
         setLastSeed(seedInfo.seed);
       }
       try {
+        // This component owns only local retry/variant state, not a durable
+        // chat batch. Force sync so its preview callback cannot strand pending.
+        const args = JSON.parse(argsJson) as Record<string, unknown>;
         const result = await window.snow.callMcpTool(
           toolCall.name,
-          argsJson,
+          JSON.stringify({ ...args, mode: "sync" }),
           undefined, // projectId：生图不依赖会话目录
           undefined, // checkpointIds
           undefined, // checkpointWorkDir
@@ -203,30 +206,6 @@ export const ImageGenToolCall = ({
       console.warn("[imagegen] copy args failed", error);
     }
   }, [toolCall.arguments]);
-
-  // ------------------------------------------------------------------
-  // 生成队列可视：统计当前会话内正在运行的生图任务数，
-  // pending 卡片据此展示排队提示（maxConcurrentImages 由应用侧管理）。
-  // ------------------------------------------------------------------
-  const { sessions, activeConversationId } = useChatConversationContext();
-  const runningImageGenCount = useMemo(() => {
-    if (!activeConversationId) {
-      return 0;
-    }
-    const session = sessions[activeConversationId];
-    if (!session?.messages) {
-      return 0;
-    }
-    let count = 0;
-    for (const message of session.messages) {
-      for (const call of message.toolCalls ?? []) {
-        if (call.name === "imagegen-generate" && call.status === "running") {
-          count += 1;
-        }
-      }
-    }
-    return count;
-  }, [sessions, activeConversationId]);
 
   // ------------------------------------------------------------------
   // 批量下载：优先一次选择目录写入全部（showDirectoryPicker），
@@ -1185,11 +1164,17 @@ export const ImageGenToolCall = ({
 
   // 生成中（等待/执行/流式预览）：参数区 + 实时预览同框展示，
   // 提示词 / 参考图 / 参数标签不再等生成完成才可见
+  const generationLabel = t(
+    retry.status === "running"
+      ? "toolCall.imagegen.generating"
+      : imageGenerationStatusKey(toolCall),
+  );
   const isGenerating =
     !hasError &&
     (toolCall.status === "pending" ||
       toolCall.status === "running" ||
-      retry.status === "running");
+      retry.status === "running" ||
+      parsedResult.type === "pending");
   if (isGenerating && parsedResult.type !== "success") {
     const latestStream =
       streamingImages.length > 0
@@ -1214,15 +1199,7 @@ export const ImageGenToolCall = ({
                     size={22}
                     aria-hidden="true"
                   />
-                  <span>
-                    {toolCall.status === "pending" && runningImageGenCount > 0
-                      ? t("toolCall.imagegen.queued", {
-                          values: { count: runningImageGenCount },
-                        })
-                      : toolCall.status === "running"
-                        ? t("toolCall.imagegen.generating")
-                        : t("toolCall.imagegen.waiting")}
-                  </span>
+                  <span>{generationLabel}</span>
                 </div>
               )}
             </div>
@@ -1233,13 +1210,7 @@ export const ImageGenToolCall = ({
               <span className="tool-call-imagegen-figure-label">
                 {latestStream
                   ? t("toolCall.imagegen.streamingPreview")
-                  : toolCall.status === "pending" && runningImageGenCount > 0
-                    ? t("toolCall.imagegen.queued", {
-                        values: { count: runningImageGenCount },
-                      })
-                    : toolCall.status === "running"
-                      ? t("toolCall.imagegen.generating")
-                      : t("toolCall.imagegen.waiting")}
+                  : generationLabel}
               </span>
               <span aria-hidden="true" />
             </figcaption>

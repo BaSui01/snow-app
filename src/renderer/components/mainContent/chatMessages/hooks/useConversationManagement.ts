@@ -24,6 +24,7 @@ import {
 } from "./hookOutcome";
 import { prefetchMarkdown } from "../components/markdownRenderer";
 import { demotePendingSteering } from "../utils/pendingInputs";
+import { imageGenerationRuntime } from "./imageGenerationRuntime";
 import {
   abandonWorkflowsForConversation,
   getActiveWorkflowNodeIds,
@@ -423,6 +424,12 @@ export const useConversationManagement = (
             // Guard with the current session so a newer load's snapshot is
             // never clobbered by an older one. Later selections of the same
             // conversation then render instantly from the cache.
+            const imageRuntime = imageGenerationRuntime(ctx);
+            await imageRuntime.recover(trimmedId);
+            const historyMessages = imageRuntime.replay(
+              trimmedId,
+              buildConversationMessages(page.items),
+            );
             const currentSession = ctx.sessionsRef.current[trimmedId];
             if (!currentSession || isConversationCacheExpired(currentSession)) {
               // Never overwrite an existing session ref (e.g. one created by
@@ -473,7 +480,7 @@ export const useConversationManagement = (
                 return {
                   ...prev,
                   [trimmedId]: {
-                    messages: buildConversationMessages(page.items),
+                    messages: historyMessages,
                     messageRecords: page.items,
                     summary: nextTitle,
                     isStreaming: isCurrentlyStreaming,
@@ -688,31 +695,32 @@ export const useConversationManagement = (
         }
       }
 
-      const combinedRecords = [
-        ...olderRecords,
-        ...currentSession.messageRecords,
-      ];
-      const persistedIds = new Set(
-        currentSession.messageRecords.map((record) => record.id),
-      );
-      const transientMessages = currentSession.messages.filter(
-        (message) => !persistedIds.has(message.id),
-      );
-
+      const imageRuntime = imageGenerationRuntime(ctx);
+      await imageRuntime.recover(conversationId);
+      const projectImages = imageRuntime.projection(conversationId);
       ctx.setSessions((prev) => {
         const latestSession = prev[conversationId];
         if (!latestSession) {
           return prev;
         }
-
+        const persistedIds = new Set(
+          latestSession.messageRecords.map((record) => record.id),
+        );
+        const combinedRecords = [
+          ...olderRecords.filter((record) => !persistedIds.has(record.id)),
+          ...latestSession.messageRecords,
+        ];
+        const transientMessages = latestSession.messages.filter(
+          (message) => !persistedIds.has(message.id),
+        );
         return {
           ...prev,
           [conversationId]: {
             ...latestSession,
-            messages: [
+            messages: projectImages([
               ...buildConversationMessages(combinedRecords),
               ...transientMessages,
-            ],
+            ]),
             messageRecords: combinedRecords,
             isLoadingOlderMessages: false,
             hasMoreMessages: page.hasMore,

@@ -375,6 +375,7 @@ async fn create_response_async(
         &api_config,
         &effective_headers,
         skip_context,
+        Some(prepared_request.conversation_id.as_str()),
         on_chunk.callback(),
         Some(&cancel_token),
     )

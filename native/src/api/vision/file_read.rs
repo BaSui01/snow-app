@@ -11,7 +11,12 @@ use super::*;
 /// 限制：单张 20MB 上限；仅接受图片扩展名。主模型支持视觉时直接复用主
 /// 通道，否则回退到主 API 配置的 vision 通道（chat / responses /
 /// anthropic / gemini）；结果走 [`describe_image`] 的 blake3 内容缓存。
-pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result<String> {
+/// API 档案与自定义请求头跟随会话绑定（与主流程一致），无会话时用全局激活档案。
+pub(crate) async fn describe_image_file(
+    path: &str,
+    user_prompt: &str,
+    conversation_id: Option<&str>,
+) -> Result<String> {
     use std::fs;
 
     let trimmed = path.trim().replace('\\', "/");
@@ -59,13 +64,33 @@ pub(crate) async fn describe_image_file(path: &str, user_prompt: &str) -> Result
         )));
     }
 
-    // 3. 复用视觉管线（配置 + 客户端 + 缓存）
-    let context = crate::api::config::get_active_api_request_context()?;
-    // 独立读图请求没有会话上下文：会话级占位符（`{{session_id}}`）直接丢弃，
-    // 避免把字面模板发送给供应商。
+    // 3. 复用视觉管线（配置 + 客户端 + 缓存）：档案与请求头跟随会话绑定
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = std::path::PathBuf::from(storage_info.database_path);
+    let bound_profile = conversation_id.and_then(|id| {
+        crate::storage::services::chat_conversations::get_conversation_api_profile(
+            &database_path,
+            id,
+        )
+        .ok()
+        .flatten()
+    });
+    let context =
+        crate::api::config::get_api_request_context_with_fallback(bound_profile.as_deref())?;
+    // 会话级占位符（`{{session_id}}`）按当前会话展开，与主流程一致；无会话时置空
     let mut custom_headers = context.custom_headers;
-    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
-    let vision_config = VisionApiConfig::from(&context.api_config, &custom_headers)?;
+    crate::api::common::expand_custom_header_session_id(
+        &mut custom_headers,
+        conversation_id.unwrap_or(""),
+    );
+    let mut vision_config = VisionApiConfig::from(&context.api_config, &custom_headers)?;
+    // 与主流程一致：按会话绑定解析用户系统提示词（含项目级提示词）
+    vision_config.system_prompts =
+        crate::api::conversation::context::resolve_configured_system_prompts(
+            &context.api_config.system_prompt_ids_json,
+            conversation_id,
+        )
+        .await;
     let client = crate::api::http_client::build_proxied_client()
         .await
         .map_err(|error| {

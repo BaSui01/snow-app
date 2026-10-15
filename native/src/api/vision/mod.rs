@@ -90,6 +90,7 @@ pub async fn textify_images_in_messages(
     api_config: &ApiConfigRecord,
     custom_headers: &HashMap<String, String>,
     skip_context: bool,
+    conversation_id: Option<&str>,
     on_chunk: Option<&ResponsesApiStreamCallback>,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<()> {
@@ -97,7 +98,14 @@ pub async fn textify_images_in_messages(
         return Ok(());
     }
 
-    let vision_config = VisionApiConfig::from(api_config, custom_headers)?;
+    let mut vision_config = VisionApiConfig::from(api_config, custom_headers)?;
+    // 与主流程一致：按会话绑定解析用户系统提示词（含项目级提示词）
+    vision_config.system_prompts =
+        crate::api::conversation::context::resolve_configured_system_prompts(
+            &api_config.system_prompt_ids_json,
+            conversation_id,
+        )
+        .await;
     let client = crate::api::http_client::build_proxied_client()
         .await
         .map_err(|error| {
@@ -189,7 +197,8 @@ pub(crate) struct VisionApiConfig {
     base_url: String,
     base_url_mode: String,
     api_key: String,
-    system_prompt_ids_json: String,
+    /// 已按会话解析的用户系统提示词，与主流程一致（各自成为一个系统块）。
+    system_prompts: Vec<String>,
     model: String,
     custom_headers: HashMap<String, String>,
     /// gemini 视觉请求是否注入 google_search 工具（snowcfg.visionGoogleSearch）
@@ -306,7 +315,7 @@ impl VisionApiConfig {
             base_url,
             base_url_mode,
             api_key,
-            system_prompt_ids_json: api_config.system_prompt_ids_json.clone(),
+            system_prompts: Vec::new(),
             model,
             custom_headers: custom_headers.clone(),
             google_search,

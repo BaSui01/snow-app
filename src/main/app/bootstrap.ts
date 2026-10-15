@@ -10,6 +10,7 @@ import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow, getMainWindow, markCloseConfirmed } from "./mainWindow";
 import { markDetachedPanelsQuitting } from "./detachedPanelWindow";
+import { initDetachedPanelWindowState } from "./detachedPanelWindowState";
 import { lockAppOnStartup } from "./appLock";
 import { initTray } from "./tray";
 import { registerGlobalShortcuts } from "./globalShortcuts";
@@ -135,6 +136,8 @@ export const bootstrapApplication = (): void => {
     // 注册 img-proxy:// 协议处理器：代理外部 http(s) 图片，并直接读取本地
     // image/、upload/ 图片文件返回，使 markdown 图片能绕过 CSP 限制安全加载。
     registerImageProxyProtocol(native);
+    // 预加载独立窗口记忆的尺寸（异步读取，创建窗口时无需同步读盘）。
+    void initDetachedPanelWindowState();
 
     if (isMacOS && app.dock) {
       app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));

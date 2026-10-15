@@ -526,7 +526,9 @@ pub async fn call_mcp_tool(
             .execute_generate(&args, &on_chunk)
             .await?
     } else if tool_full_name == "imagegen-image-describe" {
-        ImageGenService::new().execute_describe(&args).await?
+        ImageGenService::new()
+            .execute_describe(&args, conversation_id.as_deref())
+            .await?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {
         BrowserService::new()
             .execute_async(tool_name, &args, &on_browser_command)

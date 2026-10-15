@@ -295,7 +295,11 @@ impl ImageGenService {
     /// 视觉模型生成描述。用于「读取项目中的 UI 设计稿 → 理解设计 →
     /// 编码还原前端页面」的工作流。主模型支持视觉时直接用主通道，否则
     /// 复用主 API 的 vision 通道。
-    pub async fn execute_describe(&self, args: &Value) -> napi::Result<Value> {
+    pub async fn execute_describe(
+        &self,
+        args: &Value,
+        conversation_id: Option<&str>,
+    ) -> napi::Result<Value> {
         let path = required_string(args, "path", TOOL_DESCRIBE)?;
         let user_prompt = args
             .get("prompt")
@@ -304,7 +308,8 @@ impl ImageGenService {
             .filter(|text| !text.is_empty())
             .unwrap_or(DEFAULT_DESCRIBE_PROMPT);
 
-        let description = crate::api::vision::describe_image_file(path, user_prompt).await?;
+        let description =
+            crate::api::vision::describe_image_file(path, user_prompt, conversation_id).await?;
 
         Ok(json!({
             "path": path,

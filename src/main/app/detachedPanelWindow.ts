@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme, type WebContents } from "electron";
+import { BrowserWindow, nativeTheme, screen, type WebContents } from "electron";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
@@ -17,6 +17,10 @@ import {
   reservePtyForHandoff,
 } from "../pty/ptyManager";
 import { APP_ICON_PATH, isMacOS } from "./constants";
+import {
+  getRememberedDetachedPanelSize,
+  trackDetachedPanelWindowSize,
+} from "./detachedPanelWindowState";
 import { buildRendererPageUrl } from "./rendererPageUrl";
 import { safeSend } from "../utils/safeSend";
 
@@ -31,8 +35,6 @@ import { safeSend } from "../utils/safeSend";
  * Linux 无边框，由渲染端 DetachedPanelTitleBar 提供顶部操作栏与窗口控制按钮。
  */
 
-const DEFAULT_WINDOW_WIDTH = 980;
-const DEFAULT_WINDOW_HEIGHT = 680;
 const MIN_WINDOW_WIDTH = 420;
 const MIN_WINDOW_HEIGHT = 320;
 /** macOS 红绿灯位置：与 44px 顶部操作栏垂直居中。 */
@@ -61,6 +63,19 @@ let latestRuntimeMirror: DetachedPanelRuntimeMirror | null = null;
 
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+
+/** 取记忆的窗口尺寸，并裁剪到主显示器工作区内。 */
+const resolveInitialWindowSize = (): { width: number; height: number } => {
+  const remembered = getRememberedDetachedPanelSize();
+  const area = screen.getPrimaryDisplay().workAreaSize;
+  return {
+    width: Math.min(Math.max(remembered.width, MIN_WINDOW_WIDTH), area.width),
+    height: Math.min(
+      Math.max(remembered.height, MIN_WINDOW_HEIGHT),
+      area.height,
+    ),
+  };
+};
 
 /** 终端 tab 携带的 ptyId：迁移时需要交接保留的会话。 */
 const readTerminalPtyId = (tab: DetachedPanelTabPayload): string | null => {
@@ -139,9 +154,10 @@ export const openDetachedPanelWindow = (
   reserveDetachedTabPty(payload.tab);
 
   const token = randomUUID();
+  const size = resolveInitialWindowSize();
   const win = new BrowserWindow({
-    width: DEFAULT_WINDOW_WIDTH,
-    height: DEFAULT_WINDOW_HEIGHT,
+    width: size.width,
+    height: size.height,
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
     title: payload.tab.title || "Snow",
@@ -185,7 +201,11 @@ export const openDetachedPanelWindow = (
     win.on("unmaximize", notifyMaximizeState);
   }
 
+  // 调整大小即记住尺寸，关闭时立即落盘。
+  win.on("resize", () => trackDetachedPanelWindowSize(win, false));
+
   win.on("close", (event) => {
+    trackDetachedPanelWindowSize(win, true);
     if (detachedPanelsQuitting || confirmedCloseWindows.has(win)) {
       return;
     }

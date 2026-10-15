@@ -2,8 +2,6 @@
 
 use super::*;
 
-use crate::api::conversation::context::resolve_configured_system_prompts;
-
 /// 单个 SSE 事件的解析结果。
 #[derive(Debug)]
 enum VisionStreamEvent {
@@ -117,6 +115,12 @@ async fn describe_image_via_chat(
         "max_tokens": vision_config.max_tokens,
         "stream": true,
     });
+    // 系统提示词与主流程一致：每条各自成为一条 system 消息，置于最前
+    if let Some(messages) = payload["messages"].as_array_mut() {
+        for text in vision_config.system_prompts.iter().rev() {
+            messages.insert(0, json!({ "role": "system", "content": text }));
+        }
+    }
     // 思考开关：开启时注入 reasoning_effort（仅当配置了具体强度）
     if vision_config.thinking_enabled && !vision_config.thinking_effort.is_empty() {
         payload["reasoning_effort"] = json!(vision_config.thinking_effort);
@@ -162,6 +166,10 @@ async fn describe_image_via_responses(
         "stream": true,
         "store": false,
     });
+    // 系统提示词与主流程一致：多条以 "\n\n" 拼接进 instructions
+    if !vision_config.system_prompts.is_empty() {
+        payload["instructions"] = json!(vision_config.system_prompts.join("\n\n"));
+    }
     // 思考开关：开启时注入 reasoning.effort（仅当配置了具体强度）
     if vision_config.thinking_enabled && !vision_config.thinking_effort.is_empty() {
         payload["reasoning"] = json!({ "effort": vision_config.thinking_effort });
@@ -213,11 +221,10 @@ async fn describe_image_via_anthropic(
         }],
     });
 
-    let system_prompts =
-        resolve_configured_system_prompts(&vision_config.system_prompt_ids_json, None).await;
-    if !system_prompts.is_empty() {
-        let blocks: Vec<_> = system_prompts
-            .into_iter()
+    if !vision_config.system_prompts.is_empty() {
+        let blocks: Vec<_> = vision_config
+            .system_prompts
+            .iter()
             .map(|text| json!({ "type": "text", "text": text }))
             .collect();
         payload["system"] = json!(blocks);
@@ -272,6 +279,15 @@ async fn describe_image_via_gemini(
         });
     }
 
+    // 系统提示词与主流程一致：每条各自成为一个 systemInstruction part
+    if !vision_config.system_prompts.is_empty() {
+        let parts: Vec<Value> = vision_config
+            .system_prompts
+            .iter()
+            .map(|text| json!({ "text": text }))
+            .collect();
+        payload["systemInstruction"] = json!({ "parts": parts });
+    }
     // 谷歌搜索联网（Gemini 原生 grounding）：配置开启时注入 google_search 工具
     if vision_config.google_search {
         payload["tools"] = json!([{ "google_search": {} }]);

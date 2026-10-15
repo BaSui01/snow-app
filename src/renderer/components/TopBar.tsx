@@ -38,7 +38,9 @@ import { pluginStore, usePluginStore } from "../plugins/pluginStore";
 import { WindowControlsButtons } from "./WindowControls";
 import { useCodebaseWatcher } from "../hooks/useCodebaseWatcher";
 import { FEATURE_PAGE_TITLES, isFeaturePageView } from "./featurePages";
+import { emitNewChatRequested } from "./newChatEvents";
 import { getSettingsPageMeta } from "./settingsPages";
+import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import type { MainContentView } from "./mainContent/types";
 
 type TopBarProps = {
@@ -804,11 +806,17 @@ export const TopBar = ({
         aria-label="New chat"
         title="New chat"
         onClick={() => {
-          // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件）与
-          // 团队协作视图，让新会话在聊天视图里立即可见。
-          if (isFeaturePageView(activeView) || isTeamView) {
+          // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件）、
+          // 团队协作视图与设置页，让新会话在聊天视图里立即可见。
+          if (
+            isFeaturePageView(activeView) ||
+            isTeamView ||
+            SETTINGS_VIEW_IDS.has(activeView)
+          ) {
             onSelectView("chat");
           }
+          // 同时通知侧栏收回设置内容（与设置页是否打开无关）。
+          emitNewChatRequested();
           handleNewChat();
         }}
       >

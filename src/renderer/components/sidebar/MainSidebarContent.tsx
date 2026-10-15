@@ -41,6 +41,8 @@ import { useShortcutLabel } from "../../hooks/useShortcutLabel";
 import { ShortcutHint } from "../ShortcutHint";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
+import { emitNewChatRequested } from "../newChatEvents";
+import { SETTINGS_VIEW_IDS } from "./settingsItems";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { openNewChatInNewWindow } from "./mainSidebar/openConversationInNewWindow";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
@@ -309,11 +311,16 @@ export function MainSidebarContent({
     }
   }, [activeMainView]);
 
-  // 新建会话前收回独立页面：新会话在聊天视图里创建，页面不应继续占用主区域。
+  // 新建会话前收回独立页面与设置页：新会话在聊天视图里创建，页面不应继续占用主区域。
+  // 侧栏回到主内容由 Sidebar 监听新建会话事件统一处理。
   const handleNewChatFromSidebar = useCallback((): void => {
-    if (isFeaturePageView(activeMainView)) {
+    if (
+      isFeaturePageView(activeMainView) ||
+      SETTINGS_VIEW_IDS.has(activeMainView)
+    ) {
       onSelectMainView("chat");
     }
+    emitNewChatRequested();
     handleNewChat();
   }, [activeMainView, handleNewChat, onSelectMainView]);
 

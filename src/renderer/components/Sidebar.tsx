@@ -1,8 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import { explorerPlacementStore } from "./common/explorerPlacementStore";
+import { NEW_CHAT_REQUESTED_EVENT } from "./newChatEvents";
 import { rightPanelEvents } from "./rightPanel/rightPanelEvents";
 import { shortcutEvents } from "./shortcutEvents";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
@@ -53,6 +61,36 @@ export const Sidebar = ({
   const [explorerPlacement, setExplorerPlacement] = useState(() =>
     explorerPlacementStore.get(),
   );
+
+  // 新建会话请求（顶栏 / 侧栏按钮、快捷键）：设置内容时切回主侧栏。
+  // 与设置页是否打开无关，覆盖只点了页脚「设置」而未选择设置项的情况。
+  useEffect(() => {
+    const handler = (): void => {
+      setActiveContent((current) =>
+        current === "settings" ? "main" : current,
+      );
+    };
+    window.addEventListener(NEW_CHAT_REQUESTED_EVENT, handler);
+    return () => {
+      window.removeEventListener(NEW_CHAT_REQUESTED_EVENT, handler);
+    };
+  }, []);
+
+  // 离开设置页（新建会话、切到聊天或功能页等）时，侧栏同步收回设置内容，回到主侧栏。
+  // 仅在从设置视图离开时触发，不影响用户在聊天视图中主动打开的设置侧栏。
+  const previousMainViewRef = useRef(activeMainView);
+  useEffect(() => {
+    const previousView = previousMainViewRef.current;
+    previousMainViewRef.current = activeMainView;
+    if (
+      SETTINGS_VIEW_IDS.has(previousView) &&
+      !SETTINGS_VIEW_IDS.has(activeMainView)
+    ) {
+      setActiveContent((current) =>
+        current === "settings" ? "main" : current,
+      );
+    }
+  }, [activeMainView]);
 
   // 订阅显示位置偏好：用户切换位置时同步在目标位置展示资源管理器。订阅回调在
   // 状态变更的同一批次内执行，因此这里能读到切换前记住的目录（effect 会晚于

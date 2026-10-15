@@ -272,9 +272,7 @@ export function SidebarProjectTree({
           </Tooltip>
         </div>
         <div className="section-actions">
-          {isLoadingDirectories || isBusy ? (
-            <Loader2 className="spin" size={14} />
-          ) : null}
+          {isBusy ? <Loader2 className="spin" size={14} /> : null}
           {!archived.isArchiveMode ? (
             <Tooltip
               content={t("sidebar.chatImportConversations", {

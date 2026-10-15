@@ -300,6 +300,10 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
           typeof source.configJson === "string" && source.configJson.trim()
             ? source.configJson
             : undefined,
+        profileName:
+          typeof source.profileName === "string" && source.profileName.trim()
+            ? source.profileName.trim()
+            : undefined,
       };
 
       return native.fetchAvailableModelsForConfig(normalizedConfig);

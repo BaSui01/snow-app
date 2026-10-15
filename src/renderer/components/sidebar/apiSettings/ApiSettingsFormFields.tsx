@@ -166,6 +166,9 @@ export function ApiSettingsFormFields({
     thinkingOptions.find((option) => option.value === data.thinkingValue)
       ?.label ?? data.thinkingValue;
 
+  // 已保存档案的名称：OAuth 档案由主进程按名读取库内最新 token，不使用编辑框里的旧快照
+  const savedProfileName = savedConfig?.profileName;
+
   const loadModelOptions = useCallback(
     async (field: ModelField, force = false) => {
       const configKey = [
@@ -201,6 +204,7 @@ export function ApiSettingsFormFields({
             requestMethod: data.requestMethod,
             customHeaderSchemeId: data.customHeaderSchemeId,
             configJson: data.configJson.trim() || undefined,
+            profileName: savedProfileName,
           },
         );
         setModelOptions(availableModels);
@@ -227,6 +231,7 @@ export function ApiSettingsFormFields({
       data.requestMethod,
       loadedModelOptionsKey,
       loadingModelFields,
+      savedProfileName,
       t,
     ],
   );

@@ -657,6 +657,34 @@ pub fn merge_metadata_into_config(
     parsed.to_string()
 }
 
+/// 渲染层保存的是打开编辑框时的快照，其中的 access token 与 oauth 元数据（refreshToken、expiresAt）
+/// 可能已被后台刷新过期或轮换。已有 OAuth 档案的这两部分只能由登录与刷新流程写入，
+/// 保存时以库内记录为准，避免把旧令牌回写覆盖新令牌。
+pub fn keep_saved_oauth_secrets(config: &mut ApiConfigInput, saved: &ApiConfigRecord) {
+    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none() {
+        return;
+    }
+    config.api_key = saved.api_key.clone();
+    let mut incoming: Value =
+        serde_json::from_str(&config.config_json).unwrap_or_else(|_| json!({}));
+    let saved_root: Value = serde_json::from_str(&saved.config_json).unwrap_or_else(|_| json!({}));
+    if let (Some(incoming_object), Some(saved_object)) =
+        (incoming.as_object_mut(), saved_root.as_object())
+    {
+        for key in [METADATA_KEY, LEGACY_METADATA_KEY] {
+            match saved_object.get(key) {
+                Some(value) => {
+                    incoming_object.insert(key.to_string(), value.clone());
+                }
+                None => {
+                    incoming_object.remove(key);
+                }
+            }
+        }
+    }
+    config.config_json = incoming.to_string();
+}
+
 pub async fn persist_profile(database_path: PathBuf, input: ApiConfigInput) -> Result<()> {
     tokio::task::spawn_blocking(move || {
         api_configs_service::upsert_api_config(&database_path, &input)?;

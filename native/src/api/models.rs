@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -22,6 +23,8 @@ use crate::api::oauth::provider::{
 };
 use crate::api::oauth::xai as xai_oauth;
 use crate::api::retry::{with_retry_sync, RetryLogContext, RetryOptions};
+use crate::storage::services::api_configs as api_configs_service;
+use crate::storage::{initialize_app_storage, ApiConfigRecord};
 
 #[napi(object)]
 pub struct Model {
@@ -370,6 +373,43 @@ pub struct ApiConfigForModels {
     pub request_method: String,
     pub custom_header_scheme_id: String,
     pub config_json: Option<String>,
+    /// 已保存档案的名称：OAuth 档案据此从库内读取最新 token，不信任渲染层快照。
+    pub profile_name: Option<String>,
+}
+
+/// 已保存的 OAuth 档案：access token 由刷新流程在库内维护，渲染层快照可能早已过期。
+/// 这里以库内记录为准，先刷新再拉取模型列表（与聊天请求路径保持一致）。
+pub async fn resolve_saved_oauth_profile(
+    mut config: ApiConfigForModels,
+) -> Result<ApiConfigForModels> {
+    let Some(profile_name) = config
+        .profile_name
+        .take()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+    else {
+        return Ok(config);
+    };
+    let saved = tokio::task::spawn_blocking(move || -> Result<Option<ApiConfigRecord>> {
+        let storage_info = initialize_app_storage()?;
+        let database_path = PathBuf::from(storage_info.database_path);
+        Ok(api_configs_service::list_api_configs(&database_path)?
+            .into_iter()
+            .find(|record| record.profile_name == profile_name))
+    })
+    .await
+    .map_err(|error| Error::from_reason(format!("Failed to load API profile: {error}")))??;
+
+    let Some(saved) = saved else {
+        return Ok(config);
+    };
+    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none() {
+        return Ok(config);
+    }
+    let refreshed = oauth_provider::refresh_if_needed(saved).await?;
+    config.api_key = refreshed.api_key;
+    config.config_json = Some(refreshed.config_json);
+    Ok(config)
 }
 
 fn resolve_oauth_metadata(
@@ -492,6 +532,7 @@ pub fn fetch_available_models_for_active_config() -> Result<Vec<Model>> {
         request_method: context.api_config.request_method,
         custom_header_scheme_id: context.api_config.custom_header_scheme_id,
         config_json: Some(context.api_config.config_json),
+        profile_name: None,
     };
 
     fetch_available_models(&config, &context.custom_headers)

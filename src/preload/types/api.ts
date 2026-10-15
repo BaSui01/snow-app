@@ -154,6 +154,8 @@ export type ApiModelsConfig = {
   customHeaderSchemeId: string;
   /** 渠道的原始 configJson：OAuth 渠道（codex 等）据此走订阅账号的模型列表接口。 */
   configJson?: string;
+  /** 已保存档案的名称：OAuth 档案据此由主进程读取库内最新 token（不信任渲染层快照）。 */
+  profileName?: string;
 };
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";

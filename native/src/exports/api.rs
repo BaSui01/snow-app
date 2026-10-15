@@ -12,7 +12,7 @@ use crate::api::file_search_agent::{
 };
 use crate::api::models::{
     fetch_available_models as fetch_models_with_config, fetch_available_models_for_active_config,
-    ApiConfigForModels, Model,
+    resolve_saved_oauth_profile, ApiConfigForModels, Model,
 };
 use crate::api::responses::{ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::api::summary::generate_conversation_summary as generate_summary;
@@ -63,6 +63,8 @@ pub async fn fetch_available_models() -> napi::Result<Vec<Model>> {
 pub async fn fetch_available_models_for_config(
     config: ApiConfigForModels,
 ) -> napi::Result<Vec<Model>> {
+    // 已保存的 OAuth 档案以库内最新 token 为准（必要时先刷新），不信任渲染层快照
+    let config = resolve_saved_oauth_profile(config).await?;
     // 使用 spawn_blocking 确保 HTTP 请求和 SQLite I/O 不阻塞 Node.js 主线程
     tokio::task::spawn_blocking(move || {
         let storage_info = initialize_app_storage()?;

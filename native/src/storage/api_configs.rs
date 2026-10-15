@@ -1,3 +1,4 @@
+use crate::api::oauth::provider::keep_saved_oauth_secrets;
 use napi::bindgen_prelude::*;
 
 use super::ensure_database_file;
@@ -12,8 +13,22 @@ pub fn list_api_configs() -> Result<Vec<ApiConfigRecord>> {
     services::api_configs::list_api_configs(&database_path)
 }
 
-pub fn upsert_api_config(config: ApiConfigInput) -> Result<()> {
+pub fn upsert_api_config(mut config: ApiConfigInput) -> Result<()> {
     let database_path = ensure_database_file()?;
+    // 改名时库内记录的键是旧档案名
+    let saved_name = config
+        .previous_profile_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(config.profile_name.as_str())
+        .to_string();
+    if let Some(saved) = services::api_configs::list_api_configs(&database_path)?
+        .into_iter()
+        .find(|record| record.profile_name == saved_name)
+    {
+        keep_saved_oauth_secrets(&mut config, &saved);
+    }
     services::api_configs::upsert_api_config(&database_path, &config)
 }
 

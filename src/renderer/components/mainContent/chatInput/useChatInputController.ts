@@ -408,6 +408,7 @@ export const useChatInputController = ({
             requestMethod: configAtRequest.requestMethod,
             customHeaderSchemeId: configAtRequest.customHeaderSchemeId,
             configJson: configAtRequest.configJson.trim() || undefined,
+            profileName: configAtRequest.profileName,
           },
         );
         if (hydrationRequestTokenRef.current !== requestToken) {

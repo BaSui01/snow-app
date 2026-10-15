@@ -6183,6 +6183,8 @@ export const en = {
   "plugins.market.empty": "No plugins in the market yet",
   "plugins.market.noMatch": "No matching plugins",
   "plugins.market.requiresApp": "Requires app v{{version}} or newer",
+  "plugins.market.networkUndeclared":
+    "This plugin does not declare network access. The app will not block its outbound connections; make sure the source is trusted before installing.",
   "plugins.tabScripts": "Script plugins",
   "plugins.tabPlugins": "Panel plugins",
   "plugins.scripts.create": "New script",
@@ -6273,6 +6275,9 @@ export const en = {
   "plugins.scopes.projectContext": "Project code context",
   "plugins.scopes.desc.projectContext":
     "Read selected project source snippets for user-requested prompt optimization; requires separate host authorization.",
+  "plugins.scopes.network": "Network access",
+  "plugins.scopes.desc.network":
+    "Open HTTP / WebSocket connections to external servers (including api.net.fetch); a plugin must declare this to use the network.",
   "plugins.scopes.apiKeys": "API keys",
   "plugins.scopes.privacyConfig": "Privacy config",
   "plugins.scopes.systemPrompts": "System prompts",
@@ -6392,9 +6397,9 @@ export const en = {
   "plugins.metadata.groups.other": "Other",
   "plugins.net.tabNet": "Network",
   "plugins.net.description":
-    "External HTTP requests a plugin can send through api.net.fetch: forwarded by the main-process network stack, following the app proxy settings, bypassing CORS and sending no cookies; no privacy declaration is required.",
+    "External HTTP requests through api.net.fetch and direct WebSocket / HTTP connections; the plugin must declare the network privacy scope.",
   "plugins.net.count": "{{matched}} / {{total}} capabilities",
-  "plugins.net.badge": "No declaration",
+  "plugins.net.badge": "Declaration required",
   "plugins.net.fetchSummary":
     'Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB of raw bytes; responseType "text" (default) decodes body as UTF-8, while "arraybuffer" returns the raw bytes as base64 in bodyBase64 so the plugin decodes them itself (e.g. GBK / GB18030). Network failures never throw and are reported in the error field.',
   "plugins.net.empty": "No matching network capability",

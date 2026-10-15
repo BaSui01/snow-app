@@ -5832,6 +5832,8 @@ export const zhTW = {
   "plugins.market.empty": "市集暫無外掛",
   "plugins.market.noMatch": "沒有符合的外掛",
   "plugins.market.requiresApp": "需要應用程式 v{{version}} 以上",
+  "plugins.market.networkUndeclared":
+    "此外掛未宣告網路存取權限。應用程式不會阻止它對外連線，安裝前請確認來源可信。",
   "plugins.tabScripts": "腳本外掛",
   "plugins.tabPlugins": "面板外掛",
   "plugins.scripts.create": "新增腳本",
@@ -5917,6 +5919,9 @@ export const zhTW = {
   "plugins.scopes.projectContext": "專案程式碼上下文",
   "plugins.scopes.desc.projectContext":
     "僅為使用者主動的提示詞優化讀取所選專案程式碼片段，需宿主另行授權。",
+  "plugins.scopes.network": "網路存取",
+  "plugins.scopes.desc.network":
+    "向外部伺服器發起 HTTP / WebSocket 連線（含 api.net.fetch），外掛須宣告後方可使用網路。",
   "plugins.scopes.apiKeys": "API 金鑰",
   "plugins.scopes.privacyConfig": "隱私設定",
   "plugins.scopes.systemPrompts": "系統提示詞",
@@ -6028,9 +6033,9 @@ export const zhTW = {
   "plugins.metadata.groups.other": "其他",
   "plugins.net.tabNet": "網路能力",
   "plugins.net.description":
-    "外掛透過 api.net.fetch 發起外部 HTTP 請求的能力：由主行程網路堆疊轉發，跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie，無需隱私宣告。",
+    "通過 api.net.fetch 的外部 HTTP 請求，以及外掛直接發起的 WebSocket / HTTP 連線；外掛須宣告 network 隱私域。",
   "plugins.net.count": "{{matched}} / {{total}} 個能力",
-  "plugins.net.badge": "無需宣告",
+  "plugins.net.badge": "需要宣告",
   "plugins.net.fetchSummary":
     '發起外部 HTTP 請求（僅 http/https）：跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie。逾時預設 30 秒（上限 120 秒），回應主體上限 5MB（按原始位元組計）；responseType 預設 "text"（宿主以 UTF-8 解碼 body），傳 "arraybuffer" 時原始位元組以 base64 放在 bodyBase64、由外掛自行解碼（如 GBK / GB18030）。網路層失敗不拋例外，以結果中的 error 欄位回傳。',
   "plugins.net.empty": "沒有符合的網路能力",

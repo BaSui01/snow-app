@@ -36,6 +36,7 @@ export const SENSITIVE_SCOPES = [
   "storage",
   "updater",
   "toolApproval",
+  "network",
 ] as const;
 
 export type SensitiveScope = (typeof SENSITIVE_SCOPES)[number];

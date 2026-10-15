@@ -57418,6 +57418,22 @@ img.plugin-icon {
   gap: 10px;
 }
 
+.plugin-market-network-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  line-height: 1.6;
+}
+
+.plugin-market-network-warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .plugin-market-confirm-row > span {
   flex-shrink: 0;
   color: var(--text-muted);

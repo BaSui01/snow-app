@@ -1,5 +1,6 @@
 import {
   Download,
+  Globe,
   Loader2,
   Puzzle,
   RefreshCw,
@@ -490,6 +491,17 @@ export const PluginMarketPanel = (): React.JSX.Element => {
               scopes={pendingEntry.privacy.filter(isSensitiveScope)}
               onOpen={() => openPrivacy(pendingEntry)}
             />
+            {pendingEntry.privacy.includes("network") ? null : (
+              <div className="plugin-market-network-warning">
+                <Globe size={13} strokeWidth={1.8} />
+                <span>
+                  {t("plugins.market.networkUndeclared", {
+                    defaultValue:
+                      "This plugin does not declare network access. The app will not block its outbound connections; make sure the source is trusted before installing.",
+                  })}
+                </span>
+              </div>
+            )}
             {isMarketEntryTooNew(pendingEntry, market.appVersion) ? (
               <div className="plugin-market-requires">
                 {t("plugins.market.requiresApp", {

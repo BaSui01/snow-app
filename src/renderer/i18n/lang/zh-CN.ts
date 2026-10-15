@@ -5821,6 +5821,8 @@ export const zhCN = {
   "plugins.market.empty": "市场暂无插件",
   "plugins.market.noMatch": "没有匹配的插件",
   "plugins.market.requiresApp": "需要应用 v{{version}} 及以上",
+  "plugins.market.networkUndeclared":
+    "该插件未声明网络访问权限。应用不会阻止它对外联网，安装前请确认来源可信。",
   "plugins.tabScripts": "脚本插件",
   "plugins.tabPlugins": "面板插件",
   "plugins.scripts.create": "新建脚本",
@@ -5906,6 +5908,9 @@ export const zhCN = {
   "plugins.scopes.projectContext": "项目代码上下文",
   "plugins.scopes.desc.projectContext":
     "仅为用户主动的提示词优化读取所选项目代码片段，需宿主另行授权。",
+  "plugins.scopes.network": "网络访问",
+  "plugins.scopes.desc.network":
+    "向外部服务器发起 HTTP / WebSocket 连接（含 api.net.fetch），插件须声明后方可使用网络。",
   "plugins.scopes.apiKeys": "API 密钥",
   "plugins.scopes.privacyConfig": "隐私配置",
   "plugins.scopes.systemPrompts": "系统提示词",
@@ -6017,9 +6022,9 @@ export const zhCN = {
   "plugins.metadata.groups.other": "其他",
   "plugins.net.tabNet": "网络能力",
   "plugins.net.description":
-    "插件通过 api.net.fetch 发起外部 HTTP 请求的能力：由主进程网络栈转发，跟随应用代理设置、无 CORS 限制、不携带 Cookie，无需隐私声明。",
+    "通过 api.net.fetch 的外部 HTTP 请求，以及插件直接发起的 WebSocket / HTTP 连接；插件须声明 network 隐私域。",
   "plugins.net.count": "{{matched}} / {{total}} 个能力",
-  "plugins.net.badge": "无需声明",
+  "plugins.net.badge": "需要声明",
   "plugins.net.fetchSummary":
     '发起外部 HTTP 请求（仅 http/https）：跟随应用代理设置、无 CORS 限制、不携带 Cookie。超时默认 30 秒（上限 120 秒），响应体上限 5MB（按原始字节计）；responseType 缺省 "text"（宿主按 UTF-8 解码 body），传 "arraybuffer" 时原始字节以 base64 放在 bodyBase64、由插件自行解码（如 GBK / GB18030）。网络层失败不抛异常，以结果里的 error 字段返回。',
   "plugins.net.empty": "没有匹配的网络能力",

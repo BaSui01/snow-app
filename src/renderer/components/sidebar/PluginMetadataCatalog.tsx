@@ -517,7 +517,7 @@ export const PluginMetadataCatalog = ({
           <div className="plugin-metadata-caption">
             {t("plugins.net.description", {
               defaultValue:
-                "External HTTP requests a plugin can send through api.net.fetch: forwarded by the main-process network stack, following the app proxy settings, bypassing CORS and sending no cookies; no privacy declaration is required.",
+                "External HTTP requests through api.net.fetch and direct WebSocket / HTTP connections; the plugin must declare the network privacy scope.",
             })}
           </div>
 
@@ -529,7 +529,7 @@ export const PluginMetadataCatalog = ({
                   <div className="plugin-metadata-badges">
                     <span className="plugin-metadata-badge public">
                       {t("plugins.net.badge", {
-                        defaultValue: "No declaration",
+                        defaultValue: "Declaration required",
                       })}
                     </span>
                   </div>

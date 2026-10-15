@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.4.26
+
+## New Features
+
+- **Async Image Generation**: image-generation batches and tasks persist in storage; async mode returns a pending receipt right away and wakes the session with one batch summary when all tasks finish, with new execution-mode settings (auto / sync / async) and real Rust-side upstream concurrency limits.
+- **Remote-Control SSH2 Tunnel**: phone remote control can connect through an optional SSH2 tunnel.
+- **Plugin Network Scope**: plugin outbound requests require a `network` privacy authorization (the market shows a warning when it is missing), and plugins can open WebSocket / HTTP connections directly.
+- **Plugin Conversation Actions**: plugins can send user messages to conversations, create empty conversations and switch the app to a given conversation.
+- **Session-Aware Visual Requests**: image recognition and imagegen image reading now resolve the session-bound API document, custom request headers and system prompts, consistent with the main flow.
+- **Custom System Prompts Everywhere**: user-configured system prompts now apply across API modules.
+- **Standalone Panel Polish**: independent windows remember their last size, and closing the last tab of an independent panel asks for a second confirmation.
+
+## Bug Fixes
+
+- Fixed saving an OAuth archive overwriting the library's latest token with an older snapshot.
+- Fixed `~` in local workspace parameters not being expanded to the home directory.
+- Fixed SSH paths missing the authority prefix when opening a terminal from the explorer.
+- Invalid and orphaned Git work-tree records are now cleaned up.
+
 ## v0.4.25
 
 ## New Features

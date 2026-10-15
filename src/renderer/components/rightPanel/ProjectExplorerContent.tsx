@@ -588,6 +588,16 @@ export function ProjectExplorerContent({
     }
   }, [placement, directoryId]);
 
+  // SSH 条目的路径是裸远程路径（如 /opt/app），终端只识别 ssh:// 形式；
+  // 拼上工作区的 authority（ssh://user@host:port）后再交给 onOpenTerminal。
+  const handleEntryOpenTerminal = useCallback(
+    (cwd: string): void => {
+      const authority = rootPath?.match(/^ssh:\/\/[^/]+/)?.[0];
+      onOpenTerminal?.(isSsh && authority ? `${authority}${cwd}` : cwd);
+    },
+    [isSsh, rootPath, onOpenTerminal],
+  );
+
   const handleEntryContextMenu = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -1695,7 +1705,7 @@ export function ProjectExplorerContent({
           onDeleteSelected={() => handleDeleteSelected()}
           onCopySelectedPaths={() => handleCopySelectedPaths()}
           onAddToInput={() => handleAddSelectedToInput()}
-          onOpenTerminal={onOpenTerminal}
+          onOpenTerminal={handleEntryOpenTerminal}
           onRename={(newName) =>
             handleRenameEntry(entryContextMenu.path, newName)
           }

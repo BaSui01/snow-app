@@ -2,6 +2,7 @@ import type {
   ColorGroup,
   ThemeBackground,
   ThemeBackgroundSource,
+  ThemeCarouselOrder,
   ThemePalette,
   ThemeSettings,
   ThemeMode,
@@ -15,6 +16,7 @@ import {
 } from "./themePresets";
 import { STREAM_CURSOR_LUCIDE_ICONS } from "./streamCursorIcons";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
+import { setActiveBackground } from "./backgroundLayerStore";
 
 export const THEME_SETTING_NAME = "Theme settings";
 export const THEME_SETTING_CODE = "theme_settings";
@@ -26,6 +28,14 @@ export const THEME_SETTING_CODE = "theme_settings";
  * ThemeSettingsPanel 预览 useEffect。
  */
 export const MAX_BACKGROUND_OPACITY = 0.6;
+
+/** 背景图列表上限（与 Rust 端 BACKGROUND_IMAGE_LIMIT 保持一致）。 */
+export const BACKGROUND_IMAGE_LIMIT = 30;
+
+/** 轮播切换间隔（秒）范围与默认值，与 Rust 端常量保持一致。 */
+export const CAROUSEL_INTERVAL_MIN_SECS = 10;
+export const CAROUSEL_INTERVAL_MAX_SECS = 7200;
+export const CAROUSEL_INTERVAL_DEFAULT_SECS = 300;
 
 /** 宠物背景大小（相对视口高度的比例）范围与默认值。 */
 export const PET_BACKGROUND_SCALE_MIN = 0.2;
@@ -257,11 +267,15 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   background: {
     enabled: false,
     source: "image",
-    imagePath: "",
+    imagePaths: [],
     petId: "",
     petScale: PET_BACKGROUND_SCALE_DEFAULT,
     opacity: 0.2,
     blur: 0,
+    carouselEnabled: false,
+    carouselIntervalSecs: CAROUSEL_INTERVAL_DEFAULT_SECS,
+    carouselOrder: "sequential",
+    currentImagePath: "",
   },
   fontFamily: "",
   streamCursor: {
@@ -348,7 +362,24 @@ export function normalizeThemeBackground(
       : 0;
   const sourceKind: ThemeBackgroundSource =
     source.source === "pet" ? "pet" : "image";
-  const imagePath = toText(source.imagePath);
+  // 图片列表：trim、去空、去重（保留首次出现）、截断到上限，与 Rust 端一致。
+  const rawList = Array.isArray(source.imagePaths) ? source.imagePaths : [];
+  const imagePaths: string[] = [];
+  for (const item of rawList) {
+    const trimmed = toText(item).trim();
+    if (!trimmed || imagePaths.includes(trimmed)) {
+      continue;
+    }
+    imagePaths.push(trimmed);
+    if (imagePaths.length >= BACKGROUND_IMAGE_LIMIT) {
+      break;
+    }
+  }
+  // 旧数据迁移：旧版单图字段非空且列表为空时并入列表。
+  const legacyImagePath = toText(source.imagePath).trim();
+  if (imagePaths.length === 0 && legacyImagePath) {
+    imagePaths.push(legacyImagePath);
+  }
   const petId = toText(source.petId);
   const petScale = pickInRange(
     source.petScale,
@@ -356,53 +387,72 @@ export function normalizeThemeBackground(
     PET_BACKGROUND_SCALE_MAX,
     PET_BACKGROUND_SCALE_DEFAULT,
   );
+  // 轮播间隔越界处理与 Rust 端一致：小于下限回退默认值，大于上限钳制到上限。
+  const rawInterval =
+    typeof source.carouselIntervalSecs === "number" &&
+    Number.isFinite(source.carouselIntervalSecs)
+      ? source.carouselIntervalSecs
+      : CAROUSEL_INTERVAL_DEFAULT_SECS;
+  const carouselIntervalSecs =
+    rawInterval < CAROUSEL_INTERVAL_MIN_SECS
+      ? CAROUSEL_INTERVAL_DEFAULT_SECS
+      : Math.min(rawInterval, CAROUSEL_INTERVAL_MAX_SECS);
+  const carouselOrder: ThemeCarouselOrder =
+    source.carouselOrder === "random" ? "random" : "sequential";
+  // 当前显示图必须属于图片列表，否则清空（回退到列表首张），与 Rust 端一致。
+  const rawCurrentImagePath = toText(source.currentImagePath).trim();
+  const currentImagePath = imagePaths.includes(rawCurrentImagePath)
+    ? rawCurrentImagePath
+    : "";
   // 当前来源缺少素材时视为未启用，与 Rust 端 normalize 保持一致。
-  const hasContent = sourceKind === "pet" ? Boolean(petId) : Boolean(imagePath);
+  const hasContent =
+    sourceKind === "pet" ? Boolean(petId) : imagePaths.length > 0;
   return {
     enabled:
       typeof source.enabled === "boolean"
         ? source.enabled && hasContent
         : false,
     source: sourceKind,
-    imagePath,
+    imagePaths,
     petId,
     petScale,
     opacity,
     blur,
+    carouselEnabled: source.carouselEnabled === true,
+    carouselIntervalSecs,
+    carouselOrder,
+    currentImagePath,
   };
 }
 
-/** 当前来源是否已有可用素材（图片已选择 / 宠物已选择）。 */
+/** 当前来源是否已有可用素材（图片列表非空 / 宠物已选择）。 */
 export const hasBackgroundContent = (
   background: ThemeSettings["background"],
 ): boolean =>
   background.source === "pet"
     ? Boolean(background.petId)
-    : Boolean(background.imagePath);
+    : background.imagePaths.length > 0;
 
 /**
- * 将背景配置应用到 :root CSS 变量。
+ * 将背景配置应用到 document。
  *
- * - image：写入 --theme-bg-image，由 .app-shell::after 铺满绘制
- * - pet：不写 --theme-bg-image（由渲染层宠物画布绘制 idle 动画），
- *   仅提供不透明度 / 模糊 / 宠物大小变量
+ * - image：写入全局快照供 ThemeBackgroundImageLayer 组件绘制（多图轮播 +
+ *   交叉淡化），同时维护不透明度 / 模糊 / 宠物大小等 CSS 变量；
+ * - pet：图片图层不参与，仅提供变量（由渲染层宠物画布绘制 idle 动画）。
  */
 export function applyBackgroundToDocument(background: ThemeBackground): void {
   const root = document.documentElement;
-  if (background.enabled && hasBackgroundContent(background)) {
+  const isActive = background.enabled && hasBackgroundContent(background);
+  // 通知全局背景图片图层（组件从快照读取图片列表与轮播参数并负责绘制）。
+  setActiveBackground(isActive ? background : null);
+  if (isActive) {
     const opacity = Math.max(
       0,
       Math.min(MAX_BACKGROUND_OPACITY, background.opacity),
     );
     const blur = Math.max(0, background.blur);
-    if (background.source === "pet") {
-      root.style.removeProperty("--theme-bg-image");
-    } else {
-      root.style.setProperty(
-        "--theme-bg-image",
-        `url("${themeBgUrl(background.imagePath)}")`,
-      );
-    }
+    // 旧版图片通过 --theme-bg-image 变量绘制，现已由图层组件接管，清理历史遗留值。
+    root.style.removeProperty("--theme-bg-image");
     root.style.setProperty("--theme-bg-opacity", String(opacity));
     root.style.setProperty("--theme-bg-blur", `${blur}px`);
     root.style.setProperty("--theme-pet-scale", String(background.petScale));
@@ -748,11 +798,81 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
   applyStreamCursorToDocument(settings.streamCursor);
   applyTypographyToDocument(settings.typography);
 
-  // 同步背景图层 CSS 变量，避免启动时背景延迟出现。
+  // 同步背景图层快照与 CSS 变量，React 挂载后图片层立即生效。
   applyBackgroundToDocument(settings.background);
 
   return isDark ? "dark" : "light";
 };
+
+/** 「当前显示图变化」事件名：图层切换成功后派发，设置面板监听以同步表单。 */
+export const THEME_BG_CURRENT_EVENT = "theme:bg-current-changed";
+
+/**
+ * theme:changed 的来源标记：背景「当前图」节流回写。
+ * 该来源的广播仅代表 currentImagePath 变化（表单已通过
+ * THEME_BG_CURRENT_EVENT 同步），监听方可跳过无谓的整表重载。
+ */
+export const THEME_CHANGED_SOURCE_BG_CURRENT = "bg-current";
+
+/** 当前显示图写回后端的节流窗口（毫秒）。 */
+const BACKGROUND_CURRENT_PERSIST_THROTTLE_MS = 3000;
+
+let persistCurrentTimer: number | null = null;
+let pendingCurrentPath: string | null = null;
+
+/**
+ * 记录「当前显示的背景图」并节流持久化，使下次启动从上次显示的图继续：
+ * - 顺序模式：从该图往下继续播放；
+ * - 随机模式：该图作为关闭轮播时的固定图（开始播放时仍会随机起播）；
+ * - 关闭轮播 / 点选缩略图固定时，重启后仍显示它。
+ *
+ * 数据来源与写入均走 localStorage 主题缓存 + 全量 setThemeSettings，
+ * 不依赖设置面板是否挂载；切换成功即调用，节流窗口内只回写最后一次。
+ */
+export function persistBackgroundCurrentImagePath(imagePath: string): void {
+  if (!imagePath) {
+    return;
+  }
+  pendingCurrentPath = imagePath;
+  // 立即广播：让设置面板同步表单里的当前图（避免其保存时回退旧值）。
+  window.dispatchEvent(
+    new CustomEvent(THEME_BG_CURRENT_EVENT, { detail: imagePath }),
+  );
+  if (persistCurrentTimer !== null) {
+    return;
+  }
+  persistCurrentTimer = window.setTimeout(() => {
+    persistCurrentTimer = null;
+    const path = pendingCurrentPath;
+    pendingCurrentPath = null;
+    if (!path) {
+      return;
+    }
+    const cached = readThemeCache();
+    if (!cached || cached.background.currentImagePath === path) {
+      return;
+    }
+    const updated: ThemeSettings = {
+      ...cached,
+      background: { ...cached.background, currentImagePath: path },
+    };
+    writeThemeCache(updated);
+    void window.snow
+      .setThemeSettings(updated)
+      .then(() => {
+        // 先落库再广播，确保 theme:changed 监听方读到的是新值；附带来源标记，
+        // 设置面板据此跳过整表重载（避免每次切换闪一次「加载中」禁用态）。
+        window.dispatchEvent(
+          new CustomEvent("theme:changed", {
+            detail: { source: THEME_CHANGED_SOURCE_BG_CURRENT },
+          }),
+        );
+      })
+      .catch(() => {
+        // 持久化失败不阻塞轮播；下一次切换会重试。
+      });
+  }, BACKGROUND_CURRENT_PERSIST_THROTTLE_MS);
+}
 
 const TRAFFIC_LIGHT_GROUP_HEIGHT = 16;
 const DEFAULT_HEADER_CENTER_Y = 36;

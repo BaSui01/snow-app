@@ -45,6 +45,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import { ThemeBackgroundPetLayer } from "./components/pet/ThemeBackgroundPetLayer";
+import { ThemeBackgroundImageLayer } from "./components/sidebar/themeSettings/ThemeBackgroundImageLayer";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
 import {
   CLOSE_BEHAVIOR_SETTING_CODE,
@@ -1087,6 +1088,7 @@ export const App = (): React.JSX.Element => {
           style={panelSizeStyle}
           data-snow-anchor="app.root"
         >
+          <ThemeBackgroundImageLayer />
           <ThemeBackgroundPetLayer background={themeSettings.background} />
           <TopBar
             activeView={activeMainView}

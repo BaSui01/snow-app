@@ -1,5 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { promises as fs } from "fs";
+import { homedir } from "os";
+import { extname, join } from "path";
 import type {
   FileSearchAgentProgress,
   GitCloneProgress,
@@ -791,16 +793,16 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
-    "theme:select-background-image",
+    "theme:select-background-images",
     async (event, dialogTitle: unknown) => {
       const browserWindow = BrowserWindow.fromWebContents(event.sender);
       const title =
         typeof dialogTitle === "string" && dialogTitle.trim()
           ? dialogTitle.trim()
-          : "Select background image";
+          : "Select background images";
       const options: Electron.OpenDialogOptions = {
         title,
-        properties: ["openFile"],
+        properties: ["openFile", "multiSelections"],
         filters: [
           {
             name: "Images",
@@ -813,9 +815,61 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
         ? await dialog.showOpenDialog(browserWindow, options)
         : await dialog.showOpenDialog(options);
 
-      return result.canceled ? null : (result.filePaths[0] ?? null);
+      return result.canceled ? [] : result.filePaths;
     },
   );
+  /**
+   * 列出受管背景图目录（~/.snowapp/backgrounds/）中的历史图片，
+   * 按修改时间倒序返回，供「历史图片」弹窗重新加入列表或清理文件。
+   */
+  ipcMain.handle("theme:list-background-images", async () => {
+    const backgroundsDir = join(homedir(), ".snowapp", "backgrounds");
+    const allowedExtensions = new Set([
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "webp",
+      "bmp",
+      "svg",
+    ]);
+    const entries = await fs
+      .readdir(backgroundsDir, { withFileTypes: true })
+      .catch(() => null);
+    if (!entries) {
+      // 目录不存在（尚未使用过背景图）时返回空列表。
+      return [];
+    }
+    const items: {
+      path: string;
+      fileName: string;
+      modifiedAt: number;
+      size: number;
+    }[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) {
+        continue;
+      }
+      const extension = extname(entry.name).slice(1).toLowerCase();
+      if (!allowedExtensions.has(extension)) {
+        continue;
+      }
+      const fullPath = join(backgroundsDir, entry.name);
+      try {
+        const stat = await fs.stat(fullPath);
+        items.push({
+          path: fullPath,
+          fileName: entry.name,
+          modifiedAt: stat.mtimeMs,
+          size: stat.size,
+        });
+      } catch {
+        // 单个文件读取失败时跳过，不影响其余列表。
+      }
+    }
+    items.sort((a, b) => b.modifiedAt - a.modifiedAt);
+    return items;
+  });
   ipcMain.handle(
     "theme:select-stream-cursor-svg",
     async (event, dialogTitle: unknown) => {

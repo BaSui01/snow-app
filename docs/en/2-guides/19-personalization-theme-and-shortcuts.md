@@ -114,7 +114,7 @@ The theme is stored as the `theme_settings` record in SQLite `system_settings`, 
 
 - `mode` and `presetId`;
 - `custom.light` and `custom.dark` palettes;
-- `background`;
+- `background` (source, image list, carousel settings, opacity, and blur);
 - `fontFamily`;
 - `typography` (UI font size, body font weight, chat font size / line height, code font size);
 - `streamCursor`.
@@ -125,10 +125,33 @@ The renderer also keeps a fast localStorage theme cache to reduce startup flashi
 
 The background has two mutually exclusive sources:
 
-- **Image**: when you select a background image, Snow App copies it to `~/.snowapp/backgrounds/` and no longer continuously references the original file. The renderer reads the managed resource through the restricted `theme-bg://` protocol.
+- **Image**: background images are managed as a list of up to 30 entries. “Add images” accepts several local files in a single selection (`png`, `jpg`, `jpeg`, `gif`, `webp`, `bmp`, `svg`); Snow App copies each file to `~/.snowapp/backgrounds/` and no longer continuously references the original file. The list is displayed as a thumbnail grid where entries can be removed one by one; clicking a thumbnail pins that image as the background and ends the automatic carousel; images beyond the 30-image limit are reported as not added.
 - **Pet**: when you select an installed desktop pet, that pet's idle animation loops on the top layer as an animated background, with a 20%–150% size control (relative to the window height); the playback speed follows the speed multiplier in Settings > Desktop pet.
 
-Both sources share the enabled state, opacity, and a blur value from 0 to 100. The `source` field in `background` marks the active source, and `petId` / `petScale` only apply to the pet source.
+The renderer reads image resources through the restricted `theme-bg://` protocol.
+
+Both sources share the enabled state, opacity, and a blur value from 0 to 100; opacity is capped at 60% and, together with blur, applies to the whole background layer. The `source` field in `background` marks the active source, and `petId` / `petScale` only apply to the pet source.
+
+#### Automatic Carousel
+
+An image list can rotate automatically, and the carousel can be toggled at any time:
+
+- **Interval**: 10 seconds to 2 hours, choosing among 10 seconds, 30 seconds, 1 minute, 5 minutes, 15 minutes, 30 minutes, 1 hour, and 2 hours; the default is 5 minutes;
+- **Order**: “Sequential” or “Random”; the default is sequential;
+- **Transition**: a cross-fade of about 0.6 seconds, with the next image preloaded before the switch so that no blank frame appears;
+- **Scope**: the carousel runs only while the app is running;
+- **Playback position**: in sequential mode, the next launch or the next time the carousel is enabled continues from the image that was displayed last; in random mode, each playback starts from a randomly chosen image; when the carousel is turned off or an image is pinned by clicking its thumbnail, the image on screen is remembered and is still shown after a restart;
+- **Single image and off state**: with one image in the list or the carousel disabled, the background stays static and never switches.
+
+#### Image History and File Retention
+
+Every background image you have added stays in the application-managed `~/.snowapp/backgrounds/` directory. The “Image history” dialog lists those files and can add an image back to the list. Whether the file is deleted from disk depends on where you delete it:
+
+| Action                                | List    | File in `~/.snowapp/backgrounds/`                  |
+| ------------------------------------- | ------- | -------------------------------------------------- |
+| Remove an image from the current list | Removed | Kept; re-add it from image history later           |
+| Reset the theme                       | Cleared | Kept; re-add it from image history later           |
+| Delete an image in “Image history”    | Removed | Deleted from disk as well; it cannot be added back |
 
 The font can use the system default or a selected family. The same area also provides typography settings: UI font size (12–18 px, where 13 px = 100%, applied as whole-app zoom equivalent to Electron `webFrame.setZoomFactor`), body font weight (100–900, free input), chat font size (12–20 px), chat line height (1.2–2.4), and code font size (10–18 px, applied to chat code blocks and inline code); the UI font size can also be adjusted with keyboard shortcuts and persists immediately. The streaming cursor supports:
 
@@ -140,7 +163,7 @@ Custom SVGs are copied to `~/.snowapp/stream-cursors/`. Cursor size is normalize
 
 ### AI Color Generation
 
-AI color generation uses the background image as visual input. You must select an API profile whose advanced model supports vision. Applying the result writes the theme immediately. Because the background is sent to the selected model, review the provider's data-handling policy before using private images.
+AI color generation uses the first image in the background list as visual input. You must select an API profile whose advanced model supports vision. Applying the result writes the theme immediately. Because the background is sent to the selected model, review the provider's data-handling policy before using private images.
 
 ## Language
 
@@ -201,13 +224,13 @@ The “Foreground only” value is persisted, but the current engine is based on
 
 ## Storage, Lifecycle, and Security Boundaries
 
-| Data                              | Location                                                 | Lifecycle                                                   | Security boundary                                                        |
-| --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Global ROLE                       | `~/.snow/ROLE.md`                                        | Retained until the user overwrites or deletes it            | Can affect every project that loads global rules                         |
-| Project ROLE and switch           | `<workspace>/ROLE.md`, `<workspace>/.snow/settings.json` | Retained with workspace files                               | Limited to the current project; SSH content uses the remote-access path  |
-| System prompts and header schemes | `~/.snowapp/snowapp.db`                                  | Retained until UI deletion, database migration, or recovery | May contain instructions and secrets; database backups are sensitive too |
-| Theme, language, and shortcuts    | SQLite `system_settings`                                 | Retained until changed, reset, or the database is replaced  | localStorage is only a startup cache, not a replacement source of truth  |
-| Backgrounds and cursor SVGs       | `~/.snowapp/backgrounds/`, `~/.snowapp/stream-cursors/`  | Managed copies remain after the original is removed         | `theme-bg://` exposes only controlled local resources                    |
+| Data                              | Location                                                 | Lifecycle                                                                                       | Security boundary                                                        |
+| --------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Global ROLE                       | `~/.snow/ROLE.md`                                        | Retained until the user overwrites or deletes it                                                | Can affect every project that loads global rules                         |
+| Project ROLE and switch           | `<workspace>/ROLE.md`, `<workspace>/.snow/settings.json` | Retained with workspace files                                                                   | Limited to the current project; SSH content uses the remote-access path  |
+| System prompts and header schemes | `~/.snowapp/snowapp.db`                                  | Retained until UI deletion, database migration, or recovery                                     | May contain instructions and secrets; database backups are sensitive too |
+| Theme, language, and shortcuts    | SQLite `system_settings`                                 | Retained until changed, reset, or the database is replaced                                      | localStorage is only a startup cache, not a replacement source of truth  |
+| Backgrounds and cursor SVGs       | `~/.snowapp/backgrounds/`, `~/.snowapp/stream-cursors/`  | Managed copies survive list removals and theme resets; only image-history deletion removes them | `theme-bg://` exposes only controlled local resources                    |
 
 For the full directory, backup, and restore boundaries, see [Data Storage Locations](../3-reference/4-data-storage-locations.md).
 
@@ -223,7 +246,7 @@ The current engine uses renderer keyboard events, which stop when Snow App loses
 
 ### Does deleting the original background image break the theme?
 
-No. The selected file was copied to `~/.snowapp/backgrounds/`. Removing the managed application copy, however, makes that background unavailable.
+No. Adding an image copies the file to `~/.snowapp/backgrounds/` and registers the copy as image history; removing it from the list or resetting the theme never deletes the copy, so you can add it back at any time. Only deleting the image in the “Image history” dialog removes the copy from disk, after which it cannot be added back.
 
 ### Why is an API profile not using the global prompt or headers?
 

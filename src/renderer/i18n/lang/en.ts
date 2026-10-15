@@ -3584,6 +3584,34 @@ export const en = {
   "settings.themeBackgroundOpacity": "Opacity",
   "settings.themeBackgroundBlur": "Blur",
   "settings.themeBackgroundSaveError": "Failed to save background image",
+  "settings.themeBackgroundAddImages": "Add images",
+  "settings.themeBackgroundAddDialogTitle": "Select background images",
+  "settings.themeBackgroundHistory": "Image history",
+  "settings.themeBackgroundHistoryTitle": "Background image history",
+  "settings.themeBackgroundHistoryInfo":
+    "Pick previously used backgrounds to add them back to the list. Deleting also removes the file from disk.",
+  "settings.themeBackgroundHistoryEmpty": "No background history yet.",
+  "settings.themeBackgroundHistoryAdded": "Added",
+  "settings.themeBackgroundHistoryAdd": "Add to list",
+  "settings.themeBackgroundHistoryDelete": "Delete file",
+  "settings.themeBackgroundHistoryDeleteConfirm":
+    "Delete this background image file? This cannot be undone.",
+  "settings.themeBackgroundHistoryLoadError":
+    "Failed to load background history",
+  "settings.themeBackgroundCarouselEnable": "Auto carousel",
+  "settings.themeBackgroundCarouselInfo":
+    "When enabled, backgrounds switch automatically at the chosen interval (up to 30 images).",
+  "settings.themeBackgroundCarouselInterval": "Interval",
+  "settings.themeBackgroundCarouselOrder": "Playback order",
+  "settings.themeBackgroundCarouselOrderSequential": "Sequential",
+  "settings.themeBackgroundCarouselOrderRandom": "Random",
+  "settings.themeBackgroundIntervalSeconds": "{{count}} sec",
+  "settings.themeBackgroundIntervalMinutes": "{{count}} min",
+  "settings.themeBackgroundIntervalHours": "{{count}} h",
+  "settings.themeBackgroundLimitHint":
+    "Up to 30 images; extra ones were skipped.",
+  "settings.themeBackgroundImagesEmpty":
+    "No backgrounds yet. Use the add button to pick some.",
   "settings.themeFontTitle": "Font",
   "settings.themeFontInfo":
     "Set the application font. Choose a common font or enter a custom CSS font-family value.",

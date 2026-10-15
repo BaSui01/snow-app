@@ -393,9 +393,24 @@ export type CustomTheme = {
 
 export type ThemeBackground = {
   enabled: boolean;
-  imagePath: string;
+  /** 背景来源：image（自定义图片）| pet（桌面宠物 idle 动画） */
+  source: string;
+  /** 背景图片列表（source 为 image 时生效，首张为初始显示图） */
+  imagePaths: string[];
+  /** 宠物背景使用的已安装宠物 id */
+  petId: string;
+  /** 宠物背景大小：相对视口高度的比例 */
+  petScale: number;
   opacity: number;
   blur: number;
+  /** 是否开启自动轮播（图片数量 >= 2 时生效） */
+  carouselEnabled: boolean;
+  /** 轮播切换间隔（秒） */
+  carouselIntervalSecs: number;
+  /** 轮播播放顺序：sequential | random */
+  carouselOrder: string;
+  /** 当前显示 / 固定的背景图路径（空表示取列表首张） */
+  currentImagePath: string;
 };
 
 export type ThemeSettings = {

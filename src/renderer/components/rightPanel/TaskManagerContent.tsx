@@ -304,6 +304,7 @@ export const TaskManagerContent = ({
       void window.snow.showNotification({
         title: t("taskManager.alertNotifyTitle"),
         body: alertTriggeredText(t, metric, rule),
+        ignoreFocus: true,
       });
     },
     [t],

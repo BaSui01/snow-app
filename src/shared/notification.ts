@@ -9,6 +9,8 @@ export type AppNotificationOptions = {
   body: string;
   silent?: boolean;
   target?: NotificationConversationTarget;
+  /** 忽略窗口聚焦抑制，用于用户显式开启的通知 */
+  ignoreFocus?: boolean;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -18,7 +20,7 @@ const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
 export const isNotificationConversationTarget = (
-  value: unknown
+  value: unknown,
 ): value is NotificationConversationTarget =>
   isRecord(value) &&
   value.kind === "conversation" &&
@@ -26,11 +28,12 @@ export const isNotificationConversationTarget = (
   isNonEmptyString(value.directoryId);
 
 export const isAppNotificationOptions = (
-  value: unknown
+  value: unknown,
 ): value is AppNotificationOptions =>
   isRecord(value) &&
   typeof value.title === "string" &&
   typeof value.body === "string" &&
   (value.silent === undefined || typeof value.silent === "boolean") &&
+  (value.ignoreFocus === undefined || typeof value.ignoreFocus === "boolean") &&
   (value.target === undefined ||
     isNotificationConversationTarget(value.target));

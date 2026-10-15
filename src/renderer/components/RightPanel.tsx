@@ -284,6 +284,8 @@ type RightPanelProps = RightPanelContentProps & {
   detachedWindow?: { initialTab: RightPanelTab };
   /** 独立面板窗口模式：活动 tab 标题变化时回调（顶部操作栏显示用）。 */
   onActiveTabTitleChange?: (title: string) => void;
+  /** 独立面板窗口模式：用户主动关闭最后一个 tab 时请求父级二次确认（确认后关窗）。 */
+  onRequestCloseDetachedWindow?: () => void;
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
@@ -296,6 +298,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       onToggleRightPanelFullscreen,
       detachedWindow,
       onActiveTabTitleChange,
+      onRequestCloseDetachedWindow,
     },
     ref,
   ): React.JSX.Element => {
@@ -1300,7 +1303,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
 
     useEffect(() => {
       if (isDetachedWindow && tabs.length === 0) {
-        // 没有标签页可保留：直接关闭，不再二次确认。
+        // 程序性清空（移出 / 移回等）：直接关闭；用户主动关闭最后一个 tab 已由 requestCloseTab 确认。
         void window.snow.confirmDetachedPanelClose();
       }
     }, [isDetachedWindow, tabs.length]);
@@ -1464,18 +1467,36 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       return () => el.removeEventListener("wheel", onWheel);
     }, [tabs.length]);
 
+    // 用户主动关闭 tab（标签按钮、中键、右键菜单）的统一入口：独立窗口的最后一个 tab
+    // 关闭即关窗，先交由父级确认框二次确认（与点击窗口关闭按钮一致）。
+    const requestCloseTab = useCallback(
+      (tabId: string): void => {
+        if (
+          isDetachedWindow &&
+          tabs.length === 1 &&
+          tabs[0].id === tabId &&
+          onRequestCloseDetachedWindow
+        ) {
+          onRequestCloseDetachedWindow();
+          return;
+        }
+        handleCloseTab(tabId);
+      },
+      [isDetachedWindow, tabs, handleCloseTab, onRequestCloseDetachedWindow],
+    );
+
     // tab 关闭按钮点击：terminal / browser 需要二次确认（tooltip 浮层），
     // 其余类型（file / diff 等）直接关闭。浮层坐标基于关闭按钮相对
     // tab-list 的位置计算，maxX 用于防止浮层超出 tab 栏右边界。
     const handleTabCloseClick = useCallback(
       (event: React.MouseEvent<HTMLButtonElement>, tab: RightPanelTab) => {
         if (tab.type !== "terminal" && tab.type !== "browser") {
-          handleCloseTab(tab.id);
+          requestCloseTab(tab.id);
           return;
         }
         const listRect = tabListRef.current?.getBoundingClientRect();
         if (!listRect) {
-          handleCloseTab(tab.id);
+          requestCloseTab(tab.id);
           return;
         }
         const rect = event.currentTarget.getBoundingClientRect();
@@ -1486,16 +1507,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           maxX: listRect.width - 4,
         });
       },
-      [handleCloseTab],
+      [requestCloseTab],
     );
 
     // 确认关闭：执行关闭并收起浮层。
     const confirmCloseTab = useCallback((): void => {
       if (closeConfirm) {
-        handleCloseTab(closeConfirm.tabId);
+        requestCloseTab(closeConfirm.tabId);
       }
       setCloseConfirm(null);
-    }, [closeConfirm, handleCloseTab]);
+    }, [closeConfirm, requestCloseTab]);
 
     // 点击浮层以外的任意位置时收起确认浮层（捕获阶段，浮层内已阻止冒泡）。
     useEffect(() => {
@@ -1904,7 +1925,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                       event.preventDefault();
                       if (tab.id !== GIT_TAB_ID) {
                         setCloseConfirm(null);
-                        handleCloseTab(tab.id);
+                        requestCloseTab(tab.id);
                       }
                     }
                   }}
@@ -2183,7 +2204,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             onCloseTab={() => {
               setTabContextMenu(null);
               if (tabContextMenu.tabId !== null) {
-                handleCloseTab(tabContextMenu.tabId);
+                requestCloseTab(tabContextMenu.tabId);
               }
             }}
             onClose={() => setTabContextMenu(null)}

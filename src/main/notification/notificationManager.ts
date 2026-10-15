@@ -26,7 +26,7 @@ const retainedNotifications: Notification[] = [];
 
 const isAnyWindowFocused = (): boolean =>
   BrowserWindow.getAllWindows().some(
-    (win) => !win.isDestroyed() && win.isVisible() && win.isFocused()
+    (win) => !win.isDestroyed() && win.isVisible() && win.isFocused(),
   );
 
 const flashTaskbar = (window: BrowserWindow): void => {
@@ -111,7 +111,7 @@ const deliverPendingActivation = (window: BrowserWindow): void => {
 // 时暂存激活目标，待 did-finish-load 后补发，避免激活目标静默丢失。
 const sendOrDeferActivation = (
   window: BrowserWindow,
-  target: NotificationConversationTarget
+  target: NotificationConversationTarget,
 ): void => {
   if (window.isDestroyed()) {
     return;
@@ -134,7 +134,7 @@ const sendOrDeferActivation = (
 
 const activateSourceWindow = async (
   sourceWindow: BrowserWindow,
-  target: NotificationConversationTarget | undefined
+  target: NotificationConversationTarget | undefined,
 ): Promise<void> => {
   if (isMacOS && app.dock) {
     try {
@@ -181,10 +181,10 @@ const activateSourceWindow = async (
 
 export const showAppNotification = (
   options: AppNotificationOptions,
-  sourceWindow: BrowserWindow
+  sourceWindow: BrowserWindow,
 ): void => {
-  // 窗口已聚焦时用户能直接看到 UI，不需要系统通知
-  if (isAnyWindowFocused()) {
+  // 窗口已聚焦时用户能直接看到 UI，不需要系统通知（显式开启的除外）
+  if (!options.ignoreFocus && isAnyWindowFocused()) {
     return;
   }
 

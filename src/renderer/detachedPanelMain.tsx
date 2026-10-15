@@ -209,6 +209,7 @@ function DetachedPanelWindowApp(): React.JSX.Element | null {
               activeDirectory={activeDirectory}
               detachedWindow={{ initialTab: toRightPanelTab(payload.tab) }}
               onActiveTabTitleChange={setWindowTitle}
+              onRequestCloseDetachedWindow={() => setIsCloseConfirmOpen(true)}
             />
           </ChatConversationProvider>
         ) : null}

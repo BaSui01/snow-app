@@ -2,6 +2,7 @@ import type { Locale } from "../../shared/locale";
 import { en } from "./lang/en";
 import { zhCN } from "./lang/zh-CN";
 import { zhTW } from "./lang/zh-TW";
+import { imageGenerationTranslations } from "./lang/imageGeneration";
 
 // 语言集合与归一化规则与主进程、Mobile 远控页共用同一份实现
 // （src/shared/locale.ts），这里仅保留 Renderer 专有的词典与展示名。
@@ -21,7 +22,7 @@ export const localeLabels: Record<Locale, string> = {
 };
 
 export const resources: Record<Locale, Record<string, string>> = {
-  en,
-  "zh-CN": zhCN,
-  "zh-TW": zhTW,
+  en: { ...en, ...imageGenerationTranslations.en },
+  "zh-CN": { ...zhCN, ...imageGenerationTranslations["zh-CN"] },
+  "zh-TW": { ...zhTW, ...imageGenerationTranslations["zh-TW"] },
 };

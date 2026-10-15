@@ -647,11 +647,20 @@ export const buildConversationMessages = (
 export const isSameToolCall = (
   candidate: ToolCallInfo,
   target: ToolCallInfo,
-): boolean =>
-  target.callId
-    ? candidate.callId === target.callId
-    : candidate.name === target.name &&
-      candidate.arguments === target.arguments;
+): boolean => {
+  if (candidate.name !== target.name) return false;
+  if (target.callId) {
+    return (
+      candidate.callId === target.callId &&
+      (!target.interactionId ||
+        candidate.interactionId === target.interactionId)
+    );
+  }
+  return (
+    Boolean(target.interactionId) &&
+    candidate.interactionId === target.interactionId
+  );
+};
 
 export const updateFirstMatchingToolCall = (
   toolCalls: ToolCallInfo[] | undefined,
@@ -733,6 +742,7 @@ export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
     "filesystem-replace_edit": ["filePath", "searchContent", "replaceContent"],
     "filesystem-copy": ["filePath", "sourceFilePath"],
     "bash-terminal-execute": ["command"],
+    "imagegen-generate": ["prompt"],
   };
   const requiredNumberArguments: Record<string, readonly string[]> = {
     "filesystem-copy": ["sourceStartLine"],

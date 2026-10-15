@@ -220,6 +220,14 @@ automatically:
 - **Channel selection**: the AI picks a usable channel per request (OpenAI is
   the default when both are enabled); you can ask explicitly, e.g. “use Gemini”.
 
+### Asynchronous Tasks, Per-image Display and Batch Notifications
+
+A `pending` receipt from `mode="async"` acknowledges admission only. The AI may end its current turn immediately without waiting for generation. Each terminal image updates its original gallery slot; after every member completes, fails or is cancelled, one batch summary is scheduled. There is no first-image delay window.
+
+Task terminals are persisted independently. Conversation switching, history reload and lost invocation callbacks can recover from task snapshots. Legacy pending records without durable task facts show an explicit untracked result and never automatically repeat paid generation. Startup settles interrupted previous-process tasks as failures rather than leaving them waiting forever. Single-image retries, variations and direct Drawing Panel generation use synchronous mode.
+
+The concurrency setting limits actual upstream image requests, not pending receipts. Lifecycle logs distinguish admission, request start, terminal commit, callback enqueue, IPC forwarding, frontend consumption, and notification queued/sent. A library image or a generation-success log does not establish successful chat delivery. See the [asynchronous image-generation lifecycle ADR](../4-architecture-and-development/9-async-image-generation-lifecycle-adr.md) for contracts and acceptance boundaries.
+
 ### Reference Paths and Runtime Limits
 
 Reference items in `images` may use inline `data` or a `path`. Two path forms are supported:

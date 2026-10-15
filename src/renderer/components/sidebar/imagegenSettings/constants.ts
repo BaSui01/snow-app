@@ -51,11 +51,15 @@ export const IMAGE_GEN_TIMEOUT_RANGE: { min: number; max: number } = {
   max: 3600,
 };
 
+/** 生图执行模式默认值：auto（Agent 根据上下文自主判定）。 */
+export const DEFAULT_IMAGE_GEN_EXECUTION_MODE = "auto" as const;
+
 /** 生图设置默认值：无渠道（未配置时不暴露生图工具）。 */
 export const DEFAULT_IMAGE_GEN_SETTINGS: ImageGenSettingsValue = {
   channels: [],
   maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
   timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
+  executionMode: DEFAULT_IMAGE_GEN_EXECUTION_MODE,
 };
 
 /** OpenAI 兼容端点官方默认地址（baseUrl 留空时使用）。 */

@@ -1,4 +1,4 @@
-import { Braces, CircleAlert, Loader2, Settings, X } from "lucide-react";
+import { Braces, CircleAlert, Clock, Loader2, Settings, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { LspSessionStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
@@ -185,7 +185,21 @@ export function LspStatusBadge({
           aria-label={t("chatInput.lspBadgeTitle")}
         >
           <div className="lsp-status-popover-header">
-            <strong>{t("chatInput.lspBadgeTitle")}</strong>
+            <div className="lsp-status-popover-title-row">
+              <Braces
+                size={13}
+                className="lsp-status-popover-icon"
+                aria-hidden="true"
+              />
+              <strong>{t("chatInput.lspBadgeTitle")}</strong>
+              {!current?.stale && runningCount > 0 && (
+                <span className="lsp-status-popover-pill">
+                  {t("chatInput.lspBadgeRunning", {
+                    values: { running: runningCount, total: items.length },
+                  })}
+                </span>
+              )}
+            </div>
             <button
               type="button"
               className="icon-btn ghost"
@@ -198,77 +212,97 @@ export function LspStatusBadge({
               <X size={14} aria-hidden="true" />
             </button>
           </div>
-          <div className="lsp-status-popover-list">
-            <p className="lsp-status-popover-empty">
-              {t("chatInput.lspBadgeProcessOnly")}
-            </p>
-            {current?.stale && (
-              <p className="lsp-status-popover-empty" role="status">
-                {t("chatInput.lspBadgeStale")}
-              </p>
-            )}
-            {current?.updatedAt && (
-              <p className="lsp-status-popover-empty">
-                {t("chatInput.lspBadgeUpdated", {
-                  values: {
-                    time: new Date(current.updatedAt).toLocaleTimeString(
-                      locale,
-                    ),
-                  },
-                })}
-              </p>
-            )}
+
+          <div className="lsp-status-popover-body">
             {!current ? (
-              <p className="lsp-status-popover-empty" role="status">
-                {title}
-              </p>
+              <div className="lsp-status-popover-state" role="status">
+                <Loader2
+                  size={18}
+                  className="spin lsp-status-state-icon"
+                  aria-hidden="true"
+                />
+                <span className="lsp-status-state-text">{title}</span>
+              </div>
             ) : items.length === 0 ? (
-              <p className="lsp-status-popover-empty">
-                {current.stale
-                  ? t("chatInput.lspBadgeUnknown")
-                  : t("chatInput.lspBadgeEmpty")}
-              </p>
-            ) : (
-              items.map((session) => (
-                <div
-                  key={`${session.lang}:${session.projectRoot}`}
-                  className={`lsp-status-row ${current.stale ? "stale" : session.status}`}
-                >
-                  <span className="lsp-status-dot" aria-hidden="true" />
-                  <strong className="lsp-status-lang">{session.lang}</strong>
-                  <span
-                    className="lsp-status-project"
-                    title={session.projectRoot}
-                  >
-                    {session.projectRoot}
-                  </span>
-                  <span className="lsp-status-label">
-                    {t(STATUS_LABEL_KEY[session.status])}
-                  </span>
-                  {session.error && (
-                    <span className="lsp-status-error" title={session.error}>
-                      {session.error}
-                    </span>
-                  )}
+              <div className="lsp-status-popover-state">
+                <div className="lsp-status-empty-icon-wrap" aria-hidden="true">
+                  <Braces size={18} />
                 </div>
-              ))
+                <span className="lsp-status-state-text">
+                  {current.stale
+                    ? t("chatInput.lspBadgeUnknown")
+                    : t("chatInput.lspBadgeEmpty")}
+                </span>
+              </div>
+            ) : (
+              <div className="lsp-status-popover-list">
+                {items.map((session) => (
+                  <div
+                    key={`${session.lang}:${session.projectRoot}`}
+                    className={`lsp-status-card ${current.stale ? "stale" : session.status}`}
+                  >
+                    <div className="lsp-status-card-header">
+                      <div className="lsp-status-card-main">
+                        <span className="lsp-status-dot" aria-hidden="true" />
+                        <span className="lsp-status-lang-badge">
+                          {session.lang}
+                        </span>
+                        <span
+                          className="lsp-status-project"
+                          title={session.projectRoot}
+                        >
+                          {session.projectRoot}
+                        </span>
+                      </div>
+                      <span className="lsp-status-card-badge">
+                        {t(STATUS_LABEL_KEY[session.status])}
+                      </span>
+                    </div>
+                    {session.error && (
+                      <div className="lsp-status-error" title={session.error}>
+                        {session.error}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-          {onOpenSettings && (
-            <div className="lsp-status-popover-footer">
+
+          <div className="lsp-status-popover-footer">
+            <div className="lsp-status-popover-footer-meta">
+              {current?.stale ? (
+                <span className="lsp-status-stale-tag" role="status">
+                  <CircleAlert size={11} aria-hidden="true" />
+                  {t("chatInput.lspBadgeStale")}
+                </span>
+              ) : current?.updatedAt ? (
+                <span className="lsp-status-time-tag">
+                  <Clock size={11} aria-hidden="true" />
+                  {t("chatInput.lspBadgeUpdated", {
+                    values: {
+                      time: new Date(current.updatedAt).toLocaleTimeString(
+                        locale,
+                      ),
+                    },
+                  })}
+                </span>
+              ) : null}
+            </div>
+            {onOpenSettings && (
               <button
                 type="button"
-                className="api-settings-form-btn secondary"
+                className="lsp-status-settings-btn"
                 onClick={() => {
                   setOpen(false);
                   onOpenSettings();
                 }}
               >
-                <Settings size={13} aria-hidden="true" />
-                {t("chatInput.lspBadgeOpenSettings")}
+                <Settings size={12} aria-hidden="true" />
+                <span>{t("chatInput.lspBadgeOpenSettings")}</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>

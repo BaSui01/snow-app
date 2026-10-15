@@ -23616,10 +23616,10 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 .lsp-status-badge.is-active {
-  color: var(--success, #22c55e);
+  color: var(--success);
 }
 .lsp-status-badge.has-problems {
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
 }
 .lsp-status-badge-count {
   font-size: 10px;
@@ -23631,71 +23631,134 @@ body.is-panel-resizing * {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  width: 340px;
-  max-width: min(340px, calc(100vw - 24px));
-  max-height: 340px;
+  width: 320px;
+  max-width: min(320px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
+  box-shadow: var(--shadow-lg, var(--island-shadow));
   z-index: 100;
   overflow: hidden;
-  animation: tooltip-in 0.14s ease-out;
+  animation: tooltip-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .lsp-status-popover-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 11px;
+  background: var(--bg-primary);
+}
+.lsp-status-popover-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lsp-status-popover-icon {
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 .lsp-status-popover-header strong {
   color: var(--text-primary);
   font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
-.lsp-status-popover-list {
+.lsp-status-popover-pill {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--success);
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--border-subtle);
+}
+.lsp-status-popover-body {
+  padding: 8px;
+  max-height: 220px;
   overflow-y: auto;
-  padding: 4px 0;
-  max-height: 230px;
 }
-.lsp-status-popover-empty {
-  padding: 14px 12px;
-  font-size: 11px;
-  color: var(--text-muted);
+.lsp-status-popover-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  gap: 8px;
   text-align: center;
 }
-.lsp-status-row {
+.lsp-status-empty-icon-wrap {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 5px 10px;
-  font-size: 11px;
-  line-height: 1.4;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  color: var(--text-muted);
 }
-.lsp-status-row:hover {
-  background: var(--surface-hover, rgba(127, 127, 127, 0.06));
+.lsp-status-state-icon {
+  color: var(--text-muted);
+}
+.lsp-status-state-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.lsp-status-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lsp-status-card {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+.lsp-status-card:hover {
+  background: var(--surface-hover, var(--bg-hover));
+  border-color: var(--border-color);
+}
+.lsp-status-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lsp-status-card-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 .lsp-status-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--text-muted);
 }
-.lsp-status-row.running .lsp-status-dot {
-  background: var(--success, #22c55e);
+.lsp-status-card.running .lsp-status-dot {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
 }
-.lsp-status-row.dead .lsp-status-dot,
-.lsp-status-row.exited .lsp-status-dot {
-  background: var(--warning, #f59e0b);
+.lsp-status-card.dead .lsp-status-dot,
+.lsp-status-card.exited .lsp-status-dot,
+.lsp-status-card.stale .lsp-status-dot {
+  background: var(--warning);
 }
-.lsp-status-lang {
+.lsp-status-lang-badge {
+  font-size: 11px;
   font-weight: 600;
+  font-family: var(--code-font, monospace);
   color: var(--text-primary);
   flex-shrink: 0;
 }
@@ -23705,30 +23768,83 @@ body.is-panel-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
   color: var(--text-muted);
 }
-.lsp-status-label {
+.lsp-status-card-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
+  background: var(--bg-hover);
   color: var(--text-secondary);
 }
-.lsp-status-row.dead .lsp-status-label,
-.lsp-status-row.exited .lsp-status-label {
-  color: var(--warning, #f59e0b);
+.lsp-status-card.running .lsp-status-card-badge {
+  color: var(--success);
+}
+.lsp-status-card.dead .lsp-status-card-badge,
+.lsp-status-card.exited .lsp-status-card-badge,
+.lsp-status-card.stale .lsp-status-card-badge {
+  color: var(--warning);
 }
 .lsp-status-error {
-  flex-basis: 100%;
-  padding-left: 13px;
+  margin-top: 4px;
+  padding-left: 12px;
   font-size: 10px;
-  color: var(--warning, #f59e0b);
+  color: var(--warning);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .lsp-status-popover-footer {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-top: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lsp-status-popover-footer-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.lsp-status-time-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.lsp-status-stale-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--warning);
+}
+.lsp-status-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.lsp-status-settings-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover, var(--bg-secondary));
+  border-color: var(--border-color);
 }
 
 .tooltip-wrapper {

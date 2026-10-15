@@ -126,6 +126,14 @@ const requiredExports = [
   "cancelOAuthLogin",
   // OAuth 订阅配额（模型列表配额面板）
   "getOAuthQuota",
+  // 异步生图任务生命周期与持久批次通知（拒绝缺少新接口的旧绑定）
+  "registerImageGenerationBatch",
+  "sealImageGenerationBatch",
+  "listImageGenerationBatches",
+  "getImageGenerationTask",
+  "claimImageGenerationBatchNotification",
+  "releaseImageGenerationBatchNotification",
+  "recoverInterruptedImageGenerationTasks",
   // 应用任务管理器（进程树快照采集与结束进程）
   "listProcessTree",
   "killProcessTree",

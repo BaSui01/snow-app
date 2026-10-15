@@ -72,6 +72,7 @@ import {
 import { createToolExecutor } from "./toolExecution";
 import { ReadonlyCallGuard } from "./readonlyCallGuard";
 import { resolveGoalContinuation } from "./goalContinuation";
+import { imageGenerationRuntime } from "./imageGenerationRuntime";
 
 type CapturedChatInputSendOptions = ChatInputSendOptions;
 
@@ -323,6 +324,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.runId = currentRunId;
         sessionRef.activeSendOptions = capturedOptions;
         sessionRef.activeTaskMessages = [{ role: "user", content: trimmed }];
+        if (capturedOptions.imageGenerationBatchId) {
+          imageGenerationRuntime(ctx).notificationSent(
+            sessionKey,
+            capturedOptions.imageGenerationBatchId,
+          );
+        }
       }
 
       // 宠物联动：本次 run 的唯一回合 id —— start/end 按 id 一一核销。

@@ -26,6 +26,7 @@ import { useI18n } from "../../../../i18n";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
 import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
+import { imageGenerationStatusKey } from "../utils/imageGenerationState";
 import {
   columnsForCount,
   parseImageGenArgs,
@@ -54,7 +55,7 @@ type GallerySlot =
   | {
       kind: "loading";
       key: string;
-      status: "pending" | "running";
+      statusKey: string;
       streaming: { mimeType: string; data: string } | null;
       promptLabel: string;
     }
@@ -138,13 +139,16 @@ export const ImageGenGallery = ({
         });
       } else if (
         toolCall.status === "pending" ||
-        toolCall.status === "running"
+        toolCall.status === "running" ||
+        // 异步模式：工具调用早已返回（卡片状态为 completed），但 result
+        // 仍是 {status:"pending",taskId} —— 后台任务生成中，格子保持 loading。
+        parsedResult.type === "pending"
       ) {
         const streaming = toolCall.streamingImages ?? [];
         result.push({
           kind: "loading",
           key: `${callKey}-loading`,
-          status: toolCall.status,
+          statusKey: imageGenerationStatusKey(toolCall),
           streaming:
             streaming.length > 0 ? streaming[streaming.length - 1] : null,
           promptLabel,
@@ -481,11 +485,7 @@ export const ImageGenGallery = ({
           size={22}
           aria-hidden="true"
         />
-        <span>
-          {slot.status === "running"
-            ? t("toolCall.imagegen.generating")
-            : t("toolCall.imagegen.waiting")}
-        </span>
+        <span>{t(slot.statusKey)}</span>
       </div>
     );
 
@@ -495,9 +495,7 @@ export const ImageGenGallery = ({
       case "loading":
         return slot.streaming
           ? t("toolCall.imagegen.streamingPreview")
-          : slot.status === "running"
-            ? t("toolCall.imagegen.generating")
-            : t("toolCall.imagegen.waiting");
+          : t(slot.statusKey);
       case "error":
         return truncateLabel(slot.message, 24);
       case "empty":

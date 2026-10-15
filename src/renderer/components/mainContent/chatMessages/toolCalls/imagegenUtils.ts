@@ -10,6 +10,8 @@
 
 export type ParsedImageGenArgs = {
   prompt: string;
+  /** 执行模式：auto / sync / async */
+  mode?: string;
   /** 逐请求不同提示词（一次调用生成多张不同设计稿）；提供时覆盖 n */
   prompts?: string[];
   model?: string;
@@ -61,6 +63,13 @@ export type ParsedImageGenResult =
       remoteUrls: string[];
       contentPreview: string;
     }
+  | {
+      type: "pending";
+      taskId: string;
+      prompt: string;
+      message: string;
+      contentPreview: string;
+    }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
@@ -75,8 +84,7 @@ export type GalleryItem = {
 
 /** 灯箱目标：本地图片或远程 URL。 */
 export type LightboxTarget =
-  | { kind: "image"; image: GeneratedImage }
-  | { kind: "remote"; url: string };
+  { kind: "image"; image: GeneratedImage } | { kind: "remote"; url: string };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,6 +101,9 @@ export const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
     }
 
     const result: ParsedImageGenArgs = { prompt: parsed.prompt };
+    if (typeof parsed.mode === "string") {
+      result.mode = parsed.mode;
+    }
     if (typeof parsed.model === "string") {
       result.model = parsed.model;
     }
@@ -183,7 +194,8 @@ export const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
       }
     }
     if (Array.isArray(parsed.requestImages)) {
-      const requestImages: NonNullable<ParsedImageGenArgs["requestImages"]> = [];
+      const requestImages: NonNullable<ParsedImageGenArgs["requestImages"]> =
+        [];
       for (const group of parsed.requestImages) {
         if (!Array.isArray(group)) {
           continue;
@@ -195,7 +207,10 @@ export const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
           if (isRecord(item) && typeof item.mimeType === "string") {
             if (typeof item.data === "string" && item.data.trim() !== "") {
               groupItems.push({ data: item.data, mimeType: item.mimeType });
-            } else if (typeof item.path === "string" && item.path.trim() !== "") {
+            } else if (
+              typeof item.path === "string" &&
+              item.path.trim() !== ""
+            ) {
               groupItems.push({
                 data: "",
                 mimeType: item.mimeType,
@@ -225,7 +240,7 @@ export const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
 const INLINE_IMAGE_TAG_RE = /@@image:(data:[^@]+)@@/g;
 
 export const parseImageGenResult = (
-  result: string | undefined
+  result: string | undefined,
 ): ParsedImageGenResult => {
   if (!result) {
     return { type: "empty" };
@@ -249,6 +264,18 @@ export const parseImageGenResult = (
     }
     if (typeof parsed.error === "string") {
       return { type: "error", message: parsed.error };
+    }
+    if (parsed.status === "pending" && typeof parsed.taskId === "string") {
+      return {
+        type: "pending",
+        taskId: parsed.taskId,
+        prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+        message: typeof parsed.message === "string" ? parsed.message : "",
+        contentPreview:
+          typeof parsed.contentPreview === "string"
+            ? parsed.contentPreview
+            : "",
+      };
     }
 
     const images: GeneratedImage[] = [];
@@ -511,7 +538,7 @@ const ERROR_CLASSIFIERS: Array<{
 
 /** 将后端英文错误消息归类为本地化类别。 */
 export const classifyImageGenError = (
-  message: string
+  message: string,
 ): ClassifiedImageGenError => {
   const lower = message.toLowerCase();
   for (const rule of ERROR_CLASSIFIERS) {

@@ -12,6 +12,7 @@ import type {
   UserQuestionRequest,
 } from "../../../../../preload";
 import type { NotificationConversationTarget } from "../../../../../shared/notification";
+import type { ImageGenerationTaskStatus } from "../../../../../shared/imageGeneration";
 import type { Dispatch, SetStateAction } from "react";
 import type {
   IncompleteVariant,
@@ -84,6 +85,10 @@ export type ToolCallInfo = {
   interactionId: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
+  /** Runtime task binding; persisted task snapshots remain the source of truth. */
+  imageGenerationTaskId?: string;
+  imageGenerationBatchId?: string;
+  imageGenerationTaskStatus?: ImageGenerationTaskStatus;
   /** 该只读调用是否命中缓存复用（未重复执行物理调用）。 */
   fromCache?: boolean;
   streamingStdout?: string;

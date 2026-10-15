@@ -5590,11 +5590,33 @@ export const zhTW = {
   "remoteControl.tunnelTitle": "自架伺服器公網連線",
   "remoteControl.tunnelDescription":
     "安裝檔已內建並驗證 frpc；部署失敗時不會儲存憑證，驗證成功後才會在本機加密儲存。",
+  "remoteControl.tunnelDescriptionSsh2":
+    "Snow 會自動產生通道專用金鑰；部署失敗時不會儲存憑證，驗證成功後才會在本機加密儲存。",
   "remoteControl.statusLoading": "讀取中",
   "remoteControl.statusUnknown": "未知",
   "remoteControl.localWan": "本機 WAN",
   "remoteControl.notListening": "未監聽",
   "remoteControl.frpTunnel": "FRP 通道",
+  "remoteControl.transportMode": "通道方式",
+  "remoteControl.transportFrp": "FRP",
+  "remoteControl.transportSsh2": "SSH2",
+  "remoteControl.ssh2Tunnel": "SSH2 通道",
+  "remoteControl.ssh2DeployHint":
+    "SSH2 模式不需要第二個 frp 網域，也不需要 token 與 CA 憑證；Snow 會自動產生專用金鑰並只上傳公鑰。",
+  "remoteControl.ssh2NeedsAuthorization":
+    "SSH2 設定已匯入，但本機缺少通道私鑰；請使用「自動部署並連線」重新授權此裝置。",
+  "remoteControl.switchTransportHint":
+    "切換通道方式請重新執行部署並選擇目標方式。",
+  "remoteControl.ssh2SummaryTitle": "SSH2 通道詳細資料",
+  "remoteControl.ssh2ServerAddr": "伺服器位址",
+  "remoteControl.ssh2TunnelPort": "SSH2 通道連接埠",
+  "remoteControl.ssh2TunnelPortHint":
+    "專用 snow-tunnel-sshd 的監聽連接埠，需要在安全性群組開放；未修改時通常是 7001。",
+  "remoteControl.ssh2RemotePort": "SSH2 通道回送連接埠",
+  "remoteControl.ssh2RemotePortHint":
+    "伺服器內部回送連接埠，只由 Caddy 使用；不需在安全性群組開放。",
+  "remoteControl.ssh2HostKeyFingerprint": "主機金鑰指紋",
+  "remoteControl.copyFingerprint": "複製指紋",
   "remoteControl.httpsProbe": "HTTPS 探測",
   "remoteControl.endpointUnchecked": "未檢查",
   "remoteControl.endpointChecking": "正在檢查",
@@ -5612,12 +5634,15 @@ export const zhTW = {
     "若元件已被刪除或隔離，請重新執行 Snow 安裝程式覆蓋安裝以還原；",
   "remoteControl.frpcBlockedStepRetry": "完成後點擊「連線公網」重新建立通道。",
   "remoteControl.noticeFrpcDirCopied": "目錄路徑已複製",
+  "remoteControl.noticeFingerprintCopied": "主機金鑰指紋已複製",
   "remoteControl.guideSummary": "第一次公網部署（共 4 步，由 Snow 安裝）",
   "remoteControl.guideCalloutTitle": "只在同一個 Wi-Fi 使用時，不需要伺服器。",
   "remoteControl.guideCalloutText":
     "直接掃描上方的區域網路 QR Code 即可；下方的公網設定可以保持關閉。",
   "remoteControl.step1Title": "購買前確認：只需要伺服器和網域",
   "remoteControl.step1ServerLabel": "Linux 公網伺服器：",
+  "remoteControl.step1ServerTextSsh2":
+    "廠商不拘，Ubuntu 22+、Debian 11+、Fedora 44+、CentOS Stream/RHEL/Rocky/AlmaLinux 9+，僅 x86_64/amd64、root 或免密碼 sudo、systemd、獨立公網 IPv4、長期運作；至少 1 核心 1 GB。不要購買搶佔式、競價、Windows、資料庫、GPU 或預裝面板方案。",
   "remoteControl.step1ServerText":
     "廠商不拘，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常見發行版、x86_64、獨立公網 IPv4、長期運作；至少 1 核心 1 GB。不要購買搶佔式、競價、Windows、資料庫、GPU 或預裝面板方案。",
   "remoteControl.step1DomainLabel": "一個付費網域：",
@@ -5639,6 +5664,7 @@ export const zhTW = {
     "，不要填寫完整網域；線路與 TTL 保持預設。",
   "remoteControl.step2DnsHintDomains":
     "儲存後會得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
+  "remoteControl.step2DnsHintDomainsSsh2": "儲存後會得到 snow.{{rootDomain}}。",
   "remoteControl.step2FirewallLabel":
     "伺服器主控台 → 防火牆/安全性群組 → 新增輸入規則：",
   "remoteControl.portPurposeSsh": "Snow 登入伺服器",
@@ -5684,6 +5710,8 @@ export const zhTW = {
   "remoteControl.step4Title": "偵測成功後再自動部署",
   "remoteControl.step4Text":
     "先點「偵測 DNS」。兩行均通過後，再點「自動部署並連線」；之後 FRP、Caddy、token、CA、憑證與設定匯入都由 Snow 處理。",
+  "remoteControl.step4TextSsh2":
+    "先點「偵測 DNS」。snow 解析通過後，再點「自動部署並連線」；之後受限 sshd、Caddy、憑證與設定匯入都由 Snow 處理。",
   "remoteControl.checkDns": "偵測 DNS",
   "remoteControl.deployConnect": "自動部署並連線",
   "remoteControl.cancelDeploy": "取消部署",
@@ -5695,6 +5723,8 @@ export const zhTW = {
   "remoteControl.credentialsLabel": "加密憑證",
   "remoteControl.credentialsSaved": "FRP 憑證與 CA 憑證已儲存",
   "remoteControl.credentialsMissing": "缺少 FRP 憑證或 CA 憑證",
+  "remoteControl.credentialsSavedSsh2": "通道私鑰已儲存",
+  "remoteControl.credentialsMissingSsh2": "缺少通道私鑰",
   "remoteControl.autoConnectLabel": "啟動時自動連線",
   "remoteControl.autoConnectOn": "已開啟",
   "remoteControl.autoConnectOff": "已關閉",
@@ -5706,6 +5736,8 @@ export const zhTW = {
   "remoteControl.removeConfigConfirmTitle": "確認移除本機儲存的公網設定？",
   "remoteControl.removeConfigConfirmText":
     "將中斷公網通道並刪除加密儲存的 FRP 憑證與 CA 憑證；伺服器上的 FRP 與 Caddy 不受影響，重新部署或匯入設定包後可再次連線。",
+  "remoteControl.removeConfigConfirmTextSsh2":
+    "將中斷公網通道並刪除加密儲存的通道私鑰；伺服器上的通道服務與 Caddy 不受影響，重新部署或匯入設定包後可再次連線。",
   "remoteControl.removeConfigConfirm": "確認移除",
   "remoteControl.configEmptyTitle": "還沒有公網設定",
   "remoteControl.configEmptyText":
@@ -5725,10 +5757,14 @@ export const zhTW = {
   "remoteControl.noticeConnectFailed": "連線公網失敗",
   "remoteControl.noticeConfigRemoved":
     "公網設定已移除，伺服器上的 FRP 與 Caddy 不受影響",
+  "remoteControl.noticeConfigRemovedSsh2":
+    "公網設定已移除，伺服器上的通道服務與 Caddy 不受影響",
   "remoteControl.noticeRemoveFailed": "移除公網設定失敗",
   "remoteControl.exportBundle": "匯出設定包",
   "remoteControl.noticeExported":
     "設定包已匯出到 {{path}}；檔案包含 FRP 憑證，請妥善保管",
+  "remoteControl.noticeExportedSsh2":
+    "設定包已匯出到 {{path}}；SSH2 設定不含私鑰，可安全傳遞",
   "remoteControl.noticeExportFailed": "匯出設定包失敗",
   "remoteControl.importBundle": "匯入現有設定包",
   "remoteControl.tunnelEnabled": "啟用公網遠端控制",
@@ -5772,6 +5808,9 @@ export const zhTW = {
   "remoteControl.noticeDnsPending":
     "DNS 尚未生效，請核對下方兩筆 A 記錄後稍等幾分鐘再偵測",
   "remoteControl.noticeDnsFailed": "DNS 偵測失敗",
+  "remoteControl.noticeDnsReadySsh2": "snow 解析已生效，可以開始自動部署",
+  "remoteControl.noticeDnsPendingSsh2":
+    "DNS 尚未生效，請核對下方的 snow A 記錄後稍等幾分鐘再偵測",
   "remoteControl.privateKeyDialogTitle": "選擇伺服器 SSH 私鑰",
   "remoteControl.deployStarting": "正在開始部署",
   "remoteControl.noticeDeploySuccess":
@@ -5789,6 +5828,8 @@ export const zhTW = {
   "remoteControl.noticeDisconnectFailed": "中斷失敗",
   "remoteControl.noticeImported":
     "設定包已驗證並加密儲存，Snow 正在連線。內容包含 FRP 憑證，請從下載資料夾安全刪除。",
+  "remoteControl.noticeImportedSsh2":
+    "設定包已驗證並加密儲存，Snow 正在連線。SSH2 設定不含私鑰，可安全傳遞。",
   "remoteControl.noticeImportFailed": "匯入設定包失敗",
   "remoteControl.tunnelStageStopped": "已關閉",
   "remoteControl.tunnelStageStarting": "正在啟動本機入口",
@@ -5808,6 +5849,11 @@ export const zhTW = {
   "remoteControl.deployStage.verifying": "正在連線 FRP 並驗證公網 HTTPS",
   "remoteControl.deployStage.completed":
     "公網遠端控制部署完成，可以掃描公網 QR Code",
+  "remoteControl.deployStageSsh2.checking_dns": "正在檢查 snow 網域解析",
+  "remoteControl.deployStageSsh2.installing":
+    "正在安裝受限 SSH 隧道服務，通常需要 1–4 分鐘",
+  "remoteControl.deployStageSsh2.verifying":
+    "正在建立 SSH2 通道並驗證公網 HTTPS",
   "plugins.sidebarEntry": "外掛",
   "plugins.updateAvailable": "有 {{count}} 個外掛可更新",
   "plugins.title": "外掛",

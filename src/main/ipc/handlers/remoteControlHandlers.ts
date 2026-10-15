@@ -127,6 +127,10 @@ export const registerRemoteControlHandlers = (): void => {
     }
     const input = parseRemoteTunnelImportBundle(parsed);
     await remoteTunnelManager.save(input);
+    if (!input.enabled) {
+      // SSH2 配置包不含私钥：先保存元数据，等“自动部署并连接”重新授权后再启用。
+      return { canceled: false, status: remoteTunnelManager.getStatus() };
+    }
     return { canceled: false, status: await remoteTunnelManager.connect() };
   });
   ipcMain.handle("remote-control:tunnel-export", async (event) => {
@@ -153,7 +157,14 @@ export const registerRemoteControlHandlers = (): void => {
   });
   ipcMain.handle(
     "remote-control:server-check-dns",
-    async (event, input: { serverIp: string; rootDomain: string }) => {
+    async (
+      event,
+      input: {
+        serverIp: string;
+        rootDomain: string;
+        transport?: "frp" | "ssh2";
+      },
+    ) => {
       assertMainFrame(event);
       return checkRemoteServerDns(input);
     },

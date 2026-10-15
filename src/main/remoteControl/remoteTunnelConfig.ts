@@ -12,7 +12,9 @@ import { join } from "node:path";
 import {
   DEFAULT_FRP_SERVER_PORT,
   DEFAULT_REMOTE_PORT,
+  DEFAULT_SSH2_TUNNEL_PORT,
   normalizeRemoteTunnelConfig,
+  parseStoredRemoteTunnelConfig,
   type RemoteTunnelConfigInput,
   type RemoteTunnelConfigView,
   type StoredRemoteTunnelConfig,
@@ -35,6 +37,7 @@ const restrictPermissions = (path: string): void => {
 export const isRemoteTunnelSecureStorageAvailable = (): boolean =>
   safeStorage.isEncryptionAvailable();
 
+/** 读取并校验加密配置：version 1 旧配置会自动迁移为 v2 的 FRP 传输。 */
 export const loadStoredRemoteTunnelConfig =
   (): StoredRemoteTunnelConfig | null => {
     const path = configPath();
@@ -54,34 +57,46 @@ export const loadStoredRemoteTunnelConfig =
     } catch {
       throw new Error("公网远控配置无法解密或格式无效");
     }
-    const value = parsed as StoredRemoteTunnelConfig;
-    if (!value || value.version !== 1) {
-      throw new Error("公网远控配置版本不受支持");
+    try {
+      return parseStoredRemoteTunnelConfig(parsed);
+    } catch (error) {
+      throw new Error(
+        error instanceof Error ? error.message : "公网远控配置格式无效",
+      );
     }
-    return normalizeRemoteTunnelConfig(
-      {
-        ...value,
-        token: value.token,
-        caCertificate: value.caCertificate,
-      },
-      null,
-    );
   };
 
+/** 状态视图：只暴露凭据是否存在，不包含 token / CA / 私钥正文。 */
 export const toRemoteTunnelConfigView = (
   value: StoredRemoteTunnelConfig | null,
 ): RemoteTunnelConfigView => ({
   configured: Boolean(value),
   enabled: value?.enabled ?? false,
   autoConnect: value?.autoConnect ?? false,
-  serverAddr: value?.serverAddr ?? "",
-  serverPort: value?.serverPort ?? DEFAULT_FRP_SERVER_PORT,
-  remotePort: value?.remotePort ?? DEFAULT_REMOTE_PORT,
+  activeTransport: value?.activeTransport ?? "frp",
   publicOrigin: value?.publicOrigin ?? "",
-  tlsServerName: value?.tlsServerName ?? "",
-  hasToken: Boolean(value?.token),
-  hasCaCertificate: Boolean(value?.caCertificate),
   secureStorageAvailable: safeStorage.isEncryptionAvailable(),
+  frp: {
+    configured: Boolean(value?.frp),
+    serverAddr: value?.frp?.serverAddr ?? "",
+    serverPort: value?.frp?.serverPort ?? DEFAULT_FRP_SERVER_PORT,
+    remotePort: value?.frp?.remotePort ?? DEFAULT_REMOTE_PORT,
+    tlsServerName: value?.frp?.tlsServerName ?? "",
+    hasToken: Boolean(value?.frp?.token),
+    hasCaCertificate: Boolean(value?.frp?.caCertificate),
+  },
+  ssh2: {
+    configured: Boolean(value?.ssh2),
+    serverAddr: value?.ssh2?.serverAddr ?? "",
+    serverPort: value?.ssh2?.serverPort ?? DEFAULT_SSH2_TUNNEL_PORT,
+    username: value?.ssh2?.username ?? "",
+    remotePort: value?.ssh2?.remotePort ?? DEFAULT_REMOTE_PORT,
+    hostKeyType: value?.ssh2?.hostKeyType ?? "",
+    hostKeyPublicKey: value?.ssh2?.hostKeyPublicKey ?? "",
+    hostKeyFingerprint: value?.ssh2?.hostKeyFingerprint ?? "",
+    hasPrivateKey: Boolean(value?.ssh2?.privateKey),
+    needsAuthorization: Boolean(value?.ssh2) && !value?.ssh2?.privateKey,
+  },
 });
 
 export const saveRemoteTunnelConfig = async (

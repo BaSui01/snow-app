@@ -462,6 +462,29 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "chat-conversations:create",
+    async (_event, directoryId: unknown, title: unknown) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Directory ID is required to create a conversation");
+      }
+      if (typeof title !== "string" || !title.trim()) {
+        throw new Error("Title is required to create a conversation");
+      }
+      const normalizedDirectoryId = directoryId.trim();
+      const conversationId = await native.createChatConversation(
+        normalizedDirectoryId,
+        title.trim(),
+      );
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "create",
+        message: "Conversation created",
+        context: `conversation=${conversationId}; directory=${normalizedDirectoryId}`,
+      });
+      return conversationId;
+    },
+  );
+  ipcMain.handle(
     "chat-conversations:delete",
     async (_event, conversationId: unknown, deleteMemories: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

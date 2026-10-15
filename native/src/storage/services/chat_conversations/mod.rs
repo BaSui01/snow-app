@@ -143,6 +143,49 @@ pub fn resolve_conversation_id(
     Ok(create_chat_id("conv"))
 }
 
+/// 创建空白主会话（无消息、无模型绑定，沿用全局激活档案）。首条消息由
+/// store_chat_exchange 写入时保留此处设定的标题（ON CONFLICT DO NOTHING）。
+pub fn create_chat_conversation(
+    database_path: &Path,
+    directory_id: &str,
+    title: &str,
+) -> Result<String> {
+    let conversation_id = create_chat_id("conv");
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "INSERT INTO chat_conversations (
+                   id,
+                   conversation_id,
+                   title,
+                   summary,
+                   last_message_preview,
+                   message_count,
+                   model,
+                   api_profile_name,
+                   last_response_id,
+                   status,
+                   directory_id,
+                   forked_from_conversation_id,
+                   fork_message_count,
+                   created_at,
+                   updated_at
+                 ) VALUES (
+                   ?1, ?2, ?3, ?3, '', 0, '', '', '', 'active', ?4, '', 0,
+                   datetime('now', 'localtime'), datetime('now', 'localtime')
+                 )",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    title.trim(),
+                    directory_id.trim(),
+                ],
+            )
+        })
+        .map_err(|error| database::database_error(database_path, "create chat conversation", error))
+        .map(|_| conversation_id)
+}
+
 pub fn load_context_messages(
     database_path: &Path,
     conversation_id: &str,

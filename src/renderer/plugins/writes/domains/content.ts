@@ -1,4 +1,6 @@
 import { scheduledTasksStore } from "../../../hooks/scheduledTasksStore";
+import { sendMessageToConversation } from "../../../components/mainContent/chatMessages/hooks/conversationMessageBridge";
+import { requestConversationActivation } from "../../pluginEvents";
 import {
   bumpRevision,
   callSnow,
@@ -478,6 +480,79 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       await callSnow("deleteConversation", conversationId, deleteMemories);
       bumpRevision("conversationListRevision");
       return { conversationId };
+    },
+  },
+  {
+    domain: "conversations",
+    action: "sendMessage",
+    scope: "conversations",
+    summary: l10n(
+      "Send a user message to a specific conversation",
+      "向指定会话投递用户消息",
+      "向指定工作階段投遞使用者訊息",
+    ),
+    invoke: async ({ params }) => {
+      const conversationId = requireString(params, "conversationId");
+      const text = requireString(params, "text");
+      return await sendMessageToConversation(conversationId, text);
+    },
+  },
+  {
+    domain: "conversations",
+    action: "create",
+    scope: "conversations",
+    summary: l10n(
+      "Create an empty conversation in a project",
+      "在项目中新建空白会话",
+      "在專案中新增空白工作階段",
+    ),
+    invoke: async ({ params }) => {
+      const directoryId = requireString(params, "directoryId").trim();
+      const title = requireString(params, "title").trim();
+      const directories = await callSnow<Array<{ directoryId: string }>>(
+        "listWorkspaceDirectories",
+      );
+      if (
+        !directories.some((item) => item.directoryId.trim() === directoryId)
+      ) {
+        throw new Error(`Unknown workspace directory '${directoryId}'`);
+      }
+      const conversationId = await callSnow<string>(
+        "createChatConversation",
+        directoryId,
+        title,
+      );
+      bumpRevision("conversationListRevision");
+      return { conversationId, directoryId, title };
+    },
+  },
+  {
+    domain: "conversations",
+    action: "activate",
+    scope: "conversations",
+    summary: l10n(
+      "Switch the app to a conversation",
+      "切换到指定会话",
+      "切換到指定工作階段",
+    ),
+    invoke: async ({ params }) => {
+      const conversationId = requireString(params, "conversationId").trim();
+      const record = await callSnow<{ directoryId: string } | null>(
+        "getChatConversation",
+        conversationId,
+      );
+      if (!record) {
+        throw new Error(`Conversation not found: ${conversationId}`);
+      }
+      const directoryId = record.directoryId.trim();
+      const outcome = await requestConversationActivation({
+        conversationId,
+        directoryId,
+      });
+      if (outcome !== "opened") {
+        throw new Error(`Conversation could not be activated (${outcome})`);
+      }
+      return { conversationId, directoryId };
     },
   },
 

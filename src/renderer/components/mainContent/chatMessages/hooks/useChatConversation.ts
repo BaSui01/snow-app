@@ -33,6 +33,7 @@ import { useRollback } from "./useRollback";
 import { useAgentLoop } from "./useAgentLoop";
 import { useConversationManagement } from "./useConversationManagement";
 import { useImageGenerationRuntime } from "./imageGenerationRuntime";
+import { useConversationMessageBridge } from "./conversationMessageBridge";
 
 export const useChatConversation = (
   directoryId?: string,
@@ -857,6 +858,8 @@ export const useChatConversation = (
   // Subscribe only after the sender ref is installed; idle notifications must
   // never be claimed while handleSendMessageRef still contains its initial noop.
   useImageGenerationRuntime(ctx);
+  // 插件会话编排的投递通道：向任意主会话投递用户消息（见 conversationMessageBridge）。
+  useConversationMessageBridge(ctx);
 
   // --- 6. Conversation management (select, new, abort, fork, etc.) ---
   const conversationManagementApi = useConversationManagement({

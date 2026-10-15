@@ -143,7 +143,14 @@ incremental = true
 debug = false
 opt-level = 1
 
-# -- release: keep codegen-units high for parallel LLVM, thin LTO for link speed --
+# -- release: 发布产物，thin LTO --
 [profile.release]
 lto = "thin"
 codegen-units = 4
+
+# -- local: npm run build 使用，关 LTO + 增量 + 高并行，改动后快速重编 --
+[profile.local]
+inherits = "release"
+lto = false
+codegen-units = 256
+incremental = true

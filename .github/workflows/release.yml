@@ -89,7 +89,7 @@ jobs:
         env:
           NATIVE_BUILD_ARCH: ${{ matrix.arch }}
           NODE_OPTIONS: --max-old-space-size=8192
-        run: npm run build
+        run: npm run build:release
 
       - name: Build electron packages
         env:

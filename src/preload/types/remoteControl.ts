@@ -41,17 +41,40 @@ export type ResolvedRemoteAttachment = {
   path?: string;
 };
 
-export type RemoteTunnelConfigInput = {
-  enabled: boolean;
-  autoConnect: boolean;
+/** 活动传输类型：FRP（现有方案）或 SSH2（进程内反向隧道）。 */
+export type RemoteTransportKind = "frp" | "ssh2";
+
+export type FrpTransportConfigInput = {
   serverAddr: string;
   serverPort: number;
   /** FRP 隧道远端端口（服务器 allowPorts 与 Caddy 反代目标）；缺省 18080。 */
   remotePort?: number;
-  publicOrigin: string;
   tlsServerName: string;
   token?: string;
   caCertificate?: string;
+};
+
+export type Ssh2TransportConfigInput = {
+  serverAddr: string;
+  serverPort: number;
+  username: string;
+  /** SSH2 隧道回环端口（PermitListen 与 Caddy 反代目标）；缺省 18080。 */
+  remotePort?: number;
+  hostKeyType: string;
+  hostKeyPublicKey: string;
+  hostKeyFingerprint: string;
+  /** 缺省时沿用已存私钥；配置包导入不携带私钥。 */
+  privateKey?: string;
+};
+
+export type RemoteTunnelConfigInput = {
+  enabled: boolean;
+  autoConnect: boolean;
+  /** 本次保存 / 启用的活动传输。 */
+  transport: RemoteTransportKind;
+  publicOrigin: string;
+  frp?: FrpTransportConfigInput;
+  ssh2?: Ssh2TransportConfigInput;
 };
 
 export type RemoteTunnelImportResult = {
@@ -77,6 +100,12 @@ export type RemoteServerDeployInput = {
   frpBindPort?: number;
   /** FRP 隧道远端端口（allowPorts 与 Caddy 反代目标）；缺省 18080。 */
   frpRemotePort?: number;
+  /** 隧道类型：缺省 frp 保持旧行为；ssh2 使用进程内反向隧道。 */
+  transport?: "frp" | "ssh2";
+  /** SSH2 隧道服务端口（专用 snow-tunnel-sshd 实例）；缺省 7001。 */
+  ssh2TunnelPort?: number;
+  /** SSH2 隧道回环端口（PermitListen 与 Caddy 反代目标）；缺省 18080。 */
+  ssh2RemotePort?: number;
 };
 
 export type RemoteServerDnsRecord = {
@@ -115,14 +144,31 @@ export type RemoteTunnelStatus = {
     configured: boolean;
     enabled: boolean;
     autoConnect: boolean;
-    serverAddr: string;
-    serverPort: number;
-    remotePort: number;
+    activeTransport: RemoteTransportKind;
     publicOrigin: string;
-    tlsServerName: string;
-    hasToken: boolean;
-    hasCaCertificate: boolean;
     secureStorageAvailable: boolean;
+    frp: {
+      configured: boolean;
+      serverAddr: string;
+      serverPort: number;
+      remotePort: number;
+      tlsServerName: string;
+      hasToken: boolean;
+      hasCaCertificate: boolean;
+    };
+    ssh2: {
+      configured: boolean;
+      serverAddr: string;
+      serverPort: number;
+      username: string;
+      remotePort: number;
+      hostKeyType: string;
+      hostKeyPublicKey: string;
+      hostKeyFingerprint: string;
+      hasPrivateKey: boolean;
+      /** 缺少本机私钥（如导入的配置包）：需要重新部署授权后才能连接。 */
+      needsAuthorization: boolean;
+    };
   };
   stage:
     | "stopped"

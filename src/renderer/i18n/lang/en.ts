@@ -5925,11 +5925,33 @@ export const en = {
   "remoteControl.tunnelTitle": "Self-hosted public connection",
   "remoteControl.tunnelDescription":
     "frpc is bundled and verified; credentials are stored encrypted locally only after verification succeeds.",
+  "remoteControl.tunnelDescriptionSsh2":
+    "Snow generates a dedicated tunnel key automatically; credentials are stored encrypted locally only after verification succeeds.",
   "remoteControl.statusLoading": "Loading",
   "remoteControl.statusUnknown": "Unknown",
   "remoteControl.localWan": "Local WAN",
   "remoteControl.notListening": "Not listening",
   "remoteControl.frpTunnel": "FRP tunnel",
+  "remoteControl.transportMode": "Tunnel type",
+  "remoteControl.transportFrp": "FRP",
+  "remoteControl.transportSsh2": "SSH2",
+  "remoteControl.ssh2Tunnel": "SSH2 tunnel",
+  "remoteControl.ssh2DeployHint":
+    "SSH2 mode needs no second frp domain, token, or CA certificate; Snow generates a dedicated key and uploads only the public key.",
+  "remoteControl.ssh2NeedsAuthorization":
+    "The SSH2 configuration was imported, but this device is missing the tunnel private key; use “Deploy and connect” to authorize it again.",
+  "remoteControl.switchTransportHint":
+    "Switching the tunnel type requires running the deployment again and choosing the target type.",
+  "remoteControl.ssh2SummaryTitle": "SSH2 tunnel details",
+  "remoteControl.ssh2ServerAddr": "Server address",
+  "remoteControl.ssh2TunnelPort": "SSH2 tunnel port",
+  "remoteControl.ssh2TunnelPortHint":
+    "The listening port of the dedicated snow-tunnel-sshd instance; allow it in the security group. Usually 7001 if unchanged.",
+  "remoteControl.ssh2RemotePort": "SSH2 loopback port",
+  "remoteControl.ssh2RemotePortHint":
+    "Server-internal loopback port used only by Caddy; no security-group rule needed.",
+  "remoteControl.ssh2HostKeyFingerprint": "Host key fingerprint",
+  "remoteControl.copyFingerprint": "Copy fingerprint",
   "remoteControl.httpsProbe": "HTTPS probe",
   "remoteControl.endpointUnchecked": "Not checked",
   "remoteControl.endpointChecking": "Checking",
@@ -5949,6 +5971,7 @@ export const en = {
   "remoteControl.frpcBlockedStepRetry":
     "Then click “Connect public access” to rebuild the tunnel.",
   "remoteControl.noticeFrpcDirCopied": "Directory path copied",
+  "remoteControl.noticeFingerprintCopied": "Host key fingerprint copied",
   "remoteControl.guideSummary":
     "First public deployment (4 steps, installed by Snow)",
   "remoteControl.guideCalloutTitle":
@@ -5957,6 +5980,8 @@ export const en = {
     "Just scan the LAN QR code above; you can leave the public configuration off.",
   "remoteControl.step1Title": "Buy only a server and a domain",
   "remoteControl.step1ServerLabel": "Public Linux server: ",
+  "remoteControl.step1ServerTextSsh2":
+    "Any provider; Ubuntu 22+, Debian 11+, Fedora 44+, CentOS Stream/RHEL/Rocky/AlmaLinux 9+, x86_64/amd64 only, root or passwordless sudo, systemd, a dedicated public IPv4, long-running; at least 1 vCPU and 1 GB RAM. Do not buy spot or preemptible, Windows, database, GPU, or preinstalled-panel plans.",
   "remoteControl.step1ServerText":
     "Any provider; Ubuntu 22.04/24.04, Debian 11+, CentOS Stream/Rocky/AlmaLinux 8+ or similar, x86_64, a dedicated public IPv4, long-running; at least 1 vCPU and 1 GB RAM. Do not buy spot or preemptible, Windows, database, GPU, or preinstalled-panel plans.",
   "remoteControl.step1DomainLabel": "A paid domain: ",
@@ -5978,6 +6003,8 @@ export const en = {
     "as host records; do not enter the full domain. Keep line and TTL at default.",
   "remoteControl.step2DnsHintDomains":
     "After saving, you get snow.{{rootDomain}} and frp.{{rootDomain}}.",
+  "remoteControl.step2DnsHintDomainsSsh2":
+    "After saving, you get snow.{{rootDomain}}.",
   "remoteControl.step2FirewallLabel":
     "Server console → Firewall/Security group → Add inbound rules:",
   "remoteControl.portPurposeSsh": "Snow SSH access",
@@ -6025,6 +6052,8 @@ export const en = {
   "remoteControl.step4Title": "Verify first, then deploy automatically",
   "remoteControl.step4Text":
     "Click “Check DNS” first. Once both lines pass, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
+  "remoteControl.step4TextSsh2":
+    "Click “Check DNS” first. Once the snow record passes, click “Deploy and connect automatically”; Snow then handles the restricted sshd, Caddy, certificates, and configuration import.",
   "remoteControl.checkDns": "Check DNS",
   "remoteControl.deployConnect": "Deploy and connect",
   "remoteControl.cancelDeploy": "Cancel deployment",
@@ -6036,6 +6065,8 @@ export const en = {
   "remoteControl.credentialsLabel": "Encrypted credentials",
   "remoteControl.credentialsSaved": "FRP token and CA certificate saved",
   "remoteControl.credentialsMissing": "FRP token or CA certificate missing",
+  "remoteControl.credentialsSavedSsh2": "Tunnel private key saved",
+  "remoteControl.credentialsMissingSsh2": "Tunnel private key missing",
   "remoteControl.autoConnectLabel": "Connect on startup",
   "remoteControl.autoConnectOn": "On",
   "remoteControl.autoConnectOff": "Off",
@@ -6048,6 +6079,8 @@ export const en = {
     "Remove the saved public configuration from this device?",
   "remoteControl.removeConfigConfirmText":
     "The public tunnel is disconnected and the encrypted FRP token and CA certificate are deleted. FRP and Caddy on the server stay untouched; deploy again or import a bundle to reconnect.",
+  "remoteControl.removeConfigConfirmTextSsh2":
+    "The public tunnel is disconnected and the encrypted tunnel private key is deleted. The tunnel service and Caddy on the server stay untouched; deploy again or import a bundle to reconnect.",
   "remoteControl.removeConfigConfirm": "Remove",
   "remoteControl.configEmptyTitle": "No public configuration yet",
   "remoteControl.configEmptyText":
@@ -6067,10 +6100,14 @@ export const en = {
   "remoteControl.noticeConnectFailed": "Failed to connect public access",
   "remoteControl.noticeConfigRemoved":
     "Public configuration removed; FRP and Caddy on the server stay untouched",
+  "remoteControl.noticeConfigRemovedSsh2":
+    "Public configuration removed; the tunnel service and Caddy on the server stay untouched",
   "remoteControl.noticeRemoveFailed": "Failed to remove public configuration",
   "remoteControl.exportBundle": "Export bundle",
   "remoteControl.noticeExported":
     "Bundle exported to {{path}}; it contains the FRP token, keep it safe",
+  "remoteControl.noticeExportedSsh2":
+    "Bundle exported to {{path}}; the SSH2 configuration contains no private key and is safe to transfer",
   "remoteControl.noticeExportFailed": "Failed to export bundle",
   "remoteControl.importBundle": "Import an existing bundle",
   "remoteControl.tunnelEnabled": "Enable public remote control",
@@ -6119,6 +6156,10 @@ export const en = {
   "remoteControl.noticeDnsPending":
     "DNS is not ready yet. Verify the two A records below and try again in a few minutes.",
   "remoteControl.noticeDnsFailed": "DNS check failed",
+  "remoteControl.noticeDnsReadySsh2":
+    "The snow record is active; you can start the automatic deployment",
+  "remoteControl.noticeDnsPendingSsh2":
+    "DNS is not ready yet. Verify the snow A record below and try again in a few minutes.",
   "remoteControl.privateKeyDialogTitle": "Select the server SSH private key",
   "remoteControl.deployStarting": "Starting deployment",
   "remoteControl.noticeDeploySuccess":
@@ -6137,6 +6178,8 @@ export const en = {
   "remoteControl.noticeDisconnectFailed": "Disconnect failed",
   "remoteControl.noticeImported":
     "The bundle was verified and saved encrypted; Snow is connecting. It contains FRP credentials — delete it from your downloads folder.",
+  "remoteControl.noticeImportedSsh2":
+    "The bundle was verified and saved encrypted; Snow is connecting. The SSH2 configuration contains no private key and is safe to transfer.",
   "remoteControl.noticeImportFailed":
     "Failed to import the configuration bundle",
   "remoteControl.tunnelStageStopped": "Stopped",
@@ -6159,6 +6202,11 @@ export const en = {
     "Connecting FRP and verifying public HTTPS",
   "remoteControl.deployStage.completed":
     "Public remote control deployed; scan the public QR code to verify",
+  "remoteControl.deployStageSsh2.checking_dns": "Checking the snow DNS record",
+  "remoteControl.deployStageSsh2.installing":
+    "Installing the restricted SSH tunnel service; usually takes 1–4 minutes",
+  "remoteControl.deployStageSsh2.verifying":
+    "Establishing the SSH2 tunnel and verifying public HTTPS",
   "plugins.sidebarEntry": "Plugins",
   "plugins.updateAvailable": "{{count}} plugin updates available",
   "plugins.title": "Plugins",

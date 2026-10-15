@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 import {
   DEFAULT_FRP_SERVER_PORT,
   DEFAULT_REMOTE_PORT,
+  DEFAULT_SSH2_TUNNEL_PORT,
 } from "./remoteTunnelSchema";
 
 export type RemoteServerAuthMethod = "password" | "privateKey";
@@ -19,16 +20,29 @@ export type RemoteServerDeployInput = {
   frpBindPort?: number;
   /** FRP 隧道远端端口（allowPorts 与 Caddy 反代目标）；缺省 18080。 */
   frpRemotePort?: number;
+  /** 隧道类型：缺省 frp 保持旧行为；ssh2 使用进程内反向隧道。 */
+  transport?: "frp" | "ssh2";
+  /** SSH2 隧道服务端口（专用 snow-tunnel-sshd 实例）；缺省 7001。 */
+  ssh2TunnelPort?: number;
+  /** SSH2 隧道回环端口（PermitListen 与 Caddy 反代目标）；缺省 18080。 */
+  ssh2RemotePort?: number;
 };
 
 export type NormalizedRemoteServerDeployInput = Omit<
   RemoteServerDeployInput,
-  "frpBindPort" | "frpRemotePort"
+  | "frpBindPort"
+  | "frpRemotePort"
+  | "transport"
+  | "ssh2TunnelPort"
+  | "ssh2RemotePort"
 > & {
+  transport: "frp" | "ssh2";
   publicDomain: string;
   frpDomain: string;
   frpBindPort: number;
   frpRemotePort: number;
+  ssh2TunnelPort: number;
+  ssh2RemotePort: number;
 };
 
 const HOSTNAME_PATTERN =
@@ -168,6 +182,15 @@ export const normalizeRemoteServerDeployInput = (
   if (frpBindPort === frpRemotePort) {
     throw new Error("FRP 控制端口与 FRP 隧道端口不能相同");
   }
+  const transport: "frp" | "ssh2" = input.transport === "ssh2" ? "ssh2" : "frp";
+  const ssh2TunnelPort =
+    input.ssh2TunnelPort === undefined
+      ? DEFAULT_SSH2_TUNNEL_PORT
+      : normalizeDeployPort(input.ssh2TunnelPort, "SSH2 隧道端口");
+  const ssh2RemotePort =
+    input.ssh2RemotePort === undefined
+      ? DEFAULT_REMOTE_PORT
+      : normalizeDeployPort(input.ssh2RemotePort, "SSH2 隧道回环端口");
   const reservedPorts = new Map<number, string>([
     [80, "Caddy 申请 HTTPS 证书"],
     [443, "Caddy 手机 HTTPS 访问"],
@@ -182,6 +205,25 @@ export const normalizeRemoteServerDeployInput = (
       throw new Error(`${label} ${port} 与${owner}冲突，请更换`);
     }
   }
+  if (transport === "ssh2") {
+    for (const [label, port] of [
+      ["SSH2 隧道端口", ssh2TunnelPort],
+      ["SSH2 隧道回环端口", ssh2RemotePort],
+    ] as const) {
+      const owner = reservedPorts.get(port);
+      if (owner) {
+        throw new Error(`${label} ${port} 与${owner}冲突，请更换`);
+      }
+    }
+    if (ssh2TunnelPort === ssh2RemotePort) {
+      throw new Error("SSH2 隧道端口与 SSH2 隧道回环端口不能相同");
+    }
+    if (ssh2TunnelPort === frpBindPort) {
+      throw new Error(
+        "SSH2 隧道端口不能与 FRP 控制端口相同（切换期间 frps 可能仍在运行）",
+      );
+    }
+  }
   const domains = deriveRemoteDomains(input.rootDomain);
   return {
     serverIp,
@@ -191,8 +233,11 @@ export const normalizeRemoteServerDeployInput = (
     sshPort: input.sshPort,
     sshUsername,
     authMethod: input.authMethod,
+    transport,
     frpBindPort,
     frpRemotePort,
+    ssh2TunnelPort,
+    ssh2RemotePort,
     ...(input.authMethod === "password" ? { password: input.password } : {}),
     ...(privateKeyPath ? { privateKeyPath } : {}),
     ...(input.passphrase ? { passphrase: input.passphrase } : {}),
@@ -228,6 +273,51 @@ export const buildRemoteInstallCommand = (
     .filter(Boolean)
     .join(" ");
 
+/** SSH2 隧道安装命令：上传脚本 + 公钥文件，安装受限 sshd 服务。 */
+export const buildSsh2InstallCommand = (
+  remoteScriptPath: string,
+  params: {
+    publicDomain: string;
+    tunnelPort: number;
+    remotePort: number;
+    pubkeyPath: string;
+  },
+  useSudo: boolean,
+): string =>
+  [
+    useSudo ? "sudo -n" : "",
+    "bash",
+    shellQuote(remoteScriptPath),
+    "--public-domain",
+    shellQuote(params.publicDomain),
+    "--tunnel-port",
+    String(params.tunnelPort),
+    "--remote-port",
+    String(params.remotePort),
+    "--pubkey-file",
+    shellQuote(params.pubkeyPath),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+/** SSH2 切换 Caddy 上游命令（也可用于失败回滚到旧端口）。 */
+export const buildSsh2SwitchUpstreamCommand = (
+  remoteScriptPath: string,
+  params: { publicDomain: string; port: number },
+  useSudo: boolean,
+): string =>
+  [
+    useSudo ? "sudo -n" : "",
+    "bash",
+    shellQuote(remoteScriptPath),
+    "--switch-upstream",
+    String(params.port),
+    "--public-domain",
+    shellQuote(params.publicDomain),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
 /**
  * 受支持的发行版与主版本号（/etc/os-release 的 ID 与 VERSION_ID 主版本）。
  * RHEL 系部分发行版的 VERSION_ID 带小版本（如 9.4），因此按主版本匹配。
@@ -241,8 +331,20 @@ const SUPPORTED_SYSTEMS: Record<string, readonly string[]> = {
   almalinux: ["8", "9"],
 };
 
+/** SSH2 按发行版最低主版本支持，不限制后续主版本。 */
+const SSH2_MINIMUM_SYSTEM_VERSIONS: Record<string, number> = {
+  ubuntu: 22,
+  debian: 11,
+  fedora: 44,
+  centos: 9,
+  rhel: 9,
+  rocky: 9,
+  almalinux: 9,
+};
+
 export const parseRemotePreflight = (
   output: string,
+  transport: "frp" | "ssh2" = "frp",
 ): { os: string; version: string; arch: string; useSudo: boolean } => {
   const values = new Map(
     output
@@ -254,9 +356,19 @@ export const parseRemotePreflight = (
   const version = values.get("version") ?? "";
   const arch = values.get("arch")?.toLowerCase() ?? "";
   const privilege = values.get("privilege") ?? "none";
-  if (!SUPPORTED_SYSTEMS[os]?.includes(version.split(".")[0])) {
+  const majorVersion = version.split(".")[0];
+  const minimumVersion = SSH2_MINIMUM_SYSTEM_VERSIONS[os];
+  const supported =
+    transport === "ssh2"
+      ? minimumVersion !== undefined &&
+        /^\d+$/.test(majorVersion) &&
+        Number(majorVersion) >= minimumVersion
+      : SUPPORTED_SYSTEMS[os]?.includes(majorVersion);
+  if (!supported) {
     throw new Error(
-      `服务器系统暂不支持：检测到 ${os || "未知"} ${version}；支持 Ubuntu 22.04/24.04、Debian 11+ 与 CentOS/RHEL/Rocky/AlmaLinux 8+ 的 x86_64 系统`,
+      transport === "ssh2"
+        ? `SSH2 模式支持 Ubuntu 22+、Debian 11+、Fedora 44+ 与 CentOS/RHEL/Rocky/AlmaLinux 9+ 的 x86_64/amd64 系统；检测到 ${os || "未知"} ${version}`
+        : `服务器系统暂不支持：检测到 ${os || "未知"} ${version}；支持 Ubuntu 22.04/24.04、Debian 11+ 与 CentOS/RHEL/Rocky/AlmaLinux 8+ 的 x86_64 系统`,
     );
   }
   if (!new Set(["x86_64", "amd64"]).has(arch)) {

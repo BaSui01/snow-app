@@ -3092,6 +3092,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["tunnel", "frp", "公网连接"],
       ],
       [
+        "remote.wan.transport",
+        "field",
+        "remoteControl.transportMode",
+        "隧道方式",
+        ["remote.tab.wan"],
+        ["frp", "ssh2", "隧道方式"],
+      ],
+      [
         "remote.wan.frpTunnel",
         "field",
         "remoteControl.frpTunnel",

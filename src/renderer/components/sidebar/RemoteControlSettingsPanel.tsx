@@ -24,6 +24,7 @@ import type {
   RemoteServerDeployInput,
   RemoteServerDeployProgress,
   RemoteServerDnsCheck,
+  RemoteTransportKind,
   RemoteTunnelConfigInput,
   RemoteTunnelStatus,
 } from "../../../preload";
@@ -75,6 +76,7 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     caCertificate: "",
   });
   const wanModeInitialized = useRef(false);
+  const transportModeInitialized = useRef(false);
   const deployCancelRequested = useRef(false);
   const [busy, setBusy] = useState(false);
   const [checkingDns, setCheckingDns] = useState(false);
@@ -94,12 +96,17 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     sshUsername: "root",
     frpBindPort: "7000",
     frpRemotePort: "18080",
+    ssh2TunnelPort: "7001",
+    ssh2RemotePort: "18080",
     authMethod: "password" as "password" | "privateKey",
     password: "",
     privateKeyPath: "",
     passphrase: "",
   });
   const [wanMode, setWanMode] = useState<RemoteWanMode | null>(null);
+  /** 隧道方式选择：只影响表单展示，切换不会立即断开或连接。 */
+  const [transportMode, setTransportMode] =
+    useState<RemoteTransportKind>("frp");
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   const applyState = useCallback((next: RemoteControlPairingState): void => {
@@ -122,11 +129,11 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
         ...current,
         enabled: next.config.enabled,
         autoConnect: next.config.autoConnect,
-        serverAddr: next.config.serverAddr,
-        serverPort: String(next.config.serverPort),
-        remotePort: String(next.config.remotePort),
+        serverAddr: next.config.frp.serverAddr,
+        serverPort: String(next.config.frp.serverPort),
+        remotePort: String(next.config.frp.remotePort),
         publicOrigin: next.config.publicOrigin,
-        tlsServerName: next.config.tlsServerName,
+        tlsServerName: next.config.frp.tlsServerName,
       };
       const unchanged =
         merged.enabled === current.enabled &&
@@ -208,6 +215,27 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     if (!tunnel || wanModeInitialized.current) return;
     wanModeInitialized.current = true;
     if (!tunnel.config.configured) setWanMode("deploy");
+    // 回环端口默认值避让：另一传输已占用 18080 时默认改用 18081。
+    setDeployForm((current) => ({
+      ...current,
+      frpRemotePort:
+        tunnel.config.ssh2.configured && tunnel.config.ssh2.remotePort === 18080
+          ? "18081"
+          : "18080",
+      ssh2RemotePort:
+        tunnel.config.frp.configured && tunnel.config.frp.remotePort === 18080
+          ? "18081"
+          : "18080",
+    }));
+  }, [tunnel]);
+
+  /** 首次拿到状态后同步隧道方式：已配置跟随活动传输，未配置默认 FRP。 */
+  useEffect(() => {
+    if (!tunnel || transportModeInitialized.current) return;
+    transportModeInitialized.current = true;
+    setTransportMode(
+      tunnel.config.configured ? tunnel.config.activeTransport : "frp",
+    );
   }, [tunnel]);
 
   useEffect(() => {
@@ -400,6 +428,27 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     }
   };
 
+  const copyHostKeyFingerprint = async (value: string): Promise<void> => {
+    if (!value) return;
+    try {
+      await window.snow.writeClipboardText(value);
+      setNotice({
+        message: t("remoteControl.noticeFingerprintCopied", {
+          defaultValue: "主机密钥指纹已复制",
+        }),
+        tone: "success",
+      });
+    } catch (error) {
+      setNotice({
+        message:
+          error instanceof Error
+            ? error.message
+            : t("remoteControl.noticeCopyFailed", { defaultValue: "复制失败" }),
+        tone: "error",
+      });
+    }
+  };
+
   const frpcBlocked = Boolean(
     tunnel &&
     (!tunnel.frpc.present ||
@@ -472,17 +521,29 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
       const result = await window.snow.checkRemoteServerDns({
         serverIp: deployForm.serverIp,
         rootDomain: deployForm.rootDomain,
+        transport: transportMode,
       });
       setDnsCheck(result);
-      setNotice({
-        message: result.ready
-          ? t("remoteControl.noticeDnsReady", {
+      const readyMessage =
+        transportMode === "ssh2"
+          ? t("remoteControl.noticeDnsReadySsh2", {
+              defaultValue: "snow 解析已生效，可以开始自动部署",
+            })
+          : t("remoteControl.noticeDnsReady", {
               defaultValue: "两条 DNS 解析均已生效，可以开始自动部署",
+            });
+      const pendingMessage =
+        transportMode === "ssh2"
+          ? t("remoteControl.noticeDnsPendingSsh2", {
+              defaultValue:
+                "DNS 尚未生效，请核对下方的 snow A 记录后稍等几分钟再检测",
             })
           : t("remoteControl.noticeDnsPending", {
               defaultValue:
                 "DNS 尚未生效，请核对下方两条 A 记录后稍等几分钟再检测",
-            }),
+            });
+      setNotice({
+        message: result.ready ? readyMessage : pendingMessage,
         tone: result.ready ? "success" : "warning",
       });
     } catch (error) {
@@ -530,8 +591,16 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
         sshPort: Number(deployForm.sshPort),
         sshUsername: deployForm.sshUsername,
         authMethod: deployForm.authMethod,
-        frpBindPort: Number(deployForm.frpBindPort),
-        frpRemotePort: Number(deployForm.frpRemotePort),
+        transport: transportMode,
+        ...(transportMode === "ssh2"
+          ? {
+              ssh2TunnelPort: Number(deployForm.ssh2TunnelPort),
+              ssh2RemotePort: Number(deployForm.ssh2RemotePort),
+            }
+          : {
+              frpBindPort: Number(deployForm.frpBindPort),
+              frpRemotePort: Number(deployForm.frpRemotePort),
+            }),
         ...(deployForm.authMethod === "password"
           ? { password: deployForm.password }
           : {
@@ -604,19 +673,48 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     setBusy(true);
     setNotice(null);
     try {
-      const input: RemoteTunnelConfigInput = {
-        enabled: form.enabled,
-        autoConnect: form.autoConnect,
-        serverAddr: form.serverAddr,
-        serverPort: Number(form.serverPort),
-        remotePort: Number(form.remotePort),
-        publicOrigin: form.publicOrigin,
-        tlsServerName: form.tlsServerName,
-        ...(form.token.trim() ? { token: form.token } : {}),
-        ...(form.caCertificate.trim()
-          ? { caCertificate: form.caCertificate }
-          : {}),
-      };
+      const ssh2Config = tunnel?.config.ssh2;
+      const useSsh2 = Boolean(
+        tunnel?.config.configured &&
+        tunnel.config.activeTransport === "ssh2" &&
+        ssh2Config,
+      );
+      let input: RemoteTunnelConfigInput;
+      if (useSsh2 && ssh2Config) {
+        // SSH2：沿用已存私钥（不传 privateKey），元数据取自保存的配置。
+        input = {
+          enabled: form.enabled,
+          autoConnect: form.autoConnect,
+          transport: "ssh2",
+          publicOrigin: form.publicOrigin,
+          ssh2: {
+            serverAddr: ssh2Config.serverAddr,
+            serverPort: ssh2Config.serverPort,
+            username: ssh2Config.username,
+            remotePort: ssh2Config.remotePort,
+            hostKeyType: ssh2Config.hostKeyType,
+            hostKeyPublicKey: ssh2Config.hostKeyPublicKey,
+            hostKeyFingerprint: ssh2Config.hostKeyFingerprint,
+          },
+        };
+      } else {
+        input = {
+          enabled: form.enabled,
+          autoConnect: form.autoConnect,
+          transport: "frp",
+          publicOrigin: form.publicOrigin,
+          frp: {
+            serverAddr: form.serverAddr,
+            serverPort: Number(form.serverPort),
+            remotePort: Number(form.remotePort),
+            tlsServerName: form.tlsServerName,
+            ...(form.token.trim() ? { token: form.token } : {}),
+            ...(form.caCertificate.trim()
+              ? { caCertificate: form.caCertificate }
+              : {}),
+          },
+        };
+      }
       let next = await window.snow.saveRemoteTunnelConfig(input);
       if (input.enabled) {
         next = await window.snow.connectRemoteTunnel();
@@ -709,6 +807,11 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     }
   };
 
+  /** 展示用传输方式：已保存配置以生效方式为准，未配置时跟随隧道方式选择。 */
+  const activeTransport: RemoteTransportKind = tunnel?.config.configured
+    ? tunnel.config.activeTransport
+    : transportMode;
+
   /** 移除本机公网配置：断开隧道并删除加密保存的 FRP 凭据与 CA 证书。 */
   const removeConfig = async (): Promise<void> => {
     setBusy(true);
@@ -720,9 +823,16 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
       setWanMode(null);
       setForm((current) => ({ ...current, token: "", caCertificate: "" }));
       setNotice({
-        message: t("remoteControl.noticeConfigRemoved", {
-          defaultValue: "公网配置已移除，服务器上的 FRP 与 Caddy 不受影响",
-        }),
+        message:
+          activeTransport === "ssh2"
+            ? t("remoteControl.noticeConfigRemovedSsh2", {
+                defaultValue:
+                  "公网配置已移除，服务器上的隧道服务与 Caddy 不受影响",
+              })
+            : t("remoteControl.noticeConfigRemoved", {
+                defaultValue:
+                  "公网配置已移除，服务器上的 FRP 与 Caddy 不受影响",
+              }),
         tone: "success",
       });
     } catch (error) {
@@ -749,11 +859,18 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
       const result = await window.snow.exportRemoteTunnelConfig();
       if (result.canceled) return;
       setNotice({
-        message: t("remoteControl.noticeExported", {
-          values: { path: result.path ?? "" },
-          defaultValue:
-            "配置包已导出到 {{path}}；文件包含 FRP 凭据，请妥善保管",
-        }),
+        message:
+          tunnel?.config.activeTransport === "ssh2"
+            ? t("remoteControl.noticeExportedSsh2", {
+                values: { path: result.path ?? "" },
+                defaultValue:
+                  "配置包已导出到 {{path}}；SSH2 配置不含私钥，可安全传递",
+              })
+            : t("remoteControl.noticeExported", {
+                values: { path: result.path ?? "" },
+                defaultValue:
+                  "配置包已导出到 {{path}}；文件包含 FRP 凭据，请妥善保管",
+              }),
         tone: "success",
       });
     } catch (error) {
@@ -808,11 +925,23 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
       applyTunnel(result.status);
       applyState(await window.snow.getRemoteControlPairingState());
       setNotice({
-        message: t("remoteControl.noticeImported", {
-          defaultValue:
-            "配置包已校验并加密保存，Snow 正在连接。导入包含 FRP 凭据，请从下载目录安全删除。",
-        }),
-        tone: "success",
+        message: result.status.config.ssh2.needsAuthorization
+          ? t("remoteControl.ssh2NeedsAuthorization", {
+              defaultValue:
+                "SSH2 配置已导入，但本机缺少隧道私钥；请使用“自动部署并连接”重新授权此设备。",
+            })
+          : result.status.config.activeTransport === "ssh2"
+            ? t("remoteControl.noticeImportedSsh2", {
+                defaultValue:
+                  "配置包已校验并加密保存，Snow 正在连接。SSH2 配置不含私钥，可安全传递。",
+              })
+            : t("remoteControl.noticeImported", {
+                defaultValue:
+                  "配置包已校验并加密保存，Snow 正在连接。导入包含 FRP 凭据，请从下载目录安全删除。",
+              }),
+        tone: result.status.config.ssh2.needsAuthorization
+          ? "warning"
+          : "success",
       });
     } catch (error) {
       setNotice({
@@ -855,6 +984,51 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
     reachable: t("remoteControl.endpointReachable", { defaultValue: "已通过" }),
     failed: t("remoteControl.endpointFailed", { defaultValue: "未通过" }),
   };
+
+  /** 已配置时手动编辑表单按活动传输渲染；未配置保持原有 FRP 手动填写。 */
+  const manualTransport: RemoteTransportKind =
+    tunnel?.config.configured && tunnel.config.activeTransport === "ssh2"
+      ? "ssh2"
+      : "frp";
+
+  /** 另一传输已配置且当前选择与之不同：切换活动传输需要重新部署。 */
+  const showSwitchTransportHint = Boolean(
+    tunnel?.config.configured &&
+    transportMode !== tunnel.config.activeTransport &&
+    (transportMode === "frp"
+      ? tunnel.config.frp.configured
+      : tunnel.config.ssh2.configured),
+  );
+
+  /** 隧道方式双选控件：部署向导与空配置引导区共用，切换只改变表单展示。 */
+  const transportModeSelector = (
+    <div
+      className="import-settings-tabs"
+      role="tablist"
+      aria-label={t("remoteControl.transportMode", {
+        defaultValue: "隧道方式",
+      })}
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={transportMode === "frp"}
+        className={`import-settings-tab ${transportMode === "frp" ? "active" : ""}`}
+        onClick={() => setTransportMode("frp")}
+      >
+        {t("remoteControl.transportFrp", { defaultValue: "FRP" })}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={transportMode === "ssh2"}
+        className={`import-settings-tab ${transportMode === "ssh2" ? "active" : ""}`}
+        onClick={() => setTransportMode("ssh2")}
+      >
+        {t("remoteControl.transportSsh2", { defaultValue: "SSH2" })}
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -1151,10 +1325,15 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                   })}
                 </strong>
                 <p>
-                  {t("remoteControl.tunnelDescription", {
-                    defaultValue:
-                      "安装包已内置并校验 frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
-                  })}
+                  {activeTransport === "ssh2"
+                    ? t("remoteControl.tunnelDescriptionSsh2", {
+                        defaultValue:
+                          "Snow 会自动生成隧道专用密钥；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
+                      })
+                    : t("remoteControl.tunnelDescription", {
+                        defaultValue:
+                          "安装包已内置并校验 frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
+                      })}
                 </p>
               </div>
               <span
@@ -1178,7 +1357,9 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                   : t("remoteControl.notListening", { defaultValue: "未监听" })}
               </strong>
               <span>
-                {t("remoteControl.frpTunnel", { defaultValue: "FRP 隧道" })}
+                {tunnel?.config.activeTransport === "ssh2"
+                  ? t("remoteControl.ssh2Tunnel", { defaultValue: "SSH2 隧道" })
+                  : t("remoteControl.frpTunnel", { defaultValue: "FRP 隧道" })}
               </span>
               <strong>
                 {tunnel
@@ -1225,45 +1406,137 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                   </span>
                 </div>
 
+                {tunnel.config.activeTransport === "ssh2" &&
+                tunnel.config.ssh2.needsAuthorization ? (
+                  <div className="remote-tunnel-guide-callout warning">
+                    <strong>
+                      {t("remoteControl.ssh2NeedsAuthorization", {
+                        defaultValue:
+                          "SSH2 配置已导入，但本机缺少隧道私钥；请使用“自动部署并连接”重新授权此设备。",
+                      })}
+                    </strong>
+                  </div>
+                ) : null}
+
                 <div className="remote-tunnel-status-grid">
-                  <span>
-                    {t("remoteControl.frpServerAddr", {
-                      defaultValue: "FRP 服务器地址",
-                    })}
-                  </span>
-                  <strong>{`${tunnel.config.serverAddr}:${tunnel.config.serverPort}`}</strong>
-                  <span>
-                    {t("remoteControl.frpRemotePort", {
-                      defaultValue: "FRP 隧道端口",
-                    })}
-                  </span>
-                  <strong>{String(tunnel.config.remotePort)}</strong>
-                  <span>
-                    {t("remoteControl.publicOrigin", {
-                      defaultValue: "手机 HTTPS 地址",
-                    })}
-                  </span>
-                  <strong>{tunnel.config.publicOrigin}</strong>
-                  <span>
-                    {t("remoteControl.tlsServerName", {
-                      defaultValue: "FRP TLS 服务器名称",
-                    })}
-                  </span>
-                  <strong>{tunnel.config.tlsServerName}</strong>
-                  <span>
-                    {t("remoteControl.credentialsLabel", {
-                      defaultValue: "加密凭据",
-                    })}
-                  </span>
-                  <strong>
-                    {tunnel.config.hasToken && tunnel.config.hasCaCertificate
-                      ? t("remoteControl.credentialsSaved", {
-                          defaultValue: "FRP 凭据与 CA 证书已保存",
-                        })
-                      : t("remoteControl.credentialsMissing", {
-                          defaultValue: "缺少 FRP 凭据或 CA 证书",
+                  {tunnel.config.activeTransport === "ssh2" ? (
+                    <>
+                      <span>
+                        {t("remoteControl.ssh2ServerAddr", {
+                          defaultValue: "服务器地址",
                         })}
-                  </strong>
+                      </span>
+                      <strong>{tunnel.config.ssh2.serverAddr}</strong>
+                      <span>
+                        {t("remoteControl.ssh2TunnelPort", {
+                          defaultValue: "SSH2 隧道端口",
+                        })}
+                      </span>
+                      <strong>{String(tunnel.config.ssh2.serverPort)}</strong>
+                      <span>
+                        {t("remoteControl.sshUsername", {
+                          defaultValue: "SSH 用户名",
+                        })}
+                      </span>
+                      <strong>{tunnel.config.ssh2.username}</strong>
+                      <span>
+                        {t("remoteControl.ssh2RemotePort", {
+                          defaultValue: "SSH2 隧道回环端口",
+                        })}
+                      </span>
+                      <strong>{String(tunnel.config.ssh2.remotePort)}</strong>
+                      <span>
+                        {t("remoteControl.ssh2HostKeyFingerprint", {
+                          defaultValue: "主机密钥指纹",
+                        })}
+                      </span>
+                      <div className="remote-token-value">
+                        <code title={tunnel.config.ssh2.hostKeyFingerprint}>
+                          {tunnel.config.ssh2.hostKeyFingerprint.length > 32
+                            ? `${tunnel.config.ssh2.hostKeyFingerprint.slice(0, 32)}…`
+                            : tunnel.config.ssh2.hostKeyFingerprint}
+                        </code>
+                        <button
+                          type="button"
+                          className="api-settings-action-btn secondary"
+                          onClick={() =>
+                            void copyHostKeyFingerprint(
+                              tunnel.config.ssh2.hostKeyFingerprint,
+                            )
+                          }
+                        >
+                          <Copy size={15} strokeWidth={1.9} />
+                          <span>
+                            {t("remoteControl.copyFingerprint", {
+                              defaultValue: "复制指纹",
+                            })}
+                          </span>
+                        </button>
+                      </div>
+                      <span>
+                        {t("remoteControl.publicOrigin", {
+                          defaultValue: "手机 HTTPS 地址",
+                        })}
+                      </span>
+                      <strong>{tunnel.config.publicOrigin}</strong>
+                      <span>
+                        {t("remoteControl.credentialsLabel", {
+                          defaultValue: "加密凭据",
+                        })}
+                      </span>
+                      <strong>
+                        {tunnel.config.ssh2.hasPrivateKey
+                          ? t("remoteControl.credentialsSavedSsh2", {
+                              defaultValue: "隧道私钥已保存",
+                            })
+                          : t("remoteControl.credentialsMissingSsh2", {
+                              defaultValue: "缺少隧道私钥",
+                            })}
+                      </strong>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {t("remoteControl.frpServerAddr", {
+                          defaultValue: "FRP 服务器地址",
+                        })}
+                      </span>
+                      <strong>{`${tunnel.config.frp.serverAddr}:${tunnel.config.frp.serverPort}`}</strong>
+                      <span>
+                        {t("remoteControl.frpRemotePort", {
+                          defaultValue: "FRP 隧道端口",
+                        })}
+                      </span>
+                      <strong>{String(tunnel.config.frp.remotePort)}</strong>
+                      <span>
+                        {t("remoteControl.publicOrigin", {
+                          defaultValue: "手机 HTTPS 地址",
+                        })}
+                      </span>
+                      <strong>{tunnel.config.publicOrigin}</strong>
+                      <span>
+                        {t("remoteControl.tlsServerName", {
+                          defaultValue: "FRP TLS 服务器名称",
+                        })}
+                      </span>
+                      <strong>{tunnel.config.frp.tlsServerName}</strong>
+                      <span>
+                        {t("remoteControl.credentialsLabel", {
+                          defaultValue: "加密凭据",
+                        })}
+                      </span>
+                      <strong>
+                        {tunnel.config.frp.hasToken &&
+                        tunnel.config.frp.hasCaCertificate
+                          ? t("remoteControl.credentialsSaved", {
+                              defaultValue: "FRP 凭据与 CA 证书已保存",
+                            })
+                          : t("remoteControl.credentialsMissing", {
+                              defaultValue: "缺少 FRP 凭据或 CA 证书",
+                            })}
+                      </strong>
+                    </>
+                  )}
                   <span>
                     {t("remoteControl.autoConnectLabel", {
                       defaultValue: "启动时自动连接",
@@ -1450,12 +1723,61 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                         })}
                   </strong>
                 </div>
-                <p className="remote-pairing-note">
-                  {t("remoteControl.manualFormHint", {
-                    defaultValue:
-                      "FRP 凭据与 CA 证书会加密保存到本机；留空表示沿用已保存的值。",
-                  })}
-                </p>
+                {manualTransport === "ssh2" ? (
+                  <>
+                    <div className="remote-config-head">
+                      <strong>
+                        {t("remoteControl.ssh2SummaryTitle", {
+                          defaultValue: "SSH2 隧道详情",
+                        })}
+                      </strong>
+                    </div>
+                    <div className="remote-tunnel-status-grid">
+                      <span>
+                        {t("remoteControl.ssh2ServerAddr", {
+                          defaultValue: "服务器地址",
+                        })}
+                      </span>
+                      <strong>{tunnel?.config.ssh2.serverAddr}</strong>
+                      <span>
+                        {t("remoteControl.ssh2TunnelPort", {
+                          defaultValue: "SSH2 隧道端口",
+                        })}
+                      </span>
+                      <strong>{String(tunnel?.config.ssh2.serverPort)}</strong>
+                      <span>
+                        {t("remoteControl.sshUsername", {
+                          defaultValue: "SSH 用户名",
+                        })}
+                      </span>
+                      <strong>{tunnel?.config.ssh2.username}</strong>
+                      <span>
+                        {t("remoteControl.ssh2RemotePort", {
+                          defaultValue: "SSH2 隧道回环端口",
+                        })}
+                      </span>
+                      <strong>{String(tunnel?.config.ssh2.remotePort)}</strong>
+                      <span>
+                        {t("remoteControl.ssh2HostKeyFingerprint", {
+                          defaultValue: "主机密钥指纹",
+                        })}
+                      </span>
+                      <strong title={tunnel?.config.ssh2.hostKeyFingerprint}>
+                        {(tunnel?.config.ssh2.hostKeyFingerprint ?? "").length >
+                        32
+                          ? `${(tunnel?.config.ssh2.hostKeyFingerprint ?? "").slice(0, 32)}…`
+                          : tunnel?.config.ssh2.hostKeyFingerprint}
+                      </strong>
+                    </div>
+                  </>
+                ) : (
+                  <p className="remote-pairing-note">
+                    {t("remoteControl.manualFormHint", {
+                      defaultValue:
+                        "FRP 凭据与 CA 证书会加密保存到本机；留空表示沿用已保存的值。",
+                    })}
+                  </p>
+                )}
                 <div className="remote-tunnel-form">
                   <label className="remote-tunnel-check">
                     <input
@@ -1488,56 +1810,60 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                     })}
                   </label>
 
-                  <label>
-                    {t("remoteControl.frpServerAddr", {
-                      defaultValue: "FRP 服务器地址",
-                    })}
-                    <input
-                      value={form.serverAddr}
-                      placeholder="frp.example.com"
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          serverAddr: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpServerPort", {
-                      defaultValue: "FRP 端口",
-                    })}
-                    <input
-                      type="number"
-                      min="1"
-                      max="65535"
-                      value={form.serverPort}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          serverPort: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpRemotePort", {
-                      defaultValue: "FRP 隧道端口",
-                    })}
-                    <input
-                      type="number"
-                      min="1"
-                      max="65535"
-                      value={form.remotePort}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          remotePort: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  {manualTransport === "frp" ? (
+                    <>
+                      <label>
+                        {t("remoteControl.frpServerAddr", {
+                          defaultValue: "FRP 服务器地址",
+                        })}
+                        <input
+                          value={form.serverAddr}
+                          placeholder="frp.example.com"
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              serverAddr: event.target.value,
+                            }))
+                          }
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label>
+                        {t("remoteControl.frpServerPort", {
+                          defaultValue: "FRP 端口",
+                        })}
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={form.serverPort}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              serverPort: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        {t("remoteControl.frpRemotePort", {
+                          defaultValue: "FRP 隧道端口",
+                        })}
+                        <input
+                          type="number"
+                          min="1"
+                          max="65535"
+                          value={form.remotePort}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              remotePort: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </>
+                  ) : null}
                   <label>
                     {t("remoteControl.publicOrigin", {
                       defaultValue: "手机 HTTPS 地址",
@@ -1554,67 +1880,73 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                       spellCheck={false}
                     />
                   </label>
-                  <label>
-                    {t("remoteControl.tlsServerName", {
-                      defaultValue: "FRP TLS 服务器名称",
-                    })}
-                    <input
-                      value={form.tlsServerName}
-                      placeholder="frp.example.com"
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          tlsServerName: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    {t("remoteControl.frpToken", { defaultValue: "FRP 凭据" })}
-                    <input
-                      type="password"
-                      value={form.token}
-                      placeholder={
-                        tunnel?.config.hasToken
-                          ? t("remoteControl.tokenPlaceholderSaved", {
-                              defaultValue: "已加密保存；留空保持不变",
-                            })
-                          : t("remoteControl.tokenPlaceholderNew", {
-                              defaultValue: "至少 32 个字符",
-                            })
-                      }
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          token: event.target.value,
-                        }))
-                      }
-                      autoComplete="new-password"
-                    />
-                  </label>
-                  <label className="remote-tunnel-ca">
-                    {t("remoteControl.frpCa", {
-                      defaultValue: "FRP CA 证书（PEM）",
-                    })}
-                    <textarea
-                      value={form.caCertificate}
-                      placeholder={
-                        tunnel?.config.hasCaCertificate
-                          ? t("remoteControl.caPlaceholderSaved", {
-                              defaultValue: "证书已加密保存；留空保持不变",
-                            })
-                          : "-----BEGIN CERTIFICATE-----"
-                      }
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          caCertificate: event.target.value,
-                        }))
-                      }
-                      spellCheck={false}
-                    />
-                  </label>
+                  {manualTransport === "frp" ? (
+                    <>
+                      <label>
+                        {t("remoteControl.tlsServerName", {
+                          defaultValue: "FRP TLS 服务器名称",
+                        })}
+                        <input
+                          value={form.tlsServerName}
+                          placeholder="frp.example.com"
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              tlsServerName: event.target.value,
+                            }))
+                          }
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label>
+                        {t("remoteControl.frpToken", {
+                          defaultValue: "FRP 凭据",
+                        })}
+                        <input
+                          type="password"
+                          value={form.token}
+                          placeholder={
+                            tunnel?.config.frp.hasToken
+                              ? t("remoteControl.tokenPlaceholderSaved", {
+                                  defaultValue: "已加密保存；留空保持不变",
+                                })
+                              : t("remoteControl.tokenPlaceholderNew", {
+                                  defaultValue: "至少 32 个字符",
+                                })
+                          }
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              token: event.target.value,
+                            }))
+                          }
+                          autoComplete="new-password"
+                        />
+                      </label>
+                      <label className="remote-tunnel-ca">
+                        {t("remoteControl.frpCa", {
+                          defaultValue: "FRP CA 证书（PEM）",
+                        })}
+                        <textarea
+                          value={form.caCertificate}
+                          placeholder={
+                            tunnel?.config.frp.hasCaCertificate
+                              ? t("remoteControl.caPlaceholderSaved", {
+                                  defaultValue: "证书已加密保存；留空保持不变",
+                                })
+                              : "-----BEGIN CERTIFICATE-----"
+                          }
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              caCertificate: event.target.value,
+                            }))
+                          }
+                          spellCheck={false}
+                        />
+                      </label>
+                    </>
+                  ) : null}
                 </div>
 
                 <div className="remote-pairing-actions">
@@ -1693,6 +2025,23 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                           "第一次公网部署（共 4 步，Snow 负责安装）",
                       })}
                 </p>
+                {transportModeSelector}
+                {transportMode === "ssh2" ? (
+                  <p className="remote-pairing-note">
+                    {t("remoteControl.ssh2DeployHint", {
+                      defaultValue:
+                        "SSH2 模式无需第二条 frp 域名，也不需要 token 与 CA 证书；Snow 会自动生成专用密钥并只把公钥上传到服务器。",
+                    })}
+                  </p>
+                ) : null}
+                {showSwitchTransportHint ? (
+                  <p className="remote-pairing-note">
+                    {t("remoteControl.switchTransportHint", {
+                      defaultValue:
+                        "切换隧道方式请重新运行部署并选择目标方式。",
+                    })}
+                  </p>
+                ) : null}
                 <div className="remote-tunnel-guide-callout">
                   <strong>
                     {t("remoteControl.guideCalloutTitle", {
@@ -1721,10 +2070,15 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                           defaultValue: "Linux 公网服务器：",
                         })}
                       </strong>
-                      {t("remoteControl.step1ServerText", {
-                        defaultValue:
-                          "任意厂商，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常见发行版、x86_64、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
-                      })}
+                      {transportMode === "ssh2"
+                        ? t("remoteControl.step1ServerTextSsh2", {
+                            defaultValue:
+                              "任意厂商，Ubuntu 22+、Debian 11+、Fedora 44+、CentOS Stream/RHEL/Rocky/AlmaLinux 9+，仅 x86_64/amd64、root 或免密码 sudo、systemd、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
+                          })
+                        : t("remoteControl.step1ServerText", {
+                            defaultValue:
+                              "任意厂商，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常见发行版、x86_64、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
+                          })}
                     </li>
                     <li>
                       <strong>
@@ -1789,31 +2143,46 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                           defaultValue: "服务器公网 IP",
                         })}
                     </code>
-                    <code>A</code>
-                    <code>frp</code>
-                    <code>
-                      {deployForm.serverIp.trim() ||
-                        t("remoteControl.serverIpLabel", {
-                          defaultValue: "服务器公网 IP",
-                        })}
-                    </code>
+                    {transportMode === "frp" ? (
+                      <>
+                        <code>A</code>
+                        <code>frp</code>
+                        <code>
+                          {deployForm.serverIp.trim() ||
+                            t("remoteControl.serverIpLabel", {
+                              defaultValue: "服务器公网 IP",
+                            })}
+                        </code>
+                      </>
+                    ) : null}
                   </div>
                   <small>
                     {t("remoteControl.step2DnsHintPrefix", {
                       defaultValue: "主机记录只填",
                     })}{" "}
                     <code>snow</code>{" "}
-                    {t("remoteControl.step2DnsHintAnd", { defaultValue: "和" })}{" "}
-                    <code>frp</code>
+                    {transportMode === "frp" ? (
+                      <>
+                        {t("remoteControl.step2DnsHintAnd", {
+                          defaultValue: "和",
+                        })}{" "}
+                        <code>frp</code>
+                      </>
+                    ) : null}
                     {t("remoteControl.step2DnsHintSuffix", {
                       defaultValue: "，不要填写完整域名；线路和 TTL 保持默认。",
                     })}
                     {normalizedRootDomain
-                      ? ` ${t("remoteControl.step2DnsHintDomains", {
-                          values: { rootDomain: normalizedRootDomain },
-                          defaultValue:
-                            "保存后会得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
-                        })}`
+                      ? transportMode === "ssh2"
+                        ? ` ${t("remoteControl.step2DnsHintDomainsSsh2", {
+                            values: { rootDomain: normalizedRootDomain },
+                            defaultValue: "保存后会得到 snow.{{rootDomain}}。",
+                          })}`
+                        : ` ${t("remoteControl.step2DnsHintDomains", {
+                            values: { rootDomain: normalizedRootDomain },
+                            defaultValue:
+                              "保存后会得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
+                          })}`
                       : ""}
                   </small>
                   <p>
@@ -1843,7 +2212,12 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                         defaultValue: "手机 HTTPS 访问",
                       })}
                     </span>
-                    <code>TCP {deployForm.frpBindPort.trim() || "7000"}</code>
+                    <code>
+                      TCP{" "}
+                      {transportMode === "ssh2"
+                        ? deployForm.ssh2TunnelPort.trim() || "7001"
+                        : deployForm.frpBindPort.trim() || "7000"}
+                    </code>
                     <span>
                       {t("remoteControl.portPurposeTunnel", {
                         defaultValue: "Snow 桌面隧道",
@@ -1854,7 +2228,10 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                     <strong>
                       {t("remoteControl.step2ClosedPortWarning", {
                         values: {
-                          port: deployForm.frpRemotePort.trim() || "18080",
+                          port:
+                            transportMode === "ssh2"
+                              ? deployForm.ssh2RemotePort.trim() || "18080"
+                              : deployForm.frpRemotePort.trim() || "18080",
                         },
                         defaultValue: "不要开放 TCP {{port}}。",
                       })}
@@ -1968,52 +2345,105 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                         }
                       />
                     </label>
-                    <label>
-                      {t("remoteControl.frpBindPort", {
-                        defaultValue: "FRP 控制端口",
-                      })}
-                      <small>
-                        {t("remoteControl.frpBindPortHint", {
-                          defaultValue:
-                            "服务器 frps 的控制端口，会写入客户端配置包；未修改时通常是 7000。",
-                        })}
-                      </small>
-                      <input
-                        type="number"
-                        min="1"
-                        max="65535"
-                        value={deployForm.frpBindPort}
-                        onChange={(event) =>
-                          setDeployForm((current) => ({
-                            ...current,
-                            frpBindPort: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      {t("remoteControl.frpRemotePort", {
-                        defaultValue: "FRP 隧道端口",
-                      })}
-                      <small>
-                        {t("remoteControl.frpRemotePortHint", {
-                          defaultValue:
-                            "服务器内部隧道端口，只由 Caddy 使用；无需在安全组放行。",
-                        })}
-                      </small>
-                      <input
-                        type="number"
-                        min="1"
-                        max="65535"
-                        value={deployForm.frpRemotePort}
-                        onChange={(event) =>
-                          setDeployForm((current) => ({
-                            ...current,
-                            frpRemotePort: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
+                    {transportMode === "frp" ? (
+                      <>
+                        <label>
+                          {t("remoteControl.frpBindPort", {
+                            defaultValue: "FRP 控制端口",
+                          })}
+                          <small>
+                            {t("remoteControl.frpBindPortHint", {
+                              defaultValue:
+                                "服务器 frps 的控制端口，会写入客户端配置包；未修改时通常是 7000。",
+                            })}
+                          </small>
+                          <input
+                            type="number"
+                            min="1"
+                            max="65535"
+                            value={deployForm.frpBindPort}
+                            onChange={(event) =>
+                              setDeployForm((current) => ({
+                                ...current,
+                                frpBindPort: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          {t("remoteControl.frpRemotePort", {
+                            defaultValue: "FRP 隧道端口",
+                          })}
+                          <small>
+                            {t("remoteControl.frpRemotePortHint", {
+                              defaultValue:
+                                "服务器内部隧道端口，只由 Caddy 使用；无需在安全组放行。",
+                            })}
+                          </small>
+                          <input
+                            type="number"
+                            min="1"
+                            max="65535"
+                            value={deployForm.frpRemotePort}
+                            onChange={(event) =>
+                              setDeployForm((current) => ({
+                                ...current,
+                                frpRemotePort: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <label>
+                          {t("remoteControl.ssh2TunnelPort", {
+                            defaultValue: "SSH2 隧道端口",
+                          })}
+                          <small>
+                            {t("remoteControl.ssh2TunnelPortHint", {
+                              defaultValue:
+                                "专用 snow-tunnel-sshd 的监听端口，需要在安全组放行；未修改时通常是 7001。",
+                            })}
+                          </small>
+                          <input
+                            type="number"
+                            min="1"
+                            max="65535"
+                            value={deployForm.ssh2TunnelPort}
+                            onChange={(event) =>
+                              setDeployForm((current) => ({
+                                ...current,
+                                ssh2TunnelPort: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          {t("remoteControl.ssh2RemotePort", {
+                            defaultValue: "SSH2 隧道回环端口",
+                          })}
+                          <small>
+                            {t("remoteControl.ssh2RemotePortHint", {
+                              defaultValue:
+                                "服务器内部回环端口，只由 Caddy 使用；无需在安全组放行。",
+                            })}
+                          </small>
+                          <input
+                            type="number"
+                            min="1"
+                            max="65535"
+                            value={deployForm.ssh2RemotePort}
+                            onChange={(event) =>
+                              setDeployForm((current) => ({
+                                ...current,
+                                ssh2RemotePort: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </>
+                    )}
                     <label>
                       {t("remoteControl.authMethod", {
                         defaultValue: "登录方式",
@@ -2126,10 +2556,15 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                     })}
                   </h4>
                   <p>
-                    {t("remoteControl.step4Text", {
-                      defaultValue:
-                        "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
-                    })}
+                    {transportMode === "ssh2"
+                      ? t("remoteControl.step4TextSsh2", {
+                          defaultValue:
+                            "先点“检测 DNS”。snow 解析通过后，再点“自动部署并连接”；之后受限 sshd、Caddy、证书与配置导入都由 Snow 处理。",
+                        })
+                      : t("remoteControl.step4Text", {
+                          defaultValue:
+                            "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
+                        })}
                   </p>
 
                   {dnsCheck ? (
@@ -2204,9 +2639,14 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                       />
                       <span>
                         {t(
-                          `remoteControl.deployStage.${deployProgress.stage}`,
+                          transportMode === "ssh2"
+                            ? `remoteControl.deployStageSsh2.${deployProgress.stage}`
+                            : `remoteControl.deployStage.${deployProgress.stage}`,
                           {
-                            defaultValue: deployProgress.message,
+                            defaultValue: t(
+                              `remoteControl.deployStage.${deployProgress.stage}`,
+                              { defaultValue: deployProgress.message },
+                            ),
                           },
                         )}
                       </span>
@@ -2215,7 +2655,9 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
                 </section>
               </section>
             ) : null}
-            {tunnel && frpcBlocked ? (
+            {tunnel &&
+            frpcBlocked &&
+            tunnel.config.activeTransport !== "ssh2" ? (
               <div className="remote-frpc-blocked" role="alert">
                 <div className="remote-frpc-blocked-head">
                   <ShieldAlert size={16} strokeWidth={1.9} />
@@ -2435,10 +2877,17 @@ export function RemoteControlSettingsPanel(): React.JSX.Element {
         title={t("remoteControl.removeConfigConfirmTitle", {
           defaultValue: "确认移除本机保存的公网配置？",
         })}
-        message={t("remoteControl.removeConfigConfirmText", {
-          defaultValue:
-            "将断开公网隧道并删除加密保存的 FRP 凭据与 CA 证书；服务器上的 FRP 与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
-        })}
+        message={
+          activeTransport === "ssh2"
+            ? t("remoteControl.removeConfigConfirmTextSsh2", {
+                defaultValue:
+                  "将断开公网隧道并删除加密保存的隧道私钥；服务器上的隧道服务与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
+              })
+            : t("remoteControl.removeConfigConfirmText", {
+                defaultValue:
+                  "将断开公网隧道并删除加密保存的 FRP 凭据与 CA 证书；服务器上的 FRP 与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
+              })
+        }
         confirmLabel={t("remoteControl.removeConfigConfirm", {
           defaultValue: "确认移除",
         })}

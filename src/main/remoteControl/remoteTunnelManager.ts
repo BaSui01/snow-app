@@ -19,9 +19,11 @@ import {
 } from "./remoteTunnelConfig";
 import {
   isPermanentFrpcFailure,
+  isPermanentSsh2Failure,
   normalizeRemoteTunnelConfig,
   redactTunnelText,
   renderFrpcConfig,
+  type FrpTransportConfig,
   type RemoteTunnelConfigInput,
   type RemoteTunnelConfigView,
   type StoredRemoteTunnelConfig,
@@ -31,6 +33,10 @@ import {
   stopRemoteWanListener,
 } from "./remoteControlServer";
 import { probeRemoteTunnelTls } from "./remoteTunnelProbe";
+import {
+  Ssh2TunnelTransport,
+  type Ssh2TransportCloseInfo,
+} from "./ssh2TunnelTransport";
 
 export type RemoteTunnelStage =
   "stopped" | "starting" | "connecting" | "online" | "reconnecting" | "failed";
@@ -188,7 +194,7 @@ const extractFrpcFailureDetail = (
     : collapsed;
 };
 
-const withFrpcDetail = (message: string, detail: string | null): string =>
+const withDetail = (message: string, detail: string | null): string =>
   detail ? `${message}（${detail}）` : message;
 
 export class RemoteTunnelManager {
@@ -198,6 +204,11 @@ export class RemoteTunnelManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private endpointMonitorTimer: ReturnType<typeof setTimeout> | null = null;
   private endpointFailureCount = 0;
+  /**
+   * 部署期的临时隧道标记：connectTransient 建立候选隧道后，公网入口还没切换好，
+   * 此时端点探测失败属于预期，绝不能据此拆除正在使用的传输。
+   */
+  private transientDeploy = false;
   private logTail = "";
   private exitHandling: Promise<void> | null = null;
   private operation: Promise<void> = Promise.resolve();
@@ -211,6 +222,8 @@ export class RemoteTunnelManager {
   };
   private verifiedBinaryPath: string | null = null;
   private startupAttempts = 0;
+  private ssh2Transport: Ssh2TunnelTransport | null = null;
+  private activeConfig: StoredRemoteTunnelConfig | null = null;
 
   getStatus(): RemoteTunnelStatus {
     let stored: StoredRemoteTunnelConfig | null = null;
@@ -233,6 +246,8 @@ export class RemoteTunnelManager {
   }
 
   async save(input: RemoteTunnelConfigInput): Promise<RemoteTunnelStatus> {
+    // 配置一旦落盘，部署期的临时隧道就成为正式隧道，端点监控恢复正常判定。
+    this.transientDeploy = false;
     await saveRemoteTunnelConfig(input);
     if (!input.enabled && this.status.stage !== "stopped") {
       await this.disconnect();
@@ -260,7 +275,11 @@ export class RemoteTunnelManager {
       const message = redactTunnelText(
         error instanceof Error ? error.message : String(error),
       );
-      if (error instanceof FrpcBundleError || isPermanentFrpcFailure(message)) {
+      if (
+        error instanceof FrpcBundleError ||
+        isPermanentFrpcFailure(message) ||
+        isPermanentSsh2Failure(message)
+      ) {
         throw error;
       }
       const delay = STARTUP_RETRY_DELAYS_MS[this.startupAttempts];
@@ -281,6 +300,8 @@ export class RemoteTunnelManager {
   }
 
   async connect(): Promise<RemoteTunnelStatus> {
+    // 正式连接取代任何部署期的临时隧道。
+    this.transientDeploy = false;
     await this.enqueue(async () => {
       const generation = ++this.generation;
       await this.disconnectInternal();
@@ -306,19 +327,26 @@ export class RemoteTunnelManager {
     input: RemoteTunnelConfigInput,
   ): Promise<RemoteTunnelStatus> {
     const config = normalizeRemoteTunnelConfig(input, null);
-    await this.enqueue(async () => {
-      const generation = ++this.generation;
-      await this.disconnectInternal();
-      this.status = {
-        stage: "starting",
-        listenerPort: 0,
-        attempt: 0,
-        nextRetryAt: null,
-        endpoint: { stage: "unchecked", checkedAt: null },
-        error: null,
-      };
-      await this.startAttempt(config, generation, 0);
-    });
+    this.transientDeploy = true;
+    try {
+      await this.enqueue(async () => {
+        const generation = ++this.generation;
+        await this.disconnectInternal();
+        this.status = {
+          stage: "starting",
+          listenerPort: 0,
+          attempt: 0,
+          nextRetryAt: null,
+          endpoint: { stage: "unchecked", checkedAt: null },
+          error: null,
+        };
+        await this.startAttempt(config, generation, 0);
+      });
+    } catch (error) {
+      // 候选隧道没能建立：退出部署期，交由部署器按失败流程处理。
+      this.transientDeploy = false;
+      throw error;
+    }
     return {
       ...this.getStatus(),
       config: toRemoteTunnelConfigView(config),
@@ -326,6 +354,8 @@ export class RemoteTunnelManager {
   }
 
   async disconnect(): Promise<RemoteTunnelStatus> {
+    // 主动断开即结束部署期，避免标记残留影响后续正常连接的端点监控。
+    this.transientDeploy = false;
     await this.enqueue(async () => {
       this.generation += 1;
       await this.disconnectInternal();
@@ -463,7 +493,7 @@ export class RemoteTunnelManager {
   }
 
   private prepareRuntime(
-    config: StoredRemoteTunnelConfig,
+    frp: FrpTransportConfig,
     localPort: number,
   ): { configFile: string; executable: string } {
     const { executable } = this.resolveBundle();
@@ -476,11 +506,11 @@ export class RemoteTunnelManager {
     const tokenFile = join(dir, "token.txt");
     const caFile = join(dir, "ca.crt");
     const configFile = join(dir, "frpc.toml");
-    writeFileSync(tokenFile, config.token, { mode: 0o600 });
-    writeFileSync(caFile, config.caCertificate, { mode: 0o600 });
+    writeFileSync(tokenFile, frp.token, { mode: 0o600 });
+    writeFileSync(caFile, frp.caCertificate, { mode: 0o600 });
     writeFileSync(
       configFile,
-      renderFrpcConfig(config, { tokenFile, caFile, localPort }),
+      renderFrpcConfig(frp, { tokenFile, caFile, localPort }),
       { mode: 0o600 },
     );
     for (const path of [tokenFile, caFile, configFile])
@@ -530,19 +560,26 @@ export class RemoteTunnelManager {
     attempt: number,
   ): Promise<void> {
     if (generation !== this.generation) return;
+    this.activeConfig = config;
+    if (config.activeTransport === "ssh2") {
+      await this.startSsh2Attempt(config, generation, attempt);
+      return;
+    }
     this.status.stage = attempt === 0 ? "starting" : "reconnecting";
     this.status.attempt = attempt;
     this.status.nextRetryAt = null;
     this.status.error = null;
     try {
+      const frp = config.frp;
+      if (!frp) throw new Error("缺少 FRP 隧道配置");
       if (attempt === 0) {
-        await probeRemoteTunnelTls(config);
+        await probeRemoteTunnelTls(frp);
         if (generation !== this.generation) return;
       }
       const pairing = await startRemoteWanListener(config.publicOrigin, 0);
       const localPort = pairing.wan.localPort;
       this.status.listenerPort = localPort;
-      const runtime = this.prepareRuntime(config, localPort);
+      const runtime = this.prepareRuntime(frp, localPort);
       await this.verifyFrpc(runtime.executable, runtime.configFile);
       if (generation !== this.generation) return;
       this.status.stage = "connecting";
@@ -602,7 +639,7 @@ export class RemoteTunnelManager {
     const deadline = Date.now() + 20_000;
     while (
       generation === this.generation &&
-      this.child &&
+      this.hasActiveTransport() &&
       Date.now() < deadline
     ) {
       if (await this.isEndpointReachable(origin)) {
@@ -616,14 +653,14 @@ export class RemoteTunnelManager {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     if (generation !== this.generation) return;
-    if (!this.child) {
+    if (!this.hasActiveTransport()) {
       await this.exitHandling;
       return;
     }
     this.status.endpoint = { stage: "failed", checkedAt: Date.now() };
     this.status.error = publicError(
       "ENDPOINT_UNREACHABLE",
-      withFrpcDetail(
+      withDetail(
         "隧道进程已启动，但 HTTPS 公网入口尚不可达；Snow 会继续自动探测",
         extractFrpcFailureDetail(this.logTail),
       ),
@@ -660,7 +697,13 @@ export class RemoteTunnelManager {
     this.endpointMonitorTimer = setTimeout(() => {
       this.endpointMonitorTimer = null;
       void (async () => {
-        if (generation !== this.generation || !this.child) return;
+        if (generation !== this.generation || !this.hasActiveTransport())
+          return;
+        if (this.transientDeploy) {
+          // 部署尚未完成：入口不可达是预期状态，只继续探测，不累计失败、不重启隧道。
+          this.scheduleEndpointMonitor(origin, generation);
+          return;
+        }
         if (await this.isEndpointReachable(origin)) {
           this.endpointFailureCount = 0;
           this.status.stage = "online";
@@ -676,7 +719,7 @@ export class RemoteTunnelManager {
           "公网 HTTPS 入口连续探测失败，正在确认是否需要重连",
         );
         if (this.endpointFailureCount >= 2) {
-          this.child?.kill();
+          this.terminateTransport(generation);
           return;
         }
         this.scheduleEndpointMonitor(origin, generation);
@@ -710,7 +753,7 @@ export class RemoteTunnelManager {
       this.status.stage = "failed";
       this.status.error = publicError(
         permanent ? "AUTH_OR_CERTIFICATE_FAILED" : "TUNNEL_EXITED",
-        withFrpcDetail(
+        withDetail(
           permanent
             ? tlsRejected
               ? "FRP 服务端证书校验未通过，连接未能建立；请检查服务器证书、frp 域名解析与服务器时间"
@@ -729,7 +772,7 @@ export class RemoteTunnelManager {
     this.status.nextRetryAt = Date.now() + delay;
     this.status.error = publicError(
       "TUNNEL_EXITED",
-      withFrpcDetail("FRP 隧道已断开，正在重连", detail),
+      withDetail("FRP 隧道已断开，正在重连", detail),
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -739,11 +782,188 @@ export class RemoteTunnelManager {
     }, delay);
   }
 
+  /**
+   * SSH2 反向隧道尝试：本机 WAN listener → 进程内 SSH2 传输 → 服务器回环端口。
+   * 认证、主机密钥校验与反向监听申请全部完成后才开始公网探测。
+   */
+  private async startSsh2Attempt(
+    config: StoredRemoteTunnelConfig,
+    generation: number,
+    attempt: number,
+  ): Promise<void> {
+    if (generation !== this.generation) return;
+    this.status.stage = attempt === 0 ? "starting" : "reconnecting";
+    this.status.attempt = attempt;
+    this.status.nextRetryAt = null;
+    this.status.error = null;
+    try {
+      const ssh2Config = config.ssh2;
+      if (!ssh2Config) throw new Error("缺少 SSH2 隧道配置");
+      if (!ssh2Config.privateKey) {
+        throw new Error(
+          "缺少 SSH2 隧道私钥，请使用“自动部署并连接”重新授权此设备",
+        );
+      }
+      const pairing = await startRemoteWanListener(config.publicOrigin, 0);
+      const localPort = pairing.wan.localPort;
+      this.status.listenerPort = localPort;
+      if (generation !== this.generation) return;
+      this.status.stage = "connecting";
+      this.exitHandling = null;
+      const transport = new Ssh2TunnelTransport({
+        host: ssh2Config.serverAddr,
+        port: ssh2Config.serverPort,
+        username: ssh2Config.username,
+        privateKey: ssh2Config.privateKey,
+        remoteBindPort: ssh2Config.remotePort,
+        localTargetPort: localPort,
+        expectedHostKey: {
+          keyType: ssh2Config.hostKeyType,
+          publicKey: ssh2Config.hostKeyPublicKey,
+          fingerprint: ssh2Config.hostKeyFingerprint,
+        },
+        onUnexpectedClose: (info) =>
+          this.onSsh2UnexpectedClose(transport, generation, info),
+      });
+      this.ssh2Transport = transport;
+      await transport.connect();
+      if (generation !== this.generation) {
+        if (this.ssh2Transport === transport) this.ssh2Transport = null;
+        await transport.stop().catch(() => undefined);
+        return;
+      }
+      await this.probeEndpoint(config.publicOrigin, generation);
+    } catch (error) {
+      const message = redactTunnelText(
+        error instanceof Error ? error.message : String(error),
+      );
+      const transport = this.ssh2Transport;
+      this.ssh2Transport = null;
+      if (transport) {
+        await transport.stop().catch(() => undefined);
+      }
+      await this.cleanupRuntime();
+      await stopRemoteWanListener();
+      this.status.stage = "failed";
+      this.status.endpoint = { stage: "failed", checkedAt: Date.now() };
+      this.status.error = isPermanentSsh2Failure(message)
+        ? publicError("AUTH_OR_CERTIFICATE_FAILED", message)
+        : publicError("CONNECT_FAILED", message);
+      throw error;
+    }
+  }
+
+  private onSsh2UnexpectedClose(
+    transport: Ssh2TunnelTransport,
+    generation: number,
+    info: Ssh2TransportCloseInfo,
+  ): void {
+    if (this.ssh2Transport !== transport) return;
+    this.ssh2Transport = null;
+    const config = this.activeConfig;
+    if (!config || generation !== this.generation) return;
+    this.exitHandling = this.handleSsh2Loss(
+      config,
+      generation,
+      this.status.attempt,
+      info,
+    ).catch(() => undefined);
+  }
+
+  /** SSH2 意外断开：永久性失败直接终止，其余按与 FRP 相同的退避策略重连。 */
+  private async handleSsh2Loss(
+    config: StoredRemoteTunnelConfig,
+    generation: number,
+    attempt: number,
+    info: Ssh2TransportCloseInfo,
+  ): Promise<void> {
+    if (generation !== this.generation) return;
+    this.clearEndpointMonitor();
+    await this.cleanupRuntime();
+    if (generation !== this.generation) return;
+    if (info.permanent || !config.enabled) {
+      await stopRemoteWanListener();
+      if (generation !== this.generation) return;
+      this.status.stage = "failed";
+      this.status.error = publicError(
+        info.permanent ? "AUTH_OR_CERTIFICATE_FAILED" : "TUNNEL_EXITED",
+        withDetail(
+          info.permanent
+            ? "SSH2 隧道身份验证或授权失败，请检查配置或重新授权此设备"
+            : "SSH2 隧道已退出",
+          info.detail,
+        ),
+      );
+      return;
+    }
+    const nextAttempt = attempt + 1;
+    const base = Math.min(60_000, 1_000 * 2 ** Math.min(nextAttempt, 6));
+    const delay = base + Math.floor(Math.random() * Math.max(250, base * 0.2));
+    this.status.stage = "reconnecting";
+    this.status.attempt = nextAttempt;
+    this.status.nextRetryAt = Date.now() + delay;
+    this.status.error = publicError(
+      "TUNNEL_EXITED",
+      withDetail("SSH2 隧道已断开，正在重连", info.detail),
+    );
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.startAttempt(config, generation, nextAttempt).catch(
+        () => undefined,
+      );
+    }, delay);
+  }
+
+  private hasActiveTransport(): boolean {
+    return Boolean(this.child) || Boolean(this.ssh2Transport);
+  }
+
+  /** 强制关闭当前传输并按意外断开处理（用于公网入口连续探测失败后的重启）。 */
+  private terminateTransport(generation: number): void {
+    const transport = this.ssh2Transport;
+    if (transport) {
+      this.ssh2Transport = null;
+      void transport.stop();
+      const config = this.activeConfig;
+      if (config) {
+        this.exitHandling = this.handleSsh2Loss(
+          config,
+          generation,
+          this.status.attempt,
+          {
+            permanent: false,
+            detail: "公网 HTTPS 入口连续探测失败，正在重启隧道",
+          },
+        ).catch(() => undefined);
+      }
+      return;
+    }
+    this.child?.kill();
+  }
+
+  /** 立即重新探测公网入口并返回最新状态（部署切换上游后调用）。 */
+  async probeEndpointNow(): Promise<RemoteTunnelStatus> {
+    const config = this.activeConfig;
+    if (
+      config &&
+      this.hasActiveTransport() &&
+      this.status.stage !== "stopped"
+    ) {
+      await this.probeEndpoint(config.publicOrigin, this.generation);
+    }
+    return this.getStatus();
+  }
+
   private async disconnectInternal(): Promise<void> {
     this.clearEndpointMonitor();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    const transport = this.ssh2Transport;
+    this.ssh2Transport = null;
+    if (transport) {
+      await transport.stop().catch(() => undefined);
     }
     const child = this.child;
     this.child = null;

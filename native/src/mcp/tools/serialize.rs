@@ -13,6 +13,9 @@ pub fn tools_as_openai_chat_json(tools: &[McpTool]) -> Value {
                     "name": tool.full_name(),
                     "description": tool.description,
                     "parameters": sanitized_schema,
+                    // Preserve genuine optional properties; do not opt into a
+                    // strict dialect that requires every property to be present.
+                    "strict": false,
                 }
             })
         })
@@ -21,14 +24,13 @@ pub fn tools_as_openai_chat_json(tools: &[McpTool]) -> Value {
     Value::Array(functions)
 }
 
-/// Tool APIs require input schemas to describe an object. Some gateways (e.g.
-/// Google Gemini API, OpenAI, Claude) strictly enforce that any schema node with
-/// `properties` or `required` MUST declare `"type": "object"`, any node with
-/// `items` MUST declare `"type": "array"`, `type` cannot be a union array, and
-/// every object node must carry a `required` array (a missing keyword is read as
-/// null and fails the whole request with HTTP 400). Remove root combinators
-/// (`oneOf`/`anyOf`/`allOf`) and recursively ensure all nested schema nodes are
-/// compliant.
+/// Normalize schema structure, never weaken the accepted argument language.
+/// OpenAI chat/responses (non-strict) and Anthropic receive JSON Schema, as do
+/// Interactions declarations. Gateways implementing only a subset must reject
+/// unsupported keywords explicitly rather than silently dropping constraints.
+/// Gemini uses parametersJsonSchema below: its legacy parameters/Schema dialect
+/// cannot faithfully represent arbitrary root combinators and nullable unions.
+/// Keep public serializer signatures and optional-property required lists intact.
 fn sanitize_tool_input_schema(schema: &Value) -> Value {
     let mut root = schema.clone();
     sanitize_schema_node(&mut root, true);
@@ -37,49 +39,63 @@ fn sanitize_tool_input_schema(schema: &Value) -> Value {
 
 fn sanitize_schema_node(node: &mut Value, is_root: bool) {
     if let Value::Object(map) = node {
-        if is_root {
-            map.remove("oneOf");
-            map.remove("anyOf");
-            map.remove("allOf");
-            map.insert("type".to_string(), Value::String("object".to_string()));
-        } else if let Some(type_val) = map.get("type") {
-            if let Some(arr) = type_val.as_array() {
-                let first_scalar = arr
-                    .iter()
-                    .find_map(|item| item.as_str())
-                    .unwrap_or("string");
-                map.insert("type".to_string(), Value::String(first_scalar.to_string()));
+        if !map.contains_key("type") {
+            if is_root || map.contains_key("properties") || map.contains_key("required") {
+                map.insert("type".to_string(), json!("object"));
+            } else if map.contains_key("items") {
+                map.insert("type".to_string(), json!("array"));
             }
-        } else if map.contains_key("properties") || map.contains_key("required") {
-            map.insert("type".to_string(), Value::String("object".to_string()));
-        } else if map.contains_key("items") {
-            map.insert("type".to_string(), Value::String("array".to_string()));
         }
-
-        // Strict gateways (openai / google compatible) validate every object
-        // node of a tool schema and require the `required` keyword to be an
-        // array. A tool definition that omits it is read as null and rejected
-        // with `Invalid schema for function "<name>": null is not of type
-        // "array"` together with HTTP 400 — the request never reaches the
-        // model, so the agent loop dies on a client-side defect (browser-create
-        // had no `required`). Normalize missing / null / non-array values to an
-        // empty array so any tool definition stays sendable.
-        if map.get("type").and_then(Value::as_str) == Some("object")
-            && !matches!(map.get("required"), Some(Value::Array(_)))
-        {
-            map.insert("required".to_string(), Value::Array(Vec::new()));
+        let is_object = map.get("type").is_some_and(|value| {
+            value.as_str() == Some("object")
+                || value
+                    .as_array()
+                    .is_some_and(|types| types.iter().any(|ty| ty == "object"))
+        });
+        if is_object && map.get("required").is_none_or(Value::is_null) {
+            map.insert("required".to_string(), json!([]));
         }
-
-        if let Some(properties) = map.get_mut("properties") {
-            if let Value::Object(props_map) = properties {
-                for (_, prop_val) in props_map.iter_mut() {
-                    sanitize_schema_node(prop_val, false);
+        // Visit schema-valued keywords only; never reinterpret defaults, const,
+        // enum or examples (which may contain arbitrary user JSON) as schemas.
+        for keyword in [
+            "properties",
+            "patternProperties",
+            "$defs",
+            "definitions",
+            "dependentSchemas",
+        ] {
+            if let Some(Value::Object(children)) = map.get_mut(keyword) {
+                for child in children.values_mut() {
+                    sanitize_schema_node(child, false);
                 }
             }
         }
-
-        if let Some(items) = map.get_mut("items") {
-            sanitize_schema_node(items, false);
+        for keyword in [
+            "items",
+            "additionalProperties",
+            "contains",
+            "not",
+            "if",
+            "then",
+            "else",
+            "propertyNames",
+        ] {
+            if let Some(child) = map.get_mut(keyword) {
+                if let Value::Array(children) = child {
+                    for child in children {
+                        sanitize_schema_node(child, false);
+                    }
+                } else {
+                    sanitize_schema_node(child, false);
+                }
+            }
+        }
+        for keyword in ["anyOf", "oneOf", "allOf", "prefixItems"] {
+            if let Some(Value::Array(children)) = map.get_mut(keyword) {
+                for child in children {
+                    sanitize_schema_node(child, false);
+                }
+            }
         }
     }
 }
@@ -110,6 +126,7 @@ pub fn tools_as_openai_responses_json(tools: &[McpTool]) -> Value {
                 "name": tool.full_name(),
                 "description": tool.description,
                 "parameters": sanitized_schema,
+                "strict": false,
             })
         })
         .collect();
@@ -122,11 +139,19 @@ pub fn tools_as_gemini_json(tools: &[McpTool]) -> Value {
         .iter()
         .map(|tool| {
             let sanitized_schema = sanitize_tool_input_schema(&tool.input_schema);
-            json!({
+            // Preserve the legacy parameters envelope for simple tools. Advanced
+            // JSON Schema requires Gemini's lossless JSON Schema transport.
+            let mut declaration = json!({
                 "name": tool.full_name(),
                 "description": tool.description,
-                "parameters": sanitized_schema,
-            })
+            });
+            let field = if requires_json_schema_transport(&sanitized_schema) {
+                "parametersJsonSchema"
+            } else {
+                "parameters"
+            };
+            declaration[field] = sanitized_schema;
+            declaration
         })
         .collect();
 
@@ -137,6 +162,78 @@ pub fn tools_as_gemini_json(tools: &[McpTool]) -> Value {
     json!([{
         "functionDeclarations": function_declarations
     }])
+}
+
+// This is a transport capability choice, not a lossy schema conversion. Inspect
+// only schema locations: a user default containing a key named type is data.
+fn requires_json_schema_transport(schema: &Value) -> bool {
+    let Some(map) = schema.as_object() else {
+        return false;
+    };
+    // Antigravity's legacy `parameters` adapter strips these constraints,
+    // stringifies non-string enum values, and adds required placeholders to
+    // optional-only objects. Keep those schemas on the untouched JSON Schema
+    // transport rather than silently changing bounds, nulls or optionality.
+    let optional_only_object = map.get("type").and_then(Value::as_str) == Some("object")
+        && map
+            .get("required")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty);
+    let non_string_enum = map
+        .get("enum")
+        .and_then(Value::as_array)
+        .is_some_and(|values| values.iter().any(|value| !value.is_string()));
+    if optional_only_object
+        || non_string_enum
+        || map.get("type").is_some_and(Value::is_array)
+        || map.get("items").is_some_and(Value::is_array)
+        || [
+            "anyOf",
+            "oneOf",
+            "allOf",
+            "not",
+            "if",
+            "then",
+            "else",
+            "const",
+            "default",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "minLength",
+            "maxLength",
+            "pattern",
+            "format",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
+            "contains",
+            "minProperties",
+            "maxProperties",
+            "propertyNames",
+            "dependentRequired",
+            "additionalItems",
+            "unevaluatedProperties",
+            "unevaluatedItems",
+            "$ref",
+            "$defs",
+            "definitions",
+            "additionalProperties",
+            "patternProperties",
+            "dependentSchemas",
+            "prefixItems",
+        ]
+        .iter()
+        .any(|key| map.contains_key(*key))
+    {
+        return true;
+    }
+    map.get("properties")
+        .and_then(Value::as_object)
+        .is_some_and(|properties| properties.values().any(requires_json_schema_transport))
+        || map.get("items").is_some_and(requires_json_schema_transport)
 }
 
 pub fn tools_as_interactions_json(tools: &[McpTool]) -> Value {
@@ -205,7 +302,10 @@ mod tests {
         let sanitized = sanitize_tool_input_schema(&raw_schema);
 
         assert_eq!(sanitized["type"], "object");
-        assert!(sanitized.get("oneOf").is_none());
+        assert_eq!(
+            sanitized["oneOf"],
+            json!([{"type": "object", "required": []}])
+        );
 
         // dialogResponse has properties, so type: "object" must be injected
         assert_eq!(sanitized["properties"]["dialogResponse"]["type"], "object");
@@ -214,8 +314,11 @@ mod tests {
             "boolean"
         );
 
-        // requestId array type collapsed to single scalar string
-        assert_eq!(sanitized["properties"]["requestId"]["type"], "string");
+        // Union types are not narrowed to their first alternative.
+        assert_eq!(
+            sanitized["properties"]["requestId"]["type"],
+            json!(["string", "number"])
+        );
 
         // itemsList items object has properties, so type: "object" injected into item, and itemsList has type: "array"
         assert_eq!(sanitized["properties"]["itemsList"]["type"], "array");

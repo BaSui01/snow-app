@@ -18,7 +18,15 @@ const delay = (ms: number): Promise<void> =>
 
 const nextFrame = (): Promise<void> =>
   new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve());
+    let frame: number | undefined;
+    const finish = (): void => {
+      window.clearTimeout(timer);
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      resolve();
+    };
+    // 隐藏窗口可能暂停 rAF；租约就绪不能无限等待。
+    const timer = window.setTimeout(finish, LAYOUT_POLL_INTERVAL_MS);
+    frame = window.requestAnimationFrame(finish);
   });
 
 const findBrowserPane = (instanceId: string): HTMLElement | null =>
@@ -37,23 +45,68 @@ const waitForPaneLayout = async (pane: HTMLElement): Promise<void> => {
   }
 };
 
+export type CaptureRenderLease = {
+  ready: Promise<void>;
+  release: () => void;
+};
+
+type PaneLeaseState = {
+  references: number;
+  ready: Promise<void>;
+  hadCaptureClass: boolean;
+};
+const paneLeases = new WeakMap<HTMLElement, PaneLeaseState>();
+
+/** 同一 pane 的截图/录屏共享渲染态；激活时也持有，切后台后仍可产帧。 */
+export const acquireCaptureRenderLease = (
+  instanceId: string,
+): CaptureRenderLease => {
+  const pane = findBrowserPane(instanceId);
+  if (!pane) return { ready: Promise.resolve(), release: () => {} };
+  let state = paneLeases.get(pane);
+  if (!state) {
+    state = {
+      references: 0,
+      ready: Promise.resolve(),
+      hadCaptureClass: pane.classList.contains(CAPTURE_RENDER_CLASS),
+    };
+    paneLeases.set(pane, state);
+    pane.classList.add(CAPTURE_RENDER_CLASS);
+    if (!pane.classList.contains("active")) {
+      state.ready = (async () => {
+        await waitForPaneLayout(pane);
+        await nextFrame();
+        await nextFrame();
+        await delay(FRAME_SETTLE_MS);
+      })();
+    }
+  }
+  state.references++;
+  const leaseState = state;
+  let released = false;
+  return {
+    ready: leaseState.ready,
+    release: () => {
+      if (released) return;
+      released = true;
+      if (--leaseState.references === 0) {
+        paneLeases.delete(pane);
+        if (!leaseState.hadCaptureClass)
+          pane.classList.remove(CAPTURE_RENDER_CLASS);
+      }
+    },
+  };
+};
+
 export const withCaptureRenderMode = async <T>(
   instanceId: string,
   run: () => Promise<T>,
 ): Promise<T> => {
-  const pane = findBrowserPane(instanceId);
-  // pane 不在本窗口（独立浏览器窗口）或本就是激活 tab：无需渲染态切换。
-  if (!pane || pane.classList.contains("active")) {
-    return run();
-  }
-  pane.classList.add(CAPTURE_RENDER_CLASS);
+  const lease = acquireCaptureRenderLease(instanceId);
   try {
-    await waitForPaneLayout(pane);
-    await nextFrame();
-    await nextFrame();
-    await delay(FRAME_SETTLE_MS);
+    await lease.ready;
     return await run();
   } finally {
-    pane.classList.remove(CAPTURE_RENDER_CLASS);
+    lease.release();
   }
 };

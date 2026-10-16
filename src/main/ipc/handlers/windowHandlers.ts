@@ -108,6 +108,11 @@ import {
   stopBrowserScreencast,
 } from "../../browser/browserScreencast";
 
+import {
+  listBrowserDialogs,
+  respondBrowserDialog,
+} from "../../browser/browserDialogs";
+
 const browserDevToolsWindows = new Map<number, BrowserWindow>();
 
 // ===== 面板 MCP 门禁横幅「不再提示」=====
@@ -1064,13 +1069,23 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   // 录屏：CDP 帧采集 + MJPEG AVI 合成（screencast_start / screencast_stop）。
   ipcMain.handle(
     "browser:screencast-start",
-    (_event, webContentsId: number, options?: unknown) => {
+    (event, webContentsId: number, options?: unknown) => {
+      // IPC event 的 sender getter 不应在 guest 销毁后才读取。
+      const sender = event.sender;
+      const contents = getBrowserWebContents(webContentsId);
+      if (
+        contents.hostWebContents?.id !== sender.id ||
+        event.senderFrame !== sender.mainFrame
+      )
+        throw new Error("Browser operation is not owned by this renderer");
       const raw =
         options !== null && typeof options === "object"
           ? (options as Record<string, unknown>)
           : {};
+      if (raw.recordingId !== undefined && typeof raw.recordingId !== "string")
+        throw new Error("Invalid screencast recordingId");
       return startBrowserScreencast(
-        typeof webContentsId === "number" ? webContentsId : -1,
+        webContentsId,
         {
           filePath: typeof raw.filePath === "string" ? raw.filePath : undefined,
           quality: typeof raw.quality === "number" ? raw.quality : undefined,
@@ -1081,14 +1096,38 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
             typeof raw.maxDurationMs === "number"
               ? raw.maxDurationMs
               : undefined,
+          recordingId: raw.recordingId as string | undefined,
+        },
+        (recordingId) => {
+          if (!sender.isDestroyed())
+            sender.send("browser:screencast-stopped", {
+              webContentsId,
+              recordingId,
+            });
         },
       );
     },
   );
-  ipcMain.handle("browser:screencast-stop", (_event, webContentsId: number) =>
-    stopBrowserScreencast(
-      typeof webContentsId === "number" ? webContentsId : -1,
-    ),
+  ipcMain.handle(
+    "browser:screencast-stop",
+    (event, webContentsId: number, recordingId?: unknown) => {
+      const contents = getBrowserWebContents(webContentsId);
+      if (
+        contents.hostWebContents?.id !== event.sender.id ||
+        event.senderFrame !== event.sender.mainFrame
+      )
+        throw new Error("Browser operation is not owned by this renderer");
+      if (
+        recordingId !== undefined &&
+        (typeof recordingId !== "string" ||
+          !/^[A-Za-z0-9_-]{1,128}$/.test(recordingId))
+      )
+        throw new Error("Invalid screencast recordingId");
+      return stopBrowserScreencast(
+        webContentsId,
+        recordingId as string | undefined,
+      );
+    },
   );
   // 网络状态模拟：offline=true 离线，false 恢复在线。
   ipcMain.handle(
@@ -1153,18 +1192,64 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
         typeof domain === "string" ? domain : "",
       ),
   );
-  ipcMain.handle("browser:network-request", (_event, recordId: number) => {
-    const record = getNetworkRecord(
-      typeof recordId === "number" ? recordId : -1,
-    );
-    return record ?? null;
-  });
+  ipcMain.handle(
+    "browser:network-request",
+    (event, webContentsId: number, requestId: number) => {
+      const contents = getBrowserWebContents(webContentsId);
+      if (
+        contents.hostWebContents?.id !== event.sender.id ||
+        event.senderFrame !== event.sender.mainFrame
+      ) {
+        throw new Error("Browser operation is not owned by this renderer");
+      }
+      if (!Number.isSafeInteger(requestId) || requestId <= 0)
+        throw new Error("requestId must be a positive integer");
+      return getNetworkRecord(webContentsId, requestId) ?? null;
+    },
+  );
   ipcMain.handle("browser:network-clear", (_event, webContentsId: number) => {
     const cleared = clearNetworkRecords(
       typeof webContentsId === "number" ? webContentsId : -1,
     );
     return { cleared };
   });
+
+  // Dialogs share the recorder's Page event listener; only the owning host main frame may respond.
+  ipcMain.handle(
+    "browser:dialogs-list",
+    async (event, webContentsId: number) => {
+      const contents = getBrowserWebContents(webContentsId);
+      if (
+        contents.hostWebContents?.id !== event.sender.id ||
+        event.senderFrame !== event.sender.mainFrame
+      ) {
+        throw new Error("Browser operation is not owned by this renderer");
+      }
+      await ensureWebContentsDebugger(contents);
+      if (!contents.debugger.isAttached())
+        throw new Error("Browser debugger is unavailable");
+      return listBrowserDialogs(webContentsId);
+    },
+  );
+  ipcMain.handle(
+    "browser:dialog-respond",
+    (event, webContentsId: number, accept: unknown, promptText?: unknown) => {
+      const contents = getBrowserWebContents(webContentsId);
+      if (
+        contents.hostWebContents?.id !== event.sender.id ||
+        event.senderFrame !== event.sender.mainFrame
+      ) {
+        throw new Error("Browser operation is not owned by this renderer");
+      }
+      if (
+        typeof accept !== "boolean" ||
+        (promptText !== undefined && typeof promptText !== "string")
+      ) {
+        throw new Error("Invalid JavaScript dialog response");
+      }
+      return respondBrowserDialog(contents, accept, promptText);
+    },
+  );
 
   // ===== 浏览器下载管理 =====
   ipcMain.handle("browser:downloads-list", () => listDownloads());

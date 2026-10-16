@@ -205,6 +205,10 @@ export const getCssStyles = async (
   ): Promise<unknown> => contents.debugger.sendCommand(method, params);
   await send("DOM.enable", {});
   await send("CSS.enable", {});
+  // CDP requires the document to be requested before backend nodes can be pushed.
+  const doc = (await send("DOM.getDocument", { depth: 0 })) as {
+    root?: { nodeId?: number };
+  };
 
   let nodeId = 0;
   if (typeof query.backendNodeId === "number" && query.backendNodeId > 0) {
@@ -213,9 +217,6 @@ export const getCssStyles = async (
     })) as { nodeIds?: number[] };
     nodeId = pushed.nodeIds?.[0] ?? 0;
   } else if (query.selector) {
-    const doc = (await send("DOM.getDocument", { depth: 0 })) as {
-      root?: { nodeId?: number };
-    };
     const rootId = doc.root?.nodeId;
     if (typeof rootId !== "number") {
       throw new Error("Failed to resolve the page document");

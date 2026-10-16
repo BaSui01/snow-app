@@ -5138,6 +5138,7 @@ export const en = {
   "rightPanel.fileViewerExternalChange": "This file was changed on disk.",
   "rightPanel.fileViewerExternalReload": "Reload",
   "rightPanel.fileViewerExternalDismiss": "Dismiss",
+  "rightPanel.fileViewerRefresh": "Refresh",
   "rightPanel.aiDrawing.promptPlaceholder":
     "Describe the image you want to generate, Chinese supported; e.g. cyberpunk rainy city at night, neon reflections…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter to generate",

@@ -4966,6 +4966,7 @@ export const zhTW = {
   "rightPanel.fileViewerExternalChange": "檔案已在磁碟上被修改。",
   "rightPanel.fileViewerExternalReload": "重新載入",
   "rightPanel.fileViewerExternalDismiss": "忽略",
+  "rightPanel.fileViewerRefresh": "重新整理",
   "rightPanel.terminalTab": "終端",
   "codebase.panel.fileCount": "共 {{count}} 個檔案",
   "codebase.panel.colPath": "檔案路徑",

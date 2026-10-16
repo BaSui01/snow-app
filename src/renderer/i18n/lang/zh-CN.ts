@@ -4834,6 +4834,7 @@ export const zhCN = {
   "rightPanel.fileViewerExternalChange": "文件已在磁盘上被修改。",
   "rightPanel.fileViewerExternalReload": "重新加载",
   "rightPanel.fileViewerExternalDismiss": "忽略",
+  "rightPanel.fileViewerRefresh": "刷新",
   "rightPanel.aiDrawing.promptPlaceholder":
     "描述你想生成的画面，支持中文；例如：赛博朋克风格的雨夜城市，霓虹灯倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",

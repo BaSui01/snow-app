@@ -2166,6 +2166,21 @@
   background: var(--compact-danger-hover) !important;
 }
 
+/* 浏览器地址栏：容器本身已是完整控件外观，内部输入框不再叠加第二层边框与聚焦描边
+   （全局 input 规则与 :focus-visible 焦点环会在此形成双重框，聚焦反馈统一由容器承担）。 */
+:root[data-theme-preset="compact"] .browser-address-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme-preset="compact"] .browser-address-input:focus,
+:root[data-theme-preset="compact"] .browser-address-input:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 @media (max-width: 1100px) {
   :root[data-theme-preset="compact"] .api-settings-page {
     padding: 22px 24px 32px !important;

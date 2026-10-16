@@ -1,5 +1,28 @@
 # Release Notes
 
+## v0.4.27
+
+## New Features
+
+- **Remote File Transfer**: SSH remote files can be uploaded and downloaded, with a transfer panel and conflict handling; the remote file preview gains a refresh button.
+- **Explorer Upload**: local files can be uploaded into any folder.
+- **Live HTML Preview**: a new HTML render tool previews pages live within a conversation.
+- **Multi-Image Theme Background**: theme backgrounds can rotate through several images with a crossfade, remembering the current image.
+- **Conversation Control in App Control**: App Control can create, send to, activate and abort conversations.
+- **Batch Memory Management**: the memo panel supports AI-driven memory deletion and batch operations.
+- **Userscript Request Rewriting**: the dialog request proxy layer lets userscripts rewrite requests and responses.
+
+## Improvements
+
+- Clicking the scroll-to-bottom button now plays an animation; the sidebar guide becomes a pure icon button with hints.
+- Built-in pets can no longer be installed or used to override other pets.
+- OAuth subscription identity headers are now managed through header schemes.
+
+## Bug Fixes
+
+- Fixed SSH repositories reading files from local paths when opened from the changes area.
+- Fixed the settings sidebar content not closing when creating a new conversation.
+
 ## v0.4.26
 
 ## New Features

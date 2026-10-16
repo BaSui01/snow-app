@@ -8,6 +8,7 @@ import {
   Code2,
   Copy,
   CopySlash,
+  Download,
   Eye,
   FileInput,
   FileText,
@@ -1252,6 +1253,18 @@ export function FileViewerContent({
       window.setTimeout(() => setCopied(false), 2000);
     });
   }, [content]);
+
+  /** 下载远端文件到本地：主进程弹出原生保存对话框并创建下载任务。 */
+  const handleDownloadRemote = useCallback(() => {
+    if (!isSsh || !sshWorkspaceId) return;
+    // 用户取消保存或下载失败都不打断阅读器，静默忽略；也不触发草稿保存。
+    void window.snow
+      .sshTransferDownload({
+        workspaceId: sshWorkspaceId,
+        remotePaths: [filePath],
+      })
+      .catch(() => {});
+  }, [filePath, isSsh, sshWorkspaceId]);
 
   // 虚拟滚动下行元素只覆盖可视窗口：选中全部已渲染行（如全选）复制时
   // 补齐为完整文件内容，避免复制结果被窗口截断。
@@ -2616,6 +2629,17 @@ export function FileViewerContent({
             <Copy size={13} />
           </button>
         )}
+        {isSsh && sshWorkspaceId ? (
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            title={t("rightPanel.downloadRemoteFileHint")}
+            aria-label={t("rightPanel.downloadRemoteFile")}
+            onClick={handleDownloadRemote}
+          >
+            <Download size={13} />
+          </button>
+        ) : null}
         {canReview && !editMode ? (
           <>
             <button

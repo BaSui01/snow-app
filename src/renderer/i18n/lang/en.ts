@@ -6596,4 +6596,66 @@ export const en = {
   "team.nameFallback": "Team",
   "topBar.alwaysOnTop": "Always on top",
   "topBar.disableAlwaysOnTop": "Disable always on top",
+  "explorer.transferUpload": "Upload files…",
+  "explorer.transferUploadRoot": "Upload files to the workspace root",
+  "explorer.transferUploadToHere": "Upload files here…",
+  "explorer.transferDownload": "Download to local…",
+  "explorer.transferDownloadMulti": "Download {{count}} files to local…",
+  "explorer.transfersTitle": "File transfers",
+  "explorer.transfersSummary": "{{active}} active · {{failed}} failed",
+  "explorer.transfersAllDone": "Transfers complete",
+  "explorer.transfersEmpty": "No transfer tasks",
+  "explorer.transferDismiss": "Done",
+  "explorer.transferCancel": "Cancel",
+  "explorer.transferCancelAll": "Cancel all",
+  "explorer.transferOpenFolder": "Show in folder",
+  "explorer.transferStatusQueued": "Queued",
+  "explorer.transferStatusPreparing": "Preparing",
+  "explorer.transferStatusAwaitingConflict": "Waiting for conflict decision",
+  "explorer.transferStatusTransferring": "Transferring",
+  "explorer.transferStatusVerifying": "Verifying",
+  "explorer.transferStatusCommitting": "Committing",
+  "explorer.transferStatusSucceeded": "Completed",
+  "explorer.transferStatusSkipped": "Skipped",
+  "explorer.transferStatusFailed": "Failed",
+  "explorer.transferStatusCancelled": "Cancelled",
+  "explorer.transferStatusCommitUnknown": "Result unknown",
+  "explorer.transferConflictTitle": "Target already exists",
+  "explorer.transferConflictMessage": '"{{name}}" already exists. Replace it?',
+  "explorer.transferConflictReplace": "Replace",
+  "explorer.transferConflictSkip": "Skip",
+  "explorer.transferConflictRename": "Save as",
+  "explorer.transferConflictNameLabel": "New name",
+  "explorer.transferConflictApplyAll":
+    "Apply the same choice to remaining conflicts",
+  "explorer.transferConflictCancelTask": "Cancel this task",
+  "explorer.transferBytes": "{{done}} / {{total}}",
+  "explorer.transferErrorNotConnected":
+    "SSH connection is not available. Reconnect and retry.",
+  "explorer.transferErrorTimeout":
+    "Transfer timed out; the connection may be unstable",
+  "explorer.transferErrorSourceChanged":
+    "The source changed during the transfer; the commit was cancelled",
+  "explorer.transferErrorTargetChanged":
+    "The target changed during the transfer; retry the transfer",
+  "explorer.transferErrorReplaceUnsupported":
+    'The server does not support safe atomic replacement; use "Save as" instead',
+  "explorer.transferErrorCommitUnknown":
+    "Commit result unknown: the connection was interrupted before confirmation. Verify the target file manually.",
+  "explorer.transferErrorSizeMismatch":
+    "Transferred byte count does not match the expected size",
+  "explorer.transferErrorPathInvalid": "Invalid path",
+  "explorer.transferErrorOutsideWorkspace":
+    "The target is outside the authorized workspace",
+  "explorer.transferErrorNotAFile": "Only regular files are supported",
+  "explorer.transferErrorSymlink": "Symbolic links are not supported",
+  "explorer.transferErrorConflictUnresolved":
+    "The target name is still taken; the transfer was cancelled",
+  "explorer.transferErrorExists": "The target already exists",
+  "explorer.transferErrorIo": "File read/write failed",
+  "explorer.transferErrorGeneric": "Transfer failed",
+  "explorer.transferStartFailed": "Cannot start the transfer",
+  "rightPanel.downloadRemoteFile": "Download to local…",
+  "rightPanel.downloadRemoteFileHint":
+    "Download the saved remote file (unsaved edits are not included)",
 } satisfies Record<string, string>;

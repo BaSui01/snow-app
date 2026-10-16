@@ -138,6 +138,104 @@ export type RemoteWorkspaceFileSearchOptions = {
   listChildren: boolean;
 };
 
+// ===== SSH 文件传输（上传 / 下载） =====
+
+export type SshTransferDirection = "upload" | "download";
+
+export type SshTransferStatus =
+  | "queued"
+  | "preparing"
+  | "awaiting-conflict"
+  | "transferring"
+  | "verifying"
+  | "committing"
+  | "succeeded"
+  | "skipped"
+  | "failed"
+  | "cancelled"
+  | "commit-unknown";
+
+export type SshTransferConflictSnapshot = {
+  direction: SshTransferDirection;
+  baseName: string;
+  suggestedName: string;
+  targetPath: string;
+  existingSize: number | null;
+  rounds: number;
+};
+
+export type SshTransferTaskSnapshot = {
+  taskId: string;
+  batchId: string;
+  direction: SshTransferDirection;
+  status: SshTransferStatus;
+  name: string;
+  remotePath: string;
+  localPath: string;
+  /** 提交完成后的最终目标路径（下载为本地路径、上传为远端路径）。 */
+  finalPath: string | null;
+  workspaceId: string;
+  profileId: string;
+  bytesTotal: number | null;
+  bytesTransferred: number;
+  startedAt: number;
+  endedAt: number | null;
+  error: { code: string; message: string } | null;
+  conflict: SshTransferConflictSnapshot | null;
+};
+
+export type SshTransferBatchSnapshot = {
+  batchId: string;
+  workspaceId: string;
+  profileId: string;
+  total: number;
+  pending: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  cancelled: number;
+  commitUnknown: number;
+};
+
+export type SshTransferSnapshot = {
+  version: number;
+  tasks: SshTransferTaskSnapshot[];
+  batches: SshTransferBatchSnapshot[];
+};
+
+export type SshTransferStartResult =
+  | { canceled: false; batchId: string; taskIds: string[] }
+  | { canceled: true; reason: string };
+
+export type SshTransferConflictAction = "replace" | "skip" | "rename";
+
+export type SshTransferUploadParams = {
+  workspaceId: string;
+  remoteDirectory: string;
+};
+
+export type SshTransferUploadDroppedParams = SshTransferUploadParams & {
+  localPaths: string[];
+};
+
+export type SshTransferDownloadParams = {
+  workspaceId: string;
+  /** 选中的远端条目路径（目录 / 缺失 / 链接项由主进程过滤并确认）。 */
+  remotePaths: string[];
+};
+
+export type SshTransferCancelParams = {
+  taskId?: string;
+  batchId?: string;
+};
+
+export type SshTransferResolveConflictParams = {
+  taskId: string;
+  action: SshTransferConflictAction;
+  newName?: string;
+  applyToBatch?: boolean;
+};
+
 export type SshCredentialRecord = {
   profileKey: string;
   host: string;

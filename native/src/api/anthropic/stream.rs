@@ -24,6 +24,7 @@ use crate::api::retry::{
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
@@ -159,6 +160,7 @@ pub(super) async fn collect_anthropic_stream(
     stream_idle_timeout_sec: u64,
     enable_one_m_context: bool,
 ) -> Result<AnthropicStreamResult> {
+    let payload = request_proxy::transform_request("anthropic", payload).await;
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
     let mut thinking_tracker = ThinkingStreamTracker::default();
@@ -386,7 +388,7 @@ pub(super) async fn collect_anthropic_stream(
         // A fresh value per attempt makes retry reset atomic: no content,
         // thinking, tool fragments, parse errors, usage, or terminal state leaks.
         attempt_state = AnthropicAttemptState::default();
-        let mut stream = response.bytes_stream();
+        let mut stream = request_proxy::wrap_response_stream("anthropic", response.bytes_stream());
         let mut byte_buffer = Vec::new();
 
         let stream_end = read_sse_stream_until_terminal(

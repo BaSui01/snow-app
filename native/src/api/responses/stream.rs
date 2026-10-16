@@ -25,6 +25,7 @@ use crate::api::retry::{
     StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
     EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
@@ -459,6 +460,7 @@ pub(super) async fn collect_streaming_response(
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,
 ) -> Result<StreamingResponseResult> {
+    let payload = request_proxy::transform_request("responses", payload).await;
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
     let mut thinking_tracker = ThinkingStreamTracker::default();
@@ -668,7 +670,7 @@ pub(super) async fn collect_streaming_response(
         // ---- Phase 2: read one complete Provider attempt ----
         let mut attempt_state = ResponsesAttemptState::default();
         let mut byte_buffer = Vec::new();
-        let mut stream = response.bytes_stream();
+        let mut stream = request_proxy::wrap_response_stream("responses", response.bytes_stream());
 
         let stream_end = read_sse_stream_until_terminal(
             &mut stream,

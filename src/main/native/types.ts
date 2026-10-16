@@ -2604,6 +2604,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
   writeInteractiveStdin: (sessionId: string, input: string) => Promise<void>;
+  /** 注册（或清除）对话请求代理回调：请求体发出前与 SSE 响应事件送达前调用。 */
+  setRequestProxyHandler: (
+    handler: ((message: string) => Promise<string>) | null,
+  ) => void;
   /** Registers the SSH remote-command dispatcher used by checkpoint APIs. */
   setCheckpointRemoteCallback: (
     callback: ((command: RemoteWorkspaceCommand) => Promise<string>) | null,

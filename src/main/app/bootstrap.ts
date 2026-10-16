@@ -44,6 +44,7 @@ import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 import { initBrowserDeviceEmulation } from "../browser/browserDeviceEmulation";
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { ensureBuiltinPets } from "../pets/ensureBuiltinPet";
+import { registerRequestProxy } from "../requestProxy/requestProxy";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
 import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
 import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
@@ -145,6 +146,8 @@ export const bootstrapApplication = (): void => {
     // 注册 html-preview:// 协议处理器：HTML 渲染器会话内预览（按文档 id 由
     // Rust 解析缓存文件）。
     registerHtmlPreviewProtocol(native);
+    // 对话请求代理层：注册 Rust 回调并确保用户脚本模板存在（模板默认不改变任何请求）。
+    registerRequestProxy(native);
     // 预加载独立窗口记忆的尺寸（异步读取，创建窗口时无需同步读盘）。
     void initDetachedPanelWindowState();
 

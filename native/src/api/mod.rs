@@ -20,6 +20,7 @@ pub mod jev;
 pub mod models;
 pub mod oauth;
 pub mod reranking;
+pub mod request_proxy;
 pub mod responses;
 pub mod retry;
 pub mod sse;

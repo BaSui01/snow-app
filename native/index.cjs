@@ -19,6 +19,8 @@ const platformMap = {
 const requiredExports = [
   // 核心存储与会话
   "initializeAppStorage",
+  // 对话请求代理层（用户脚本 onRequest / onResponseEvent 回调注册）
+  "setRequestProxyHandler",
   "listCustomHeaderSchemes",
   "upsertCustomHeaderScheme",
   "deleteCustomHeaderScheme",

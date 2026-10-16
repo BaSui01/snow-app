@@ -17,6 +17,8 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   // Request-local optimization cancellation does not touch SQLite.
   "preparePromptOptimization",
   "abortPromptOptimization",
+  // 对话请求代理回调是进程级注册状态，不依赖 SQLite。
+  "setRequestProxyHandler",
   // Git（本地仓库子进程操作）
   "getGitStatus",
   "getGitBranches",
@@ -154,6 +156,7 @@ const createUnavailableBridge = (): NativeBridge => {
     migrateCheckpointLayout: () => Promise.resolve(0),
     setRemoteControlRendererBridge: () => {},
     setCheckpointRemoteCallback: () => {},
+    setRequestProxyHandler: () => {},
   };
   return new Proxy(overrides as NativeBridge, {
     get(target, prop) {

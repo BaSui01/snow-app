@@ -21,6 +21,7 @@ use crate::api::retry::{
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
@@ -53,6 +54,7 @@ pub(super) async fn collect_interactions_stream(
     retry_options: &RetryOptions,
     stream_idle_timeout_sec: u64,
 ) -> Result<InteractionsStreamResult> {
+    let payload = request_proxy::transform_request("interactions", payload).await;
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
     let mut thinking_tracker = ThinkingStreamTracker::default();
@@ -305,7 +307,7 @@ pub(super) async fn collect_interactions_stream(
         let mut stream_finished = false;
         let mut interruption_reason = None;
         let mut recovery_outcome = None;
-        let mut stream = response.bytes_stream();
+        let mut stream = request_proxy::wrap_response_stream("interactions", response.bytes_stream());
         let mut end_cause: Option<(StreamEndCause, String)> = None;
 
         macro_rules! process_event_block {

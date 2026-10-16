@@ -14,6 +14,7 @@ use crate::api::models::{
     fetch_available_models as fetch_models_with_config, fetch_available_models_for_active_config,
     resolve_saved_oauth_profile, ApiConfigForModels, Model,
 };
+use crate::api::request_proxy::{self, ProxySession, RequestProxyCallback};
 use crate::api::responses::{ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
@@ -96,13 +97,24 @@ pub async fn create_response_stream(
     on_chunk: ResponsesApiStreamCallback,
     stream_id: String,
 ) -> napi::Result<ResponsesApiResult> {
-    let stream = create_conversation_response_stream(request, on_chunk, stream_id);
+    let proxy_session = ProxySession::new(stream_id.clone(), request.conversation_id.clone());
+    let stream = request_proxy::with_session(
+        proxy_session,
+        create_conversation_response_stream(request, on_chunk, stream_id),
+    );
     crate::utils::panic_guard::guard_panic(stream).await
 }
 
 #[napi]
 pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_stream(&stream_id))
+}
+
+/// 注册（或清除）对话请求代理回调。主进程初始化时调用一次：请求体发出前与
+/// SSE 响应事件送达前，Rust 通过该回调把数据交给用户可编辑的代理脚本处理。
+#[napi]
+pub fn set_request_proxy_handler(handler: Option<RequestProxyCallback>) {
+    request_proxy::set_handler(handler);
 }
 
 /// Abort an in-flight tool execution (e.g. a bash subprocess) by the

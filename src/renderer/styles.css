@@ -58536,3 +58536,22 @@ img.plugin-icon {
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent-color) 14%, transparent);
 }
+
+/* 上传确认弹窗：目标目录与待上传文件列表 */
+.explorer-upload-confirm-dir {
+  display: block;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.explorer-upload-confirm-list {
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  word-break: break-all;
+}
+
+.explorer-upload-confirm-list li {
+  line-height: 1.6;
+}

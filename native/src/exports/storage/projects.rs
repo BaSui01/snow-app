@@ -360,6 +360,26 @@ pub async fn delete_workspace_entries(
     .map_err(map_spawn_error)?
 }
 
+/// 本地上传：把外部普通文件复制进工作区目录（阻塞 IO 放在 spawn_blocking 中执行）。
+#[napi]
+pub async fn copy_files_into_directory(
+    root_path: String,
+    target_dir: String,
+    source_paths: Vec<String>,
+    replace_existing: bool,
+) -> napi::Result<crate::storage::services::fs_explorer::BatchWorkspaceCopyResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::copy_files_into_directory(
+            root_path,
+            target_dir,
+            source_paths,
+            replace_existing,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn search_files(
     root_dir: String,

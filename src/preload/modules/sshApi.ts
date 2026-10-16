@@ -22,7 +22,6 @@ import type {
   SshTransferResolveConflictParams,
   SshTransferSnapshot,
   SshTransferStartResult,
-  SshTransferUploadDroppedParams,
   SshTransferUploadParams,
   RemoteDraftInput,
   RemoteDraftRecord,
@@ -211,16 +210,11 @@ export const sshApi = {
 
   // ===== SSH 文件传输（上传 / 下载） =====
 
-  /** 上传：主进程弹出文件选择框，确认后创建上传批次。 */
+  /** 上传：渲染层已完成来源选择与确认，主进程创建上传批次（同名冲突由传输面板协商）。 */
   sshTransferUpload: (
     params: SshTransferUploadParams,
   ): Promise<SshTransferStartResult> =>
     ipcRenderer.invoke("ssh:transfers:upload", params),
-  /** 上传（拖入）：携带 preload 解析出的本地路径，主进程校验并弹确认框。 */
-  sshTransferUploadDropped: (
-    params: SshTransferUploadDroppedParams,
-  ): Promise<SshTransferStartResult> =>
-    ipcRenderer.invoke("ssh:transfers:upload-dropped", params),
   /** 下载：单文件弹保存框、多文件弹目录选择框，确认后创建下载批次。 */
   sshTransferDownload: (
     params: SshTransferDownloadParams,

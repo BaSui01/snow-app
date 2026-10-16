@@ -759,6 +759,17 @@ export type BatchWorkspaceDeleteResult = {
   failed: FailedWorkspaceDelete[];
 };
 
+export type FailedWorkspaceCopy = {
+  source: string;
+  error: string;
+};
+
+/** 本地复制结果：copied 为落盘后的条目（另存时名称可能变化），failed 为失败的源文件。 */
+export type BatchWorkspaceCopyResult = {
+  copied: DirectoryEntry[];
+  failed: FailedWorkspaceCopy[];
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   name: string;
@@ -2213,6 +2224,13 @@ export type NativeBridge = ImageGenerationNativeApi & {
     rootPath: string,
     entryPaths: string[],
   ) => Promise<BatchWorkspaceDeleteResult>;
+  /** 本地上传：把外部普通文件复制进工作区目录；replaceExisting=false 时同名自动另存。 */
+  copyFilesIntoDirectory: (
+    rootPath: string,
+    targetDir: string,
+    sourcePaths: string[],
+    replaceExisting: boolean,
+  ) => Promise<BatchWorkspaceCopyResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   /** linked 默认 true：项目属于关联项目组时搜索覆盖组内全部根；false 只搜给定根目录。 */

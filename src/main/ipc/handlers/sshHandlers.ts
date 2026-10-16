@@ -987,7 +987,10 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   // 字节流全部发生在主进程内部：本地文件 <-> 任务专属 SFTP channel。
   // 渲染层只负责发起、查询快照与取消。
 
-  /** 上传：主进程弹出文件选择框，用户选择即视为来源确认。 */
+  /**
+   * 上传：渲染层已完成来源选择、普通文件过滤、目标目录与同名确认，
+   * 主进程仅校验参数并过滤特殊文件后创建上传批次（同名冲突由传输面板协商）。
+   */
   ipcMain.handle("ssh:transfers:upload", async (event, params: unknown) => {
     if (typeof params !== "object" || params === null) {
       throw new Error("SSH upload params must be an object");
@@ -1001,55 +1004,14 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
     if (!remoteDirectory) {
       throw new Error("Remote target directory is required");
     }
+    const localPaths = normalizeTransferStringList(
+      input.localPaths,
+      "Local file paths",
+    );
 
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
-    const openOptions: Electron.OpenDialogOptions = {
-      title: tMain("sshTransfer.uploadDialogTitle"),
-      properties: ["openFile", "multiSelections"],
-    };
-    const selection = browserWindow
-      ? await dialog.showOpenDialog(browserWindow, openOptions)
-      : await dialog.showOpenDialog(openOptions);
-    if (selection.canceled || selection.filePaths.length === 0) {
-      return { canceled: true as const, reason: "dialog" };
-    }
-
-    const classified = await classifySshUploadSources(selection.filePaths);
+    const classified = await classifySshUploadSources(localPaths);
     if (classified.files.length === 0) {
-      await showTransferConfirm(browserWindow, {
-        type: "warning",
-        title: tMain("sshTransfer.partialTitle"),
-        message: tMain("sshTransfer.noTransferableFiles"),
-        detail: transferCompactNames(
-          classified.skipped.map((item) => item.path),
-        ),
-        buttons: [tMain("sshTransfer.cancelButton")],
-        defaultId: 0,
-        cancelId: 0,
-      });
       return { canceled: true as const, reason: "no-files" };
-    }
-    if (classified.skipped.length > 0) {
-      const confirmed = await showTransferConfirm(browserWindow, {
-        type: "warning",
-        title: tMain("sshTransfer.partialTitle"),
-        message: tMain("sshTransfer.partialMessage", {
-          count: classified.files.length,
-          skipped: classified.skipped.length,
-        }),
-        detail: transferCompactNames(
-          classified.skipped.map((item) => item.path),
-        ),
-        buttons: [
-          tMain("sshTransfer.continueButton"),
-          tMain("sshTransfer.cancelButton"),
-        ],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (!confirmed) {
-        return { canceled: true as const, reason: "user" };
-      }
     }
 
     watchSshTransferOwner(event.sender);
@@ -1060,82 +1022,6 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       localPaths: classified.files,
     });
   });
-
-  /** 上传（拖入）：来源由 preload 解析，主进程校验并展示来源与目标确认。 */
-  ipcMain.handle(
-    "ssh:transfers:upload-dropped",
-    async (event, params: unknown) => {
-      if (typeof params !== "object" || params === null) {
-        throw new Error("SSH upload params must be an object");
-      }
-      const input = params as Record<string, unknown>;
-      const workspaceId = normalizeTransferWorkspaceId(input.workspaceId);
-      const remoteDirectory =
-        typeof input.remoteDirectory === "string"
-          ? input.remoteDirectory.trim()
-          : "";
-      if (!remoteDirectory) {
-        throw new Error("Remote target directory is required");
-      }
-      const localPaths = normalizeTransferStringList(
-        input.localPaths,
-        "Local file paths",
-      );
-
-      const browserWindow = BrowserWindow.fromWebContents(event.sender);
-      const classified = await classifySshUploadSources(localPaths);
-      if (classified.files.length === 0) {
-        await showTransferConfirm(browserWindow, {
-          type: "warning",
-          title: tMain("sshTransfer.partialTitle"),
-          message: tMain("sshTransfer.noTransferableFiles"),
-          detail: transferCompactNames(
-            classified.skipped.map((item) => item.path),
-          ),
-          buttons: [tMain("sshTransfer.cancelButton")],
-          defaultId: 0,
-          cancelId: 0,
-        });
-        return { canceled: true as const, reason: "no-files" };
-      }
-
-      const detailParts = [transferCompactNames(classified.files)];
-      if (classified.skipped.length > 0) {
-        detailParts.push(
-          tMain("sshTransfer.partialMessage", {
-            count: classified.files.length,
-            skipped: classified.skipped.length,
-          }),
-        );
-      }
-      const confirmed = await showTransferConfirm(browserWindow, {
-        type: "question",
-        title: tMain("sshTransfer.dropConfirmTitle"),
-        message: tMain("sshTransfer.dropConfirmMessage", {
-          count: classified.files.length,
-          dir: remoteDirectory,
-        }),
-        detail: detailParts.join("\n"),
-        buttons: [
-          tMain("sshTransfer.uploadButton"),
-          tMain("sshTransfer.cancelButton"),
-        ],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (!confirmed) {
-        return { canceled: true as const, reason: "user" };
-      }
-
-      watchSshTransferOwner(event.sender);
-      return createSshUploadBatch({
-        ownerWebContentsId: event.sender.id,
-        workspaceId,
-        remoteDirectory,
-        localPaths: classified.files,
-      });
-    },
-  );
 
   /** 下载：单文件弹保存框；多文件弹目录选择框。 */
   ipcMain.handle("ssh:transfers:download", async (event, params: unknown) => {

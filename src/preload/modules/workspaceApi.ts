@@ -1,5 +1,6 @@
 import { ipcRenderer, webUtils, type IpcRendererEvent } from "electron";
 import type {
+  BatchWorkspaceCopyResult,
   BatchWorkspaceDeleteResult,
   DirectoryEntry,
   DroppedPathEntry,
@@ -270,6 +271,20 @@ export const workspaceApi = {
       "workspace-directories:delete-entries",
       rootPath,
       entryPaths,
+    ),
+  /** 本地上传：把外部普通文件复制进工作区目录；replaceExisting=false 时同名自动另存。 */
+  copyFilesIntoDirectory: (
+    rootPath: string,
+    targetDir: string,
+    sourcePaths: string[],
+    replaceExisting: boolean,
+  ): Promise<BatchWorkspaceCopyResult> =>
+    ipcRenderer.invoke(
+      "workspace-directories:copy-files-into",
+      rootPath,
+      targetDir,
+      sourcePaths,
+      replaceExisting,
     ),
   readFileContent: (filePath: string): Promise<FileContentResult> =>
     ipcRenderer.invoke("workspace-directories:read-file", filePath),

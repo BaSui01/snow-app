@@ -491,6 +491,38 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:copy-files-into",
+    (
+      _event,
+      rootPath: unknown,
+      targetDir: unknown,
+      sourcePaths: unknown,
+      replaceExisting: unknown,
+    ) => {
+      if (typeof rootPath !== "string" || !rootPath.trim()) {
+        throw new Error("Workspace root path is required");
+      }
+      if (typeof targetDir !== "string" || !targetDir.trim()) {
+        throw new Error("Upload target directory is required");
+      }
+      if (
+        !Array.isArray(sourcePaths) ||
+        sourcePaths.length === 0 ||
+        !sourcePaths.every((p) => typeof p === "string" && p.trim().length > 0)
+      ) {
+        throw new Error("Source file paths are required");
+      }
+
+      return native.copyFilesIntoDirectory(
+        rootPath.trim(),
+        targetDir.trim(),
+        sourcePaths.map((p) => (p as string).trim()),
+        replaceExisting === true,
+      );
+    },
+  );
+
+  ipcMain.handle(
     "workspace-directories:read-file",
     (_event, filePath: unknown) => {
       if (typeof filePath !== "string" || !filePath.trim()) {

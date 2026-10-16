@@ -550,7 +550,7 @@ export function ExplorerEntryContextMenu({
                 <span>{t("explorer.transferDownload")}</span>
               </button>
             ) : null}
-            {isSsh && isDirectory && onUploadToHere ? (
+            {isDirectory && onUploadToHere ? (
               <button
                 className="explorer-entry-context-menu-item"
                 onClick={handleUploadToHere}

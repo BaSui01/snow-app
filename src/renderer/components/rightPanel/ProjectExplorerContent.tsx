@@ -41,6 +41,7 @@ import type { FileTag } from "../mainContent/chatInput/fileTagUtils";
 import { INSERT_FILE_TAGS_EVENT } from "../mainContent/chatInput/fileTagUtils";
 import { buildSshConnectParams } from "../sidebar/personalization/roleFileUtils";
 import { explorerPlacementStore } from "../common/explorerPlacementStore";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { rightPanelEvents } from "./rightPanelEvents";
 import { SshTransfersPanel } from "./SshTransfersPanel";
 
@@ -89,6 +90,21 @@ type ExplorerEntryContextMenuState = {
   /** 当前选中条目数；>1 时右键菜单切换为批量操作模式。 */
   selectedCount: number;
 };
+
+/** 待上传的文件批次：targetDir 为树路径（本地绝对路径或 SSH 裸远端路径）。 */
+type PendingUpload = {
+  targetDir: string;
+  /** 已过滤为普通文件的来源路径。 */
+  files: string[];
+  /** 被跳过的文件夹数量（仅支持上传普通文件）。 */
+  skippedDirCount: number;
+};
+
+/** 上传确认弹窗的当前阶段：确认 / 同名决策 / 无可上传文件。 */
+type UploadPrompt =
+  | { kind: "confirm"; upload: PendingUpload }
+  | { kind: "conflict"; upload: PendingUpload; conflictNames: string[] }
+  | { kind: "empty" };
 
 const flattenTree = (
   nodes: TreeNode[],
@@ -243,26 +259,62 @@ const findTreeNode = (
   return null;
 };
 
-// 目录内容失效：清空 children 并复位加载标记，使下一次 loadChildren 真正
-// 重新读取 SFTP，而不是经 mergeTreeNodes 复用旧缓存。
-const invalidateTreeNode = (
+// 路径所在目录：同时兼容 Windows 反斜杠与远端 / 分隔；盘符根目录保留分隔符。
+const parentDirectoryOf = (path: string): string | null => {
+  const lastSep = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (lastSep < 0) {
+    return null;
+  }
+  if (lastSep === 0) {
+    return path.substring(0, 1);
+  }
+  const parent = path.substring(0, lastSep);
+  return /^[A-Za-z]:$/.test(parent) ? `${parent}${path[lastSep]}` : parent;
+};
+
+const baseNameOf = (path: string): string => path.split(/[\\/]/).pop() ?? path;
+
+// 树节点排序与后端一致：目录优先，其余按名称。
+const compareTreeNodes = (a: TreeNode, b: TreeNode): number => {
+  if (a.isDirectory !== b.isDirectory) {
+    return a.isDirectory ? -1 : 1;
+  }
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+};
+
+// 把上传后的文件节点合并进已加载的子节点：同路径视为同名覆盖（更新大小），否则插入。
+const mergeFileNodes = (
+  children: TreeNode[],
+  files: TreeNode[],
+): TreeNode[] => {
+  const next = [...children];
+  for (const file of files) {
+    const index = next.findIndex((node) => node.path === file.path);
+    if (index >= 0) {
+      next[index] = { ...next[index], size: file.size };
+    } else {
+      next.push(file);
+    }
+  }
+  return next.sort(compareTreeNodes);
+};
+
+// 仅更新已加载的目标目录；未加载的目录展开时会重新读取，无需处理。
+const mergeFilesIntoTree = (
   nodes: TreeNode[],
-  targetPath: string,
+  parentPath: string,
+  files: TreeNode[],
 ): TreeNode[] =>
   nodes.map((node) => {
-    if (node.path === targetPath) {
-      return {
-        ...node,
-        children: undefined,
-        loaded: false,
-        loading: false,
-        error: undefined,
-      };
+    if (node.path === parentPath) {
+      return node.loaded
+        ? { ...node, children: mergeFileNodes(node.children ?? [], files) }
+        : node;
     }
     if (node.children) {
       return {
         ...node,
-        children: invalidateTreeNode(node.children, targetPath),
+        children: mergeFilesIntoTree(node.children, parentPath, files),
       };
     }
     return node;
@@ -304,11 +356,13 @@ export function ProjectExplorerContent({
   const sshGenerationRef = useRef(0);
   const [sshConnectionStatus, setSshConnectionStatus] =
     useState<SshConnectionStatus | null>(null);
-  // SSH 工作区根目录的远端路径（ssh:// URL 解析结果）：拖入上传目标与
-  // 上传完成后的目录刷新比对都基于它。
+  // SSH 工作区根目录的远端路径（ssh:// URL 解析结果）：上传根目录与
+  // 上传结果回写时的父目录比对都基于它。
   const [rootRemotePath, setRootRemotePath] = useState<string | null>(null);
-  // 上传文件选择框 / 传输批次创建进行中：短暂禁用按钮，防止连点产生重复批次。
-  const [isStartingUpload, setIsStartingUpload] = useState(false);
+  // 上传进行中（选择文件、启动传输批次、本地复制）：禁用上传按钮，防止重复批次。
+  const [isUploading, setIsUploading] = useState(false);
+  // 待确认 / 待决策的上传；非空时由确认弹窗接管。
+  const [uploadPrompt, setUploadPrompt] = useState<UploadPrompt | null>(null);
   // 外部文件拖入高亮：树容器（工作区根目录）与目录行分别记录。
   const [isTreeDropTarget, setIsTreeDropTarget] = useState(false);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
@@ -339,8 +393,8 @@ export function ProjectExplorerContent({
   const loadChildrenRef = useRef<
     ((parentPath: string) => Promise<void>) | null
   >(null);
-  // 已触发过目录刷新的上传任务：同一任务的成功事件只刷新一次。
-  const refreshedUploadTasksRef = useRef<Set<string>>(new Set());
+  // 已回写到树中的上传任务：同一任务的成功事件只回写一次。
+  const appliedUploadTasksRef = useRef<Set<string>>(new Set());
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -950,7 +1004,7 @@ export function ProjectExplorerContent({
     }
   }, [isSsh, rootPath, selectedPaths, t]);
 
-  // ===== SSH 文件传输（上传 / 下载 / 拖入上传） =====
+  // ===== 文件传输（上传 / 下载）与上传入口 =====
 
   /** 传输启动失败文案：本地化原始错误；空消息回退通用提示。 */
   const toTransferStartErrorMessage = useCallback(
@@ -966,49 +1020,319 @@ export function ProjectExplorerContent({
     [t],
   );
 
-  /** 上传到指定远端目录（裸远端路径）；用户取消选择时静默忽略。 */
-  const handleUploadToDirectory = useCallback(
-    async (remoteDirectory: string): Promise<void> => {
-      if (!isSsh || !directoryId) {
+  // 上传根目录：本地为工作区绝对路径，SSH 为裸远端路径（与树节点路径同一口径）。
+  const uploadRootDirectory = isSsh ? rootRemotePath : rootPath;
+  const uploadToTargetLabel = t("explorer.uploadToTarget", {
+    defaultValue:
+      "Upload files to the selected folder (workspace root if none is selected)",
+  });
+
+  /**
+   * 解析「当前打开的目录」作为上传目标：最近点击的条目若是目录则取其本身，
+   * 否则取其所在目录；没有选中条目时为工作区根目录。
+   */
+  const resolveUploadTargetDirectory = useCallback((): string | null => {
+    const anchor = selectionAnchorRef.current;
+    if (!anchor) {
+      return uploadRootDirectory;
+    }
+    const node = findTreeNode(treeStateRef.current, anchor);
+    if (node?.isDirectory) {
+      return node.path;
+    }
+    return parentDirectoryOf(anchor) ?? uploadRootDirectory;
+  }, [uploadRootDirectory]);
+
+  /** 按条目生成待上传批次：文件夹被跳过；没有任何普通文件时直接进入提示。 */
+  const requestUpload = useCallback(
+    (
+      entries: Array<{ path: string; isDirectory: boolean }>,
+      targetDir: string,
+    ): void => {
+      const files = entries
+        .filter((entry) => !entry.isDirectory)
+        .map((entry) => entry.path);
+      if (files.length === 0) {
+        setUploadPrompt({ kind: "empty" });
         return;
       }
+      setUploadPrompt({
+        kind: "confirm",
+        upload: {
+          targetDir,
+          files,
+          skippedDirCount: entries.length - files.length,
+        },
+      });
+    },
+    [],
+  );
+
+  /** 工具栏 / 右键「上传到此处」：系统选择框选择文件，选择结果进入确认流程。 */
+  const handlePickUpload = useCallback(
+    async (targetDir: string): Promise<void> => {
+      if (isUploading) {
+        return;
+      }
+      setIsUploading(true);
       try {
-        const result = await window.snow.sshTransferUpload({
+        const selection = await window.snow.selectFiles(
+          t("explorer.uploadSelectTitle", {
+            defaultValue: "Select files to upload",
+          }),
+        );
+        if (selection && selection.length > 0) {
+          requestUpload(selection, targetDir);
+        }
+      } catch (pickError) {
+        setError(toTransferStartErrorMessage(pickError));
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [isUploading, requestUpload, t, toTransferStartErrorMessage],
+  );
+
+  /** SSH 上传：交给主进程创建传输批次，完成后由 onSshTransfersUpdated 回写对应节点。 */
+  const startSshUpload = useCallback(
+    async (upload: PendingUpload): Promise<void> => {
+      if (!directoryId) {
+        return;
+      }
+      setIsUploading(true);
+      setError(null);
+      try {
+        await window.snow.sshTransferUpload({
           workspaceId: directoryId,
-          remoteDirectory,
+          remoteDirectory: upload.targetDir,
+          localPaths: upload.files,
         });
-        if (result.canceled) {
-          return;
+      } catch (uploadError) {
+        setError(toTransferStartErrorMessage(uploadError));
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [directoryId, toTransferStartErrorMessage],
+  );
+
+  /** 本地上传：复制完成后只把成功写入的文件合并进目标目录节点，不重读整棵树。 */
+  const startLocalUpload = useCallback(
+    async (upload: PendingUpload, replaceExisting: boolean): Promise<void> => {
+      if (!rootPath) {
+        return;
+      }
+      setIsUploading(true);
+      setError(null);
+      try {
+        const result = await window.snow.copyFilesIntoDirectory(
+          rootPath,
+          upload.targetDir,
+          upload.files,
+          replaceExisting,
+        );
+        if (result.copied.length > 0) {
+          const copiedNodes = toTreeNodes(result.copied);
+          setTree((prev) =>
+            upload.targetDir === rootPath
+              ? mergeFileNodes(prev, copiedNodes)
+              : mergeFilesIntoTree(prev, upload.targetDir, copiedNodes),
+          );
+        }
+        if (result.failed.length > 0) {
+          setError(
+            t("explorer.uploadPartialError", {
+              defaultValue: "{{count}} file(s) failed to upload",
+              values: { count: result.failed.length },
+            }),
+          );
         }
       } catch (uploadError) {
         setError(toTransferStartErrorMessage(uploadError));
+      } finally {
+        setIsUploading(false);
       }
     },
-    [isSsh, directoryId, toTransferStartErrorMessage],
+    [rootPath, t, toTransferStartErrorMessage],
   );
 
-  /** 工具栏上传：目标为工作区根目录，先把 ssh:// URL 解析为裸远端路径。 */
-  const handleUploadToRoot = useCallback(async (): Promise<void> => {
-    if (!isSsh || !rootPath || !directoryId || isStartingUpload) {
-      return;
+  /**
+   * 确认上传（本地与 SSH 共用）：SSH 直接交给传输批次（冲突由传输面板协商）；
+   * 本地先检查目标目录的同名文件，有冲突则弹出决策，无冲突直接复制。
+   */
+  const confirmUpload = useCallback(
+    async (upload: PendingUpload): Promise<void> => {
+      setUploadPrompt(null);
+      if (isSsh) {
+        await startSshUpload(upload);
+        return;
+      }
+      try {
+        const entries = await window.snow.readDirectoryEntries(
+          upload.targetDir,
+        );
+        const existingNames = new Set(
+          entries.map((entry) => entry.name.toLowerCase()),
+        );
+        const conflictNames = upload.files
+          .map((file) => baseNameOf(file))
+          .filter((name) => existingNames.has(name.toLowerCase()));
+        if (conflictNames.length > 0) {
+          setUploadPrompt({ kind: "conflict", upload, conflictNames });
+          return;
+        }
+      } catch (checkError) {
+        setError(toTransferStartErrorMessage(checkError));
+        return;
+      }
+      await startLocalUpload(upload, false);
+    },
+    [isSsh, startSshUpload, startLocalUpload, toTransferStartErrorMessage],
+  );
+
+  /** 拖入 / 粘贴的系统文件：解析真实路径后进入上传确认。 */
+  const handleSystemFilesUpload = useCallback(
+    async (files: File[], targetDir: string): Promise<void> => {
+      if (files.length === 0) {
+        return;
+      }
+      try {
+        const entries = await window.snow.resolveDroppedFiles(files);
+        if (entries.length > 0) {
+          requestUpload(entries, targetDir);
+        }
+      } catch (dropError) {
+        setError(toTransferStartErrorMessage(dropError));
+      }
+    },
+    [requestUpload, toTransferStartErrorMessage],
+  );
+
+  /** 粘贴系统文件（如资源管理器中复制的文件）：上传到当前打开的目录；输入框内的粘贴保持原生行为。 */
+  const handleExplorerPaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>): void => {
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("input, textarea, [contenteditable='true']")
+      ) {
+        return;
+      }
+      const files = Array.from(event.clipboardData.files);
+      const targetDir = resolveUploadTargetDirectory();
+      if (files.length === 0 || !targetDir) {
+        return;
+      }
+      event.preventDefault();
+      void handleSystemFilesUpload(files, targetDir);
+    },
+    [resolveUploadTargetDirectory, handleSystemFilesUpload],
+  );
+
+  // 上传确认 / 同名决策弹窗：统一使用应用内 ConfirmDialog，不调用系统对话框。
+  const renderUploadPrompt = (): React.JSX.Element | null => {
+    if (!uploadPrompt) {
+      return null;
     }
-    setIsStartingUpload(true);
-    try {
-      const parsed = await window.snow.sshParseUrl(rootPath);
-      await handleUploadToDirectory(parsed.remotePath);
-    } catch (parseError) {
-      setError(toTransferStartErrorMessage(parseError));
-    } finally {
-      setIsStartingUpload(false);
+    const closePrompt = (): void => setUploadPrompt(null);
+
+    if (uploadPrompt.kind === "empty") {
+      return (
+        <ConfirmDialog
+          open
+          title={t("explorer.uploadNoFilesTitle", {
+            defaultValue: "No files to upload",
+          })}
+          message={t("explorer.uploadNoFilesMessage", {
+            defaultValue:
+              "Only regular files can be uploaded. Folders are not supported.",
+          })}
+          confirmLabel={t("common.confirm", { defaultValue: "Confirm" })}
+          onConfirm={closePrompt}
+          onCancel={closePrompt}
+        />
+      );
     }
-  }, [
-    isSsh,
-    rootPath,
-    directoryId,
-    isStartingUpload,
-    handleUploadToDirectory,
-    toTransferStartErrorMessage,
-  ]);
+
+    if (uploadPrompt.kind === "conflict") {
+      const { upload, conflictNames } = uploadPrompt;
+      return (
+        <ConfirmDialog
+          open
+          variant="warning"
+          title={t("explorer.uploadConflictTitle", {
+            defaultValue: "Name already exists",
+          })}
+          message={t("explorer.uploadConflictMessage", {
+            defaultValue:
+              "{{count}} file(s) already exist in the target folder:",
+            values: { count: conflictNames.length },
+          })}
+          confirmLabel={t("explorer.uploadConflictReplace", {
+            defaultValue: "Replace",
+          })}
+          extraLabel={t("explorer.uploadConflictKeepBoth", {
+            defaultValue: "Keep both",
+          })}
+          cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+          onConfirm={() => {
+            setUploadPrompt(null);
+            void startLocalUpload(upload, true);
+          }}
+          onExtra={() => {
+            setUploadPrompt(null);
+            void startLocalUpload(upload, false);
+          }}
+          onCancel={closePrompt}
+        >
+          <ul className="explorer-upload-confirm-list">
+            {conflictNames.map((name, index) => (
+              <li key={`${index}-${name}`}>{name}</li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      );
+    }
+
+    const { upload } = uploadPrompt;
+    return (
+      <ConfirmDialog
+        open
+        title={t("explorer.uploadConfirmTitle", {
+          defaultValue: "Upload files",
+        })}
+        message={t("explorer.uploadConfirmMessage", {
+          defaultValue: "Upload {{count}} file(s) to the folder below:",
+          values: { count: upload.files.length },
+        })}
+        confirmLabel={t("explorer.uploadConfirmButton", {
+          defaultValue: "Upload",
+        })}
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => void confirmUpload(upload)}
+        onCancel={closePrompt}
+      >
+        <span className="explorer-upload-confirm-dir" title={upload.targetDir}>
+          {upload.targetDir}
+        </span>
+        <ul className="explorer-upload-confirm-list">
+          {upload.files.map((file) => (
+            <li key={file} title={file}>
+              {baseNameOf(file)}
+            </li>
+          ))}
+        </ul>
+        {upload.skippedDirCount > 0 ? (
+          <p>
+            {t("explorer.uploadSkippedDirs", {
+              defaultValue:
+                "{{count}} folder(s) skipped: only regular files can be uploaded",
+              values: { count: upload.skippedDirCount },
+            })}
+          </p>
+        ) : null}
+      </ConfirmDialog>
+    );
+  };
 
   /** 下载选中的远端条目：主进程按单文件弹保存框、多文件弹目录选择框。 */
   const handleDownloadEntries = useCallback(
@@ -1031,52 +1355,22 @@ export function ProjectExplorerContent({
     [isSsh, directoryId, toTransferStartErrorMessage],
   );
 
-  /** 外部文件拖入上传：解析本地路径（跳过目录）后交由主进程校验并确认。 */
-  const handleDropUpload = useCallback(
-    async (files: File[], remoteDirectory: string): Promise<void> => {
-      if (!isSsh || !directoryId || files.length === 0) {
-        return;
-      }
-      try {
-        const entries = await window.snow.resolveDroppedFiles(files);
-        const localPaths = entries
-          .filter((entry) => !entry.isDirectory)
-          .map((entry) => entry.path);
-        // 全部为目录：上传只支持普通文件，直接忽略。
-        if (localPaths.length === 0) {
-          return;
-        }
-        const result = await window.snow.sshTransferUploadDropped({
-          workspaceId: directoryId,
-          remoteDirectory,
-          localPaths,
-        });
-        if (result.canceled) {
-          return;
-        }
-      } catch (dropError) {
-        setError(toTransferStartErrorMessage(dropError));
-      }
-    },
-    [isSsh, directoryId, toTransferStartErrorMessage],
-  );
-
-  /** 树容器拖拽悬停：目标为工作区根目录。 */
+  /** 树容器拖拽悬停：目标为工作区根目录（本地与 SSH 共用）。 */
   const handleTreeDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!uploadRootDirectory || !isExternalFileDrag(event)) {
         return;
       }
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
       setIsTreeDropTarget(true);
     },
-    [isSsh],
+    [uploadRootDirectory],
   );
 
   const handleTreeDragLeave = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!isExternalFileDrag(event)) {
         return;
       }
       // 进入树容器内的子元素（如目录行）时不清除，由行的高亮接管。
@@ -1085,32 +1379,32 @@ export function ProjectExplorerContent({
       }
       setIsTreeDropTarget(false);
     },
-    [isSsh],
+    [],
   );
 
   const handleTreeDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!isExternalFileDrag(event)) {
         return;
       }
       event.preventDefault();
       setIsTreeDropTarget(false);
       setDropTargetPath(null);
-      if (!rootRemotePath) {
+      if (!uploadRootDirectory) {
         return;
       }
-      void handleDropUpload(
+      void handleSystemFilesUpload(
         Array.from(event.dataTransfer.files),
-        rootRemotePath,
+        uploadRootDirectory,
       );
     },
-    [isSsh, rootRemotePath, handleDropUpload],
+    [uploadRootDirectory, handleSystemFilesUpload],
   );
 
-  /** 目录行拖拽悬停：目标为该目录的远端路径。 */
+  /** 目录行拖拽悬停：目标为该目录（本地绝对路径或 SSH 远端路径）。 */
   const handleDirectoryDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>, nodePath: string): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!isExternalFileDrag(event)) {
         return;
       }
       event.preventDefault();
@@ -1120,12 +1414,12 @@ export function ProjectExplorerContent({
       setIsTreeDropTarget(false);
       setDropTargetPath(nodePath);
     },
-    [isSsh],
+    [],
   );
 
   const handleDirectoryDragLeave = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!isExternalFileDrag(event)) {
         return;
       }
       // 行内元素间移动不重置高亮，真正离开整行才清除。
@@ -1134,21 +1428,24 @@ export function ProjectExplorerContent({
       }
       setDropTargetPath(null);
     },
-    [isSsh],
+    [],
   );
 
   const handleDirectoryDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>, nodePath: string): void => {
-      if (!isSsh || !isExternalFileDrag(event)) {
+      if (!isExternalFileDrag(event)) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
       setIsTreeDropTarget(false);
       setDropTargetPath(null);
-      void handleDropUpload(Array.from(event.dataTransfer.files), nodePath);
+      void handleSystemFilesUpload(
+        Array.from(event.dataTransfer.files),
+        nodePath,
+      );
     },
-    [isSsh, handleDropUpload],
+    [handleSystemFilesUpload],
   );
 
   const handleSearchChange = useCallback((value: string): void => {
@@ -1355,49 +1652,54 @@ export function ProjectExplorerContent({
     };
   }, []);
 
-  // 上传成功后刷新目标目录：SSH 目录没有文件监听，必须手动失效缓存。
-  // 同一任务只刷新一次；上传到根目录时整树刷新，子目录仅失效该节点并重拉。
+  // 远端上传成功：把新文件（或同名覆盖后的文件）合并进目标目录的已加载节点，
+  // 不整树刷新、不折叠已展开目录。SSH 目录没有文件监听，这里是唯一的回写点。
   useEffect(() => {
     if (!isSsh || !directoryId) {
       return;
     }
+    // 只回写订阅之后结束的任务：挂载前已完成的任务不再写入树。
+    const subscribedAt = Date.now();
 
     const unsubscribe = window.snow.onSshTransfersUpdated((snapshot) => {
       for (const task of snapshot.tasks) {
         if (
           task.direction !== "upload" ||
           task.workspaceId !== directoryId ||
-          task.status !== "succeeded"
+          task.status !== "succeeded" ||
+          (task.endedAt ?? 0) < subscribedAt
         ) {
           continue;
         }
-        if (refreshedUploadTasksRef.current.has(task.taskId)) {
+        if (appliedUploadTasksRef.current.has(task.taskId)) {
           continue;
         }
-        refreshedUploadTasksRef.current.add(task.taskId);
+        appliedUploadTasksRef.current.add(task.taskId);
 
-        // 远端目录 = remotePath 去掉最后一个 "/" 之后的段。
-        const lastSlash = task.remotePath.lastIndexOf("/");
+        // 最终落盘路径（同名另存时与原始名不同）；父目录 = 去掉最后一个 "/" 之后的段。
+        const finalPath = task.finalPath ?? task.remotePath;
+        const lastSlash = finalPath.lastIndexOf("/");
         const parentDirectory =
-          lastSlash <= 0 ? "/" : task.remotePath.substring(0, lastSlash);
+          lastSlash <= 0 ? "/" : finalPath.substring(0, lastSlash);
+        const fileNodes = toTreeNodes([
+          {
+            name: finalPath.substring(lastSlash + 1),
+            path: finalPath,
+            isDirectory: false,
+            size: task.bytesTotal ?? task.bytesTransferred,
+          },
+        ]);
 
-        if (rootRemotePath && parentDirectory === rootRemotePath) {
-          handleRefresh();
-          continue;
-        }
-
-        // 目标目录未展开（或尚未加载）时无需处理，展开时自然读到最新内容。
-        const node = findTreeNode(treeStateRef.current, parentDirectory);
-        if (!node?.loaded) {
-          continue;
-        }
-        setTree((prev) => invalidateTreeNode(prev, parentDirectory));
-        void loadChildrenRef.current?.(parentDirectory);
+        setTree((prev) =>
+          parentDirectory === rootRemotePath
+            ? mergeFileNodes(prev, fileNodes)
+            : mergeFilesIntoTree(prev, parentDirectory, fileNodes),
+        );
       }
     });
 
     return unsubscribe;
-  }, [isSsh, directoryId, rootRemotePath, handleRefresh]);
+  }, [isSsh, directoryId, rootRemotePath]);
 
   const flatNodes = useMemo(
     () => flattenTree(tree, expandedPaths),
@@ -1839,21 +2141,22 @@ export function ProjectExplorerContent({
           <PanelLeft size={14} />
         )}
       </button>
-      {isSsh && rootPath && directoryId ? (
-        // SSH 工作区：上传文件到根目录（主进程弹文件选择框）。
+      {rootPath && directoryId ? (
+        // 上传到当前打开的目录（无选中时为根目录），本地与 SSH 工作区共用。
         <button
           className="icon-btn ghost explorer-upload-btn"
-          onClick={() => void handleUploadToRoot()}
+          onClick={() => {
+            const targetDir = resolveUploadTargetDirectory();
+            if (targetDir) {
+              void handlePickUpload(targetDir);
+            }
+          }}
           type="button"
-          disabled={isStartingUpload}
-          aria-label={t("explorer.transferUploadRoot", {
-            defaultValue: "Upload files to the workspace root",
-          })}
-          title={t("explorer.transferUploadRoot", {
-            defaultValue: "Upload files to the workspace root",
-          })}
+          disabled={isUploading}
+          aria-label={uploadToTargetLabel}
+          title={uploadToTargetLabel}
         >
-          {isStartingUpload ? (
+          {isUploading ? (
             <Loader2 className="spin" size={14} />
           ) : (
             <Upload size={14} />
@@ -1907,7 +2210,7 @@ export function ProjectExplorerContent({
         </div>
       )}
 
-      <div className="explorer-content">
+      <div className="explorer-content" onPaste={handleExplorerPaste}>
         {placement === "sidebar" ? searchBarNode : null}
 
         {rootPath ? (
@@ -2038,9 +2341,9 @@ export function ProjectExplorerContent({
               ref={treeRef}
               tabIndex={-1}
               onKeyDown={handleTreeKeyDown}
-              onDragOver={isSsh ? handleTreeDragOver : undefined}
-              onDragLeave={isSsh ? handleTreeDragLeave : undefined}
-              onDrop={isSsh ? handleTreeDrop : undefined}
+              onDragOver={handleTreeDragOver}
+              onDragLeave={handleTreeDragLeave}
+              onDrop={handleTreeDrop}
             >
               {tree.map((node) => renderNode(node, 0))}
             </div>
@@ -2073,9 +2376,7 @@ export function ProjectExplorerContent({
                 : [entryContextMenu.path],
             )
           }
-          onUploadToHere={() =>
-            void handleUploadToDirectory(entryContextMenu.path)
-          }
+          onUploadToHere={() => void handlePickUpload(entryContextMenu.path)}
           position={entryContextMenu.position}
         />
       ) : null}
@@ -2092,6 +2393,7 @@ export function ProjectExplorerContent({
           onOpenTerminal={onOpenTerminal}
         />
       </Suspense>
+      {renderUploadPrompt()}
       {/* SSH 文件传输进度 / 冲突协商：无任务时组件自渲染为 null。 */}
       <SshTransfersPanel />
     </>

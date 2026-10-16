@@ -226,6 +226,20 @@ pub fn delete_workspace_entries(
     services::fs_explorer::delete_workspace_entries(&root_path, entry_paths)
 }
 
+pub fn copy_files_into_directory(
+    root_path: String,
+    target_dir: String,
+    source_paths: Vec<String>,
+    replace_existing: bool,
+) -> Result<services::fs_explorer::BatchWorkspaceCopyResult> {
+    services::fs_explorer::copy_files_into_directory(
+        &root_path,
+        &target_dir,
+        source_paths,
+        replace_existing,
+    )
+}
+
 /// 文件名 / 内容搜索。项目属于关联项目组时，搜索覆盖组内所有根目录：
 /// 兄弟根的相对路径带上「目录名/」前缀，主根结果保持相对路径不变。
 /// `linked=false`（如 `@:项目/` 显式限定某个成员）时只搜索给定根目录。

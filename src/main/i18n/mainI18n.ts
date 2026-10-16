@@ -57,10 +57,8 @@ const en: MainMessages = {
   "download.saveDialogTitle": "Save file",
   "download.completed": "Download complete",
   "download.failed": "Download failed",
-  "sshTransfer.uploadDialogTitle": "Select files to upload",
   "sshTransfer.downloadSaveTitle": "Choose where to save",
   "sshTransfer.downloadDirTitle": "Choose a destination folder",
-  "sshTransfer.uploadButton": "Upload",
   "sshTransfer.saveButton": "Save",
   "sshTransfer.chooseButton": "Select",
   "sshTransfer.continueButton": "Continue",
@@ -70,8 +68,6 @@ const en: MainMessages = {
   "sshTransfer.partialTitle": "Some items cannot be transferred",
   "sshTransfer.partialMessage":
     "{{count}} file(s) will continue; {{skipped}} item(s) will be skipped (only regular files are supported).",
-  "sshTransfer.dropConfirmTitle": "Upload files",
-  "sshTransfer.dropConfirmMessage": "Upload {{count}} file(s) to:\n{{dir}}",
 };
 
 const zhCN: MainMessages = {
@@ -109,10 +105,8 @@ const zhCN: MainMessages = {
   "download.saveDialogTitle": "保存文件",
   "download.completed": "下载完成",
   "download.failed": "下载失败",
-  "sshTransfer.uploadDialogTitle": "选择要上传的文件",
   "sshTransfer.downloadSaveTitle": "选择保存位置",
   "sshTransfer.downloadDirTitle": "选择保存文件夹",
-  "sshTransfer.uploadButton": "上传",
   "sshTransfer.saveButton": "保存",
   "sshTransfer.chooseButton": "选择",
   "sshTransfer.continueButton": "继续",
@@ -121,8 +115,6 @@ const zhCN: MainMessages = {
   "sshTransfer.partialTitle": "部分项目无法传输",
   "sshTransfer.partialMessage":
     "将传输 {{count}} 个文件，跳过 {{skipped}} 项（仅支持普通文件）。",
-  "sshTransfer.dropConfirmTitle": "上传文件",
-  "sshTransfer.dropConfirmMessage": "将 {{count}} 个文件上传到：\n{{dir}}",
 };
 
 const zhTW: MainMessages = {
@@ -160,10 +152,8 @@ const zhTW: MainMessages = {
   "download.saveDialogTitle": "儲存檔案",
   "download.completed": "下載完成",
   "download.failed": "下載失敗",
-  "sshTransfer.uploadDialogTitle": "選擇要上傳的檔案",
   "sshTransfer.downloadSaveTitle": "選擇儲存位置",
   "sshTransfer.downloadDirTitle": "選擇儲存資料夾",
-  "sshTransfer.uploadButton": "上傳",
   "sshTransfer.saveButton": "儲存",
   "sshTransfer.chooseButton": "選擇",
   "sshTransfer.continueButton": "繼續",
@@ -172,8 +162,6 @@ const zhTW: MainMessages = {
   "sshTransfer.partialTitle": "部分項目無法傳輸",
   "sshTransfer.partialMessage":
     "將傳輸 {{count}} 個檔案，略過 {{skipped}} 項（僅支援一般檔案）。",
-  "sshTransfer.dropConfirmTitle": "上傳檔案",
-  "sshTransfer.dropConfirmMessage": "將 {{count}} 個檔案上傳到：\n{{dir}}",
 };
 
 const dictionaries: Record<Locale, MainMessages> = {

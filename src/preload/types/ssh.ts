@@ -209,12 +209,10 @@ export type SshTransferStartResult =
 
 export type SshTransferConflictAction = "replace" | "skip" | "rename";
 
+/** 上传：渲染层已确认的本地普通文件路径，上传到远端目录。 */
 export type SshTransferUploadParams = {
   workspaceId: string;
   remoteDirectory: string;
-};
-
-export type SshTransferUploadDroppedParams = SshTransferUploadParams & {
   localPaths: string[];
 };
 

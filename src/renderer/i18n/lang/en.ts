@@ -6599,7 +6599,24 @@ export const en = {
   "topBar.alwaysOnTop": "Always on top",
   "topBar.disableAlwaysOnTop": "Disable always on top",
   "explorer.transferUpload": "Upload files…",
-  "explorer.transferUploadRoot": "Upload files to the workspace root",
+  "explorer.uploadToTarget":
+    "Upload files to the selected folder (workspace root if none is selected)",
+  "explorer.uploadSelectTitle": "Select files to upload",
+  "explorer.uploadConfirmTitle": "Upload files",
+  "explorer.uploadConfirmMessage":
+    "Upload {{count}} file(s) to the folder below:",
+  "explorer.uploadConfirmButton": "Upload",
+  "explorer.uploadSkippedDirs":
+    "{{count}} folder(s) skipped: only regular files can be uploaded",
+  "explorer.uploadNoFilesTitle": "No files to upload",
+  "explorer.uploadNoFilesMessage":
+    "Only regular files can be uploaded. Folders are not supported.",
+  "explorer.uploadConflictTitle": "Name already exists",
+  "explorer.uploadConflictMessage":
+    "{{count}} file(s) already exist in the target folder:",
+  "explorer.uploadConflictReplace": "Replace",
+  "explorer.uploadConflictKeepBoth": "Keep both",
+  "explorer.uploadPartialError": "{{count}} file(s) failed to upload",
   "explorer.transferUploadToHere": "Upload files here…",
   "explorer.transferDownload": "Download to local…",
   "explorer.transferDownloadMulti": "Download {{count}} files to local…",

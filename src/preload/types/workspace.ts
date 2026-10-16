@@ -110,6 +110,17 @@ export type BatchWorkspaceDeleteResult = {
   failed: FailedWorkspaceDelete[];
 };
 
+export type FailedWorkspaceCopy = {
+  source: string;
+  error: string;
+};
+
+/** 本地复制结果：copied 为落盘后的条目（另存时名称可能变化），failed 为失败的源文件。 */
+export type BatchWorkspaceCopyResult = {
+  copied: DirectoryEntry[];
+  failed: FailedWorkspaceCopy[];
+};
+
 export type FileSearchResult = {
   path: string;
   relativePath: string;

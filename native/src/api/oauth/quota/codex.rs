@@ -10,6 +10,7 @@ use super::{
     QuotaBucket, QuotaGroup, QuotaParts,
 };
 use crate::api::oauth::codex as codex_auth;
+use crate::api::oauth::header_schemes::fill_missing_headers;
 use crate::api::oauth::provider::OAuthProfileMetadata;
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -18,8 +19,14 @@ const WEEK_SECONDS: i64 = 604_800;
 const MIN_MONTH_SECONDS: i64 = 28 * 24 * 60 * 60;
 const MAX_MONTH_SECONDS: i64 = 31 * 24 * 60 * 60;
 
-pub async fn fetch(token: &str, metadata: &OAuthProfileMetadata) -> Result<QuotaParts> {
-    let mut headers = HashMap::new();
+/// `headers` 为档案绑定方案与账号级请求头；ChatGPT 档案没有 Codex 方案，
+/// 配额接口仍需 Codex 客户端身份，缺失项以 Codex 默认身份头补齐。
+pub async fn fetch(
+    token: &str,
+    metadata: &OAuthProfileMetadata,
+    mut headers: HashMap<String, String>,
+) -> Result<QuotaParts> {
+    fill_missing_headers(&mut headers, codex_auth::required_headers());
     codex_auth::apply_request_headers(metadata, &mut headers);
     let payload = get_json(USAGE_URL, token, &headers).await?;
 

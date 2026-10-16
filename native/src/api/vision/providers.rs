@@ -405,15 +405,6 @@ fn build_anthropic_headers(
                 Error::from_reason(format!("Invalid vision API key header value: {error}"))
             })?,
         );
-    } else {
-        // 订阅（OAuth）令牌按 Claude Code 客户端的形状请求，缺失身份头会被
-        // 上游网关拒绝（与对话链路 api/oauth/anthropic.rs 保持一致）。
-        for (name, value) in crate::api::oauth::anthropic::oauth_messages_headers() {
-            headers.insert(
-                HeaderName::from_static(name),
-                HeaderValue::from_static(value),
-            );
-        }
     }
     headers.insert(
         AUTHORIZATION,

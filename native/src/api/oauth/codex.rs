@@ -313,16 +313,20 @@ pub fn parse_claims(id_token: &str) -> OAuthClaims {
     }
 }
 
+/// Codex 后端要求的客户端身份头，作为默认值写入「Codex」自定义请求头方案。
+pub fn required_headers() -> Vec<(&'static str, String)> {
+    vec![
+        ("originator", ORIGINATOR.to_string()),
+        ("OpenAI-Beta", "responses=experimental".to_string()),
+        ("User-Agent", user_agent()),
+    ]
+}
+
+/// 账号级请求头随登录账号变化，不写入共享方案，按档案元数据在请求时注入。
 pub fn apply_request_headers(
     metadata: &OAuthProfileMetadata,
     headers: &mut HashMap<String, String>,
 ) {
-    headers.insert("originator".to_string(), ORIGINATOR.to_string());
-    headers.insert(
-        "OpenAI-Beta".to_string(),
-        "responses=experimental".to_string(),
-    );
-    headers.insert("User-Agent".to_string(), user_agent());
     if !metadata.account_id.trim().is_empty() {
         headers.insert(
             "chatgpt-account-id".to_string(),

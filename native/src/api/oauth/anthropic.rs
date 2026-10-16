@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
@@ -320,20 +319,14 @@ pub fn fetch_models_blocking(base_url: &str, access_token: &str) -> Result<Vec<S
 /// 与 API key 渠道不同，Anthropic 按官方 Claude Code 客户端的形状校验订阅令牌的
 /// Messages 请求：`anthropic-beta` 必须同时声明 `claude-code-20250219`，并携带 CLI 的
 /// User-Agent、`x-app: cli` 与直接浏览器访问声明，请求才会被网关当作官方订阅客户端
-/// 放行（与 CLIProxyAPI 的上游伪装行为一致）。
-pub fn oauth_messages_headers() -> [(&'static str, &'static str); 5] {
-    [
-        ("anthropic-version", ANTHROPIC_VERSION),
-        ("anthropic-beta", MESSAGES_BETA),
-        ("anthropic-dangerous-direct-browser-access", "true"),
-        ("x-app", "cli"),
-        ("user-agent", CLAUDE_CODE_USER_AGENT),
+/// 放行（与 CLIProxyAPI 的上游伪装行为一致）。这些值作为默认值写入「Claude」自定义
+/// 请求头方案，由档案绑定后随请求下发，用户可在设置中调整。
+pub fn required_headers() -> Vec<(&'static str, String)> {
+    vec![
+        ("anthropic-version", ANTHROPIC_VERSION.to_string()),
+        ("anthropic-beta", MESSAGES_BETA.to_string()),
+        ("anthropic-dangerous-direct-browser-access", "true".to_string()),
+        ("x-app", "cli".to_string()),
+        ("user-agent", CLAUDE_CODE_USER_AGENT.to_string()),
     ]
-}
-
-/// 把订阅（OAuth）身份头写入可变请求头表。
-pub fn apply_request_headers(headers: &mut HashMap<String, String>) {
-    for (name, value) in oauth_messages_headers() {
-        headers.insert(name.to_string(), value.to_string());
-    }
 }

@@ -1,4 +1,5 @@
 import type {
+  AutoSendRequest,
   ChatInputSendOptions,
   ConversationInputRuntimeState,
 } from "../../chatInput/types";
@@ -386,6 +387,9 @@ export type ConversationSessionRef = {
   worktreeMode: boolean;
   /** WorkTree id bound or pending for this session. */
   worktreeId?: string | null;
+  /** 后台新建的会话（定时任务触发，不切换视图）：不继承也不清理新会话视图
+   *  的一次性状态（预选工作树、回滚新会话状态等）。随迁移一并保留。 */
+  startedInBackground?: boolean;
   /** Whether WorkFlow Mode was active when this session was last used. */
   workflowMode: boolean;
   /** Whether Goal Mode was active when this session was last used. */
@@ -721,16 +725,13 @@ export type ConversationContextValue = {
   // Refs
   sessionsRefData: RefValue<Map<string, ConversationSessionRef>>;
   activeConversationIdRef: RefValue<string | undefined>;
-  /** One-shot target directory for the next new-chat send. Set by
-   *  handleNewChat(directoryId) (e.g. a scheduled task firing for its bound
-   *  project) and consumed by handleSendMessage so the new PENDING session
-   *  is created in the target project instead of the currently active one. */
+  /** One-shot target directory for the next manual new-chat send. Set by
+   *  handleNewChat(directoryId) (e.g. starting a chat for a specific project
+   *  from the Git branch selector) and consumed by handleSendMessage so the new
+   *  PENDING session is created in the target project instead of the currently
+   *  active one. Background conversations carry their target in the send
+   *  options and never touch it. */
   pendingDirectoryIdRef: RefValue<string | undefined>;
-  /** One-shot name of the scheduled task that triggered the next new-chat
-   *  send. Set by buildFromContent(taskName) and consumed by
-   *  handleSendMessage to stamp the new session with `triggeredByTask` so the
-   *  message list can show "triggered by scheduled task" feedback. */
-  pendingTaskNameRef: RefValue<string | undefined>;
   selectionRequestIdRef: RefValue<number>;
   /** In-flight initial history loads keyed by conversationId. Selections of
    *  the same conversation share a single load so switching away and back
@@ -1049,35 +1050,42 @@ export type UseChatConversationResult = {
     upToResponseId: string,
   ) => Promise<void>;
   draftToRestore: string | null;
-  autoSendToken: number;
   clearDraftToRestore: () => void;
   /** 保存/读取/清除某会话的输入草稿（含图片 chip）。详见
    *  ConversationContextValue.inputDraftsRef 的注释。 */
   saveInputDraft: (conversationId: string | undefined, content: string) => void;
   getInputDraft: (conversationId: string | undefined) => string | undefined;
   clearInputDraft: (conversationId: string | undefined) => void;
-  /** directoryId: optional target project for the new conversation; when
-   *  omitted the currently active project is used. options: optional one-shot
-   *  overrides (set by scheduled tasks) consumed by the next auto-send — the
-   *  fired conversation then uses the configured API profile / advanced model /
+  /** Opens a new conversation in the current view and auto-sends `content`
+   *  (memo / plugin "let AI build it" entries). Requests are delivered one at
+   *  a time (FIFO): the next one opens its new-chat view only after the
+   *  previous request was sent. */
+  buildFromContent: (content: string) => void;
+  /** Starts a new conversation in the background WITHOUT switching the
+   *  current view (scheduled tasks). directoryId: target project ("" or
+   *  omitted = the currently active project). options: one-shot overrides —
+   *  the conversation uses the configured API profile / advanced model /
    *  thinking strength, while basicModel applies only to its first title.
-   *  taskName: optional scheduled-task name, shown on the fired conversation's
-   *  message-list "triggered by scheduled task" banner. */
-  buildFromContent: (
+   *  taskName: shown on the conversation's "triggered by scheduled task"
+   *  banner. Resolves once the first message has been dispatched. */
+  startBackgroundConversation: (
     content: string,
     directoryId?: string,
     options?: ScheduledTaskRunOptions,
     taskName?: string,
-  ) => void;
+  ) => Promise<void>;
+  /** Head of the auto-send queue awaiting delivery by the ChatInput. */
+  autoSendRequest: AutoSendRequest | null;
+  /** Claims the head request for sending; false when it was already claimed
+   *  (ChatInput rebuilt / several inputs mounted) or is no longer the head. */
+  claimAutoSend: (id: number) => boolean;
+  /** Marks the head request as sent and activates the next queued one. */
+  completeAutoSend: (id: number) => void;
   /** 回填输入框但不自动发送；newChat 时先新建会话（可指定目标项目）。 */
   prefillComposer: (
     content: string,
     options?: { newChat?: boolean; directoryId?: string },
   ) => void;
-  /** One-shot per-send override queued by buildFromContent for the ChatInput's
-   *  auto-send. Cleared once consumed (onAutoSendOverrideConsumed). */
-  pendingAutoSendOverride: ScheduledTaskRunOptions | null;
-  setPendingAutoSendOverride: (options: ScheduledTaskRunOptions | null) => void;
   handleRollback: (messageId: string) => void;
   /** 回滚变更计算中（弹窗弹出前）的消息 id，入口按钮据此显示 loading。 */
   rollbackPreparingMessageId: string | null;
@@ -1159,6 +1167,10 @@ export const PENDING_SESSION_KEY = "__pending__";
 export const PENDING_SESSION_KEY_PREFIX = "__pending__:";
 export const getPendingSessionKey = (seq: number): string =>
   `${PENDING_SESSION_KEY_PREFIX}${seq}`;
+/** 后台新建会话（定时任务）的 pending 槽位 key：与新会话视图的序号槽位
+ *  分属不同命名空间，永远不会成为当前视图会话，迁移时也就不会切换视图。 */
+export const getBackgroundPendingSessionKey = (seq: number): string =>
+  `${PENDING_SESSION_KEY_PREFIX}bg-${seq}`;
 /** 判断 key 是否属于"新会话"（未迁移到真实 conversationId 的会话）。 */
 export const isPendingSessionKey = (key: string | undefined | null): boolean =>
   !!key &&

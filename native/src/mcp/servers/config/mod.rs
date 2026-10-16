@@ -3546,7 +3546,9 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
         // key 指向不存在的方案时按新建处理：调用方显式给出的 id 会被采用。
         let scheme_id = match existing {
             Some(record) => record.scheme_id.clone(),
-            None if is_new => next_scheme_id(&records),
+            None if is_new => {
+                crate::storage::services::custom_header_schemes::next_scheme_id(&records)
+            }
             None => requested.to_string(),
         };
 
@@ -3936,18 +3938,6 @@ fn unwrap_stringified_value(scope: &str, key: &str, raw: &str) -> Option<Value> 
         }
     }
     None
-}
-
-/// 生成未占用的请求头方案 id（毫秒时间戳，与 UI 的 `String(Date.now())` 风格一致）。
-fn next_scheme_id(records: &[crate::storage::CustomHeaderSchemeRecord]) -> String {
-    let mut candidate = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_millis().to_string())
-        .unwrap_or_else(|_| "0".to_string());
-    while records.iter().any(|record| record.scheme_id == candidate) {
-        candidate = format!("{candidate}-1");
-    }
-    candidate
 }
 
 /// 校验子代理 toolsJson 中的工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：

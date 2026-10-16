@@ -7,7 +7,7 @@ use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{anthropic, antigravity, chatgpt, codex, xai};
+use super::{anthropic, antigravity, chatgpt, codex, header_schemes, xai};
 use crate::storage::services::api_configs as api_configs_service;
 use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::{ensure_database_file, ApiConfigInput, ApiConfigRecord};
@@ -157,6 +157,26 @@ impl OAuthProviderId {
             OAuthProviderId::Anthropic => "localhost",
             OAuthProviderId::Antigravity => "localhost",
             OAuthProviderId::Xai => "127.0.0.1",
+        }
+    }
+
+    /// 订阅档案绑定的自定义请求头方案名称；`None` 表示该提供方没有固定身份请求头。
+    pub fn header_scheme_name(self) -> Option<&'static str> {
+        match self {
+            OAuthProviderId::Codex => Some("Codex"),
+            OAuthProviderId::Anthropic => Some("Claude"),
+            OAuthProviderId::Antigravity => Some("Antigravity"),
+            OAuthProviderId::ChatGpt | OAuthProviderId::Xai => None,
+        }
+    }
+
+    /// 订阅请求必需的固定身份请求头，作为默认值写入该提供方的自定义请求头方案。
+    pub fn required_headers(self) -> Vec<(&'static str, String)> {
+        match self {
+            OAuthProviderId::Codex => codex::required_headers(),
+            OAuthProviderId::Anthropic => anthropic::required_headers(),
+            OAuthProviderId::Antigravity => antigravity::required_headers(),
+            OAuthProviderId::ChatGpt | OAuthProviderId::Xai => Vec::new(),
         }
     }
 }
@@ -386,6 +406,9 @@ pub async fn fetch_models(
     }
 }
 
+/// 账号级动态请求头（随登录账号或令牌变化，无法写入共享的请求头方案）。
+///
+/// 固定的身份请求头由档案绑定的自定义请求头方案提供（见 `header_schemes`）。
 pub fn apply_request_headers(
     config: &ApiConfigRecord,
     headers: &mut HashMap<String, String>,
@@ -395,12 +418,10 @@ pub fn apply_request_headers(
     };
     match metadata.provider {
         OAuthProviderId::Codex => codex::apply_request_headers(&metadata, headers),
-        OAuthProviderId::ChatGpt => {}
-        OAuthProviderId::Anthropic => anthropic::apply_request_headers(headers),
         OAuthProviderId::Antigravity => {
             antigravity::apply_request_headers(&config.api_key, headers)
         }
-        OAuthProviderId::Xai => {}
+        OAuthProviderId::ChatGpt | OAuthProviderId::Anthropic | OAuthProviderId::Xai => {}
     }
 }
 
@@ -575,36 +596,9 @@ pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigR
 
     let database_path = ensure_database_file()?;
     let profile_name = api_config.profile_name.clone();
-    let input = ApiConfigInput {
-        profile_name: profile_name.clone(),
-        previous_profile_name: None,
-        display_name: api_config.display_name.clone(),
-        is_active: api_config.is_active,
-        base_url: api_config.base_url.clone(),
-        base_url_mode: api_config.base_url_mode.clone(),
-        api_key: tokens.access_token.clone(),
-        request_method: api_config.request_method.clone(),
-        advanced_model: api_config.advanced_model.clone(),
-        basic_model: api_config.basic_model.clone(),
-        supports_vision: api_config.supports_vision,
-        vision_base_url: api_config.vision_base_url.clone(),
-        vision_base_url_mode: api_config.vision_base_url_mode.clone(),
-        vision_api_key: String::new(),
-        vision_request_method: api_config.vision_request_method.clone(),
-        vision_model: api_config.vision_model.clone(),
-        max_context_tokens: api_config.max_context_tokens,
-        max_tokens: api_config.max_tokens,
-        stream_idle_timeout_sec: api_config.stream_idle_timeout_sec,
-        enable_auto_compress: api_config.enable_auto_compress,
-        auto_compress_threshold: api_config.auto_compress_threshold,
-        max_retries: api_config.max_retries,
-        retry_base_delay_ms: api_config.retry_base_delay_ms,
-        partial_retry_max_chars: api_config.partial_retry_max_chars,
-        system_prompt_ids_json: api_config.system_prompt_ids_json.clone(),
-        custom_header_scheme_id: api_config.custom_header_scheme_id.clone(),
-        config_json: config_json.clone(),
-        source: api_config.source.clone(),
-    };
+    let mut input = input_from_record(&api_config);
+    input.api_key = tokens.access_token.clone();
+    input.config_json = config_json.clone();
 
     let persisted = {
         let db_path = database_path.clone();
@@ -640,6 +634,40 @@ fn pick_fresh(fresh: &str, existing: &str) -> String {
         existing.to_string()
     } else {
         fresh.to_string()
+    }
+}
+
+/// 以库内记录为底构造回写输入；视觉 key 留空，由 upsert 保留库内原值。
+pub fn input_from_record(record: &ApiConfigRecord) -> ApiConfigInput {
+    ApiConfigInput {
+        profile_name: record.profile_name.clone(),
+        previous_profile_name: None,
+        display_name: record.display_name.clone(),
+        is_active: record.is_active,
+        base_url: record.base_url.clone(),
+        base_url_mode: record.base_url_mode.clone(),
+        api_key: record.api_key.clone(),
+        request_method: record.request_method.clone(),
+        advanced_model: record.advanced_model.clone(),
+        basic_model: record.basic_model.clone(),
+        supports_vision: record.supports_vision,
+        vision_base_url: record.vision_base_url.clone(),
+        vision_base_url_mode: record.vision_base_url_mode.clone(),
+        vision_api_key: String::new(),
+        vision_request_method: record.vision_request_method.clone(),
+        vision_model: record.vision_model.clone(),
+        max_context_tokens: record.max_context_tokens,
+        max_tokens: record.max_tokens,
+        stream_idle_timeout_sec: record.stream_idle_timeout_sec,
+        enable_auto_compress: record.enable_auto_compress,
+        auto_compress_threshold: record.auto_compress_threshold,
+        max_retries: record.max_retries,
+        retry_base_delay_ms: record.retry_base_delay_ms,
+        partial_retry_max_chars: record.partial_retry_max_chars,
+        system_prompt_ids_json: record.system_prompt_ids_json.clone(),
+        custom_header_scheme_id: record.custom_header_scheme_id.clone(),
+        config_json: record.config_json.clone(),
+        source: record.source.clone(),
     }
 }
 
@@ -685,8 +713,16 @@ pub fn keep_saved_oauth_secrets(config: &mut ApiConfigInput, saved: &ApiConfigRe
     config.config_json = incoming.to_string();
 }
 
-pub async fn persist_profile(database_path: PathBuf, input: ApiConfigInput) -> Result<()> {
+/// 写入登录得到的订阅档案，并把档案绑定到提供方的自定义请求头方案（缺失则补建）。
+pub async fn persist_profile(
+    database_path: PathBuf,
+    provider: OAuthProviderId,
+    mut input: ApiConfigInput,
+) -> Result<()> {
     tokio::task::spawn_blocking(move || {
+        if let Some(scheme_id) = header_schemes::ensure_provider_scheme(&database_path, provider)? {
+            input.custom_header_scheme_id = scheme_id;
+        }
         api_configs_service::upsert_api_config(&database_path, &input)?;
         api_configs_service::reorder_api_configs(&database_path, &[input.profile_name.clone()])
     })

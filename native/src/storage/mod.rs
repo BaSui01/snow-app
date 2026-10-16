@@ -65,6 +65,7 @@ static MIGRATION_RECOVER_INIT: Once = Once::new();
 static LSP_CONFIG_SEED_INIT: Once = Once::new();
 static LSP_CONFIG_RECONCILE_INIT: Once = Once::new();
 static LSP_CONFIG_NORMALIZE_INIT: Once = Once::new();
+static OAUTH_HEADER_SCHEME_BIND_INIT: Once = Once::new();
 
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     crate::utils::panic_hook::install_panic_hook();
@@ -143,6 +144,17 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
         let db_path = database_path.clone();
         if let Err(error) = services::lsp_server_configs::normalize_legacy_sort_orders(&db_path) {
             eprintln!("Failed to normalize LSP server sort orders: {error}");
+        }
+    });
+
+    // Bind subscription (OAuth) profiles created before their identity headers
+    // moved into custom header schemes. Runs once per database (guarded by a
+    // system setting flag); errors are non-fatal.
+    OAUTH_HEADER_SCHEME_BIND_INIT.call_once(|| {
+        if let Err(error) =
+            crate::api::oauth::header_schemes::bind_legacy_profiles_once(&database_path)
+        {
+            eprintln!("Failed to bind OAuth profiles to header schemes: {error}");
         }
     });
 

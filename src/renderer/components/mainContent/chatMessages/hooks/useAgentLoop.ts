@@ -186,7 +186,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return;
       }
 
-      let capturedOptions = captureChatInputSendOptions(options);
+      // 后台会话（startBackgroundConversation）的目标项目与任务名随本次发送
+      // 传入，不进入 capturedOptions，避免写进 activeSendOptions / 排队消息。
+      const { targetDirectoryId, triggeredByTaskName, ...sendOptions } =
+        options;
+      let capturedOptions = captureChatInputSendOptions(sendOptions);
       // 程序化发送（pending 队列自动冲刷）携带目标会话 key：消息必须发到
       // 队列所属的会话，而不是用户当前停留的视图会话。
       const sessionKey =
@@ -232,23 +236,30 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return;
       }
 
-      // 程序化发送（targetSessionKey）是既有会话的后续消息，永远不是
-      // 首条消息：不参与占位记录/首条 summary/回滚状态合并等首条逻辑。
+      // 程序化发送（targetSessionKey）通常是既有会话的后续消息，不参与占位
+      // 记录/首条 summary/回滚状态合并等首条逻辑。唯一例外是后台新建会话：
+      // targetSessionKey 指向一个尚不存在的 pending 槽位（定时任务在后台
+      // 开新会话），它是首条消息，但不属于任何视图——不得读写新会话视图的
+      // 一次性状态（预选工作树、回滚新会话状态、pendingDirectoryIdRef）。
+      const isBackgroundStart =
+        isPendingSessionKey(options.targetSessionKey) && !existingRef;
       const isFirstMessage =
-        ctx.activeConversationIdRef.current === undefined &&
-        !options.targetSessionKey;
-      const targetPendingWorktree =
-        ctx.pendingWorktreeIdRef.current || existingRef?.worktreeId;
-      if (
-        isFirstMessage &&
-        (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current) &&
-        !targetPendingWorktree
-      ) {
+        isBackgroundStart ||
+        (ctx.activeConversationIdRef.current === undefined &&
+          !options.targetSessionKey);
+      const targetPendingWorktree = isBackgroundStart
+        ? undefined
+        : ctx.pendingWorktreeIdRef.current || existingRef?.worktreeId;
+      const sessionWorktreeMode = isBackgroundStart
+        ? ctx.globalModeDefaultsRef.current.worktreeMode
+        : (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current);
+      if (isFirstMessage && sessionWorktreeMode && !targetPendingWorktree) {
         // 用内置提示弹窗代替系统 alert：置入文案，由 ChatContent 渲染。
         ctx.setWorktreeModeNotice(t("git.worktreesPendingSessionHint"));
         return;
       }
-      const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;
+      const rollbackState =
+        isFirstMessage && !isBackgroundStart ? ctx.rollbackNewChatState : null;
       if (rollbackState) {
         capturedOptions = {
           ...capturedOptions,
@@ -269,19 +280,21 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             },
         };
       }
-      // Consume the one-shot target project set by handleNewChat(directoryId)
-      // (e.g. a scheduled task firing for its bound project) so the new
-      // PENDING session lands in the task's project instead of the currently
-      // active one. Cleared immediately — it applies to this send only.
-      const pendingDirId = ctx.pendingDirectoryIdRef.current;
-      ctx.pendingDirectoryIdRef.current = undefined;
+      // Target project of the new PENDING session: a background conversation
+      // carries its own target (e.g. a scheduled task's bound project) and
+      // leaves the view's one-shot slot untouched; a manual send consumes the
+      // one-shot target set by handleNewChat(directoryId) — it applies to this
+      // send only.
+      let pendingDirId: string | undefined;
+      if (!isBackgroundStart) {
+        pendingDirId = ctx.pendingDirectoryIdRef.current;
+        ctx.pendingDirectoryIdRef.current = undefined;
+      }
       const sessionDirId =
-        existingRef?.directoryId ?? pendingDirId ?? ctx.directoryId;
-      // One-shot scheduled-task name (set by buildFromContent) consumed here so
-      // the new session can show a "triggered by scheduled task" banner in the
-      // message list. Cleared immediately — it applies to this send only.
-      const pendingTaskName = ctx.pendingTaskNameRef.current;
-      ctx.pendingTaskNameRef.current = undefined;
+        existingRef?.directoryId ??
+        targetDirectoryId ??
+        pendingDirId ??
+        ctx.directoryId;
 
       // Reset only this session's approval for the new user task. Other
       // conversations may still be executing their independently approved plan.
@@ -301,6 +314,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
       if (sessionRef && targetPendingWorktree) {
         sessionRef.worktreeId = targetPendingWorktree;
+      }
+      if (sessionRef && isBackgroundStart) {
+        sessionRef.startedInBackground = true;
       }
       // 已有会话：发送时把当前选择统一落库（渠道绑定/思考强度/Fast Mode/模式）。
       // 切换这些选择本身不再写库；pending 会话在迁移拿到真实 id 后再写。
@@ -369,9 +385,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // Stamp the session with the scheduled-task trigger info (if any) so the
       // message list can render a "triggered by task" banner. Only on the
       // first message — a task firing always starts a brand-new conversation.
-      if (isFirstMessage && pendingTaskName) {
+      if (isFirstMessage && triggeredByTaskName) {
         ctx.updateSessionField(sessionKey, "triggeredByTask", {
-          name: pendingTaskName,
+          name: triggeredByTaskName,
           triggeredAt: new Date().toISOString(),
         });
       }
@@ -784,8 +800,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const iterRef = ctx.sessionsRefData.current.get(effectiveKey);
         const effectiveWorktreeMode =
           iterRef?.worktreeMode ?? ctx.worktreeModeRef.current;
-        const effectiveWorktreeId =
-          iterRef?.worktreeId ?? ctx.pendingWorktreeIdRef.current;
+        const effectiveWorktreeId = iterRef?.startedInBackground
+          ? iterRef.worktreeId
+          : (iterRef?.worktreeId ?? ctx.pendingWorktreeIdRef.current);
         const projectSessionDirPath =
           directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
         const effectiveExecutionWorkspaceRoot =
@@ -892,16 +909,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               planApprovedSessionKeysRef.current.add(response.conversationId);
             }
             ctx.migrateSession(effectiveKey, response.conversationId);
-            ctx.setRollbackNewChatState(null);
             const currentSession = ctx.sessionsRefData.current.get(
               response.conversationId,
             );
-            const effectiveWorktreeId =
-              currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
-            if (effectiveWorktreeId && currentSession) {
-              currentSession.worktreeId = effectiveWorktreeId;
+            // 后台会话不属于新会话视图：视图的回滚新会话状态与预选工作树
+            // 留给用户当前的新会话，既不借用也不清理。
+            if (!currentSession?.startedInBackground) {
+              ctx.setRollbackNewChatState(null);
+              const effectiveWorktreeId =
+                currentSession?.worktreeId || ctx.pendingWorktreeIdRef.current;
+              if (effectiveWorktreeId && currentSession) {
+                currentSession.worktreeId = effectiveWorktreeId;
+              }
+              ctx.setPendingWorktreeId(null);
             }
-            ctx.setPendingWorktreeId(null);
             if (
               ctx.activeSessionKeyRef.current === migratingPendingKey &&
               !ctx.newChatRequestedRef.current
@@ -1695,8 +1716,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
         const projectSessionDirPath =
           directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
-        const effectiveWorktreeId =
-          sessionRef?.worktreeId || ctx.pendingWorktreeIdRef.current;
+        const effectiveWorktreeId = isBackgroundStart
+          ? sessionRef?.worktreeId
+          : sessionRef?.worktreeId || ctx.pendingWorktreeIdRef.current;
         const sessionDirPath = await resolveConversationWorkspacePath(
           isPendingSessionKey(sessionKey) ? "" : sessionKey,
           sessionDirId,

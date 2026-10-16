@@ -7,11 +7,7 @@ import {
   useState,
 } from "react";
 import { BrainCircuit } from "lucide-react";
-import type {
-  ApiConfigRecord,
-  Model,
-  ScheduledTaskRunOptions,
-} from "../../../../preload";
+import type { ApiConfigRecord, Model } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { shortcutEvents } from "../../shortcutEvents";
 import {
@@ -35,6 +31,7 @@ import {
   type BusySendBehavior,
 } from "../../../constants/busySendBehavior";
 import type {
+  AutoSendRequest,
   ChatInputActions,
   ChatInputSendOptions,
   ChatInputState,
@@ -55,10 +52,10 @@ type UseChatInputControllerParams = {
   isAborting?: boolean;
   onAbort?: () => void;
   draftToRestore?: string | null;
-  autoSendToken?: number;
   onDraftRestored?: () => void;
-  autoSendOverride?: ScheduledTaskRunOptions | null;
-  onAutoSendOverrideConsumed?: () => void;
+  autoSendRequest?: AutoSendRequest | null;
+  claimAutoSend?: (id: number) => boolean;
+  completeAutoSend?: (id: number) => void;
   saveInputDraft?: (
     conversationId: string | undefined,
     content: string,
@@ -113,10 +110,10 @@ export const useChatInputController = ({
   isAborting = false,
   onAbort,
   draftToRestore = null,
-  autoSendToken = 0,
   onDraftRestored,
-  autoSendOverride = null,
-  onAutoSendOverrideConsumed,
+  autoSendRequest = null,
+  claimAutoSend,
+  completeAutoSend,
   saveInputDraft,
   getInputDraft,
   clearInputDraft,
@@ -509,43 +506,52 @@ export const useChatInputController = ({
     textareaRef.current?.style.removeProperty("height");
   }, []);
 
+  // 程序化自动发送（buildFromContent 队首请求）：只发送，绝不写进输入框——
+  // 写进去会在输入区实例重建时被卸载快照存成草稿，又被新实例的草稿恢复逻辑
+  // 写回输入框（表现为消息发出后提示词仍留在输入框）。claim 保证同一请求只被
+  // 一个输入区实例发送一次，发送后 complete 才激活下一条请求。
   useEffect(() => {
-    if (draftToRestore === null) {
+    if (!autoSendRequest || !claimAutoSend?.(autoSendRequest.id)) {
       return;
     }
-
-    // 程序化自动发送（buildFromContent 排队的一次性提示词）：只发送，绝不写进
-    // 输入框——写进去会在输入区实例重建时被卸载快照存成草稿，又被新实例的草稿
-    // 恢复逻辑写回输入框（表现为消息发出后提示词仍留在输入框）。
-    if (autoSendToken > 0) {
-      const autoSendTextarea = textareaRef.current;
-      if (autoSendTextarea) {
-        autoSendTextarea.innerHTML = "";
-        autoSendTextarea.dataset.empty = "true";
-        adjustHeight();
+    const request = autoSendRequest;
+    const autoSendTextarea = textareaRef.current;
+    if (autoSendTextarea) {
+      autoSendTextarea.innerHTML = "";
+      autoSendTextarea.dataset.empty = "true";
+      adjustHeight();
+    }
+    setValue("");
+    clearInputDraft?.(conversationId);
+    requestAnimationFrame(() => {
+      const message = request.content.trim();
+      if (message) {
+        onSend?.(
+          message,
+          resolveAutoSendOptions({
+            apiConfigs,
+            selectedModel,
+            selectedApiProfile,
+          }),
+        );
       }
-      setValue("");
-      clearInputDraft?.(conversationId);
-      requestAnimationFrame(() => {
-        const message = draftToRestore.trim();
-        if (message) {
-          // Scheduled-task runs may carry one-shot profile/model/title-model
-          // overrides. The resolver never borrows selectedModel when a task
-          // names a profile, and this existing callback remains the sole
-          // consumption point so snapshots cannot leak into manual sends.
-          onSend?.(
-            message,
-            resolveAutoSendOptions({
-              autoSendOverride,
-              apiConfigs,
-              selectedModel,
-              selectedApiProfile,
-            }),
-          );
-        }
-        onAutoSendOverrideConsumed?.();
-      });
-      onDraftRestored?.();
+      completeAutoSend?.(request.id);
+    });
+  }, [
+    autoSendRequest,
+    claimAutoSend,
+    completeAutoSend,
+    adjustHeight,
+    onSend,
+    apiConfigs,
+    selectedModel,
+    selectedApiProfile,
+    conversationId,
+    clearInputDraft,
+  ]);
+
+  useEffect(() => {
+    if (draftToRestore === null) {
       return;
     }
 
@@ -577,13 +583,6 @@ export const useChatInputController = ({
     draftToRestore,
     onDraftRestored,
     adjustHeight,
-    autoSendToken,
-    onSend,
-    apiConfigs,
-    selectedModel,
-    selectedApiProfile,
-    autoSendOverride,
-    onAutoSendOverrideConsumed,
     conversationId,
     clearInputDraft,
   ]);
@@ -629,16 +628,22 @@ export const useChatInputController = ({
   // ChatInput 实例随会话切换（key 变化）而重建，卸载时草稿存入
   // per-conversation 草稿池；新实例挂载后——或 conversationId prop 变化
   // 而实例未重建时——恢复目标会话的草稿。Rollback 草稿（draftToRestore）
-  // 优先，由上面的 effect 处理。
+  // 与待投递的自动发送优先，由上面的 effect 处理。
   useEffect(() => {
-    if (draftToRestore !== null) {
+    if (draftToRestore !== null || autoSendRequest !== null) {
       return;
     }
     const draft = getInputDraft?.(conversationId);
     if (draft) {
       restoreContent(draft);
     }
-  }, [conversationId, draftToRestore, getInputDraft, restoreContent]);
+  }, [
+    conversationId,
+    draftToRestore,
+    autoSendRequest,
+    getInputDraft,
+    restoreContent,
+  ]);
 
   // Save the current input when the component unmounts or the conversation
   // changes, so nothing typed is lost (latestValueRef avoids stale closures).

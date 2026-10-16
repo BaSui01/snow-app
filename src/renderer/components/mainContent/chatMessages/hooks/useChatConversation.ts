@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
-import type { ConversationInputRuntimeState } from "../../chatInput/types";
+import type {
+  AutoSendRequest,
+  ConversationInputRuntimeState,
+} from "../../chatInput/types";
 import type {
   ApiConfigRecord,
   ScheduledTaskRunOptions,
@@ -16,9 +19,11 @@ import type {
 } from "../utils/conversationTypes";
 import {
   PENDING_SESSION_KEY,
+  getBackgroundPendingSessionKey,
   getPendingSessionKey,
   isPendingSessionKey,
 } from "../utils/conversationTypes";
+import { resolveAutoSendOptions } from "../../chatInput/autoSendOptions";
 import {
   CONVERSATION_CACHE_TTL_CHANGED_EVENT,
   CONVERSATION_CACHE_TTL_DEFAULT_MINUTES,
@@ -206,11 +211,17 @@ export const useChatConversation = (
   ] = useState<Set<string>>(new Set());
   const [isLoadingInitialHistory, setIsLoadingInitialHistory] = useState(false);
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
-  const [autoSendToken, setAutoSendToken] = useState(0);
-  // One-shot per-send overrides queued by buildFromContent (scheduled tasks).
-  // Consumed by the ChatInput's auto-send effect, then cleared.
-  const [pendingAutoSendOverride, setPendingAutoSendOverride] =
-    useState<ScheduledTaskRunOptions | null>(null);
+  // buildFromContent 的前台自动发送队列：队首（activeAutoSend）被输入区发送后
+  // 才激活下一条，多次请求不会互相覆盖。
+  const [activeAutoSend, setActiveAutoSend] = useState<AutoSendRequest | null>(
+    null,
+  );
+  const activeAutoSendRef = useRef<AutoSendRequest | null>(null);
+  const autoSendClaimedRef = useRef(false);
+  const autoSendQueueRef = useRef<AutoSendRequest[]>([]);
+  const autoSendSeqRef = useRef(0);
+  // 后台会话（定时任务）的槽位序号，与新会话视图的 pendingSessionSeqRef 独立。
+  const backgroundSessionSeqRef = useRef(0);
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
   const [rollbackNewChatState, setRollbackNewChatState] =
@@ -287,7 +298,6 @@ export const useChatConversation = (
   // pending 槽位 -> 迁移后的真实 conversationId（侧边栏占位替换用）。
   const pendingToRealConversationIdRef = useRef<Map<string, string>>(new Map());
   const pendingDirectoryIdRef = useRef<string | undefined>(undefined);
-  const pendingTaskNameRef = useRef<string | undefined>(undefined);
   const selectionRequestIdRef = useRef(0);
   const historyLoadPromisesRef = useRef(new Map<string, Promise<void>>());
   const loadingOlderConversationIdsRef = useRef(new Set<string>());
@@ -739,7 +749,6 @@ export const useChatConversation = (
     pendingSessionSeqRef,
     activeSessionKeyRef,
     pendingDirectoryIdRef,
-    pendingTaskNameRef,
     selectionRequestIdRef,
     historyLoadPromisesRef,
     loadingOlderConversationIdsRef,
@@ -1127,6 +1136,87 @@ export const useChatConversation = (
     [ctx.updateSessionField],
   );
 
+  // --- Auto-send queue (buildFromContent) ---
+  // 激活下一条请求时才新建会话视图：上一条已在 handleSendMessage 中同步标记
+  // isSending，handleNewChat 会保留其槽位并分配新槽位，互不串台。
+  // handleNewChatRef 始终指向最新的 handleNewChat（上方独立窗口归属处维护）。
+  const activateNextAutoSend = useCallback((): void => {
+    const next = autoSendQueueRef.current.shift() ?? null;
+    activeAutoSendRef.current = next;
+    autoSendClaimedRef.current = false;
+    if (next) {
+      handleNewChatRef.current();
+    }
+    setActiveAutoSend(next);
+  }, []);
+
+  const buildFromContent = useCallback(
+    (content: string): void => {
+      autoSendSeqRef.current += 1;
+      autoSendQueueRef.current.push({ id: autoSendSeqRef.current, content });
+      if (!activeAutoSendRef.current) {
+        activateNextAutoSend();
+      }
+    },
+    [activateNextAutoSend],
+  );
+
+  // --- Background conversations (scheduled tasks) ---
+  // 每次分配独立的后台 pending 槽位，直接走 handleSendMessage 的程序化发送：
+  // 不新建会话视图、不借用输入区，也不读写任何视图级一次性状态，多条任务
+  // 同时触发时各自落在各自的槽位与项目里。渠道/模型按新会话视图的默认规则
+  // 解析（任务指定的渠道优先，否则取当前激活渠道及其高级模型）。
+  const startBackgroundConversation = useCallback(
+    async (
+      content: string,
+      directoryId?: string,
+      options?: ScheduledTaskRunOptions,
+      taskName?: string,
+    ): Promise<void> => {
+      const message = content.trim();
+      if (!message) {
+        return;
+      }
+      const configs = await window.snow.listApiConfigs();
+      const activeConfig =
+        configs.find((config) => config.isActive) ?? configs[0];
+      backgroundSessionSeqRef.current += 1;
+      handleSendMessageRef.current(message, {
+        ...resolveAutoSendOptions({
+          autoSendOverride: options ?? null,
+          apiConfigs: configs,
+          selectedModel: activeConfig?.advancedModel,
+          selectedApiProfile: activeConfig?.profileName,
+        }),
+        targetSessionKey: getBackgroundPendingSessionKey(
+          backgroundSessionSeqRef.current,
+        ),
+        targetDirectoryId: directoryId?.trim() || undefined,
+        triggeredByTaskName: taskName,
+      });
+    },
+    [],
+  );
+
+  // 同一请求只允许一个输入区实例认领一次（输入区重建、多实例挂载时防重复发送）。
+  const claimAutoSend = useCallback((id: number): boolean => {
+    if (activeAutoSendRef.current?.id !== id || autoSendClaimedRef.current) {
+      return false;
+    }
+    autoSendClaimedRef.current = true;
+    return true;
+  }, []);
+
+  const completeAutoSend = useCallback(
+    (id: number): void => {
+      if (activeAutoSendRef.current?.id !== id) {
+        return;
+      }
+      activateNextAutoSend();
+    },
+    [activateNextAutoSend],
+  );
+
   return {
     messages: activeSession?.messages ?? [],
     summary: activeSession?.summary ?? "",
@@ -1214,33 +1304,18 @@ export const useChatConversation = (
     abortWorkflowNodes: conversationManagementApi.abortWorkflowNodes,
     handleForkConversation: conversationManagementApi.handleForkConversation,
     draftToRestore,
-    autoSendToken,
-    clearDraftToRestore: () => {
-      rollbackApi.clearDraftToRestore();
-      setAutoSendToken(0);
-    },
+    clearDraftToRestore: rollbackApi.clearDraftToRestore,
     saveInputDraft,
     getInputDraft,
     clearInputDraft,
     updateRuntimeInputState,
     getRuntimeInputState,
-    buildFromContent: (
-      content: string,
-      directoryId?: string,
-      options?: ScheduledTaskRunOptions,
-      taskName?: string,
-    ) => {
-      conversationManagementApi.handleNewChat(directoryId);
-      // One-shot task name for the message-list "triggered by scheduled task"
-      // banner; consumed by handleSendMessage when the new session starts.
-      pendingTaskNameRef.current = taskName;
-      setDraftToRestore(content);
-      // Queue the per-send overrides (if any) for the ChatInput's auto-send
-      // effect; it merges them into the send options and clears them after.
-      setPendingAutoSendOverride(options ?? null);
-      setAutoSendToken(Date.now());
-    },
-    // 回填输入框但不发送（不走 autoSendToken 分支）；newChat 时先新建会话。
+    buildFromContent,
+    startBackgroundConversation,
+    autoSendRequest: activeAutoSend,
+    claimAutoSend,
+    completeAutoSend,
+    // 回填输入框但不发送（不走自动发送队列）；newChat 时先新建会话。
     prefillComposer: (
       content: string,
       options?: { newChat?: boolean; directoryId?: string },
@@ -1250,8 +1325,6 @@ export const useChatConversation = (
       }
       setDraftToRestore(content);
     },
-    pendingAutoSendOverride,
-    setPendingAutoSendOverride,
     handleRollback: rollbackApi.handleRollback,
     rollbackPreparingMessageId: rollbackApi.preparingMessageId,
     rollbackPreview,

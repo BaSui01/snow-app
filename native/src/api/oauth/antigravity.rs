@@ -444,6 +444,15 @@ pub fn fetch_models_blocking(
     )))
 }
 
+/// Code Assist 网关要求的客户端身份头，作为默认值写入「Antigravity」自定义请求头方案。
+pub fn required_headers() -> Vec<(&'static str, String)> {
+    vec![
+        ("User-Agent", user_agent()),
+        ("x-goog-api-client", API_CLIENT.to_string()),
+    ]
+}
+
+/// 授权头随令牌刷新变化，不写入共享方案，在请求时按档案当前令牌注入。
 pub fn apply_request_headers(access_token: &str, headers: &mut HashMap<String, String>) {
     let access_token = access_token.trim();
     if access_token.is_empty() {
@@ -453,6 +462,4 @@ pub fn apply_request_headers(access_token: &str, headers: &mut HashMap<String, S
         "Authorization".to_string(),
         format!("Bearer {access_token}"),
     );
-    headers.insert("User-Agent".to_string(), user_agent());
-    headers.insert("x-goog-api-client".to_string(), API_CLIENT.to_string());
 }

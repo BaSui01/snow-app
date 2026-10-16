@@ -2,7 +2,6 @@ import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
-import type { ScheduledTaskRunOptions } from "../../../../preload";
 
 export type ConversationInputRuntimeState = {
   model: string;
@@ -42,7 +41,20 @@ export type ChatInputSendOptions = {
   targetSessionKey?: string;
   /** Renderer-owned batch delivery trace, never supplied by the model. */
   imageGenerationBatchId?: string;
+  /** 内部字段：后台新建会话（startBackgroundConversation）的目标项目，仅决定
+   *  新会话落在哪个项目；随本次发送传递，不经任何全局一次性状态。 */
+  targetDirectoryId?: string;
+  /** 内部字段：触发本次后台会话的定时任务名，用于消息列表的
+   *  "由定时任务触发"横幅；仅对新会话首条消息生效。 */
+  triggeredByTaskName?: string;
 };
+
+/** buildFromContent 排队的一次前台自动发送请求，消费后整体出队。 */
+export type AutoSendRequest = {
+  id: number;
+  content: string;
+};
+
 export type ChatInputProps = {
   placeholder?: string;
   projectId?: string;
@@ -56,13 +68,12 @@ export type ChatInputProps = {
   onAbort?: () => void;
   tokenUsage?: TokenUsage | null;
   draftToRestore?: string | null;
-  autoSendToken?: number;
   onDraftRestored?: () => void;
-  /** One-shot per-send overrides queued by buildFromContent (scheduled task
-   *  runs). The auto-send effect merges them into the send options, then calls
-   *  onAutoSendOverrideConsumed so they never leak into later manual sends. */
-  autoSendOverride?: ScheduledTaskRunOptions | null;
-  onAutoSendOverrideConsumed?: () => void;
+  /** 当前待投递的自动发送请求（buildFromContent 队首）。输入区先 claim
+   *  （同一请求只会被一个输入区实例认领一次），发送后 complete 推进队列。 */
+  autoSendRequest?: AutoSendRequest | null;
+  claimAutoSend?: (id: number) => boolean;
+  completeAutoSend?: (id: number) => void;
   /** 按会话持久化输入草稿（文本+图片 chip）。 */
   saveInputDraft?: (
     conversationId: string | undefined,

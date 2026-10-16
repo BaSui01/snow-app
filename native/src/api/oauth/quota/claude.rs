@@ -10,6 +10,7 @@ use super::{
     QuotaGroup, QuotaParts,
 };
 use crate::api::oauth::anthropic as anthropic_auth;
+use crate::api::oauth::header_schemes::fill_missing_headers;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
@@ -23,9 +24,10 @@ const TOP_LEVEL_WINDOWS: [&str; 7] = [
     "iguana_necktie",
 ];
 
-pub async fn fetch(token: &str) -> Result<QuotaParts> {
-    let mut headers = HashMap::new();
-    anthropic_auth::apply_request_headers(&mut headers);
+/// `headers` 为档案绑定方案解析出的请求头；配额接口不属于用户配置的推理请求，
+/// 档案未绑定方案时以 Claude Code 默认身份头补齐缺失项。
+pub async fn fetch(token: &str, mut headers: HashMap<String, String>) -> Result<QuotaParts> {
+    fill_missing_headers(&mut headers, anthropic_auth::required_headers());
     let (usage, profile) = futures::future::join(
         get_json(USAGE_URL, token, &headers),
         get_json(PROFILE_URL, token, &headers),

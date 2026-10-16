@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use napi::bindgen_prelude::*;
 use rusqlite::{params, Connection};
@@ -38,6 +39,18 @@ pub fn upsert_custom_header_scheme(
         .map_err(|error| {
             database::database_error(database_path, "upsert custom header scheme", error)
         })
+}
+
+/// 生成未占用的请求头方案 id（毫秒时间戳，与 UI 的 `String(Date.now())` 风格一致）。
+pub fn next_scheme_id(records: &[CustomHeaderSchemeRecord]) -> String {
+    let mut candidate = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis().to_string())
+        .unwrap_or_else(|_| "0".to_string());
+    while records.iter().any(|record| record.scheme_id == candidate) {
+        candidate = format!("{candidate}-1");
+    }
+    candidate
 }
 
 pub fn delete_custom_header_scheme(database_path: &Path, scheme_id: &str) -> Result<()> {

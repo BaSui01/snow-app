@@ -19,8 +19,9 @@
  * task remains valid.
  *
  * Execution is delegated to a registered "executor" callback. The renderer
- * (which lives inside the ChatConversationProvider) registers buildFromContent
- * as the executor, so every task fires a fresh AI Loop with access to all
+ * (which lives inside the ChatConversationProvider) registers
+ * startBackgroundConversation as the executor, so every task fires a fresh AI
+ * Loop in the background with access to all
  * tools. If no executor is registered when a task fires, the run is marked as
  * error and retried on the next tick (for recurring tasks).
  *
@@ -455,7 +456,7 @@ export class ScheduledTasksStore {
   };
 
   /**
-   * Registers the AI Loop executor (buildFromContent). 侧栏与定时任务页面会同时
+   * Registers the AI Loop executor (startBackgroundConversation). 侧栏与定时任务页面会同时
    * 注册：注销只移除自己那份，任何一个宿主卸载都不会让调度器失去执行器。
    */
   setExecutor = (executor: Executor): (() => void) => {

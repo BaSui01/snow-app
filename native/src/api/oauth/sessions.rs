@@ -435,7 +435,7 @@ async fn perform_login(
         &basic_model,
     );
     let database_path = ensure_database_file()?;
-    provider::persist_profile(database_path, prepared.input).await?;
+    provider::persist_profile(database_path, provider, prepared.input).await?;
 
     Ok(OAuthLoginOutcome {
         provider,

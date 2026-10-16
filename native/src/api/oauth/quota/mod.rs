@@ -6,6 +6,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use napi::bindgen_prelude::*;
 use serde_json::Value;
 
+use super::header_schemes::resolve_profile_headers;
 use super::provider::{OAuthProfileMetadata, OAuthProviderId};
 use crate::api::http_client::build_proxied_client_with_timeout;
 use crate::storage::ApiConfigRecord;
@@ -52,8 +53,14 @@ pub async fn fetch_snapshot(config: &ApiConfigRecord) -> Result<QuotaSnapshot> {
 
     let provider = metadata.provider;
     let (plan, groups) = match provider {
-        OAuthProviderId::Codex | OAuthProviderId::ChatGpt => codex::fetch(token, &metadata).await?,
-        OAuthProviderId::Anthropic => claude::fetch(token).await?,
+        OAuthProviderId::Codex | OAuthProviderId::ChatGpt => {
+            let headers = resolve_profile_headers(config).await?;
+            codex::fetch(token, &metadata, headers).await?
+        }
+        OAuthProviderId::Anthropic => {
+            let headers = resolve_profile_headers(config).await?;
+            claude::fetch(token, headers).await?
+        }
         OAuthProviderId::Antigravity => antigravity::fetch(token).await?,
         OAuthProviderId::Xai => xai::fetch(token, &metadata.account_id).await?,
     };

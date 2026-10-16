@@ -295,10 +295,16 @@ pub async fn list_sub_agent_conversations_by_parents(
 }
 
 #[napi]
-pub async fn create_chat_conversation(directory_id: String, title: String) -> napi::Result<String> {
-    tokio::task::spawn_blocking(move || crate::storage::create_chat_conversation(directory_id, title))
-        .await
-        .map_err(map_spawn_error)?
+pub async fn create_chat_conversation(
+    directory_id: String,
+    title: String,
+    initial_text: Option<String>,
+) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::create_chat_conversation(directory_id, title, initial_text)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

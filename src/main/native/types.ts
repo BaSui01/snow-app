@@ -2412,10 +2412,11 @@ export type NativeBridge = ImageGenerationNativeApi & {
     conversationId: string,
     profileName: string,
   ) => Promise<void>;
-  /** 创建空白主会话（无消息），返回新会话 ID；标题由调用方提供。 */
+  /** 创建主会话，返回新会话 ID；initialText 非空时仅写入一条 user 消息（不触发回合）。 */
   createChatConversation: (
     directoryId: string,
     title: string,
+    initialText?: string,
   ) => Promise<string>;
   /** deleteMemories=true 时把该会话（含级联子会话）保存的项目记忆一并删除；默认保留。 */
   deleteConversation: (

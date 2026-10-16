@@ -20,6 +20,10 @@ type ConversationMessageSender = (
 
 let activeSender: ConversationMessageSender | null = null;
 
+type ConversationAborter = (conversationId: string) => boolean;
+
+let activeAborter: ConversationAborter | null = null;
+
 /**
  * 向任意主会话投递用户消息（插件会话编排）。目标不必是当前视图会话：
  * 会话未在内存中时先后台加载历史与模式，再走与普通发送一致的代理循环；
@@ -129,6 +133,44 @@ export const useConversationMessageBridge = (
     return () => {
       if (activeSender === sender) {
         activeSender = null;
+      }
+    };
+  }, []);
+};
+
+/**
+ * 中止指定主会话的运行（插件会话编排）。与界面停止按钮同一收尾路径，
+ * 级联中止其子代理与 WorkFlow 节点。返回是否确有运行中的回合被中止。
+ */
+export const abortConversationRun = (conversationId: string): boolean => {
+  if (!activeAborter) {
+    throw new Error("Chat runtime is not ready");
+  }
+  return activeAborter(conversationId);
+};
+
+/** 注册会话中止通道；handleAbort 需在会话管理 Hook 创建后传入。 */
+export const useConversationAbortBridge = (
+  ctx: ConversationContextValue,
+  handleAbort: (conversationId: string) => void,
+): void => {
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
+  const abortRef = useRef(handleAbort);
+  abortRef.current = handleAbort;
+  useEffect(() => {
+    const aborter: ConversationAborter = (conversationId) => {
+      const ref = ctxRef.current.sessionsRefData.current.get(conversationId);
+      if (!ref?.isSending || ref.isAbortRequested) {
+        return false;
+      }
+      abortRef.current(conversationId);
+      return true;
+    };
+    activeAborter = aborter;
+    return () => {
+      if (activeAborter === aborter) {
+        activeAborter = null;
       }
     };
   }, []);

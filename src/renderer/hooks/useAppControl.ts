@@ -17,11 +17,16 @@ import {
 } from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsConstants";
 import { readProxyBrowserSettingsJson } from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsUtils";
 import { scheduledTasksStore } from "./scheduledTasksStore";
+import { sendMessageToConversation } from "../components/mainContent/chatMessages/hooks/conversationMessageBridge";
+import {
+  activateConversationById,
+  createConversationInDirectory,
+} from "../plugins/writes/conversationOps";
 
 /** Fetches every memo of a project (paginated, with a hard page cap). */
 const fetchAllMemos = async (
   directoryId: string,
-  status?: MemoStatus
+  status?: MemoStatus,
 ): Promise<MemoRecord[]> => {
   const PAGE_SIZE = 100;
   const MAX_PAGES = 10;
@@ -32,7 +37,7 @@ const fetchAllMemos = async (
       directoryId,
       PAGE_SIZE,
       offset,
-      status
+      status,
     );
     all.push(...result.items);
     if (!result.hasMore) break;
@@ -51,6 +56,19 @@ export const APP_CONTROL_PROJECT_CREATED_EVENT = "app-control:project-created";
  *  session-aware path (session ref + global defaults + per-conversation DB
  *  record) so AI-driven mode switches behave exactly like user toggles. */
 export const APP_CONTROL_MODE_CHANGED_EVENT = "app-control:mode-changed";
+
+/** AI 会话工具只能操作当前项目的会话（与备忘录工具的项目隔离一致）。 */
+const assertConversationInProject = async (
+  conversationId: string,
+  directoryId: string,
+): Promise<void> => {
+  const record = await window.snow.getChatConversation(conversationId);
+  if (!record || record.directoryId.trim() !== directoryId.trim()) {
+    throw new Error(
+      `Conversation not found in the current project: ${conversationId}`,
+    );
+  }
+};
 
 type AppControlHandlers = {
   activeDirectory: WorkspaceDirectoryRecord | null;
@@ -89,10 +107,10 @@ export const useAppControl = ({
             const content = (payload.content as string) ?? "";
             const memo = await window.snow.createMemo(
               directory.directoryId,
-              content
+              content,
             );
             window.dispatchEvent(
-              new CustomEvent(APP_CONTROL_MEMO_CREATED_EVENT)
+              new CustomEvent(APP_CONTROL_MEMO_CREATED_EVENT),
             );
             return JSON.stringify({
               success: true,
@@ -134,7 +152,7 @@ export const useAppControl = ({
             const memo = memos.find((item) => item.memoId === memoId);
             if (!memo) {
               throw new Error(
-                `Memo not found in the current project: ${memoId}`
+                `Memo not found in the current project: ${memoId}`,
               );
             }
             return JSON.stringify({ success: true, memo });
@@ -152,7 +170,7 @@ export const useAppControl = ({
             }
             if (status !== "pending" && status !== "done") {
               throw new Error(
-                `status must be "pending" or "done", received "${status}"`
+                `status must be "pending" or "done", received "${status}"`,
               );
             }
             // Project isolation: refuse to mutate a memo that does not belong
@@ -161,19 +179,16 @@ export const useAppControl = ({
             const memo = memos.find((item) => item.memoId === memoId);
             if (!memo) {
               throw new Error(
-                `Memo not found in the current project: ${memoId}`
+                `Memo not found in the current project: ${memoId}`,
               );
             }
-            const updated = await window.snow.updateMemoStatus(
-              memoId,
-              status
-            );
+            const updated = await window.snow.updateMemoStatus(memoId, status);
             return JSON.stringify({ success: true, memo: updated });
           }
 
           case "get_blocked_patterns": {
             const raw = await window.snow.getSystemSettingValue(
-              PROXY_BROWSER_SETTING_CODE
+              PROXY_BROWSER_SETTING_CODE,
             );
             const settings = readProxyBrowserSettingsJson(raw);
             return JSON.stringify({
@@ -192,7 +207,7 @@ export const useAppControl = ({
               operation !== "replace"
             ) {
               throw new Error(
-                `operation must be "add", "remove", or "replace", received "${operation}"`
+                `operation must be "add", "remove", or "replace", received "${operation}"`,
               );
             }
             if (!Array.isArray(rawPatterns)) {
@@ -213,7 +228,7 @@ export const useAppControl = ({
             });
 
             const raw = await window.snow.getSystemSettingValue(
-              PROXY_BROWSER_SETTING_CODE
+              PROXY_BROWSER_SETTING_CODE,
             );
             const settings = readProxyBrowserSettingsJson(raw);
             let blockedPatterns: string[];
@@ -227,7 +242,7 @@ export const useAppControl = ({
               }
             } else if (operation === "remove") {
               blockedPatterns = settings.blockedPatterns.filter(
-                (pattern) => !patterns.includes(pattern)
+                (pattern) => !patterns.includes(pattern),
               );
             } else {
               blockedPatterns = patterns;
@@ -240,13 +255,13 @@ export const useAppControl = ({
             await window.snow.setSystemSetting(
               PROXY_BROWSER_SETTING_NAME,
               PROXY_BROWSER_SETTING_CODE,
-              JSON.stringify(nextSettings)
+              JSON.stringify(nextSettings),
             );
             await window.snow.applyProxySettings();
             window.dispatchEvent(
               new CustomEvent(PROXY_BROWSER_SETTINGS_CHANGED_EVENT, {
                 detail: { blockedPatterns },
-              })
+              }),
             );
             return JSON.stringify({
               success: true,
@@ -267,7 +282,7 @@ export const useAppControl = ({
             window.dispatchEvent(
               new CustomEvent(APP_CONTROL_MODE_CHANGED_EVENT, {
                 detail: { mode, enabled },
-              })
+              }),
             );
             return JSON.stringify({ success: true, mode, enabled });
           }
@@ -276,7 +291,7 @@ export const useAppControl = ({
             const page = payload.page as string;
             setActiveMainViewRef.current(page as MainContentView);
             window.dispatchEvent(
-              new CustomEvent(APP_CONTROL_OPEN_SETTINGS_EVENT)
+              new CustomEvent(APP_CONTROL_OPEN_SETTINGS_EVENT),
             );
             return JSON.stringify({ success: true, page });
           }
@@ -289,8 +304,7 @@ export const useAppControl = ({
             const name = (payload.name as string) ?? "";
             const prompt = (payload.prompt as string) ?? "";
             const schedule = payload.schedule as
-              | ScheduledTaskSchedule
-              | undefined;
+              ScheduledTaskSchedule | undefined;
             if (!name.trim()) {
               throw new Error("name is required");
             }
@@ -355,7 +369,7 @@ export const useAppControl = ({
             window.dispatchEvent(
               new CustomEvent(APP_CONTROL_SCHEDULED_TASK_CREATED_EVENT, {
                 detail: { taskId: created.id, name: created.name },
-              })
+              }),
             );
             return JSON.stringify({
               success: true,
@@ -378,18 +392,16 @@ export const useAppControl = ({
             const parentPath =
               providedParentPath ??
               (await window.snow.selectWorkspaceDirectory(
-                "Choose a folder to save the new project"
+                "Choose a folder to save the new project",
               ));
             if (!parentPath) {
               return JSON.stringify({ success: false, cancelled: true });
             }
             const directories = await window.snow.createWorkspaceProject(
               parentPath,
-              name.trim()
+              name.trim(),
             );
-            const created = directories.find(
-              (directory) => directory.isActive
-            );
+            const created = directories.find((directory) => directory.isActive);
             window.dispatchEvent(
               new CustomEvent(APP_CONTROL_PROJECT_CREATED_EVENT, {
                 detail: created
@@ -399,7 +411,7 @@ export const useAppControl = ({
                       path: created.path,
                     }
                   : undefined,
-              })
+              }),
             );
             return JSON.stringify({
               success: true,
@@ -409,10 +421,59 @@ export const useAppControl = ({
             });
           }
 
+          case "create_conversation": {
+            const directory = activeDirectoryRef.current;
+            if (!directory) {
+              throw new Error("No active project directory");
+            }
+            const created = await createConversationInDirectory({
+              directoryId: directory.directoryId,
+              title: (payload.title as string) ?? "",
+              text: typeof payload.text === "string" ? payload.text : undefined,
+              autoReply: payload.autoReply === true,
+            });
+            return JSON.stringify({ success: true, ...created });
+          }
+
+          case "send_conversation_message": {
+            const directory = activeDirectoryRef.current;
+            if (!directory) {
+              throw new Error("No active project directory");
+            }
+            const conversationId = (payload.conversationId as string) ?? "";
+            await assertConversationInProject(
+              conversationId,
+              directory.directoryId,
+            );
+            const receipt = await sendMessageToConversation(
+              conversationId,
+              (payload.text as string) ?? "",
+            );
+            return JSON.stringify({
+              success: true,
+              conversationId: receipt.conversationId,
+              status: receipt.status,
+            });
+          }
+
+          case "activate_conversation": {
+            const directory = activeDirectoryRef.current;
+            if (!directory) {
+              throw new Error("No active project directory");
+            }
+            const conversationId = (payload.conversationId as string) ?? "";
+            await assertConversationInProject(
+              conversationId,
+              directory.directoryId,
+            );
+            const opened = await activateConversationById(conversationId);
+            return JSON.stringify({ success: true, ...opened });
+          }
+
           default:
             throw new Error(`Unknown app control action: ${request.action}`);
         }
-      }
+      },
     );
 
     return () => {

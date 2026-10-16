@@ -5,6 +5,9 @@ import {
   CheckCircle2,
   FileCode2,
   FolderPlus,
+  MessageSquare,
+  MessageSquarePlus,
+  Send,
   Settings,
   ShieldBan,
   StickyNote,
@@ -234,6 +237,46 @@ export const AppControlToolCall = ({
         ) : null;
       break;
     }
+    case "createConversation": {
+      const title = asString(parsedArgs?.title);
+      displayName = title ? truncate(title) : undefined;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.conversationCreated")}
+          </span>
+        ) : null;
+      break;
+    }
+    case "sendConversationMessage": {
+      const text = asString(parsedArgs?.text);
+      displayName = text ? truncate(text) : undefined;
+      const status =
+        parsedResult.type === "success" ? parsedResult.data.status : undefined;
+      meta =
+        status === "started" || status === "queued" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {status === "started"
+              ? t("toolCall.appControl.messageStarted")
+              : t("toolCall.appControl.messageQueued")}
+          </span>
+        ) : null;
+      break;
+    }
+    case "activateConversation": {
+      const conversationId = asString(parsedArgs?.conversationId);
+      displayName = conversationId ? truncate(conversationId) : undefined;
+      meta =
+        parsedResult.type === "success" ? (
+          <span className="tool-call-app-meta tool-call-app-meta-ok">
+            <CheckCircle2 size={10} aria-hidden="true" />
+            {t("toolCall.appControl.conversationOpened")}
+          </span>
+        ) : null;
+      break;
+    }
     case "listMemos": {
       const count =
         parsedResult.type === "success" ? parsedResult.data.total : undefined;
@@ -428,6 +471,57 @@ export const AppControlToolCall = ({
             ) : null}
           </div>
         );
+      }
+      case "createConversation": {
+        const title = asString(parsedArgs?.title);
+        const text = asString(parsedArgs?.text);
+        return (
+          <div className="tool-call-app-detail tool-call-app-detail-col">
+            {title ? (
+              <div className="tool-call-app-detail">
+                <MessageSquarePlus size={12} aria-hidden="true" />
+                <span>{title}</span>
+              </div>
+            ) : null}
+            {text ? (
+              <div className="tool-call-app-detail">
+                <span className="tool-call-app-detail-label">
+                  {t("toolCall.appControl.initialTextLabel")}
+                </span>
+                <span>{truncate(text, 240)}</span>
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+      case "sendConversationMessage": {
+        const conversationId = asString(parsedArgs?.conversationId);
+        const text = asString(parsedArgs?.text);
+        return (
+          <div className="tool-call-app-detail tool-call-app-detail-col">
+            {conversationId ? (
+              <div className="tool-call-app-detail">
+                <MessageSquare size={12} aria-hidden="true" />
+                <code>{conversationId}</code>
+              </div>
+            ) : null}
+            {text ? (
+              <div className="tool-call-app-detail">
+                <Send size={12} aria-hidden="true" />
+                <span>{truncate(text, 240)}</span>
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+      case "activateConversation": {
+        const conversationId = asString(parsedArgs?.conversationId);
+        return conversationId ? (
+          <div className="tool-call-app-detail">
+            <MessageSquare size={12} aria-hidden="true" />
+            <code>{conversationId}</code>
+          </div>
+        ) : null;
       }
       case "listMemos": {
         const status = asString(parsedArgs?.status);

@@ -33,7 +33,10 @@ import { useRollback } from "./useRollback";
 import { useAgentLoop } from "./useAgentLoop";
 import { useConversationManagement } from "./useConversationManagement";
 import { useImageGenerationRuntime } from "./imageGenerationRuntime";
-import { useConversationMessageBridge } from "./conversationMessageBridge";
+import {
+  useConversationAbortBridge,
+  useConversationMessageBridge,
+} from "./conversationMessageBridge";
 
 export const useChatConversation = (
   directoryId?: string,
@@ -870,6 +873,8 @@ export const useChatConversation = (
   // ctx 组装早于 management hooks：WorkFlow 级联中止能力在此回填，
   // 供 useRollback 等后续 hook 使用。
   ctx.abortWorkflowNodes = conversationManagementApi.abortWorkflowNodes;
+  // 插件会话编排的中止通道：复用 handleAbort（见 conversationMessageBridge）。
+  useConversationAbortBridge(ctx, conversationManagementApi.handleAbort);
 
   // --- 独立窗口归属 ---
   // 归属于某个独立窗口的会话（窗口内的会话 tab 与运行中的会话）只能在该窗口运行。

@@ -1612,6 +1612,7 @@ export const zhTW = {
   "toolNames.app-control-getMemo": "讀取備忘",
   "toolNames.app-control-listMemos": "列出備忘",
   "toolNames.app-control-updateMemoStatus": "更新備忘狀態",
+  "toolNames.app-control-deleteMemo": "刪除備忘",
   "toolNames.app-control-getBlockedPatterns": "讀取封鎖規則",
   "toolNames.app-control-updateBlockedPatterns": "更新封鎖規則",
   "toolNames.filesystem-read": "讀取檔案",

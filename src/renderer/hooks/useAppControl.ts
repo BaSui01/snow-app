@@ -16,6 +16,7 @@ import {
   PROXY_BROWSER_SETTINGS_CHANGED_EVENT,
 } from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsConstants";
 import { readProxyBrowserSettingsJson } from "../components/sidebar/proxyBrowserSettings/proxyBrowserSettingsUtils";
+import { notifyMemosAiChanged } from "../components/sidebar/memoEvents";
 import { scheduledTasksStore } from "./scheduledTasksStore";
 import { sendMessageToConversation } from "../components/mainContent/chatMessages/hooks/conversationMessageBridge";
 import {
@@ -109,9 +110,7 @@ export const useAppControl = ({
               directory.directoryId,
               content,
             );
-            window.dispatchEvent(
-              new CustomEvent(APP_CONTROL_MEMO_CREATED_EVENT),
-            );
+            notifyMemosAiChanged();
             return JSON.stringify({
               success: true,
               memoId: memo.memoId,
@@ -183,7 +182,37 @@ export const useAppControl = ({
               );
             }
             const updated = await window.snow.updateMemoStatus(memoId, status);
+            notifyMemosAiChanged();
             return JSON.stringify({ success: true, memo: updated });
+          }
+
+          case "delete_memo": {
+            const directory = activeDirectoryRef.current;
+            if (!directory) {
+              throw new Error("No active project directory");
+            }
+            const rawIds = Array.isArray(payload.memoIds)
+              ? payload.memoIds
+              : [];
+            const memoIds = rawIds.filter(
+              (id): id is string => typeof id === "string",
+            );
+            if (memoIds.length === 0) {
+              throw new Error("memoId is required");
+            }
+            // Project isolation: validate the whole batch before deleting, so a
+            // single foreign or missing id refuses every deletion.
+            const memos = await fetchAllMemos(directory.directoryId);
+            const ownIds = new Set(memos.map((item) => item.memoId));
+            const missing = memoIds.filter((id) => !ownIds.has(id));
+            if (missing.length > 0) {
+              throw new Error(
+                `Memo not found in the current project: ${missing.join(", ")}`,
+              );
+            }
+            const deleted = await window.snow.deleteMemos(memoIds);
+            notifyMemosAiChanged(memoIds);
+            return JSON.stringify({ success: true, deleted, memoIds });
           }
 
           case "get_blocked_patterns": {

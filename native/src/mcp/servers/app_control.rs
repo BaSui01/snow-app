@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::id_list_arg;
 use super::user_interaction::{UserQuestionCallback, UserQuestionCommand};
 
 pub const SERVER_ID: &str = "app-control";
@@ -13,6 +14,7 @@ const TOOL_CREATE_MEMO: &str = "createMemo";
 const TOOL_LIST_MEMOS: &str = "listMemos";
 const TOOL_GET_MEMO: &str = "getMemo";
 const TOOL_UPDATE_MEMO_STATUS: &str = "updateMemoStatus";
+const TOOL_DELETE_MEMO: &str = "deleteMemo";
 const TOOL_GET_BLOCKED_PATTERNS: &str = "getBlockedPatterns";
 const TOOL_UPDATE_BLOCKED_PATTERNS: &str = "updateBlockedPatterns";
 const TOOL_SET_MODE: &str = "setMode";
@@ -29,7 +31,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
+    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "delete_memo" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -61,6 +63,7 @@ impl AppControlService {
             TOOL_LIST_MEMOS => validate_list_memos_args(args)?,
             TOOL_GET_MEMO => validate_get_memo_args(args)?,
             TOOL_UPDATE_MEMO_STATUS => validate_update_memo_status_args(args)?,
+            TOOL_DELETE_MEMO => validate_delete_memo_args(args)?,
             TOOL_GET_BLOCKED_PATTERNS => validate_get_blocked_patterns_args(args)?,
             TOOL_UPDATE_BLOCKED_PATTERNS => validate_update_blocked_patterns_args(args)?,
             TOOL_SET_MODE => validate_set_mode_args(args)?,
@@ -180,6 +183,28 @@ impl McpService for AppControlService {
                         }
                     },
                     "required": ["memoId", "status"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_DELETE_MEMO.to_string(),
+                description: "Permanently delete one or more memos of the CURRENT project by memoId. DESTRUCTIVE: before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. memoId may be an array to delete several memos in one call under a single confirmation. The whole batch is refused without deleting anything if any memoId does not exist in the current project. Prefer updateMemoStatus to mark a memo done when it may still be useful.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "memoId": {
+                            "oneOf": [
+                                { "type": "string", "description": "The memoId of a single memo to delete." },
+                                { "type": "array", "items": { "type": "string" }, "description": "The memoIds of the memos to delete." }
+                            ],
+                            "description": "A memoId string, or an array of memoIds for batch deletion."
+                        },
+                        "confirmed": {
+                            "type": "boolean",
+                            "description": "MUST be true and may only be set after explicit user approval via askUserQuestion."
+                        }
+                    },
+                    "required": ["memoId", "confirmed"]
                 }),
             },
             McpTool {
@@ -649,6 +674,22 @@ fn validate_update_memo_status_args(args: &Value) -> napi::Result<(String, Value
         "update_memo_status".to_string(),
         json!({ "memoId": memo_id, "status": status }),
     ))
+}
+
+fn validate_delete_memo_args(args: &Value) -> napi::Result<(String, Value)> {
+    let confirmed = args
+        .get("confirmed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !confirmed {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "DESTRUCTIVE: deleteMemo requires confirmed: true. First ask the user for explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true.".to_string(),
+        ));
+    }
+    let memo_ids = id_list_arg(args, "memoId")?;
+
+    Ok(("delete_memo".to_string(), json!({ "memoIds": memo_ids })))
 }
 
 fn validate_get_blocked_patterns_args(_args: &Value) -> napi::Result<(String, Value)> {

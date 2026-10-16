@@ -1611,6 +1611,7 @@ export const zhCN = {
   "toolNames.app-control-getMemo": "读取备忘",
   "toolNames.app-control-listMemos": "列出备忘",
   "toolNames.app-control-updateMemoStatus": "更新备忘状态",
+  "toolNames.app-control-deleteMemo": "删除备忘",
   "toolNames.app-control-getBlockedPatterns": "读取拦截规则",
   "toolNames.app-control-updateBlockedPatterns": "更新拦截规则",
   "toolNames.filesystem-read": "读取文件",

@@ -38,7 +38,11 @@ import {
   type FileMentionPopupHandle,
 } from "../mainContent/chatInput/FileMentionPopup";
 import { formatTimeLabel, parseDbTimestamp } from "./mainSidebar/chatTimeGroup";
-import { notifyMemosChanged } from "./memoEvents";
+import {
+  MEMOS_AI_CHANGED_EVENT,
+  notifyMemosChanged,
+  type MemosAiChangedDetail,
+} from "./memoEvents";
 import type {
   MemoPage,
   MemoRecord,
@@ -365,6 +369,34 @@ export function MemoPanel({
 
   useEffect(() => {
     void loadFirstPage(filter, sortField, sortOrder, searchKeyword);
+  }, [filter, sortField, sortOrder, searchKeyword, loadFirstPage]);
+
+  // AI（app-control）改动备忘后重新拉取列表。被删除的选中项需等列表刷新完成
+  // 再回退：若先清空选中，「自动选中首条」effect 会读到旧列表而选回已删条目。
+  useEffect(() => {
+    const handleAiChanged = (event: Event) => {
+      const deletedIds = new Set(
+        (event as CustomEvent<MemosAiChangedDetail>).detail?.deletedIds ?? [],
+      );
+      void (async () => {
+        await loadFirstPage(filter, sortField, sortOrder, searchKeyword);
+        if (deletedIds.size === 0) return;
+        setSelectedMemoIds((prev) => {
+          const next = new Set([...prev].filter((id) => !deletedIds.has(id)));
+          return next.size === prev.size ? prev : next;
+        });
+        if (
+          selectedMemoIdRef.current &&
+          deletedIds.has(selectedMemoIdRef.current)
+        ) {
+          setSelectedMemoId(null);
+        }
+      })();
+    };
+    window.addEventListener(MEMOS_AI_CHANGED_EVENT, handleAiChanged);
+    return () => {
+      window.removeEventListener(MEMOS_AI_CHANGED_EVENT, handleAiChanged);
+    };
   }, [filter, sortField, sortOrder, searchKeyword, loadFirstPage]);
 
   // 关键词防抖：输入停顿后才重新查询；清空立即恢复完整列表。

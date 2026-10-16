@@ -316,8 +316,42 @@ fn upsert_memory_with_connection(
     Ok((record, true))
 }
 
-/// 更新记忆的可编辑字段（`None` 保持不变）。条目不存在时报错。
+/// 更新单条记忆的可编辑字段（`None` 保持不变）。条目不存在时报错。
 pub fn update_memory(
+    database_path: &Path,
+    memory_id: &str,
+    patch: &MemoryUpdatePatch,
+) -> Result<MemoryRecord> {
+    let connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "open database", error))?;
+    apply_memory_patch(&connection, database_path, memory_id, patch)
+}
+
+/// 把同一补丁套用到多条记忆（批量更新）。单 IMMEDIATE 事务保证原子性：
+/// 任一条不存在或补丁非法都会整体回滚；返回值与 `memory_ids` 顺序一致。
+pub fn update_memories(
+    database_path: &Path,
+    memory_ids: &[String],
+    patch: &MemoryUpdatePatch,
+) -> Result<Vec<MemoryRecord>> {
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "update memories", error))?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "update memories", error))?;
+    let mut records = Vec::with_capacity(memory_ids.len());
+    for memory_id in memory_ids {
+        records.push(apply_memory_patch(&transaction, database_path, memory_id, patch)?);
+    }
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "update memories", error))?;
+    Ok(records)
+}
+
+/// 校验并写入单条补丁，回读更新后的记录（`update_memory` 与 `update_memories` 共用）。
+fn apply_memory_patch(
+    connection: &Connection,
     database_path: &Path,
     memory_id: &str,
     patch: &MemoryUpdatePatch,
@@ -361,8 +395,6 @@ pub fn update_memory(
     }
 
     // —— DB 操作 ——
-    let connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "open database", error))?;
     let updated = connection
         .execute(
             "UPDATE project_memories SET
@@ -391,7 +423,7 @@ pub fn update_memory(
             format!("Memory not found: {}", memory_id.trim()),
         ));
     }
-    fetch_memory_by_memory_id(&connection, memory_id.trim())
+    fetch_memory_by_memory_id(connection, memory_id.trim())
         .map_err(|error| database::database_error(database_path, "reload updated memory", error))?
         .ok_or_else(|| {
             Error::new(

@@ -1699,6 +1699,7 @@ export const en = {
   "toolNames.app-control-getMemo": "Read memo",
   "toolNames.app-control-listMemos": "List memos",
   "toolNames.app-control-updateMemoStatus": "Update memo status",
+  "toolNames.app-control-deleteMemo": "Delete memo",
   "toolNames.app-control-getBlockedPatterns": "Read blocked patterns",
   "toolNames.app-control-updateBlockedPatterns": "Update blocked patterns",
   "toolNames.filesystem-read": "Read file",

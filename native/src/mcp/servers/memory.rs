@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::id_list_arg;
 
 const SERVER_ID: &str = "memory";
 
@@ -212,7 +213,7 @@ impl MemoryService {
     // memory-update：修改可编辑字段（None 字段保持不变）。
     // -----------------------------------------------------------------
     async fn execute_update(&self, args: &Value) -> napi::Result<Value> {
-        let memory_id = required_string(args, "memoryId")?;
+        let memory_ids = id_list_arg(args, "memoryId")?;
         let patch = crate::storage::services::project_memories::MemoryUpdatePatch {
             kind: optional_string(args, "kind"),
             title: optional_string(args, "title"),
@@ -235,15 +236,34 @@ impl MemoryService {
             ));
         }
 
-        let record = tokio::task::spawn_blocking(move || {
-            crate::storage::update_project_memory(memory_id, patch)
+        // title / content 与去重键、正文绑定：多条共用同一值会造成标题冲突，
+        // 故仅允许单条更新这两个字段。
+        if memory_ids.len() > 1 && (patch.title.is_some() || patch.content.is_some()) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "title and content can only be changed for a single memory (one memoryId string); batch updates support kind / importance / status / tags".to_string(),
+            ));
+        }
+
+        let records = tokio::task::spawn_blocking(move || {
+            let database_path = crate::storage::ensure_database_file()?;
+            crate::storage::services::project_memories::update_memories(
+                &database_path,
+                &memory_ids,
+                &patch,
+            )
         })
         .await
         .map_err(spawn_error("update memory"))??;
 
         Ok(json!({
-            "memory": serde_json::to_value(&record).unwrap_or(json!({})),
-            "message": "Memory updated.".to_string(),
+            "memories": serde_json::to_value(&records).unwrap_or(json!([])),
+            "count": records.len(),
+            "message": format!(
+                "Updated {} memor{}.",
+                records.len(),
+                if records.len() == 1 { "y" } else { "ies" }
+            ),
         }))
     }
 
@@ -253,7 +273,7 @@ impl MemoryService {
     // （与 config-delete 同规）。
     // -----------------------------------------------------------------
     async fn execute_delete(&self, args: &Value) -> napi::Result<Value> {
-        let memory_id = required_string(args, "memoryId")?;
+        let memory_ids = id_list_arg(args, "memoryId")?;
         let confirmed = args
             .get("confirmed")
             .and_then(Value::as_bool)
@@ -266,19 +286,29 @@ impl MemoryService {
         }
 
         let deleted = tokio::task::spawn_blocking(move || {
-            crate::storage::delete_project_memory(memory_id)
+            let database_path = crate::storage::ensure_database_file()?;
+            crate::storage::services::project_memories::delete_memories_by_memory_ids(
+                &database_path,
+                &memory_ids,
+            )
         })
         .await
         .map_err(spawn_error("delete memory"))??;
 
-        if deleted {
-            Ok(json!({ "deleted": true, "message": "Memory deleted.".to_string() }))
+        let any_deleted = deleted > 0;
+        let message = if any_deleted {
+            format!(
+                "Deleted {deleted} memor{}.",
+                if deleted == 1 { "y" } else { "ies" }
+            )
         } else {
-            Ok(json!({
-                "deleted": false,
-                "message": "No memory matched the given id; it may have been deleted already.".to_string(),
-            }))
-        }
+            "No memory matched the given ids; they may have been deleted already.".to_string()
+        };
+        Ok(json!({
+            "deleted": any_deleted,
+            "deletedCount": deleted,
+            "message": message,
+        }))
     }
 }
 
@@ -379,13 +409,19 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "update".to_string(),
-                description: "Update an existing memory entry in the CURRENT project's memory bank by id (obtained from memory-list / memory-search results). Only provided fields change; omitted fields keep their values. Use to refine wording, correct an outdated memory, or change importance/status.".to_string(),
+                description: "Update an existing memory entry in the CURRENT project's memory bank by id (obtained from memory-list / memory-search results). Only provided fields change; omitted fields keep their values. Use to refine wording, correct an outdated memory, or change importance/status. memoryId may be an array to apply the same kind / importance / status / tags patch to several entries at once (all-or-nothing). title and content can only be changed with a single memoryId string.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "memoryId": { "type": "string", "description": "Memory id from list/search results." },
-                        "title": { "type": "string", "description": "Optional new title." },
-                        "content": { "type": "string", "description": "Optional new content." },
+                        "memoryId": {
+                            "oneOf": [
+                                { "type": "string", "description": "A single memory id from list/search results." },
+                                { "type": "array", "items": { "type": "string" }, "description": "Several memory ids; the same patch is applied to each." }
+                            ],
+                            "description": "Memory id (string), or an array of ids for batch update."
+                        },
+                        "title": { "type": "string", "description": "Optional new title (single memoryId only)." },
+                        "content": { "type": "string", "description": "Optional new content (single memoryId only)." },
                         "kind": {
                             "type": "string",
                             "enum": ["fact", "decision", "preference", "pitfall", "task_state"],
@@ -405,11 +441,17 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "delete".to_string(),
-                description: "Delete one memory entry from the CURRENT project's memory bank. DESTRUCTIVE — before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. Prefer memory-update with status=\"archived\" when the memory may still be useful later.".to_string(),
+                description: "Delete one or more memory entries (memoryId string or array) from the CURRENT project's memory bank. DESTRUCTIVE — before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. Prefer memory-update with status=\"archived\" when the memory may still be useful later. An array of memoryIds deletes several entries in one call under a single confirmation.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "memoryId": { "type": "string", "description": "Memory id from list/search results." },
+                        "memoryId": {
+                            "oneOf": [
+                                { "type": "string", "description": "A single memory id from list/search results." },
+                                { "type": "array", "items": { "type": "string" }, "description": "Several memory ids from list/search results." }
+                            ],
+                            "description": "Memory id (string), or an array of ids for batch deletion."
+                        },
                         "confirmed": {
                             "type": "boolean",
                             "description": "MUST be true and may only be set after explicit user approval via askUserQuestion."

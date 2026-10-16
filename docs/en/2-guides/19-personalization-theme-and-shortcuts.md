@@ -188,10 +188,12 @@ Snow App ships an official built-in pet (`resources/pets/*.zip`) that is
 installed automatically into `~/.snowapp/pets/` on first launch — no manual
 install needed. If you already installed a pet with the same id, that directory
 is overwritten and the list is de-duplicated by id, so no duplicate entries
-appear. The built-in pet is refreshed after an upgrade when the app version or
-the package content changes (marker file `~/.snowapp/builtin-pets.json`), and a
-pet you uninstalled yourself is never reinstalled. Extraction runs in the Rust
-backend and never blocks the main process.
+appear. The built-in pet cannot be uninstalled (its list entry has no delete
+button), a user package with the same id cannot replace it, and the data cleanup
+keeps it. After an upgrade, the built-in pet is refreshed when the app version or
+the package content changes; if its directory goes missing, it is reinstalled on
+the next launch (marker file `~/.snowapp/builtin-pets.json`). Extraction runs in
+the Rust backend and never blocks the main process.
 
 ## Keyboard Shortcuts
 

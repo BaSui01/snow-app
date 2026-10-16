@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use napi::bindgen_prelude::*;
 
-use super::{image_library, storage_locations};
+use super::{image_library, pets, storage_locations};
 use crate::storage::paths;
 use crate::storage::{
     CleanupAgeBucket, CleanupCategoryStats, CleanupDeleteResult, CleanupScanResult,
@@ -86,10 +86,16 @@ impl CleanupCategory {
         }
     }
 
-    /// 扫描与删除时跳过的子目录名：checkpoint 的 pending 是工具执行期间的
-    /// 临时快照（迁移时同样跳过），不作为可清理的数据对待。
-    fn skip_dir_name(&self, name: &str) -> bool {
-        matches!(self, Self::Checkpoints if name == storage_locations::PENDING_DIR_NAME)
+    /// 扫描与删除时跳过的子目录：checkpoint 的 pending 是工具执行期间的
+    /// 临时快照（迁移时同样跳过）；内置宠物目录属于应用自带资源，不可清理。
+    fn skip_dir(&self, path: &Path) -> bool {
+        match self {
+            Self::Checkpoints => path.file_name().is_some_and(|name| {
+                name.to_string_lossy() == storage_locations::PENDING_DIR_NAME
+            }),
+            Self::Pets => pets::is_builtin_pet_dir(path),
+            _ => false,
+        }
     }
 }
 
@@ -137,7 +143,7 @@ where
                 continue;
             };
             if file_type.is_dir() {
-                if category.skip_dir_name(&entry.file_name().to_string_lossy()) {
+                if category.skip_dir(&entry.path()) {
                     continue;
                 }
                 pending.push(entry.path());
@@ -269,7 +275,7 @@ fn clear_root_children(root: &Path, category: CleanupCategory, result: &mut Clea
     };
     for entry in entries.flatten() {
         let is_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
-        if is_dir && category.skip_dir_name(&entry.file_name().to_string_lossy()) {
+        if is_dir && category.skip_dir(&entry.path()) {
             continue;
         }
         remove_entry(&entry.path(), result);
@@ -295,7 +301,7 @@ fn delete_older_than(
                 continue;
             };
             if file_type.is_dir() {
-                if category.skip_dir_name(&entry.file_name().to_string_lossy()) {
+                if category.skip_dir(&entry.path()) {
                     continue;
                 }
                 pending.push(entry.path());

@@ -24,6 +24,8 @@ export type PetManifest = {
   columns: number;
   /** 精灵图行数 */
   rows: number;
+  /** 是否为应用内置宠物（内置宠物不可卸载） */
+  builtin: boolean;
 };
 
 /** 桌面宠物设置。 */

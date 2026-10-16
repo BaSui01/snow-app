@@ -9,8 +9,12 @@ use napi_derive::napi;
 use crate::storage::services::pets::{self, PetManifest};
 
 #[napi]
-pub async fn install_pet_from_zip(zip_path: String) -> napi::Result<PetManifest> {
-    tokio::task::spawn_blocking(move || pets::install_pet_from_zip(zip_path))
+pub async fn install_pet_from_zip(
+    zip_path: String,
+    builtin: Option<bool>,
+) -> napi::Result<PetManifest> {
+    let builtin = builtin.unwrap_or(false);
+    tokio::task::spawn_blocking(move || pets::install_pet_from_zip(zip_path, builtin))
         .await
         .map_err(map_spawn_error)?
 }

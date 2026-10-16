@@ -3185,7 +3185,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   browserHistoryClear: () => Promise<number>;
   // ── Codex 宠物系统 ────────────────────────────────────────────────
   /** 安装 Codex 宠物包（zip），返回安装后的宠物清单 */
-  installPetFromZip: (zipPath: string) => Promise<PetManifestRecord>;
+  installPetFromZip: (
+    zipPath: string,
+    builtin?: boolean,
+  ) => Promise<PetManifestRecord>;
   /** 列出所有可用宠物（Snow App 安装 + Codex App / Petdex 生态） */
   listInstalledPets: () => Promise<PetManifestRecord[]>;
   /** 卸载 Snow App 安装的宠物 */
@@ -3345,6 +3348,8 @@ export type PetManifestRecord = {
   columns: number;
   /** 精灵图行数 */
   rows: number;
+  /** 是否为应用内置宠物（内置宠物不可卸载） */
+  builtin: boolean;
 };
 
 // ── 用户脚本（油猴兼容）────────────────────────────────────────────

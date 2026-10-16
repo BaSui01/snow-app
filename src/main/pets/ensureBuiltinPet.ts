@@ -12,9 +12,11 @@
  *   Rust 的 install_pet_from_zip 会覆盖 `~/.snowapp/pets/{id}/` 下的旧目录，
  *   老用户提前装过同名宠物不会产生重复条目（list_installed_pets 按
  *   snow > codex > petdex 优先级按 id 去重）。
- * - 标记文件 `~/.snowapp/builtin-pets.json` 记录「应用版本 + 各 zip 指纹」，
- *   标记匹配时直接跳过，用户主动卸载内置宠物后不会被反复装回；
- *   升级或内置包变化时才重新安装。
+ * - 内置宠物以 builtin=true 安装，Rust 侧标记为内置：不可卸载，也不能被
+ *   手动安装的同 id 包覆盖。
+ * - 标记文件 `~/.snowapp/builtin-pets.json` 记录「应用版本 + 各 zip 指纹 +
+ *   已安装的内置宠物 id」。标记匹配且这些宠物仍以内置身份存在时直接跳过；
+ *   升级、内置包变化或宠物目录丢失时重新安装。
  */
 import { app } from "electron";
 import {
@@ -36,10 +38,11 @@ const APP_DATA_DIR_NAME = ".snowapp";
 /** 内置宠物安装标记文件名（位于 ~/.snowapp/ 下）。 */
 const MARKER_FILE_NAME = "builtin-pets.json";
 
-/** 标记内容：应用版本 + 全部内置包指纹。 */
+/** 标记内容：应用版本 + 全部内置包指纹 + 已安装的内置宠物 id。 */
 type BuiltinPetsMarker = {
   version: string;
   signature: string;
+  ids: string[];
 };
 
 const markerFilePath = (): string =>
@@ -62,17 +65,33 @@ const readMarker = (): BuiltinPetsMarker | null => {
     if (typeof parsed !== "object" || parsed === null) {
       return null;
     }
-    const record = parsed as Record<string, unknown>;
+    const { version, signature, ids } = parsed as Record<string, unknown>;
     if (
-      typeof record.version !== "string" ||
-      typeof record.signature !== "string"
+      typeof version !== "string" ||
+      typeof signature !== "string" ||
+      !Array.isArray(ids)
     ) {
       return null;
     }
-    return { version: record.version, signature: record.signature };
+    return {
+      version,
+      signature,
+      ids: ids.filter((id): id is string => typeof id === "string"),
+    };
   } catch {
     return null;
   }
+};
+
+/** 标记中记录的内置宠物是否都仍以内置身份存在（缺失时需要补装）。 */
+const builtinPetsPresent = async (
+  native: NativeBridge,
+  ids: string[],
+): Promise<boolean> => {
+  const installed = await native.listInstalledPets();
+  return ids.every((id) =>
+    installed.some((pet) => pet.id === id && pet.builtin),
+  );
 };
 
 /**
@@ -114,7 +133,12 @@ export const ensureBuiltinPets = async (
     .join("|");
 
   const marker = readMarker();
-  if (marker && marker.version === version && marker.signature === signature) {
+  if (
+    marker &&
+    marker.version === version &&
+    marker.signature === signature &&
+    (await builtinPetsPresent(native, marker.ids))
+  ) {
     return;
   }
 
@@ -124,6 +148,7 @@ export const ensureBuiltinPets = async (
     try {
       const manifest = await native.installPetFromZip(
         join(BUILTIN_PETS_DIR, name),
+        true,
       );
       installedIds.push(manifest.id);
     } catch (error) {
@@ -163,7 +188,11 @@ export const ensureBuiltinPets = async (
   try {
     const file = markerFilePath();
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify({ version, signature }), "utf8");
+    writeFileSync(
+      file,
+      JSON.stringify({ version, signature, ids: installedIds }),
+      "utf8",
+    );
   } catch (error) {
     snowLog.warn({
       module: "app/pets",

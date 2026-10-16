@@ -4,7 +4,7 @@
  * 与其它设置页保持一致的结构：页头（标题 + 描述 + 关闭按钮）+
  * api-settings-manual-form 表单卡片（分区：当前宠物、宠物聊天、已安装宠物列表）。
  * 支持：唤醒/收起、安装 Codex 宠物包（.zip）、选择激活宠物、
- * 卸载 Snow App 安装的宠物、调整显示大小与动画播放速度（带实时预览）、
+ * 卸载 Snow App 安装的宠物（内置宠物不提供卸载入口），调整显示大小与动画播放速度（带实时预览）、
  * 编辑每只宠物的人设，以及宠物聊天使用的 API 配置与模型
  * （默认为跟随当前配置的高级模型）。
  */
@@ -655,7 +655,7 @@ export function PetsSettingsPanel(): React.JSX.Element {
                       >
                         <Pencil size={14} strokeWidth={1.8} />
                       </button>
-                      {pet.source === "snow" && (
+                      {pet.source === "snow" && !pet.builtin && (
                         <button
                           className="icon-btn ghost danger pets-uninstall-btn"
                           onClick={() => handleUninstallPet(pet)}

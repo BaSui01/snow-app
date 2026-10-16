@@ -28,6 +28,8 @@ pub const PET_FRAME_HEIGHT: u32 = 208;
 const PET_MANIFEST_FILE: &str = "pet.json";
 /// Snow App 自身宠物安装目录名（位于 ~/.snowapp/ 下）。
 const PETS_DIR_NAME: &str = "pets";
+/// 内置宠物标记文件名（位于宠物目录下）：存在即表示该宠物为应用内置，不可卸载。
+const BUILTIN_MARKER_FILE: &str = ".builtin";
 
 /// 宠物清单元数据（pet.json 解析结果 + 安装位置信息）。
 #[napi(object)]
@@ -53,6 +55,8 @@ pub struct PetManifest {
     pub columns: i32,
     /// 精灵图行数。
     pub rows: i32,
+    /// 是否为应用内置宠物（内置宠物不可卸载，也不能被同 id 的手动安装包覆盖）。
+    pub builtin: bool,
 }
 
 /// pet.json 原始结构（字段均容忍缺失）。
@@ -75,6 +79,11 @@ fn err(reason: impl Into<String>) -> Error {
 pub fn snow_pets_dir() -> Result<PathBuf> {
     let storage_dir = paths::app_storage_dir()?;
     Ok(storage_dir.join(PETS_DIR_NAME))
+}
+
+/// 目录是否为应用内置宠物（存在内置标记文件）。
+pub fn is_builtin_pet_dir(dir: &Path) -> bool {
+    dir.join(BUILTIN_MARKER_FILE).is_file()
 }
 
 /// 各来源的宠物根目录（按优先级排序，靠前者在同 id 冲突时胜出）。
@@ -271,11 +280,13 @@ fn load_manifest_from_dir(dir: &Path, source: &str) -> Option<PetManifest> {
         version,
         columns,
         rows,
+        builtin: is_builtin_pet_dir(dir),
     })
 }
 
 /// 安装宠物包 zip。解压校验后落盘到 `~/.snowapp/pets/{id}/`。
-pub fn install_pet_from_zip(zip_path: String) -> Result<PetManifest> {
+/// `builtin` 为 true 时标记为应用内置宠物；用户手动安装的包不能覆盖内置宠物。
+pub fn install_pet_from_zip(zip_path: String, builtin: bool) -> Result<PetManifest> {
     let trimmed = zip_path.trim();
     if trimmed.is_empty() {
         return Err(Error::new(
@@ -377,6 +388,13 @@ pub fn install_pet_from_zip(zip_path: String) -> Result<PetManifest> {
     })?;
     let target_dir = pets_root.join(&manifest.id);
     if target_dir.exists() {
+        if !builtin && is_builtin_pet_dir(&target_dir) {
+            let _ = fs::remove_dir_all(&staging_dir);
+            return Err(err(format!(
+                "Pet '{}' is a built-in pet and cannot be replaced by a user package",
+                manifest.id
+            )));
+        }
         fs::remove_dir_all(&target_dir).map_err(|error| {
             err(format!(
                 "Failed to replace existing pet '{}': {error}",
@@ -393,6 +411,18 @@ pub fn install_pet_from_zip(zip_path: String) -> Result<PetManifest> {
             target_dir.display()
         ))
     })?;
+
+    // 内置标记由安装方式决定，忽略包内自带的同名文件。
+    let marker_path = target_dir.join(BUILTIN_MARKER_FILE);
+    let _ = fs::remove_file(&marker_path);
+    if builtin {
+        fs::write(&marker_path, b"").map_err(|error| {
+            err(format!(
+                "Failed to mark built-in pet '{}': {error}",
+                manifest.id
+            ))
+        })?;
+    }
 
     load_manifest_from_dir(&target_dir, "snow").ok_or_else(|| {
         err("Pet package was installed but could not be re-read".to_string())
@@ -443,7 +473,7 @@ pub fn list_installed_pets() -> Vec<PetManifest> {
     result
 }
 
-/// 卸载 Snow App 安装的宠物（仅允许删除 ~/.snowapp/pets/ 下的目录）。
+/// 卸载 Snow App 安装的宠物（仅允许删除 ~/.snowapp/pets/ 下的目录，内置宠物拒绝卸载）。
 pub fn uninstall_pet(pet_id: String) -> Result<()> {
     let id = sanitize_pet_id(&pet_id);
     let pets_root = snow_pets_dir()?;
@@ -462,6 +492,9 @@ pub fn uninstall_pet(pet_id: String) -> Result<()> {
         .map_err(|error| err(format!("Failed to resolve pet directory: {error}")))?;
     if !canonical_target.starts_with(&canonical_root) {
         return Err(err("Refused to delete a directory outside the pets root"));
+    }
+    if is_builtin_pet_dir(&canonical_target) {
+        return Err(err(format!("Built-in pet '{id}' cannot be uninstalled")));
     }
 
     fs::remove_dir_all(&canonical_target)

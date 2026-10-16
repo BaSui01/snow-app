@@ -17,6 +17,13 @@ import type {
   SshFileWriteResult,
   SshJumpHostRecord,
   SshProfileConnection,
+  SshTransferCancelParams,
+  SshTransferDownloadParams,
+  SshTransferResolveConflictParams,
+  SshTransferSnapshot,
+  SshTransferStartResult,
+  SshTransferUploadDroppedParams,
+  SshTransferUploadParams,
   RemoteDraftInput,
   RemoteDraftRecord,
 } from "../types";
@@ -201,4 +208,49 @@ export const sshApi = {
     ipcRenderer.invoke("ssh:select-private-key", dialogTitle),
   sshParseUrl: (sshUrl: string): Promise<ParsedSshUrl> =>
     ipcRenderer.invoke("ssh:parse-url", sshUrl),
+
+  // ===== SSH 文件传输（上传 / 下载） =====
+
+  /** 上传：主进程弹出文件选择框，确认后创建上传批次。 */
+  sshTransferUpload: (
+    params: SshTransferUploadParams,
+  ): Promise<SshTransferStartResult> =>
+    ipcRenderer.invoke("ssh:transfers:upload", params),
+  /** 上传（拖入）：携带 preload 解析出的本地路径，主进程校验并弹确认框。 */
+  sshTransferUploadDropped: (
+    params: SshTransferUploadDroppedParams,
+  ): Promise<SshTransferStartResult> =>
+    ipcRenderer.invoke("ssh:transfers:upload-dropped", params),
+  /** 下载：单文件弹保存框、多文件弹目录选择框，确认后创建下载批次。 */
+  sshTransferDownload: (
+    params: SshTransferDownloadParams,
+  ): Promise<SshTransferStartResult> =>
+    ipcRenderer.invoke("ssh:transfers:download", params),
+  /** 当前窗口可见的传输任务快照（重新打开面板时先拉取一次）。 */
+  sshListTransfers: (): Promise<SshTransferSnapshot> =>
+    ipcRenderer.invoke("ssh:transfers:list"),
+  /** 取消单个任务或整批尚未提交的子任务。 */
+  sshCancelTransfer: (params: SshTransferCancelParams): Promise<void> =>
+    ipcRenderer.invoke("ssh:transfers:cancel", params),
+  /** 回答冲突协商（替换 / 跳过 / 另存为）。 */
+  sshResolveTransferConflict: (
+    params: SshTransferResolveConflictParams,
+  ): Promise<void> =>
+    ipcRenderer.invoke("ssh:transfers:resolve-conflict", params),
+  /** 清除当前窗口已结束（含失败 / 取消）的任务记录。 */
+  sshClearFinishedTransfers: (): Promise<void> =>
+    ipcRenderer.invoke("ssh:transfers:clear-finished"),
+  /** 订阅传输任务快照推送；返回退订函数。 */
+  onSshTransfersUpdated: (
+    callback: (snapshot: SshTransferSnapshot) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      snapshot: SshTransferSnapshot,
+    ): void => {
+      callback(snapshot);
+    };
+    ipcRenderer.on("ssh:transfers:updated", handler);
+    return () => ipcRenderer.removeListener("ssh:transfers:updated", handler);
+  },
 };

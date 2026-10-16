@@ -58178,3 +58178,361 @@ img.plugin-icon {
   gap: 6px;
   padding: 4px 6px;
 }
+
+/* ===== SSH File Transfers（传输进度条 / 冲突协商浮层） =====
+   底部条随内容流布局，列表向上生长；冲突卡片浮在资源管理器内容区上方。 */
+
+.ssh-transfers {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.ssh-transfers-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  flex-shrink: 0;
+}
+
+.ssh-transfers-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.ssh-transfers-toggle:hover {
+  color: var(--text-primary);
+}
+
+.ssh-transfers-header-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ssh-transfers-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ssh-transfers-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.ssh-transfers-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ssh-transfers-text-btn {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.ssh-transfers-text-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* 展开的任务列表：在底部条上方生长，超高时自身滚动 */
+.ssh-transfers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 6px 2px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.ssh-transfers-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.ssh-transfers-item:hover {
+  background: var(--bg-hover);
+}
+
+.ssh-transfers-item-icon {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.ssh-transfers-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ssh-transfers-item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ssh-transfers-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.ssh-transfers-item-status {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.ssh-transfers-item.status-succeeded .ssh-transfers-item-status {
+  color: var(--accent-green);
+}
+
+.ssh-transfers-item.status-failed .ssh-transfers-item-status,
+.ssh-transfers-item.status-commit-unknown .ssh-transfers-item-status {
+  color: var(--accent-red);
+}
+
+.ssh-transfers-item.status-cancelled .ssh-transfers-item-status,
+.ssh-transfers-item.status-skipped .ssh-transfers-item-status {
+  color: var(--accent-amber-text);
+}
+
+.ssh-transfers-item-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ssh-transfers-progress-track {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.ssh-transfers-progress-bar {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent-color);
+  transition: width 0.2s ease;
+}
+
+.ssh-transfers-progress-text {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ssh-transfers-item-error {
+  color: var(--accent-red);
+  font-size: 10.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ssh-transfers-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.ssh-transfers-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ssh-transfers-icon-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* 冲突协商卡片：浮在底部条上方，覆盖资源管理器内容区。
+   z-index 需高于目录吸顶行（100 - depth），否则会被吸顶行盖住。 */
+.ssh-transfer-conflict {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: var(--island-shadow);
+}
+
+.ssh-transfer-conflict-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-amber-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ssh-transfer-conflict-header svg {
+  flex-shrink: 0;
+}
+
+.ssh-transfer-conflict-message {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ssh-transfer-conflict-path {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssh-transfer-conflict-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.ssh-transfer-conflict-field input {
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ssh-transfer-conflict-field input:focus {
+  border-color: var(--accent-color);
+}
+
+.ssh-transfer-conflict-apply-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ssh-transfer-conflict-error {
+  color: var(--accent-red);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ssh-transfer-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.ssh-transfer-conflict-actions button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.ssh-transfer-conflict-actions button:hover:not(:disabled) {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.ssh-transfer-conflict-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.ssh-transfer-conflict-actions button.primary {
+  background: var(--accent-color);
+  color: var(--on-solid);
+}
+
+.ssh-transfer-conflict-actions button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* 外部文件拖入上传：树容器（工作区根目录）与目录行目标高亮 */
+.explorer-tree--drop-target {
+  outline: 1px dashed var(--accent-color);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+}
+
+.explorer-tree-row--drop-target {
+  outline: 1px dashed var(--accent-color);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+}

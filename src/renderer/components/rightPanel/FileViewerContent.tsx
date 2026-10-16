@@ -8,6 +8,7 @@ import {
   Code2,
   Copy,
   CopySlash,
+  Download,
   Eye,
   FileInput,
   FileText,
@@ -16,6 +17,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Pencil,
+  RefreshCw,
   Save,
   Search,
   Terminal as TerminalIcon,
@@ -338,6 +340,8 @@ export function FileViewerContent({
   // code = 源码视图（保留行号与文内搜索）。
   const [mdMode, setMdMode] = useState<"preview" | "code">("preview");
   const [copied, setCopied] = useState(false);
+  // SSH 预览刷新（手动重新读取远端文件）进行中。
+  const [refreshing, setRefreshing] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -1253,6 +1257,18 @@ export function FileViewerContent({
     });
   }, [content]);
 
+  /** 下载远端文件到本地：主进程弹出原生保存对话框并创建下载任务。 */
+  const handleDownloadRemote = useCallback(() => {
+    if (!isSsh || !sshWorkspaceId) return;
+    // 用户取消保存或下载失败都不打断阅读器，静默忽略；也不触发草稿保存。
+    void window.snow
+      .sshTransferDownload({
+        workspaceId: sshWorkspaceId,
+        remotePaths: [filePath],
+      })
+      .catch(() => {});
+  }, [filePath, isSsh, sshWorkspaceId]);
+
   // 虚拟滚动下行元素只覆盖可视窗口：选中全部已渲染行（如全选）复制时
   // 补齐为完整文件内容，避免复制结果被窗口截断。
   const handleCodeCopy = useCallback(
@@ -1306,6 +1322,45 @@ export function FileViewerContent({
     },
     [editTextareaId],
   );
+
+  /**
+   * SSH 手动刷新：重新读取远端文件并原地应用（仅预览模式使用）。
+   * 内容未变则无操作；会话断开或文件暂不可读时保留当前内容，可稍后重试。
+   */
+  const handleRefreshRemote = useCallback(async (): Promise<void> => {
+    if (!isSsh || !sshSessionId || refreshing) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const next = await window.snow.sshReadFile(sshSessionId, filePath);
+      const current = contentRef.current;
+      if (!current) {
+        return;
+      }
+      if (next.content === current.content) {
+        // 内容未变：仍同步远端版本（mtime 可能已变化），
+        // 避免之后保存时因版本过期误报冲突。
+        if (
+          serializeRemoteVersion(next.remoteVersion) !==
+          serializeRemoteVersion(current.remoteVersion)
+        ) {
+          setContent(next);
+        }
+        return;
+      }
+      if (editModeRef.current && dirtyRef.current) {
+        // 有未保存修改时不覆盖，交由用户选择是否重载（防御性分支）。
+        setExternalChange(next);
+        return;
+      }
+      applyExternalContent(next);
+    } catch {
+      // 会话断开或远端文件暂不可读：保留当前内容，可稍后重试。
+    } finally {
+      setRefreshing(false);
+    }
+  }, [applyExternalContent, filePath, isSsh, refreshing, sshSessionId]);
 
   const handleEnterEditMode = useCallback(() => {
     if (!content || !isEditable(content)) return;
@@ -2616,6 +2671,37 @@ export function FileViewerContent({
             <Copy size={13} />
           </button>
         )}
+        {isSsh && sshSessionId && !editMode ? (
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            title={t("rightPanel.fileViewerRefresh", {
+              defaultValue: "Refresh",
+            })}
+            aria-label={t("rightPanel.fileViewerRefresh", {
+              defaultValue: "Refresh",
+            })}
+            onClick={() => void handleRefreshRemote()}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <Loader2 className="spin" size={13} />
+            ) : (
+              <RefreshCw size={13} />
+            )}
+          </button>
+        ) : null}
+        {isSsh && sshWorkspaceId ? (
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            title={t("rightPanel.downloadRemoteFileHint")}
+            aria-label={t("rightPanel.downloadRemoteFile")}
+            onClick={handleDownloadRemote}
+          >
+            <Download size={13} />
+          </button>
+        ) : null}
         {canReview && !editMode ? (
           <>
             <button

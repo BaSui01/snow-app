@@ -3,6 +3,7 @@ import {
   ChevronRight,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   FolderOpen,
   Loader2,
@@ -10,6 +11,7 @@ import {
   Pencil,
   Terminal,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -34,6 +36,12 @@ type ExplorerEntryContextMenuProps = {
   onDeleteSelected?: () => Promise<void>;
   /** 批量复制选中路径（selectedCount > 1 时使用）。 */
   onCopySelectedPaths?: () => void;
+  /** SSH：下载当前条目到本地（单条文件）。 */
+  onDownloadToLocal?: () => void;
+  /** SSH：批量下载选中条目（多选时使用）。 */
+  onDownloadSelected?: () => void;
+  /** SSH：上传文件到当前目录（目录条目）。 */
+  onUploadToHere?: () => void;
   /** 将当前条目（多选时为整个选中集合）添加到聊天输入框。 */
   onAddToInput: () => void;
   onOpenTerminal?: (cwd: string) => void;
@@ -53,6 +61,9 @@ export function ExplorerEntryContextMenu({
   onDelete,
   onDeleteSelected,
   onCopySelectedPaths,
+  onDownloadToLocal,
+  onDownloadSelected,
+  onUploadToHere,
   onAddToInput,
   onOpenTerminal,
   onRename,
@@ -288,6 +299,22 @@ export function ExplorerEntryContextMenu({
     onCopySelectedPaths?.();
   };
 
+  // SSH 传输入口沿用「先关菜单再触发」的既有模式：错误由资源管理器内容区展示。
+  const handleDownloadToLocal = (): void => {
+    onClose();
+    onDownloadToLocal?.();
+  };
+
+  const handleDownloadSelected = (): void => {
+    onClose();
+    onDownloadSelected?.();
+  };
+
+  const handleUploadToHere = (): void => {
+    onClose();
+    onUploadToHere?.();
+  };
+
   const handleAddToInput = (): void => {
     onClose();
     onAddToInput();
@@ -407,6 +434,21 @@ export function ExplorerEntryContextMenu({
                 })}
               </span>
             </button>
+            {isSsh && onDownloadSelected ? (
+              <button
+                className="explorer-entry-context-menu-item"
+                onClick={handleDownloadSelected}
+                role="menuitem"
+                type="button"
+              >
+                <Download size={13} />
+                <span>
+                  {t("explorer.transferDownloadMulti", {
+                    values: { count: selectedCount },
+                  })}
+                </span>
+              </button>
+            ) : null}
             <div className="explorer-entry-context-menu-separator" />
             <button
               className="explorer-entry-context-menu-item danger"
@@ -497,6 +539,28 @@ export function ExplorerEntryContextMenu({
                 {t("sidebar.explorerCopyPath", { defaultValue: "Copy Path" })}
               </span>
             </button>
+            {isSsh && !isDirectory && onDownloadToLocal ? (
+              <button
+                className="explorer-entry-context-menu-item"
+                onClick={handleDownloadToLocal}
+                role="menuitem"
+                type="button"
+              >
+                <Download size={13} />
+                <span>{t("explorer.transferDownload")}</span>
+              </button>
+            ) : null}
+            {isSsh && isDirectory && onUploadToHere ? (
+              <button
+                className="explorer-entry-context-menu-item"
+                onClick={handleUploadToHere}
+                role="menuitem"
+                type="button"
+              >
+                <Upload size={13} />
+                <span>{t("explorer.transferUploadToHere")}</span>
+              </button>
+            ) : null}
             {canOpenWith ? (
               <span
                 className="explorer-entry-context-menu-submenu-trigger"

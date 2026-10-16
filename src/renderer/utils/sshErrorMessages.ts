@@ -17,7 +17,7 @@ export type LocalizedSshError = {
 
 type TranslateFn = (
   key: string,
-  options?: { defaultValue?: string; values?: Record<string, string | number> }
+  options?: { defaultValue?: string; values?: Record<string, string | number> },
 ) => string;
 
 const IPC_ERROR_PREFIX =
@@ -35,7 +35,7 @@ export const stripIpcErrorPrefix = (message: string): string => {
  */
 export const localizeSshError = (
   err: unknown,
-  t: TranslateFn
+  t: TranslateFn,
 ): LocalizedSshError => {
   const raw = err instanceof Error ? err.message : String(err ?? "");
   const detail = stripIpcErrorPrefix(raw);
@@ -114,4 +114,43 @@ export const localizeSshError = (
   }
 
   return { message: detail };
+};
+
+// ===== SSH 文件传输错误本地化 =====
+
+/** 传输错误码 → 渲染层文案 key（与 lang 三语文件中的键保持一致）。 */
+const SSH_TRANSFER_ERROR_MESSAGE_KEYS: Record<string, string> = {
+  SSH_TRANSFER_NOT_CONNECTED: "explorer.transferErrorNotConnected",
+  SSH_TRANSFER_TIMEOUT: "explorer.transferErrorTimeout",
+  SSH_TRANSFER_SOURCE_CHANGED: "explorer.transferErrorSourceChanged",
+  SSH_TRANSFER_TARGET_CHANGED: "explorer.transferErrorTargetChanged",
+  SSH_TRANSFER_REPLACE_UNSUPPORTED: "explorer.transferErrorReplaceUnsupported",
+  SSH_TRANSFER_COMMIT_UNKNOWN: "explorer.transferErrorCommitUnknown",
+  SSH_TRANSFER_SIZE_MISMATCH: "explorer.transferErrorSizeMismatch",
+  SSH_TRANSFER_PATH_INVALID: "explorer.transferErrorPathInvalid",
+  SSH_TRANSFER_OUTSIDE_WORKSPACE: "explorer.transferErrorOutsideWorkspace",
+  SSH_TRANSFER_NOT_A_FILE: "explorer.transferErrorNotAFile",
+  SSH_TRANSFER_SYMLINK_NOT_ALLOWED: "explorer.transferErrorSymlink",
+  SSH_TRANSFER_CONFLICT_UNRESOLVED: "explorer.transferErrorConflictUnresolved",
+  SSH_TRANSFER_TARGET_EXISTS: "explorer.transferErrorExists",
+  SSH_TRANSFER_IO_FAILED: "explorer.transferErrorIo",
+  SSH_TRANSFER_WORKSPACE_INVALID: "explorer.transferErrorGeneric",
+};
+
+/**
+ * 把传输任务的错误对象转成当前语言的文案。
+ * 已知错误码走本地化键（缺失时回退主进程英文消息），未知错误原样展示。
+ */
+export const localizeSshTransferError = (
+  error: { code: string; message: string } | null,
+  t: TranslateFn,
+): string => {
+  if (!error) {
+    return "";
+  }
+  const key = SSH_TRANSFER_ERROR_MESSAGE_KEYS[error.code];
+  if (key) {
+    return t(key, { defaultValue: error.message });
+  }
+  return error.message;
 };

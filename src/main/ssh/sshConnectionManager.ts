@@ -40,13 +40,14 @@ type SshConnectionManagerOptions = {
   reconnectDelaysMs?: number[];
 };
 
-const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
+const DEFAULT_RECONNECT_DELAYS_MS = [
+  1_000, 2_000, 4_000, 8_000, 15_000, 30_000,
+];
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 
-export const getSshProfileId = (params: Pick<
-  SshConnectParams,
-  "host" | "port" | "username"
->): string => `ssh-profile:${getSshProfileKey(params)}`;
+export const getSshProfileId = (
+  params: Pick<SshConnectParams, "host" | "port" | "username">,
+): string => `ssh-profile:${getSshProfileKey(params)}`;
 
 const clonePublicState = (entry: ProfileEntry): SshProfileConnection => ({
   profileId: entry.profileId,
@@ -70,7 +71,9 @@ const classifyConnectionError = (error: unknown): SshConnectionStatus => {
   }
   if (
     code === "SSH_AGENT_UNAVAILABLE" ||
-    /authentication|all configured authentication|permission denied/i.test(message)
+    /authentication|all configured authentication|permission denied/i.test(
+      message,
+    )
   ) {
     return "auth_required";
   }
@@ -97,9 +100,7 @@ export class SshConnectionManager {
     setSshSessionHandleResolver((handle) => this.resolveSessionId(handle));
   }
 
-  subscribe(
-    listener: (state: SshProfileConnection) => void
-  ): () => void {
+  subscribe(listener: (state: SshProfileConnection) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -136,7 +137,11 @@ export class SshConnectionManager {
       entry.idleTimer = undefined;
     }
 
-    if (entry.status === "connected" && entry.sessionId && getSshSession(entry.sessionId)) {
+    if (
+      entry.status === "connected" &&
+      entry.sessionId &&
+      getSshSession(entry.sessionId)
+    ) {
       return clonePublicState(entry);
     }
     if (entry.connectPromise) {
@@ -168,6 +173,25 @@ export class SshConnectionManager {
     }, this.idleTimeoutMs);
   }
 
+  /**
+   * 外部长任务（SSH 文件传输等）在运行期间持有连接引用：
+   * - 只对当前已连接且持有会话的档案生效，不触发重连；
+   * - 引用计数 +1 并取消空闲回收计时器，任务结束后必须调用 release()。
+   * 返回快照（含当前 sessionId 与 generation）供任务固定代际；不可用时返回 null。
+   */
+  retain(profileId: string): SshProfileConnection | null {
+    const entry = this.entries.get(profileId);
+    if (!entry || entry.status !== "connected" || !entry.sessionId) {
+      return null;
+    }
+    entry.references += 1;
+    if (entry.idleTimer) {
+      clearTimeout(entry.idleTimer);
+      entry.idleTimer = undefined;
+    }
+    return clonePublicState(entry);
+  }
+
   dispose(): void {
     for (const entry of this.entries.values()) {
       this.stop(entry, "idle");
@@ -185,7 +209,7 @@ export class SshConnectionManager {
 
   private async connect(
     entry: ProfileEntry,
-    isReconnect: boolean
+    isReconnect: boolean,
   ): Promise<SshProfileConnection> {
     entry.status = isReconnect ? "reconnecting" : "connecting";
     entry.lastError = undefined;

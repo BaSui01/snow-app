@@ -1491,6 +1491,13 @@ const isWithinRemoteRoot = (path: string, root: string): boolean => {
     : left === right || left.startsWith(`${right}/`);
 };
 
+/**
+ * 供 SSH 文件传输模块复用：远程路径规范化与工作区边界判定必须与原子写
+ * 使用同一套规则，避免两条路径产生不一致的越界判断。
+ */
+export const normalizeSshRemotePath = normalizedRemotePath;
+export const isSshPathWithinRoot = isWithinRemoteRoot;
+
 const assertWorkspaceBoundary = async (
   sftp: import("ssh2").SFTPWrapper,
   remotePath: string,
@@ -2120,6 +2127,34 @@ export const statSshEntry = (
       (err: Error | undefined, stats: import("ssh2").Stats) => {
         if (err) {
           // Path may have been removed; return null instead of rejecting.
+          resolve(null);
+          return;
+        }
+        resolve(stats);
+      },
+    );
+  });
+};
+
+/**
+ * lstat 版本（不跟随符号链接）。文件传输前置检查需要区分普通文件与符号链接，
+ * 不能直接使用会跟随链接的 statSshEntry。
+ */
+export const lstatSshEntry = (
+  sessionId: string,
+  remotePath: string,
+): Promise<import("ssh2").Stats | null> => {
+  return new Promise((resolve, reject) => {
+    const session = getSshSession(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    session.sftp.lstat(
+      remotePath,
+      (err: Error | undefined, stats: import("ssh2").Stats) => {
+        if (err) {
           resolve(null);
           return;
         }

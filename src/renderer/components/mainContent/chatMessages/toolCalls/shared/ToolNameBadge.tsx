@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  CodeXml,
   Copy,
   Database,
   FilePen,
@@ -40,6 +41,7 @@ export type ToolCategory =
   | "skill"
   | "database"
   | "telemetry"
+  | "html"
   | "generic";
 
 const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
@@ -61,6 +63,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   skill: Sparkles,
   database: Database,
   telemetry: Activity,
+  html: CodeXml,
   generic: Wrench,
 };
 

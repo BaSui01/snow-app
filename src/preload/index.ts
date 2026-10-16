@@ -19,6 +19,7 @@ import { userscriptsApi } from "./modules/userscriptsApi";
 import { pluginsApi } from "./modules/pluginsApi";
 import { imageGenerationApi } from "./modules/imageGenerationApi";
 import { imageLibraryApi } from "./modules/imageLibraryApi";
+import { htmlPreviewApi } from "./modules/htmlPreviewApi";
 import { storageApi } from "./modules/storageApi";
 import { resourceApi } from "./modules/resourceApi";
 import { ideApi } from "./modules/ideApi";
@@ -50,6 +51,7 @@ const api = {
   ...pluginsApi,
   ...imageGenerationApi,
   ...imageLibraryApi,
+  ...htmlPreviewApi,
   ...storageApi,
   ...resourceApi,
   ...ideApi,

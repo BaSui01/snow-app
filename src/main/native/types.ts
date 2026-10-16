@@ -1,4 +1,5 @@
 import type { ImageGenerationNativeApi } from "../../shared/imageGeneration";
+import type { HtmlPreviewDocument } from "../../shared/htmlPreview";
 import type {
   PromptOptimizationRequest,
   PromptOptimizationResult,
@@ -3077,6 +3078,19 @@ export type NativeBridge = ImageGenerationNativeApi & {
   /** 手动导入图片文件（复制进图库目录并写入索引），返回成功导入的记录 */
   importImageFiles: (filePaths: string[]) => Promise<ImageLibraryRecord[]>;
   readImageLibraryFile: (relativePath: string) => Promise<string | null>;
+  /** HTML 渲染器：规范化并写入内容寻址预览缓存（已存在则跳过）。 */
+  materializeHtmlPreview: (
+    html: string,
+    title: string | null,
+  ) => Promise<HtmlPreviewDocument>;
+  /** HTML 渲染器：按文档 id 解析预览缓存文件路径（非法或缺失返回 null）。 */
+  resolveHtmlPreviewFile: (id: string) => Promise<string | null>;
+  /** HTML 渲染器：把规范化后的完整文档写到指定路径（下载）。 */
+  exportHtmlPreview: (
+    html: string,
+    title: string | null,
+    targetPath: string,
+  ) => Promise<void>;
   deleteImageLibraryImage: (id: string) => Promise<void>;
   countConversationImages: (conversationIds: string[]) => Promise<number>;
   deleteConversationImages: (conversationIds: string[]) => Promise<number>;

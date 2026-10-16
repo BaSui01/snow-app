@@ -2,6 +2,7 @@ import {
   AppWindow,
   Bot,
   Brain,
+  CodeXml,
   Crosshair,
   DatabaseSearch,
   FolderTree,
@@ -43,6 +44,7 @@ const BUILTIN_SERVER_ICONS: Record<string, LucideIcon> = {
   "builtin:workflow": Workflow,
   "builtin:memory": Brain,
   "builtin:computer-use": Monitor,
+  "builtin:html": CodeXml,
 };
 
 /** 返回内置服务的专属图标；非内置服务返回 undefined。 */

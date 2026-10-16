@@ -22,6 +22,7 @@ import { registerScheduledTaskHandlers } from "./handlers/scheduledTaskHandlers"
 import { registerPersonalizationHandlers } from "./handlers/personalizationHandlers";
 import { registerImageHandlers } from "./handlers/imageHandlers";
 import { registerImageLibraryHandlers } from "./handlers/imageLibraryHandlers";
+import { registerHtmlPreviewHandlers } from "./handlers/htmlPreviewHandlers";
 import { registerStorageHandlers } from "./handlers/storageHandlers";
 import { registerBrowserPasswordHandlers } from "./handlers/browserPasswordHandlers";
 import { registerBrowserHistoryHandlers } from "./handlers/browserHistoryHandlers";
@@ -56,6 +57,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerPersonalizationHandlers();
   registerImageHandlers(native);
   registerImageLibraryHandlers(native);
+  registerHtmlPreviewHandlers(native);
   registerStorageHandlers(native);
   registerBrowserPasswordHandlers(native);
   registerBrowserHistoryHandlers(native);

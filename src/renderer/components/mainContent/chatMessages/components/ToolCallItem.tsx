@@ -26,6 +26,7 @@ import {
   BrowserToolCall,
   TerminalToolCall,
   ComputerUseToolCall,
+  HtmlRenderToolCall,
   SkillToolCall,
   ConfigToolCall,
   AppLogsToolCall,
@@ -182,6 +183,10 @@ const renderToolCall = ({
 
   if (toolCall.name.startsWith("computer-use-")) {
     return <ComputerUseToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "html-render") {
+    return <HtmlRenderToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name === "skills-skill-execute") {

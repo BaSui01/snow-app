@@ -26,6 +26,10 @@ import {
   registerImageProxyProtocol,
   registerImageProxySchemePrivilege,
 } from "./imageProxyProtocol";
+import {
+  registerHtmlPreviewProtocol,
+  registerHtmlPreviewSchemePrivilege,
+} from "./htmlPreviewProtocol";
 import { applySessionProxy } from "./sessionProxy";
 import { ensureBuiltinDocs, ensureBuiltinSkills } from "./ensureBuiltinSkills";
 import {
@@ -69,6 +73,8 @@ export const bootstrapApplication = (): void => {
   registerThemeBgSchemePrivilege();
   // img-proxy:// 同样需要在 whenReady 前声明特权，才能用于 <img src>。
   registerImageProxySchemePrivilege();
+  // html-preview://：HTML 渲染器预览需要独立源（standard）才能按文档隔离。
+  registerHtmlPreviewSchemePrivilege();
 
   // Prevent multiple instances — must be called before app.whenReady().
   const gotTheLock = app.requestSingleInstanceLock();
@@ -136,6 +142,9 @@ export const bootstrapApplication = (): void => {
     // 注册 img-proxy:// 协议处理器：代理外部 http(s) 图片，并直接读取本地
     // image/、upload/ 图片文件返回，使 markdown 图片能绕过 CSP 限制安全加载。
     registerImageProxyProtocol(native);
+    // 注册 html-preview:// 协议处理器：HTML 渲染器会话内预览（按文档 id 由
+    // Rust 解析缓存文件）。
+    registerHtmlPreviewProtocol(native);
     // 预加载独立窗口记忆的尺寸（异步读取，创建窗口时无需同步读盘）。
     void initDetachedPanelWindowState();
 

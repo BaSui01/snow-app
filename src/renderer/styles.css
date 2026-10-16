@@ -18438,6 +18438,135 @@ body.is-panel-resizing * {
   font-size: 11.5px;
 }
 
+/* HTML Renderer Tool Call (html-render) */
+.html-render-size {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.html-render-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.html-render-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.html-render-tabs,
+.html-render-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.html-render-tab,
+.html-render-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.html-render-tab:hover,
+.html-render-action:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.html-render-tab.is-active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-color: var(--border-light);
+}
+
+.html-render-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.html-render-tab:focus-visible,
+.html-render-action:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 预览区可纵向拖拽调整高度；页面背景按浏览器默认的白底呈现，与在浏览器中
+   打开时一致，不随应用主题变化。 */
+.html-render-frame-wrap {
+  position: relative;
+  min-height: 160px;
+  max-height: 1600px;
+  resize: vertical;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.html-render-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.html-render-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.html-render-placeholder--error {
+  color: var(--accent-red-text);
+}
+
+.html-render-source.tool-call-code-highlight-wrap {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.html-render-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
 /* Grep Tool Call */
 .tool-call-grep-body {
   gap: 10px;

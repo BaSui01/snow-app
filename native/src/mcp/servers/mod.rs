@@ -11,6 +11,7 @@ pub mod computer_use;
 pub mod config;
 pub mod filesystem;
 pub mod grep;
+pub mod html_render;
 pub mod imagegen;
 pub mod lsp;
 pub mod memory;

@@ -14,6 +14,7 @@ use super::servers::computer_use::ComputerUseService;
 use super::servers::config::ConfigService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::html_render::HtmlRenderService;
 use super::servers::imagegen::ImageGenService;
 use super::servers::lsp::LspService;
 use super::servers::memory::MemoryService;
@@ -51,6 +52,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(WorkflowService::new()),
         Arc::new(MemoryService::new()),
         Arc::new(ComputerUseService::new()),
+        Arc::new(HtmlRenderService::new()),
         // Logs are exposed as config-logs-read; no separate MCP server.
         // NOTE: new services must be appended to the END of this list to keep
         // the tool order stable (prompt cache); never insert in the middle.
@@ -65,6 +67,10 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         // DEFAULT_DISABLED_SERVER_IDS，与 terminal/lsp 同一白名单机制），
         // 需在 MCP 面板按项目显式启用。键鼠控制工具天然高危，全部走用户
         // 审批，仅 screen-info 列入 READONLY_TOOL_NAMES。
+        //
+        // html：HTML 渲染器（会话内实时预览），纯 Rust 规范化 + 内容寻址落盘，
+        // 经默认分发路径 spawn_blocking 执行；默认关闭（同上白名单机制），
+        // 无工作区副作用，render 列入 READONLY_TOOL_NAMES。
     ]
 }
 
@@ -106,6 +112,7 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "memory-search",
     "memory-list",
     "computer-use-screen-info",
+    "html-render",
 ];
 
 /// 返回仍注册在案的只读工具全名（过滤掉已删除/改名工具的过期条目）。

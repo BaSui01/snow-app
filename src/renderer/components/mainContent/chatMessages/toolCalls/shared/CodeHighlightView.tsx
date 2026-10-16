@@ -7,6 +7,8 @@ import { useI18n } from "../../../../../i18n";
 type CodeHighlightViewProps = {
   code: string;
   filePath?: string;
+  /** 显式 highlight.js 语言名；缺省时按 filePath 扩展名推断。 */
+  language?: string;
   startLine?: number;
   totalLines?: number;
   maxHeight?: number | string;
@@ -83,6 +85,7 @@ const escapeHtml = (str: string): string =>
 export const CodeHighlightView = ({
   code,
   filePath = "",
+  language: explicitLanguage,
   startLine = 1,
   totalLines,
   maxHeight,
@@ -99,8 +102,8 @@ export const CodeHighlightView = ({
   );
 
   const language = useMemo(
-    () => (filePath ? getLanguageFromPath(filePath) : ""),
-    [filePath],
+    () => explicitLanguage || (filePath ? getLanguageFromPath(filePath) : ""),
+    [explicitLanguage, filePath],
   );
 
   // 切分代码行与语法高亮

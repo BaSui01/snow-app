@@ -4,6 +4,7 @@ pub(crate) mod codebase;
 mod engine;
 mod formatting;
 mod git;
+mod html_preview;
 mod ide;
 mod image_generation;
 mod images;

@@ -21,6 +21,7 @@ const BUILTIN_SERVER_DESCRIPTION_KEYS: Record<string, string> = {
   "builtin:workflow": "mcpBuiltinServer.desc.workflow",
   "builtin:memory": "mcpBuiltinServer.desc.memory",
   "builtin:computer-use": "mcpBuiltinServer.desc.computerUse",
+  "builtin:html": "mcpBuiltinServer.desc.html",
 };
 
 /** 返回内置服务的 i18n 说明 key；非内置服务返回 undefined。 */

@@ -161,6 +161,7 @@ pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "grep",
     "terminal",
     "memory",
+    "html",
 ];
 
 /// 精简模式（Lite Mode）禁用的内置服务器 ID。启用精简模式后，这些服务器的

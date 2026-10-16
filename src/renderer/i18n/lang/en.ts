@@ -1810,6 +1810,7 @@ export const en = {
   "toolNames.computer-use-key-button": "Key button",
   "toolNames.computer-use-type-text": "Type text",
   "toolNames.computer-use-perform-actions": "Perform actions",
+  "toolNames.html-render": "Render HTML",
   "toolNames.workflow-workflow-generate": "Generate workflow",
   "toolNames.workflow-workflow-resume": "Resume workflow",
   "toolCall.duplicateReadonlyProtection.duplicateCall":
@@ -1851,6 +1852,15 @@ export const en = {
   "toolCall.computerUse.mapping": "Coordinate mapping",
   "toolCall.computerUse.running": "Running screen action...",
   "toolCall.computerUse.noImage": "Screenshot result has no image",
+  "toolCall.htmlRender.preview": "Preview",
+  "toolCall.htmlRender.source": "Source",
+  "toolCall.htmlRender.copySource": "Copy HTML source",
+  "toolCall.htmlRender.download": "Download",
+  "toolCall.htmlRender.downloadTitle": "Save as an HTML file",
+  "toolCall.htmlRender.openInBrowser": "Open in browser",
+  "toolCall.htmlRender.openInBrowserTitle": "Open in the built-in browser",
+  "toolCall.htmlRender.loading": "Loading preview...",
+  "toolCall.htmlRender.generating": "Generating HTML...",
   "toolCall.common.status.pending": "Pending",
   "toolCall.common.status.running": "Running",
   "toolCall.common.status.completed": "Completed",
@@ -4324,6 +4334,7 @@ export const en = {
   "mcpBuiltinServer.desc.memory": "Remember project knowledge across sessions",
   "mcpBuiltinServer.desc.computerUse":
     "Screenshot and control the desktop (mouse, keyboard)",
+  "mcpBuiltinServer.desc.html": "Render HTML live inside the conversation",
   "projectCodebase.title": "Project Codebase",
   "projectCodebase.description": "Codebase indexing for {{project}}",
   "projectCodebase.noProject":

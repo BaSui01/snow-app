@@ -826,13 +826,75 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [],
     );
 
-    // Git 变更/暂存区文件「打开文件」按钮：以本地仓库文件（isSsh=false）
-    // 在右侧面板新建 file tab，通过 FileViewerContent 显示文件原文。
+    // 为远程文件查看建立/复用 SSH 会话。失败时删除缓存，允许下次重试。
+    const getSshFileSession = useCallback(
+      (workspacePath: string): Promise<string> => {
+        const cached = sshFileSessionPromisesRef.current.get(workspacePath);
+        if (cached) {
+          return cached;
+        }
+        const connecting = buildSshConnectParams(workspacePath)
+          .then((params) => {
+            if (!params) {
+              throw new Error("Unable to resolve SSH connection parameters");
+            }
+            return window.snow.sshConnect(params);
+          })
+          .catch((error: unknown) => {
+            sshFileSessionPromisesRef.current.delete(workspacePath);
+            throw error;
+          });
+        sshFileSessionPromisesRef.current.set(workspacePath, connecting);
+        return connecting;
+      },
+      [],
+    );
+
+    // 当前活动工作区为 SSH 工作区时的根路径与工作区 id：Git 面板打开远程文件
+    // 需要用它建立 SSH 会话，并为文件 tab 提供下载等远程能力（本地为 undefined）。
+    const activeSshWorkspacePath =
+      activeDirectory && activeDirectory.path.startsWith("ssh://")
+        ? activeDirectory.path
+        : undefined;
+    const activeSshWorkspaceId = activeSshWorkspacePath
+      ? activeDirectory?.directoryId
+      : undefined;
+
+    // Git 变更/暂存区文件「打开文件」按钮：在右侧面板新建 file tab，通过
+    // FileViewerContent 显示文件原文。SSH 仓库的路径是 ssh:// URI，必须先转成
+    // SFTP 使用的裸远端路径并建立 SSH 会话，否则会被当成不存在的本地路径读取。
     const handleOpenFileFromGit = useCallback(
       (filePath: string, fileName: string) => {
-        handleOpenFileTab(filePath, fileName, false);
+        if (!filePath.startsWith("ssh://")) {
+          handleOpenFileTab(filePath, fileName, false);
+          return;
+        }
+
+        // 剥离 ssh://authority，得到 /home/... 形式的裸远端路径（与聊天区
+        // Ctrl+点击路径打开远程文件时使用的解析方式一致）。
+        const remotePath = filePath.replace(/^ssh:\/\/[^/]+/, "") || "/";
+        void getSshFileSession(activeSshWorkspacePath ?? filePath)
+          .then((sshSessionId) => {
+            handleOpenFileTab(
+              remotePath,
+              fileName,
+              true,
+              sshSessionId,
+              undefined,
+              activeSshWorkspacePath,
+              activeSshWorkspaceId,
+            );
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to open remote file from git panel", error);
+          });
       },
-      [handleOpenFileTab],
+      [
+        activeSshWorkspaceId,
+        activeSshWorkspacePath,
+        getSshFileSession,
+        handleOpenFileTab,
+      ],
     );
 
     const handleOpenFileDiffPreviewTab = useCallback(
@@ -910,30 +972,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     useEffect(() => {
       return rightPanelEvents.on("open-browser-tab", handleOpenBrowserTabEvent);
     }, [handleOpenBrowserTabEvent]);
-
-    // 为远程文件查看建立/复用 SSH 会话。失败时删除缓存，允许下次重试。
-    const getSshFileSession = useCallback(
-      (workspacePath: string): Promise<string> => {
-        const cached = sshFileSessionPromisesRef.current.get(workspacePath);
-        if (cached) {
-          return cached;
-        }
-        const connecting = buildSshConnectParams(workspacePath)
-          .then((params) => {
-            if (!params) {
-              throw new Error("Unable to resolve SSH connection parameters");
-            }
-            return window.snow.sshConnect(params);
-          })
-          .catch((error: unknown) => {
-            sshFileSessionPromisesRef.current.delete(workspacePath);
-            throw error;
-          });
-        sshFileSessionPromisesRef.current.set(workspacePath, connecting);
-        return connecting;
-      },
-      [],
-    );
 
     useEffect(() => {
       const sessions = sshFileSessionPromisesRef.current;

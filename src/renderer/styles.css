@@ -48,7 +48,7 @@
 .chat-file-artifact-source {
   margin: 0;
   padding: 16px;
-  max-height: 480px;
+  max-height: clamp(240px, 56vh, 760px);
   overflow: auto;
 }
 
@@ -58,9 +58,14 @@
   border-radius: 8px;
   overflow: hidden;
   margin-block: 12px;
+  /* The preview scales against the block width, not the window width. */
+  container-type: inline-size;
+  container-name: html-artifact;
 }
 .html-artifact-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   padding: 8px 12px;
   background: var(--bg-secondary);
@@ -83,10 +88,30 @@
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
+/* The zoom controls are built by the renderer, so the slot stays empty in markup. */
+.html-artifact-zoom-slot {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+.html-artifact-block[data-html-view="preview"] .html-artifact-zoom-slot {
+  display: flex;
+}
 .html-artifact-preview {
   display: none;
-  height: 480px;
+  height: clamp(240px, 56vh, 760px);
   background: var(--bg-primary);
+}
+@container html-artifact (max-width: 620px) {
+  .html-artifact-preview {
+    height: clamp(200px, 46vh, 520px);
+  }
+}
+@container html-artifact (max-width: 420px) {
+  .html-artifact-preview {
+    height: clamp(180px, 40vh, 420px);
+  }
 }
 .html-artifact-block[data-html-view="preview"] .html-artifact-preview {
   display: block;

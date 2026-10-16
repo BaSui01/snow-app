@@ -162,6 +162,7 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
       `<div class="html-artifact-toolbar">` +
       `<button type="button" data-html-action="code" aria-pressed="true"></button>` +
       `<button type="button" data-html-action="preview" aria-pressed="false" disabled></button>` +
+      `<div class="html-artifact-zoom-slot"></div>` +
       `</div><div class="html-artifact-code"><pre><code class="hljs language-html">${highlightCodeHtml(token.content, "html")}</code></pre></div>` +
       `<div class="html-artifact-preview"></div></div>\n`
     );

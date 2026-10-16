@@ -27,6 +27,7 @@ import {
   cleanupHtmlArtifacts,
   setHtmlArtifactView,
   syncHtmlArtifacts,
+  type ArtifactLabels,
 } from "./htmlArtifactRenderer";
 import { openTableExportMenu } from "./tableExport";
 import { openInSystemBrowser, openLinkOpenMenu } from "./linkOpenMenu";
@@ -760,6 +761,22 @@ export const MarkdownBlock = memo(
   }): React.JSX.Element => {
     const { t } = useI18n();
 
+    /** Shared with the worker-generated toolbars: only this layer knows the language. */
+    const htmlArtifactLabels = useCallback(
+      (): ArtifactLabels => ({
+        code: t("markdown.html.code"),
+        preview: t("markdown.html.preview"),
+        pending: t("markdown.html.pending"),
+        title: t("markdown.html.title"),
+        fitWidth: t("markdown.html.fitWidth"),
+        fitPage: t("markdown.html.fitPage"),
+        zoomIn: t("markdown.html.zoomIn"),
+        zoomOut: t("markdown.html.zoomOut"),
+        zoomReset: t("markdown.html.zoomReset"),
+      }),
+      [t],
+    );
+
     const containerRef = useRef<HTMLDivElement | null>(null);
     // 已提交块（主线程侧 DOM 镜像）：随提交更新，供下一次请求声明已就位的块。
     const committedRef = useRef<CommittedChunk[]>([]);
@@ -872,17 +889,20 @@ export const MarkdownBlock = memo(
         syncHtmlArtifacts(
           node,
           streaming || paused,
-          {
-            code: t("markdown.html.code"),
-            preview: t("markdown.html.preview"),
-            pending: t("markdown.html.pending"),
-            title: t("markdown.html.title"),
-          },
+          htmlArtifactLabels(),
           autoPreviewHtml,
           pending?.content === content,
         );
       }
-    }, [version, streaming, paused, pending, content, autoPreviewHtml, t]);
+    }, [
+      version,
+      streaming,
+      paused,
+      pending,
+      content,
+      autoPreviewHtml,
+      htmlArtifactLabels,
+    ]);
 
     useEffect(() => {
       const node = containerRef.current;
@@ -939,12 +959,7 @@ export const MarkdownBlock = memo(
           ) {
             e.preventDefault();
             block.dataset.htmlUserView = action;
-            setHtmlArtifactView(
-              block,
-              action,
-              streaming,
-              t("markdown.html.title"),
-            );
+            setHtmlArtifactView(block, action, streaming, htmlArtifactLabels());
           }
           return;
         }
@@ -1127,7 +1142,7 @@ export const MarkdownBlock = memo(
           window.setTimeout(() => copyBtn.classList.remove("copied"), 2000);
         });
       },
-      [onFileLinkClick, streaming, t],
+      [htmlArtifactLabels, onFileLinkClick, streaming, t],
     );
 
     return (

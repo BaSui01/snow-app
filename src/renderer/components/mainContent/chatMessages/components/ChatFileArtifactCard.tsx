@@ -10,7 +10,11 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { openBrowserFile } from "../../../../utils/browserFileOpen";
 import { highlightCodeHtml } from "../../../../utils/syntaxHighlight";
-import { setHtmlArtifactView } from "./htmlArtifactRenderer";
+import {
+  setHtmlArtifactView,
+  syncHtmlArtifactZoom,
+  type ArtifactLabels,
+} from "./htmlArtifactRenderer";
 import {
   HTML_ARTIFACT_MAX_BYTES,
   type ChatFileArtifact,
@@ -24,8 +28,22 @@ const HtmlFileRuntime = ({ source }: { source: string }): React.JSX.Element => {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
   const title = t("markdown.html.title");
-  const titleRef = useRef(title);
-  titleRef.current = title;
+  const labels = useMemo<ArtifactLabels>(
+    () => ({
+      code: t("markdown.html.code"),
+      preview: t("markdown.html.preview"),
+      pending: t("markdown.html.pending"),
+      title,
+      fitWidth: t("markdown.html.fitWidth"),
+      fitPage: t("markdown.html.fitPage"),
+      zoomIn: t("markdown.html.zoomIn"),
+      zoomOut: t("markdown.html.zoomOut"),
+      zoomReset: t("markdown.html.zoomReset"),
+    }),
+    [t, title],
+  );
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
   const [view, setView] = useState<"code" | "preview">("preview");
   const highlightedSource = useMemo(
     () => (view === "code" ? highlightCodeHtml(source, "html") : ""),
@@ -34,11 +52,16 @@ const HtmlFileRuntime = ({ source }: { source: string }): React.JSX.Element => {
   useLayoutEffect(() => {
     const node = root.current;
     if (!node) return;
-    setHtmlArtifactView(node, view, false, titleRef.current);
+    setHtmlArtifactView(node, view, false, labelsRef.current);
     return () => {
       node.querySelector(".html-artifact-preview")?.replaceChildren();
     };
   }, [source, view]);
+  // Language switches must reach the zoom controls, which the renderer owns.
+  useLayoutEffect(() => {
+    const node = root.current;
+    if (node) syncHtmlArtifactZoom(node, labels);
+  }, [labels]);
   useEffect(() => {
     const frame = root.current?.querySelector("iframe");
     if (frame) frame.title = title;
@@ -69,6 +92,7 @@ const HtmlFileRuntime = ({ source }: { source: string }): React.JSX.Element => {
         >
           {t("markdown.html.preview")}
         </button>
+        <div className="html-artifact-zoom-slot" />
       </div>
       <pre className="html-artifact-code chat-file-artifact-source">
         <code

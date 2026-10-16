@@ -11,22 +11,114 @@
   </head>
   <body class="html-artifact-carrier">
     <script>
-      window.addEventListener("message", (event) => {
-        if (
-          event.source !== parent ||
-          !event.data ||
-          event.data.type !== "snow-html-artifact" ||
-          typeof event.data.source !== "string"
-        ) {
-          return;
-        }
+      (() => {
+        const ZOOM_TYPE = "snowapp-html-artifact-zoom";
+        const ZOOM_MIN = 0.25;
+        const ZOOM_MAX = 4;
+        const SCALE_PRECISION = 1000;
+        // Fit modes only ever shrink: a document that already fits keeps its own scale.
+        const MAX_FIT = 1;
+        let mode = "page";
+        let manual = 1;
+        let pending = 0;
+        let observer;
+        let zoomListener = null;
 
-        document.title =
-          typeof event.data.title === "string" ? event.data.title : "";
-        document.open();
-        document.write(event.data.source);
-        document.close();
-      });
+        const clamp = (value) => Math.min(Math.max(value, ZOOM_MIN), ZOOM_MAX);
+
+        // `zoom` scales the layout viewport with it, so measuring at zoom 1 yields the
+        // document's own unscaled size; the applied scale maps that size onto the frame.
+        const naturalSize = () => {
+          const root = document.documentElement;
+          const previous = root.style.zoom;
+          root.style.zoom = "1";
+          const size = { width: root.scrollWidth, height: root.scrollHeight };
+          root.style.zoom = previous;
+          return size;
+        };
+
+        const targetZoom = () => {
+          if (mode === "manual") return manual;
+          const size = naturalSize();
+          const width = window.innerWidth / Math.max(size.width, 1);
+          const height = window.innerHeight / Math.max(size.height, 1);
+          return Math.min(
+            MAX_FIT,
+            mode === "width" ? width : Math.min(width, height),
+          );
+        };
+
+        const apply = () => {
+          pending = 0;
+          if (!document.body) return;
+          const root = document.documentElement;
+          const scale =
+            Math.round(clamp(targetZoom()) * SCALE_PRECISION) / SCALE_PRECISION;
+          const next = String(scale);
+          if (root.style.zoom === next) return;
+          root.style.zoom = next;
+        };
+
+        const schedule = () => {
+          if (!pending) pending = requestAnimationFrame(apply);
+        };
+
+        // Every write replaces the document and drops its listeners, so the carrier
+        // re-registers the zoom channel and the observed root after each write.
+        const bind = () => {
+          if (zoomListener) window.removeEventListener("message", zoomListener);
+          zoomListener = (event) => {
+            if (
+              event.source !== parent ||
+              !event.data ||
+              event.data.type !== ZOOM_TYPE
+            ) {
+              return;
+            }
+            if (
+              event.data.mode === "width" ||
+              event.data.mode === "page" ||
+              event.data.mode === "manual"
+            ) {
+              mode = event.data.mode;
+            }
+            if (
+              typeof event.data.factor === "number" &&
+              Number.isFinite(event.data.factor)
+            ) {
+              manual = clamp(event.data.factor);
+            }
+            schedule();
+          };
+          window.addEventListener("message", zoomListener);
+          window.removeEventListener("resize", schedule);
+          window.addEventListener("resize", schedule);
+          observer?.disconnect();
+          observer = new ResizeObserver(schedule);
+          observer.observe(document.documentElement);
+          schedule();
+        };
+
+        bind();
+
+        window.addEventListener("message", (event) => {
+          if (
+            event.source !== parent ||
+            !event.data ||
+            event.data.type !== "snow-html-artifact" ||
+            typeof event.data.source !== "string"
+          ) {
+            return;
+          }
+
+          document.title =
+            typeof event.data.title === "string" ? event.data.title : "";
+          document.open();
+          document.write(event.data.source);
+          document.close();
+          bind();
+        });
+      })();
     </script>
   </body>
 </html>

@@ -186,6 +186,17 @@ Before mounting, the host injects a global `window.SnowAppPlugin`:
 
 With `renderMode: "iframe"` those globals are not injected: the entry runs inside a sandboxed document and reaches the bridge as `window.SnowPlugin`, exposing `runtime: "iframe"`, `plugin: {id, name, version}`, `locale`, `t`, `metadata`, `write`, `storage`, `assets`, `net`, `on`, and `log` with the same semantics as the table below (an iframe may request the five capabilities `metadata`, `write`, `storage`, `assets`, and `net`; for writes it only has `api.write.run` and `api.write.domains`, without the per-domain sugar).
 
+#### 5.1 Engineered sources and single-file bundles
+
+The file named by `entry` is read in full and executed as one ES module. Relative imports such as `./utils.js` and bare specifiers such as `react` cannot be resolved. Sources may be split into modules, written in TypeScript or JSX, and depend on npm packages, but must be bundled into **one ES module file** before release; ship the build output, not the sources:
+
+- **Build options**: `format: "esm"`, `bundle: true`, `splitting: false`. Code splitting produces several chunks, which cannot be loaded. Bundle each entry (panel, message footer, tool card, and so on) into its own standalone file.
+- **Do not bundle React**: map `react` to the host's `window.SnowAppPlugin.React` (see the table above) so only one React instance exists. After that mapping, the `React` identifier required by the classic JSX transform can come from `import React from "react"`.
+- **JSX transform**: prefer the classic transform (`jsx: "transform"`, compiled to `createElement` calls). With the automatic runtime (`jsx: "automatic"`), the output imports `jsx` / `jsxs` from `react/jsx-runtime`, where `key` is the third argument. Mapping them straight to `createElement` drops `key` and triggers `unique "key" prop` warnings in lists. Use a wrapper that explicitly merges the third-argument `key` into props before calling `createElement`.
+- **Icons**: get host lucide icons through `api.ui.icon(name)`; do not bundle `lucide-react`.
+- **Styles**: CSS is emitted as separate files; declare them in `styles`.
+- **Size**: the entry is read as text, and a single text file is capped at 8 MB; the install directory is capped at 128 MB.
+
 ### 6. Runtime API
 
 | API                                                                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

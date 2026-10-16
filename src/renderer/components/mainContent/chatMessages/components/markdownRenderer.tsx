@@ -23,10 +23,16 @@ import {
   setMermaidView,
   watchThemeForMermaid,
 } from "./mermaidRenderer";
+import {
+  cleanupHtmlArtifacts,
+  setHtmlArtifactView,
+  syncHtmlArtifacts,
+} from "./htmlArtifactRenderer";
 import { openTableExportMenu } from "./tableExport";
 import { openInSystemBrowser, openLinkOpenMenu } from "./linkOpenMenu";
 import { useI18n } from "../../../../i18n";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
+import { isFileLinkHref } from "../../../../utils/browserFileOpen";
 import { Tooltip } from "../../../common/Tooltip";
 
 /**
@@ -304,6 +310,8 @@ const LONG_TEXT_INTERVAL_MS = 300;
 
 /** 一批待提交的渲染结果：changedFrom 起（含）的块需要重建。 */
 type PendingRender = {
+  /** The source snapshot whose chunks are safe to commit and execute. */
+  content: string;
   changedFrom: number;
   chunks: MarkdownChunk[];
   /** 该结果是否为流式渲染（流式提交走增量淡入路径） */
@@ -342,12 +350,16 @@ const useMarkdownRender = (
     pending: PendingRender | null;
     version: number;
   }>(() => {
-    // Warm the state synchronously from the cache when possible so that the
-    // first paint after mount is not blank while the worker warms up.
+    // Cache entries contain markup only, never execution or view state.
     const cached = contentCacheGet(content);
     return cached
       ? {
-          pending: { changedFrom: 0, chunks: cached, streaming: false },
+          pending: {
+            content,
+            changedFrom: 0,
+            chunks: cached,
+            streaming: false,
+          },
           version: 1,
         }
       : { pending: null, version: 0 };
@@ -405,9 +417,12 @@ const useMarkdownRender = (
       const knownKeys = committedRef.current.map((chunk) => chunk.key);
       void dispatchRender(currentContent, knownKeys, isStreaming).then(
         ({ changedFrom, chunks }) => {
-          // Drop stale results: if a newer request superseded this one while
-          // the worker was busy, keep the newer one authoritative.
-          if (latestRequestIdRef.current !== requestId) {
+          // A newer prop may arrive before its throttled request is dispatched.
+          // Neither superseded requests nor old content may become executable.
+          if (
+            latestRequestIdRef.current !== requestId ||
+            currentContent !== contentRef.current
+          ) {
             return;
           }
           lastRenderAtRef.current = performance.now();
@@ -415,14 +430,14 @@ const useMarkdownRender = (
             // 终态且拿到完整块列表：缓存下来，供重挂载/翻页首帧同步还原。
             contentCacheSet(currentContent, chunks);
           }
-          if (
-            changedFrom >= committedRef.current.length &&
-            chunks.length === 0
-          ) {
-            return;
-          }
+          // Even an unchanged chunk list confirms the current content snapshot.
           setState((prev) => ({
-            pending: { changedFrom, chunks, streaming: isStreaming },
+            pending: {
+              content: currentContent,
+              changedFrom,
+              chunks,
+              streaming: isStreaming,
+            },
             version: prev.version + 1,
           }));
         },
@@ -441,7 +456,7 @@ const useMarkdownRender = (
     if (cached) {
       latestRequestIdRef.current = 0;
       setState((prev) => ({
-        pending: { changedFrom: 0, chunks: cached, streaming: false },
+        pending: { content, changedFrom: 0, chunks: cached, streaming: false },
         version: prev.version + 1,
       }));
       return;
@@ -535,23 +550,6 @@ const bindFaviconFallback = (root: HTMLElement): void => {
     });
 };
 
-/** 判断非 http(s) href 是否像本地文件链接（相对路径/绝对路径/带扩展名文件名）。 */
-const isFileLinkHref = (href: string): boolean => {
-  if (!href || href.length > 512 || /\s/.test(href)) {
-    return false;
-  }
-  // 页内锚点与协议链接（mailto:/tel:/data: 等）不是文件链接；Windows 盘符（C:\）除外。
-  if (href.startsWith("#")) {
-    return false;
-  }
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !/^[a-zA-Z]:[\\/]/.test(href)) {
-    return false;
-  }
-  return (
-    /[\\/]/.test(href) || /(?:^|[\\/])[^\\/]+\.[a-zA-Z0-9]{1,12}$/.test(href)
-  );
-};
-
 /**
  * 把一次渲染结果提交到容器：先与已提交块对齐（key 相同的块保持现有 DOM
  * 不动，因此同一结果重复提交是幂等的），再只重建真正变化的块。
@@ -567,6 +565,65 @@ const commitMarkdownChunks = (
   lastTailTextRef: { current: string },
 ): void => {
   const { changedFrom, chunks, streaming } = pending;
+
+  if (!streaming) {
+    const prefixLength = Math.min(changedFrom, committed.length);
+    const previous = committed.slice(prefixLength);
+    const candidates = new Map<string, { indexes: number[]; cursor: number }>();
+    previous.forEach((chunk, index) => {
+      const pool = candidates.get(chunk.key);
+      if (pool) pool.indexes.push(index);
+      else candidates.set(chunk.key, { indexes: [index], cursor: 0 });
+    });
+    const retained = new Set<CommittedChunk>();
+    let minimumIndex = 0;
+    const next = chunks.map((chunk): CommittedChunk => {
+      const pool = candidates.get(chunk.key);
+      if (pool) {
+        // Consume duplicate fingerprints once, in document order. Retained
+        // iframe nodes must never be moved: even reparenting restarts scripts.
+        while (
+          pool.cursor < pool.indexes.length &&
+          pool.indexes[pool.cursor] < minimumIndex
+        ) {
+          pool.cursor += 1;
+        }
+        const index = pool.indexes[pool.cursor];
+        if (index !== undefined) {
+          pool.cursor += 1;
+          minimumIndex = index + 1;
+          const existing = previous[index];
+          retained.add(existing);
+          return existing;
+        }
+      }
+      return { key: chunk.key, nodes: parseChunkNodes(chunk.html) };
+    });
+    for (const chunk of previous) {
+      if (retained.has(chunk)) continue;
+      for (const node of chunk.nodes) {
+        if (node instanceof HTMLElement) cleanupHtmlArtifacts(node);
+        node.parentNode?.removeChild(node);
+      }
+    }
+    let anchor: Node | null = null;
+    for (let index = next.length - 1; index >= 0; index -= 1) {
+      const chunk = next[index];
+      if (!retained.has(chunk)) {
+        const fragment = document.createDocumentFragment();
+        for (const node of chunk.nodes) fragment.appendChild(node);
+        container.insertBefore(fragment, anchor);
+        for (const node of chunk.nodes) {
+          if (node instanceof HTMLElement) bindFaviconFallback(node);
+        }
+      }
+      anchor = chunk.nodes[0] ?? anchor;
+    }
+    committed.length = prefixLength;
+    for (const chunk of next) committed.push(chunk);
+    lastTailTextRef.current = "";
+    return;
+  }
 
   // 与已提交块对齐：worker 判定的变化点之后，仍可能有一批 key 相同的块
   // （例如缓存命中后的重复提交），这些块无需重建。
@@ -600,7 +657,16 @@ const commitMarkdownChunks = (
     parsedTailNodes = parseChunkNodes(chunks[0].html);
     const tailText =
       findLastNonEmptyTextNodeIn(parsedTailNodes)?.nodeValue ?? "";
-    if (tailText.startsWith(lastTailTextRef.current)) {
+    if (
+      !chunks[0].html.includes('class="html-artifact-block"') &&
+      !tailNodes.some(
+        (node) =>
+          node instanceof HTMLElement &&
+          (node.matches(".html-artifact-block") ||
+            node.querySelector(".html-artifact-block")),
+      ) &&
+      tailText.startsWith(lastTailTextRef.current)
+    ) {
       reuseTail = true;
       appendText = tailText.slice(lastTailTextRef.current.length);
       lastTailTextRef.current = tailText;
@@ -612,6 +678,9 @@ const commitMarkdownChunks = (
   const removeFrom = reuseTail ? committed.length : index;
   for (let i = committed.length - 1; i >= removeFrom; i -= 1) {
     for (const node of committed[i].nodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        cleanupHtmlArtifacts(node as HTMLElement);
+      }
       node.parentNode?.removeChild(node);
     }
   }
@@ -672,6 +741,7 @@ export const MarkdownBlock = memo(
     className,
     content,
     streaming = false,
+    autoPreviewHtml = false,
     onFileLinkClick,
     minRenderIntervalMs,
     paused = false,
@@ -679,6 +749,8 @@ export const MarkdownBlock = memo(
     className: string;
     content: string;
     streaming?: boolean;
+    /** Assistant bodies opt in; reasoning and document readers stay explicit. */
+    autoPreviewHtml?: boolean;
     /** 非 http(s) 文件链接点击回调：宿主（如右侧文件阅读器）用它打开新阅读器 tab。 */
     onFileLinkClick?: (href: string) => void;
     /** 流式渲染最小间隔（ms），覆盖默认 100ms。思考过程等幕后内容可传更大值。 */
@@ -782,7 +854,7 @@ export const MarkdownBlock = memo(
     // 同一结果重复提交是幂等的（见 commitMarkdownChunks）。
     useLayoutEffect(() => {
       const node = containerRef.current;
-      if (!node || !pending) {
+      if (!node || !pending || pending.content !== content) {
         return;
       }
       commitMarkdownChunks(
@@ -791,7 +863,33 @@ export const MarkdownBlock = memo(
         pending,
         lastTailTextRef,
       );
-    }, [pending]);
+    }, [pending, content]);
+
+    // Current props gate execution, including a stream ending without new chunks.
+    useLayoutEffect(() => {
+      const node = containerRef.current;
+      if (node) {
+        syncHtmlArtifacts(
+          node,
+          streaming || paused,
+          {
+            code: t("markdown.html.code"),
+            preview: t("markdown.html.preview"),
+            pending: t("markdown.html.pending"),
+            title: t("markdown.html.title"),
+          },
+          autoPreviewHtml,
+          pending?.content === content,
+        );
+      }
+    }, [version, streaming, paused, pending, content, autoPreviewHtml, t]);
+
+    useEffect(() => {
+      const node = containerRef.current;
+      return () => {
+        if (node) cleanupHtmlArtifacts(node);
+      };
+    }, []);
 
     // During streaming, skip all mermaid operations entirely — only the code
     // view is shown. Once streaming ends (`streaming` flips to false), both
@@ -827,6 +925,29 @@ export const MarkdownBlock = memo(
     const handleClick = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
+        const artifactAction =
+          target.closest<HTMLElement>("[data-html-action]");
+        if (artifactAction) {
+          const block = artifactAction.closest<HTMLElement>(
+            ".html-artifact-block",
+          );
+          const action = artifactAction.dataset.htmlAction;
+          if (
+            e.button === 0 &&
+            block &&
+            (action === "code" || action === "preview")
+          ) {
+            e.preventDefault();
+            block.dataset.htmlUserView = action;
+            setHtmlArtifactView(
+              block,
+              action,
+              streaming,
+              t("markdown.html.title"),
+            );
+          }
+          return;
+        }
 
         // --- 来源徽章点击：弹出内部/系统浏览器选择菜单 ---
         const badge = target.closest(".md-source-badge") as HTMLElement | null;
@@ -873,6 +994,14 @@ export const MarkdownBlock = memo(
           // 非 http(s) 链接：若像本地文件路径且宿主提供了回调（右侧文件阅读器），
           // 拦截默认导航（渲染进程导航到相对 URL 会直接黑屏），
           // 改为在右侧面板新建文件阅读器 tab。
+          if (
+            (e.ctrlKey || e.metaKey) &&
+            anchor.closest(".chat-area") &&
+            isFileLinkHref(href)
+          ) {
+            e.preventDefault();
+            return; // The chat container owns modified path clicks.
+          }
           if (onFileLinkClick && isFileLinkHref(href)) {
             e.preventDefault();
             onFileLinkClick(href);
@@ -998,7 +1127,7 @@ export const MarkdownBlock = memo(
           window.setTimeout(() => copyBtn.classList.remove("copied"), 2000);
         });
       },
-      [onFileLinkClick, t],
+      [onFileLinkClick, streaming, t],
     );
 
     return (

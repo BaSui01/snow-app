@@ -51,6 +51,14 @@
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
+- [会话文件产物 ADR / Chat file artifacts ADR](adr/2026-10-16-chat-file-artifacts.md)：真实文件读取、默认沙箱预览与同轮跨消息去重 / Real file reads, default sandbox preview and cross-message deduplication within a run.
+
+- [HTML 动态预览 ADR / HTML artifact preview ADR](adr/2026-10-16-html-artifact-preview.md)：AI 正文默认预览、显式执行边界、流式生命周期与共享布局内嵌，沙箱和 CSP 不放宽 / Default assistant-body previews, explicit-only surfaces, streaming lifecycle and embedded shared layouts, with sandbox and CSP unchanged.
+
+- [共享源码高亮 ADR / Shared source highlighting ADR](adr/2026-10-16-shared-syntax-highlighting.md)：HTML 源码补齐、统一语言与主题配色、缓存隔离和完整纯文本降级 / HTML source highlighting, shared language and theme colors, isolated caches, and complete plain-text fallback.
+
+- [本地文件与项目浏览指南](zh-CN/2-使用指南/12-Git面板与代码浏览.md) / [Local files and project browsing](en/2-guides/12-git-and-code-browsing.md)：本地/SSH 文件树与文件阅读器 / Local/SSH file trees and file readers.
+
 - [异步生图任务生命周期 ADR](zh-CN/4-架构与开发/9-异步生图任务生命周期ADR.md) / [Asynchronous image-generation lifecycle ADR](en/4-architecture-and-development/9-async-image-generation-lifecycle-adr.md)：任务持久化、终态交付与批次通知 / Durable tasks, terminal delivery and batch notifications.
 
 - [功能文档覆盖审计 / Feature Documentation Coverage Audit](FEATURE_COVERAGE.md)：功能、25 个设置页、工具域、平台能力到代码和双语文档的覆盖矩阵。

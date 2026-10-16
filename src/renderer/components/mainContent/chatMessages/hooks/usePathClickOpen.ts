@@ -1,29 +1,22 @@
 import { useCallback, useEffect } from "react";
+import { localFileUrlToPath } from "../../../../utils/localFileUrl";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
+import {
+  isFileLinkHref,
+  openBrowserFile,
+} from "../../../../utils/browserFileOpen";
 
 /** 启发式判断文本是否像文件路径（含分隔符，或是带扩展名的文件名）。 */
-const looksLikePath = (value: string): boolean => {
-  if (!value || value.length > 512 || /^https?:\/\//i.test(value)) {
-    return false;
-  }
-  if (/\s/.test(value)) {
-    return false;
-  }
-  return (
-    /[\\/]/.test(value) ||
-    /(?:^|[\\/])[^\\/]+\.[a-zA-Z0-9]{1,12}$/.test(value)
-  );
-};
+const looksLikePath = isFileLinkHref;
 
 /** 解析 `path:line`、`path:start-end` 或 Markdown `path#Lline`。 */
-const parsePathWithLine = (
-  raw: string
-): { path: string; line?: number } => {
+const parsePathWithLine = (raw: string): { path: string; line?: number } => {
   const cleaned = raw.replace(/^["'`]+|["'`]+$/g, "").trim();
   const hashMatch = cleaned.match(/^(.+?)#L(\d+)$/i);
   if (hashMatch) {
     return { path: hashMatch[1], line: parseInt(hashMatch[2], 10) };
   }
+  if (/^file:/i.test(cleaned)) return { path: cleaned };
   // 冒号后必须为纯数字，避免误伤 Windows 盘符（C:\foo）。
   const lineMatch = cleaned.match(/^(.+):(\d+)(?:[-–](\d+))?$/);
   if (lineMatch) {
@@ -37,7 +30,7 @@ const isAbsoluteLocalPath = (path: string): boolean =>
 
 const resolveLocalPath = (
   path: string,
-  cwd: string | undefined
+  cwd: string | undefined,
 ): string | undefined => {
   if (!path) {
     return undefined;
@@ -51,7 +44,7 @@ const resolveLocalPath = (
   const separator = cwd.includes("\\") ? "\\" : "/";
   return `${cwd.replace(/[\\/]+$/, "")}${separator}${path.replace(
     /^[\\/]+/,
-    ""
+    "",
   )}`;
 };
 
@@ -92,7 +85,7 @@ const decodeHref = (href: string): string => {
  */
 export const usePathClickOpen = (
   directoryPath: string | undefined,
-  directoryId: string | undefined
+  directoryId: string | undefined,
 ): {
   onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onAuxClick: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -126,26 +119,42 @@ export const usePathClickOpen = (
 
   const openPath = useCallback(
     (raw: string, lineAttr?: string): void => {
-      const { path, line } = parsePathWithLine(raw);
+      const parsed = parsePathWithLine(raw);
+      const isFileUrl = /^file:/i.test(parsed.path);
+      // A file URL is explicitly local, never reinterpret it as an SSH path.
+      if (isFileUrl && directoryPath?.startsWith("ssh://")) return;
+      const path = isFileUrl ? localFileUrlToPath(parsed.path) : parsed.path;
+      if (!path) return;
+      const line = parsed.line;
       const attrLine = lineAttr ? parseInt(lineAttr, 10) : undefined;
       const focusLine = line ?? attrLine;
-      const isSshWorkspace = directoryPath?.startsWith("ssh://") ?? false;
+      if (
+        /^[a-z][a-z0-9+.-]*:/i.test(path) &&
+        !/^[a-z]:[\\/]/i.test(path) &&
+        !/^ssh:\/\//i.test(path)
+      )
+        return;
+      const explicitSsh = /^ssh:\/\//i.test(path);
+      const workspace = explicitSsh ? path : directoryPath;
+      const isSshWorkspace =
+        explicitSsh || (directoryPath?.startsWith("ssh://") ?? false);
       const resolved =
-        isSshWorkspace && directoryPath
-          ? resolveSshPath(path, directoryPath)
+        isSshWorkspace && workspace
+          ? resolveSshPath(path, workspace)
           : resolveLocalPath(path, directoryPath);
       if (!resolved) {
         return;
       }
+      if (openBrowserFile(resolved, isSshWorkspace)) return;
       rightPanelEvents.emit("open-file", {
         filePath: resolved,
         isSsh: isSshWorkspace,
-        sshWorkspacePath: isSshWorkspace ? directoryPath : undefined,
+        sshWorkspacePath: isSshWorkspace ? workspace : undefined,
         sshWorkspaceId: isSshWorkspace ? directoryId : undefined,
         focusLine: focusLine && focusLine > 0 ? focusLine : undefined,
       });
     },
-    [directoryId, directoryPath]
+    [directoryId, directoryPath],
   );
 
   const handleClick = useCallback(
@@ -177,7 +186,7 @@ export const usePathClickOpen = (
         if (/^https?:\/\//i.test(href)) {
           return;
         }
-        const decoded = decodeHref(href);
+        const decoded = /^file:/i.test(href) ? href : decodeHref(href);
         if (looksLikePath(decoded)) {
           event.preventDefault();
           openPath(decoded);
@@ -206,7 +215,7 @@ export const usePathClickOpen = (
         }
       }
     },
-    [openPath]
+    [openPath],
   );
 
   // auxclick 与 click 共用同一处理：Chromium 中 Ctrl/Cmd+点击或中键点击

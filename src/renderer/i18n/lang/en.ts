@@ -6660,4 +6660,15 @@ export const en = {
   "rightPanel.downloadRemoteFile": "Download to local…",
   "rightPanel.downloadRemoteFileHint":
     "Download the saved remote file (unsaved edits are not included)",
+  "markdown.html.code": "Code",
+  "markdown.html.preview": "Live preview",
+  "markdown.html.pending": "Available after generation ends and the code fence closes",
+  "markdown.html.title": "Isolated HTML live preview",
+  "chat.fileArtifact.load": "Load preview",
+  "chat.fileArtifact.refresh": "Refresh file",
+  "chat.fileArtifact.loading": "Loading preview",
+  "chat.fileArtifact.failed": "Unable to load HTML preview",
+  "chat.fileArtifact.tooLarge": "HTML preview exceeds the 2 MiB limit",
+  "chat.fileArtifact.remote": "Remote file is unavailable",
+  "chat.fileArtifact.pending": "Preview paused until the file write succeeds",
 } satisfies Record<string, string>;

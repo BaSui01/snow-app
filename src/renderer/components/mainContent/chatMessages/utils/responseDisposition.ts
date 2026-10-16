@@ -193,3 +193,11 @@ export const resolveResponseDisposition = (
     mayContinueLoop: false,
   };
 };
+
+/** 自动执行资格不能复用 complete 展示分类：取消也会静默展示为 complete。 */
+export const isResponseHtmlPreviewEligible = (
+  input: ResponseDispositionInput,
+): boolean =>
+  input.status === COMPLETED_STATUS &&
+  !input.interruptionReason &&
+  resolveResponseDisposition(input).kind === "complete";

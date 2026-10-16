@@ -35,6 +35,7 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
+import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import {
   accumulateRunTokenUsage,
@@ -2009,6 +2010,14 @@ export function createWorkflowRunner(
         }
 
         const disposition = resolveResponseDisposition(response);
+        ctx.updateSessionMessages(conversationId, (currentMessages) =>
+          settleResponseHtmlPreviewEligibility(
+            currentMessages,
+            assistantMessageId,
+            response,
+            isNodeCancelled(),
+          ),
+        );
         if (disposition.kind === "error") {
           finalizeMessage(assistantMessageId, {
             content: response.content || "Node request failed.",

@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- html-artifact-layout -->
+  </head>
+  <body class="html-artifact-carrier">
+    <script>
+      window.addEventListener("message", (event) => {
+        if (
+          event.source !== parent ||
+          !event.data ||
+          event.data.type !== "snow-html-artifact" ||
+          typeof event.data.source !== "string"
+        ) {
+          return;
+        }
+
+        document.title =
+          typeof event.data.title === "string" ? event.data.title : "";
+        document.open();
+        document.write(event.data.source);
+        document.close();
+      });
+    </script>
+  </body>
+</html>

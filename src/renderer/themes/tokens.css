@@ -37,6 +37,41 @@
   --accent-color: var(--text-primary);
   --accent-amber-bg: #fef3c7;
   --accent-amber-text: #92400e;
+  /* Shared syntax roles resolve against the active theme's semantic colors. */
+  --syntax-text: var(--text-primary);
+  --syntax-keyword: color-mix(
+    in srgb,
+    var(--accent-blue-text) 55%,
+    var(--accent-red-text)
+  );
+  --syntax-string: var(--accent-green-text);
+  --syntax-number: var(--accent-amber-text);
+  --syntax-function: var(--accent-blue-text);
+  --syntax-type: color-mix(
+    in srgb,
+    var(--accent-green-text) 55%,
+    var(--accent-blue-text)
+  );
+  --syntax-comment: var(--text-tertiary);
+  --syntax-tag: var(--accent-red-text);
+  --syntax-attribute: var(--accent-blue-text);
+  --syntax-variable: var(--text-secondary);
+  --syntax-meta: color-mix(
+    in srgb,
+    var(--accent-amber-text) 70%,
+    var(--text-secondary)
+  );
+  --syntax-regexp: color-mix(
+    in srgb,
+    var(--accent-red-text) 60%,
+    var(--accent-amber-text)
+  );
+  --syntax-selector: var(--accent-amber-text);
+  --syntax-symbol: var(--syntax-number);
+  --syntax-addition: var(--accent-green-text);
+  --syntax-addition-bg: var(--accent-green-bg);
+  --syntax-deletion: var(--accent-red-text);
+  --syntax-deletion-bg: var(--accent-red-bg);
   --focus-ring: rgba(17, 24, 39, 0.06);
   --scrollbar-thumb: rgba(148, 163, 184, 0.58);
   --scrollbar-thumb-hover: rgba(100, 116, 139, 0.78);

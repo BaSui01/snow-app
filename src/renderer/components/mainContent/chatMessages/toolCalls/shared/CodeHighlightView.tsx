@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import hljs from "highlight.js";
+import {
+  getCodeLanguageFromPath,
+  highlightCodeHtml,
+} from "../../../../../utils/syntaxHighlight";
+import { splitHighlightedHtmlLines } from "../../../../rightPanel/fileViewer/codeText";
 import { getFileTypeIcon } from "../../../../../utils/fileIcons";
 import { useI18n } from "../../../../../i18n";
 
@@ -12,73 +16,6 @@ type CodeHighlightViewProps = {
   maxHeight?: number | string;
   className?: string;
 };
-
-const getLanguageFromPath = (path: string): string => {
-  const fileName = path.split(/[\\/]/).filter(Boolean).pop() || path;
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    ts: "typescript",
-    tsx: "typescript",
-    js: "javascript",
-    jsx: "javascript",
-    mjs: "javascript",
-    cjs: "javascript",
-    json: "json",
-    css: "css",
-    scss: "scss",
-    less: "less",
-    html: "xml",
-    htm: "xml",
-    xml: "xml",
-    svg: "xml",
-    md: "markdown",
-    markdown: "markdown",
-    py: "python",
-    rb: "ruby",
-    go: "go",
-    rs: "rust",
-    java: "java",
-    kt: "kotlin",
-    swift: "swift",
-    c: "c",
-    h: "c",
-    cpp: "cpp",
-    cc: "cpp",
-    cxx: "cpp",
-    hpp: "cpp",
-    cs: "csharp",
-    php: "php",
-    sh: "bash",
-    bash: "bash",
-    zsh: "bash",
-    yml: "yaml",
-    yaml: "yaml",
-    toml: "ini",
-    ini: "ini",
-    cfg: "ini",
-    sql: "sql",
-    graphql: "graphql",
-    gql: "graphql",
-    lua: "lua",
-    r: "r",
-    dart: "dart",
-    vue: "xml",
-    svelte: "xml",
-    dockerfile: "dockerfile",
-    makefile: "makefile",
-    diff: "diff",
-    patch: "diff",
-  };
-  return map[ext] ?? "";
-};
-
-const escapeHtml = (str: string): string =>
-  str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 
 export const CodeHighlightView = ({
   code,
@@ -99,27 +36,18 @@ export const CodeHighlightView = ({
   );
 
   const language = useMemo(
-    () => (filePath ? getLanguageFromPath(filePath) : ""),
+    () => (filePath ? getCodeLanguageFromPath(filePath) : ""),
     [filePath],
   );
 
   // 切分代码行与语法高亮
-  const highlightedLines = useMemo(() => {
-    let highlightedHtml = "";
-    if (language && hljs.getLanguage(language)) {
-      try {
-        highlightedHtml = hljs.highlight(code, {
-          language,
-          ignoreIllegals: true,
-        }).value;
-      } catch {
-        highlightedHtml = escapeHtml(code);
-      }
-    } else {
-      highlightedHtml = escapeHtml(code);
-    }
-    return highlightedHtml.split(/\r?\n/);
-  }, [code, language]);
+  const highlightedLines = useMemo(
+    () =>
+      splitHighlightedHtmlLines(
+        highlightCodeHtml(code, language).replace(/\r\n/g, "\n"),
+      ),
+    [code, language],
+  );
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -32,7 +32,10 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
-import { settleInterruptedMessage } from "../utils/messageSettlement";
+import {
+  settleInterruptedMessage,
+  settleResponseHtmlPreviewEligibility,
+} from "../utils/messageSettlement";
 import {
   demotePendingSteering,
   hasPendingSteering,
@@ -850,6 +853,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           bindAgentTask(response.conversationId, taskHistory);
         const responseDisposition = resolveResponseDisposition(response);
         const responseFailed = responseDisposition.kind === "error";
+        ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+          settleResponseHtmlPreviewEligibility(
+            currentMessages,
+            currentAssistantMessageId,
+            response,
+            isRunCancelled(effectiveKey),
+          ),
+        );
 
         const ref = ctx.sessionsRefData.current.get(effectiveKey);
         if (ref) {

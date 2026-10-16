@@ -11,9 +11,16 @@
  * is responsible for throttling and dispatching.
  */
 
-import hljs from "highlight.js";
+import {
+  escapeCodeHtml as escapeHtml,
+  getCodeLanguageHint,
+  highlightCodeHtml,
+} from "../../../../utils/syntaxHighlight";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
+import type { RuleBlock } from "markdown-it/lib/parser_block.mjs";
+import fenceRule from "markdown-it/lib/rules_block/fence.mjs";
+import { localFileUrlToPath } from "../../../../utils/localFileUrl";
 import type Token from "markdown-it/lib/token.mjs";
 import texmath from "markdown-it-texmath";
 import {
@@ -22,19 +29,12 @@ import {
   localImageProxyUrl,
 } from "../../../../utils/imageProxyUrl";
 
-/**
- * Escape HTML special characters in a string so that when highlight.js
- * returns autoHighlight for an unknown language the result is safe to inject.
- */
-const escapeHtml = (str: string): string =>
-  str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
 const markdown = new MarkdownIt({
   breaks: true,
   html: false,
   linkify: true,
   highlight(str: string, lang: string): string {
-    const language = lang?.trim();
+    const language = getCodeLanguageHint(lang ?? "");
 
     // Mermaid diagrams are rendered on the main thread (mermaid needs DOM
     // access and cannot run inside a Web Worker). Emit a placeholder container
@@ -72,20 +72,7 @@ const markdown = new MarkdownIt({
       );
     }
 
-    let highlighted: string;
-
-    if (language && hljs.getLanguage(language)) {
-      try {
-        highlighted = hljs.highlight(str, {
-          language,
-          ignoreIllegals: true,
-        }).value;
-      } catch {
-        highlighted = escapeHtml(str);
-      }
-    } else {
-      highlighted = escapeHtml(str);
-    }
+    const highlighted = highlightCodeHtml(str, language);
 
     const label = language || "code";
 
@@ -111,6 +98,52 @@ const markdown = new MarkdownIt({
   },
 });
 
+const defaultValidateLink = markdown.validateLink.bind(markdown);
+markdown.validateLink = (url: string): boolean =>
+  /^file:/i.test(url)
+    ? localFileUrlToPath(url) !== undefined
+    : defaultValidateLink(url);
+
+// Observe the real fence parser while quote/list indentation is still active.
+// fenceRule passes its exclusive body end to getLines and advances state.line
+// beyond that end only when it actually consumes a closing marker. EOF and
+// parent-container termination therefore stay incomplete without rescanning.
+const trackFenceCompletion: RuleBlock = (state, startLine, endLine, silent) => {
+  if (silent) return fenceRule(state, startLine, endLine, silent);
+  const getLines = state.getLines;
+  let bodyEnd: number | undefined;
+  const tokenIndex = state.tokens.length;
+  state.getLines = (begin, end, indent, keepLastLF) => {
+    bodyEnd = end;
+    return getLines.call(state, begin, end, indent, keepLastLF);
+  };
+  try {
+    const matched = fenceRule(state, startLine, endLine, silent);
+    const token = state.tokens[tokenIndex];
+    if (matched && token?.type === "fence") {
+      token.meta = {
+        ...token.meta,
+        htmlArtifactComplete:
+          bodyEnd !== undefined && state.line === bodyEnd + 1,
+      };
+    }
+    return matched;
+  } finally {
+    state.getLines = getLines;
+  }
+};
+(
+  markdown as unknown as {
+    block: {
+      ruler: {
+        at: (name: string, rule: RuleBlock, options: { alt: string[] }) => void;
+      };
+    };
+  }
+).block.ruler.at("fence", trackFenceCompletion, {
+  alt: ["paragraph", "reference", "blockquote", "list"],
+});
+
 // The highlight callback above returns a complete .code-block-wrapper element.
 // markdown-it's default fence renderer would nest any highlight result that
 // does not start with "<pre" inside an extra <pre><code>, producing invalid
@@ -119,6 +152,20 @@ const markdown = new MarkdownIt({
 markdown.renderer.rules.fence = (tokens, idx, options): string => {
   const token = tokens[idx];
   const lang = token.info ? token.info.trim() : "";
+  if (/^(?:html|htm|text\/html)(?:\s|$)/i.test(lang)) {
+    const complete =
+      (token.meta as { htmlArtifactComplete?: boolean } | null)
+        ?.htmlArtifactComplete === true;
+    const encoded = encodeURIComponent(token.content);
+    return (
+      `<div class="html-artifact-block" data-html-source="${encoded}" data-html-complete="${complete}" data-html-view="code">` +
+      `<div class="html-artifact-toolbar">` +
+      `<button type="button" data-html-action="code" aria-pressed="true"></button>` +
+      `<button type="button" data-html-action="preview" aria-pressed="false" disabled></button>` +
+      `</div><div class="html-artifact-code"><pre><code class="hljs language-html">${highlightCodeHtml(token.content, "html")}</code></pre></div>` +
+      `<div class="html-artifact-preview"></div></div>\n`
+    );
+  }
   const rendered = options.highlight
     ? options.highlight(token.content, lang, "")
     : "";
@@ -252,7 +299,9 @@ type HandoffBlockState = {
 // 结构），展开为主题色引用面板。
 markdown.renderer.rules.handoff_block = (tokens, idx): string => {
   const inner = tokens[idx].content.trim();
-  const rendered = inner ? markdown.render(inner) : "";
+  const rendered = inner
+    ? markdown.render(inner, { artifactSource: inner })
+    : "";
   return (
     `<div class="md-handoff-block">` +
     `<button class="md-handoff-toggle" type="button" aria-expanded="false">` +
@@ -759,7 +808,7 @@ const renderChunk = (text: string, streaming: boolean): string => {
   if (cached !== undefined) {
     return cached;
   }
-  const html = markdown.render(text);
+  const html = markdown.render(text, { artifactSource: text });
   if (!streaming && text.length <= CACHE_MAX_CHUNK_CHARS) {
     cacheSet(text, html);
   }

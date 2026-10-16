@@ -6278,4 +6278,15 @@ export const zhTW = {
   "rightPanel.downloadRemoteFile": "下載到本機…",
   "rightPanel.downloadRemoteFileHint":
     "下載遠端已儲存的原檔案（不包含未儲存的編輯內容）",
+  "markdown.html.code": "程式碼",
+  "markdown.html.preview": "動態預覽",
+  "markdown.html.pending": "生成結束且程式碼區塊閉合後可預覽",
+  "markdown.html.title": "隔離的 HTML 動態預覽",
+  "chat.fileArtifact.load": "載入預覽",
+  "chat.fileArtifact.refresh": "重新整理檔案",
+  "chat.fileArtifact.loading": "正在載入預覽",
+  "chat.fileArtifact.failed": "無法載入網頁預覽",
+  "chat.fileArtifact.tooLarge": "網頁預覽超出 2 MiB 限制",
+  "chat.fileArtifact.remote": "遠端檔案暫時無法使用",
+  "chat.fileArtifact.pending": "預覽已暫停，等待檔案寫入成功",
 } satisfies Record<string, string>;

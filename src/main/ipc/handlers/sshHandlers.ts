@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { homedir } from "node:os";
+import { HTML_ARTIFACT_MAX_BYTES } from "../../../shared/htmlArtifact";
 import {
   basename as localBasename,
   dirname as localDirname,
@@ -708,14 +709,33 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       if (typeof remotePath !== "string" || !remotePath.trim()) {
         throw new Error("Remote file path is required");
       }
-      const file = await readSshFileWithVersion(
-        sessionId.trim(),
-        remotePath.trim(),
-      );
-      return {
-        ...processFileContent(remotePath.trim(), file.content),
-        remoteVersion: file.version,
-      };
+      const handle = sessionId.trim();
+      const path = remotePath.trim();
+      const workspaceRead = isSshPath(handle);
+      if (workspaceRead && (!path.startsWith("/") || path.includes("\u0000"))) {
+        throw new Error("An absolute remote file path is required");
+      }
+      // Workspace callers never receive or decrypt credentials in the renderer.
+      // Existing session/profile handles continue through the same reader unchanged.
+      const profile = workspaceRead
+        ? await sshConnectionManager.acquire(buildSshConnectParams(handle))
+        : undefined;
+      try {
+        if (profile && profile.status !== "connected") {
+          throw new Error("SSH workspace connection is unavailable");
+        }
+        const file = await readSshFileWithVersion(
+          profile?.profileId ?? handle,
+          path,
+          workspaceRead ? { maxBytes: HTML_ARTIFACT_MAX_BYTES } : undefined,
+        );
+        return {
+          ...processFileContent(path, file.content),
+          remoteVersion: file.version,
+        };
+      } finally {
+        if (profile) sshConnectionManager.release(profile.profileId);
+      }
     },
   );
 

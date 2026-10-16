@@ -34,6 +34,7 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
+import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
   extractFileChangesFromTool,
@@ -451,6 +452,14 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     recordTaskResponse(taskHistory, subConvId, subResponse.id, agentName);
     const subResponseDisposition = resolveResponseDisposition(subResponse);
     const subResponseFailed = subResponseDisposition.kind === "error";
+    ctx.updateSessionMessages(subConvId, (currentMessages) =>
+      settleResponseHtmlPreviewEligibility(
+        currentMessages,
+        subAssistantMessageId,
+        subResponse,
+        isSubCancelled(),
+      ),
+    );
 
     // Replace the frontend-generated temporary user message ids with the real
     // database ids returned by createResponseStream (same as the main agent

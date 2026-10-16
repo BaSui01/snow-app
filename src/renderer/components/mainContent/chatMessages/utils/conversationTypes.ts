@@ -153,6 +153,9 @@ export type ChatConversationMessage = {
   isThinkingActive?: boolean;
   timestamp: string;
   status?: "sending" | "sent" | "incomplete" | "error";
+  /** 自动执行资格独立于展示状态；仅真实成功终态授予，取消后不可恢复。
+   *  不单独持久化，历史加载从原始响应 status 重新计算。 */
+  htmlPreviewEligible?: boolean;
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;

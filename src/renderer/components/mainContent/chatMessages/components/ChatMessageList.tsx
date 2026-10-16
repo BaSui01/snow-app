@@ -6,6 +6,11 @@ import { VirtualizedMessage } from "./VirtualizedMessage";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
+import { directoryIdToPath } from "../utils/conversationHelpers";
+import {
+  collectChatFileArtifacts,
+  type ChatFileArtifact,
+} from "./chatFileArtifacts";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
@@ -33,6 +38,7 @@ export const ChatMessageList = ({
   const { locale, t } = useI18n();
   const {
     activeConversationId,
+    conversationDirectoryId,
     handleForkConversation,
     handleSelectConversation,
     handleRollback,
@@ -51,6 +57,34 @@ export const ChatMessageList = ({
     conversationTtftSumMs,
     conversationRequestCount,
   } = useChatConversationContext();
+
+  const artifactWorkspace = directoryIdToPath(conversationDirectoryId);
+  const previousArtifacts = useRef(
+    new Map<string, readonly ChatFileArtifact[]>(),
+  );
+  const artifactsByOwner = useMemo(() => {
+    const grouped = new Map<string, ChatFileArtifact[]>();
+    for (const artifact of collectChatFileArtifacts(
+      messages,
+      artifactWorkspace,
+    )) {
+      const list = grouped.get(artifact.ownerId) ?? [];
+      list.push(artifact);
+      grouped.set(artifact.ownerId, list);
+    }
+    const stable = new Map<string, readonly ChatFileArtifact[]>();
+    for (const [owner, list] of grouped) {
+      const previous = previousArtifacts.current.get(owner);
+      stable.set(
+        owner,
+        previous && JSON.stringify(previous) === JSON.stringify(list)
+          ? previous
+          : list,
+      );
+    }
+    previousArtifacts.current = stable;
+    return stable;
+  }, [messages, artifactWorkspace]);
 
   const lastAssistantMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -337,6 +371,8 @@ export const ChatMessageList = ({
         virtualization={virtualization}
         previouslyRendered={Boolean(message.idRemappedFrom)}
         message={message}
+        fileArtifacts={artifactsByOwner.get(message.id)}
+        artifactWorkspace={artifactWorkspace}
         isStreaming={isStreaming}
         isAborting={isAborting}
         lastAssistantMessageId={lastAssistantMessageId}

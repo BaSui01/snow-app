@@ -4,6 +4,20 @@ Snow App uses conversation as the main entry point for AI collaboration. In addi
 
 ## 1. Interface and First Conversation
 
+### HTML live preview
+
+After a filesystem tool successfully creates, edits or copies an `.html` / `.htm` file, the conversation shows a live preview card outside the tool group; no extra code fence is needed. A final reply containing only a file link reuses one card per file within that run, placed below the referencing reply. Reopening history reconstructs cards from successful persisted tool records. Content is read from the actual local or SSH file, never from tool arguments or edit fragments.
+
+HTML links without successful write evidence offer **Load preview**; only clicking the link or that button reads them. Plain path mentions never trigger reads. Refresh reads the current file; deleted, unreadable, binary or over-2-MiB files do not execute. A subsequent write pauses preview until it succeeds. Cards support code mode, refresh and an explicit app-browser action for local files; automatic preview never opens the right-side browser.
+
+Fenced blocks labelled `html`, `htm`, or `text/html` in AI reply bodies and sections default to live preview; labels are case-insensitive and may include trailing metadata. Automatic execution starts only when the message is not streaming, errored, retrying, or interrupted, the source fence is genuinely closed, and the committed DOM render matches the current content snapshot. Self-contained HTML, CSS, and JavaScript then run in an isolated sandbox. Selecting **Code** removes the iframe and stops execution; later synchronization of the same DOM block does not take preview back from that manual choice. Selecting **Live preview** again starts fresh. Reasoning content, Markdown file readers, and editors still require an explicit preview click. Streaming or unclosed blocks cannot execute. Ordinary Markdown HTML, JavaScript, and React blocks never run automatically.
+
+Code views for HTML fences and file cards provide IDE-style multicolor syntax highlighting for HTML tags and embedded CSS and JavaScript; file cards compute highlighting only when switched to code mode. Language resolution and colors are shared with ordinary chat code blocks, tool source views, and the file reader, adapting to light and dark themes without rerunning previews. Copying and sandbox execution always use the original source. Inputs exceeding the 131,072-character synchronous highlighting budget display the complete, safely escaped plain text without truncation.
+
+Layout is defined only in the shared `src/renderer/styles.css`. At the final stage, Vite embeds the `.html-artifact-frame` and `.html-artifact-carrier` layout rules into the standalone carrier page, without relying on an opaque `file:` sandbox to read external CSS. This prevents the inner iframe from falling back to the top-left `300×150` default size without relaxing sandbox isolation or CSP.
+
+Preview denies network requests, external scripts/styles/fonts, forms, objects, nested frames, and host APIs; inline scripts/styles and data/blob images are allowed. CDN dependencies and JSX compilation are unavailable. The fixed viewport scrolls internally. It provides no CPU/memory quotas and does not promise to prevent self-navigation. Preview only code you trust. See the [HTML preview ADR](../../adr/2026-10-16-html-artifact-preview.md) for architecture and limitations.
+
 | Area              | Contents                                                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | Sidebar           | Local/SSH projects, conversations, memos, scheduled tasks, and settings                                                 |

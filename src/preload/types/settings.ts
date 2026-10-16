@@ -137,13 +137,34 @@ export type ThemeBackground = {
   enabled: boolean;
   /** 背景来源：image（自定义图片）| pet（桌面宠物 idle 动画） */
   source: string;
-  imagePath: string;
+  /** 背景图片列表（source 为 image 时生效，首张为初始显示图） */
+  imagePaths: string[];
   /** 宠物背景使用的已安装宠物 id */
   petId: string;
   /** 宠物背景大小：相对视口高度的比例 */
   petScale: number;
   opacity: number;
   blur: number;
+  /** 是否开启自动轮播（图片数量 >= 2 时生效） */
+  carouselEnabled: boolean;
+  /** 轮播切换间隔（秒） */
+  carouselIntervalSecs: number;
+  /** 轮播播放顺序：sequential | random */
+  carouselOrder: string;
+  /** 当前显示 / 固定的背景图路径（空表示取列表首张） */
+  currentImagePath: string;
+};
+
+/** 受管背景图目录中的历史图片条目（用于「历史图片」选择与清理）。 */
+export type ThemeBackgroundHistoryEntry = {
+  /** 受管目录下的完整文件路径 */
+  path: string;
+  /** 文件名（bg-<时间戳>-<随机串>.<扩展名>） */
+  fileName: string;
+  /** 文件修改时间（毫秒时间戳） */
+  modifiedAt: number;
+  /** 文件大小（字节） */
+  size: number;
 };
 
 export type ThemeStreamCursor = {

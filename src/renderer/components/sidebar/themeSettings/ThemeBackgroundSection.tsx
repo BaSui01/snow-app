@@ -1,4 +1,4 @@
-import { ImageIcon, PawPrint, Trash2 } from "lucide-react";
+import { History, ImageIcon, PawPrint, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { PetManifest } from "../../../../preload/types/pets";
@@ -6,13 +6,21 @@ import { CustomSelect } from "../../common/CustomSelect";
 import { RangeSlider } from "../../common/RangeSlider";
 import { PetPreview } from "../../pet/PetPreview";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
-import type { ThemeBackground, ThemeBackgroundSource } from "./types";
+import type {
+  ThemeBackground,
+  ThemeBackgroundSource,
+  ThemeCarouselOrder,
+} from "./types";
 import {
+  BACKGROUND_IMAGE_LIMIT,
   hasBackgroundContent,
   MAX_BACKGROUND_OPACITY,
   PET_BACKGROUND_SCALE_MAX,
   PET_BACKGROUND_SCALE_MIN,
 } from "./themeSettingsUtils";
+
+/** 轮播间隔档位（秒）：10 秒 ~ 2 小时。 */
+const CAROUSEL_INTERVAL_OPTIONS = [10, 30, 60, 300, 900, 1800, 3600, 7200];
 
 type ThemeBackgroundSectionProps = {
   background: ThemeBackground;
@@ -21,8 +29,14 @@ type ThemeBackgroundSectionProps = {
   disabled?: boolean;
   busy?: boolean;
   onChange: (background: ThemeBackground) => void;
-  onSelectImage: () => Promise<void>;
-  onRemoveImage: () => Promise<void>;
+  /** 多选本地图片并加入背景列表 */
+  onAddImages: () => Promise<void>;
+  /** 从列表移除指定图片（不删除文件，可从「历史图片」重新加入） */
+  onRemoveImage: (imagePath: string) => Promise<void>;
+  /** 点击缩略图：固定该图为背景并结束轮播 */
+  onPickImage: (imagePath: string) => void;
+  /** 打开「历史图片」弹窗 */
+  onOpenHistory: () => void;
 };
 
 const SOURCE_OPTIONS: {
@@ -51,8 +65,10 @@ export function ThemeBackgroundSection({
   disabled,
   busy,
   onChange,
-  onSelectImage,
+  onAddImages,
   onRemoveImage,
+  onPickImage,
+  onOpenHistory,
 }: ThemeBackgroundSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const isBusy = disabled || busy;
@@ -60,6 +76,37 @@ export function ThemeBackgroundSection({
   const selectedPet = isPetSource
     ? (pets.find((pet) => pet.id === background.petId) ?? null)
     : null;
+
+  /** 轮播仅在「背景已开启」且图片数量 >= 2 时可用（关闭背景时禁用轮播控件）。 */
+  const isCarouselReady =
+    background.enabled && background.imagePaths.length >= 2;
+  // 当前间隔不在预设档位时（如手改配置数据），补充进选项列表以便正常展示。
+  const intervalOptions = CAROUSEL_INTERVAL_OPTIONS.includes(
+    background.carouselIntervalSecs,
+  )
+    ? CAROUSEL_INTERVAL_OPTIONS
+    : [...CAROUSEL_INTERVAL_OPTIONS, background.carouselIntervalSecs].sort(
+        (a, b) => a - b,
+      );
+
+  const formatIntervalLabel = (secs: number): string => {
+    if (secs < 60) {
+      return t("settings.themeBackgroundIntervalSeconds", {
+        defaultValue: "{{count}} sec",
+        values: { count: secs },
+      });
+    }
+    if (secs < 3600) {
+      return t("settings.themeBackgroundIntervalMinutes", {
+        defaultValue: "{{count}} min",
+        values: { count: secs / 60 },
+      });
+    }
+    return t("settings.themeBackgroundIntervalHours", {
+      defaultValue: "{{count}} h",
+      values: { count: secs / 3600 },
+    });
+  };
 
   // 本地 state 用于滑块拖动期间的即时 UI 响应，拖动期间不触发父组件
   // setForm，避免预览 useEffect 全量重绘 + IPC 调用导致卡涩。
@@ -171,7 +218,7 @@ export function ThemeBackgroundSection({
       enabled:
         source === "pet"
           ? Boolean(background.petId)
-          : Boolean(background.imagePath),
+          : background.imagePaths.length > 0,
     });
   };
 
@@ -274,51 +321,158 @@ export function ThemeBackgroundSection({
           </div>
         </div>
       ) : (
-        <div className="api-settings-form-grid">
-          <div className="theme-background-preview">
-            {background.imagePath ? (
-              <img
-                src={themeBgUrl(background.imagePath)}
-                alt=""
-                className="theme-background-thumbnail"
-              />
-            ) : (
+        <>
+          <div className="theme-background-grid">
+            {background.imagePaths.length === 0 ? (
               <span className="theme-background-placeholder">
                 <ImageIcon size={24} strokeWidth={1.6} />
               </span>
+            ) : (
+              background.imagePaths.map((imagePath) => (
+                <div key={imagePath} className="theme-background-thumb">
+                  <button
+                    type="button"
+                    className="theme-background-thumb-select"
+                    onClick={() => onPickImage(imagePath)}
+                    disabled={isBusy}
+                  >
+                    <img
+                      src={themeBgUrl(imagePath)}
+                      alt=""
+                      className="theme-background-thumbnail"
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    className="theme-background-thumb-remove"
+                    title={t("settings.themeBackgroundRemove", {
+                      defaultValue: "Remove",
+                    })}
+                    onClick={() => void onRemoveImage(imagePath)}
+                    disabled={isBusy}
+                  >
+                    <X size={12} strokeWidth={2.2} />
+                  </button>
+                </div>
+              ))
             )}
           </div>
-          <div className="theme-background-actions">
+          <div className="theme-background-actions row">
             <button
               type="button"
               className="api-settings-form-btn secondary"
-              onClick={() => void onSelectImage()}
-              disabled={isBusy}
+              onClick={() => void onAddImages()}
+              disabled={
+                isBusy || background.imagePaths.length >= BACKGROUND_IMAGE_LIMIT
+              }
             >
               <ImageIcon size={15} strokeWidth={1.8} />
               <span>
-                {t("settings.themeBackgroundSelect", {
-                  defaultValue: "Select image",
+                {t("settings.themeBackgroundAddImages", {
+                  defaultValue: "Add images",
                 })}
               </span>
             </button>
-            {background.imagePath && (
-              <button
-                type="button"
-                className="api-settings-form-btn secondary danger"
-                onClick={() => void onRemoveImage()}
-                disabled={isBusy}
-              >
-                <Trash2 size={15} strokeWidth={1.8} />
-                <span>
-                  {t("settings.themeBackgroundRemove", {
-                    defaultValue: "Remove",
+            <button
+              type="button"
+              className="api-settings-form-btn secondary"
+              onClick={onOpenHistory}
+              disabled={isBusy}
+            >
+              <History size={15} strokeWidth={1.8} />
+              <span>
+                {t("settings.themeBackgroundHistory", {
+                  defaultValue: "Image history",
+                })}
+              </span>
+            </button>
+          </div>
+          {background.imagePaths.length === 0 && (
+            <span className="settings-item-description">
+              {t("settings.themeBackgroundImagesEmpty", {
+                defaultValue:
+                  "No backgrounds yet. Use the add button to pick some.",
+              })}
+            </span>
+          )}
+
+          <div className="theme-background-carousel">
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={background.carouselEnabled}
+                onChange={(event) =>
+                  updateField("carouselEnabled", event.target.checked)
+                }
+                disabled={isBusy || !isCarouselReady}
+                hidden
+              />
+              <span className="toggle-slider" />
+              <span>
+                {t("settings.themeBackgroundCarouselEnable", {
+                  defaultValue: "Auto carousel",
+                })}
+              </span>
+            </label>
+            <span className="settings-item-description">
+              {t("settings.themeBackgroundCarouselInfo", {
+                defaultValue:
+                  "When enabled, backgrounds switch automatically at the chosen interval (up to 30 images).",
+              })}
+            </span>
+            <div className="theme-background-carousel-options">
+              <div className="theme-background-option">
+                <span className="theme-background-option-label">
+                  {t("settings.themeBackgroundCarouselInterval", {
+                    defaultValue: "Interval",
                   })}
                 </span>
-              </button>
-            )}
+                <CustomSelect
+                  value={String(background.carouselIntervalSecs)}
+                  onChange={(value) =>
+                    updateField("carouselIntervalSecs", Number(value))
+                  }
+                  disabled={isBusy || !isCarouselReady}
+                  options={intervalOptions.map((secs) => ({
+                    value: String(secs),
+                    label: formatIntervalLabel(secs),
+                  }))}
+                />
+              </div>
+              <div className="theme-background-option">
+                <span className="theme-background-option-label">
+                  {t("settings.themeBackgroundCarouselOrder", {
+                    defaultValue: "Playback order",
+                  })}
+                </span>
+                <CustomSelect
+                  value={background.carouselOrder}
+                  onChange={(value) =>
+                    updateField("carouselOrder", value as ThemeCarouselOrder)
+                  }
+                  disabled={isBusy || !isCarouselReady}
+                  options={[
+                    {
+                      value: "sequential",
+                      label: t(
+                        "settings.themeBackgroundCarouselOrderSequential",
+                        {
+                          defaultValue: "Sequential",
+                        },
+                      ),
+                    },
+                    {
+                      value: "random",
+                      label: t("settings.themeBackgroundCarouselOrderRandom", {
+                        defaultValue: "Random",
+                      }),
+                    },
+                  ]}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {hasBackgroundContent(background) && (

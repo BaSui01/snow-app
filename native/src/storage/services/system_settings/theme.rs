@@ -30,6 +30,12 @@ const PET_BACKGROUND_SCALE_MIN: f64 = 0.2;
 const PET_BACKGROUND_SCALE_MAX: f64 = 1.5;
 const DEFAULT_PET_BACKGROUND_SCALE: f64 = 0.6;
 
+// 背景图列表上限与轮播参数范围 / 默认值，与渲染层 themeSettingsUtils 保持一致。
+const BACKGROUND_IMAGE_LIMIT: usize = 30;
+const CAROUSEL_INTERVAL_MIN_SECS: f64 = 10.0;
+const CAROUSEL_INTERVAL_MAX_SECS: f64 = 7200.0;
+const DEFAULT_CAROUSEL_INTERVAL_SECS: f64 = 300.0;
+
 // ===== Theme settings =====
 
 /// 主题调色板，对应渲染层 CSS 变量。每个字段为合法 CSS 颜色字符串
@@ -124,19 +130,31 @@ impl CustomTheme {
     }
 }
 
-/// 背景配置。source 决定来源："image" 使用 image_path 指向的自定义图片，
+/// 背景配置。source 决定来源："image" 使用 image_paths 指向的多张自定义图片，
 /// "pet" 使用 pet_id 指向的已安装宠物的 idle 动画（pet_scale 为相对视口高度
 /// 的比例）；opacity 范围 0.0~1.0；blur 为高斯模糊像素值（0 表示不模糊）。
+/// carousel_enabled / carousel_interval_secs / carousel_order 为图片自动轮播参数。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeBackground {
     pub enabled: bool,
     pub source: String,
+    /// 旧版单图字段：仅用于兼容读取旧数据，normalize 后并入 image_paths 并清空。
     pub image_path: String,
+    /// 背景图片列表（source 为 image 时生效，首张为初始显示图）。
+    pub image_paths: Vec<String>,
     pub pet_id: String,
     pub pet_scale: f64,
     pub opacity: f64,
     pub blur: f64,
+    /// 是否开启自动轮播（图片数量 >= 2 时生效）。
+    pub carousel_enabled: bool,
+    /// 轮播切换间隔（秒），范围 CAROUSEL_INTERVAL_MIN_SECS ~ CAROUSEL_INTERVAL_MAX_SECS。
+    pub carousel_interval_secs: f64,
+    /// 轮播播放顺序："sequential"（顺序）| "random"（随机）。
+    pub carousel_order: String,
+    /// 当前显示 / 固定的背景图路径（空表示取列表首张）；轮播切换后由渲染层更新。
+    pub current_image_path: String,
 }
 
 impl ThemeBackground {
@@ -145,7 +163,26 @@ impl ThemeBackground {
         if !matches!(self.source.as_str(), "image" | "pet") {
             self.source = "image".to_string();
         }
+        // 图片列表：trim、去空、去重（保留首次出现）、截断到上限。
+        let mut paths: Vec<String> = Vec::new();
+        for item in self.image_paths.drain(..) {
+            let trimmed = item.trim().to_string();
+            if trimmed.is_empty() || paths.iter().any(|existing| existing == &trimmed) {
+                continue;
+            }
+            paths.push(trimmed);
+            if paths.len() >= BACKGROUND_IMAGE_LIMIT {
+                break;
+            }
+        }
+        // 旧数据迁移：旧版单图字段非空且列表为空时并入列表。
         self.image_path = self.image_path.trim().to_string();
+        if paths.is_empty() && !self.image_path.is_empty() {
+            paths.push(self.image_path.clone());
+        }
+        self.image_path.clear();
+        self.image_paths = paths;
+
         self.pet_id = self.pet_id.trim().to_string();
         if !self.pet_scale.is_finite() || self.pet_scale < PET_BACKGROUND_SCALE_MIN {
             self.pet_scale = DEFAULT_PET_BACKGROUND_SCALE;
@@ -162,11 +199,33 @@ impl ThemeBackground {
         } else if self.blur > 100.0 {
             self.blur = 100.0;
         }
-        // 当前来源缺少素材（图片路径 / 宠物 id）时视为未启用。
+        // 轮播参数：顺序校验 + 间隔钳制（缺省 / 小于下限时回退默认值）。
+        self.carousel_order = self.carousel_order.trim().to_string();
+        if self.carousel_order != "random" {
+            self.carousel_order = "sequential".to_string();
+        }
+        if !self.carousel_interval_secs.is_finite()
+            || self.carousel_interval_secs < CAROUSEL_INTERVAL_MIN_SECS
+        {
+            self.carousel_interval_secs = DEFAULT_CAROUSEL_INTERVAL_SECS;
+        } else if self.carousel_interval_secs > CAROUSEL_INTERVAL_MAX_SECS {
+            self.carousel_interval_secs = CAROUSEL_INTERVAL_MAX_SECS;
+        }
+        // 当前显示图必须属于图片列表，否则清空（渲染层会回退到列表首张）。
+        self.current_image_path = self.current_image_path.trim().to_string();
+        if !self.current_image_path.is_empty()
+            && !self
+                .image_paths
+                .iter()
+                .any(|existing| existing == &self.current_image_path)
+        {
+            self.current_image_path.clear();
+        }
+        // 当前来源缺少素材（图片列表 / 宠物 id）时视为未启用。
         let has_content = if self.source == "pet" {
             !self.pet_id.is_empty()
         } else {
-            !self.image_path.is_empty()
+            !self.image_paths.is_empty()
         };
         if !has_content {
             self.enabled = false;

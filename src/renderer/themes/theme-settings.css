@@ -245,6 +245,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .theme-background-placeholder {
@@ -256,6 +257,222 @@
   flex-direction: column;
   gap: 8px;
   justify-content: center;
+}
+
+/* 图片分支工具行：添加图片 / 历史图片 横向排列。 */
+.theme-background-actions.row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+/* 背景图片缩略图网格：自动换行铺满容器。 */
+.theme-background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.theme-background-grid .theme-background-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.theme-background-thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* 缩略图主体即「点选固定」按钮：点击该图固定为背景并结束轮播，无额外标记。 */
+.theme-background-thumb-select {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.theme-background-thumb-select:disabled {
+  cursor: not-allowed;
+}
+
+.theme-background-thumb-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.theme-background-thumb:hover .theme-background-thumb-remove,
+.theme-background-thumb-remove:focus-visible {
+  opacity: 1;
+}
+
+.theme-background-thumb-remove:hover:not(:disabled) {
+  background: var(--accent-red);
+  color: var(--on-solid);
+}
+
+/* 背景图轮播控件：开关 + 间隔 / 顺序选择。 */
+.theme-background-carousel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.theme-background-carousel .toggle-switch {
+  align-self: flex-start;
+}
+
+.theme-background-carousel-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.theme-background-option {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.theme-background-option-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* ===== Background Image History Modal ===== */
+
+.theme-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.theme-history-item {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.theme-history-item.added {
+  opacity: 0.55;
+}
+
+.theme-history-item.selected {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-color);
+}
+
+.theme-history-item-select {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.theme-history-item-select:disabled {
+  cursor: default;
+}
+
+.theme-history-item-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  color: var(--on-solid);
+  pointer-events: none;
+}
+
+.theme-history-item-delete {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.theme-history-item:hover .theme-history-item-delete,
+.theme-history-item-delete:focus-visible {
+  opacity: 1;
+}
+
+.theme-history-item-delete:hover:not(:disabled) {
+  background: var(--accent-red);
+  color: var(--on-solid);
+}
+
+.theme-history-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.theme-history-error {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--accent-red);
 }
 
 .theme-background-source {
@@ -369,28 +586,36 @@
 }
 
 /* ===== Theme Background Layer =====
-   当用户启用背景图时，useTheme 在 :root 上设置 --theme-bg-image 等变量
-   并添加 data-theme-bg="on" 属性。
+   当用户启用图片背景时，useTheme / 主题面板预览会通过 applyBackgroundToDocument
+   写入模块级背景快照与 :root CSS 变量（--theme-bg-opacity / --theme-bg-blur，
+   并添加 data-theme-bg="on"）。ThemeBackgroundImageLayer 组件订阅快照，用双
+   缓冲层绘制图片（多图轮播 + 交叉淡化），z-index 远高于所有 UI 元素，通过
+   opacity 控制背景图浓淡，pointer-events: none 确保不拦截交互。 */
 
-   采用顶层覆盖方案：.app-shell::after 伪元素作为背景图层，z-index 设为
-   远高于所有 UI 元素的值，覆盖在所有内容之上。通过 opacity 控制背景图
-   浓淡，实现全局统一的透明度效果。pointer-events: none 确保不拦截交互。 */
-
-.app-shell::after {
-  content: "";
+.theme-bg-image-layer {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background-image: var(--theme-bg-image, none);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  width: 100%;
+  height: 100%;
   opacity: var(--theme-bg-opacity, 0);
   filter: blur(var(--theme-bg-blur, 0px));
   pointer-events: none;
+  overflow: hidden;
 }
-:root:not([data-theme-bg="on"]) .app-shell::after {
-  display: none;
+
+.theme-bg-image-slot {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.theme-bg-image-slot.active {
+  opacity: 1;
 }
 
 /* 宠物背景层：宠物 idle 动画画布，与图片背景同为顶层覆盖（同一 z-index，

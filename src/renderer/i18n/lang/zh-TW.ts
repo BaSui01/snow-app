@@ -3398,6 +3398,32 @@ export const zhTW = {
   "settings.themeBackgroundOpacity": "不透明度",
   "settings.themeBackgroundBlur": "模糊",
   "settings.themeBackgroundSaveError": "儲存背景圖失敗",
+  "settings.themeBackgroundAddImages": "新增圖片",
+  "settings.themeBackgroundAddDialogTitle": "選擇背景圖片（可多選）",
+  "settings.themeBackgroundHistory": "歷史圖片",
+  "settings.themeBackgroundHistoryTitle": "歷史背景圖",
+  "settings.themeBackgroundHistoryInfo":
+    "從歷史記錄中挑選背景圖加入列表；刪除會同時從磁碟移除該檔案。",
+  "settings.themeBackgroundHistoryEmpty": "尚無歷史背景圖。",
+  "settings.themeBackgroundHistoryAdded": "已新增",
+  "settings.themeBackgroundHistoryAdd": "加入列表",
+  "settings.themeBackgroundHistoryDelete": "刪除檔案",
+  "settings.themeBackgroundHistoryDeleteConfirm":
+    "確定刪除該背景圖檔案嗎？此操作無法復原。",
+  "settings.themeBackgroundHistoryLoadError": "載入歷史背景圖失敗",
+  "settings.themeBackgroundCarouselEnable": "自動輪播",
+  "settings.themeBackgroundCarouselInfo":
+    "開啟後按設定間隔自動切換背景圖（最多 30 張）。",
+  "settings.themeBackgroundCarouselInterval": "切換間隔",
+  "settings.themeBackgroundCarouselOrder": "播放順序",
+  "settings.themeBackgroundCarouselOrderSequential": "順序",
+  "settings.themeBackgroundCarouselOrderRandom": "隨機",
+  "settings.themeBackgroundIntervalSeconds": "{{count}} 秒",
+  "settings.themeBackgroundIntervalMinutes": "{{count}} 分鐘",
+  "settings.themeBackgroundIntervalHours": "{{count}} 小時",
+  "settings.themeBackgroundLimitHint": "最多新增 30 張，超出的圖片未加入。",
+  "settings.themeBackgroundImagesEmpty":
+    "尚未新增背景圖，點擊「新增圖片」選擇。",
   "settings.themeFontTitle": "字體",
   "settings.themeFontInfo":
     "設定應用字體。可選擇常用字體或輸入自訂 CSS font-family 值。",

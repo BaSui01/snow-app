@@ -7,6 +7,7 @@ import { useI18n } from "../../i18n";
 import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
 import { getPresetById } from "./themeSettings/themePresets";
 import {
+  BACKGROUND_IMAGE_LIMIT,
   applyBackgroundToDocument,
   applyFontFamilyToDocument,
   applyPaletteToDocument,
@@ -19,6 +20,8 @@ import {
   readThemeCache,
   resolveActivePalette,
   syncMacTrafficLightPosition,
+  THEME_BG_CURRENT_EVENT,
+  THEME_CHANGED_SOURCE_BG_CURRENT,
   writeThemeCache,
 } from "./themeSettings/themeSettingsUtils";
 import type {
@@ -32,6 +35,7 @@ import type {
 import type { PetManifest } from "../../../preload/types/pets";
 import { THEME_BG_PREVIEW_EVENT } from "../pet/ThemeBackgroundPetLayer";
 import { ThemeAiColorModal } from "./themeSettings/ThemeAiColorModal";
+import { ThemeBackgroundHistoryModal } from "./themeSettings/ThemeBackgroundHistoryModal";
 import { ThemeBackgroundSection } from "./themeSettings/ThemeBackgroundSection";
 import { ThemeColorEditor } from "./themeSettings/ThemeColorEditor";
 import { ThemeFontSection } from "./themeSettings/ThemeFontSection";
@@ -67,6 +71,25 @@ function computeThemeSaveValue(
   return form;
 }
 
+/**
+ * 合并背景图片列表：去重、截断到上限，并返回是否发生截断（供 UI 提示）。
+ */
+function appendBackgroundImages(
+  existing: string[],
+  additions: string[],
+): { paths: string[]; overflow: boolean } {
+  const merged = [...existing];
+  for (const path of additions) {
+    if (path && !merged.includes(path)) {
+      merged.push(path);
+    }
+  }
+  return {
+    paths: merged.slice(0, BACKGROUND_IMAGE_LIMIT),
+    overflow: merged.length > BACKGROUND_IMAGE_LIMIT,
+  };
+}
+
 export function ThemeSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
   // 初始值优先取 localStorage 主题缓存，避免加载完成前表单回退到默认主题导致预览闪烁。
@@ -85,6 +108,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
   const [editorTab, setEditorTab] = useState<EditorTab>("light");
   const [editorOpen, setEditorOpen] = useState(false);
   const [aiColorOpen, setAiColorOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const isMountedRef = useRef(true);
@@ -128,12 +152,19 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
   // 外部主题变更（如快捷键调整界面字号）时同步表单：仅在无未保存改动
   // （form 与 lastSaved 一致）时重载，避免覆盖用户正在编辑的内容。
+  // 例外：背景「当前图」的节流回写（带 THEME_CHANGED_SOURCE_BG_CURRENT
+  // 标记）只改了 currentImagePath 且表单已同步过，重载没有收益，反而会让
+  // 面板在每次自动切换后闪一次「加载中」禁用态，故直接跳过。
   const formRef = useRef(form);
   const lastSavedRef = useRef(lastSaved);
   formRef.current = form;
   lastSavedRef.current = lastSaved;
   useEffect(() => {
-    const handleExternalThemeChange = (): void => {
+    const handleExternalThemeChange = (event: Event): void => {
+      const detail = (event as CustomEvent<{ source?: string }>).detail;
+      if (detail?.source === THEME_CHANGED_SOURCE_BG_CURRENT) {
+        return;
+      }
       if (
         JSON.stringify(formRef.current) !== JSON.stringify(lastSavedRef.current)
       ) {
@@ -146,6 +177,39 @@ export function ThemeSettingsPanel(): React.JSX.Element {
       window.removeEventListener("theme:changed", handleExternalThemeChange);
     };
   }, [load]);
+
+  // 图层组件（轮播切换 / 列表对齐）更新当前显示图时同步表单，
+  // 避免面板后续保存把「当前图」回退成旧值。
+  // 注意：「当前图」由图层负责节流持久化，不构成面板的未保存改动；
+  // 因此 lastSaved 的同一字段一并同步，否则表单会被判定为「脏」，
+  // 触发 useDebouncedAutoSave 的整表保存并弹出「主题设置已保存」提示。
+  useEffect(() => {
+    const handleCurrentImageChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (typeof detail !== "string" || !detail) {
+        return;
+      }
+      // form 与 lastSaved 同步更新：前者防保存回退，后者防误触发自动保存。
+      const syncCurrentImagePath = (previous: ThemeSettings): ThemeSettings => {
+        if (previous.background.currentImagePath === detail) {
+          return previous;
+        }
+        return {
+          ...previous,
+          background: { ...previous.background, currentImagePath: detail },
+        };
+      };
+      setForm(syncCurrentImagePath);
+      setLastSaved(syncCurrentImagePath);
+    };
+    window.addEventListener(THEME_BG_CURRENT_EVENT, handleCurrentImageChanged);
+    return () => {
+      window.removeEventListener(
+        THEME_BG_CURRENT_EVENT,
+        handleCurrentImageChanged,
+      );
+    };
+  }, []);
 
   // 实时预览：表单变化时即时应用到 document，但不持久化。
   useEffect(() => {
@@ -331,6 +395,18 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     setForm((previous: ThemeSettings) => ({ ...previous, background }));
   };
 
+  /** 点击缩略图：把该图固定为背景并结束轮播（点选即固定的交互口径）。 */
+  const handlePickImage = (imagePath: string): void => {
+    setForm((previous: ThemeSettings) => ({
+      ...previous,
+      background: {
+        ...previous.background,
+        currentImagePath: imagePath,
+        carouselEnabled: false,
+      },
+    }));
+  };
+
   const handleFontChange = (fontFamily: string): void => {
     setForm((previous: ThemeSettings) => ({ ...previous, fontFamily }));
   };
@@ -419,41 +495,56 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     }
   };
 
-  const handleSelectImage = async (): Promise<void> => {
+  const handleAddImages = async (): Promise<void> => {
     setIsBusy(true);
     setError("");
     setStatus("");
     try {
-      const title = t("settings.themeBackgroundSelectDialogTitle", {
-        defaultValue: "Select background image",
+      const title = t("settings.themeBackgroundAddDialogTitle", {
+        defaultValue: "Select background images",
       });
-      const sourcePath = await window.snow.selectThemeBackgroundImage(title);
-      if (!sourcePath) {
+      const sourcePaths = await window.snow.selectThemeBackgroundImages(title);
+      if (sourcePaths.length === 0) {
         return;
       }
-      // 替换图片时先删除旧文件，避免冗余文件堆积。
-      const previousImagePath = form.background.imagePath;
-      if (previousImagePath) {
-        await window.snow
-          .deleteThemeBackgroundImage(previousImagePath)
-          .catch(() => {
-            // 旧文件删除失败不阻塞新图片上传。
-          });
+      // 逐个复制进受管目录；单张失败不阻塞其余图片。
+      const savedPaths: string[] = [];
+      for (const sourcePath of sourcePaths) {
+        try {
+          savedPaths.push(
+            await window.snow.saveThemeBackgroundImage(sourcePath),
+          );
+        } catch {
+          // 跳过失败项。
+        }
       }
-      const savedPath = await window.snow.saveThemeBackgroundImage(sourcePath);
-      setForm((previous: ThemeSettings) => {
-        // 首次上传背景图时，透明度默认 0.2；替换图片时保留用户已调整的 opacity。
-        const isFirstUpload = !previous.background.imagePath;
-        return {
-          ...previous,
-          background: {
-            ...previous.background,
-            imagePath: savedPath,
-            enabled: true,
-            opacity: isFirstUpload ? 0.2 : previous.background.opacity,
-          },
-        };
-      });
+      if (savedPaths.length === 0) {
+        setError(
+          t("settings.themeBackgroundSaveError", {
+            defaultValue: "Failed to save background image",
+          }),
+        );
+        return;
+      }
+      const existing = formRef.current.background.imagePaths;
+      const merged = appendBackgroundImages(existing, savedPaths);
+      // 首次添加背景图时透明度默认 0.2；已有图片时保留用户已调整的 opacity。
+      setForm((previous: ThemeSettings) => ({
+        ...previous,
+        background: {
+          ...previous.background,
+          imagePaths: merged.paths,
+          enabled: true,
+          opacity: existing.length === 0 ? 0.2 : previous.background.opacity,
+        },
+      }));
+      if (merged.overflow) {
+        setStatus(
+          t("settings.themeBackgroundLimitHint", {
+            defaultValue: "Up to 30 images; extra ones were skipped.",
+          }),
+        );
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -467,24 +558,64 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     }
   };
 
-  const handleRemoveImage = async (): Promise<void> => {
-    const imagePath = form.background.imagePath;
-    if (!imagePath) {
-      return;
-    }
+  const handleRemoveImage = async (imagePath: string): Promise<void> => {
     setIsBusy(true);
     setError("");
     setStatus("");
     try {
+      // 仅从列表移除；文件保留在受管目录中，可从「历史图片」重新加入。
+      setForm((previous: ThemeSettings) => {
+        if (!previous.background.imagePaths.includes(imagePath)) {
+          return previous;
+        }
+        const nextPaths = previous.background.imagePaths.filter(
+          (item) => item !== imagePath,
+        );
+        return {
+          ...previous,
+          background: {
+            ...previous.background,
+            imagePaths: nextPaths,
+            enabled: previous.background.enabled && nextPaths.length > 0,
+          },
+        };
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  /** 从「历史图片」弹窗把选中的历史图片加入列表（文件已在受管目录，无需复制）。 */
+  const handleAddFromHistory = (paths: string[]): void => {
+    if (paths.length === 0) {
+      return;
+    }
+    const existing = formRef.current.background.imagePaths;
+    const merged = appendBackgroundImages(existing, paths);
+    setForm((previous: ThemeSettings) => ({
+      ...previous,
+      background: {
+        ...previous.background,
+        imagePaths: merged.paths,
+        enabled: true,
+        opacity: existing.length === 0 ? 0.2 : previous.background.opacity,
+      },
+    }));
+    if (merged.overflow) {
+      setStatus(
+        t("settings.themeBackgroundLimitHint", {
+          defaultValue: "Up to 30 images; extra ones were skipped.",
+        }),
+      );
+    }
+  };
+
+  /** 从磁盘删除历史背景图文件；若该图仍在当前列表中则同步移除。 */
+  const handleDeleteHistoryImage = async (imagePath: string): Promise<void> => {
+    setError("");
+    setStatus("");
+    try {
       await window.snow.deleteThemeBackgroundImage(imagePath);
-      setForm((previous) => ({
-        ...previous,
-        background: {
-          ...previous.background,
-          enabled: false,
-          imagePath: "",
-        },
-      }));
     } catch (e) {
       setError(
         e instanceof Error
@@ -493,9 +624,24 @@ export function ThemeSettingsPanel(): React.JSX.Element {
               defaultValue: "Failed to delete background image",
             }),
       );
-    } finally {
-      setIsBusy(false);
+      return;
     }
+    setForm((previous: ThemeSettings) => {
+      if (!previous.background.imagePaths.includes(imagePath)) {
+        return previous;
+      }
+      const nextPaths = previous.background.imagePaths.filter(
+        (item) => item !== imagePath,
+      );
+      return {
+        ...previous,
+        background: {
+          ...previous.background,
+          imagePaths: nextPaths,
+          enabled: previous.background.enabled && nextPaths.length > 0,
+        },
+      };
+    });
   };
 
   const saveSettings = useCallback(
@@ -568,7 +714,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
   const isCustom = form.presetId === "custom";
   // AI 配色按钮仅在用户已上传背景图（图片来源）时显示。
   const hasBackgroundImage =
-    form.background.source === "image" && Boolean(form.background.imagePath);
+    form.background.source === "image" && form.background.imagePaths.length > 0;
   // 弹窗中始终编辑 custom 调色板，与是否启用自定义无关。
   const currentPalette =
     editorTab === "light" ? form.custom.light : form.custom.dark;
@@ -699,8 +845,10 @@ export function ThemeSettingsPanel(): React.JSX.Element {
             disabled={busy}
             busy={isBusy}
             onChange={handleBackgroundChange}
-            onSelectImage={handleSelectImage}
+            onAddImages={handleAddImages}
             onRemoveImage={handleRemoveImage}
+            onPickImage={handlePickImage}
+            onOpenHistory={() => setHistoryOpen(true)}
           />
 
           <ThemeFontSection
@@ -792,9 +940,17 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
       <ThemeAiColorModal
         open={aiColorOpen}
-        imagePath={form.background.imagePath}
+        imagePath={form.background.imagePaths[0] ?? ""}
         onClose={() => setAiColorOpen(false)}
         onApply={handleApplyAiPalette}
+      />
+
+      <ThemeBackgroundHistoryModal
+        open={historyOpen}
+        activePaths={form.background.imagePaths}
+        onClose={() => setHistoryOpen(false)}
+        onAdd={handleAddFromHistory}
+        onDelete={handleDeleteHistoryImage}
       />
     </div>
   );

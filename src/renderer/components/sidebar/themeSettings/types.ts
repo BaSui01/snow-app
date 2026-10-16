@@ -38,16 +38,28 @@ export type CustomTheme = {
 /** 背景来源：自定义图片 / 桌面宠物 idle 动画。 */
 export type ThemeBackgroundSource = "image" | "pet";
 
+/** 背景图片轮播的播放顺序。 */
+export type ThemeCarouselOrder = "sequential" | "random";
+
 export type ThemeBackground = {
   enabled: boolean;
   source: ThemeBackgroundSource;
-  imagePath: string;
+  /** 背景图片列表（source 为 image 时生效，首张为初始显示图） */
+  imagePaths: string[];
   /** 宠物背景使用的已安装宠物 id（source 为 pet 时生效） */
   petId: string;
   /** 宠物背景大小：相对视口高度的比例 */
   petScale: number;
   opacity: number;
   blur: number;
+  /** 是否开启自动轮播（图片数量 >= 2 时生效） */
+  carouselEnabled: boolean;
+  /** 轮播切换间隔（秒），范围 10 ~ 7200 */
+  carouselIntervalSecs: number;
+  /** 轮播播放顺序：顺序 / 随机 */
+  carouselOrder: ThemeCarouselOrder;
+  /** 当前显示 / 固定的背景图路径（空表示取列表首张） */
+  currentImagePath: string;
 };
 
 /**

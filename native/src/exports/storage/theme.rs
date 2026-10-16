@@ -132,13 +132,22 @@ pub struct ThemeBackgroundNapi {
     pub enabled: bool,
     /// 背景来源："image"（自定义图片）| "pet"（桌面宠物 idle 动画）
     pub source: String,
-    pub image_path: String,
+    /// 背景图片列表（source 为 "image" 时生效，首张为初始显示图）
+    pub image_paths: Vec<String>,
     /// 宠物背景使用的已安装宠物 id
     pub pet_id: String,
     /// 宠物背景大小：相对视口高度的比例
     pub pet_scale: f64,
     pub opacity: f64,
     pub blur: f64,
+    /// 是否开启自动轮播（图片数量 >= 2 时生效）
+    pub carousel_enabled: bool,
+    /// 轮播切换间隔（秒）
+    pub carousel_interval_secs: f64,
+    /// 轮播播放顺序："sequential" | "random"
+    pub carousel_order: String,
+    /// 当前显示 / 固定的背景图路径（空表示取列表首张）
+    pub current_image_path: String,
 }
 
 impl From<ThemeBackground> for ThemeBackgroundNapi {
@@ -146,11 +155,15 @@ impl From<ThemeBackground> for ThemeBackgroundNapi {
         ThemeBackgroundNapi {
             enabled: b.enabled,
             source: b.source,
-            image_path: b.image_path,
+            image_paths: b.image_paths,
             pet_id: b.pet_id,
             pet_scale: b.pet_scale,
             opacity: b.opacity,
             blur: b.blur,
+            carousel_enabled: b.carousel_enabled,
+            carousel_interval_secs: b.carousel_interval_secs,
+            carousel_order: b.carousel_order,
+            current_image_path: b.current_image_path,
         }
     }
 }
@@ -160,11 +173,17 @@ impl From<ThemeBackgroundNapi> for ThemeBackground {
         ThemeBackground {
             enabled: b.enabled,
             source: b.source,
-            image_path: b.image_path,
+            // napi 层不再暴露旧版单图字段，storage 层保留空值以兼容序列化结构。
+            image_path: String::new(),
+            image_paths: b.image_paths,
             pet_id: b.pet_id,
             pet_scale: b.pet_scale,
             opacity: b.opacity,
             blur: b.blur,
+            carousel_enabled: b.carousel_enabled,
+            carousel_interval_secs: b.carousel_interval_secs,
+            carousel_order: b.carousel_order,
+            current_image_path: b.current_image_path,
         }
     }
 }

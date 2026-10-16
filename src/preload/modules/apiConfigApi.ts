@@ -25,6 +25,7 @@ import type {
   ResponsesApiRequest,
   ResponsesApiResult,
   ResponsesApiStreamChunk,
+  ThemeBackgroundHistoryEntry,
   ThemeSettings,
   UsageRecordPage,
   UsageSummary,
@@ -212,8 +213,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-theme-settings"),
   setThemeSettings: (settings: ThemeSettings): Promise<void> =>
     ipcRenderer.invoke("settings:set-theme-settings", settings),
-  selectThemeBackgroundImage: (dialogTitle?: string): Promise<string | null> =>
-    ipcRenderer.invoke("theme:select-background-image", dialogTitle),
+  selectThemeBackgroundImages: (dialogTitle?: string): Promise<string[]> =>
+    ipcRenderer.invoke("theme:select-background-images", dialogTitle),
+  listThemeBackgroundImages: (): Promise<ThemeBackgroundHistoryEntry[]> =>
+    ipcRenderer.invoke("theme:list-background-images"),
   saveThemeBackgroundImage: (sourcePath: string): Promise<string> =>
     ipcRenderer.invoke("theme:save-background-image", sourcePath),
   deleteThemeBackgroundImage: (imagePath: string): Promise<void> =>

@@ -30,6 +30,21 @@ type Match = {
 const compareText = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 
+// Identity per PluginView instance. pluginStore.refresh() rebuilds every view, so the
+// match cache below must be keyed on the instance as well: otherwise it keeps handing
+// out a stale plugin object and MatchedToolCall disposes itself on the next store
+// notification (pluginCurrent compares by identity).
+const pluginObjectIds = new WeakMap<PluginView, number>();
+let nextPluginObjectId = 0;
+const pluginObjectId = (plugin: PluginView): number => {
+  let id = pluginObjectIds.get(plugin);
+  if (id === undefined) {
+    id = ++nextPluginObjectId;
+    pluginObjectIds.set(plugin, id);
+  }
+  return id;
+};
+
 // LRU/Map memoization cache for tool renderer selection to avoid recalculating matches on every message render
 const rendererMatchCache = new Map<string, Match | undefined>();
 const MAX_MATCH_CACHE_SIZE = 1000;
@@ -43,7 +58,7 @@ const selectRenderer = (
   name: string,
 ): Match | undefined => {
   // Compute cache key combining enabled plugins revision and tool name
-  const cacheKey = `${plugins.map((p) => `${p.pluginId}:${p.version}:${p.enabled ? 1 : 0}:${p.toolCallRenderers.length}`).join("|")}::${name}`;
+  const cacheKey = `${plugins.map((p) => `${pluginObjectId(p)}:${p.pluginId}:${p.version}:${p.enabled ? 1 : 0}:${p.toolCallRenderers.length}`).join("|")}::${name}`;
   if (rendererMatchCache.has(cacheKey)) {
     return rendererMatchCache.get(cacheKey);
   }
@@ -377,17 +392,6 @@ const MatchedToolCall = ({
       <RenderContribution {...loaded} context={context} fallback={fallback} />
     </RendererBoundary>
   );
-};
-
-const pluginObjectIds = new WeakMap<PluginView, number>();
-let nextPluginObjectId = 0;
-const pluginObjectId = (plugin: PluginView): number => {
-  let id = pluginObjectIds.get(plugin);
-  if (id === undefined) {
-    id = ++nextPluginObjectId;
-    pluginObjectIds.set(plugin, id);
-  }
-  return id;
 };
 
 export const PluginToolCall = (props: Props): React.JSX.Element => {

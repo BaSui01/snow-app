@@ -18,6 +18,7 @@
 - Fixed `~` in local workspace parameters not being expanded to the home directory.
 - Fixed SSH paths missing the authority prefix when opening a terminal from the explorer.
 - Invalid and orphaned Git work-tree records are now cleaned up.
+- Fixed plugin tool-call cards falling back to the built-in card after a plugin list refresh (the renderer match cache could return a stale plugin view, so already-mounted cards never recovered).
 
 ## v0.4.25
 

@@ -9870,10 +9870,6 @@ body.is-panel-resizing * {
 .chat-scroll-to-bottom:hover {
   border-color: var(--border-color);
   background: var(--bg-hover);
-  box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.16),
-    0 3px 8px rgba(0, 0, 0, 0.1);
-  transform: translate(-50%, calc(-100% - 9px));
 }
 
 .chat-scroll-to-bottom:active {

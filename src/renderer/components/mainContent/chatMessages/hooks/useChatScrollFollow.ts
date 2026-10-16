@@ -94,7 +94,7 @@ export type ChatScrollFollowResult = {
   handleChatPointerLeave: (event: React.PointerEvent<HTMLDivElement>) => void;
   handleChatKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   handleChatScroll: () => void;
-  handleScrollToBottom: () => void;
+  handleScrollToBottom: (options?: { animate?: boolean }) => void;
   handleLoadOlderWithScroll: () => Promise<void>;
   handleSendWithScroll: (
     message: string,
@@ -1229,103 +1229,115 @@ export const useChatScrollFollow = ({
     isLoadingOlderMessages,
   ]);
 
-  const handleScrollToBottom = useCallback((): void => {
-    const container = scrollRef.current;
-    if (!container) {
-      return;
-    }
-
-    // Cancel any tween already in flight before starting a new one.
-    if (scrollToBottomAnimRef.current !== 0) {
-      cancelAnimationFrame(scrollToBottomAnimRef.current);
-      scrollToBottomAnimRef.current = 0;
-    }
-
-    shouldStickToBottomRef.current = true;
-    isInitialBottomPositioningRef.current = false;
-    isUserScrollIntentRef.current = false;
-    lastUserScrollInputAtRef.current = -Infinity;
-    lastUserScrollInputDirectionRef.current = 0;
-    setShowScrollToBottom(false);
-    // 手动吸底后的虚拟节点仍可能在下一帧展开；短暂保留跟随资格，
-    // 但不改变关闭自动滚动时的偏好。
-    if (autoScrollEnabledRef.current) {
-      followGraceUntilRef.current =
-        performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
-    }
-
-    const startTop = container.scrollTop;
-    const initialMaxScrollTop = container.scrollHeight - container.clientHeight;
-    const initialDistance = initialMaxScrollTop - startTop;
-    // Streaming and long/virtualized timelines should never animate through
-    // placeholder expansion. Only a short, settled distance uses a tween.
-    if (
-      isStreamingRef.current ||
-      initialDistance > Math.min(container.clientHeight * 0.75, 480) ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      container.scrollTop = container.scrollHeight;
-      deriveFollowStateFromScroll(container);
-      return;
-    }
-
-    isSmoothScrollingToBottomRef.current = true;
-    const startTimeMs = performance.now();
-    const durationMs = 220;
-    let lastTop = startTop;
-
-    const tick = (nowMs: number): void => {
-      if (scrollRef.current !== container) {
-        scrollToBottomAnimRef.current = 0;
-        isSmoothScrollingToBottomRef.current = false;
+  const handleScrollToBottom = useCallback(
+    (options?: { animate?: boolean }): void => {
+      const container = scrollRef.current;
+      if (!container) {
         return;
       }
 
-      const maxScrollTop = container.scrollHeight - container.clientHeight;
+      // Cancel any tween already in flight before starting a new one.
+      if (scrollToBottomAnimRef.current !== 0) {
+        cancelAnimationFrame(scrollToBottomAnimRef.current);
+        scrollToBottomAnimRef.current = 0;
+      }
 
+      shouldStickToBottomRef.current = true;
+      isInitialBottomPositioningRef.current = false;
+      isUserScrollIntentRef.current = false;
+      lastUserScrollInputAtRef.current = -Infinity;
+      lastUserScrollInputDirectionRef.current = 0;
+      setShowScrollToBottom(false);
+      // 手动吸底后的虚拟节点仍可能在下一帧展开；短暂保留跟随资格，
+      // 但不改变关闭自动滚动时的偏好。
+      if (autoScrollEnabledRef.current) {
+        followGraceUntilRef.current =
+          performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
+      }
+
+      const initialMaxScrollTop =
+        container.scrollHeight - container.clientHeight;
+      const initialDistance = initialMaxScrollTop - container.scrollTop;
+      const tweenMaxDistance = Math.min(container.clientHeight * 0.75, 480);
+      // Streaming and reduced motion always jump. Non-click callers keep the
+      // rule that only a short, settled distance tweens, so long/virtualized
+      // timelines never animate through placeholder expansion.
       if (
-        isUserScrollIntentRef.current &&
-        Math.abs(container.scrollTop - lastTop) > 2
+        isStreamingRef.current ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        (!options?.animate && initialDistance > tweenMaxDistance)
       ) {
-        scrollToBottomAnimRef.current = 0;
-        isSmoothScrollingToBottomRef.current = false;
+        container.scrollTop = container.scrollHeight;
         deriveFollowStateFromScroll(container);
         return;
       }
 
-      // Content expanding while the tween runs makes a moving target; stop
-      // chasing it frame by frame and let normal bottom-follow take over.
-      if (Math.abs(maxScrollTop - initialMaxScrollTop) > 1) {
-        scrollToBottomAnimRef.current = 0;
-        isSmoothScrollingToBottomRef.current = false;
-        pinToBottom();
-        deriveFollowStateFromScroll(container);
-        return;
+      isSmoothScrollingToBottomRef.current = true;
+      // Click on a long timeline: jump to the last tween window first, so the
+      // animated part only covers rendered content near the bottom.
+      if (initialDistance > tweenMaxDistance) {
+        container.scrollTop = initialMaxScrollTop - tweenMaxDistance;
       }
+      const startTop = container.scrollTop;
+      const tweenDistance = initialMaxScrollTop - startTop;
+      const startTimeMs = performance.now();
+      const durationMs = 220;
+      let lastTop = startTop;
 
-      const elapsed = nowMs - startTimeMs;
-      const progress = Math.min(1, elapsed / durationMs);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const nextTop = Math.min(
-        Math.max(lastTop, startTop + initialDistance * eased),
-        maxScrollTop,
-      );
-      container.scrollTop = nextTop;
-      lastTop = nextTop;
+      const tick = (nowMs: number): void => {
+        if (scrollRef.current !== container) {
+          scrollToBottomAnimRef.current = 0;
+          isSmoothScrollingToBottomRef.current = false;
+          return;
+        }
 
-      if (progress >= 1 || nextTop >= maxScrollTop - 1) {
-        container.scrollTop = maxScrollTop;
-        scrollToBottomAnimRef.current = 0;
-        isSmoothScrollingToBottomRef.current = false;
-        deriveFollowStateFromScroll(container);
-        return;
-      }
+        const maxScrollTop = container.scrollHeight - container.clientHeight;
+
+        if (
+          isUserScrollIntentRef.current &&
+          Math.abs(container.scrollTop - lastTop) > 2
+        ) {
+          scrollToBottomAnimRef.current = 0;
+          isSmoothScrollingToBottomRef.current = false;
+          deriveFollowStateFromScroll(container);
+          return;
+        }
+
+        // Content expanding while the tween runs makes a moving target; stop
+        // chasing it frame by frame and let normal bottom-follow take over.
+        if (Math.abs(maxScrollTop - initialMaxScrollTop) > 1) {
+          scrollToBottomAnimRef.current = 0;
+          isSmoothScrollingToBottomRef.current = false;
+          pinToBottom();
+          deriveFollowStateFromScroll(container);
+          return;
+        }
+
+        const elapsed = nowMs - startTimeMs;
+        const progress = Math.min(1, elapsed / durationMs);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const nextTop = Math.min(
+          Math.max(lastTop, startTop + tweenDistance * eased),
+          maxScrollTop,
+        );
+        container.scrollTop = nextTop;
+        lastTop = nextTop;
+
+        if (progress >= 1 || nextTop >= maxScrollTop - 1) {
+          container.scrollTop = maxScrollTop;
+          scrollToBottomAnimRef.current = 0;
+          isSmoothScrollingToBottomRef.current = false;
+          deriveFollowStateFromScroll(container);
+          return;
+        }
+
+        scrollToBottomAnimRef.current = requestAnimationFrame(tick);
+      };
 
       scrollToBottomAnimRef.current = requestAnimationFrame(tick);
-    };
-
-    scrollToBottomAnimRef.current = requestAnimationFrame(tick);
-  }, [deriveFollowStateFromScroll]);
+    },
+    [deriveFollowStateFromScroll],
+  );
 
   const handleSendWithScroll = useCallback(
     (message: string, options: ChatInputSendOptions) => {

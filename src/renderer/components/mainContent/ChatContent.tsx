@@ -656,7 +656,7 @@ const ChatContentBody = ({
                   isStreaming ? " is-streaming" : ""
                 }`}
                 type="button"
-                onClick={handleScrollToBottom}
+                onClick={() => handleScrollToBottom({ animate: true })}
                 aria-label={t("chat.scrollToBottom")}
                 title={
                   scrollToBottomShortcut

@@ -9052,6 +9052,16 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
+/* 使用指南：纯图标，靠右显示（作用于 Tooltip 包裹层） */
+.sidebar-footer-row > .tooltip-wrapper:has(.sidebar-user-guide-btn) {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sidebar-user-guide-btn {
+  padding: 6px;
+}
+
 .sidebar-version-badge {
   font-size: 10px;
   font-weight: 500;

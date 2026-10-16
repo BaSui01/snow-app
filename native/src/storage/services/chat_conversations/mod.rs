@@ -143,17 +143,22 @@ pub fn resolve_conversation_id(
     Ok(create_chat_id("conv"))
 }
 
-/// 创建空白主会话（无消息、无模型绑定，沿用全局激活档案）。首条消息由
-/// store_chat_exchange 写入时保留此处设定的标题（ON CONFLICT DO NOTHING）。
+/// 创建主会话（无模型绑定，沿用全局激活档案）。`initial_text` 非空时在同一事务内
+/// 写入一条 user 消息，仅入库、不触发回合；首条消息由 store_chat_exchange 写入时保留此处标题。
 pub fn create_chat_conversation(
     database_path: &Path,
     directory_id: &str,
     title: &str,
+    initial_text: Option<&str>,
 ) -> Result<String> {
     let conversation_id = create_chat_id("conv");
+    let initial_text = initial_text
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     database::open_connection(database_path)
-        .and_then(|connection| {
-            connection.execute(
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            transaction.execute(
                 "INSERT INTO chat_conversations (
                    id,
                    conversation_id,
@@ -180,7 +185,40 @@ pub fn create_chat_conversation(
                     title.trim(),
                     directory_id.trim(),
                 ],
-            )
+            )?;
+            if let Some(text) = initial_text {
+                insert_message(
+                    &transaction,
+                    &conversation_id,
+                    "user",
+                    text,
+                    "",
+                    "",
+                    "",
+                    "sent",
+                    None,
+                    None,
+                    "{}",
+                    "",
+                    "[]",
+                    0,
+                    0,
+                    "[]",
+                    None,
+                    0,
+                    0,
+                    "",
+                )?;
+                transaction.execute(
+                    "UPDATE chat_conversations
+                        SET message_count = 1,
+                            last_message_preview = ?2,
+                            updated_at = datetime('now', 'localtime')
+                      WHERE conversation_id = ?1",
+                    params![conversation_id, create_snippet(text, 180)],
+                )?;
+            }
+            transaction.commit()
         })
         .map_err(|error| database::database_error(database_path, "create chat conversation", error))
         .map(|_| conversation_id)

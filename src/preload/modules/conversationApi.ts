@@ -120,12 +120,18 @@ export const conversationApi = {
       conversationId,
       profileName,
     ),
-  /** 在指定项目下创建空白主会话，返回新会话 ID。 */
+  /** 在指定项目下创建主会话，返回新会话 ID；initialText 仅写入一条 user 消息，不触发回合。 */
   createChatConversation: (
     directoryId: string,
     title: string,
+    initialText?: string,
   ): Promise<string> =>
-    ipcRenderer.invoke("chat-conversations:create", directoryId, title),
+    ipcRenderer.invoke(
+      "chat-conversations:create",
+      directoryId,
+      title,
+      initialText,
+    ),
   /** deleteMemories=true 时把该会话（含级联子会话）保存的项目记忆一并删除；默认保留。 */
   deleteConversation: (
     conversationId: string,

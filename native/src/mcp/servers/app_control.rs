@@ -19,6 +19,9 @@ const TOOL_SET_MODE: &str = "setMode";
 const TOOL_OPEN_SETTINGS: &str = "openSettings";
 const TOOL_CREATE_SCHEDULED_TASK: &str = "createScheduledTask";
 const TOOL_CREATE_PROJECT: &str = "createProject";
+const TOOL_CREATE_CONVERSATION: &str = "createConversation";
+const TOOL_SEND_CONVERSATION_MESSAGE: &str = "sendConversationMessage";
+const TOOL_ACTIVATE_CONVERSATION: &str = "activateConversation";
 const TOOL_REQUEST_APPROVAL: &str = "requestApproval";
 
 const APPROVE_OPTION: &str = "Approve and execute the plan";
@@ -26,7 +29,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project"
+    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -64,6 +67,9 @@ impl AppControlService {
             TOOL_OPEN_SETTINGS => validate_open_settings_args(args)?,
             TOOL_CREATE_SCHEDULED_TASK => validate_create_scheduled_task_args(args)?,
             TOOL_CREATE_PROJECT => validate_create_project_args(args)?,
+            TOOL_CREATE_CONVERSATION => validate_create_conversation_args(args)?,
+            TOOL_SEND_CONVERSATION_MESSAGE => validate_send_conversation_message_args(args)?,
+            TOOL_ACTIVATE_CONVERSATION => validate_activate_conversation_args(args)?,
             _ => return Err(unknown_tool_error(tool_name)),
         };
 
@@ -374,6 +380,63 @@ impl McpService for AppControlService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
+                name: TOOL_CREATE_CONVERSATION.to_string(),
+                description: "Create a new top-level conversation (chat session) in the CURRENT project. Optional `text` is written as an initial user message WITHOUT starting an AI reply; set `autoReply=true` (requires `text`) to also start one AI turn with that text. Use it to set up a participant session (e.g. a role setting) or to hand a task to an independent session. Returns the new conversationId.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Title of the new conversation."
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Optional initial user message. Written to the conversation without triggering an AI reply unless autoReply is true."
+                        },
+                        "autoReply": {
+                            "type": "boolean",
+                            "description": "When true, the AI starts one turn with `text` right after creation. Default false. Requires `text`."
+                        }
+                    },
+                    "required": ["title"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_SEND_CONVERSATION_MESSAGE.to_string(),
+                description: "Send a user message to a specific top-level conversation of the CURRENT project. If the target is idle, a new AI turn starts immediately; if it is busy, the message is queued and sent after the current turn. Returns the delivery status (started | queued). Sub-agent and WorkFlow node conversations are rejected.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "conversationId": {
+                            "type": "string",
+                            "description": "The target conversation id (must belong to the current project)."
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "The user message text to deliver."
+                        }
+                    },
+                    "required": ["conversationId", "text"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: TOOL_ACTIVATE_CONVERSATION.to_string(),
+                description: "Switch the app UI to a conversation of the CURRENT project so the user sees it. Only conversations of the current project can be activated.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "conversationId": {
+                            "type": "string",
+                            "description": "The conversation id to open (must belong to the current project)."
+                        }
+                    },
+                    "required": ["conversationId"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
                 name: TOOL_REQUEST_APPROVAL.to_string(),
                 description: "Request the user's explicit approval to execute the completed implementation plan. In Plan Mode, call this dedicated tool after the plan is ready and before calling filesystem-replace_edit or filesystem-create. The tool returns a structured `approved` boolean; no wording or keyword in a normal chat response can unlock file editing. Call this tool by itself and wait for the user's decision."
                     .to_string(),
@@ -409,7 +472,10 @@ impl McpService for AppControlService {
             | TOOL_SET_MODE
             | TOOL_OPEN_SETTINGS
             | TOOL_CREATE_SCHEDULED_TASK
-            | TOOL_CREATE_PROJECT => Err(Error::new(
+            | TOOL_CREATE_PROJECT
+            | TOOL_CREATE_CONVERSATION
+            | TOOL_SEND_CONVERSATION_MESSAGE
+            | TOOL_ACTIVATE_CONVERSATION => Err(Error::new(
                 Status::GenericFailure,
                 format!(
                     "{SERVER_ID}-{tool_name} must be executed through the asynchronous Electron app control bridge"
@@ -1047,11 +1113,73 @@ fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
     Ok(("create_project".to_string(), Value::Object(payload)))
 }
 
+fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    let title = required_trimmed_str(args, "title", TOOL_CREATE_CONVERSATION)?;
+    let text = args
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let auto_reply = args
+        .get("autoReply")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if auto_reply && text.is_none() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "text is required when autoReply is true for createConversation".to_string(),
+        ));
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("title".to_string(), json!(title));
+    if let Some(text) = text {
+        payload.insert("text".to_string(), json!(text));
+    }
+    payload.insert("autoReply".to_string(), json!(auto_reply));
+
+    Ok(("create_conversation".to_string(), Value::Object(payload)))
+}
+
+fn validate_send_conversation_message_args(args: &Value) -> napi::Result<(String, Value)> {
+    let conversation_id = required_trimmed_str(args, "conversationId", TOOL_SEND_CONVERSATION_MESSAGE)?;
+    let text = required_trimmed_str(args, "text", TOOL_SEND_CONVERSATION_MESSAGE)?;
+
+    Ok((
+        "send_conversation_message".to_string(),
+        json!({ "conversationId": conversation_id, "text": text }),
+    ))
+}
+
+fn validate_activate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    let conversation_id = required_trimmed_str(args, "conversationId", TOOL_ACTIVATE_CONVERSATION)?;
+
+    Ok((
+        "activate_conversation".to_string(),
+        json!({ "conversationId": conversation_id }),
+    ))
+}
+
+/// 读取必填非空字符串参数（去首尾空白）。
+fn required_trimmed_str(args: &Value, key: &str, tool: &str) -> napi::Result<String> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                format!("{key} is required and must be a non-empty string for {tool}"),
+            )
+        })
+}
+
 fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_LIST_MEMOS}, {SERVER_ID}-{TOOL_GET_MEMO}, {SERVER_ID}-{TOOL_UPDATE_MEMO_STATUS}, {SERVER_ID}-{TOOL_GET_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_UPDATE_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_LIST_MEMOS}, {SERVER_ID}-{TOOL_GET_MEMO}, {SERVER_ID}-{TOOL_UPDATE_MEMO_STATUS}, {SERVER_ID}-{TOOL_GET_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_UPDATE_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_CREATE_CONVERSATION}, {SERVER_ID}-{TOOL_SEND_CONVERSATION_MESSAGE}, {SERVER_ID}-{TOOL_ACTIVATE_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
         ),
     )
 }

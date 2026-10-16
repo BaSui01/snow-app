@@ -1,6 +1,12 @@
 import { scheduledTasksStore } from "../../../hooks/scheduledTasksStore";
-import { sendMessageToConversation } from "../../../components/mainContent/chatMessages/hooks/conversationMessageBridge";
-import { requestConversationActivation } from "../../pluginEvents";
+import {
+  abortConversationRun,
+  sendMessageToConversation,
+} from "../../../components/mainContent/chatMessages/hooks/conversationMessageBridge";
+import {
+  activateConversationById,
+  createConversationInDirectory,
+} from "../conversationOps";
 import {
   bumpRevision,
   callSnow,
@@ -499,31 +505,35 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
   },
   {
     domain: "conversations",
+    action: "abort",
+    scope: "conversations",
+    summary: l10n(
+      "Abort a running conversation",
+      "中止指定会话的运行",
+      "中止指定工作階段的執行",
+    ),
+    invoke: async ({ params }) => {
+      const conversationId = requireString(params, "conversationId").trim();
+      const aborted = abortConversationRun(conversationId);
+      return { conversationId, aborted };
+    },
+  },
+  {
+    domain: "conversations",
     action: "create",
     scope: "conversations",
     summary: l10n(
-      "Create an empty conversation in a project",
-      "在项目中新建空白会话",
-      "在專案中新增空白工作階段",
+      "Create a conversation in a project, optionally with initial text",
+      "在项目中新建会话，可携带初始内容",
+      "在專案中新增工作階段，可附帶初始內容",
     ),
     invoke: async ({ params }) => {
-      const directoryId = requireString(params, "directoryId").trim();
-      const title = requireString(params, "title").trim();
-      const directories = await callSnow<Array<{ directoryId: string }>>(
-        "listWorkspaceDirectories",
-      );
-      if (
-        !directories.some((item) => item.directoryId.trim() === directoryId)
-      ) {
-        throw new Error(`Unknown workspace directory '${directoryId}'`);
-      }
-      const conversationId = await callSnow<string>(
-        "createChatConversation",
-        directoryId,
-        title,
-      );
-      bumpRevision("conversationListRevision");
-      return { conversationId, directoryId, title };
+      return await createConversationInDirectory({
+        directoryId: requireString(params, "directoryId"),
+        title: requireString(params, "title"),
+        text: optionalString(params, "text"),
+        autoReply: optionalBoolean(params, "autoReply") ?? false,
+      });
     },
   },
   {
@@ -535,25 +545,8 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       "切换到指定会话",
       "切換到指定工作階段",
     ),
-    invoke: async ({ params }) => {
-      const conversationId = requireString(params, "conversationId").trim();
-      const record = await callSnow<{ directoryId: string } | null>(
-        "getChatConversation",
-        conversationId,
-      );
-      if (!record) {
-        throw new Error(`Conversation not found: ${conversationId}`);
-      }
-      const directoryId = record.directoryId.trim();
-      const outcome = await requestConversationActivation({
-        conversationId,
-        directoryId,
-      });
-      if (outcome !== "opened") {
-        throw new Error(`Conversation could not be activated (${outcome})`);
-      }
-      return { conversationId, directoryId };
-    },
+    invoke: async ({ params }) =>
+      await activateConversationById(requireString(params, "conversationId")),
   },
 
   {

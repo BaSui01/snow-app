@@ -356,9 +356,18 @@ pub fn create_sub_agent_session(
     )
 }
 
-pub fn create_chat_conversation(directory_id: String, title: String) -> Result<String> {
+pub fn create_chat_conversation(
+    directory_id: String,
+    title: String,
+    initial_text: Option<String>,
+) -> Result<String> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::create_chat_conversation(&database_path, &directory_id, &title)
+    services::chat_conversations::create_chat_conversation(
+        &database_path,
+        &directory_id,
+        &title,
+        initial_text.as_deref(),
+    )
 }
 
 pub fn update_sub_agent_session_status(

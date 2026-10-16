@@ -31,6 +31,7 @@ import {
 } from "../../userscripts/clientScriptStore";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { HelpSkillDisabledDialog } from "../common/HelpSkillDisabledDialog";
+import { Tooltip } from "../common/Tooltip";
 import {
   isHelpSkillDisabled,
   markHelpGuideUsed,
@@ -343,9 +344,6 @@ export function MainSidebarContent({
     );
   }, [activeDirectoryId, activeMainView, onSelectMainView, prefillComposer, t]);
 
-  // 存在更新入口（可更新 / 下载中 / 已下载）时隐藏使用指南，避免底部按钮挤压
-  const hasUpdateEntry = updateStatus.available || updateStatus.downloaded;
-
   // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索面板，Ctrl/Cmd+B 切换备忘录页面。
   // 快捷键引擎通过 shortcutEvents 总线触发，页面切换状态由父级持有。
   useEffect(() => {
@@ -649,19 +647,6 @@ export function MainSidebarContent({
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
           </button>
 
-          {!hasUpdateEntry && (
-            <button
-              className="nav-item"
-              onClick={handleOpenUserGuide}
-              type="button"
-            >
-              <CircleHelp size={18} strokeWidth={1.8} />
-              <span>
-                {t("sidebar.userGuide", { defaultValue: "User guide" })}
-              </span>
-            </button>
-          )}
-
           {/* 自动检测到新版本时显示更新入口，点击打开更新弹窗 */}
           {updateStatus.available &&
             !updateStatus.downloading &&
@@ -718,6 +703,22 @@ export function MainSidebarContent({
               </span>
             </button>
           )}
+
+          <Tooltip
+            content={t("sidebar.userGuide", { defaultValue: "User guide" })}
+            placement="top"
+          >
+            <button
+              aria-label={t("sidebar.userGuide", {
+                defaultValue: "User guide",
+              })}
+              className="nav-item sidebar-user-guide-btn"
+              onClick={handleOpenUserGuide}
+              type="button"
+            >
+              <CircleHelp size={18} strokeWidth={1.8} />
+            </button>
+          </Tooltip>
         </div>
       </div>
       <GlobalSearchModal

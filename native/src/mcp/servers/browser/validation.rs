@@ -11,13 +11,98 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         )
     })?;
     let mut normalized = object.clone();
+    // Only structural identifiers, paths and enums are trimmed. Payload strings
+    // (JavaScript, selectors, text, regexes, response bodies and form values) are
+    // validated and forwarded verbatim, including significant surrounding spaces.
+    for field in [
+        "instanceId",
+        "frameId",
+        "fromFrameId",
+        "toFrameId",
+        "ref",
+        "fromRef",
+        "toRef",
+        "url",
+        "action",
+        "format",
+        "level",
+        "state",
+        "contentType",
+        "fileName",
+        "domain",
+        "sourcePath",
+        "filePath",
+        "requestFilePath",
+        "responseFilePath",
+        "baseFilePath",
+        "currentFilePath",
+        "colorScheme",
+        "networkConditions",
+        "viewport",
+        "nodeType",
+        "sortBy",
+        "insightId",
+    ] {
+        if let Some(Value::String(value)) = normalized.get_mut(field) {
+            *value = value.trim().to_string();
+        }
+    }
+    if tool_name == "emulate" {
+        // These resets already have concrete renderer/CDP equivalents.
+        if normalized.get("colorScheme").is_some_and(Value::is_null) {
+            normalized.insert("colorScheme".to_string(), json!("auto"));
+        }
+        if normalized
+            .get("cpuThrottlingRate")
+            .is_some_and(Value::is_null)
+        {
+            normalized.insert("cpuThrottlingRate".to_string(), json!(1));
+        }
+    }
+    if tool_name == "fill_form" {
+        if let Some(Value::Array(elements)) = normalized.get_mut("elements") {
+            for element in elements {
+                if let Some(Value::String(value)) = element.get_mut("ref") {
+                    *value = value.trim().to_string();
+                }
+            }
+        }
+    }
+    // Validate exactly the values that will cross the Electron bridge.
+    let input = Value::Object(normalized.clone());
+    let args = &input;
     if let Some(frame_id) = optional_non_empty_string(args, "frameId")? {
-        if !matches!(tool_name, "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "fill_form" | "hover" | "select_option" | "upload-file" | "devtools") {
-            return Err(Error::new(Status::InvalidArg, "frameId is not supported for this browser tool".to_string()));
+        if !matches!(
+            tool_name,
+            "evaluate"
+                | "get_tab_content"
+                | "wait"
+                | "click"
+                | "type"
+                | "fill_form"
+                | "hover"
+                | "select_option"
+                | "upload-file"
+                | "devtools"
+        ) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "frameId is not supported for this browser tool".to_string(),
+            ));
         }
         validate_frame_id(frame_id)?;
-        if tool_name == "devtools" && !matches!(args.get("action").and_then(Value::as_str).unwrap_or("snapshot"), "snapshot" | "ax") {
-            return Err(Error::new(Status::InvalidArg, "frameId supports only devtools snapshot/ax".to_string()));
+        if tool_name == "devtools"
+            && !matches!(
+                args.get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("snapshot"),
+                "snapshot" | "ax"
+            )
+        {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "frameId supports only devtools snapshot/ax".to_string(),
+            ));
         }
         normalized.insert("frameId".to_string(), json!(frame_id));
     }
@@ -33,7 +118,15 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             optional_boolean(args, "reload")?;
             optional_boolean(args, "ignoreCache")?;
             let reloading = args.get("reload").and_then(Value::as_bool).unwrap_or(false);
-            let url = optional_non_empty_string(args, "url")?;
+            // Empty optional navigation fields are commonly emitted as placeholders.
+            // Treat them as omitted, but still require a URL for normal navigation.
+            let url = match args.get("url") {
+                Some(Value::String(value)) if value.trim().is_empty() => None,
+                _ => optional_non_empty_string(args, "url")?,
+            };
+            if url.is_none() {
+                normalized.remove("url");
+            }
             if reloading {
                 if url.is_some() {
                     return Err(Error::new(
@@ -56,6 +149,13 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                         Status::InvalidArg,
                         "initScript must be a string for browser-navigate".to_string(),
                     ));
+                }
+                if init_script.is_null()
+                    || init_script
+                        .as_str()
+                        .is_some_and(|value| value.trim().is_empty())
+                {
+                    normalized.remove("initScript");
                 }
             }
             let timeout = bounded_u64(
@@ -109,7 +209,8 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 if !matches!(format, "png" | "jpeg" | "webp") {
                     return Err(Error::new(
                         Status::InvalidArg,
-                        "format must be one of png, jpeg, or webp for browser-screenshot".to_string(),
+                        "format must be one of png, jpeg, or webp for browser-screenshot"
+                            .to_string(),
                     ));
                 }
             }
@@ -133,11 +234,15 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             let selector = optional_non_empty_string(args, "selector")?;
             let ref_value = optional_non_empty_string(args, "ref")?;
             optional_boolean(args, "exact")?;
-            let full_page = args.get("fullPage").and_then(Value::as_bool).unwrap_or(false);
+            let full_page = args
+                .get("fullPage")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             if (selector.is_some() || ref_value.is_some()) && full_page {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "fullPage cannot be combined with selector/ref for browser-screenshot".to_string(),
+                    "fullPage cannot be combined with selector/ref for browser-screenshot"
+                        .to_string(),
                 ));
             }
             if let Some(path) = optional_non_empty_string(args, "filePath")? {
@@ -146,10 +251,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         }
         "devtools" => {
             optional_non_empty_string(args, "instanceId")?;
-            let action = args
-                .get("action")
-                .and_then(Value::as_str)
-                .unwrap_or("snapshot");
+            let action = optional_non_empty_string(args, "action")?.unwrap_or("snapshot");
             if !matches!(
                 action,
                 "snapshot"
@@ -204,6 +306,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             if let Some(value) = optional_bounded_u64(args, "pageSize", 1, 1000)? {
                 normalized.insert("pageSize".to_string(), json!(value));
             }
+            if let Some(limit) = optional_bounded_u64(args, "limit", 1, 200)? {
+                normalized.insert("limit".to_string(), json!(limit));
+            }
             validate_string_array(args, "types", 30)?;
             validate_string_array(args, "resourceTypes", 30)?;
             if let Some(response) = args.get("dialogResponse") {
@@ -220,7 +325,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                         "dialogResponse.accept must be a boolean for browser-devtools".to_string(),
                     ));
                 }
-                optional_non_empty_string(response, "promptText")?;
+                if response.get("promptText").is_some() {
+                    required_string(response, "promptText", "devtools")?;
+                }
             }
             let max_content_length = bounded_u64(
                 args,
@@ -248,7 +355,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                         "msgid is required for browser-devtools console_message".to_string(),
                     )
                 })?;
-                if msgid.as_u64().is_none() {
+                if !msgid.as_u64().is_some_and(|value| value > 0) {
                     return Err(Error::new(
                         Status::InvalidArg,
                         "msgid must be a positive integer for browser-devtools".to_string(),
@@ -269,7 +376,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             // route：pattern 必填；status 限 100-599；headers 必须为字符串映射。
             if action == "route" {
                 required_non_empty_string(args, "pattern", "devtools")?;
-                optional_non_empty_string(args, "body")?;
+                if args.get("body").is_some() {
+                    required_string(args, "body", "devtools")?;
+                }
                 optional_non_empty_string(args, "contentType")?;
                 if let Some(status) = args.get("status") {
                     if !status.is_null() {
@@ -359,12 +468,17 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                         "requestId is required for browser-devtools network_detail".to_string(),
                     )
                 })?;
-                if request_id.as_u64().is_none() {
-                    return Err(Error::new(
-                        Status::InvalidArg,
-                        "requestId must be a positive integer for browser-devtools".to_string(),
-                    ));
-                }
+                let id = request_id.as_u64().or_else(|| {
+                    let value = request_id.as_str()?.trim();
+                    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                        return None;
+                    }
+                    value.parse::<u64>().ok()
+                }).filter(|value| (1..=MAX_SAFE_RECORD_ID).contains(value)).ok_or_else(|| Error::new(
+                    Status::InvalidArg,
+                    "requestId must be a positive safe integer record id (1-9007199254740991) for browser-devtools network_detail".to_string(),
+                ))?;
+                normalized.insert("requestId".to_string(), json!(id));
             }
             normalized.insert("action".to_string(), json!(action));
             normalized.insert("maxContentLength".to_string(), json!(max_content_length));
@@ -374,10 +488,14 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             let expression = optional_non_empty_string(args, "expression")?;
             let function = optional_non_empty_string(args, "function")?;
             let source_path = optional_non_empty_string(args, "sourcePath")?;
-            let provided = [expression.is_some(), function.is_some(), source_path.is_some()]
-                .iter()
-                .filter(|value| **value)
-                .count();
+            let provided = [
+                expression.is_some(),
+                function.is_some(),
+                source_path.is_some(),
+            ]
+            .iter()
+            .filter(|value| **value)
+            .count();
             if provided == 0 {
                 return Err(Error::new(
                     Status::InvalidArg,
@@ -532,8 +650,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             if to_selector.is_none() && to_text.is_none() && to_ref.is_none() {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "Either toSelector, toText, or toRef is required for browser-drag"
-                        .to_string(),
+                    "Either toSelector, toText, or toRef is required for browser-drag".to_string(),
                 ));
             }
             optional_boolean(args, "fromExact")?;
@@ -574,6 +691,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                         "each elements item must be an object for browser-fill_form".to_string(),
                     )
                 })?;
+                for field in ["selector", "text", "ref"] {
+                    optional_non_empty_string(item, field)?;
+                }
                 let has_target = ["selector", "text", "ref"].iter().any(|key| {
                     entry
                         .get(*key)
@@ -617,7 +737,10 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             let selector = optional_non_empty_string(args, "selector")?;
             let text = optional_non_empty_string(args, "text")?;
             let frame_ref = optional_non_empty_string(args, "ref")?;
-            if selector.is_none() && text.is_none() && !(args.get("frameId").is_some_and(Value::is_string) && frame_ref.is_some()) {
+            if selector.is_none()
+                && text.is_none()
+                && !(args.get("frameId").is_some_and(Value::is_string) && frame_ref.is_some())
+            {
                 return Err(Error::new(
                     Status::InvalidArg,
                     "Either selector, text, or a frame-scoped ref is required for browser-select_option".to_string(),
@@ -666,8 +789,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 if !matches!(scheme, "dark" | "light" | "auto") {
                     return Err(Error::new(
                         Status::InvalidArg,
-                        "colorScheme must be dark, light, or auto for browser-emulate"
-                            .to_string(),
+                        "colorScheme must be dark, light, or auto for browser-emulate".to_string(),
                     ));
                 }
             }
@@ -676,8 +798,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                     let value = rate.as_f64().ok_or_else(|| {
                         Error::new(
                             Status::InvalidArg,
-                            "cpuThrottlingRate must be a number for browser-emulate"
-                                .to_string(),
+                            "cpuThrottlingRate must be a number for browser-emulate".to_string(),
                         )
                     })?;
                     if !(1.0..=20.0).contains(&value) {
@@ -694,8 +815,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                     let obj = headers.as_object().ok_or_else(|| {
                         Error::new(
                             Status::InvalidArg,
-                            "extraHttpHeaders must be an object for browser-emulate"
-                                .to_string(),
+                            "extraHttpHeaders must be an object for browser-emulate".to_string(),
                         )
                     })?;
                     for value in obj.values() {
@@ -723,12 +843,23 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                             "geolocation.latitude is required for browser-emulate".to_string(),
                         )
                     })?;
-                    let lng = obj.get("longitude").and_then(Value::as_f64).ok_or_else(|| {
-                        Error::new(
-                            Status::InvalidArg,
-                            "geolocation.longitude is required for browser-emulate".to_string(),
-                        )
-                    })?;
+                    let lng = obj
+                        .get("longitude")
+                        .and_then(Value::as_f64)
+                        .ok_or_else(|| {
+                            Error::new(
+                                Status::InvalidArg,
+                                "geolocation.longitude is required for browser-emulate".to_string(),
+                            )
+                        })?;
+                    if let Some(accuracy) = geo.get("accuracy") {
+                        if !accuracy.as_f64().is_some_and(|value| value >= 0.0) {
+                            return Err(Error::new(
+                                Status::InvalidArg,
+                                "geolocation.accuracy must be a non-negative number".to_string(),
+                            ));
+                        }
+                    }
                     if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lng) {
                         return Err(Error::new(
                             Status::InvalidArg,
@@ -739,7 +870,10 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                 }
             }
             if let Some(preset) = optional_non_empty_string(args, "networkConditions")? {
-                if !matches!(preset, "Offline" | "Slow 3G" | "Fast 3G" | "Slow 4G" | "Fast 4G") {
+                if !matches!(
+                    preset,
+                    "Offline" | "Slow 3G" | "Fast 3G" | "Slow 4G" | "Fast 4G"
+                ) {
                     return Err(Error::new(
                         Status::InvalidArg,
                         "networkConditions must be one of Offline, Slow 3G, Fast 3G, Slow 4G, or Fast 4G for browser-emulate"
@@ -795,7 +929,12 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             let insight_id = required_non_empty_string(args, "insightId", tool_name)?;
             if !matches!(
                 insight_id,
-                "long-tasks" | "render-blocking" | "lcp" | "cls" | "document-latency" | "third-parties"
+                "long-tasks"
+                    | "render-blocking"
+                    | "lcp"
+                    | "cls"
+                    | "document-latency"
+                    | "third-parties"
             ) {
                 return Err(Error::new(
                     Status::InvalidArg,
@@ -963,7 +1102,9 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             optional_non_empty_string(args, "instanceId")?;
             required_non_empty_string(args, "name", tool_name)?;
         }
-        "frames" => { optional_non_empty_string(args, "instanceId")?; }
+        "frames" => {
+            optional_non_empty_string(args, "instanceId")?;
+        }
         "list" => {}
         "get_tab_content" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -998,8 +1139,7 @@ fn required_non_empty_string<'a>(
 ) -> napi::Result<&'a str> {
     args.get(field)
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
@@ -1019,7 +1159,7 @@ fn optional_non_empty_string<'a>(args: &'a Value, field: &str) -> napi::Result<O
                     format!("{field} must not be empty when provided"),
                 ))
             } else {
-                Ok(Some(trimmed))
+                Ok(Some(value.as_str()))
             }
         }
         Some(_) => Err(Error::new(
@@ -1097,15 +1237,12 @@ fn optional_bounded_u64(
 fn optional_number(args: &Value, field: &str) -> napi::Result<Option<f64>> {
     match args.get(field) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_f64()
-            .map(Some)
-            .ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    format!("{field} must be a number when provided"),
-                )
-            }),
+        Some(value) => value.as_f64().map(Some).ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                format!("{field} must be a number when provided"),
+            )
+        }),
     }
 }
 
@@ -1150,8 +1287,9 @@ fn validate_absolute_path(path: &str, field: &str) -> napi::Result<()> {
 }
 
 fn validate_frame_id(frame_id: &str) -> napi::Result<()> {
-    let pattern = regex::Regex::new(r"^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-        .expect("frame id pattern is static");
+    let pattern =
+        regex::Regex::new(r"^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+            .expect("frame id pattern is static");
     if pattern.is_match(frame_id) {
         Ok(())
     } else {

@@ -1,0 +1,32 @@
+.tool-call-browser.browser-result-partial .tcn-dot--completed {
+  background: var(--accent-amber-text);
+}
+
+.tool-call-browser.browser-result-neutral .tcn-dot--completed {
+  background: var(--text-muted);
+}
+
+.tool-call-browser .tool-call-section table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: normal;
+  font: inherit;
+}
+
+.tool-call-browser .tool-call-section th,
+.tool-call-browser .tool-call-section td {
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tool-call-browser .tool-call-section th {
+  color: var(--text-secondary);
+}
+
+.tool-call-browser .tool-call-tags dd {
+  margin-inline-start: 6px;
+  overflow-wrap: anywhere;
+}

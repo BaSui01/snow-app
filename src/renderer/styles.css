@@ -30122,10 +30122,9 @@ body.is-panel-resizing * {
   display: flex;
 }
 
-/* 非激活浏览器 tab 的 webview 一旦 display:none 就不再产帧，CDP 截图
-   （Page.captureScreenshot）会一直挂起。截图期间临时进入渲染态：仍在视口内
-   绘制、置顶、全透明且不吃指针事件，用户看不到任何切换。 */
-.right-panel-tab-pane.capture-render {
+/* 非激活浏览器 tab 的 webview 一旦 display:none 就不再产帧。截图与录屏
+   租约共享 capture-render；只对后台 pane 透明化，激活 pane 保持正常显示。 */
+.right-panel-tab-pane.capture-render:not(.active) {
   display: flex;
   opacity: 0;
   pointer-events: none;

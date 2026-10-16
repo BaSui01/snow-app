@@ -77,6 +77,40 @@ const alive = (contents: WebContents, entry: FrameEntry): void => {
       "FRAME_STALE: frame was detached or replaced; enumerate frames again",
     );
 };
+const frameCdpDeadline = async <T>(
+  method: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `FRAME_CDP_TIMEOUT: ${method} did not finish within 10 seconds`,
+              ),
+            ),
+          10000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+const frameCommand = (
+  contents: WebContents,
+  method: string,
+  params: Record<string, unknown>,
+  sessionId?: string,
+): Promise<any> =>
+  frameCdpDeadline(method, () =>
+    contents.debugger.sendCommand(method, params, sessionId),
+  );
+
 const rawExecute = async (
   frame: WebFrameMain,
   script: string,
@@ -208,7 +242,9 @@ const withCdpFrame = async <T>(
   entry: FrameEntry,
   action: (target: CdpFrame) => Promise<T>,
 ): Promise<T> => {
-  await ensureWebContentsDebugger(contents);
+  await frameCdpDeadline("ensureWebContentsDebugger", () =>
+    ensureWebContentsDebugger(contents),
+  );
   if (!contents.debugger.isAttached())
     throw new Error("FRAME_CDP_UNAVAILABLE: close page DevTools and retry");
   const attribute = `data-snow-frame-${randomUUID()}`;
@@ -223,7 +259,7 @@ const withCdpFrame = async <T>(
     method: string,
     params: Record<string, unknown>,
     sessionId?: string,
-  ): Promise<any> => contents.debugger.sendCommand(method, params, sessionId);
+  ): Promise<any> => frameCommand(contents, method, params, sessionId);
   try {
     const queue: (string | undefined)[] = [undefined];
     const seenFrames = new Set<string>();
@@ -323,8 +359,7 @@ const elementHandle = async (
   const send = (
     method: string,
     params: Record<string, unknown>,
-  ): Promise<any> =>
-    contents.debugger.sendCommand(method, params, target.sessionId);
+  ): Promise<any> => frameCommand(contents, method, params, target.sessionId);
   if (typeof args.ref === "string") {
     const backend = entry.refs.get(args.ref);
     if (backend === undefined)
@@ -374,7 +409,8 @@ const withElement = async <T>(
   withCdpFrame(contents, entry, async (target) => {
     const objectId = await elementHandle(contents, entry, target, args);
     try {
-      const prepared = (await contents.debugger.sendCommand(
+      const prepared = (await frameCommand(
+        contents,
         "Runtime.callFunctionOn",
         {
           objectId,
@@ -392,9 +428,12 @@ const withElement = async <T>(
       await execute(contents, entry, "true");
       return await action(target, objectId);
     } finally {
-      await contents.debugger
-        .sendCommand("Runtime.releaseObject", { objectId }, target.sessionId)
-        .catch(() => {});
+      await frameCommand(
+        contents,
+        "Runtime.releaseObject",
+        { objectId },
+        target.sessionId,
+      ).catch(() => {});
     }
   });
 
@@ -406,7 +445,8 @@ const rootPointerPoint = async (
   target: CdpFrame,
   objectId: string,
 ): Promise<{ x: number; y: number }> => {
-  const local = (await contents.debugger.sendCommand(
+  const local = (await frameCommand(
+    contents,
     "Runtime.callFunctionOn",
     {
       objectId,
@@ -447,14 +487,16 @@ const rootPointerPoint = async (
       contents,
       parentEntry,
       async (parentTarget) => {
-        const owner = (await contents.debugger.sendCommand(
+        const owner = (await frameCommand(
+          contents,
           "DOM.getFrameOwner",
           { frameId: childProtocolId },
           parentTarget.sessionId,
         )) as { backendNodeId?: number };
         if (!owner.backendNodeId)
           throw new Error("FRAME_STALE: frame owner is unavailable");
-        const resolved = (await contents.debugger.sendCommand(
+        const resolved = (await frameCommand(
+          contents,
           "DOM.resolveNode",
           {
             backendNodeId: owner.backendNodeId,
@@ -466,7 +508,8 @@ const rootPointerPoint = async (
         if (!ownerId)
           throw new Error("FRAME_STALE: frame owner is unavailable");
         try {
-          const mapped = (await contents.debugger.sendCommand(
+          const mapped = (await frameCommand(
+            contents,
             "Runtime.callFunctionOn",
             {
               objectId: ownerId,
@@ -506,13 +549,12 @@ const rootPointerPoint = async (
             );
           return { point: mapped.result.value, frameId: parentTarget.frameId };
         } finally {
-          await contents.debugger
-            .sendCommand(
-              "Runtime.releaseObject",
-              { objectId: ownerId },
-              parentTarget.sessionId,
-            )
-            .catch(() => {});
+          await frameCommand(
+            contents,
+            "Runtime.releaseObject",
+            { objectId: ownerId },
+            parentTarget.sessionId,
+          ).catch(() => {});
         }
       },
     );
@@ -542,7 +584,8 @@ const dragElementPoint = async (
     };
     const objectId = await elementHandle(contents, entry, target, locator);
     try {
-      const prepared = (await contents.debugger.sendCommand(
+      const prepared = (await frameCommand(
+        contents,
         "Runtime.callFunctionOn",
         {
           objectId,
@@ -558,7 +601,8 @@ const dragElementPoint = async (
       if (prepared.exceptionDetails)
         throw new Error("Drag target element is stale or disabled");
       const point = await rootPointerPoint(contents, entry, target, objectId);
-      const described = (await contents.debugger.sendCommand(
+      const described = (await frameCommand(
+        contents,
         "Runtime.callFunctionOn",
         {
           objectId,
@@ -575,9 +619,12 @@ const dragElementPoint = async (
       )) as { result?: { value?: unknown } };
       return { ...point, element: described.result?.value ?? null };
     } finally {
-      await contents.debugger
-        .sendCommand("Runtime.releaseObject", { objectId }, target.sessionId)
-        .catch(() => {});
+      await frameCommand(
+        contents,
+        "Runtime.releaseObject",
+        { objectId },
+        target.sessionId,
+      ).catch(() => {});
     }
   });
 
@@ -634,7 +681,11 @@ const perform = async (
       })`,
       );
     }
-    const resultValue = await execute(contents, entry, source);
+    // Preserve JavaScript Script completion semantics (including declarations and semicolons).
+    // Internal expression probes still use execute; user scripts must not be wrapped in parentheses.
+    await execute(contents, entry, "true");
+    const resultValue = await rawExecute(entry.frame, source);
+    await execute(contents, entry, "true");
     if (typeof args.filePath === "string" && args.filePath.trim()) {
       const text = JSON.stringify(resultValue, null, 2) ?? "undefined";
       await mkdir(dirname(args.filePath), { recursive: true });
@@ -709,7 +760,8 @@ const perform = async (
     if (args.action !== "ax")
       throw new Error("frameId is supported only for devtools snapshot/ax");
     return withCdpFrame(contents, entry, async (target) => {
-      const result = (await contents.debugger.sendCommand(
+      const result = (await frameCommand(
+        contents,
         "Accessibility.getFullAXTree",
         { frameId: target.frameId },
         target.sessionId,
@@ -741,12 +793,14 @@ const perform = async (
     const toEntry = await selectFrame(contents, args.toFrameId);
     const from = await dragElementPoint(contents, fromEntry, args, "from");
     const to = await dragElementPoint(contents, toEntry, args, "to");
-    await ensureWebContentsDebugger(contents);
+    await frameCdpDeadline("ensureWebContentsDebugger", () =>
+      ensureWebContentsDebugger(contents),
+    );
     if (!contents.debugger.isAttached())
       throw new Error("FRAME_CDP_UNAVAILABLE: close page DevTools and retry");
     contents.focus();
     const send = (params: Record<string, unknown>): Promise<unknown> =>
-      contents.debugger.sendCommand("Input.dispatchMouseEvent", params);
+      frameCommand(contents, "Input.dispatchMouseEvent", params);
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
     const steps = Math.max(8, Math.min(24, Math.round(distance / 16)));
     await send({ type: "mouseMoved", x: from.x, y: from.y, buttons: 0 });
@@ -814,8 +868,7 @@ const perform = async (
     const send = (
       method: string,
       params: Record<string, unknown>,
-    ): Promise<any> =>
-      contents.debugger.sendCommand(method, params, target.sessionId);
+    ): Promise<any> => frameCommand(contents, method, params, target.sessionId);
     const locate = async (body: string): Promise<unknown> => {
       await execute(contents, entry, "true");
       const result = await send("Runtime.callFunctionOn", {
@@ -855,7 +908,7 @@ const perform = async (
       );
       contents.focus();
       const pointer = (params: Record<string, unknown>): Promise<unknown> =>
-        contents.debugger.sendCommand("Input.dispatchMouseEvent", params);
+        frameCommand(contents, "Input.dispatchMouseEvent", params);
       await pointer({ type: "mouseMoved", x, y });
       if (operation === "click") {
         await pointer({
@@ -914,6 +967,13 @@ const perform = async (
       if (typeof args.value !== "string")
         throw new Error("value must be a string");
       const delay = bounded(args, "delayMs", 0, 0, 1000);
+      const submitForm = async (): Promise<void> => {
+        if (args.submit === true) {
+          await locate(
+            "if (element.form) element.form.requestSubmit(); return true;",
+          );
+        }
+      };
       contents.focus();
       const mode = await locate(`const tag = element.tagName;
         if (tag === 'SELECT') return 'select';
@@ -928,7 +988,11 @@ const perform = async (
           args.value === "checked";
         const applied = await locate(`const desired = ${checked};
           const isRadio = element.type === 'radio';
-          if (isRadio && !desired) return element.checked;
+          if (isRadio && !desired && element.checked) {
+            element.checked = false;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
           if (element.checked !== desired) {
             element.click();
             if (element.checked !== desired) {
@@ -938,6 +1002,11 @@ const perform = async (
             }
           }
           return element.checked;`);
+        if (applied !== checked)
+          throw new Error(
+            "Frame control did not apply the requested checked state",
+          );
+        await submitForm();
         return {
           ...metadata,
           success: true,
@@ -955,8 +1024,30 @@ const perform = async (
           option.selected = true;
           element.dispatchEvent(new Event('input', { bubbles: true }));
           element.dispatchEvent(new Event('change', { bubbles: true }));
+          if (!option.selected) throw new Error('Frame select did not apply the requested option');
           return Array.from(element.selectedOptions).map((item) => item.value);`);
+        await submitForm();
         return { ...metadata, success: true, mode: "select", selected };
+      }
+      if (delay === 0) {
+        const applied =
+          await locate(`const value = ${JSON.stringify(args.value)};
+          element.focus();
+          if (element.isContentEditable) {
+            element.textContent = value;
+          } else {
+            const prototype = element.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+            if (!setter) throw new Error('Target does not support text values');
+            setter.call(element, value);
+          }
+          element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+          return element.isContentEditable ? element.textContent : element.value;`);
+        if (applied !== args.value)
+          throw new Error("Frame input did not apply the requested value");
+        await submitForm();
+        return { ...metadata, success: true };
       }
       await locate(`element.focus();
         if (element.isContentEditable) {
@@ -976,23 +1067,26 @@ const perform = async (
           "const root = element.getRootNode(); if (root.activeElement !== element && !element.contains(root.activeElement)) throw new Error('Target lost focus'); return true;",
         );
         if (delay) {
-          await contents.debugger.sendCommand("Input.dispatchKeyEvent", {
+          await frameCommand(contents, "Input.dispatchKeyEvent", {
             type: "keyDown",
             key: text,
             text,
           });
-          await contents.debugger.sendCommand("Input.dispatchKeyEvent", {
+          await frameCommand(contents, "Input.dispatchKeyEvent", {
             type: "keyUp",
             key: text,
           });
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
-          await contents.debugger.sendCommand("Input.insertText", { text });
+          await frameCommand(contents, "Input.insertText", { text });
         }
       }
-      await locate(
-        `element.dispatchEvent(new Event('change', { bubbles: true })); ${args.submit === true ? "if (element.form) element.form.requestSubmit();" : ""} return true;`,
+      const applied = await locate(
+        "element.dispatchEvent(new Event('change', { bubbles: true })); return element.isContentEditable ? element.textContent : element.value;",
       );
+      if (applied !== args.value)
+        throw new Error("Frame input did not apply the requested value");
+      await submitForm();
       return { ...metadata, success: true };
     }
     throw new Error("Unsupported frame operation");
@@ -1040,7 +1134,11 @@ export const registerBrowserFrameHandlers = (): void => {
       } catch (error) {
         throw new Error(
           redactBrowserText(
-            error instanceof Error ? error.message : "Frame operation failed",
+            error instanceof Error
+              ? error.message
+              : typeof (error as { message?: unknown })?.message === "string"
+                ? String((error as { message: string }).message)
+                : "Frame operation failed",
           ),
         );
       }

@@ -380,12 +380,18 @@ export const FileMentionPopup = forwardRef<
             lineMatches: [],
           }));
         preloadedEntriesRef.current = results;
-        setEntries(results);
-        setSelectedIndex(0);
+        // 已有搜索在进行（如 @ 后立即粘贴查询词）时只缓存根目录列表，
+        // 不覆盖搜索结果；查询清空后再由搜索 effect 回填。
+        if (lastQueryRef.current === "") {
+          setEntries(results);
+          setSelectedIndex(0);
+        }
       } catch {
         if (loadSeq === loadSeqRef.current) {
           preloadedEntriesRef.current = [];
-          setEntries([]);
+          if (lastQueryRef.current === "") {
+            setEntries([]);
+          }
         }
       } finally {
         if (loadSeq === loadSeqRef.current) {
@@ -487,10 +493,15 @@ export const FileMentionPopup = forwardRef<
     // `@!技能关键词`：感叹号前缀表示 Skills 搜索模式，列出已启用的技能。
     const isSkillMode = rawTrimmed.startsWith("!");
     const searchKey = `${searchRoot?.directoryId ?? ""}\n${searchQuery}`;
-
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
+    // 只在真正发起新搜索前替换防抖定时器：依赖变化但查询未变的重跑（如目录
+    // 列表异步加载完成刷新了 searchRoot 引用）若取消已排队的搜索，会因去重
+    // 而不再重发——@ 后一次性粘贴的查询词就永远不会被搜索。过期的回调由
+    // searchSeqRef 拦截，弹窗关闭时由打开/关闭 effect 统一清理定时器。
+    const clearPendingSearch = (): void => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
 
     if (isSkillMode) {
       // 取消进行中的根目录预加载，避免预加载结果干扰技能列表。
@@ -506,6 +517,7 @@ export const FileMentionPopup = forwardRef<
       setIsSearching(true);
       const seq = ++searchSeqRef.current;
 
+      clearPendingSearch();
       searchTimerRef.current = setTimeout(async () => {
         if (seq !== searchSeqRef.current) {
           return;
@@ -535,12 +547,6 @@ export const FileMentionPopup = forwardRef<
           }
         }
       }, 150);
-
-      return () => {
-        if (searchTimerRef.current) {
-          clearTimeout(searchTimerRef.current);
-        }
-      };
     }
 
     if (isContentMode) {
@@ -567,6 +573,7 @@ export const FileMentionPopup = forwardRef<
       setIsSearching(true);
       const seq = ++searchSeqRef.current;
 
+      clearPendingSearch();
       searchTimerRef.current = setTimeout(async () => {
         if (seq !== searchSeqRef.current) {
           return;
@@ -593,12 +600,6 @@ export const FileMentionPopup = forwardRef<
           }
         }
       }, 150);
-
-      return () => {
-        if (searchTimerRef.current) {
-          clearTimeout(searchTimerRef.current);
-        }
-      };
     }
 
     // `@:` 目录模式：尚未选定工作目录时只展示目录选择列表，不执行搜索。
@@ -644,6 +645,7 @@ export const FileMentionPopup = forwardRef<
       const seq = ++searchSeqRef.current;
 
       // AI 搜索耗时较长，防抖时间放宽。
+      clearPendingSearch();
       searchTimerRef.current = setTimeout(async () => {
         if (seq !== searchSeqRef.current) {
           return;
@@ -681,12 +683,6 @@ export const FileMentionPopup = forwardRef<
           }
         }
       }, 400);
-
-      return () => {
-        if (searchTimerRef.current) {
-          clearTimeout(searchTimerRef.current);
-        }
-      };
     }
 
     if (!searchQuery || !searchRoot) {
@@ -705,9 +701,12 @@ export const FileMentionPopup = forwardRef<
     }
     lastQueryRef.current = searchKey;
 
+    // 根目录预加载可能仍在进行：结束骨架屏，改为展示搜索中状态。
+    setIsLoadingInitial(false);
     setIsSearching(true);
     const seq = ++searchSeqRef.current;
 
+    clearPendingSearch();
     searchTimerRef.current = setTimeout(async () => {
       if (seq !== searchSeqRef.current) {
         return;
@@ -742,12 +741,6 @@ export const FileMentionPopup = forwardRef<
         }
       }
     }, 150);
-
-    return () => {
-      if (searchTimerRef.current) {
-        clearTimeout(searchTimerRef.current);
-      }
-    };
   }, [
     visible,
     query,

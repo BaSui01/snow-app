@@ -52,6 +52,8 @@ import type {
 
 const PAGE_SIZE = 20;
 const SAVE_DEBOUNCE_MS = 600;
+/** 与样式表中 .file-mention-popup 的 max-height 保持一致。 */
+const MENTION_POPUP_MAX_HEIGHT = 340;
 const SEARCH_DEBOUNCE_MS = 300;
 const PREVIEW_MAX_LEN = 120;
 /** 命中关键词时预览片段在命中位置前后各保留的字符数。 */
@@ -705,25 +707,48 @@ export function MemoPanel({
     [captureEditorRange, checkMentionTrigger, placeEditorCaret],
   );
 
-  // 引用面板以编辑器为锚点：默认贴着编辑器底边向上展开（memo 编辑器顶边
-  // 离视口顶部很近，向上会顶到视口外），上方空间不足时改为向下展开。
+  // 引用面板以光标所在行为锚点：默认贴在输入行下方展开，下方空间放不下
+  // 面板时翻到输入行上方；水平方向与编辑器对齐。
   useEffect(() => {
     if (!isMentionOpen) return;
 
     const updateMentionPopupStyle = (): void => {
       const editor = editorRef.current;
       if (!editor) return;
-      const rect = editor.getBoundingClientRect();
-      const placeAbove = rect.bottom - 8 >= window.innerHeight - rect.top - 8;
+      const editorRect = editor.getBoundingClientRect();
+      const selection = window.getSelection();
+      const liveRange =
+        selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      const caretRange =
+        liveRange && editor.contains(liveRange.startContainer)
+          ? liveRange
+          : editorRangeRef.current;
+      const caretRects = caretRange?.getClientRects();
+      const caretRect =
+        caretRects && caretRects.length > 0
+          ? caretRects[caretRects.length - 1]
+          : editorRect;
+      const gap = 4;
+      const viewportMargin = 8;
+      const spaceBelow =
+        window.innerHeight - caretRect.bottom - gap - viewportMargin;
+      const spaceAbove = caretRect.top - gap - viewportMargin;
+      const placeAbove =
+        spaceBelow < MENTION_POPUP_MAX_HEIGHT && spaceAbove > spaceBelow;
       setMentionPopupStyle({
         position: "fixed",
-        left: rect.left,
+        left: editorRect.left,
         right: "auto",
-        top: placeAbove ? "auto" : rect.top + 4,
-        bottom: placeAbove ? window.innerHeight - rect.bottom + 4 : "auto",
-        width: rect.width,
+        top: placeAbove ? "auto" : caretRect.bottom + gap,
+        bottom: placeAbove ? window.innerHeight - caretRect.top + gap : "auto",
+        width: editorRect.width,
+        maxHeight: Math.min(
+          MENTION_POPUP_MAX_HEIGHT,
+          placeAbove ? spaceAbove : spaceBelow,
+        ),
         marginTop: 0,
         marginBottom: 0,
+        transformOrigin: placeAbove ? "center bottom" : "center top",
         zIndex: 10000,
       });
     };
@@ -736,7 +761,7 @@ export function MemoPanel({
       window.removeEventListener("resize", updateMentionPopupStyle);
       editor?.removeEventListener("scroll", updateMentionPopupStyle, true);
     };
-  }, [isMentionOpen]);
+  }, [isMentionOpen, mentionQuery]);
 
   /** 点击 chip 的关闭按钮时移除引用，并记录光标用于后续插入。 */
   const handleEditorClick = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -781,6 +806,13 @@ export function MemoPanel({
         return;
       }
     }
+    // @ 引用面板打开时粘贴的是查询词：按纯文本插入（去掉首尾空白/换行），
+    // 默认的富文本粘贴会生成新节点把光标移出 @ 所在文本节点，导致不触发搜索。
+    if (!isMentionOpen) return;
+    const text = event.clipboardData.getData("text/plain").trim();
+    if (!text) return;
+    event.preventDefault();
+    document.execCommand("insertText", false, text);
   };
 
   const handleCreate = async () => {

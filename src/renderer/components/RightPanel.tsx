@@ -2123,7 +2123,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             x={tabContextMenu.x}
             y={tabContextMenu.y}
             isClosable={contextMenuTargetClosable}
-            pluginItems={pluginPanels.map(({ plugin, panelIndex }, index) => {
+            pluginItems={pluginPanels.map(({ plugin, panelIndex }) => {
               const panel = plugin.panels[panelIndex];
               return {
                 id: `plugin:${plugin.pluginId}:${panel.id}`,
@@ -2135,7 +2135,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                     size={13}
                   />
                 ),
-                separator: index === 0,
                 onClick: () => {
                   setTabContextMenu(null);
                   const current = pluginStore.getById(plugin.pluginId);

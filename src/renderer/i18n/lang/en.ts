@@ -5036,6 +5036,9 @@ export const en = {
   "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
   "rightPanel.tabContextNewTasks": "Task manager",
+  "rightPanel.tabContextGroupOpen": "Open in",
+  "rightPanel.tabContextGroupPlugins": "Plugins",
+  "rightPanel.tabContextGroupClose": "Close",
   "rightPanel.openInNewWindow": "Open in new window",
   "detachedPanel.closeConfirmTitle": "Close detached window",
   "detachedPanel.closeConfirmMessage":

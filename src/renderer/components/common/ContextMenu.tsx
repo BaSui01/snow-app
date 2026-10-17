@@ -12,6 +12,8 @@ export type ContextMenuItem = {
   danger?: boolean;
   /** 为 true 时在该项之前插入分隔线。 */
   separator?: boolean;
+  /** 分隔线旁显示的分组文字（仅 separator 为 true 时生效）。 */
+  separatorLabel?: string;
 };
 
 type ContextMenuProps = {
@@ -22,6 +24,8 @@ type ContextMenuProps = {
   items: ContextMenuItem[];
   /** 分隔线下方的附加菜单项（如“关闭标签页”）。 */
   footerItems?: ContextMenuItem[];
+  /** 附加菜单项上方分隔线旁显示的分组文字。 */
+  footerLabel?: string;
   onClose: () => void;
   /** Opt-in focus and keyboard navigation; legacy callers retain their behavior. */
   keyboardNavigation?: boolean;
@@ -40,6 +44,7 @@ export function ContextMenu({
   y,
   items,
   footerItems,
+  footerLabel,
   onClose,
   keyboardNavigation = false,
   returnFocusTo,
@@ -114,11 +119,22 @@ export function ContextMenu({
     ? measuredLeft
     : Math.min(x, window.innerWidth - MENU_MIN_WIDTH - 8);
 
+  const renderSeparator = (label?: string): React.JSX.Element =>
+    label ? (
+      <div
+        className="context-menu-separator labeled"
+        role="separator"
+        aria-label={label}
+      >
+        <span className="context-menu-separator-label">{label}</span>
+      </div>
+    ) : (
+      <div className="context-menu-separator" role="separator" />
+    );
+
   const renderItem = (item: ContextMenuItem): React.JSX.Element => (
     <div key={item.id}>
-      {item.separator && (
-        <div className="context-menu-separator" role="separator" />
-      )}
+      {item.separator && renderSeparator(item.separatorLabel)}
       <button
         type="button"
         className={`context-menu-item${item.disabled ? " disabled" : ""}${
@@ -187,7 +203,7 @@ export function ContextMenu({
       {items.map(renderItem)}
       {footerItems && footerItems.length > 0 && (
         <>
-          <div className="context-menu-separator" role="separator" />
+          {renderSeparator(footerLabel)}
           {footerItems.map(renderItem)}
         </>
       )}

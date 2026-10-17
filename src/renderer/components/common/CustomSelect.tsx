@@ -65,6 +65,8 @@ type CustomSelectBaseProps = {
    * `(count) => \`${count} selected\``. Ignored when `multiple` is unset.
    */
   multipleCountLabel?: (count: number) => string;
+  /** 下拉展开/收起时回调（供调用方在菜单打开期间保持外层悬停态）。 */
+  onOpenChange?: (open: boolean) => void;
 };
 
 export type CustomSelectProps =
@@ -101,8 +103,16 @@ export function CustomSelect({
   noMatchText = "No matching options",
   multipleEmptyLabel = "",
   multipleCountLabel,
+  onOpenChange,
 }: CustomSelectProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+  const changeOpen = useCallback(
+    (next: boolean): void => {
+      setIsOpen(next);
+      onOpenChange?.(next);
+    },
+    [onOpenChange],
+  );
   const [filterText, setFilterText] = useState("");
   const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null);
   // Auto-detect clipping ancestors (e.g. Modal bodies with `overflow: hidden`
@@ -147,11 +157,11 @@ export function CustomSelect({
       ) {
         return;
       }
-      setIsOpen(false);
+      changeOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
+  }, [isOpen, changeOpen]);
 
   // 测量 portal 下拉的位置与宽度：默认与触发按钮等宽；调用方给出
   // dropdownMinWidth 时取两者较大值，避免窄按钮旁的菜单把选项文字截断。
@@ -224,16 +234,16 @@ export function CustomSelect({
           : [...current, option.value];
         (onChange as (values: string[]) => void)(next);
       } else {
-        setIsOpen(false);
+        changeOpen(false);
         (onChange as (value: string) => void)(option.value);
       }
     },
-    [multiple, onChange, value],
+    [multiple, onChange, value, changeOpen],
   );
 
   const handleTriggerClick = (): void => {
     if (disabled) return;
-    setIsOpen((v) => !v);
+    changeOpen(!isOpen);
   };
 
   const normalizedFilter = filterText.trim().toLowerCase();

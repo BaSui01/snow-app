@@ -39,7 +39,7 @@ type RightPanelTabContextMenuProps = {
   onNewBrowser: () => void;
   onNewDrawing: () => void;
   onNewTasks: () => void;
-  /** 已启用插件的声明式面板入口，与加号菜单保持一致。 */
+  /** 已启用插件的声明式面板入口，与加号菜单保持一致（分组分隔线由本组件添加）。 */
   pluginItems?: ContextMenuItem[];
   onCloseTab: () => void;
   onClose: () => void;
@@ -107,22 +107,25 @@ export function RightPanelTabContextMenu({
     },
   ];
 
-  // 通用：在新窗口中打开（弹出为独立面板窗口；打开成功后原 tab 移出）。与新建类项、插件区域之间以分隔线隔开。
+  // 打开方式分组：在新窗口中打开 / 移回主窗口 / 在本地浏览器中打开。
+  // 与新建类项、插件区域之间以带文字的分隔线隔开（首项承载分隔线）。
+  const openItems: ContextMenuItem[] = [];
+
+  // 通用：在新窗口中打开（弹出为独立面板窗口；打开成功后原 tab 移出）。
   if (onOpenInNewWindow) {
-    items.push({
+    openItems.push({
       id: "open-in-new-window",
       label: t("rightPanel.openInNewWindow", {
         defaultValue: "Open in new window",
       }),
       icon: <ExternalLink size={13} strokeWidth={1.8} />,
-      separator: true,
       onClick: onOpenInNewWindow,
     });
   }
 
   // 独立面板窗口专属：把 tab 移回主窗口。
   if (onReturnToMain) {
-    items.push({
+    openItems.push({
       id: "return-to-main",
       label: t("rightPanel.returnToMainWindow", {
         defaultValue: "Return to main window",
@@ -133,7 +136,7 @@ export function RightPanelTabContextMenu({
   }
 
   if (onOpenInLocalBrowser) {
-    items.push({
+    openItems.push({
       id: "open-in-local-browser",
       label: t("rightPanel.openInLocalBrowser", {
         defaultValue: "Open in local browser",
@@ -144,8 +147,28 @@ export function RightPanelTabContextMenu({
     });
   }
 
-  // 插件声明式面板独占一片区域（首项由调用方加分隔线，末尾由关闭组分隔）。
-  items.push(...pluginItems);
+  const withGroupLabel = (
+    group: ContextMenuItem[],
+    label: string,
+  ): ContextMenuItem[] =>
+    group.map((item, index) =>
+      index === 0 ? { ...item, separator: true, separatorLabel: label } : item,
+    );
+
+  items.push(
+    ...withGroupLabel(
+      openItems,
+      t("rightPanel.tabContextGroupOpen", { defaultValue: "Open in" }),
+    ),
+  );
+
+  // 插件声明式面板独占一片区域（末尾由关闭组分隔）。
+  items.push(
+    ...withGroupLabel(
+      pluginItems,
+      t("rightPanel.tabContextGroupPlugins", { defaultValue: "Plugins" }),
+    ),
+  );
 
   // 分隔线下方按 VS Code 习惯组织关闭类菜单项：
   // 关闭标签页 → 关闭其他 → 关闭右侧 → 关闭左侧 → 关闭所有。
@@ -203,6 +226,9 @@ export function RightPanelTabContextMenu({
       y={y}
       items={items}
       footerItems={footerItems.length > 0 ? footerItems : undefined}
+      footerLabel={t("rightPanel.tabContextGroupClose", {
+        defaultValue: "Close",
+      })}
       onClose={onClose}
     />
   );

@@ -4739,6 +4739,9 @@ export const zhCN = {
   "rightPanel.tabContextNewBrowser": "新建浏览器",
   "rightPanel.tabContextNewDrawing": "新建绘图工作台",
   "rightPanel.tabContextNewTasks": "任务管理器",
+  "rightPanel.tabContextGroupOpen": "打开方式",
+  "rightPanel.tabContextGroupPlugins": "插件",
+  "rightPanel.tabContextGroupClose": "关闭",
   "rightPanel.openInNewWindow": "在新窗口中打开",
   "detachedPanel.closeConfirmTitle": "关闭独立窗口",
   "detachedPanel.closeConfirmMessage":

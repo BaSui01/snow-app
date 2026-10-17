@@ -142,6 +142,8 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
     y: number;
     record: ImageLibraryRecord;
   } | null>(null);
+  /** 当前「移入相册」下拉展开中的卡片 id（菜单为 portal，需手动保持卡片悬停态） */
+  const [albumMenuCardId, setAlbumMenuCardId] = useState<string | null>(null);
   /** 相册封面 dataUrl 缓存（key = albumId） */
   const [albumCovers, setAlbumCovers] = useState<Record<string, string>>({});
   /** 最近一次复制成功的标识（用于"已复制"反馈） */
@@ -1100,20 +1102,24 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
       onDrop={(event) => void handlePanelDrop(event)}
     >
       {/* 相册栏 */}
-      <div className="image-library-albums">
+      <div className="import-settings-tabs image-library-albums" role="tablist">
         <button
           type="button"
-          className={`image-library-album-chip${
+          role="tab"
+          aria-selected={activeAlbum === "all"}
+          className={`import-settings-tab image-library-album-tab${
             activeAlbum === "all" ? " active" : ""
           }`}
           onClick={() => openGallery("all")}
         >
-          <ImageIcon size={12} aria-hidden="true" />
+          <ImageIcon size={13} strokeWidth={1.8} aria-hidden="true" />
           {t("settings.imageLibraryAlbumAll")}
         </button>
         <button
           type="button"
-          className={`image-library-album-chip${
+          role="tab"
+          aria-selected={activeAlbum === "none"}
+          className={`import-settings-tab image-library-album-tab${
             activeAlbum === "none" ? " active" : ""
           }${dragOverAlbum === "none" ? " drag-over" : ""}`}
           onClick={() => openGallery("none")}
@@ -1145,21 +1151,20 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
             }
           }}
         >
-          <FolderOpen size={12} aria-hidden="true" />
+          <FolderOpen size={13} strokeWidth={1.8} aria-hidden="true" />
           {t("settings.imageLibraryAlbumNone")}
         </button>
         {albums.map((album) => (
-          <span
-            key={album.id}
-            className={`image-library-album-chip-wrap${
-              activeAlbum === album.id ? " active" : ""
-            }`}
-          >
+          <span key={album.id} className="image-library-album-tab-wrap">
             <button
               type="button"
-              className={`image-library-album-chip${
-                dragOverAlbum === album.id ? " drag-over" : ""
-              }${draggingAlbumId === album.id ? " dragging" : ""}`}
+              role="tab"
+              aria-selected={activeAlbum === album.id}
+              className={`import-settings-tab image-library-album-tab${
+                activeAlbum === album.id ? " active" : ""
+              }${dragOverAlbum === album.id ? " drag-over" : ""}${
+                draggingAlbumId === album.id ? " dragging" : ""
+              }`}
               onClick={() => openGallery(album.id)}
               title={`${album.name} · ${album.imageCount}`}
               draggable
@@ -1223,21 +1228,19 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
             >
               {albumCovers[album.id] ? (
                 <img
-                  className="image-library-album-chip-cover"
+                  className="image-library-album-tab-cover"
                   src={albumCovers[album.id]}
                   alt=""
                 />
               ) : (
-                <FolderOpen size={12} aria-hidden="true" />
+                <FolderOpen size={13} strokeWidth={1.8} aria-hidden="true" />
               )}
-              <span className="image-library-album-chip-name">
-                {album.name}
-              </span>
-              <span className="image-library-album-chip-count">
+              <span className="image-library-album-tab-name">{album.name}</span>
+              <span className="image-library-album-tab-count">
                 {album.imageCount}
               </span>
             </button>
-            <span className="image-library-album-chip-actions">
+            <span className="image-library-album-tab-actions">
               <button
                 type="button"
                 title={t("settings.imageLibraryAlbumRename")}
@@ -1260,11 +1263,11 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
         ))}
         <button
           type="button"
-          className="image-library-album-add"
+          className="import-settings-tab image-library-album-add"
           onClick={openCreateAlbum}
           title={t("settings.imageLibraryAlbumCreate")}
         >
-          <FolderPlus size={12} aria-hidden="true" />
+          <FolderPlus size={13} strokeWidth={1.8} aria-hidden="true" />
           {t("settings.imageLibraryAlbumCreate")}
         </button>
       </div>
@@ -1527,7 +1530,7 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
                     key={record.id}
                     className={`image-library-card${
                       selected ? " selected" : ""
-                    }`}
+                    }${albumMenuCardId === record.id ? " menu-open" : ""}`}
                     role="button"
                     tabIndex={0}
                     ref={(element) => {
@@ -1616,6 +1619,11 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
                           })),
                         ]}
                         onChange={(value) => void moveToAlbum(record, value)}
+                        onOpenChange={(open) =>
+                          setAlbumMenuCardId((prev) =>
+                            open ? record.id : prev === record.id ? null : prev,
+                          )
+                        }
                         portal
                       />
                       <button

@@ -794,7 +794,10 @@ export function ScheduledTasksPanel({
         imageFiles.forEach(insertPromptImageFile);
         return;
       }
-      const text = event.clipboardData.getData("text/plain");
+      const rawText = event.clipboardData.getData("text/plain");
+      // @ 引用面板打开时粘贴的是查询词：去掉首尾空白/换行，避免光标被
+      // 换行移出 @ 所在文本节点而不触发搜索。
+      const text = isMentionOpen ? rawText.trim() : rawText;
       if (!text) {
         return;
       }
@@ -802,7 +805,12 @@ export function ScheduledTasksPanel({
       syncPromptContent();
       checkPromptInputTriggers();
     },
-    [checkPromptInputTriggers, insertPromptImageFile, syncPromptContent],
+    [
+      checkPromptInputTriggers,
+      insertPromptImageFile,
+      isMentionOpen,
+      syncPromptContent,
+    ],
   );
 
   const insertPromptExternalFiles = useCallback(

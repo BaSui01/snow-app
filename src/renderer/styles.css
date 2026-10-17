@@ -42565,6 +42565,32 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   background: var(--border-light);
 }
 
+/* 带分组文字的分隔线：文字在左，横线填充剩余宽度。 */
+.context-menu-separator.labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  margin: 6px 8px 2px;
+  background: transparent;
+}
+
+.context-menu-separator.labeled::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-light);
+}
+
+.context-menu-separator-label {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
 /* Ctrl+点击打开文件：按住 Ctrl 悬停路径时给出可点击提示。
    提示样式由 body.ctrl-held 驱动（usePathClickOpen 全局按键监听
    直接操作 classList，不经过 React 渲染，零 re-render 开销）。 */
@@ -51272,81 +51298,52 @@ pre.file-viewer-code {
   cursor: not-allowed;
 }
 
-/* ---- 图库相册栏：全部 / 未分类 / 相册 chips / 新建 ---- */
+/* ---- 图库相册 Tab 栏：沿用设置页 Tab 样式（全部 / 未分类 / 相册 / 新建） ---- */
 .image-library-albums {
-  display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0 10px;
-  border-bottom: 1px solid var(--border-subtle);
   overflow-x: auto; /* 相册多时横向滚动 */
   scrollbar-width: thin;
   flex-shrink: 0;
 }
 
-.image-library-album-chip.dragging {
-  opacity: 0.45;
-  border-style: dashed;
+.image-library-albums > * {
+  flex: 0 0 auto;
 }
 
-.image-library-album-chip.drag-over {
-  border-color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
-}
-
-.image-library-album-chip,
-.image-library-album-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 27px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  cursor: pointer;
+.image-library-album-tab {
   max-width: 170px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
 }
 
-.image-library-album-chip:hover,
-.image-library-album-add:hover {
-  color: var(--accent-color);
+.image-library-album-tab.dragging {
+  opacity: 0.45;
+}
+
+.image-library-album-tab.drag-over {
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent-color) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
-}
-
-.image-library-album-chip.active {
   color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
-  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
-  font-weight: 600;
 }
 
-.image-library-album-chip-name {
+.image-library-album-tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.image-library-album-chip-count {
+.image-library-album-tab-count {
   font-size: 10px;
+  font-weight: 400;
   opacity: 0.75;
 }
 
-.image-library-album-chip-wrap {
+.image-library-album-tab-wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
 
-.image-library-album-chip-actions {
+.image-library-album-tab-actions {
   display: none;
   position: absolute;
   right: 0;
@@ -51360,11 +51357,11 @@ pre.file-viewer-code {
   box-shadow: var(--island-shadow);
 }
 
-.image-library-album-chip-wrap:hover .image-library-album-chip-actions {
+.image-library-album-tab-wrap:hover .image-library-album-tab-actions {
   display: flex;
 }
 
-.image-library-album-chip-actions button {
+.image-library-album-tab-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -51378,12 +51375,12 @@ pre.file-viewer-code {
   cursor: pointer;
 }
 
-.image-library-album-chip-actions button:hover {
+.image-library-album-tab-actions button:hover {
   color: var(--accent-color);
   background: color-mix(in srgb, var(--accent-color) 12%, transparent);
 }
 
-.image-library-album-chip-actions button.danger:hover {
+.image-library-album-tab-actions button.danger:hover {
   color: var(--accent-red-text);
   background: var(--accent-red-bg);
 }
@@ -51991,7 +51988,8 @@ pre.file-viewer-code {
 }
 
 .image-library-card:hover,
-.image-library-card:focus-visible {
+.image-library-card:focus-visible,
+.image-library-card.menu-open {
   border-color: color-mix(
     in srgb,
     var(--accent-color) 45%,
@@ -52050,7 +52048,8 @@ pre.file-viewer-code {
 }
 
 .image-library-card:hover .image-library-card-actions,
-.image-library-card:focus-visible .image-library-card-actions {
+.image-library-card:focus-visible .image-library-card-actions,
+.image-library-card.menu-open .image-library-card-actions {
   opacity: 1;
 }
 
@@ -52246,6 +52245,7 @@ pre.file-viewer-code {
 
 .image-library-card:hover .image-library-card-check,
 .image-library-card:focus-visible .image-library-card-check,
+.image-library-card.menu-open .image-library-card-check,
 .image-library-card-check.checked {
   opacity: 1;
 }
@@ -52265,21 +52265,14 @@ pre.file-viewer-code {
   box-shadow: 0 0 0 2px var(--accent-color);
 }
 
-/* 相册 chip 封面缩略图（圆形小图） */
-.image-library-album-chip-cover {
-  width: 20px;
-  height: 20px;
+/* 相册 Tab 封面缩略图（圆形小图，与 13px 图标同高） */
+.image-library-album-tab-cover {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 1px solid var(--border-subtle);
   object-fit: cover;
   flex-shrink: 0;
-}
-
-/* 拖拽图片悬停到相册 chip 时的高亮 */
-.image-library-album-chip.drag-over {
-  border-color: var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 25%, transparent);
 }
 
 /* 灯箱详情面板（右下角） */

@@ -714,20 +714,27 @@ export const useContentEditableInteractions = ({
         textareaRef.current?.focus();
         insertHtmlAtSelection(buildSegmentsHtml(normalized));
         syncContent();
+        checkInputTriggers();
       };
 
+      // 从输入框自身复制的内容带有 chips 编码；只含文字时与外部纯文本一样
+      // 走原生 insertText，否则 insertHtmlAtSelection 会生成独立文本节点且
+      // 不触发 input，@ 后粘贴的查询词无法被引用面板识别。
       const chipsData = event.clipboardData.getData(CHIPS_CLIPBOARD_TYPE);
-      if (chipsData) {
-        insertSegmentedContent(parseContentSegments(chipsData));
-        return;
-      }
-      const text = event.clipboardData.getData("text/plain");
-      if (!text) {
-        return;
-      }
-      const segments = parseContentSegments(text);
+      const segments = parseContentSegments(
+        chipsData || event.clipboardData.getData("text/plain"),
+      );
       if (segments.some((segment) => segment.type !== "text")) {
         insertSegmentedContent(segments);
+        return;
+      }
+      const rawText = segments
+        .map((segment) => (segment.type === "text" ? segment.content : ""))
+        .join("");
+      // @ 引用面板打开时粘贴的是查询词：去掉首尾空白/换行，否则复制整行
+      // 带出的换行会把光标移出 @ 所在文本节点，导致不触发搜索。
+      const text = isMentionOpen ? rawText.trim() : rawText;
+      if (!text) {
         return;
       }
       if (text.length > TEXT_SNIPPET_THRESHOLD) {
@@ -749,6 +756,7 @@ export const useContentEditableInteractions = ({
       checkInputTriggers,
       insertExternalFiles,
       insertImageFromFile,
+      isMentionOpen,
       syncContent,
       textareaRef,
     ],

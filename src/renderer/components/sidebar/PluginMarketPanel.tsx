@@ -211,19 +211,6 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         >
           {PLUGIN_MARKET_REPO_URL.replace("https://github.com/", "")}
         </button>
-        {market.statsLimited ? (
-          <span
-            className="plugin-market-stats-limited"
-            title={t("plugins.market.statsLimitedHint", {
-              defaultValue:
-                "GitHub API rate limit reached. Set the GITHUB_TOKEN or GH_TOKEN environment variable to raise the quota.",
-            })}
-          >
-            {t("plugins.market.statsLimited", {
-              defaultValue: "Download counts unavailable",
-            })}
-          </span>
-        ) : null}
         {market.updatedAt ? (
           <span className="plugin-market-updated">
             {t("plugins.market.updatedAt", {

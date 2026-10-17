@@ -440,6 +440,7 @@ export const GitFileList = ({
       <div
         key={`${section}-${file.path}`}
         className={`git-file-item${isSelected ? " selected" : ""}`}
+        tabIndex={-1}
         style={treeIndent(depth)}
         onClick={(e) => onFileSelect(file, e, section)}
         onDoubleClick={() => onFileActivate(file, section)}

@@ -201,31 +201,24 @@ export const buildMarketStatsTargets = (
       asset: entry.asset,
     }));
 
-/** 市场下载量统计结果：按条目 id 的下载量与是否受 GitHub 配额限制。 */
-export type MarketStats = {
-  counts: Record<string, number>;
-  limited: boolean;
-};
-
 /** 解析下载量统计 JSON；解析失败或非法值一律忽略。 */
-export const parseMarketStats = (text: string): MarketStats => {
+export const parseMarketStats = (text: string): Record<string, number> => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { counts: {}, limited: false };
+    return {};
   }
-  if (!isRecord(parsed)) {
-    return { counts: {}, limited: false };
+  if (!isRecord(parsed) || !isRecord(parsed.counts)) {
+    return {};
   }
-  const rawCounts = isRecord(parsed.counts) ? parsed.counts : {};
   const counts: Record<string, number> = {};
-  for (const [id, value] of Object.entries(rawCounts)) {
+  for (const [id, value] of Object.entries(parsed.counts)) {
     if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
       counts[id] = Math.floor(value);
     }
   }
-  return { counts, limited: parsed.limited === true };
+  return counts;
 };
 
 /** 下载量紧凑展示：1000 以下原样，千 / 百万分别用 k / M。 */

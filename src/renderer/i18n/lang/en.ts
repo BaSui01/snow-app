@@ -6273,9 +6273,6 @@ export const en = {
   "plugins.market.installing": "Installing…",
   "plugins.market.installed": "Installed",
   "plugins.market.downloads": "Downloads",
-  "plugins.market.statsLimited": "Download counts unavailable",
-  "plugins.market.statsLimitedHint":
-    "GitHub API rate limit reached (60 requests/hour anonymously, shared per IP). Set the GITHUB_TOKEN or GH_TOKEN environment variable to raise the quota.",
   "plugins.market.update": "Update",
   "plugins.market.updateHint": "Installed v{{from}} → v{{to}}",
   "plugins.market.confirmTitle": "Install plugin",

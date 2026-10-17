@@ -5917,9 +5917,6 @@ export const zhTW = {
   "plugins.market.installing": "安裝中…",
   "plugins.market.installed": "已安裝",
   "plugins.market.downloads": "下載量",
-  "plugins.market.statsLimited": "下載量暫不可用",
-  "plugins.market.statsLimitedHint":
-    "GitHub 介面配額已用盡（匿名 60 次/小時且依 IP 共用）。設定 GITHUB_TOKEN 或 GH_TOKEN 環境變數可提升配額。",
   "plugins.market.update": "更新",
   "plugins.market.updateHint": "已安裝 v{{from}} → v{{to}}",
   "plugins.market.confirmTitle": "安裝外掛",

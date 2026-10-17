@@ -14,7 +14,6 @@ export type MarketStoreState = {
   error: string | null;
   entries: MarketPluginEntry[];
   stats: Record<string, number>;
-  statsLimited: boolean;
   updatedAt: string;
   appVersion: string;
 };
@@ -24,7 +23,6 @@ let state: MarketStoreState = {
   error: null,
   entries: [],
   stats: {},
-  statsLimited: false,
   updatedAt: "",
   appVersion: "",
 };
@@ -48,7 +46,7 @@ const loadStats = async (
   const requestId = ++statsRequestId;
   const targets = buildMarketStatsTargets(entries);
   if (targets.length === 0) {
-    commit({ stats: {}, statsLimited: false });
+    commit({ stats: {} });
     return;
   }
   try {
@@ -59,8 +57,7 @@ const loadStats = async (
     if (requestId !== statsRequestId) {
       return;
     }
-    const stats = parseMarketStats(text);
-    commit({ stats: stats.counts, statsLimited: stats.limited });
+    commit({ stats: parseMarketStats(text) });
   } catch {
     // 统计不可用时保持已有数据
   }

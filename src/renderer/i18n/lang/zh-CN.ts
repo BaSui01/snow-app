@@ -5907,9 +5907,6 @@ export const zhCN = {
   "plugins.market.installing": "安装中…",
   "plugins.market.installed": "已安装",
   "plugins.market.downloads": "下载量",
-  "plugins.market.statsLimited": "下载量暂不可用",
-  "plugins.market.statsLimitedHint":
-    "GitHub 接口配额已用尽（匿名 60 次/小时且按 IP 共享）。设置 GITHUB_TOKEN 或 GH_TOKEN 环境变量可提升配额。",
   "plugins.market.update": "更新",
   "plugins.market.updateHint": "已安装 v{{from}} → v{{to}}",
   "plugins.market.confirmTitle": "安装插件",

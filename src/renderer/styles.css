@@ -4615,8 +4615,12 @@ body.is-panel-resizing * {
 }
 
 .explorer-tree-row.selected {
-  background: var(--bg-active);
   color: var(--text-primary);
+}
+
+/* 选中背景仅在列表获得焦点时显示，失焦后只保留文字颜色区分当前选中项 */
+.explorer-tree:focus-within .explorer-tree-row.selected {
+  background: var(--bg-active);
 }
 
 .explorer-tree-row.stale .tree-icon,
@@ -18878,6 +18882,60 @@ body.is-panel-resizing * {
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
+}
+
+/* 搜索结果站点图标（仅展示加载成功的站点图标）。
+   注意：全局 `:is(.ai-message, ...) img` 规则（Markdown 内联图片）会覆盖
+   display / margin / border-radius / cursor，因此这里统一用 `.tool-call-websearch`
+   作为前缀提升特异性，避免被其覆盖。 */
+.tool-call-websearch .tool-call-websearch-favicons {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* 与首个图标的负边距抵消，避免堆叠左缘超出布局区 */
+  padding-left: 6px;
+}
+
+.tool-call-websearch .tool-call-websearch-favicons-pending {
+  display: none;
+}
+
+/* 头部堆叠：相邻图标重叠，描边区分层次 */
+.tool-call-websearch .tool-call-websearch-favicon {
+  box-sizing: border-box;
+  display: block;
+  width: 16px;
+  height: 16px;
+  max-height: none;
+  flex-shrink: 0;
+  margin: 0 0 0 -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--bg-primary);
+  background: var(--bg-primary);
+  object-fit: contain;
+  cursor: default;
+}
+
+/* 列表条目前的站点图标（替代默认地球图标） */
+.tool-call-websearch .tool-call-websearch-result-favicon {
+  box-sizing: border-box;
+  display: block;
+  width: 12px;
+  height: 12px;
+  max-height: none;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  object-fit: contain;
+  cursor: default;
+}
+
+/* 加载中 / 无效图标：隐藏（同时覆盖上面两种图标） */
+.tool-call-websearch .tool-call-websearch-favicon-pending {
+  display: none;
 }
 
 .tool-call-websearch-count-blocked {
@@ -35392,7 +35450,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   background: var(--bg-hover);
 }
 
-.git-file-item.selected {
+/* 选中背景仅在文件列表获得焦点时显示，失焦后只保留文字颜色区分当前选中项 */
+.git-file-list:focus-within .git-file-item.selected {
   background: var(--bg-active);
 }
 
@@ -57606,10 +57665,6 @@ img.plugin-icon {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-.plugin-market-stats-limited {
-  color: var(--accent-amber-text);
 }
 
 .plugin-market-installed {

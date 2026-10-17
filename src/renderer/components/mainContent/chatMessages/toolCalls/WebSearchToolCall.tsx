@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   Ban,
@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -263,6 +264,129 @@ const getHost = (url: string): string => {
 const truncateLabel = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
+/** 卡片头展示的站点图标数量上限。 */
+const SITE_FAVICON_LIMIT = 6;
+
+type SiteFavicon = {
+  host: string;
+  iconUrl: string;
+};
+
+/** 页面 URL 对应的站点图标（origin 的 /favicon.ico），非 http(s) 或非法 URL 返回 null。 */
+const getSiteFavicon = (url: string): SiteFavicon | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return null;
+  }
+  return {
+    host: parsed.host,
+    iconUrl: `${parsed.origin}/favicon.ico`,
+  };
+};
+
+/** 按站点去重收集图标，数量不超过 SITE_FAVICON_LIMIT。 */
+const collectSiteFavicons = (results: SearchResultItem[]): SiteFavicon[] => {
+  const seen = new Set<string>();
+  const icons: SiteFavicon[] = [];
+  for (const item of results) {
+    const icon = getSiteFavicon(item.url);
+    if (!icon || seen.has(icon.iconUrl)) {
+      continue;
+    }
+    seen.add(icon.iconUrl);
+    icons.push(icon);
+    if (icons.length >= SITE_FAVICON_LIMIT) {
+      break;
+    }
+  }
+  return icons;
+};
+
+/** 结果列表条目前的站点图标：加载成功才显示，无图标或加载失败时不占位。 */
+const SearchResultFavicon = ({
+  url,
+}: {
+  url: string;
+}): React.JSX.Element | null => {
+  const iconUrl = useMemo(() => getSiteFavicon(url)?.iconUrl ?? null, [url]);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
+  if (iconUrl === null || failedUrl === iconUrl) {
+    return null;
+  }
+  return (
+    <img
+      className={`tool-call-websearch-result-favicon${
+        loadedUrl === iconUrl ? "" : " tool-call-websearch-favicon-pending"
+      }`}
+      src={imageProxyUrl(iconUrl)}
+      alt=""
+      decoding="async"
+      onLoad={() => setLoadedUrl(iconUrl)}
+      onError={() => setFailedUrl(iconUrl)}
+    />
+  );
+};
+
+/**
+ * 搜索结果涉及的站点图标堆叠（经 img-proxy 加载站点 favicon）。
+ * 仅展示加载成功的图标：无图标或加载失败的站点不占位；全部失败时整体不渲染。
+ */
+const SearchSiteFavicons = ({
+  icons,
+}: {
+  icons: SiteFavicon[];
+}): React.JSX.Element | null => {
+  const [loadState, setLoadState] = useState<Record<string, boolean>>({});
+
+  const visibleIcons = icons.filter(
+    (icon) => loadState[icon.iconUrl] !== false,
+  );
+  if (visibleIcons.length === 0) {
+    return null;
+  }
+  const hasLoaded = visibleIcons.some(
+    (icon) => loadState[icon.iconUrl] === true,
+  );
+
+  const markLoaded = (iconUrl: string, loaded: boolean): void => {
+    setLoadState((prev) =>
+      prev[iconUrl] === loaded ? prev : { ...prev, [iconUrl]: loaded },
+    );
+  };
+
+  return (
+    <span
+      className={`tool-call-websearch-favicons${
+        hasLoaded ? "" : " tool-call-websearch-favicons-pending"
+      }`}
+    >
+      {visibleIcons.map((icon) => (
+        <img
+          key={icon.iconUrl}
+          className={`tool-call-websearch-favicon${
+            loadState[icon.iconUrl]
+              ? ""
+              : " tool-call-websearch-favicon-pending"
+          }`}
+          src={imageProxyUrl(icon.iconUrl)}
+          title={icon.host}
+          alt=""
+          decoding="async"
+          onLoad={() => markLoaded(icon.iconUrl, true)}
+          onError={() => markLoaded(icon.iconUrl, false)}
+        />
+      ))}
+    </span>
+  );
+};
+
 /** 在右侧面板的应用内浏览器中新建 tab 打开（渲染进程事件总线，RightPanel 订阅处理）。 */
 const openInAppBrowser = (url: string): void => {
   rightPanelEvents.emit("open-browser-tab", { url });
@@ -297,6 +421,13 @@ const SearchToolCall = ({
     parsedResult.type === "success" ? parsedResult.totalResults : 0;
   const hasResults =
     parsedResult.type === "success" && parsedResult.results.length > 0;
+  const siteFavicons = useMemo(
+    () =>
+      parsedResult.type === "success"
+        ? collectSiteFavicons(parsedResult.results)
+        : [],
+    [parsedResult],
+  );
 
   return (
     <ToolCallNode
@@ -325,6 +456,9 @@ const SearchToolCall = ({
                 values: { count: resultCount },
               })}
             </span>
+            {siteFavicons.length > 0 ? (
+              <SearchSiteFavicons icons={siteFavicons} />
+            ) : null}
           </span>
         ) : null
       }
@@ -399,7 +533,7 @@ const SearchToolCall = ({
                 </div>
                 {item.displayUrl ? (
                   <div className="tool-call-websearch-result-url">
-                    <Globe size={10} aria-hidden="true" />
+                    <SearchResultFavicon url={item.url} />
                     <span>{item.displayUrl}</span>
                   </div>
                 ) : null}

@@ -843,12 +843,6 @@ export const ChatInputView = ({
           containerRef={rollbackPicker.containerRef}
           onSelect={rollbackPicker.select}
         />
-        <PendingMessages
-          messages={pendingMessages}
-          modes={pendingMessageModes}
-          onWithdraw={handleWithdrawPending}
-          onSendNow={handleSendPendingNow}
-        />
         {isStreaming && (
           <div className="stream-metrics-bar">
             <StreamMetrics
@@ -896,6 +890,12 @@ export const ChatInputView = ({
             ) : null}
           </div>
         ) : null}
+        <PendingMessages
+          messages={pendingMessages}
+          modes={pendingMessageModes}
+          onWithdraw={handleWithdrawPending}
+          onSendNow={handleSendPendingNow}
+        />
         <div className="input-box">
           <div
             ref={textareaRef}

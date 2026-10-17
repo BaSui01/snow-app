@@ -449,12 +449,8 @@
 
 :root[data-theme-preset="notion"] .pending-messages-area {
   border-color: var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--surface-island-muted);
-}
-
-:root[data-theme-preset="notion"] .pending-messages-header {
-  color: var(--nt-accent-text);
 }
 
 :root[data-theme-preset="notion"] .pending-message-item {

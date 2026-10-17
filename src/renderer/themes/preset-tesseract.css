@@ -1031,13 +1031,9 @@
 
 :root[data-theme-preset="tesseract"] .pending-messages-area {
   border: 1px solid rgba(139, 92, 246, 0.25);
-  border-radius: var(--radius-md);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--surface-island-muted);
-}
-
-:root[data-theme-preset="tesseract"] .pending-messages-header {
-  color: var(--accent-blue-text);
-  font-weight: 600;
 }
 
 :root[data-theme-preset="tesseract"] .pending-message-item {

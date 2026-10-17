@@ -1,12 +1,12 @@
 import {
   ArrowUp,
   BookOpen,
-  Clock,
   FileText,
   GitCommitHorizontal,
   GitCompare,
   Globe,
   Link2,
+  ListEnd,
   MessageSquareQuote,
   MessageSquareText,
   MousePointer2,
@@ -370,14 +370,16 @@ export const PendingMessages = ({
   };
 
   return (
-    <div className="pending-messages-area" role="status" aria-live="polite">
-      <div className="pending-messages-header">
-        <Clock size={12} className="pending-messages-icon" />
-        <span>{t("chatInput.pendingLabel")}</span>
-      </div>
+    <div
+      className="pending-messages-area"
+      role="status"
+      aria-live="polite"
+      aria-label={t("chatInput.pendingLabel")}
+    >
       <ul className="pending-messages-list">
         {messages.map((msg, index) => (
           <li key={index} className="pending-message-item">
+            <ListEnd size={14} className="pending-message-icon" />
             <span className="pending-message-text">{renderSegments(msg)}</span>
             <span className="pending-message-mode">
               {t(

@@ -620,6 +620,10 @@
   box-shadow: var(--w95-in-flat);
 }
 
+:root[data-theme-preset="win95"] .pending-messages-area {
+  border-bottom: none;
+}
+
 :root[data-theme-preset="win95"]
   :is(
     .ai-message .code-block-wrapper,

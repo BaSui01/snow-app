@@ -806,6 +806,11 @@
   box-shadow: inset 0 1px 0 var(--mac-hi);
 }
 
+:root[data-theme-preset="macos"] .pending-messages-area {
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+}
+
 :root[data-theme-preset="macos"]
   :is(
     .ai-message .code-block-wrapper,

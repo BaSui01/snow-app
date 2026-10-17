@@ -1145,7 +1145,7 @@
    for send and red for destructive withdraw. */
 :root[data-theme-preset="google"] .pending-messages-area {
   border-color: var(--google-outline);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--google-surface-1);
 }
 

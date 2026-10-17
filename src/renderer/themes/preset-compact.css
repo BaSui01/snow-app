@@ -1370,13 +1370,8 @@
 
 :root[data-theme-preset="compact"] .pending-messages-area {
   border-color: var(--border-light);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: var(--surface-island-muted);
-}
-
-:root[data-theme-preset="compact"] .pending-messages-header {
-  color: var(--compact-accent-text);
-  font-weight: 600;
 }
 
 :root[data-theme-preset="compact"] .pending-message-item {

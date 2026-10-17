@@ -2417,35 +2417,35 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
               defaultValue: "Execution mode",
             })}
           </span>
-          <div className="imagegen-concurrency-control">
-            <select
+          <div className="imagegen-concurrency-control imagegen-mode-control">
+            <CustomSelect
               value={executionMode}
-              onChange={(e) =>
-                void updateExecutionMode(
-                  e.target.value as ImageGenExecutionMode,
-                )
+              options={[
+                {
+                  value: "auto",
+                  label: t("settings.imagegenExecutionModeAuto", {
+                    defaultValue: "Auto",
+                  }),
+                },
+                {
+                  value: "sync",
+                  label: t("settings.imagegenExecutionModeSync", {
+                    defaultValue: "Sync",
+                  }),
+                },
+                {
+                  value: "async",
+                  label: t("settings.imagegenExecutionModeAsync", {
+                    defaultValue: "Async",
+                  }),
+                },
+              ]}
+              onChange={(mode) =>
+                void updateExecutionMode(mode as ImageGenExecutionMode)
               }
               disabled={isBusy}
-              aria-label={t("settings.imagegenExecutionMode", {
-                defaultValue: "Execution mode",
-              })}
-            >
-              <option value="auto">
-                {t("settings.imagegenExecutionModeAuto", {
-                  defaultValue: "Auto",
-                })}
-              </option>
-              <option value="sync">
-                {t("settings.imagegenExecutionModeSync", {
-                  defaultValue: "Sync",
-                })}
-              </option>
-              <option value="async">
-                {t("settings.imagegenExecutionModeAsync", {
-                  defaultValue: "Async",
-                })}
-              </option>
-            </select>
+              portal
+            />
           </div>
         </div>
       </div>

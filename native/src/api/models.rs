@@ -439,17 +439,27 @@ fn fetch_oauth_models(
     base_url: &str,
     api_key: &str,
 ) -> Result<Vec<Model>> {
-    let ids = match metadata.provider {
-        OAuthProviderId::Codex => {
-            codex_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
-        }
-        OAuthProviderId::ChatGpt => chatgpt_oauth::fetch_models_blocking(base_url, api_key)?,
-        OAuthProviderId::Anthropic => anthropic_oauth::fetch_models_blocking(base_url, api_key)?,
-        OAuthProviderId::Antigravity => {
-            antigravity_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)?
-        }
-        OAuthProviderId::Xai => xai_oauth::fetch_models_blocking(base_url, api_key)?,
-    };
+    // OAuth 订阅渠道的模型列表与 API key 渠道使用同一套重试口径。
+    let ids = with_retry_sync(
+        || match metadata.provider {
+            OAuthProviderId::Codex => {
+                codex_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)
+            }
+            OAuthProviderId::ChatGpt => chatgpt_oauth::fetch_models_blocking(base_url, api_key),
+            OAuthProviderId::Anthropic => anthropic_oauth::fetch_models_blocking(base_url, api_key),
+            OAuthProviderId::Antigravity => {
+                antigravity_oauth::fetch_models_blocking(base_url, api_key, &metadata.account_id)
+            }
+            OAuthProviderId::Xai => xai_oauth::fetch_models_blocking(base_url, api_key),
+        },
+        &RetryOptions::default(),
+        &RetryLogContext {
+            func: "fetch_available_models",
+            provider: metadata.provider.as_str(),
+            request_method: "oauth",
+            endpoint: base_url,
+        },
+    )?;
     Ok(ids
         .into_iter()
         .map(|id| Model {

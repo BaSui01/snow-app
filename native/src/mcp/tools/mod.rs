@@ -91,7 +91,10 @@ pub struct McpProjectToolStatus {
     pub name: String,
     pub description: String,
     pub input_schema_json: String,
+    /// 有效启用态：全局未禁用 且 项目未禁用（与 collect 注册到模型上下文的条件一致）。
     pub enabled: bool,
+    /// 全局层是否启用该工具；为 false 时项目层开关无法覆盖，前端应只读展示。
+    pub global_enabled: bool,
 }
 
 #[napi(object)]
@@ -395,7 +398,8 @@ pub async fn list_mcp_project_server_tools(
                 Status::InvalidArg,
                 "Project id is required to list project MCP server tools".to_string(),
             )
-        })?;
+            })?;
+    let global_scope = load_global_scope().await?;
 
     if let Some(builtin_server_id) = server_id.strip_prefix("builtin:") {
         let tools = get_builtin_servers_with_tools()
@@ -408,7 +412,7 @@ pub async fn list_mcp_project_server_tools(
                     format!("Unknown MCP project server: {server_id}"),
                 )
             })?;
-        return Ok(to_project_tool_statuses(&tools, &scope));
+        return Ok(to_project_tool_statuses(&tools, &scope, global_scope.as_ref()));
     }
 
     let external_server_id = server_id.strip_prefix("external:").ok_or_else(|| {
@@ -420,7 +424,7 @@ pub async fn list_mcp_project_server_tools(
     let tools =
         super::external::discover_server_tools(Some(&project_id), external_server_id, false)
             .await?;
-    Ok(to_project_tool_statuses(&tools, &scope))
+    Ok(to_project_tool_statuses(&tools, &scope, global_scope.as_ref()))
 }
 
 pub async fn set_mcp_project_server_enabled(
@@ -661,16 +665,22 @@ fn to_tool_definitions(tools: &[McpTool]) -> Vec<McpToolDefinition> {
         .collect()
 }
 
+/// 项目工具状态：`enabled` 为有效态（全局黑名单优先，项目层无法覆盖），
+/// `global_enabled` 单独标出全局层状态供前端只读展示。
 fn to_project_tool_statuses(
     tools: &[McpTool],
     scope: &McpProjectScopeSettings,
+    global_scope: Option<&McpGlobalScopeSettings>,
 ) -> Vec<McpProjectToolStatus> {
     tools
         .iter()
         .map(|tool| {
             let full_name = tool.full_name();
+            let global_enabled = !global_scope
+                .is_some_and(|global| global.disabled_tool_names.contains(&full_name));
             McpProjectToolStatus {
-                enabled: scope.is_tool_enabled(&full_name),
+                enabled: global_enabled && scope.is_tool_enabled(&full_name),
+                global_enabled,
                 name: full_name,
                 description: tool.description.clone(),
                 input_schema_json: serialize_input_schema(tool),
@@ -690,9 +700,11 @@ fn to_server_tool_statuses(
             .iter()
             .map(|tool| {
                 let full_name = tool.full_name();
+                let global_enabled = !global_scope
+                    .is_some_and(|global| global.disabled_tool_names.contains(&full_name));
                 McpProjectToolStatus {
-                    enabled: !global_scope
-                        .is_some_and(|global| global.disabled_tool_names.contains(&full_name)),
+                    enabled: global_enabled,
+                    global_enabled,
                     name: full_name,
                     description: tool.description.clone(),
                     input_schema_json: serialize_input_schema(tool),
@@ -700,7 +712,7 @@ fn to_server_tool_statuses(
             })
             .collect();
     };
-    to_project_tool_statuses(tools, scope)
+    to_project_tool_statuses(tools, scope, global_scope)
 }
 
 /// 工具状态转换：enabled 反映全局 scope 黑名单（默认全部启用）。

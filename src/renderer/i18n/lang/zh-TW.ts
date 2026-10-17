@@ -2807,6 +2807,8 @@ export const zhTW = {
   "settings.mcpToolDetailsEmpty": "此服務沒有回傳任何工具。",
   "settings.mcpToolDisable": "停用工具",
   "settings.mcpToolEnable": "啟用工具",
+  "settings.mcpToolGlobalDisabled":
+    "此工具已在全域設定中停用，專案開關無法覆寫。",
   "settings.mcpToolInputSchema": "輸入結構",
   "settings.mcpToolFilterPlaceholder": "依名稱或描述篩選工具",
   "settings.mcpToolFilterClear": "清除篩選",
@@ -4000,6 +4002,7 @@ export const zhTW = {
   "projectMcp.modeBadgeCodebase": "索引未啟用",
   "projectMcp.modeBadgeCodebaseNoIndex": "無索引資料",
   "projectMcp.modeBadgePlan": "Plan 模式未開啟",
+  "projectMcp.toolGlobalDisabled": "全域已停用",
   "mcpBuiltinServer.desc.filesystem": "讀取、建立與編輯本機檔案",
   "mcpBuiltinServer.desc.bash": "執行一次性 shell 指令",
   "mcpBuiltinServer.desc.todo": "管理工作階段的待辦事項",

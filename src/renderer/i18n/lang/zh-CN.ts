@@ -2806,6 +2806,8 @@ export const zhCN = {
   "settings.mcpToolDetailsEmpty": "此服务没有返回任何工具。",
   "settings.mcpToolDisable": "禁用工具",
   "settings.mcpToolEnable": "启用工具",
+  "settings.mcpToolGlobalDisabled":
+    "该工具已在全局设置中禁用，项目开关无法覆盖。",
   "settings.mcpToolInputSchema": "输入结构",
   "settings.mcpToolFilterPlaceholder": "按名称或描述筛选工具",
   "settings.mcpToolFilterClear": "清除筛选",
@@ -4050,6 +4052,7 @@ export const zhCN = {
   "projectMcp.modeBadgeCodebase": "索引未启用",
   "projectMcp.modeBadgeCodebaseNoIndex": "无索引数据",
   "projectMcp.modeBadgePlan": "Plan 模式未开启",
+  "projectMcp.toolGlobalDisabled": "全局已禁用",
   "mcpBuiltinServer.desc.filesystem": "读取、创建与编辑本地文件",
   "mcpBuiltinServer.desc.bash": "执行一次性 shell 命令",
   "mcpBuiltinServer.desc.todo": "管理当前会话的待办事项",

@@ -36982,8 +36982,9 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   -webkit-line-clamp: 2;
 }
 
-/* 工具名称行：名称 + 「模式未启用」徽章并排（须置于 .project-mcp-tool-content
-   span 之后，以覆盖该选择器对名称行 span 的继承样式）。 */
+/* 工具名称行：名称 + 「模式未启用」徽章并排。徽章本身是 span，须以
+   .project-mcp-tool-name 前缀提高优先级，覆盖 .project-mcp-tool-content span
+   的多行截断样式（-webkit-box 纵向排列会把图标与文字上下堆叠）。 */
 .project-mcp-tool-name {
   display: flex;
   align-items: center;
@@ -36995,12 +36996,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   min-width: 0;
 }
 
-.project-mcp-mode-badge {
+.project-mcp-tool-name .project-mcp-mode-badge {
   display: inline-flex;
-  flex-shrink: 1;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
-  max-width: 100%;
   padding: 1px 6px;
   border: 1px solid
     color-mix(in srgb, var(--accent-orange, #f59e0b) 38%, transparent);
@@ -37017,18 +37017,20 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   );
   font-size: 10px;
   font-weight: 550;
+  line-height: 1.4;
   white-space: nowrap;
 }
 
-.project-mcp-mode-badge > svg {
+.project-mcp-tool-name .project-mcp-mode-badge > svg {
   flex-shrink: 0;
 }
 
-.project-mcp-mode-badge span {
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  -webkit-line-clamp: 1;
+.project-mcp-tool-name .project-mcp-mode-badge span {
+  display: block;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: nowrap;
 }
 
 .project-mcp-empty {

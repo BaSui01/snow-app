@@ -347,7 +347,8 @@ export const ProjectMcpPanel = ({
       !projectId ||
       pendingToolNamesRef.current.has(tool.name) ||
       !server.globalEnabled ||
-      !server.enabled
+      !server.enabled ||
+      !tool.globalEnabled
     ) {
       return;
     }
@@ -570,7 +571,13 @@ export const ProjectMcpPanel = ({
                       // 工具列表里也一眼可见（如 app-control 下只有
                       // requestApproval 一个工具受 Plan Mode 限制）。
                       let toolModeBadge: string | null = null;
-                      if (server.id === "builtin:workflow" && !workflowMode) {
+                      if (!tool.globalEnabled) {
+                        // 全局禁用优先：项目层开关无法覆盖，工具只读展示为关闭。
+                        toolModeBadge = t("projectMcp.toolGlobalDisabled");
+                      } else if (
+                        server.id === "builtin:workflow" &&
+                        !workflowMode
+                      ) {
                         toolModeBadge = t("projectMcp.modeBadgeWorkflow");
                       } else if (server.id === "builtin:codebase") {
                         if (codebaseMode === "disabled") {
@@ -608,7 +615,9 @@ export const ProjectMcpPanel = ({
                             <input
                               checked={tool.enabled}
                               disabled={
-                                !server.globalEnabled || !server.enabled
+                                !server.globalEnabled ||
+                                !server.enabled ||
+                                !tool.globalEnabled
                               }
                               hidden
                               onChange={(event) =>

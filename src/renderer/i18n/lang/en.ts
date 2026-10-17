@@ -2946,6 +2946,8 @@ export const en = {
   "settings.mcpToolDetailsEmpty": "This server did not return any tools.",
   "settings.mcpToolDisable": "Disable tool",
   "settings.mcpToolEnable": "Enable tool",
+  "settings.mcpToolGlobalDisabled":
+    "Disabled in global settings; the project toggle cannot override it.",
   "settings.mcpToolInputSchema": "Input schema",
   "settings.mcpToolFilterPlaceholder": "Filter tools by name or description",
   "settings.mcpToolFilterClear": "Clear filter",
@@ -4309,6 +4311,7 @@ export const en = {
   "projectMcp.modeBadgeCodebase": "Index not enabled",
   "projectMcp.modeBadgeCodebaseNoIndex": "No index data",
   "projectMcp.modeBadgePlan": "Plan Mode off",
+  "projectMcp.toolGlobalDisabled": "Disabled globally",
   "mcpBuiltinServer.desc.filesystem": "Read, create, and edit local files",
   "mcpBuiltinServer.desc.bash": "Run one-shot shell commands",
   "mcpBuiltinServer.desc.todo": "Manage the session TODO list",

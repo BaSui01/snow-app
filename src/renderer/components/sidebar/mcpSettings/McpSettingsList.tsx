@@ -299,13 +299,20 @@ export function McpSettingsList({
                             expandedToolNames[server.serverId]?.has(
                               tool.name,
                             ) ?? false;
-                          const toolToggleLabel = tool.enabled
-                            ? t("settings.mcpToolDisable", {
-                                defaultValue: "Disable tool",
+                          const toolGloballyDisabled =
+                            tool.globalEnabled === false;
+                          const toolToggleLabel = toolGloballyDisabled
+                            ? t("settings.mcpToolGlobalDisabled", {
+                                defaultValue:
+                                  "Disabled in global settings; the project toggle cannot override it.",
                               })
-                            : t("settings.mcpToolEnable", {
-                                defaultValue: "Enable tool",
-                              });
+                            : tool.enabled
+                              ? t("settings.mcpToolDisable", {
+                                  defaultValue: "Disable tool",
+                                })
+                              : t("settings.mcpToolEnable", {
+                                  defaultValue: "Enable tool",
+                                });
                           const detailsLabel = isToolExpanded
                             ? t("settings.mcpToolDetailsCollapse", {
                                 defaultValue: "Collapse details",
@@ -347,7 +354,8 @@ export function McpSettingsList({
                                   disabled={
                                     isBusy ||
                                     !server.globalEnabled ||
-                                    !server.enabled
+                                    !server.enabled ||
+                                    toolGloballyDisabled
                                   }
                                   hidden
                                   onChange={(event) =>

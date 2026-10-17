@@ -7,7 +7,14 @@ import type {
 export type McpServerConfig = McpServerConfigRecord;
 export type ProjectMcpServerConfig = ProjectMcpServerConfigRecord;
 export type McpServerConfigLike = Omit<McpServerConfig, "id">;
-export type McpServerTool = McpToolDefinition & { enabled: boolean };
+/**
+ * `globalEnabled` 仅项目作用域的工具携带：为 false 表示已在全局禁用，
+ * 项目层开关无法覆盖（全局作用域工具不含该字段）。
+ */
+export type McpServerTool = McpToolDefinition & {
+  enabled: boolean;
+  globalEnabled?: boolean;
+};
 
 export type McpKeyValuePair = {
   id: string;

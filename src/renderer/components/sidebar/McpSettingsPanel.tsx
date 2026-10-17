@@ -619,7 +619,12 @@ export function McpSettingsPanel({
     tool: McpServerTool,
     enabled: boolean,
   ): Promise<void> => {
-    if (isBusy || !server.globalEnabled || !server.enabled) {
+    if (
+      isBusy ||
+      !server.globalEnabled ||
+      !server.enabled ||
+      tool.globalEnabled === false
+    ) {
       return;
     }
     if (activeScope === "project" && !activeDirectory) {
@@ -692,9 +697,10 @@ export function McpSettingsPanel({
         }
         return {
           ...previous,
+          // 全局已禁用的工具项目层无法覆盖，有效态恒为关闭。
           [server.serverId]: current.map((item) => ({
             ...item,
-            enabled: nextEnabled,
+            enabled: item.globalEnabled !== false && nextEnabled,
           })),
         };
       });

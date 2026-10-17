@@ -1541,7 +1541,10 @@ export type SkillUninstallResult = {
 };
 
 export type McpProjectToolStatus = McpToolDefinition & {
+  /** 有效启用态：全局未禁用且项目未禁用。 */
   enabled: boolean;
+  /** 全局层是否启用；为 false 时项目层开关无法覆盖。 */
+  globalEnabled: boolean;
 };
 
 export type McpProjectServerStatus = {

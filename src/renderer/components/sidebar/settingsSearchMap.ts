@@ -1102,6 +1102,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["加载全局规则", "继承全局规则"],
       ],
       [
+        "personalization.overrideBuiltin",
+        "field",
+        "personalization.overrideBuiltinTitle",
+        "Override built-in prompt",
+        ["personalization.tab.global"],
+        ["覆盖内置提示词", "替换系统提示词", "system prompt"],
+      ],
+      [
         "personalization.currentProject",
         "field",
         "personalization.currentProject",

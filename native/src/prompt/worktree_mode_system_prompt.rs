@@ -1,34 +1,20 @@
 use super::common::{
-    apply_role_override, get_current_time_info, get_platform_section,
-    get_working_directory_section, read_active_role,
+    get_current_time_info, get_platform_section, get_working_directory_section,
+    render_role_prompt, ActiveRole,
 };
 
-pub fn build_worktree_mode_system_prompt(
+pub(crate) fn build_worktree_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
-    remote_role_content: Option<&str>,
-    remote_include_global_rules: Option<bool>,
+    active_role: Option<&ActiveRole>,
     sub_agents_section: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
-    let prompt = match read_active_role(
-        working_directory,
-        remote_role_content,
-        remote_include_global_rules,
-    ) {
-        Some((role_content, true)) => format!(
-            "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
-        Some((role_content, false)) => {
-            let prompt = apply_role_override(WORKTREE_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
-            format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
-        }
-        None => format!(
-            "{WORKTREE_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
-    };
+    let prompt = render_role_prompt(WORKTREE_MODE_SYSTEM_PROMPT_TEMPLATE, active_role);
+    let prompt =
+        format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}");
     if sub_agents_section.trim().is_empty() {
         prompt
     } else {

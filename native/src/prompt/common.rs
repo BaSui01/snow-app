@@ -105,21 +105,33 @@ fn is_override_role(active_role_id: &Option<String>, override_role_ids: &[String
     override_role_ids.iter().any(|id| id == resolved_id)
 }
 
+/// Resolved ROLE rules for the current workspace (global + project combined).
+pub(crate) struct ActiveRole {
+    pub content: String,
+    /// "Override built-in prompt" switch (`role.overrideRoleIds` contains the
+    /// active role id). Only the normal-mode prompt honors it (the role
+    /// content replaces the whole built-in template there); mode prompts
+    /// (Plan / Goal / WorkFlow / WorkTree) carry mandatory guidance and
+    /// always inline the role via `render_role_prompt`.
+    pub overrides_builtin: bool,
+}
+
 /// Try to read the active ROLE.md content.
 ///
 /// Priority: project scope > global scope.
-/// Returns `(content, is_override)` when a non-empty role file is found.
+/// Returns the combined role when a non-empty role file is found.
 ///
-/// For `ssh://` workspaces the project ROLE.md cannot be read directly — the
-/// Electron main process resolves it over SSH (mirroring RoleEditorPanel's
-/// access path) and injects it via `remote_role_content`. The remote
-/// `.snow/settings.json` is not readable from here, so remote roles are
-/// always treated as non-override ("active").
+/// For `ssh://` workspaces the project ROLE.md and `.snow/settings.json`
+/// cannot be read directly — the Electron main process resolves them over
+/// SSH (mirroring RoleEditorPanel's access path) and injects the content via
+/// `remote_role_content` plus the `remote_include_global_rules` /
+/// `remote_override_builtin_prompt` switches.
 pub(crate) fn read_active_role(
     working_directory: &str,
     remote_role_content: Option<&str>,
     remote_include_global_rules: Option<bool>,
-) -> Option<(String, bool)> {
+    remote_override_builtin_prompt: Option<bool>,
+) -> Option<ActiveRole> {
     let mut project_role: Option<(String, bool)> = None;
     let mut include_global_rules = true;
 
@@ -131,7 +143,7 @@ pub(crate) fn read_active_role(
                 .filter(|content| !content.is_empty())
                 .map(str::to_string);
             if let Some(content) = content {
-                project_role = Some((content, false));
+                project_role = Some((content, remote_override_builtin_prompt.unwrap_or(false)));
             }
         } else {
             let project_dir = Path::new(working_directory);
@@ -171,23 +183,36 @@ pub(crate) fn read_active_role(
 fn combine_role_contents(
     global_role: Option<(String, bool)>,
     project_role: Option<(String, bool)>,
-) -> Option<(String, bool)> {
-    match (global_role, project_role) {
-        (Some((global, global_override)), Some((project, project_override))) => Some((
+) -> Option<ActiveRole> {
+    let (content, overrides_builtin) = match (global_role, project_role) {
+        (Some((global, global_override)), Some((project, project_override))) => (
             format!("## Global rules\n\n{global}\n\n## Project rules\n\n{project}"),
             global_override || project_override,
-        )),
-        (Some(role), None) | (None, Some(role)) => Some(role),
-        (None, None) => None,
-    }
+        ),
+        (Some(role), None) | (None, Some(role)) => role,
+        (None, None) => return None,
+    };
+    Some(ActiveRole {
+        content,
+        overrides_builtin,
+    })
 }
 
-/// Replace the default role text in the prompt with the role override block.
-pub(crate) fn apply_role_override(prompt: &str, role_content: &str) -> String {
-    let override_block = format!(
-        "These are the rules emphasized by the user, which must be adhered to 100%:\n{role_content}"
-    );
-    prompt.replacen(DEFAULT_ROLE_TEXT, &override_block, 1)
+/// Inline the role into a prompt template: the role block replaces the default
+/// role line, and no role keeps the template as-is. The override switch is not
+/// consulted here — only the normal-mode builder lets a role replace the
+/// whole template.
+pub(crate) fn render_role_prompt(template: &str, active_role: Option<&ActiveRole>) -> String {
+    match active_role {
+        Some(role) => {
+            let role_block = format!(
+                "These are the rules emphasized by the user, which must be adhered to 100%:\n{}",
+                role.content
+            );
+            template.replacen(DEFAULT_ROLE_TEXT, &role_block, 1)
+        }
+        None => template.to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------

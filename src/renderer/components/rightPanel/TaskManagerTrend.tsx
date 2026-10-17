@@ -494,8 +494,6 @@ export function TaskManagerPerformancePanel({
   now: number;
   processes: TaskManagerRow[];
 }): React.JSX.Element {
-  const { t } = useI18n();
-
   return (
     <div className="task-manager-perf-panel">
       <div className="task-manager-perf-charts-grid">
@@ -509,10 +507,6 @@ export function TaskManagerPerformancePanel({
       </div>
 
       <ProcessDistributionBar processes={processes} />
-
-      <p className="task-manager-hint task-manager-accounting">
-        {t("taskManager.trendHint")}
-      </p>
     </div>
   );
 }
@@ -574,7 +568,6 @@ export function TaskManagerTrend(props: {
     >
       <summary>{t("taskManager.trendTitle")}</summary>
       <div className="task-manager-trend-body">
-        <p className="task-manager-hint">{t("taskManager.trendHint")}</p>
         {!samples.length ? (
           <p className="task-manager-hint">{t("taskManager.trendEmpty")}</p>
         ) : (

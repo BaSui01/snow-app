@@ -3990,6 +3990,9 @@ export const zhCN = {
   "personalization.includeGlobalTitle": "加载全局规则",
   "personalization.includeGlobalDesc":
     "保留该项目中的通用偏好，再追加项目专属规则。",
+  "personalization.overrideBuiltinTitle": "覆盖内置提示词",
+  "personalization.overrideBuiltinDesc":
+    "开启后，普通模式下规则内容替代内置提示词；Plan / Goal / WorkFlow / WorkTree 模式仍使用各自的内置指导。API 档案中绑定的系统提示词照常生效。",
   "personalization.projectSaved": "已保存项目规则。",
   "personalization.projectPlaceholder":
     "在此输入该项目的规则内容，例如代码风格、架构约定、技术栈说明...",
@@ -4654,8 +4657,6 @@ export const zhCN = {
   "taskManager.budgetSaveError":
     "保存未确认，草稿已保留；请核实当前策略后重试。",
   "taskManager.trendTitle": "短期占用趋势 · 最近 60 秒",
-  "taskManager.trendHint":
-    "仅记录当前筛选进程的自身合计，最多 120 点。更改搜索、LSP 或项目范围会清空趋势；暂停、隐藏、采样失败或间隔超过 2.5 秒会断档。CPU 基线不完整时显示未知，不补零。",
   "taskManager.trendUnknown": "未知 / 断档",
   "taskManager.trendEmpty": "等待此筛选范围的新进程采样。",
   "taskManager.trendChartLabel":

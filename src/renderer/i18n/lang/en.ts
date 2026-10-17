@@ -4245,6 +4245,9 @@ export const en = {
   "personalization.includeGlobalTitle": "Load global rules",
   "personalization.includeGlobalDesc":
     "Keep shared preferences active in this project, then add project-specific rules.",
+  "personalization.overrideBuiltinTitle": "Override built-in prompt",
+  "personalization.overrideBuiltinDesc":
+    "When enabled, the rules replace the built-in prompt in normal mode; Plan / Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
   "personalization.projectSaved": "Project rules saved.",
   "personalization.projectPlaceholder":
     "Enter rules for this project here, e.g. code style, architecture conventions, tech stack notes...",
@@ -4948,8 +4951,6 @@ export const en = {
   "taskManager.budgetSaveError":
     "Save not confirmed. Draft retained; verify the current policy before retrying.",
   "taskManager.trendTitle": "Short-term usage · Last 60 seconds",
-  "taskManager.trendHint":
-    "Only own-process totals in the current filter, up to 120 points. Search, LSP or project scope changes clear history. Pauses, hidden windows, failed samples and intervals over 2.5s create gaps. Incomplete CPU baselines remain unknown, never zero-filled.",
   "taskManager.trendUnknown": "Unknown / gap",
   "taskManager.trendEmpty": "Waiting for a new process sample in this scope.",
   "taskManager.trendChartLabel":

@@ -1,6 +1,6 @@
 use super::common::{
-    apply_role_override, get_current_time_info, get_platform_section,
-    get_working_directory_section, read_active_role,
+    get_current_time_info, get_platform_section, get_working_directory_section,
+    render_role_prompt, ActiveRole,
 };
 
 /// Generate the built-in system prompt with dynamic context (current time, working directory, platform info).
@@ -11,53 +11,37 @@ use super::common::{
 /// `shell_type` is the user's configured default shell (e.g. "powershell", "cmd", "gitbash", "wsl").
 /// It drives the platform-specific command guidance so the AI uses correct commands.
 ///
-/// ROLE.md injection:
+/// `active_role` is the resolved ROLE.md rules (see `common::read_active_role`):
 /// - Global and project ROLE.md are combined by default, with project rules last.
-/// - If the active role is marked as "override", its content **replaces** the entire
+/// - If the role overrides the built-in prompt, its content **replaces** the entire
 ///   system prompt template; only platform/working-dir/time sections are appended.
+///   This switch applies to the normal mode only.
 /// - Otherwise the ROLE.md content replaces the default role text inside the template.
-///
-/// `remote_role_content` carries the project ROLE.md of an `ssh://` workspace,
-/// resolved by the Electron main process over SSH (Rust cannot perform SSH I/O,
-/// mirroring RoleEditorPanel's access path). `None` for local workspaces, where
-/// the project file is read directly.
 ///
 /// `sub_agents_section` is a pre-rendered markdown list of the currently
 /// configured sub-agents (built-in + global, from the `subAgents` config).
 /// It is injected into the Sub-Agents chapter so the model can pick a real
 /// `agentId` instead of defaulting to `agent_general`. Pass an empty string to
 /// omit the list (the template then keeps only the selection rule).
-pub fn build_system_prompt(
+pub(crate) fn build_system_prompt(
     working_directory: &str,
     shell_type: &str,
-    remote_role_content: Option<&str>,
-    remote_include_global_rules: Option<bool>,
+    active_role: Option<&ActiveRole>,
     sub_agents_section: &str,
 ) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
     let platform_section = get_platform_section(shell_type);
-    let template = SYSTEM_PROMPT_TEMPLATE.replace(SUB_AGENTS_LIST_MARKER, sub_agents_section.trim());
-
-    match read_active_role(
-        working_directory,
-        remote_role_content,
-        remote_include_global_rules,
-    ) {
-        // Override mode: role content replaces the entire template.
-        Some((role_content, true)) => {
-            format!("{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
+    let prompt = match active_role {
+        Some(role) if role.overrides_builtin => role.content.clone(),
+        _ => {
+            let template =
+                SYSTEM_PROMPT_TEMPLATE.replace(SUB_AGENTS_LIST_MARKER, sub_agents_section.trim());
+            render_role_prompt(&template, active_role)
         }
+    };
 
-        // Normal mode: role content replaces the default role text.
-        Some((role_content, false)) => {
-            let prompt = apply_role_override(&template, &role_content);
-            format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
-        }
-
-        // No ROLE.md found — use the default template as-is.
-        None => format!("{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"),
-    }
+    format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
 }
 
 /// Placeholder inside `SYSTEM_PROMPT_TEMPLATE` replaced with the dynamic

@@ -1426,6 +1426,8 @@ export type ResponsesApiRequest = {
    */
   remoteRoleContent?: string;
   remoteIncludeGlobalRules?: boolean;
+  /** SSH project ROLE "override built-in prompt" switch (remote settings.json). */
+  remoteOverrideBuiltinPrompt?: boolean;
   /**
    * Request-scoped MCP tool whitelist (JSON array of full tool names). Unlike
    * `subAgentToolsJson` this keeps normal (non sub-agent) semantics, and it

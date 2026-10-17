@@ -31700,14 +31700,27 @@ body.is-panel-resizing * {
   gap: 4px;
 }
 
-.task-manager-project-filter select {
+.task-manager-project-filter .custom-select {
+  width: auto;
   max-width: 220px;
-  padding: 4px 6px;
+}
+
+.task-manager-project-filter .custom-select-trigger {
+  padding: 4px 7px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.task-manager-project-filter .custom-select-trigger:hover:not(:disabled) {
   color: var(--text-primary);
-  font-size: 10.5px;
+}
+
+.task-manager-project-filter .custom-select-trigger svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
 }
 
 .task-manager-clear-project-btn {
@@ -31744,7 +31757,6 @@ body.is-panel-resizing * {
   color: var(--text-primary);
 }
 
-.task-manager .task-manager-project-filter select:focus-visible,
 .task-manager-alert-body input:focus-visible {
   outline: 2px solid var(--accent-color);
   outline-offset: -2px;

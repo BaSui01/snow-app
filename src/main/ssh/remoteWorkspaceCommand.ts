@@ -1,4 +1,8 @@
 import { dirname } from "node:path/posix";
+import {
+  parseRoleSettings,
+  type RoleSettings,
+} from "../../shared/roleSettings";
 import { processFileContent } from "../utils/fileReader";
 import {
   connectSsh,
@@ -414,6 +418,7 @@ const writeRemoteText = async (
 export type RemoteRoleContext = {
   content: string | null;
   includeGlobalRules: boolean;
+  overrideBuiltinPrompt: boolean;
 };
 
 export const readRemoteRoleContext = async (
@@ -438,7 +443,10 @@ export const readRemoteRoleContext = async (
           content = null;
         }
 
-        let includeGlobalRules = true;
+        let roleSettings: RoleSettings = {
+          includeGlobalRules: true,
+          overrideBuiltinPrompt: false,
+        };
         try {
           const settingsPath = `${projectRoot}/.snow/settings.json`;
           const settingsFile = processFileContent(
@@ -446,22 +454,21 @@ export const readRemoteRoleContext = async (
             await readSshFile(sessionId, settingsPath),
           );
           if (!settingsFile.isBinary && !settingsFile.isImage) {
-            const settings = JSON.parse(settingsFile.content) as {
-              role?: { includeGlobalRules?: unknown };
-            };
-            if (typeof settings.role?.includeGlobalRules === "boolean") {
-              includeGlobalRules = settings.role.includeGlobalRules;
-            }
+            roleSettings = parseRoleSettings(settingsFile.content);
           }
         } catch {
-          includeGlobalRules = true;
+          // Missing or invalid settings keep the defaults.
         }
 
-        return { content, includeGlobalRules };
+        return { content, ...roleSettings };
       },
     );
   } catch {
-    return { content: null, includeGlobalRules: true };
+    return {
+      content: null,
+      includeGlobalRules: true,
+      overrideBuiltinPrompt: false,
+    };
   }
 };
 

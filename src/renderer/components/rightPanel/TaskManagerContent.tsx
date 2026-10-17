@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { LspResourcePanel } from "../sidebar/lspSettings/LspResourcePanel";
 import type { TaskManagerProcess } from "../../../preload";
@@ -358,6 +359,16 @@ export const TaskManagerContent = ({
     (root: string): void => setProject(normalizeTaskProject(root)),
     [],
   );
+  const projectOptions = useMemo<CustomSelectOption[]>(() => {
+    const options: CustomSelectOption[] = [
+      { value: "", label: t("taskManager.allProjects") },
+    ];
+    if (project && !projects.some(([key]) => key === project))
+      options.push({ value: project, label: project });
+    for (const [key, root] of projects)
+      options.push({ value: key, label: `${taskProjectName(root)} · ${root}` });
+    return options;
+  }, [project, projects, t]);
   const sortedProcesses = useMemo(() => {
     const factor = sortDirection === "asc" ? 1 : -1;
     return [...visibleRows].sort((left, right) => {
@@ -689,25 +700,17 @@ export const TaskManagerContent = ({
               </button>
             </div>
             <div className="task-manager-project-filter">
-              <select
+              <CustomSelect
                 value={project}
-                data-project-filter="true"
-                onChange={(event) => setProject(event.target.value)}
-                aria-label={t("taskManager.projectScope")}
+                options={projectOptions}
+                onChange={setProject}
+                dropdownMinWidth={280}
+                ariaLabel={t("taskManager.projectScope")}
                 title={
-                  projects.find(([key]) => key === project)?.[1] || project
+                  projects.find(([key]) => key === project)?.[1] ||
+                  t("taskManager.allProjects")
                 }
-              >
-                <option value="">{t("taskManager.allProjects")}</option>
-                {project && !projects.some(([key]) => key === project) && (
-                  <option value={project}>{project}</option>
-                )}
-                {projects.map(([key, root]) => (
-                  <option key={key} value={key}>
-                    {taskProjectName(root)} · {root}
-                  </option>
-                ))}
-              </select>
+              />
               {project && (
                 <button
                   type="button"

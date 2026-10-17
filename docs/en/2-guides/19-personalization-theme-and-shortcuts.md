@@ -36,6 +36,15 @@ Project rules live at `<workspace>/ROLE.md` and the editor only modifies the act
 
 Whether a project loads global rules is controlled by `role.includeGlobalRules` in `<workspace>/.snow/settings.json`. The default is `true` when the field is absent.
 
+### Override Built-in Prompt
+
+The global and project rule editors (and the ROLE.md dialog opened from the chat input) provide an "Override built-in prompt" switch. It maps to whether `role.overrideRoleIds` in the scope's `settings.json` contains `active` (compatible with Snow CLI):
+
+- off (default): the rules replace the role line at the top of the built-in prompt; the remaining built-in sections are kept;
+- on: applies to normal mode only — the rules replace the whole built-in template, while platform commands, working directory, date and tool-related dynamic sections are still appended; Plan / Goal / WorkFlow / WorkTree modes carry explicit workflow guidance and are never replaced, the rules are embedded the same way as when the switch is off;
+- the switch does not affect system prompts bound in the API profile: when they are configured they still occupy the system prompt slot and the built-in prompt (the rules, when enabled) is demoted to the first user message;
+- when global and project rules are both loaded, enabling the switch in either scope takes effect; if a project turns off "Load global rules", the global switch does not apply to that project.
+
 ### Load Order and Precedence
 
 The composition order shown by the UI is:

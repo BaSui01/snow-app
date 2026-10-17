@@ -13,13 +13,16 @@ import type {
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useI18n } from "../../../i18n";
 import {
+  parseRoleSettings,
+  writeRoleSettings,
+} from "../../../../shared/roleSettings";
+import {
   buildRoleFilePath,
   buildRoleSettingsPath,
   buildSshConnectParams,
-  readIncludeGlobalRules,
-  writeIncludeGlobalRules,
   type ProjectDirectoryInfo,
 } from "./roleFileUtils";
+import { RoleSwitchRow } from "./RoleSwitchRow";
 
 type ProjectRoleEditorProps = {
   /** 当前激活的工作区项目；为空时无法编辑项目规则。 */
@@ -43,6 +46,9 @@ export const ProjectRoleEditor = ({
   const [includeGlobalRules, setIncludeGlobalRules] = useState(true);
   const [originalIncludeGlobalRules, setOriginalIncludeGlobalRules] =
     useState(true);
+  const [overrideBuiltinPrompt, setOverrideBuiltinPrompt] = useState(false);
+  const [originalOverrideBuiltinPrompt, setOriginalOverrideBuiltinPrompt] =
+    useState(false);
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -82,10 +88,22 @@ export const ProjectRoleEditor = ({
     setSettingsContent("");
     setIncludeGlobalRules(true);
     setOriginalIncludeGlobalRules(true);
+    setOverrideBuiltinPrompt(false);
+    setOriginalOverrideBuiltinPrompt(false);
     remoteRoleVersionRef.current = { exists: false };
     remoteSettingsVersionRef.current = { exists: false };
     disconnectSsh();
   }, [disconnectSsh]);
+
+  // 应用项目 settings.json 中的 ROLE 开关；非法 JSON 由调用方捕获并按缺省处理。
+  const applyRoleSettings = useCallback((text: string): void => {
+    const settings = parseRoleSettings(text);
+    setSettingsContent(text);
+    setIncludeGlobalRules(settings.includeGlobalRules);
+    setOriginalIncludeGlobalRules(settings.includeGlobalRules);
+    setOverrideBuiltinPrompt(settings.overrideBuiltinPrompt);
+    setOriginalOverrideBuiltinPrompt(settings.overrideBuiltinPrompt);
+  }, []);
 
   const loadProjectRole = useCallback(
     async (info: ProjectDirectoryInfo): Promise<void> => {
@@ -108,7 +126,7 @@ export const ProjectRoleEditor = ({
               t("roleEditor.sshCredentialMissing", {
                 defaultValue:
                   "SSH credential is missing. Please configure it in the project settings.",
-              })
+              }),
             );
             return;
           }
@@ -126,7 +144,9 @@ export const ProjectRoleEditor = ({
             const text = result.isBinary ? "" : result.content;
             setContent(text);
             setOriginalContent(text);
-            remoteRoleVersionRef.current = result.remoteVersion ?? { exists: false };
+            remoteRoleVersionRef.current = result.remoteVersion ?? {
+              exists: false,
+            };
           } catch (readError) {
             if (loadGenerationRef.current !== generation) return;
             // File does not exist yet — start with empty content.
@@ -137,14 +157,11 @@ export const ProjectRoleEditor = ({
           try {
             const result = await window.snow.sshReadFile(
               sessionId,
-              projectSettingsPath
+              projectSettingsPath,
             );
             if (loadGenerationRef.current !== generation) return;
             const text = result.isBinary ? "" : result.content;
-            const enabled = readIncludeGlobalRules(text);
-            setSettingsContent(text);
-            setIncludeGlobalRules(enabled);
-            setOriginalIncludeGlobalRules(enabled);
+            applyRoleSettings(text);
             remoteSettingsVersionRef.current = result.remoteVersion ?? {
               exists: false,
             };
@@ -166,15 +183,11 @@ export const ProjectRoleEditor = ({
             setOriginalContent("");
           }
           try {
-            const result = await window.snow.readFileContent(
-              projectSettingsPath
-            );
+            const result =
+              await window.snow.readFileContent(projectSettingsPath);
             if (loadGenerationRef.current !== generation) return;
             const text = result.isBinary ? "" : result.content;
-            const enabled = readIncludeGlobalRules(text);
-            setSettingsContent(text);
-            setIncludeGlobalRules(enabled);
-            setOriginalIncludeGlobalRules(enabled);
+            applyRoleSettings(text);
           } catch {
             setSettingsContent("");
           }
@@ -182,7 +195,7 @@ export const ProjectRoleEditor = ({
       } catch (loadError) {
         if (loadGenerationRef.current !== generation) return;
         setError(
-          loadError instanceof Error ? loadError.message : String(loadError)
+          loadError instanceof Error ? loadError.message : String(loadError),
         );
       } finally {
         if (loadGenerationRef.current === generation) {
@@ -190,7 +203,7 @@ export const ProjectRoleEditor = ({
         }
       }
     },
-    [resetEditor, t]
+    [applyRoleSettings, resetEditor, t],
   );
 
   // 跟随当前激活项目：项目切换时重新加载对应 ROLE.md，无项目时清空编辑器。
@@ -206,16 +219,23 @@ export const ProjectRoleEditor = ({
   }, [activeDirectory, loadProjectRole, resetEditor]);
 
   const handleSave = async (): Promise<void> => {
-    if (!directoryInfo || !roleFilePath || !settingsFilePath || isSaving) return;
+    if (!directoryInfo || !roleFilePath || !settingsFilePath || isSaving)
+      return;
 
     setIsSaving(true);
     setError(null);
     setSaveSuccess(false);
 
+    const settingsChanged =
+      includeGlobalRules !== originalIncludeGlobalRules ||
+      overrideBuiltinPrompt !== originalOverrideBuiltinPrompt;
+
     try {
       if (directoryInfo.isSsh) {
         if (!activeDirectory?.directoryId) {
-          throw new Error("Remote project rule save is missing its workspace ID");
+          throw new Error(
+            "Remote project rule save is missing its workspace ID",
+          );
         }
         if (!sshSessionIdRef.current) {
           const connectParams = await buildSshConnectParams(directoryInfo.path);
@@ -224,7 +244,7 @@ export const ProjectRoleEditor = ({
               t("roleEditor.sshCredentialMissing", {
                 defaultValue:
                   "SSH credential is missing. Please configure it in the project settings.",
-              })
+              }),
             );
             setIsSaving(false);
             return;
@@ -238,20 +258,20 @@ export const ProjectRoleEditor = ({
           {
             workspaceId: activeDirectory.directoryId,
             expectedVersion: remoteRoleVersionRef.current,
-          }
+          },
         );
         remoteRoleVersionRef.current = roleWrite.version;
-        if (includeGlobalRules !== originalIncludeGlobalRules) {
+        if (settingsChanged) {
           const settingsDirectory = settingsFilePath.replace(/\/[^/]+$/, "");
           const quotedDirectory = `'${settingsDirectory.replace(/'/g, `'"'"'`)}'`;
           await window.snow.sshExecuteCommand(
             sshSessionIdRef.current,
-            `mkdir -p -- ${quotedDirectory}`
+            `mkdir -p -- ${quotedDirectory}`,
           );
-          const nextSettings = writeIncludeGlobalRules(
-            settingsContent,
-            includeGlobalRules
-          );
+          const nextSettings = writeRoleSettings(settingsContent, {
+            includeGlobalRules,
+            overrideBuiltinPrompt,
+          });
           const settingsWrite = await window.snow.sshWriteFile(
             sshSessionIdRef.current,
             settingsFilePath,
@@ -259,18 +279,18 @@ export const ProjectRoleEditor = ({
             {
               workspaceId: activeDirectory.directoryId,
               expectedVersion: remoteSettingsVersionRef.current,
-            }
+            },
           );
           remoteSettingsVersionRef.current = settingsWrite.version;
           setSettingsContent(nextSettings);
         }
       } else {
         await window.snow.writeFileContent(roleFilePath, content);
-        if (includeGlobalRules !== originalIncludeGlobalRules) {
-          const nextSettings = writeIncludeGlobalRules(
-            settingsContent,
-            includeGlobalRules
-          );
+        if (settingsChanged) {
+          const nextSettings = writeRoleSettings(settingsContent, {
+            includeGlobalRules,
+            overrideBuiltinPrompt,
+          });
           await window.snow.writeFileContent(settingsFilePath, nextSettings);
           setSettingsContent(nextSettings);
         }
@@ -278,10 +298,11 @@ export const ProjectRoleEditor = ({
 
       setOriginalContent(content);
       setOriginalIncludeGlobalRules(includeGlobalRules);
+      setOriginalOverrideBuiltinPrompt(overrideBuiltinPrompt);
       setSaveSuccess(true);
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : String(saveError)
+        saveError instanceof Error ? saveError.message : String(saveError),
       );
     } finally {
       setIsSaving(false);
@@ -290,7 +311,8 @@ export const ProjectRoleEditor = ({
 
   const hasChanges =
     content !== originalContent ||
-    includeGlobalRules !== originalIncludeGlobalRules;
+    includeGlobalRules !== originalIncludeGlobalRules ||
+    overrideBuiltinPrompt !== originalOverrideBuiltinPrompt;
 
   return (
     <section
@@ -335,33 +357,38 @@ export const ProjectRoleEditor = ({
       ) : null}
 
       {activeDirectory ? (
-        <div className="personalization-inheritance-row">
-          <div className="personalization-inheritance-copy">
-            <strong>
-              {t("personalization.includeGlobalTitle", {
-                defaultValue: "Load global rules",
-              })}
-            </strong>
-            <span>
-              {t("personalization.includeGlobalDesc", {
-                defaultValue:
-                  "Keep shared preferences active in this project. Project rules are applied afterwards.",
-              })}
-            </span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              checked={includeGlobalRules}
-              disabled={isLoading || isSaving}
-              onChange={(event) => {
-                setIncludeGlobalRules(event.target.checked);
-                setSaveSuccess(false);
-              }}
-              type="checkbox"
-            />
-            <span className="toggle-slider" />
-          </label>
-        </div>
+        <>
+          <RoleSwitchRow
+            checked={includeGlobalRules}
+            description={t("personalization.includeGlobalDesc", {
+              defaultValue:
+                "Keep shared preferences active in this project. Project rules are applied afterwards.",
+            })}
+            disabled={isLoading || isSaving}
+            onChange={(checked) => {
+              setIncludeGlobalRules(checked);
+              setSaveSuccess(false);
+            }}
+            title={t("personalization.includeGlobalTitle", {
+              defaultValue: "Load global rules",
+            })}
+          />
+          <RoleSwitchRow
+            checked={overrideBuiltinPrompt}
+            description={t("personalization.overrideBuiltinDesc", {
+              defaultValue:
+                "When enabled, the rules replace the built-in prompt in normal mode; Plan / Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
+            })}
+            disabled={isLoading || isSaving}
+            onChange={(checked) => {
+              setOverrideBuiltinPrompt(checked);
+              setSaveSuccess(false);
+            }}
+            title={t("personalization.overrideBuiltinTitle", {
+              defaultValue: "Override built-in prompt",
+            })}
+          />
+        </>
       ) : null}
 
       {!activeDirectory ? (

@@ -1,4 +1,4 @@
-mod common;
+pub(crate) mod common;
 pub(crate) mod tool_hints;
 pub mod goal_mode_system_prompt;
 pub mod linked_projects;

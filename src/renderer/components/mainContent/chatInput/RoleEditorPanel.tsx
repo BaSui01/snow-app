@@ -1,8 +1,16 @@
 import { AlertCircle, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SshFileVersion } from "../../../../preload";
+import {
+  parseRoleSettings,
+  writeRoleSettings,
+} from "../../../../shared/roleSettings";
 import { useI18n } from "../../../i18n";
-import { buildSshConnectParams } from "../../sidebar/personalization/roleFileUtils";
+import {
+  buildRoleSettingsPath,
+  buildSshConnectParams,
+} from "../../sidebar/personalization/roleFileUtils";
+import { RoleSwitchRow } from "../../sidebar/personalization/RoleSwitchRow";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { Modal } from "../../common/Modal";
 
@@ -45,6 +53,10 @@ export const RoleEditorPanel = ({
   const { t } = useI18n();
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
+  const [settingsContent, setSettingsContent] = useState("");
+  const [overrideBuiltinPrompt, setOverrideBuiltinPrompt] = useState(false);
+  const [originalOverrideBuiltinPrompt, setOriginalOverrideBuiltinPrompt] =
+    useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,18 +66,38 @@ export const RoleEditorPanel = ({
   const loadGenerationRef = useRef(0);
   const sshSessionIdRef = useRef<string | null>(null);
   const remoteRoleVersionRef = useRef<SshFileVersion>({ exists: false });
+  const remoteSettingsVersionRef = useRef<SshFileVersion>({ exists: false });
 
   const roleFilePath = directoryInfo
     ? directoryInfo.isSsh
       ? `${directoryInfo.path.replace(/^ssh:\/\/[^/]+/, "")}/${ROLE_FILE_NAME}`
       : `${directoryInfo.path}/${ROLE_FILE_NAME}`.replace(/\/+/g, "/")
     : null;
+  const settingsFilePath = directoryInfo
+    ? buildRoleSettingsPath(directoryInfo)
+    : null;
+
+  // 应用项目 settings.json 中的「覆盖内置提示词」开关；非法 JSON 由调用方按缺省处理。
+  const applyRoleSettings = useCallback((text: string): void => {
+    const enabled = parseRoleSettings(text).overrideBuiltinPrompt;
+    setSettingsContent(text);
+    setOverrideBuiltinPrompt(enabled);
+    setOriginalOverrideBuiltinPrompt(enabled);
+  }, []);
+
+  const resetRoleSettings = useCallback((): void => {
+    setSettingsContent("");
+    setOverrideBuiltinPrompt(false);
+    setOriginalOverrideBuiltinPrompt(false);
+    remoteSettingsVersionRef.current = { exists: false };
+  }, []);
 
   const loadRoleFile = useCallback(async (): Promise<void> => {
     if (!projectId) {
       setDirectoryInfo(null);
       setContent("");
       setOriginalContent("");
+      resetRoleSettings();
       setIsLoading(false);
       return;
     }
@@ -77,6 +109,7 @@ export const RoleEditorPanel = ({
     setSaveSuccess(false);
     setContent("");
     setOriginalContent("");
+    resetRoleSettings();
     remoteRoleVersionRef.current = { exists: false };
 
     try {
@@ -127,6 +160,19 @@ export const RoleEditorPanel = ({
           setOriginalContent("");
           remoteRoleVersionRef.current = { exists: false };
         }
+        try {
+          const result = await window.snow.sshReadFile(
+            sessionId,
+            buildRoleSettingsPath(info),
+          );
+          if (loadGenerationRef.current !== generation) return;
+          applyRoleSettings(result.isBinary ? "" : result.content);
+          remoteSettingsVersionRef.current = result.remoteVersion ?? {
+            exists: false,
+          };
+        } catch {
+          // Missing or invalid settings keep the defaults.
+        }
       } else {
         try {
           const result = await window.snow.readFileContent(filePath);
@@ -140,6 +186,15 @@ export const RoleEditorPanel = ({
           setContent("");
           setOriginalContent("");
         }
+        try {
+          const result = await window.snow.readFileContent(
+            buildRoleSettingsPath(info),
+          );
+          if (loadGenerationRef.current !== generation) return;
+          applyRoleSettings(result.isBinary ? "" : result.content);
+        } catch {
+          // Missing or invalid settings keep the defaults.
+        }
       }
     } catch (loadError) {
       if (loadGenerationRef.current !== generation) return;
@@ -151,7 +206,7 @@ export const RoleEditorPanel = ({
         setIsLoading(false);
       }
     }
-  }, [projectId, t]);
+  }, [applyRoleSettings, projectId, resetRoleSettings, t]);
 
   useEffect(() => {
     if (open) {
@@ -162,11 +217,12 @@ export const RoleEditorPanel = ({
     loadGenerationRef.current += 1;
     setContent("");
     setOriginalContent("");
+    resetRoleSettings();
     setError(null);
     setSaveSuccess(false);
     setDirectoryInfo(null);
     setIsLoading(false);
-  }, [loadRoleFile, open]);
+  }, [loadRoleFile, open, resetRoleSettings]);
 
   // Disconnect SSH session on unmount.
   useEffect(() => {
@@ -179,11 +235,21 @@ export const RoleEditorPanel = ({
   }, []);
 
   const handleSave = async (): Promise<void> => {
-    if (!directoryInfo || !roleFilePath || !projectId || isSaving) return;
+    if (
+      !directoryInfo ||
+      !roleFilePath ||
+      !settingsFilePath ||
+      !projectId ||
+      isSaving
+    )
+      return;
 
     setIsSaving(true);
     setError(null);
     setSaveSuccess(false);
+
+    const settingsChanged =
+      overrideBuiltinPrompt !== originalOverrideBuiltinPrompt;
 
     try {
       if (directoryInfo.isSsh) {
@@ -206,11 +272,41 @@ export const RoleEditorPanel = ({
           },
         );
         remoteRoleVersionRef.current = writeResult.version;
+        if (settingsChanged) {
+          const settingsDirectory = settingsFilePath.replace(/\/[^/]+$/, "");
+          const quotedDirectory = `'${settingsDirectory.replace(/'/g, `'"'"'`)}'`;
+          await window.snow.sshExecuteCommand(
+            sshSessionIdRef.current,
+            `mkdir -p -- ${quotedDirectory}`,
+          );
+          const nextSettings = writeRoleSettings(settingsContent, {
+            overrideBuiltinPrompt,
+          });
+          const settingsWrite = await window.snow.sshWriteFile(
+            sshSessionIdRef.current,
+            settingsFilePath,
+            nextSettings,
+            {
+              workspaceId: projectId,
+              expectedVersion: remoteSettingsVersionRef.current,
+            },
+          );
+          remoteSettingsVersionRef.current = settingsWrite.version;
+          setSettingsContent(nextSettings);
+        }
       } else {
         await window.snow.writeFileContent(roleFilePath, content);
+        if (settingsChanged) {
+          const nextSettings = writeRoleSettings(settingsContent, {
+            overrideBuiltinPrompt,
+          });
+          await window.snow.writeFileContent(settingsFilePath, nextSettings);
+          setSettingsContent(nextSettings);
+        }
       }
 
       setOriginalContent(content);
+      setOriginalOverrideBuiltinPrompt(overrideBuiltinPrompt);
       setSaveSuccess(true);
     } catch (saveError) {
       setError(
@@ -221,7 +317,9 @@ export const RoleEditorPanel = ({
     }
   };
 
-  const hasChanges = content !== originalContent;
+  const hasChanges =
+    content !== originalContent ||
+    overrideBuiltinPrompt !== originalOverrideBuiltinPrompt;
 
   return (
     <Modal
@@ -291,6 +389,17 @@ export const RoleEditorPanel = ({
               onDismiss={() => setSaveSuccess(false)}
             />
           ) : null}
+
+          <RoleSwitchRow
+            checked={overrideBuiltinPrompt}
+            description={t("personalization.overrideBuiltinDesc")}
+            disabled={isSaving}
+            onChange={(checked) => {
+              setOverrideBuiltinPrompt(checked);
+              setSaveSuccess(false);
+            }}
+            title={t("personalization.overrideBuiltinTitle")}
+          />
 
           <textarea
             aria-label={t("roleEditor.title")}

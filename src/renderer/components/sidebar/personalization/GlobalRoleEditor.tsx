@@ -2,9 +2,10 @@ import { AlertCircle, FileText, Globe, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useI18n } from "../../../i18n";
+import { RoleSwitchRow } from "./RoleSwitchRow";
 
 /**
- * 全局规则编辑器：编辑 ~/.snow/ROLE.md。
+ * 全局规则编辑器：编辑 ~/.snow/ROLE.md 及其「覆盖内置提示词」开关。
  * 保存的内容会被 native 系统提示词构建管线读取，并默认与项目规则组合。
  */
 export const GlobalRoleEditor = (): React.JSX.Element => {
@@ -12,6 +13,9 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
   const [filePath, setFilePath] = useState("");
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
+  const [overrideBuiltinPrompt, setOverrideBuiltinPrompt] = useState(false);
+  const [originalOverrideBuiltinPrompt, setOriginalOverrideBuiltinPrompt] =
+    useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,9 +31,11 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
       setFilePath(result.filePath);
       setContent(result.content);
       setOriginalContent(result.content);
+      setOverrideBuiltinPrompt(result.overrideBuiltinPrompt);
+      setOriginalOverrideBuiltinPrompt(result.overrideBuiltinPrompt);
     } catch (loadError) {
       setError(
-        loadError instanceof Error ? loadError.message : String(loadError)
+        loadError instanceof Error ? loadError.message : String(loadError),
       );
     } finally {
       setIsLoading(false);
@@ -48,22 +54,33 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
     setSaveSuccess(false);
 
     try {
-      await window.snow.saveGlobalRole(content);
+      await window.snow.saveGlobalRole(
+        content,
+        overrideBuiltinPrompt !== originalOverrideBuiltinPrompt
+          ? overrideBuiltinPrompt
+          : undefined,
+      );
       setOriginalContent(content);
+      setOriginalOverrideBuiltinPrompt(overrideBuiltinPrompt);
       setSaveSuccess(true);
     } catch (saveError) {
       setError(
-        saveError instanceof Error ? saveError.message : String(saveError)
+        saveError instanceof Error ? saveError.message : String(saveError),
       );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const hasChanges = content !== originalContent;
+  const hasChanges =
+    content !== originalContent ||
+    overrideBuiltinPrompt !== originalOverrideBuiltinPrompt;
 
   return (
-    <section className="personalization-section" aria-label={t("personalization.globalTitle")}>
+    <section
+      className="personalization-section"
+      aria-label={t("personalization.globalTitle")}
+    >
       <div className="personalization-section-header">
         <div className="personalization-section-title">
           <span className="personalization-section-icon">
@@ -82,6 +99,22 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
           </span>
         </div>
       </div>
+
+      <RoleSwitchRow
+        checked={overrideBuiltinPrompt}
+        description={t("personalization.overrideBuiltinDesc", {
+          defaultValue:
+            "When enabled, the rules replace the built-in prompt in normal mode; Plan / Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
+        })}
+        disabled={isLoading || isSaving}
+        onChange={(checked) => {
+          setOverrideBuiltinPrompt(checked);
+          setSaveSuccess(false);
+        }}
+        title={t("personalization.overrideBuiltinTitle", {
+          defaultValue: "Override built-in prompt",
+        })}
+      />
 
       <div className="personalization-toolbar">
         <div className="personalization-toolbar-main">
@@ -112,9 +145,7 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
             ) : (
               <Save size={14} />
             )}
-            <span>
-              {t("personalization.save", { defaultValue: "Save" })}
-            </span>
+            <span>{t("personalization.save", { defaultValue: "Save" })}</span>
           </button>
         </div>
       </div>
@@ -164,8 +195,7 @@ export const GlobalRoleEditor = (): React.JSX.Element => {
           <div className="role-editor-footer">
             <small>
               {t("personalization.globalHint", {
-                defaultValue:
-                  "Changes take effect in the next conversation.",
+                defaultValue: "Changes take effect in the next conversation.",
               })}
             </small>
           </div>

@@ -67,6 +67,9 @@ pub struct ConversationContextRequest<'a> {
     /// local workspaces, where the prompt builder reads the file directly.
     pub remote_role_content: Option<&'a str>,
     pub remote_include_global_rules: Option<bool>,
+    /// SSH workspace counterpart of the local `role.overrideRoleIds` switch
+    /// ("override built-in prompt"), resolved by the Electron main process.
+    pub remote_override_builtin_prompt: Option<bool>,
     /// Explicit effective workspace execution root (e.g. worktree directory path).
     pub execution_workspace_root: Option<&'a str>,
     /// Selected or preselected worktree ID for the conversation.

@@ -1,6 +1,6 @@
 use super::common::{
-    apply_role_override, get_current_time_info, get_platform_section,
-    get_working_directory_section, read_active_role,
+    get_current_time_info, get_platform_section, get_working_directory_section,
+    render_role_prompt, ActiveRole,
 };
 
 /// Generate the Plan Mode system prompt with dynamic context.
@@ -12,10 +12,9 @@ use super::common::{
 /// `working_directory` is the resolved filesystem path of the active workspace
 /// directory. When empty, the working-directory section is omitted entirely.
 ///
-/// `remote_role_content` carries the project ROLE.md of an `ssh://` workspace,
-/// resolved by the Electron main process over SSH (mirroring RoleEditorPanel's
-/// access path). `None` for local workspaces, where the project file is read
-/// directly.
+/// `active_role` is the resolved ROLE.md rules (see `common::read_active_role`).
+/// It is always inlined into the template; the "override built-in prompt"
+/// switch only applies to the normal mode.
 ///
 /// `sub_agents_section` is a pre-rendered markdown list of the currently
 /// configured sub-agents (built-in + global). When non-empty it is appended as
@@ -26,13 +25,11 @@ use super::common::{
 /// only tools actually callable in the current project (LSP requires domain
 /// scope + usable servers + a matching language stack; codebase requires an
 /// index); see `prompt::tool_hints`. It replaces the
-/// `__ANALYSIS_TOOLS_LINES__` marker in the template (override-mode roles
-/// replace the whole template, so the marker never appears there).
-pub fn build_plan_mode_system_prompt(
+/// `__ANALYSIS_TOOLS_LINES__` marker in the template.
+pub(crate) fn build_plan_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
-    remote_role_content: Option<&str>,
-    remote_include_global_rules: Option<bool>,
+    active_role: Option<&ActiveRole>,
     sub_agents_section: &str,
     analysis_tools_lines: &str,
 ) -> String {
@@ -44,28 +41,11 @@ pub fn build_plan_mode_system_prompt(
     // 不可用工具的行不存在（注入条件 = 工具可见性）。
     let template = PLAN_MODE_SYSTEM_PROMPT_TEMPLATE
         .replace(ANALYSIS_TOOLS_MARKER, analysis_tools_lines.trim());
+    let prompt = render_role_prompt(&template, active_role);
 
-    let prompt =
-        match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
-            // Override mode: role content replaces the entire template.
-            Some((role_content, true)) => format!(
-                "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-            ),
-
-            // Normal mode: role content replaces the default role text.
-            Some((role_content, false)) => {
-                let prompt = apply_role_override(&template, &role_content);
-                format!(
-                    "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-                )
-            }
-
-            // No ROLE.md found — use the plan mode template as-is.
-            None => format!(
-                "{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-            ),
-        };
-    format!("{prompt}{sub_agents_block}")
+    format!(
+        "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}{sub_agents_block}"
+    )
 }
 
 /// Appends the Sub-Agents chapter to the Plan Mode prompt. Returns an empty

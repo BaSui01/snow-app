@@ -226,6 +226,8 @@ export const registerChatHandlers = (native: NativeBridge): void => {
               ? {
                   remoteIncludeGlobalRules:
                     remoteRoleContext.includeGlobalRules,
+                  remoteOverrideBuiltinPrompt:
+                    remoteRoleContext.overrideBuiltinPrompt,
                 }
               : {}),
           },

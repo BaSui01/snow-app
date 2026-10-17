@@ -442,6 +442,7 @@ async fn request_review_text(
         responses_fast_mode: None,
         remote_role_content: None,
         remote_include_global_rules: None,
+        remote_override_builtin_prompt: None,
         execution_workspace_root: None,
         worktree_id: None,
         allowed_tools_json: None,

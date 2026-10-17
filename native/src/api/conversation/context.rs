@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 
+use crate::prompt::common::read_active_role;
 use crate::prompt::goal_mode_system_prompt::build_goal_mode_system_prompt;
 use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
@@ -187,28 +188,31 @@ pub(crate) async fn build_builtin_system_prompt(
     } else {
         String::new()
     };
+    let active_role = read_active_role(
+        &working_directory,
+        request.remote_role_content,
+        request.remote_include_global_rules,
+        request.remote_override_builtin_prompt,
+    );
     let system_prompt = if request.worktree_mode {
         build_worktree_mode_system_prompt(
             &working_directory,
             &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
+            active_role.as_ref(),
             &sub_agents_section,
         )
     } else if request.workflow_mode {
         build_workflow_mode_system_prompt(
             &working_directory,
             &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
+            active_role.as_ref(),
             &analysis_tools_section,
         )
     } else if request.plan_mode {
         build_plan_mode_system_prompt(
             &working_directory,
             &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
+            active_role.as_ref(),
             &sub_agents_section,
             &analysis_tools_section,
         )
@@ -227,16 +231,14 @@ pub(crate) async fn build_builtin_system_prompt(
             &working_directory,
             &shell_type,
             goal_token_budget,
-            request.remote_role_content,
-            request.remote_include_global_rules,
+            active_role.as_ref(),
             &analysis_tools_section,
         )
     } else {
         build_system_prompt(
             &working_directory,
             &shell_type,
-            request.remote_role_content,
-            request.remote_include_global_rules,
+            active_role.as_ref(),
             &sub_agents_section,
         )
     };

@@ -135,6 +135,9 @@ pub struct ResponsesApiRequest {
     /// Absent for local workspaces — Rust reads the file itself.
     pub remote_role_content: Option<String>,
     pub remote_include_global_rules: Option<bool>,
+    /// "Override built-in prompt" switch of an SSH workspace's project ROLE,
+    /// read from its remote `.snow/settings.json` by the main process.
+    pub remote_override_builtin_prompt: Option<bool>,
     /// Explicit effective workspace execution root (e.g. worktree directory path).
     /// When set, overrides directoryId-based project root for system prompt and tool execution.
     pub execution_workspace_root: Option<String>,
@@ -350,6 +353,7 @@ async fn create_response_async(
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
         remote_role_content: request.remote_role_content.as_deref(),
         remote_include_global_rules: request.remote_include_global_rules,
+        remote_override_builtin_prompt: request.remote_override_builtin_prompt,
         execution_workspace_root: request.execution_workspace_root.as_deref(),
         worktree_id: request.worktree_id.as_deref(),
     })

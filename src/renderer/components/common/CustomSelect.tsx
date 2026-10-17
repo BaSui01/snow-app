@@ -18,6 +18,8 @@ type CustomSelectBaseProps = {
   options: CustomSelectOption[];
   disabled?: boolean;
   title?: string;
+  /** 触发按钮的无障碍名称；不给时退化为可见的选中项文本。 */
+  ariaLabel?: string;
   /**
    * Force the dropdown to be rendered into `document.body` via a portal and
    * positioned below the trigger button, so it escapes containers that would
@@ -94,6 +96,7 @@ export function CustomSelect({
   multiple = false,
   disabled = false,
   title,
+  ariaLabel,
   portal = false,
   dropdownMinWidth,
   renderOption,
@@ -304,6 +307,7 @@ export function CustomSelect({
         onClick={handleTriggerClick}
         disabled={disabled}
         title={title}
+        aria-label={ariaLabel}
       >
         <span className="custom-select-label" title={displayLabel}>
           {selectedOption && renderLabel

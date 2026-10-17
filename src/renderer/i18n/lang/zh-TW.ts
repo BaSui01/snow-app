@@ -3940,6 +3940,9 @@ export const zhTW = {
   "personalization.includeGlobalTitle": "載入全域規則",
   "personalization.includeGlobalDesc":
     "保留該專案中的通用偏好，再追加專案專屬規則。",
+  "personalization.overrideBuiltinTitle": "覆蓋內建提示詞",
+  "personalization.overrideBuiltinDesc":
+    "開啟後，一般模式下規則內容取代內建提示詞；Plan / Goal / WorkFlow / WorkTree 模式仍使用各自的內建指導。API 設定檔中綁定的系統提示詞照常生效。",
   "personalization.projectSaved": "已儲存專案規則。",
   "personalization.projectPlaceholder":
     "在此輸入該專案的規則內容，例如程式碼風格、架構約定、技術棧說明...",
@@ -4603,8 +4606,6 @@ export const zhTW = {
   "taskManager.budgetSaveError":
     "儲存未確認，草稿已保留；請確認目前策略後重試。",
   "taskManager.trendTitle": "短期使用量趨勢 · 最近 60 秒",
-  "taskManager.trendHint":
-    "僅記錄目前篩選程序的自身合計，最多 120 點。變更搜尋、LSP 或專案範圍會清空趨勢；暫停、隱藏、取樣失敗或間隔超過 2.5 秒會斷檔。CPU 基準不完整時顯示未知，不補零。",
   "taskManager.trendUnknown": "未知 / 斷檔",
   "taskManager.trendEmpty": "等待此篩選範圍的新程序取樣。",
   "taskManager.trendChartLabel":

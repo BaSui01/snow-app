@@ -1,6 +1,6 @@
 use super::common::{
-    apply_role_override, get_current_time_info, get_platform_section,
-    get_working_directory_section, read_active_role,
+    get_current_time_info, get_platform_section, get_working_directory_section,
+    render_role_prompt, ActiveRole,
 };
 
 /// Generate the WorkFlow Mode system prompt with dynamic context.
@@ -17,19 +17,17 @@ use super::common::{
 /// `working_directory` is the resolved filesystem path of the active workspace
 /// directory. When empty, the working-directory section is omitted entirely.
 ///
-/// `remote_role_content` carries the project ROLE.md of an `ssh://` workspace,
-/// resolved by the Electron main process over SSH. `None` for local
-/// workspaces, where the project file is read directly.
+/// `active_role` is the resolved ROLE.md rules (see `common::read_active_role`),
+/// always inlined into the template (the override switch is normal-mode only).
 /// `analysis_tools_lines` is the dynamically built investigation-phase tool
 /// list - only tools actually callable in the current project (see
 /// `prompt::tool_hints`). It replaces the `ANALYSIS_TOOLS_MARKER` placeholder
 /// in the template (used in Step 1 when the requirement depends on the
 /// existing codebase).
-pub fn build_workflow_mode_system_prompt(
+pub(crate) fn build_workflow_mode_system_prompt(
     working_directory: &str,
     shell_type: &str,
-    remote_role_content: Option<&str>,
-    remote_include_global_rules: Option<bool>,
+    active_role: Option<&ActiveRole>,
     analysis_tools_lines: &str,
 ) -> String {
     let time_info = get_current_time_info();
@@ -38,26 +36,9 @@ pub fn build_workflow_mode_system_prompt(
     // 调查阶段工具清单动态注入（2026-09-24）：只含当前项目实际可调用的工具。
     let template = WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE
         .replace(ANALYSIS_TOOLS_MARKER, analysis_tools_lines.trim());
+    let prompt = render_role_prompt(&template, active_role);
 
-    match read_active_role(working_directory, remote_role_content, remote_include_global_rules) {
-        // Override mode: role content replaces the entire template.
-        Some((role_content, true)) => format!(
-            "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
-
-        // Normal mode: role content replaces the default role text.
-        Some((role_content, false)) => {
-            let prompt = apply_role_override(&template, &role_content);
-            format!(
-                "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-            )
-        }
-
-        // No ROLE.md found — use the workflow mode template as-is.
-        None => format!(
-            "{template}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
-        ),
-    }
+    format!("{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}")
 }
 
 /// Placeholder inside `WORKFLOW_MODE_SYSTEM_PROMPT_TEMPLATE` replaced with the

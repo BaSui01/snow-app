@@ -1857,6 +1857,7 @@ export const zhCN = {
   "topBar.plusMenu.codebase": "代码库",
   "topBar.plusMenu.explorer": "资源管理器",
   "topBar.plusMenu.tasks": "任务管理器",
+  "topBar.plusMenu.devtools": "开发者工具",
   "topBar.copyProjectPath": "复制项目路径",
   "topBar.revealInExplorer": "在文件管理器中显示",
   "common.back": "返回",

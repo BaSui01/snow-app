@@ -1858,6 +1858,7 @@ export const zhTW = {
   "topBar.plusMenu.codebase": "程式碼庫",
   "topBar.plusMenu.explorer": "檔案總管",
   "topBar.plusMenu.tasks": "工作管理員",
+  "topBar.plusMenu.devtools": "開發者工具",
   "topBar.copyProjectPath": "複製專案路徑",
   "topBar.revealInExplorer": "在檔案總管中顯示",
   "common.back": "返回",

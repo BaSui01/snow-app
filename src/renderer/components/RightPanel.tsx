@@ -1,4 +1,5 @@
 import {
+  Bug,
   Database,
   FolderTree,
   Gauge,
@@ -1637,6 +1638,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         label: t("topBar.plusMenu.tasks", { defaultValue: "Task manager" }),
         icon: Gauge,
       },
+      {
+        id: "devtools",
+        label: t("topBar.plusMenu.devtools", {
+          defaultValue: "Developer tools",
+        }),
+        icon: Bug,
+      },
       ...pluginPanels.map(({ plugin, panelIndex }) => {
         const panel = plugin.panels[panelIndex];
         const panelTitle = resolveLocalized(panel.title, locale);
@@ -1683,6 +1691,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenDrawingTab();
       } else if (actionId === "tasks") {
         handleOpenTaskManagerTab();
+      } else if (actionId === "devtools") {
+        void window.snow.toggleDevTools();
       } else if (actionId === "explorer") {
         handleOpenExplorerTab(activeDirectory?.directoryId ?? "");
       } else if (actionId === "codebase" && activeDirectory?.directoryId) {

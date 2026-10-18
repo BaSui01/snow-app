@@ -1948,6 +1948,7 @@ export const en = {
   "topBar.plusMenu.codebase": "Codebase",
   "topBar.plusMenu.explorer": "Explorer",
   "topBar.plusMenu.tasks": "Task manager",
+  "topBar.plusMenu.devtools": "Developer tools",
   "topBar.copyProjectPath": "Copy Project Path",
   "topBar.revealInExplorer": "Show in Explorer",
   "common.back": "Back",

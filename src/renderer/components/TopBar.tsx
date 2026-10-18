@@ -1,4 +1,5 @@
 import {
+  Bug,
   Copy,
   Database,
   FolderOpen,
@@ -728,6 +729,13 @@ export const TopBar = ({
       label: t("topBar.plusMenu.tasks", { defaultValue: "Task manager" }),
       icon: Gauge,
     },
+    {
+      id: "devtools",
+      label: t("topBar.plusMenu.devtools", {
+        defaultValue: "Developer tools",
+      }),
+      icon: Bug,
+    },
     ...pluginPanels.map(({ plugin, panelIndex }) => {
       const panel = plugin.panels[panelIndex];
       const panelTitle = resolveLocalized(panel.title, locale);
@@ -764,6 +772,8 @@ export const TopBar = ({
       onOpenDrawing?.();
     } else if (actionId === "tasks") {
       onOpenTaskManager?.();
+    } else if (actionId === "devtools") {
+      void window.snow.toggleDevTools();
     } else if (actionId === "explorer") {
       onOpenProjectExplorer?.(activeProjectId ?? "");
     } else if (actionId === "codebase" && activeProjectId) {

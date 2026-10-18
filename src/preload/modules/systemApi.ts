@@ -1523,6 +1523,9 @@ export const windowApi = {
     ipcRenderer.invoke("window:clear-state"),
   /** 错误边界"重新加载"：由主进程强制刷新渲染进程（比 location.reload 可靠）。 */
   reloadWindow: (): Promise<void> => ipcRenderer.invoke("window:reload"),
+  /** 开关当前窗口的开发者工具（独立窗口，发行版同样可用）。 */
+  toggleDevTools: (): Promise<void> =>
+    ipcRenderer.invoke("window:toggle-devtools"),
   startWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:start-drag"),
   stopWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:stop-drag"),
   writeImageToClipboard: (dataUrl: string): Promise<void> =>

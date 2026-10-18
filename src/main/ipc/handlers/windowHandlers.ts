@@ -397,6 +397,21 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     }
   });
 
+  // 右侧面板 Plus 菜单的「开发者工具」入口：发行版同样可用。
+  // 使用 detach 模式，避免 DevTools 停靠挤压窗口导致侧面板被自动收起。
+  ipcMain.handle("window:toggle-devtools", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+    const contents = win.webContents;
+    if (contents.isDevToolsOpened()) {
+      contents.closeDevTools();
+    } else {
+      contents.openDevTools({ mode: "detach", activate: true });
+    }
+  });
+
   // 通用设置「清空应用缓存」：只清当前 session 的 HTTP 缓存后强制重新加载
   // 当前页面（最快路径，不触碰 code cache / DNS / 登录态与本地数据）。
   ipcMain.handle("app:clear-cache-and-reload", async (event) => {

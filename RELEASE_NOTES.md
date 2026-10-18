@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.4.28
+
+## New Features
+
+- **Automatic Tool-Call Correction**: when a tool call fails, the basic model proposes fixed arguments and the same call is retried (up to 3 attempts, re-authorized each time), shown in an expandable correction tree that survives restarts; enabled by default with a Plus menu toggle.
+- **ROLE Prompt Override**: the global and project ROLE editors gain an "Override built-in prompt" switch that replaces the whole built-in template (Plan / Goal / WorkFlow / WorkTree modes keep their guidance).
+- **Developer Tools**: a Plus menu entry opens the current window's DevTools.
+- **Search Favicons**: web search results show each site's favicon.
+- **Quick Default Profile**: the model dropdown has a pin button to enable any API profile as the default.
+
+## Improvements
+
+- Pending messages are restyled as a tab-like card attached to the input box.
+- Context menus and dropdowns gain grouped separators, and mention popup keyboard/mouse interactions are smoother.
+- Globally disabled MCP tools are read-only at the project level; the imagegen execution-mode select uses CustomSelect.
+
+## Bug Fixes
+
+- Fixed stream timeouts with large image attachments: images are downsampled to 1568px and the first-byte window scales with request size (default idle timeout is now 60s).
+- Fixed OAuth model-list fetching not retrying like API-key providers.
+
 ## v0.4.27
 
 ## New Features

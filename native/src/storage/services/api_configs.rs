@@ -312,9 +312,16 @@ fn record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ApiConfigRecord>
 pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
     let connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "list API configs", error))?;
-    seed_default_api_config_with_connection(&connection).map_err(|error| {
-        database::database_error(database_path, "seed default API config", error)
+    // 空表（首次安装）保持为空，不播种默认档案：渲染层据此显示「前往配置 API」
+    // 引导条。已有档案时才校正唯一激活档案。
+    let has_any = has_any_api_config(&connection).map_err(|error| {
+        database::database_error(database_path, "check API configs", error)
     })?;
+    if has_any {
+        ensure_one_active_config(&connection).map_err(|error| {
+            database::database_error(database_path, "normalize active API config", error)
+        })?;
+    }
 
     let mut statement = connection
         .prepare(
@@ -764,13 +771,16 @@ fn insert_default_api_config(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite::Result<()> {
-    let has_any: bool = connection.query_row(
+fn has_any_api_config(connection: &Connection) -> rusqlite::Result<bool> {
+    connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM api_configs)",
         [],
         |row| row.get(0),
-    )?;
-    if !has_any {
+    )
+}
+
+fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite::Result<()> {
+    if !has_any_api_config(connection)? {
         insert_default_api_config(connection)?;
     }
     ensure_one_active_config(connection)

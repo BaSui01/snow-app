@@ -13899,6 +13899,9 @@ body.is-panel-resizing * {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--app-font-family, var(--font-sans));
+  font-weight: var(--app-font-weight, 400);
+  letter-spacing: normal;
 }
 
 .link-open-menu-item-icon {

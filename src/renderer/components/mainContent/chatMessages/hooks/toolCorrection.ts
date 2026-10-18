@@ -159,6 +159,34 @@ export const appendToolCorrectionNote = (
 };
 
 /**
+ * 落库时单个文本字段的上限：超长工具输出只保留前缀。纠错树只用于审计与
+ * 复盘，完整结果本身已保存在工具结果消息里，不必重复入库。
+ */
+const PERSISTED_TEXT_MAX_CHARS = 20_000;
+
+const truncatePersistedText = (
+  value: string | undefined,
+): string | undefined => {
+  if (value === undefined || value.length <= PERSISTED_TEXT_MAX_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, PERSISTED_TEXT_MAX_CHARS)}\n...[truncated]`;
+};
+
+/** 序列化纠错状态用于持久化（重启后重建纠错树）。 */
+export const serializeToolCorrectionState = (
+  state: ToolCorrectionState,
+): string =>
+  JSON.stringify({
+    ...state,
+    attempts: state.attempts.map((attempt) => ({
+      ...attempt,
+      error: truncatePersistedText(attempt.error),
+      result: truncatePersistedText(attempt.result),
+    })),
+  });
+
+/**
  * 纠错主循环：最多 3 次「模型给出修正参数 -> 重新授权 -> 重新执行」。
  * 成功后返回最终参数与结果；失败时返回 null，调用方继续使用原始错误。
  */

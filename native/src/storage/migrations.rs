@@ -93,6 +93,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_chat_messages_thinking_stats(connection)?;
     migrate_chat_messages_token_usage(connection)?;
     migrate_chat_messages_retry_metadata(connection)?;
+    migrate_chat_messages_tool_corrections(connection)?;
     migrate_chat_messages_cancelled_terminal_cleanup(connection)?;
     purge_assistant_raw_json_blobs(connection)?;
     drop_tables_referencing_sub_agent_configs_legacy(connection)?;
@@ -712,6 +713,32 @@ fn migrate_chat_messages_retry_metadata(connection: &Connection) -> rusqlite::Re
                 [],
             )?;
         }
+    }
+
+    Ok(())
+}
+
+/// Adds the tool-correction state column to `chat_messages` for databases
+/// created before the correction tree became persistent.
+///
+/// The column stores a JSON object keyed by tool call id; each value is the
+/// serialized `ToolCorrectionState` of that call. It only feeds the history
+/// replay of the correction tree (audit), never the provider payload. Existing
+/// rows keep `{}` and therefore render exactly as before.
+///
+/// Idempotent: the column is checked before the ALTER (fresh databases get the
+/// column from the `CREATE TABLE` statement in `create_schema`).
+fn migrate_chat_messages_tool_corrections(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_messages)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "tool_corrections_json") {
+        connection.execute(
+            "ALTER TABLE chat_messages ADD COLUMN tool_corrections_json TEXT NOT NULL DEFAULT '{}'",
+            [],
+        )?;
     }
 
     Ok(())

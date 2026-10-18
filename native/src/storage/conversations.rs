@@ -518,6 +518,23 @@ pub fn update_tool_call_arguments(
     )
 }
 
+/// 落库单条工具调用的纠错状态（空字符串表示清除），供重启后重建纠错树。
+pub fn update_tool_call_correction(
+    conversation_id: String,
+    response_id: String,
+    call_id: String,
+    correction_json: String,
+) -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_tool_call_correction(
+        &database_path,
+        &conversation_id,
+        &response_id,
+        &call_id,
+        &correction_json,
+    )
+}
+
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
     let mut records =

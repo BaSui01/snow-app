@@ -50,6 +50,7 @@ import {
   isNonCorrectableToolFailure,
   isToolCorrectionEligible,
   runToolCorrection,
+  serializeToolCorrectionState,
   type ToolCorrectionSuccess,
   type ToolCorrectionToolDefinition,
 } from "./toolCorrection";
@@ -541,6 +542,31 @@ export function createToolExecutor(
         );
       };
 
+      /**
+       * 落库纠错状态：应用重启后历史消息重建时仍能展开纠错树（审计）。
+       * 与修正参数一样，仅在助手消息已持久化的会话中写入。
+       */
+      const persistToolCorrection = (
+        correctedCall: ToolCallInfo,
+        correction: ToolCorrectionState,
+      ): void => {
+        if (
+          !responseId ||
+          !correctedCall.callId ||
+          isPendingSessionKey(effectiveKey)
+        ) {
+          return;
+        }
+        void window.snow
+          .updateToolCallCorrection(
+            effectiveKey,
+            responseId,
+            correctedCall.callId,
+            serializeToolCorrectionState(correction),
+          )
+          .catch(() => undefined);
+      };
+
       /** 让下一轮请求看到修正后的工具调用参数。 */
       const persistCorrectedArguments = async (
         correctedCall: ToolCallInfo,
@@ -621,13 +647,15 @@ export function createToolExecutor(
               throw error;
             }
           },
-          onUpdate: (correction) =>
+          onUpdate: (correction) => {
             publishToolCorrection(
               correctedCall,
               correction,
               settle,
               failedResult,
-            ),
+            );
+            persistToolCorrection(correctedCall, correction);
+          },
           isCancelled: () => isRunCancelled(effectiveKey),
         });
 

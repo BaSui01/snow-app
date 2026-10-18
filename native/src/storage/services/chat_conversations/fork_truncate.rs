@@ -115,12 +115,14 @@ pub fn fork_conversation(
         i64,
         i64,
         i64,
+        String,
     )> = {
         let mut stmt = transaction
             .prepare(
                 "SELECT message_id, role, content, model, response_id, status, raw_json, thinking, tool_calls_json,
                         interruption_reason, recovery_outcome,
-                        input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
+                        input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+                        tool_corrections_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id <= COALESCE(
@@ -149,6 +151,7 @@ pub fn fork_conversation(
                     row.get(12)?,
                     row.get(13)?,
                     row.get(14)?,
+                    row.get(15)?,
                 ))
             })
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
@@ -178,9 +181,10 @@ pub fn fork_conversation(
                output_tokens,
                cache_creation_input_tokens,
                cache_read_input_tokens,
+               tool_corrections_json,
                created_at
              ) VALUES (
-               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, datetime('now', 'localtime')
+               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, datetime('now', 'localtime')
              )",
                 params![
                     database::create_snowflake_id(),
@@ -200,6 +204,7 @@ pub fn fork_conversation(
                     &msg.12, // output_tokens
                     &msg.13, // cache_creation_input_tokens
                     &msg.14, // cache_read_input_tokens
+                    &msg.15, // tool_corrections_json
                 ],
             )
             .map_err(|error| database::database_error(database_path, "fork conversation", error))?;

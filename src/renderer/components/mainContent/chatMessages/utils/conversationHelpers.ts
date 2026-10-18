@@ -1,6 +1,10 @@
 import type {
   ChatConversationMessage,
   ToolCallInfo,
+  ToolCorrectionAttempt,
+  ToolCorrectionAttemptStatus,
+  ToolCorrectionState,
+  ToolCorrectionStatus,
 } from "./conversationTypes";
 import type { ChatMessageRecord } from "../../../../../preload";
 import { getActiveLocale, tGlobal } from "../../../../i18n";
@@ -533,6 +537,141 @@ export const parseToolCalls = (
   return [];
 };
 
+const TOOL_CORRECTION_STATUSES: ReadonlySet<string> = new Set([
+  "running",
+  "succeeded",
+  "failed",
+  "abandoned",
+]);
+
+const TOOL_CORRECTION_ATTEMPT_STATUSES: ReadonlySet<string> = new Set([
+  "running",
+  "failed",
+  "succeeded",
+  "rejected",
+]);
+
+const parsePersistedCorrectionAttempt = (
+  value: unknown,
+  fallbackIndex: number,
+): ToolCorrectionAttempt | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const rawStatus = typeof record.status === "string" ? record.status : "";
+  if (!TOOL_CORRECTION_ATTEMPT_STATUSES.has(rawStatus)) {
+    return null;
+  }
+
+  const startedAt = typeof record.startedAt === "number" ? record.startedAt : 0;
+  // 应用重启后不可能还有执行中的纠错：把遗留的 running 收敛为失败，
+  // 避免历史卡片一直显示「纠错中」。
+  const interrupted = rawStatus === "running";
+  const status: ToolCorrectionAttemptStatus = interrupted
+    ? "failed"
+    : (rawStatus as ToolCorrectionAttemptStatus);
+  const finishedAt =
+    typeof record.finishedAt === "number"
+      ? record.finishedAt
+      : interrupted
+        ? startedAt
+        : undefined;
+
+  return {
+    index: typeof record.index === "number" ? record.index : fallbackIndex,
+    status,
+    arguments: typeof record.arguments === "string" ? record.arguments : "",
+    reasoning:
+      typeof record.reasoning === "string" ? record.reasoning : undefined,
+    error: typeof record.error === "string" ? record.error : undefined,
+    result: typeof record.result === "string" ? record.result : undefined,
+    startedAt,
+    finishedAt,
+  };
+};
+
+const parsePersistedCorrection = (
+  value: unknown,
+): ToolCorrectionState | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const rawStatus = typeof record.status === "string" ? record.status : "";
+  if (!TOOL_CORRECTION_STATUSES.has(rawStatus)) {
+    return null;
+  }
+
+  const attempts = Array.isArray(record.attempts)
+    ? record.attempts
+        .map((attempt, index) =>
+          parsePersistedCorrectionAttempt(attempt, index + 1),
+        )
+        .filter((attempt): attempt is ToolCorrectionAttempt => attempt !== null)
+    : [];
+
+  const interrupted = rawStatus === "running";
+  const status: ToolCorrectionStatus = interrupted
+    ? "abandoned"
+    : (rawStatus as ToolCorrectionStatus);
+  const persistedFailureCode =
+    typeof record.failureCode === "string" ? record.failureCode : "";
+
+  return {
+    status,
+    attempts,
+    originalArguments:
+      typeof record.originalArguments === "string"
+        ? record.originalArguments
+        : "",
+    failureCode: interrupted
+      ? "cancelled"
+      : (persistedFailureCode as ToolCorrectionState["failureCode"]) ||
+        undefined,
+    failureDetail:
+      typeof record.failureDetail === "string"
+        ? record.failureDetail
+        : undefined,
+  };
+};
+
+/**
+ * 解析持久化的纠错状态映射（callId -> state）。历史重放时挂回对应工具
+ * 调用，重启后仍能展开查看纠错树（审计用途）。
+ */
+export const parseToolCorrections = (
+  correctionsJson: string | undefined,
+): Record<string, ToolCorrectionState> => {
+  if (!correctionsJson) {
+    return {};
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(correctionsJson);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return {};
+    }
+
+    const corrections: Record<string, ToolCorrectionState> = {};
+    for (const [callId, value] of Object.entries(
+      parsed as Record<string, unknown>,
+    )) {
+      const correction = parsePersistedCorrection(value);
+      if (correction) {
+        corrections[callId] = correction;
+      }
+    }
+    return corrections;
+  } catch {
+    return {};
+  }
+};
+
 /**
  * Strips hook-appended sections ([Hook Context] and [Hook Warning]) from
  * user message content. These sections are appended to the message before
@@ -583,11 +722,15 @@ export const buildConversationMessages = (
     .map((record) => {
       const assistantDisposition =
         record.role === "user" ? null : resolveResponseDisposition(record);
+      const toolCorrections = parseToolCorrections(record.toolCorrectionsJson);
       const toolCalls =
         assistantDisposition?.kind === "incomplete"
           ? []
           : parseToolCalls(record.toolCallsJson).map((toolCall) => {
               const result = consumeToolResult(toolCall);
+              const correction = toolCall.callId
+                ? toolCorrections[toolCall.callId]
+                : undefined;
               return {
                 ...toolCall,
                 status:
@@ -595,6 +738,7 @@ export const buildConversationMessages = (
                     ? ("error" as const)
                     : ("completed" as const),
                 result,
+                ...(correction ? { correction } : {}),
               };
             });
       const messageStatus: NonNullable<ChatConversationMessage["status"]> =

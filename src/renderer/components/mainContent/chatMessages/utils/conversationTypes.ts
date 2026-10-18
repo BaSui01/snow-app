@@ -121,7 +121,8 @@ export type ToolCallInfo = {
   interactionId: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
-  /** 工具失败后由纠错 Agent 修复的过程与结果（仅运行时状态，不落库）。 */
+  /** 工具失败后由纠错 Agent 修复的过程与结果。运行时实时更新，并随助手
+   *  消息落库（按 callId 归档），应用重启后由历史重放恢复用于审计。 */
   correction?: ToolCorrectionState;
   /** Runtime task binding; persisted task snapshots remain the source of truth. */
   imageGenerationTaskId?: string;

@@ -1076,6 +1076,9 @@ export type ChatMessageRecord = {
   responseId: string;
   checkpointId: string;
   toolCallsJson: string;
+  /** 按工具调用 id 索引的纠错状态 JSON（`{}` 表示没有纠错记录），用于
+   *  重启后重建纠错树。 */
+  toolCorrectionsJson: string;
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
   /** Token usage of the API request that produced this assistant message
@@ -2483,6 +2486,13 @@ export type NativeBridge = ImageGenerationNativeApi & {
     responseId: string,
     callId: string,
     argumentsJson: string,
+  ) => Promise<boolean>;
+  /** 落库单条工具调用的纠错状态（空字符串清除），供重启后重建纠错树。 */
+  updateToolCallCorrection: (
+    conversationId: string,
+    responseId: string,
+    callId: string,
+    correctionJson: string,
   ) => Promise<boolean>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listUserMessages: (conversationId: string) => Promise<UserMessageSummary[]>;

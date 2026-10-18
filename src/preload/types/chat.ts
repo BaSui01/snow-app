@@ -76,6 +76,9 @@ export type ChatMessageRecord = {
   responseId: string;
   checkpointId: string;
   toolCallsJson: string;
+  /** 按工具调用 id 索引的纠错状态 JSON（`{}` 表示没有纠错记录），用于
+   *  重启后重建纠错树。 */
+  toolCorrectionsJson: string;
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
   /** Token usage of the API request that produced this assistant message

@@ -35,7 +35,9 @@ const MAX_VARIABLES: usize = 400;
 /// v2：在 v1（历史版本号）基础上引入 user_version 快路径。
 /// v3：chat_messages 补齐运行库的空响应重试元数据列
 /// （retry_attempts / retry_error），避免归档静默丢列、还原时列不齐。
-const ARCHIVE_SCHEMA_VERSION: i64 = 3;
+/// v4：chat_messages 补齐工具纠错状态列（tool_corrections_json），
+/// 否则归档/还原会丢掉重启后重建纠错树所需的数据。
+const ARCHIVE_SCHEMA_VERSION: i64 = 4;
 
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
 /// 必须与运行库 create_schema 的 chat_conversations 列保持同步——
@@ -45,7 +47,7 @@ const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_me
 /// 与运行库 chat_messages 完全一致的列。
 /// 必须与运行库 create_schema 的 chat_messages 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
-const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, retry_attempts, retry_error, created_at";
+const MESSAGE_COLUMNS: &str = "id, message_id, conversation_id, role, content, model, response_id, checkpoint_id, status, interruption_reason, recovery_outcome, raw_json, thinking, thinking_duration_ms, thinking_token_count, thinking_blocks_json, tool_calls_json, tool_corrections_json, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, retry_attempts, retry_error, created_at";
 
 const TODO_COLUMNS: &str = "id, session_id, content, status, response_id, created_at, updated_at, parent_id";
 
@@ -163,9 +165,10 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            thinking TEXT NOT NULL DEFAULT '',
            thinking_duration_ms INTEGER NOT NULL DEFAULT 0,
            thinking_token_count INTEGER NOT NULL DEFAULT 0,
-            thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
-            tool_calls_json TEXT NOT NULL DEFAULT '[]',
-            input_tokens INTEGER NOT NULL DEFAULT 0,
+             thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
+             tool_calls_json TEXT NOT NULL DEFAULT '[]',
+             tool_corrections_json TEXT NOT NULL DEFAULT '{}',
+             input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
              cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -325,6 +328,7 @@ fn migrate_archive_chat_messages(connection: &Connection) -> rusqlite::Result<()
         ("cache_read_input_tokens", "INTEGER NOT NULL DEFAULT 0"),
         ("retry_attempts", "INTEGER NOT NULL DEFAULT 0"),
         ("retry_error", "TEXT NOT NULL DEFAULT ''"),
+        ("tool_corrections_json", "TEXT NOT NULL DEFAULT '{}'"),
     ] {
         if !columns.iter().any(|column| column == name) {
             connection.execute(

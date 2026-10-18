@@ -626,6 +626,28 @@ pub async fn update_tool_call_arguments(
     .map_err(map_spawn_error)?
 }
 
+/// Persist (or clear, with an empty string) the correction-agent state of one
+/// tool call so the correction tree survives an app restart. Returns whether a
+/// matching assistant message was found.
+#[napi]
+pub async fn update_tool_call_correction(
+    conversation_id: String,
+    response_id: String,
+    call_id: String,
+    correction_json: String,
+) -> napi::Result<bool> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::update_tool_call_correction(
+            conversation_id,
+            response_id,
+            call_id,
+            correction_json,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<ChatMessageRecord>> {
     tokio::task::spawn_blocking(move || crate::storage::list_chat_messages(conversation_id))

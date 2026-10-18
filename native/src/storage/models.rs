@@ -767,6 +767,10 @@ pub struct ChatMessageRecord {
     pub response_id: String,
     pub checkpoint_id: String,
     pub tool_calls_json: String,
+    /// JSON object keyed by tool call id holding the correction-agent state of
+    /// that call (`{}` when the call was never corrected). Persisted so the
+    /// correction tree can be replayed for audit after an app restart.
+    pub tool_corrections_json: String,
     pub interruption_reason: Option<String>,
     pub recovery_outcome: Option<String>,
     /// Token usage of the API request that produced this assistant message

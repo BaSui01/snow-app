@@ -14653,16 +14653,16 @@ body.is-panel-resizing * {
   width: fit-content;
   max-width: 100%;
   padding: 4px 6px;
+  border: none;
   border-radius: 6px;
+  background: transparent;
   color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   user-select: none;
-  list-style: none;
+  appearance: none;
   transition: background 0.15s ease;
-}
-
-.tct-header::-webkit-details-marker {
-  display: none;
 }
 
 .tct-header:hover {
@@ -14748,15 +14748,40 @@ body.is-panel-resizing * {
   opacity: 1;
 }
 
-.tct[open] > .tct-header .tct-chevron {
+.tct--open > .tct-header .tct-chevron {
   transform: rotate(90deg);
+}
+
+/* 展开/收起过渡：grid 轨道 0fr -> 1fr 可对内容高度做平滑动画，
+   收起后 visibility 置为 hidden，内部元素不再可获得焦点。 */
+.tct-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.16s ease,
+    visibility 0s linear 0.22s;
+}
+
+.tct--open > .tct-body-wrap {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.16s ease,
+    visibility 0s;
 }
 
 .tct-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-height: 0;
   margin: 4px 0 2px;
+  overflow: hidden;
 }
 
 .tct-attempt-detail.tct-original-detail {
@@ -14962,6 +14987,12 @@ body.is-panel-resizing * {
 
 .tct-replaced > svg {
   flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tct-body-wrap {
+    transition: none;
+  }
 }
 
 .tcn-chevron {

@@ -661,6 +661,106 @@ pub fn update_tool_call_arguments(
     Ok(true)
 }
 
+/// Persist (or clear) the correction-agent state of one tool call inside the
+/// persisted assistant message of a response.
+///
+/// The column holds a JSON object keyed by tool call id, so several parallel
+/// tool calls of the same response keep separate correction trees. An empty
+/// `correction_json` removes the entry. The data is only used by the history
+/// replay of the correction tree and never sent to the provider.
+pub fn update_tool_call_correction(
+    database_path: &Path,
+    conversation_id: &str,
+    response_id: &str,
+    call_id: &str,
+    correction_json: &str,
+) -> Result<bool> {
+    let normalized_call_id = call_id.trim();
+    if normalized_call_id.is_empty() {
+        return Ok(false);
+    }
+
+    let correction = if correction_json.trim().is_empty() {
+        None
+    } else {
+        let parsed: Value = serde_json::from_str(correction_json).map_err(|error| {
+            Error::new(
+                Status::InvalidArg,
+                format!("Tool correction state is not valid JSON: {}", error),
+            )
+        })?;
+        if !parsed.is_object() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Tool correction state must be a JSON object.",
+            ));
+        }
+        Some(parsed)
+    };
+
+    let mut connection = database::open_connection(database_path).map_err(|error| {
+        database::database_error(database_path, "update tool call correction", error)
+    })?;
+    // IMMEDIATE serializes concurrent corrections of parallel tool calls: each
+    // read-modify-write must observe the previous entry of the same response.
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call correction", error)
+        })?;
+
+    let row = transaction
+        .query_row(
+            "SELECT id, tool_corrections_json
+               FROM chat_messages
+              WHERE conversation_id = ?1
+                AND response_id = ?2
+                AND role = 'assistant'
+                AND tool_calls_json NOT IN ('', '[]')
+              ORDER BY id DESC
+              LIMIT 1",
+            params![conversation_id, response_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call correction", error)
+        })?;
+    let Some((message_id, raw)) = row else {
+        return Ok(false);
+    };
+
+    let mut corrections = serde_json::from_str::<serde_json::Map<String, Value>>(&raw)
+        .unwrap_or_default();
+    match correction {
+        Some(value) => {
+            corrections.insert(normalized_call_id.to_string(), value);
+        }
+        None => {
+            corrections.remove(normalized_call_id);
+        }
+    }
+
+    let serialized = serde_json::to_string(&Value::Object(corrections)).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to serialize tool correction state: {}",
+            error
+        ))
+    })?;
+    transaction
+        .execute(
+            "UPDATE chat_messages SET tool_corrections_json = ?2 WHERE id = ?1",
+            params![message_id, serialized],
+        )
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call correction", error)
+        })?;
+    transaction.commit().map_err(|error| {
+        database::database_error(database_path, "update tool call correction", error)
+    })?;
+    Ok(true)
+}
+
 fn tool_call_id(tool_call: &Value) -> Option<&str> {
     tool_call
         .get("call_id")
@@ -756,7 +856,8 @@ pub fn list_chat_messages(
                         cache_read_input_tokens,
                         retry_attempts,
                         retry_error,
-                        created_at
+                        created_at,
+                        tool_corrections_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                   ORDER BY id ASC",
@@ -784,6 +885,7 @@ pub fn list_chat_messages(
                     retry_attempts: row.get(17)?,
                     retry_error: row.get(18)?,
                     created_at: row.get(19)?,
+                    tool_corrections_json: row.get(20)?,
                 })
             })?;
 
@@ -892,7 +994,8 @@ pub fn list_chat_messages_paginated(
                         cache_read_input_tokens,
                         retry_attempts,
                         retry_error,
-                        created_at
+                        created_at,
+                        tool_corrections_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id < ?2)
@@ -924,6 +1027,7 @@ pub fn list_chat_messages_paginated(
                         retry_attempts: row.get(17)?,
                         retry_error: row.get(18)?,
                         created_at: row.get(19)?,
+                        tool_corrections_json: row.get(20)?,
                     })
                 },
             )?;

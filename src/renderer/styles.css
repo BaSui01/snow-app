@@ -29463,6 +29463,58 @@ body.is-panel-resizing * {
   background: var(--bg-hover);
 }
 
+.model-dropdown-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* 与编辑按钮一致：默认不占布局空间（宽度 0 + 负 margin 抵消行内 gap），悬停时展开 */
+  width: 0;
+  padding: 0;
+  margin-left: -8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    width 0.12s ease,
+    padding 0.12s ease,
+    margin-left 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.model-dropdown-item:hover .model-dropdown-pin-btn,
+.model-dropdown-pin-btn:focus-visible {
+  width: 18px;
+  padding: 3px;
+  margin-left: 0;
+  opacity: 1;
+}
+
+.model-dropdown-pin-btn:hover {
+  color: var(--text-link, #3b82f6);
+  background: var(--bg-hover);
+}
+
+.model-dropdown-pin-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* 当前默认启用配置的常驻图钉标识（与悬停展开的图钉按钮占位一致） */
+.model-dropdown-default-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  padding: 3px;
+  color: var(--text-link, #3b82f6);
+}
+
 .model-dropdown-footer {
   margin-top: 4px;
   padding-top: 4px;

@@ -18,7 +18,10 @@ import {
   ENABLED_STATUS_LABEL,
 } from "./apiSettingsConstants";
 import { filterApiConfigs } from "./apiSettingsSearch";
-import { useApiConfigReorder } from "./apiConfigReorder";
+import {
+  useApiConfigReorder,
+  API_CONFIG_ROW_ATTRIBUTE,
+} from "./apiConfigReorder";
 import type { ApiConfigItem } from "./types";
 
 type ApiSettingsTableProps = {
@@ -292,6 +295,7 @@ export function ApiSettingsTable({
                   <tr
                     key={config.profileName}
                     {...reorder.getDropTargetProps(config.profileName)}
+                    {...{ [API_CONFIG_ROW_ATTRIBUTE]: config.profileName }}
                     className={rowClassName || undefined}
                   >
                     <td className="api-settings-table-order">

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { ApiConfigRecord } from "../../../../preload";
 
@@ -7,6 +7,43 @@ export type ApiConfigDropPlacement = "before" | "after";
 
 /** 拖拽数据里写入的自定义类型，避免与文件、会话等其它拖拽源互相干扰。 */
 const API_CONFIG_DRAG_TYPE = "application/x-snow-api-config";
+
+/** 表格行上的档案名标记，自动滚动后据此重新判定悬停落点。 */
+export const API_CONFIG_ROW_ATTRIBUTE = "data-api-config-row";
+
+/** 拖拽时距离滚动容器上下边缘多近开始自动滚动（像素）。 */
+const AUTO_SCROLL_EDGE = 52;
+
+/** 自动滚动每帧的最大位移（像素）。 */
+const AUTO_SCROLL_MAX_STEP = 20;
+
+/** 找到离拖拽行最近的可纵向滚动的祖先容器。 */
+const findScrollableAncestor = (
+  element: Element | null,
+): HTMLElement | null => {
+  let current = element instanceof HTMLElement ? element : null;
+  while (current) {
+    const { overflowY } = window.getComputedStyle(current);
+    const scrollable =
+      (overflowY === "auto" ||
+        overflowY === "scroll" ||
+        overflowY === "overlay") &&
+      current.scrollHeight - current.clientHeight > 1;
+    if (scrollable) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+};
+
+type ApiConfigAutoScrollState = {
+  container: HTMLElement;
+  sourceName: string;
+  pointerX: number;
+  pointerY: number;
+  frame: number | null;
+};
 
 /**
  * 把 `sourceName` 移动到 `targetName` 的前 / 后，返回新的完整顺序。
@@ -115,6 +152,136 @@ export const useApiConfigReorder = ({
   onReorder,
 }: ApiConfigReorderOptions): ApiConfigReorderController => {
   const [dragState, setDragState] = useState<ApiConfigDragState | null>(null);
+  const autoScrollRef = useRef<ApiConfigAutoScrollState | null>(null);
+  const visibleNamesRef = useRef(visibleNames);
+
+  useEffect(() => {
+    visibleNamesRef.current = visibleNames;
+  }, [visibleNames]);
+
+  /** 停止边缘自动滚动；重复调用安全。 */
+  const stopAutoScroll = useCallback(() => {
+    const state = autoScrollRef.current;
+    if (!state) {
+      return;
+    }
+    if (state.frame !== null) {
+      cancelAnimationFrame(state.frame);
+    }
+    autoScrollRef.current = null;
+  }, []);
+
+  /** 内容滚动后鼠标下的行会变化，主动同步落点，避免高亮停在旧行。 */
+  const syncDropTargetFromPointer = useCallback(
+    (sourceName: string, elementUnderPointer: Element) => {
+      const row = elementUnderPointer.closest(`[${API_CONFIG_ROW_ATTRIBUTE}]`);
+      const targetName = row?.getAttribute(API_CONFIG_ROW_ATTRIBUTE) ?? null;
+      if (!targetName || targetName === sourceName) {
+        return;
+      }
+      const names = visibleNamesRef.current;
+      const placement: ApiConfigDropPlacement =
+        names.indexOf(sourceName) < names.indexOf(targetName)
+          ? "after"
+          : "before";
+      setDragState((previous) =>
+        previous &&
+        previous.targetName === targetName &&
+        previous.placement === placement
+          ? previous
+          : { sourceName, targetName, placement },
+      );
+    },
+    [],
+  );
+
+  /**
+   * 拖拽悬停在滚动容器上下边缘时逐帧滚动。
+   * 越靠近边缘滚动越快，鼠标移出容器后自动停止。
+   */
+  const startAutoScroll = useCallback(
+    (
+      container: HTMLElement,
+      sourceName: string,
+      pointerX: number,
+      pointerY: number,
+    ): void => {
+      const existing = autoScrollRef.current;
+      if (existing) {
+        existing.container = container;
+        existing.sourceName = sourceName;
+        existing.pointerX = pointerX;
+        existing.pointerY = pointerY;
+        return;
+      }
+
+      const state: ApiConfigAutoScrollState = {
+        container,
+        sourceName,
+        pointerX,
+        pointerY,
+        frame: null,
+      };
+      autoScrollRef.current = state;
+
+      const step = (): void => {
+        const active = autoScrollRef.current;
+        if (!active) {
+          return;
+        }
+        const elementUnderPointer = document.elementFromPoint(
+          active.pointerX,
+          active.pointerY,
+        );
+        if (
+          !elementUnderPointer ||
+          !active.container.contains(elementUnderPointer)
+        ) {
+          stopAutoScroll();
+          return;
+        }
+
+        const rect = active.container.getBoundingClientRect();
+        const topEdge = rect.top + AUTO_SCROLL_EDGE;
+        const bottomEdge = rect.bottom - AUTO_SCROLL_EDGE;
+        let delta = 0;
+        if (active.pointerY < topEdge) {
+          const intensity = Math.min(
+            1,
+            (topEdge - active.pointerY) / AUTO_SCROLL_EDGE,
+          );
+          delta = -Math.max(1, Math.ceil(intensity * AUTO_SCROLL_MAX_STEP));
+        } else if (active.pointerY > bottomEdge) {
+          const intensity = Math.min(
+            1,
+            (active.pointerY - bottomEdge) / AUTO_SCROLL_EDGE,
+          );
+          delta = Math.max(1, Math.ceil(intensity * AUTO_SCROLL_MAX_STEP));
+        }
+
+        if (delta !== 0) {
+          const before = active.container.scrollTop;
+          active.container.scrollTop = before + delta;
+          if (active.container.scrollTop !== before) {
+            const currentElement = document.elementFromPoint(
+              active.pointerX,
+              active.pointerY,
+            );
+            if (currentElement) {
+              syncDropTargetFromPointer(active.sourceName, currentElement);
+            }
+          }
+        }
+
+        active.frame = requestAnimationFrame(step);
+      };
+
+      state.frame = requestAnimationFrame(step);
+    },
+    [stopAutoScroll, syncDropTargetFromPointer],
+  );
+
+  useEffect(() => stopAutoScroll, [stopAutoScroll]);
 
   const resolvePlacement = useCallback(
     (sourceName: string, targetName: string): ApiConfigDropPlacement =>
@@ -168,9 +335,12 @@ export const useApiConfigReorder = ({
         event.dataTransfer.setData(API_CONFIG_DRAG_TYPE, name);
         setDragState({ sourceName: name, targetName: null, placement: null });
       },
-      onDragEnd: () => setDragState(null),
+      onDragEnd: () => {
+        stopAutoScroll();
+        setDragState(null);
+      },
     }),
-    [],
+    [stopAutoScroll],
   );
 
   const getDropTargetProps = useCallback(
@@ -180,7 +350,14 @@ export const useApiConfigReorder = ({
           return;
         }
         const sourceName = dragState?.sourceName;
-        if (!sourceName || sourceName === name) {
+        if (!sourceName) {
+          return;
+        }
+        const container = findScrollableAncestor(event.currentTarget);
+        if (container) {
+          startAutoScroll(container, sourceName, event.clientX, event.clientY);
+        }
+        if (sourceName === name) {
           return;
         }
         event.preventDefault();
@@ -207,6 +384,7 @@ export const useApiConfigReorder = ({
       },
       onDrop: (event) => {
         const sourceName = dragState?.sourceName;
+        stopAutoScroll();
         setDragState(null);
         if (!sourceName || sourceName === name) {
           return;
@@ -215,7 +393,7 @@ export const useApiConfigReorder = ({
         submitMove(sourceName, name, resolvePlacement(sourceName, name));
       },
     }),
-    [dragState, resolvePlacement, submitMove],
+    [dragState, resolvePlacement, startAutoScroll, stopAutoScroll, submitMove],
   );
 
   return {

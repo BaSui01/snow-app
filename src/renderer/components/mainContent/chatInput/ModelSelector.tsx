@@ -9,6 +9,7 @@ import {
   Keyboard,
   Loader2,
   Pencil,
+  Pin,
   RefreshCw,
   Search,
   Settings,
@@ -160,6 +161,10 @@ export const ModelSelector = ({
   >(null);
   const [editingApiConfig, setEditingApiConfig] =
     useState<ApiConfigRecord | null>(null);
+  // 正在切换为默认启用配置的渠道名（图钉按钮的进行中状态）
+  const [pendingDefaultProfile, setPendingDefaultProfile] = useState<
+    string | null
+  >(null);
   useEffect(() => {
     setApiConfigsOverride(null);
   }, [apiConfigs]);
@@ -231,7 +236,7 @@ export const ModelSelector = ({
 
     // 焦点在返回/刷新/手动输入等操作按钮上时，Enter 交给原生按钮行为
     const isActionButton = !!(event.target as HTMLElement).closest(
-      ".model-menu-back, .model-dropdown-action, .model-dropdown-retry, .model-dropdown-edit-btn",
+      ".model-menu-back, .model-dropdown-action, .model-dropdown-retry, .model-dropdown-edit-btn, .model-dropdown-pin-btn",
     );
 
     switch (event.key) {
@@ -325,6 +330,30 @@ export const ModelSelector = ({
     visibleNames: apiConfigVisibleNames,
     onReorder: handleReorderApiConfigs,
   });
+
+  // 图钉：把该渠道切换为全局默认启用配置（isActive 由 Rust 保证唯一）。
+  const handleSetDefaultApiProfile = async (
+    config: ApiConfigRecord,
+  ): Promise<void> => {
+    if (config.isActive || pendingDefaultProfile !== null) {
+      return;
+    }
+    setPendingDefaultProfile(config.profileName);
+    try {
+      const list = await window.snow.upsertApiConfig({
+        ...config,
+        isActive: true,
+        // 空字符串表示沿用库里已有的密钥，避免把密钥回写覆盖。
+        apiKey: "",
+        visionApiKey: "",
+      });
+      setApiConfigsOverride(list);
+    } catch {
+      // 切换失败（如未配置模型）时保持原默认启用配置不变。
+    } finally {
+      setPendingDefaultProfile(null);
+    }
+  };
 
   // 过滤结果变化时收敛索引，避免越界
   useEffect(() => {
@@ -617,6 +646,10 @@ export const ModelSelector = ({
                     }}
                     onMouseEnter={() => setApiProfileActiveIndex(index)}
                     onKeyDown={(event) => {
+                      // 焦点在行内的按钮（图钉/编辑）上时，把按键交给按钮自身处理。
+                      if (event.target !== event.currentTarget) {
+                        return;
+                      }
                       if (event.key === " ") {
                         event.preventDefault();
                         void handleSelectApiProfile(config.profileName);
@@ -655,6 +688,38 @@ export const ModelSelector = ({
                     </span>
                     {config.profileName === selectedApiProfile && (
                       <Check size={14} className="model-dropdown-check" />
+                    )}
+                    {config.isActive ? (
+                      <span
+                        className="model-dropdown-default-mark"
+                        title={t("settings.activeProfile", {
+                          defaultValue: "Enabled profile",
+                        })}
+                      >
+                        <Pin size={11} fill="currentColor" />
+                      </span>
+                    ) : (
+                      <button
+                        className="model-dropdown-pin-btn"
+                        aria-label={t("settings.clickToActivate", {
+                          defaultValue: "Click to enable this profile",
+                        })}
+                        title={t("settings.clickToActivate", {
+                          defaultValue: "Click to enable this profile",
+                        })}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleSetDefaultApiProfile(config);
+                        }}
+                        disabled={pendingDefaultProfile !== null}
+                        type="button"
+                      >
+                        {pendingDefaultProfile === config.profileName ? (
+                          <Loader2 size={12} className="spin" />
+                        ) : (
+                          <Pin size={12} />
+                        )}
+                      </button>
                     )}
                     <button
                       className="model-dropdown-edit-btn"

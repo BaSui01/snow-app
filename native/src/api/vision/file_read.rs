@@ -97,13 +97,26 @@ pub(crate) async fn describe_image_file(
             Error::from_reason(format!("Failed to create vision HTTP client: {error}"))
         })?;
 
-    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    let data_url = format!("data:{};base64,{}", mime_type, data);
-    let image = ChatImage {
-        media_type: mime_type,
-        data,
-        data_url,
-        source: None,
+    // 大图先降采样再送视觉模型（与主请求同一策略），避免 20MB 级原图拖垮
+    // 发送阶段；降采样仅处理 PNG / JPEG，其余格式与未超限图片原样发送。
+    let image = match crate::api::conversation::image_optimize::optimize_for_request(
+        &bytes, &mime_type,
+    ) {
+        Some(optimized) => ChatImage {
+            data_url: format!("data:{};base64,{}", optimized.media_type, optimized.data),
+            media_type: optimized.media_type.to_string(),
+            data: optimized.data,
+            source: None,
+        },
+        None => {
+            let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            ChatImage {
+                data_url: format!("data:{};base64,{}", mime_type, data),
+                media_type: mime_type,
+                data,
+                source: None,
+            }
+        }
     };
     // 工具入口没有请求级取消令牌（工具执行取消走独立的 tool 注册表），
     // 因此不参与 select! 取消竞争，行为与之前一致。

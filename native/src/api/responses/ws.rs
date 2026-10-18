@@ -40,8 +40,8 @@ use crate::api::http_client::{app_user_agent, load_proxy_config, resolve_transpo
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     decide_stream_recovery, is_retriable_error, log_retry_attempt, next_stream_item_with_idle,
-    retry_backoff_ms, should_retry_empty_response, stream_idle_timeout_error, wait_before_retry,
-    RetryOptions, StreamEndCause, StreamReadOutcome, StreamRecoveryDecision,
+    retry_backoff_ms, should_retry_empty_response, wait_before_retry,
+    RetryOptions, StreamEndCause, StreamReadOutcome, StreamRecoveryDecision, StreamTimeouts,
     EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::SseStreamEnd;
@@ -787,7 +787,7 @@ pub(super) async fn collect_streaming_response_ws(
     let retry_endpoint = failure_log_endpoint(endpoint);
     let mut attempt: u32 = 0;
     let mut progress = StreamProgress::new();
-    let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+    let timeouts = StreamTimeouts::new(stream_idle_timeout_sec, frame_json.len());
 
     let (mut attempt_state, interruption_reason, recovery_outcome) = 'attempt_loop: loop {
         if cancel_token.is_cancelled() {
@@ -852,11 +852,21 @@ pub(super) async fn collect_streaming_response_ws(
         // ---- 阶段 2：逐帧读取，直到终态或传输结束 ----
         let mut attempt_state = ResponsesAttemptState::default();
         let mut reusable_socket = false;
+        // 首帧前用首字节窗口（按请求体体积放宽），之后用帧间空闲超时。
+        let mut received_any_frame = false;
         let read_end = loop {
-            let message = match next_stream_item_with_idle(&mut socket, cancel_token, idle_timeout)
+            let timeout = if received_any_frame {
+                timeouts.idle()
+            } else {
+                timeouts.first_byte()
+            };
+            let message = match next_stream_item_with_idle(&mut socket, cancel_token, timeout)
                 .await
             {
-                StreamReadOutcome::Data(message) => message,
+                StreamReadOutcome::Data(message) => {
+                    received_any_frame = true;
+                    message
+                }
                 StreamReadOutcome::ReadError(error) => {
                     break WsReadEnd::Stream(SseStreamEnd::ReadError(error.to_string()))
                 }
@@ -1064,10 +1074,9 @@ pub(super) async fn collect_streaming_response_ws(
                 StreamEndCause::UnexpectedEof,
                 "WebSocket closed before a Responses terminal event".to_string(),
             ),
-            SseStreamEnd::IdleTimeout => (
-                StreamEndCause::IdleTimeout,
-                stream_idle_timeout_error().reason.clone(),
-            ),
+            SseStreamEnd::IdleTimeout => {
+                (StreamEndCause::IdleTimeout, timeouts.read_timeout_reason())
+            }
             SseStreamEnd::ProviderTerminal | SseStreamEnd::Cancelled => {
                 unreachable!("terminal and cancellation are handled before transport recovery")
             }

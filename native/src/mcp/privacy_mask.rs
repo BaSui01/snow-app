@@ -14,6 +14,10 @@
 //! All public entry points are async and run regex/HTTP work via
 //! `spawn_blocking` or `reqwest`'s async runtime so the Node.js event loop is
 //! never blocked.
+//!
+//! Image payloads are never masked: data URLs and image content blocks are
+//! swapped for opaque tokens before masking and restored byte-for-byte, so a
+//! filter can only ever rewrite text.
 
 use std::collections::BTreeSet;
 
@@ -661,25 +665,197 @@ fn apply_matches(text: &str, matches: Vec<SensitiveMatch>) -> String {
     masked_text
 }
 
-pub(crate) fn mask_local(text: &str) -> String {
+/// Placeholder prefix for image payloads. Tokens are plain ASCII words: they
+/// survive JSON serialization unchanged and match no masking pattern.
+const IMAGE_PAYLOAD_TOKEN: &str = "SNOWPRIVACYIMAGEPAYLOAD";
+
+fn image_payload_token(index: usize) -> String {
+    format!("{IMAGE_PAYLOAD_TOKEN}{index}X")
+}
+
+fn is_base64_payload_char(value: char) -> bool {
+    value.is_ascii_alphanumeric() || matches!(value, '+' | '/' | '=')
+}
+
+/// Byte ranges of `data:image/...;base64,<payload>` inside `text`.
+///
+/// Image bytes must never pass through a text masker: replacing a single
+/// base64 character corrupts the image, and an external filter must not even
+/// receive it.
+fn image_data_url_spans(text: &str) -> Vec<(usize, usize)> {
+    const PREFIX: &str = "data:image/";
+    const SEPARATOR: &str = ";base64,";
+    let lowercase = text.to_ascii_lowercase();
+    let mut spans = Vec::new();
+    let mut search_from = 0;
+    while let Some(offset) = lowercase[search_from..].find(PREFIX) {
+        let start = search_from + offset;
+        let header_start = start + PREFIX.len();
+        let Some(header_end) = lowercase[header_start..].find(SEPARATOR) else {
+            break;
+        };
+        let data_start = header_start + header_end + SEPARATOR.len();
+        let mut end = data_start;
+        for (index, character) in text[data_start..].char_indices() {
+            if is_base64_payload_char(character) {
+                end = data_start + index + character.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if end > data_start {
+            spans.push((start, end));
+        }
+        search_from = end.max(data_start);
+        if search_from >= lowercase.len() {
+            break;
+        }
+    }
+    spans
+}
+
+/// Replace every image data URL in `text` with an opaque token and remember the
+/// original payload for restoration.
+fn replace_image_data_url_spans(text: &mut String, payloads: &mut Vec<(String, String)>) {
+    if !text.contains("data:image/") {
+        return;
+    }
+    let spans = image_data_url_spans(text);
+    if spans.is_empty() {
+        return;
+    }
+    let original = std::mem::take(text);
+    let mut protected = String::with_capacity(original.len());
+    let mut cursor = 0;
+    for (start, end) in spans {
+        if start < cursor {
+            continue;
+        }
+        protected.push_str(&original[cursor..start]);
+        let token = image_payload_token(payloads.len());
+        protected.push_str(&token);
+        payloads.push((token, original[start..end].to_string()));
+        cursor = end;
+    }
+    protected.push_str(&original[cursor..]);
+    *text = protected;
+}
+
+/// Objects that describe an image content block: `{type:"image",...}`,
+/// `{mimeType:"image/png","data":"<base64>"}` or `{isImage:true,content:...}`.
+fn is_image_context(map: &serde_json::Map<String, Value>) -> bool {
+    if map
+        .get("isImage")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if map.get("type").and_then(Value::as_str) == Some("image") {
+        return true;
+    }
+    map.get("mimeType")
+        .and_then(Value::as_str)
+        .is_some_and(|mime| mime.to_ascii_lowercase().starts_with("image/"))
+}
+
+fn collect_image_payloads(
+    value: &mut Value,
+    image_field: bool,
+    payloads: &mut Vec<(String, String)>,
+) {
+    match value {
+        Value::String(text) => {
+            if text.is_empty() {
+                return;
+            }
+            if image_field {
+                let token = image_payload_token(payloads.len());
+                payloads.push((token.clone(), std::mem::take(text)));
+                *text = token;
+                return;
+            }
+            replace_image_data_url_spans(text, payloads);
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_image_payloads(item, false, payloads);
+            }
+        }
+        Value::Object(map) => {
+            let image_context = is_image_context(map);
+            for (key, child) in map.iter_mut() {
+                let is_image_field = image_context
+                    && matches!(key.as_str(), "data" | "content" | "base64" | "image");
+                collect_image_payloads(child, is_image_field, payloads);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Hide image payloads behind tokens so text masking only touches text.
+/// Returns `None` when the content carries no image data.
+fn protect_image_payloads(content: &str) -> Option<(String, Vec<(String, String)>)> {
+    // Cheap pre-check: every image payload marker contains "image".
+    if !content.contains("image") {
+        return None;
+    }
+    if let Ok(mut value) = serde_json::from_str::<Value>(content) {
+        let mut payloads = Vec::new();
+        collect_image_payloads(&mut value, false, &mut payloads);
+        if payloads.is_empty() {
+            return None;
+        }
+        return Some((serde_json::to_string(&value).ok()?, payloads));
+    }
+
+    let mut protected = content.to_string();
+    let mut payloads = Vec::new();
+    replace_image_data_url_spans(&mut protected, &mut payloads);
+    if payloads.is_empty() {
+        None
+    } else {
+        Some((protected, payloads))
+    }
+}
+
+/// Put the original image payloads back. Image payloads are base64/data-URL
+/// text, which needs no JSON escaping, so the raw span can be reinserted
+/// verbatim. `None` means a filter rewrote a token and the caller must retry
+/// without the external API.
+fn restore_image_payloads(masked: &str, payloads: &[(String, String)]) -> Option<String> {
+    let mut restored = masked.to_string();
+    for (token, original) in payloads {
+        if !restored.contains(token.as_str()) {
+            return None;
+        }
+        restored = restored.replace(token.as_str(), original);
+    }
+    Some(restored)
+}
+
+fn mask_local_rules(text: &str) -> String {
     let matches = collect_local_sensitive_matches(text);
     apply_matches(text, matches)
 }
 
-/// Mask `text` using the configured privacy mode. Local mode is pure regex
-/// and runs synchronously inside `spawn_blocking`; API mode posts to the
-/// configured endpoint and falls back to local rules on any failure.
-pub async fn mask_text(text: &str, settings: &PrivacySettings) -> String {
-    if text.is_empty() {
-        return text.to_string();
+pub(crate) fn mask_local(text: &str) -> String {
+    let mut protected = text.to_string();
+    let mut payloads = Vec::new();
+    replace_image_data_url_spans(&mut protected, &mut payloads);
+    if payloads.is_empty() {
+        return mask_local_rules(text);
     }
+    let masked = mask_local_rules(&protected);
+    restore_image_payloads(&masked, &payloads).unwrap_or(masked)
+}
 
+/// Apply the configured privacy mode to already image-free text.
+async fn mask_text_raw(text: &str, settings: &PrivacySettings) -> String {
     if settings.mode == "api" && !settings.api.url.is_empty() {
-        match mask_with_api(text, settings).await {
-            Ok(masked) => return masked,
-            Err(_) => {
-                // fall back to local rules below
-            }
+        if let Ok(masked) = mask_with_api(text, settings).await {
+            return masked;
         }
     }
 
@@ -688,6 +864,38 @@ pub async fn mask_text(text: &str, settings: &PrivacySettings) -> String {
         Ok(masked) => masked,
         Err(_) => text.to_string(),
     }
+}
+
+/// Mask `text` using the configured privacy mode. Local mode is pure regex
+/// and runs synchronously inside `spawn_blocking`; API mode posts to the
+/// configured endpoint and falls back to local rules on any failure.
+/// Image payloads (data URLs and image content blocks) are opaque: they are
+/// swapped for tokens before masking and restored byte-for-byte afterwards.
+pub async fn mask_text(text: &str, settings: &PrivacySettings) -> String {
+    if text.is_empty() {
+        return text.to_string();
+    }
+
+    let prepared = {
+        let text_owned = text.to_string();
+        tokio::task::spawn_blocking(move || protect_image_payloads(&text_owned)).await
+    };
+    let Ok(Some((protected, payloads))) = prepared else {
+        return mask_text_raw(text, settings).await;
+    };
+
+    let masked = mask_text_raw(&protected, settings).await;
+    if let Some(restored) = restore_image_payloads(&masked, &payloads) {
+        return restored;
+    }
+
+    // The remote filter rewrote a placeholder. Never let that lose the image:
+    // mask locally and restore deterministically.
+    let local_text = protected.clone();
+    let local_masked = tokio::task::spawn_blocking(move || mask_local(&local_text))
+        .await
+        .unwrap_or(protected);
+    restore_image_payloads(&local_masked, &payloads).unwrap_or(local_masked)
 }
 
 async fn mask_with_api(text: &str, settings: &PrivacySettings) -> ApiResult<String> {

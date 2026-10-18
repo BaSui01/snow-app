@@ -62,10 +62,14 @@ pub(crate) enum SseStreamEnd<E> {
 /// transport ends. Complete delimiter-terminated blocks are parsed as they
 /// arrive. On EOF, a final non-empty block without a trailing delimiter is
 /// parsed before classifying the stream as an unexpected EOF.
+///
+/// 首个数据块前使用 `first_chunk_timeout`（首字节窗口，按请求体体积放宽），
+/// 之后每个数据块间隔使用 `idle_timeout`。
 pub(crate) async fn read_sse_stream_until_terminal<S, T, E, F>(
     stream: &mut S,
     byte_buffer: &mut Vec<u8>,
     cancel_token: &CancellationToken,
+    first_chunk_timeout: Duration,
     idle_timeout: Duration,
     mut process_event_block: F,
 ) -> SseStreamEnd<E>
@@ -74,10 +78,17 @@ where
     T: AsRef<[u8]>,
     F: FnMut(&str) -> bool,
 {
+    let mut received_any_chunk = false;
     loop {
-        match next_stream_item_with_idle(stream, cancel_token, idle_timeout).await {
+        let timeout = if received_any_chunk {
+            idle_timeout
+        } else {
+            first_chunk_timeout
+        };
+        match next_stream_item_with_idle(stream, cancel_token, timeout).await {
             StreamReadOutcome::Cancelled => return SseStreamEnd::Cancelled,
             StreamReadOutcome::Data(chunk) => {
+                received_any_chunk = true;
                 byte_buffer.extend_from_slice(chunk.as_ref());
                 while let Some((separator_index, separator_len)) = find_sse_separator(byte_buffer) {
                     let event_block =

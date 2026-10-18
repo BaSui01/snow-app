@@ -8,7 +8,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
@@ -20,9 +19,9 @@ use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStream
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, log_retry_attempt, retry_backoff_ms, send_failure_cause, should_retry,
-    should_retry_empty_response, stream_idle_timeout_error, visible_content_char_count,
+    should_retry_empty_response, visible_content_char_count,
     wait_before_retry, RetryOptions, StreamAttemptProgress, StreamEndCause,
-    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
+    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome, StreamTimeouts,
     EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::request_proxy;
@@ -467,7 +466,7 @@ pub(super) async fn collect_streaming_response(
     let stream_start = std::time::Instant::now();
     let mut ttft_ms: i64 = 0;
 
-    let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+    let timeouts = StreamTimeouts::for_payload(stream_idle_timeout_sec, &payload);
     let failure_retry_safe = request_allows_failure_retry(&payload);
     let retry_endpoint = failure_log_endpoint(endpoint);
 
@@ -549,10 +548,10 @@ pub(super) async fn collect_streaming_response(
                 result = send_future => {
                     result.map_err(|error| Error::from_reason(format!("Failed to create response stream: {error}")))
                 }
-                // 半开连接下响应头可能永远不到：与读体阶段同口径以空闲超时兜底，
-                // 超时后按重试策略重试并留痕，而不是无限等待。
-                _ = tokio::time::sleep(idle_timeout) => {
-                    Err(stream_idle_timeout_error())
+                // 半开连接下响应头可能永远不到：以首字节窗口（按请求体体积放宽、
+                // 随空闲超时次数递增）兜底，超时后按重试策略重试并留痕。
+                _ = tokio::time::sleep(timeouts.first_byte()) => {
+                    Err(timeouts.send_timeout_error())
                 }
             };
 
@@ -676,7 +675,8 @@ pub(super) async fn collect_streaming_response(
             &mut stream,
             &mut byte_buffer,
             cancel_token,
-            idle_timeout,
+            timeouts.first_byte(),
+            timeouts.idle(),
             |event_block| {
                 let (content_delta, thinking_delta, tool_args_delta) =
                     attempt_state.process_event_block(event_block);
@@ -759,10 +759,9 @@ pub(super) async fn collect_streaming_response(
                 StreamEndCause::UnexpectedEof,
                 "Stream ended before a Responses terminal event".to_string(),
             ),
-            SseStreamEnd::IdleTimeout => (
-                StreamEndCause::IdleTimeout,
-                stream_idle_timeout_error().reason.clone(),
-            ),
+            SseStreamEnd::IdleTimeout => {
+                (StreamEndCause::IdleTimeout, timeouts.read_timeout_reason())
+            }
             SseStreamEnd::ProviderTerminal | SseStreamEnd::Cancelled => {
                 unreachable!("terminal and cancellation are handled before transport recovery")
             }

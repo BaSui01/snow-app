@@ -35,39 +35,39 @@ Global config shared with Snow CLI. Top-level fields are detailed in
 API key and model config, stored under the `snowcfg` object (shared with
 Snow CLI).
 
-| Field                   | Type    | Sensitive | Description                                                                             |
-| ----------------------- | ------- | --------- | --------------------------------------------------------------------------------------- |
-| `baseUrl`               | string  |           | Main service endpoint                                                                   |
-| `baseUrlMode`           | string  |           | `auto` / `custom`                                                                       |
-| `apiKey`                | string  | 🔒        | Main provider key                                                                       |
-| `requestMethod`         | string  |           | Request method, e.g. `chat`                                                             |
-| `advancedModel`         | string  |           | Profile's default advanced model; ordinary conversations still use their selected model |
-| `basicModel`            | string  |           | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review   |
-| `supportsVision`        | boolean |           | Whether the main model supports vision                                                  |
-| `visionBaseUrl`         | string  |           | Vision service endpoint                                                                 |
-| `visionBaseUrlMode`     | string  |           | Vision endpoint mode                                                                    |
-| `visionApiKey`          | string  | 🔒        | Vision service key                                                                      |
-| `visionRequestMethod`   | string  |           | Vision request method                                                                   |
-| `visionModel`           | string  |           | Vision model name                                                                       |
-| `maxContextTokens`      | integer |           | Max context tokens                                                                      |
-| `maxTokens`             | integer |           | Max generation tokens per call                                                          |
-| `showThinking`          | boolean |           | Show thinking process                                                                   |
-| `streamIdleTimeoutSec`  | integer |           | Streaming idle timeout (seconds)                                                        |
-| `maxRetries`            | integer |           | Max request retries                                                                     |
-| `retryDelayMs`          | integer |           | Retry delay (ms); 0 uses exponential backoff                                            |
-| `enableAutoCompress`    | boolean |           | Auto-compress toggle                                                                    |
-| `autoCompressThreshold` | integer |           | Auto-compress threshold (percent)                                                       |
-| `toolResultTokenLimit`  | integer |           | Maximum percentage of the model context available to each tool result                   |
-| `anthropicBeta`         | boolean |           | Anthropic Beta header toggle                                                            |
-| `streamingDisplay`      | boolean |           | Streaming display toggle                                                                |
-| `systemPromptId`        | string  |           | Active system prompt id                                                                 |
-| `customHeadersSchemeId` | string  |           | Active custom-header scheme id                                                          |
-| `anthropicCacheTTL`     | string  |           | Anthropic cache TTL, e.g. `5m`                                                          |
-| `responsesReasoning`    | object  |           | Responses reasoning config (`{enabled, effort}`)                                        |
-| `responsesVerbosity`    | string  |           | Responses verbosity, e.g. `medium`                                                      |
-| `responsesFastMode`     | boolean |           | Responses fast mode                                                                     |
-| `responsesWebSocket`    | boolean |           | Responses WebSocket transport (persistent connection instead of SSE)                    |
-| `chatThinking`          | object  |           | Thinking-strength config (`{enabled, reasoning_effort}`)                                |
+| Field                   | Type    | Sensitive | Description                                                                                                                                                                                                                         |
+| ----------------------- | ------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl`               | string  |           | Main service endpoint                                                                                                                                                                                                               |
+| `baseUrlMode`           | string  |           | `auto` / `custom`                                                                                                                                                                                                                   |
+| `apiKey`                | string  | 🔒        | Main provider key                                                                                                                                                                                                                   |
+| `requestMethod`         | string  |           | Request method, e.g. `chat`                                                                                                                                                                                                         |
+| `advancedModel`         | string  |           | Profile's default advanced model; ordinary conversations still use their selected model                                                                                                                                             |
+| `basicModel`            | string  |           | Model for conversation titles, AI Commit, `@?` file search, and codebase Agent Review                                                                                                                                               |
+| `supportsVision`        | boolean |           | Whether the main model supports vision                                                                                                                                                                                              |
+| `visionBaseUrl`         | string  |           | Vision service endpoint                                                                                                                                                                                                             |
+| `visionBaseUrlMode`     | string  |           | Vision endpoint mode                                                                                                                                                                                                                |
+| `visionApiKey`          | string  | 🔒        | Vision service key                                                                                                                                                                                                                  |
+| `visionRequestMethod`   | string  |           | Vision request method                                                                                                                                                                                                               |
+| `visionModel`           | string  |           | Vision model name                                                                                                                                                                                                                   |
+| `maxContextTokens`      | integer |           | Max context tokens                                                                                                                                                                                                                  |
+| `maxTokens`             | integer |           | Max generation tokens per call                                                                                                                                                                                                      |
+| `showThinking`          | boolean |           | Show thinking process                                                                                                                                                                                                               |
+| `streamIdleTimeoutSec`  | integer |           | Streaming idle timeout (seconds), 60 when empty; the wait for the first data is widened automatically by request body size and grows with each idle-timeout retry; for large attachments or slow relays, 300 or more is recommended |
+| `maxRetries`            | integer |           | Max request retries                                                                                                                                                                                                                 |
+| `retryDelayMs`          | integer |           | Retry delay (ms); 0 uses exponential backoff                                                                                                                                                                                        |
+| `enableAutoCompress`    | boolean |           | Auto-compress toggle                                                                                                                                                                                                                |
+| `autoCompressThreshold` | integer |           | Auto-compress threshold (percent)                                                                                                                                                                                                   |
+| `toolResultTokenLimit`  | integer |           | Maximum percentage of the model context available to each tool result                                                                                                                                                               |
+| `anthropicBeta`         | boolean |           | Anthropic Beta header toggle                                                                                                                                                                                                        |
+| `streamingDisplay`      | boolean |           | Streaming display toggle                                                                                                                                                                                                            |
+| `systemPromptId`        | string  |           | Active system prompt id                                                                                                                                                                                                             |
+| `customHeadersSchemeId` | string  |           | Active custom-header scheme id                                                                                                                                                                                                      |
+| `anthropicCacheTTL`     | string  |           | Anthropic cache TTL, e.g. `5m`                                                                                                                                                                                                      |
+| `responsesReasoning`    | object  |           | Responses reasoning config (`{enabled, effort}`)                                                                                                                                                                                    |
+| `responsesVerbosity`    | string  |           | Responses verbosity, e.g. `medium`                                                                                                                                                                                                  |
+| `responsesFastMode`     | boolean |           | Responses fast mode                                                                                                                                                                                                                 |
+| `responsesWebSocket`    | boolean |           | Responses WebSocket transport (persistent connection instead of SSE)                                                                                                                                                                |
+| `chatThinking`          | object  |           | Thinking-strength config (`{enabled, reasoning_effort}`)                                                                                                                                                                            |
 
 > **Model routing and profile completeness**: Snow App does not switch between
 > `basicModel` and `advancedModel` based on prompt complexity. An ordinary

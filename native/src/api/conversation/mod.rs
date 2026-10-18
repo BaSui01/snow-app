@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::storage::services::chat_conversations::ChatContextMessage;
 
 pub mod context;
+pub mod image_optimize;
 pub mod images;
 pub mod stream;
 pub mod sub_agent;

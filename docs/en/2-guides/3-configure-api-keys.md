@@ -71,16 +71,16 @@ Toggle the **Enable profile** switch in API Settings to switch the currently act
 
 Some advanced parameters can be configured in the Runtime area of the UI (such as max context, max generation tokens, stream idle timeout, retry count and delay); the rest can be edited directly in the `snowcfg` field of `~/.snow/config.json`:
 
-| Field                           | Description                                                           |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `maxContextTokens`              | Max context tokens                                                    |
-| `maxTokens`                     | Max tokens per generation                                             |
-| `streamIdleTimeoutSec`          | Stream response idle timeout (seconds)                                |
-| `maxRetries`                    | Max request retries                                                   |
-| `retryDelayMs`                  | Retry interval (milliseconds); 0 uses exponential backoff             |
-| `showThinking`                  | Whether to show the thinking process                                  |
-| `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`)                                         |
-| `toolResultTokenLimit`          | Maximum percentage of the model context available to each tool result |
+| Field                           | Description                                                                                                            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `maxContextTokens`              | Max context tokens                                                                                                     |
+| `maxTokens`                     | Max tokens per generation                                                                                              |
+| `streamIdleTimeoutSec`          | Stream response idle timeout (seconds), 60 when empty; 300 or more is recommended for large attachments or slow relays |
+| `maxRetries`                    | Max request retries                                                                                                    |
+| `retryDelayMs`                  | Retry interval (milliseconds); 0 uses exponential backoff                                                              |
+| `showThinking`                  | Whether to show the thinking process                                                                                   |
+| `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`)                                                                                          |
+| `toolResultTokenLimit`          | Maximum percentage of the model context available to each tool result                                                  |
 
 > **Tip**: after editing `config.json` directly, restart the app for the changes to take effect.
 

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
@@ -846,11 +847,85 @@ pub fn log_retry_attempt_sync(
 const STREAM_IDLE_TIMEOUT_MESSAGE: &str =
     "Stream idle timeout: no data received within the configured period";
 
-/// Build the error used when the stream has been idle (no data received)
-/// for longer than the configured `stream_idle_timeout_sec`. The message is
-/// phrased so `is_retriable_error` recognises it as a retriable condition.
-pub fn stream_idle_timeout_error() -> Error {
-    Error::from_reason(STREAM_IDLE_TIMEOUT_MESSAGE)
+/// 首字节窗口按请求体体积放宽的速率：每 128 KiB 请求体追加 1 秒（约 8 秒/MB，
+/// 对应 1 Mbps 级上行链路）。上传请求体与上游预填充都发生在首字节之前，
+/// 固定窗口会让大请求（多图 / 长历史）稳定越线。
+const FIRST_BYTE_BYTES_PER_EXTRA_SEC: usize = 128 * 1024;
+/// 同一请求每发生一次空闲超时，首字节窗口按倍数放大，最多放大到该倍数。
+const FIRST_BYTE_MAX_ESCALATION: u32 = 4;
+/// 首字节窗口的上限（秒）；档案配置的空闲超时更大时以档案为准。
+const FIRST_BYTE_TIMEOUT_CAP_SEC: u64 = 900;
+
+/// 单次流式请求的超时口径。
+///
+/// - `idle`：收到首个数据块之后，相邻数据块的最大间隔（档案 `streamIdleTimeoutSec`）。
+/// - 首字节窗口：发送阶段（上传请求体 + 等待响应头）与读体阶段首个数据块之前
+///   的等待上限。在 `idle` 基础上按请求体体积放宽，并随本请求已发生的空闲超时
+///   次数递增——同一 payload 原样重发时窗口不变只会必然再次超时，这正是大附件
+///   会话被盲重试耗尽、永久卡死的根因（Issue #223）。
+pub struct StreamTimeouts {
+    idle: Duration,
+    first_byte_base: Duration,
+    first_byte_cap: Duration,
+    payload_bytes: usize,
+    idle_timeouts: AtomicU32,
+}
+
+impl StreamTimeouts {
+    pub fn new(stream_idle_timeout_sec: u64, payload_bytes: usize) -> Self {
+        let extra_sec = (payload_bytes / FIRST_BYTE_BYTES_PER_EXTRA_SEC) as u64;
+        let cap_sec = FIRST_BYTE_TIMEOUT_CAP_SEC.max(stream_idle_timeout_sec);
+        Self {
+            idle: Duration::from_secs(stream_idle_timeout_sec),
+            first_byte_base: Duration::from_secs(
+                stream_idle_timeout_sec.saturating_add(extra_sec).min(cap_sec),
+            ),
+            first_byte_cap: Duration::from_secs(cap_sec),
+            payload_bytes,
+            idle_timeouts: AtomicU32::new(0),
+        }
+    }
+
+    /// 以请求体序列化后的字节数构造（与实际发送的 JSON 体积一致）。
+    pub fn for_payload(stream_idle_timeout_sec: u64, payload: &Value) -> Self {
+        let payload_bytes = serde_json::to_vec(payload).map_or(0, |body| body.len());
+        Self::new(stream_idle_timeout_sec, payload_bytes)
+    }
+
+    pub fn idle(&self) -> Duration {
+        self.idle
+    }
+
+    /// 当前首字节窗口：基础窗口 ×（已发生空闲超时次数 + 1），封顶。
+    pub fn first_byte(&self) -> Duration {
+        let factor = self
+            .idle_timeouts
+            .load(Ordering::Relaxed)
+            .saturating_add(1)
+            .min(FIRST_BYTE_MAX_ESCALATION);
+        self.first_byte_base
+            .saturating_mul(factor)
+            .min(self.first_byte_cap)
+    }
+
+    /// 发送阶段等待响应头超时：记录一次空闲超时并返回带处置提示的错误。
+    /// 文案以 [`STREAM_IDLE_TIMEOUT_MESSAGE`] 开头，保证重试关键词与
+    /// [`send_failure_cause`] 的分类不变。
+    pub fn send_timeout_error(&self) -> Error {
+        let window = self.first_byte();
+        self.idle_timeouts.fetch_add(1, Ordering::Relaxed);
+        Error::from_reason(format!(
+            "{STREAM_IDLE_TIMEOUT_MESSAGE} (no response within {}s for a {:.1} MB request body; large image attachments or a long history can exceed the upstream's first-byte window: remove large attachments, compact the conversation, or raise streamIdleTimeoutSec)",
+            window.as_secs(),
+            self.payload_bytes as f64 / (1024.0 * 1024.0),
+        ))
+    }
+
+    /// 读体阶段空闲超时：记录一次空闲超时并返回重试提示文案。
+    pub fn read_timeout_reason(&self) -> String {
+        self.idle_timeouts.fetch_add(1, Ordering::Relaxed);
+        STREAM_IDLE_TIMEOUT_MESSAGE.to_string()
+    }
 }
 
 /// 发送阶段（建连 + 等待响应头）失败的留痕分类。
@@ -858,7 +933,7 @@ pub fn stream_idle_timeout_error() -> Error {
 /// 等待超时（半开连接，响应头迟迟不来）归入 `idle_timeout`，与读体阶段的空闲超时
 /// 同口径；其余 DNS / TCP / TLS 等连接层错误为 `connect_error`。
 pub fn send_failure_cause(error: &Error) -> &'static str {
-    if error.reason == STREAM_IDLE_TIMEOUT_MESSAGE {
+    if error.reason.starts_with(STREAM_IDLE_TIMEOUT_MESSAGE) {
         "idle_timeout"
     } else {
         "connect_error"

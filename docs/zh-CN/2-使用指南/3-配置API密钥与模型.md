@@ -93,16 +93,16 @@ Agent 也可用 config 工具直接切换（见 [5.1 ④](#51-常用操作速查
 token、流式空闲超时、重试次数与延迟），其余参数可直接编辑
 `~/.snow/config.json` 的 `snowcfg` 字段：
 
-| 字段                            | 说明                              |
-| ------------------------------- | --------------------------------- |
-| `maxContextTokens`              | 最大上下文 token 数               |
-| `maxTokens`                     | 单次生成最大 token 数             |
-| `streamIdleTimeoutSec`          | 流式响应空闲超时（秒）            |
-| `maxRetries`                    | 请求最大重试次数                  |
-| `retryDelayMs`                  | 重试间隔（毫秒）；留 0 走指数退避 |
-| `showThinking`                  | 是否展示思考过程                  |
-| `chatThinking.reasoning_effort` | 思考强度（如 `max`）              |
-| `toolResultTokenLimit`          | 工具结果最多占模型上下文的百分比  |
+| 字段                            | 说明                                                          |
+| ------------------------------- | ------------------------------------------------------------- |
+| `maxContextTokens`              | 最大上下文 token 数                                           |
+| `maxTokens`                     | 单次生成最大 token 数                                         |
+| `streamIdleTimeoutSec`          | 流式响应空闲超时（秒），留空为 60；大附件或慢速中转建议 ≥ 300 |
+| `maxRetries`                    | 请求最大重试次数                                              |
+| `retryDelayMs`                  | 重试间隔（毫秒）；留 0 走指数退避                             |
+| `showThinking`                  | 是否展示思考过程                                              |
+| `chatThinking.reasoning_effort` | 思考强度（如 `max`）                                          |
+| `toolResultTokenLimit`          | 工具结果最多占模型上下文的百分比                              |
 
 > **提示**：直接编辑 `config.json` 后需重启应用使改动生效。
 

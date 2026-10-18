@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
@@ -20,9 +19,9 @@ use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response, retry_backoff_ms,
-    log_retry_attempt, send_failure_cause, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    log_retry_attempt, send_failure_cause, visible_content_char_count, wait_before_retry,
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
-    StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
+    StreamRecoveryDecision, StreamRecoveryOutcome, StreamTimeouts, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
@@ -167,7 +166,7 @@ pub(super) async fn collect_anthropic_stream(
     let stream_start = std::time::Instant::now();
     let mut ttft_ms: i64 = 0;
 
-    let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+    let timeouts = StreamTimeouts::for_payload(stream_idle_timeout_sec, &payload);
     let mut attempt_state: AnthropicAttemptState;
 
     macro_rules! retry_empty_attempt {
@@ -266,10 +265,10 @@ pub(super) async fn collect_anthropic_stream(
                 result = send_future => {
                     result.map_err(|error| Error::from_reason(format!("Failed to create Anthropic stream: {}", error)))
                 }
-                // 半开连接下响应头可能永远不到：与读体阶段同口径以空闲超时兜底，
-                // 超时后按重试策略重试并留痕，而不是无限等待。
-                _ = tokio::time::sleep(idle_timeout) => {
-                    Err(stream_idle_timeout_error())
+                // 半开连接下响应头可能永远不到：以首字节窗口（按请求体体积放宽、
+                // 随空闲超时次数递增）兜底，超时后按重试策略重试并留痕。
+                _ = tokio::time::sleep(timeouts.first_byte()) => {
+                    Err(timeouts.send_timeout_error())
                 }
             };
 
@@ -395,7 +394,8 @@ pub(super) async fn collect_anthropic_stream(
             &mut stream,
             &mut byte_buffer,
             cancel_token,
-            idle_timeout,
+            timeouts.first_byte(),
+            timeouts.idle(),
             |event_block| {
                 let (content_delta, thinking_delta, tool_args_delta) =
                     attempt_state.process_event_block(event_block);
@@ -460,10 +460,9 @@ pub(super) async fn collect_anthropic_stream(
                 StreamEndCause::UnexpectedEof,
                 "Stream ended before an Anthropic terminal event".to_string(),
             ),
-            SseStreamEnd::IdleTimeout => (
-                StreamEndCause::IdleTimeout,
-                stream_idle_timeout_error().reason.clone(),
-            ),
+            SseStreamEnd::IdleTimeout => {
+                (StreamEndCause::IdleTimeout, timeouts.read_timeout_reason())
+            }
             SseStreamEnd::Cancelled => {
                 unreachable!("cancelled stream is finalized before recovery")
             }

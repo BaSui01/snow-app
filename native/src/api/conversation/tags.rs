@@ -135,7 +135,7 @@ pub fn parse_chat_message_content(
             // SVG is XML text — most AI models cannot interpret it as a raster
             // image from base64. Inline the raw SVG source code instead.
             parsed.text.push_str(&svg_text);
-        } else if let Some(image) = parse_image_tag_value(value, database_path)? {
+        } else if let Some(image) = parse_image_tag_value(value, database_path, true)? {
             // Insert an inline placeholder so the model can see the image's
             // position and order within the message text. The 1-based index
             // matches the order images appear in the `parsed.images` vector,

@@ -17,10 +17,19 @@ pub struct ChatImage {
     pub source: Option<String>,
 }
 
-pub(super) fn parse_image_tag_value(value: &str, database_path: &Path) -> Result<Option<ChatImage>> {
+/// 解析 `@@image:` 标签值为图片。
+///
+/// `for_request = true` 时用于组装发往模型的请求：超限图片换成降采样副本
+/// （见 [`super::image_optimize`]），`source` 仍指向磁盘原图；界面显示与
+/// 远控取图传 `false`，始终返回原图。
+pub(super) fn parse_image_tag_value(
+    value: &str,
+    database_path: &Path,
+    for_request: bool,
+) -> Result<Option<ChatImage>> {
     let value = value.trim();
     if value.starts_with("data:") {
-        return Ok(parse_base64_image_data_url(value));
+        return Ok(parse_base64_image_data_url(value, for_request));
     }
 
     // Reject obviously invalid paths that are not real file references.
@@ -50,21 +59,45 @@ pub(super) fn parse_image_tag_value(value: &str, database_path: &Path) -> Result
     // 保存的 `.jpg` 经常实为 PNG）；文本文件被引用时保留原文，避免上游
     // 视觉模型报 "cannot identify image file" 400。
     let media_type = match sniff_image_media_type(&bytes) {
-        Some(actual) => actual.to_string(),
+        Some(actual) => actual,
         None => return Ok(None),
     };
+    let source = Some(relative_path.to_string());
+    if let Some(image) = request_copy(&bytes, media_type, for_request, &source) {
+        return Ok(Some(image));
+    }
     let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let data_url = format!("data:{};base64,{}", media_type, data);
 
     Ok(Some(ChatImage {
-        media_type,
+        media_type: media_type.to_string(),
         data,
         data_url,
-        source: Some(relative_path.to_string()),
+        source,
     }))
 }
 
-fn parse_base64_image_data_url(data_url: &str) -> Option<ChatImage> {
+/// 请求路径下返回降采样副本；无需压缩或非请求路径返回 None（调用方用原图）。
+fn request_copy(
+    bytes: &[u8],
+    media_type: &str,
+    for_request: bool,
+    source: &Option<String>,
+) -> Option<ChatImage> {
+    if !for_request {
+        return None;
+    }
+    let optimized = super::image_optimize::optimize_for_request(bytes, media_type)?;
+    let data_url = format!("data:{};base64,{}", optimized.media_type, optimized.data);
+    Some(ChatImage {
+        media_type: optimized.media_type.to_string(),
+        data: optimized.data,
+        data_url,
+        source: source.clone(),
+    })
+}
+
+fn parse_base64_image_data_url(data_url: &str, for_request: bool) -> Option<ChatImage> {
     let value = data_url.trim();
     let (metadata, data) = value.strip_prefix("data:")?.split_once(',')?;
     let media_type = metadata.strip_suffix(";base64")?.trim();
@@ -80,6 +113,9 @@ fn parse_base64_image_data_url(data_url: &str) -> Option<ChatImage> {
     // 参考，实际以嗅探结果为准（`.jpg` 实为 PNG 时修正 media_type 与 data_url）。
     let decoded = base64::engine::general_purpose::STANDARD.decode(data).ok()?;
     let actual_media_type = sniff_image_media_type(&decoded)?;
+    if let Some(image) = request_copy(&decoded, actual_media_type, for_request, &None) {
+        return Some(image);
+    }
 
     let data_url = format!("data:{};base64,{}", actual_media_type, data);
 
@@ -306,7 +342,9 @@ pub fn resolve_inline_images_from_disk(content: &str, database_path: &Path) -> S
 
         if value.trim().starts_with("data:") {
             result.push_str(&remaining[tag_start..full_tag_end]);
-        } else if let Some(image) = parse_image_tag_value(value, database_path).unwrap_or(None) {
+        } else if let Some(image) =
+            parse_image_tag_value(value, database_path, false).unwrap_or(None)
+        {
             result.push_str(&format!("@@image:{}@@", image.data_url));
         } else {
             result.push_str(&remaining[tag_start..full_tag_end]);
@@ -344,7 +382,7 @@ pub fn resolve_message_image(
         let full_tag_end = tag_value_start + tag_end + 2;
 
         if index == image_index {
-            return parse_image_tag_value(value, database_path).ok().flatten();
+            return parse_image_tag_value(value, database_path, false).ok().flatten();
         }
 
         index += 1;
@@ -365,5 +403,23 @@ fn media_type_to_extension(media_type: &str) -> &str {
         "image/bmp" => "bmp",
         "image/svg+xml" => "svg",
         _ => "bin",
+    }
+}
+
+/// 按落盘扩展名还原原图 MIME（[`media_type_to_extension`] 的逆映射）。
+///
+/// 落盘文件名的扩展名来自内容嗅探，因此与原图真实格式一致；请求副本可能
+/// 已被降采样转码，引用磁盘原图时必须用这里的 MIME 而不是副本的 MIME。
+pub(crate) fn media_type_for_upload_path(path: &str) -> Option<&'static str> {
+    let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "png" => Some("image/png"),
+        "jpg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "avif" => Some("image/avif"),
+        "bmp" => Some("image/bmp"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
     }
 }

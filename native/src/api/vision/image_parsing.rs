@@ -220,14 +220,18 @@ pub(crate) async fn textify_parsed_content(
 /// 生成参考图的 JSON 引用对象（可直接作为 imagegen-generate `images` 数组元素）。
 ///
 /// 优先 `path`（磁盘相对路径），上下文占用极小；仅在没有持久化路径时回退
-/// 到完整 base64 `data`。
+/// 到完整 base64 `data`。`path` 指向磁盘原图，而 `image` 可能是降采样转码后
+/// 的请求副本，因此 mimeType 按原图扩展名还原。
 fn reference_image_json(image: &ChatImage) -> String {
     match &image.source {
         Some(source) => {
             let normalized = source.replace('\\', "/");
+            let mime_type =
+                crate::api::conversation::images::media_type_for_upload_path(&normalized)
+                    .unwrap_or(image.media_type.as_str());
             format!(
                 "{{\"path\":\"{}\",\"mimeType\":\"{}\"}}",
-                normalized, image.media_type
+                normalized, mime_type
             )
         }
         None => format!(

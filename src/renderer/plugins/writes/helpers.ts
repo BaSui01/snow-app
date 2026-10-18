@@ -1,4 +1,5 @@
 import type { Locale } from "../../../shared/locale";
+import { notifyConversationListChanged } from "../pluginEvents";
 import { runtimeSnapshot } from "../runtimeSnapshot";
 import type { PluginWriteParams } from "./types";
 
@@ -170,6 +171,14 @@ export const bumpRevision = (
     | "pluginsRevision",
 ): void => {
   runtimeSnapshot.bump(key);
+};
+
+/** 会话类写动作成功后调用：交由宿主刷新侧栏列表（其版本号变化会同步推进插件
+ *  revision），无宿主监听时直接推进插件 revision。 */
+export const commitConversationListChange = (): void => {
+  if (!notifyConversationListChanged()) {
+    bumpRevision("conversationListRevision");
+  }
 };
 
 export const dispatchAppEvent = (type: string, detail?: unknown): void => {

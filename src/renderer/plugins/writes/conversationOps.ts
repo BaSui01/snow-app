@@ -1,6 +1,6 @@
 import { sendMessageToConversation } from "../../components/mainContent/chatMessages/hooks/conversationMessageBridge";
 import { requestConversationActivation } from "../pluginEvents";
-import { bumpRevision, callSnow } from "./helpers";
+import { callSnow, commitConversationListChange } from "./helpers";
 
 /** 插件写动作与 AI 内置工具共用的会话操作（同一实现，避免两套逻辑漂移）。 */
 
@@ -41,7 +41,7 @@ export const createConversationInDirectory = async (
     title,
     input.autoReply ? undefined : initialText,
   );
-  bumpRevision("conversationListRevision");
+  commitConversationListChange();
   if (input.autoReply && initialText) {
     await sendMessageToConversation(conversationId, initialText);
   }

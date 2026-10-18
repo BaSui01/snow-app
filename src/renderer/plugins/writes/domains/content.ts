@@ -10,6 +10,7 @@ import {
 import {
   bumpRevision,
   callSnow,
+  commitConversationListChange,
   dispatchAppEvent,
   l10n,
   optionalBoolean,
@@ -404,7 +405,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       const conversationId = requireString(params, "conversationId");
       const title = requireString(params, "title");
       await callSnow("renameConversation", conversationId, title);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationId, title };
     },
   },
@@ -421,7 +422,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       const conversationId = requireString(params, "conversationId");
       const emoji = requireString(params, "emoji");
       await callSnow("updateConversationEmoji", conversationId, emoji);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationId, emoji };
     },
   },
@@ -443,7 +444,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
         );
       }
       await callSnow("updateConversationStatus", conversationId, status);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationId, status };
     },
   },
@@ -455,7 +456,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     invoke: async ({ params }) => {
       const conversationIds = requireStringArray(params, "conversationIds");
       await callSnow("archiveConversations", conversationIds);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationIds };
     },
   },
@@ -471,7 +472,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     invoke: async ({ params }) => {
       const conversationIds = requireStringArray(params, "conversationIds");
       await callSnow("restoreArchivedConversations", conversationIds);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationIds };
     },
   },
@@ -484,7 +485,7 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       const conversationId = requireString(params, "conversationId");
       const deleteMemories = optionalBoolean(params, "deleteMemories");
       await callSnow("deleteConversation", conversationId, deleteMemories);
-      bumpRevision("conversationListRevision");
+      commitConversationListChange();
       return { conversationId };
     },
   },

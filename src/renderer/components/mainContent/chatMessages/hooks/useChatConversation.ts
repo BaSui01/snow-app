@@ -42,6 +42,10 @@ import {
   useConversationAbortBridge,
   useConversationMessageBridge,
 } from "./conversationMessageBridge";
+import {
+  PLUGIN_CONVERSATION_LIST_CHANGED_EVENT,
+  type PluginConversationListChangedDetail,
+} from "../../../../plugins/pluginEvents";
 
 export const useChatConversation = (
   directoryId?: string,
@@ -1025,6 +1029,34 @@ export const useChatConversation = (
       refreshSidebarDataRef.current();
     });
   }, [isDetachedWindow]);
+
+  // 插件 / 客户端脚本的会话类写动作（归档、删除、重命名等）：与宿主 UI 操作一致，
+  // 立即重拉侧栏列表。独立窗口内的刷新会经 DetachedConversationSync 转告主窗口。
+  const refreshConversationsRef = useRef(
+    conversationManagementApi.refreshConversations,
+  );
+  refreshConversationsRef.current =
+    conversationManagementApi.refreshConversations;
+  useEffect(() => {
+    const handleChanged = (event: Event): void => {
+      const detail = (event as CustomEvent<PluginConversationListChangedDetail>)
+        .detail;
+      if (detail) {
+        detail.handled = true;
+      }
+      refreshConversationsRef.current();
+    };
+    window.addEventListener(
+      PLUGIN_CONVERSATION_LIST_CHANGED_EVENT,
+      handleChanged,
+    );
+    return () => {
+      window.removeEventListener(
+        PLUGIN_CONVERSATION_LIST_CHANGED_EVENT,
+        handleChanged,
+      );
+    };
+  }, []);
 
   // --- 7. Rollback ---
   const rollbackApi = useRollback(ctx);

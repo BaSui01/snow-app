@@ -9,6 +9,27 @@ export const PLUGIN_ACTIVATE_CONVERSATION_EVENT =
 
 export const PLUGIN_OPEN_SETTINGS_EVENT = "app-control:open-settings";
 
+export const PLUGIN_CONVERSATION_LIST_CHANGED_EVENT =
+  "snow:plugin-conversation-list-changed";
+
+export type PluginConversationListChangedDetail = {
+  /** 由监听方在同步回调中置为 true，表示宿主会话列表已接管刷新。 */
+  handled: boolean;
+};
+
+/**
+ * 通知宿主会话列表已被写动作修改。宿主刷新侧栏列表后会经
+ * conversationListVersion 再推进插件的 conversationListRevision；
+ * 返回 false 表示当前窗口没有会话宿主监听。
+ */
+export const notifyConversationListChanged = (): boolean => {
+  const detail: PluginConversationListChangedDetail = { handled: false };
+  window.dispatchEvent(
+    new CustomEvent(PLUGIN_CONVERSATION_LIST_CHANGED_EVENT, { detail }),
+  );
+  return detail.handled;
+};
+
 export type PluginActivateConversationDetail = {
   conversationId: string;
   directoryId: string;

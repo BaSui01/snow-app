@@ -145,6 +145,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-auto-format", (_event, enabled: boolean) =>
     native.setAutoFormat(enabled),
   );
+  ipcMain.handle("settings:get-tool-correction", () =>
+    native.getToolCorrection(),
+  );
+  ipcMain.handle("settings:set-tool-correction", (_event, enabled: boolean) =>
+    native.setToolCorrection(enabled),
+  );
   ipcMain.handle(
     "settings:get-conversation-modes",
     (_event, conversationId: string) =>
@@ -670,6 +676,46 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
+  ipcMain.handle("mcp:correct-tool-call", (_event, request: unknown) => {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      throw new Error("Tool correction request is required");
+    }
+    const record = request as Record<string, unknown>;
+    const toolName =
+      typeof record.toolName === "string" ? record.toolName.trim() : "";
+    if (!toolName) {
+      throw new Error("Tool name is required for tool-call correction");
+    }
+    const attemptsJson =
+      typeof record.attemptsJson === "string" && record.attemptsJson.trim()
+        ? record.attemptsJson
+        : "[]";
+    return native.correctToolCall({
+      toolName,
+      toolDescription:
+        typeof record.toolDescription === "string"
+          ? record.toolDescription
+          : "",
+      inputSchemaJson:
+        typeof record.inputSchemaJson === "string"
+          ? record.inputSchemaJson
+          : "",
+      originalArgumentsJson:
+        typeof record.originalArgumentsJson === "string"
+          ? record.originalArgumentsJson
+          : "{}",
+      failure: typeof record.failure === "string" ? record.failure : "",
+      attemptsJson,
+      attempt:
+        typeof record.attempt === "number" && Number.isFinite(record.attempt)
+          ? Math.max(1, Math.round(record.attempt))
+          : 1,
+      apiProfile:
+        typeof record.apiProfile === "string" && record.apiProfile.trim()
+          ? record.apiProfile.trim()
+          : undefined,
+    });
+  });
   ipcMain.handle("skills:list", (_event, projectId: unknown) => {
     if (
       projectId !== undefined &&

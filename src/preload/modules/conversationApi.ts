@@ -195,6 +195,19 @@ export const conversationApi = {
       conversationId,
       content,
     ),
+  updateToolCallArguments: (
+    conversationId: string,
+    responseId: string,
+    callId: string,
+    argumentsJson: string,
+  ): Promise<boolean> =>
+    ipcRenderer.invoke(
+      "chat-conversations:update-tool-call-arguments",
+      conversationId,
+      responseId,
+      callId,
+      argumentsJson,
+    ),
   listChatMessages: (conversationId: string): Promise<ChatMessageRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-messages", conversationId),
   listUserMessages: (conversationId: string): Promise<UserMessageSummary[]> =>

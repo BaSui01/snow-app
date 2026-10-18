@@ -311,15 +311,25 @@ export class ReadonlyCallGuard {
   public async recordToolExecutions(
     executableToolCalls: ToolCallInfo[],
     authorizationDecisions: ToolAuthorizationDecision[],
-    executedToolResults: Array<{ result: string } | undefined>,
+    executedToolResults: Array<
+      { result: string; corrected?: boolean } | undefined
+    >,
     readonlyToolNames: Set<string>,
   ): Promise<void> {
     for (let index = 0; index < executableToolCalls.length; index++) {
       const toolCall = executableToolCalls[index];
       const decision = authorizationDecisions[index];
-      const result = executedToolResults[index]?.result;
+      const executed = executedToolResults[index];
+      const result = executed?.result;
 
       if (decision?.status !== "approved") {
+        continue;
+      }
+
+      // Corrected calls ran with different arguments than the requested call;
+      // caching the result under the original arguments would poison later
+      // identical reads.
+      if (executed?.corrected) {
         continue;
       }
 

@@ -29,6 +29,7 @@ export { AppLogsToolCall } from "./AppLogsToolCall";
 export { AppControlToolCall } from "./AppControlToolCall";
 export { WorkflowToolCall } from "./WorkflowToolCall";
 export { GenericToolCall } from "./GenericToolCall";
+export { ToolCorrectionTree } from "./ToolCorrectionTree";
 export { HookExecutionUI } from "./HookExecutionUI";
 export type {
   HookExecutionRecord,

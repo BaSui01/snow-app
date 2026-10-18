@@ -6,6 +6,7 @@ use napi::bindgen_prelude::*;
 use rusqlite::{
     params, params_from_iter, OptionalExtension, ToSql, TransactionBehavior,
 };
+use serde_json::Value;
 
 use super::super::super::database;
 use super::super::super::{ChatMessagePage, ChatMessageRecord, UserMessageSummary};
@@ -561,6 +562,172 @@ pub fn delete_conversations(
     cleanup_orphan_checkpoint_files(&checkpoint_ids);
 
     Ok(())
+}
+
+/// Replace the arguments of one tool call inside the persisted assistant
+/// `tool_calls_json` of a response.
+///
+/// The stored JSON keeps whichever provider-native shape produced it, so only
+/// the arguments field of the matching call is rewritten. The call id and the
+/// rest of the payload stay byte-identical, which keeps later provider
+/// round-trips valid.
+pub fn update_tool_call_arguments(
+    database_path: &Path,
+    conversation_id: &str,
+    response_id: &str,
+    call_id: &str,
+    arguments_json: &str,
+) -> Result<bool> {
+    let normalized_call_id = call_id.trim();
+    if normalized_call_id.is_empty() {
+        return Ok(false);
+    }
+
+    let arguments: Value = serde_json::from_str(arguments_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("Corrected tool arguments are not valid JSON: {}", error),
+        )
+    })?;
+    if !arguments.is_object() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Corrected tool arguments must be a JSON object.",
+        ));
+    }
+
+    let mut connection = database::open_connection(database_path).map_err(|error| {
+        database::database_error(database_path, "update tool call arguments", error)
+    })?;
+    // IMMEDIATE serializes concurrent corrections of parallel tool calls:
+    // each read-modify-write must observe the previous correction.
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call arguments", error)
+        })?;
+
+    let row = transaction
+        .query_row(
+            "SELECT id, tool_calls_json
+               FROM chat_messages
+              WHERE conversation_id = ?1
+                AND response_id = ?2
+                AND role = 'assistant'
+                AND tool_calls_json NOT IN ('', '[]')
+              ORDER BY id DESC
+              LIMIT 1",
+            params![conversation_id, response_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call arguments", error)
+        })?;
+    let Some((message_id, raw)) = row else {
+        return Ok(false);
+    };
+
+    let Ok(mut tool_calls) = serde_json::from_str::<Vec<Value>>(&raw) else {
+        return Ok(false);
+    };
+    let Some(tool_call) = tool_calls
+        .iter_mut()
+        .find(|tool_call| tool_call_id(tool_call) == Some(normalized_call_id))
+    else {
+        return Ok(false);
+    };
+    if !replace_tool_call_arguments(tool_call, arguments) {
+        return Ok(false);
+    }
+
+    let serialized = serde_json::to_string(&tool_calls).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to serialize corrected tool calls: {}",
+            error
+        ))
+    })?;
+    transaction
+        .execute(
+            "UPDATE chat_messages SET tool_calls_json = ?2 WHERE id = ?1",
+            params![message_id, serialized],
+        )
+        .map_err(|error| {
+            database::database_error(database_path, "update tool call arguments", error)
+        })?;
+    transaction.commit().map_err(|error| {
+        database::database_error(database_path, "update tool call arguments", error)
+    })?;
+    Ok(true)
+}
+
+fn tool_call_id(tool_call: &Value) -> Option<&str> {
+    tool_call
+        .get("call_id")
+        .and_then(Value::as_str)
+        .or_else(|| tool_call.get("id").and_then(Value::as_str))
+        .or_else(|| {
+            tool_call
+                .get("functionCall")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            tool_call
+                .get("function_call")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+        })
+}
+
+/// Rewrite only the arguments field of a provider-native tool call entry.
+/// Returns false when the entry uses an unknown shape (leave it untouched).
+fn replace_tool_call_arguments(tool_call: &mut Value, arguments: Value) -> bool {
+    let Some(object) = tool_call.as_object_mut() else {
+        return false;
+    };
+
+    if let Some(function_call) = object
+        .get_mut("functionCall")
+        .and_then(Value::as_object_mut)
+    {
+        function_call.insert("args".to_string(), arguments);
+        return true;
+    }
+
+    if let Some(function_call) = object
+        .get_mut("function_call")
+        .and_then(Value::as_object_mut)
+    {
+        function_call.insert("arguments".to_string(), serialize_arguments(&arguments));
+        return true;
+    }
+
+    if let Some(function) = object.get_mut("function").and_then(Value::as_object_mut) {
+        function.insert("arguments".to_string(), serialize_arguments(&arguments));
+        return true;
+    }
+
+    if object.contains_key("input") {
+        object.insert("input".to_string(), arguments);
+        return true;
+    }
+
+    if object.contains_key("arguments") {
+        object.insert("arguments".to_string(), serialize_arguments(&arguments));
+        return true;
+    }
+
+    if object.contains_key("args") {
+        object.insert("args".to_string(), arguments);
+        return true;
+    }
+
+    false
+}
+
+fn serialize_arguments(arguments: &Value) -> Value {
+    Value::String(serde_json::to_string(arguments).unwrap_or_else(|_| "{}".to_string()))
 }
 
 pub fn list_chat_messages(

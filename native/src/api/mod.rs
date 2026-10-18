@@ -27,4 +27,5 @@ pub mod sse;
 pub mod summary;
 pub mod theme_palette;
 pub mod token_counter;
+pub mod tool_correction;
 pub mod vision;

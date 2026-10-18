@@ -45,6 +45,8 @@ import type {
   SkillUninstallResult,
   TerminalCommandRequest,
   TerminalCommandResponse,
+  ToolCorrectionRequest,
+  ToolCorrectionResponse,
   UpdateStatus,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -761,6 +763,10 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:discard-resumable-session", sessionId),
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
+  correctToolCall: (
+    request: ToolCorrectionRequest,
+  ): Promise<ToolCorrectionResponse> =>
+    ipcRenderer.invoke("mcp:correct-tool-call", request),
   listAvailableSkills: (projectId?: string): Promise<SkillDefinition[]> =>
     ipcRenderer.invoke("skills:list", projectId),
   setSkillEnabled: (

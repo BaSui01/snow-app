@@ -1822,6 +1822,34 @@ export const en = {
     "Reused prior result for identical call without re-reading physical file",
   "toolCall.common.arguments": "Arguments",
   "toolCall.common.result": "Result",
+  "toolCall.correction.title": "Correction agent",
+  "toolCall.correction.subtitle": "Basic model",
+  "toolCall.correction.attemptCount": "{{count}} repairs",
+  "toolCall.correction.originalArguments": "Original arguments",
+  "toolCall.correction.attempt": "Repair {{index}}",
+  "toolCall.correction.status.running": "Repairing",
+  "toolCall.correction.status.succeeded": "Repaired",
+  "toolCall.correction.status.failed": "Repair failed",
+  "toolCall.correction.status.abandoned": "Stopped",
+  "toolCall.correction.attemptStatus.running": "Running",
+  "toolCall.correction.attemptStatus.succeeded": "Succeeded",
+  "toolCall.correction.attemptStatus.failed": "Failed",
+  "toolCall.correction.attemptStatus.rejected": "Not approved",
+  "toolCall.correction.arguments": "Corrected arguments",
+  "toolCall.correction.result": "Execution result",
+  "toolCall.correction.details": "View arguments and result",
+  "toolCall.correction.replaced":
+    "The corrected call and result replaced the main flow",
+  "toolCall.correction.failure.max_attempts":
+    "Stopped after 3 repairs; the original error is used",
+  "toolCall.correction.failure.model_error":
+    "The correction model produced no usable repair",
+  "toolCall.correction.failure.not_repairable":
+    "The correction model judged this error unfixable by changing arguments",
+  "toolCall.correction.failure.rejected":
+    "The corrected call was not approved; the original error is used",
+  "toolCall.correction.failure.cancelled":
+    "The conversation was cancelled; correction stopped",
   "toolCall.rejection.title": "Rejected",
   "toolCall.rejection.noReason": "No reason provided by the user",
   "toolCall.common.charCount": "{{count}} characters",
@@ -3973,6 +4001,9 @@ export const en = {
   "plusMenu.autoScrollDescription": "Scroll to bottom while responding",
   "plusMenu.autoFormat": "Auto format",
   "plusMenu.autoFormatDescription": "Format edited files automatically",
+  "plusMenu.toolCorrection": "Auto tool correction",
+  "plusMenu.toolCorrectionDescription":
+    "Repair failed tool calls and retry automatically",
   "plusMenu.yoloMode": "YOLO Mode",
   "plusMenu.yoloModeDescription": "Skip per-tool approval",
   "plusMenu.yoloModeEnabled": "Enabled, no per-tool approval required",

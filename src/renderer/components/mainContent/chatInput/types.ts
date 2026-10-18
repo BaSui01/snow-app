@@ -136,6 +136,9 @@ export type ChatInputProps = {
   autoFormatEnabled?: boolean;
   onAutoFormatChange?: (enabled: boolean) => void;
   onRefreshAutoFormat?: () => void | Promise<boolean | void>;
+  toolCorrectionEnabled?: boolean;
+  onToolCorrectionChange?: (enabled: boolean) => void;
+  onRefreshToolCorrection?: () => void | Promise<boolean | void>;
   isCompacting?: boolean;
 };
 
@@ -287,5 +290,8 @@ export type ChatInputViewProps = ChatInputState &
     autoFormatEnabled: boolean;
     onAutoFormatChange?: (enabled: boolean) => void;
     onRefreshAutoFormat?: () => void | Promise<boolean | void>;
+    toolCorrectionEnabled: boolean;
+    onToolCorrectionChange?: (enabled: boolean) => void;
+    onRefreshToolCorrection?: () => void | Promise<boolean | void>;
     isCompacting: boolean;
   };

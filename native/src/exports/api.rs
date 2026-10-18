@@ -18,6 +18,9 @@ use crate::api::request_proxy::{self, ProxySession, RequestProxyCallback};
 use crate::api::responses::{ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
+use crate::api::tool_correction::{
+    correct_tool_call as correct_tool_call_impl, ToolCorrectionRequest, ToolCorrectionResponse,
+};
 use crate::mcp::servers::app_control::AppControlCallback;
 use crate::mcp::servers::bash::{
     authorize_sensitive_command as authorize_command,
@@ -108,6 +111,15 @@ pub async fn create_response_stream(
 #[napi]
 pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_stream(&stream_id))
+}
+
+/// Repair the arguments of a failed tool call with the active profile's basic
+/// model. The renderer controls the retry limit and re-executes the call.
+#[napi(ts_args_type = "request: ToolCorrectionRequest")]
+pub async fn correct_tool_call(
+    request: ToolCorrectionRequest,
+) -> napi::Result<ToolCorrectionResponse> {
+    crate::utils::panic_guard::guard_panic(correct_tool_call_impl(request)).await
 }
 
 /// 注册（或清除）对话请求代理回调。主进程初始化时调用一次：请求体发出前与

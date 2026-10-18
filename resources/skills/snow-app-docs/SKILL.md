@@ -177,7 +177,7 @@ allowed-tools:
   为只读域（前者调度器在渲染进程，写入被拒绝并指向 `app-control-createScheduledTask`）。
   → `3-参考手册/2-内置工具参考.md`
 - **集中开关 / 索引 / 隐私 / 快捷键 / 工作区（DB 域）**：`appSettings`（`liteMode`、
-  `autoFormat`、`terminal`、`proxyBrowser`、`imageLibraryDir`；`yoloMode` 只读）、
+  `autoFormat`、`toolCorrection`、`terminal`、`proxyBrowser`、`imageLibraryDir`；`yoloMode` 只读）、
   `privacy`（apiKey 写入空值保留旧值，`mode=local|api`）、`codebase`（全局白名单
   merge，改 embedding 配置后需重建索引；项目级 `scope` 三态覆盖，未设置继承全局）、
   `keyboardShortcuts`（按动作稀疏 merge，读取附带键位冲突）、`workspace`

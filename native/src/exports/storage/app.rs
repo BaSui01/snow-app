@@ -159,6 +159,20 @@ pub async fn set_auto_format(enabled: bool) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn get_tool_correction() -> napi::Result<bool> {
+    tokio::task::spawn_blocking(crate::storage::get_tool_correction)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_tool_correction(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_tool_correction(enabled))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_request_logging() -> napi::Result<bool> {
     tokio::task::spawn_blocking(crate::storage::get_request_logging)
         .await

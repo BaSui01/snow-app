@@ -135,6 +135,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-auto-format"),
   setAutoFormat: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-auto-format", enabled),
+  getToolCorrection: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-tool-correction"),
+  setToolCorrection: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-tool-correction", enabled),
   getConversationModes: (
     conversationId: string,
   ): Promise<ConversationModesResult> =>

@@ -61,6 +61,16 @@ pub fn set_auto_format(enabled: bool) -> Result<()> {
     services::system_settings::set_auto_format(&database_path, enabled)
 }
 
+pub fn get_tool_correction() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::get_tool_correction(&database_path)
+}
+
+pub fn set_tool_correction(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_tool_correction(&database_path, enabled)
+}
+
 pub fn get_request_logging() -> Result<bool> {
     let database_path = ensure_database_file()?;
     services::request_logging_settings::get_request_logging(&database_path)

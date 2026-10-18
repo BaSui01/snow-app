@@ -34,6 +34,7 @@ import {
   MemoryToolCall,
   WorkflowToolCall,
   GenericToolCall,
+  ToolCorrectionTree,
 } from "../toolCalls";
 import { PluginToolCall } from "./PluginToolCall";
 import { ToolRejectionNotice } from "../toolCalls/shared/ToolRejectionNotice";
@@ -228,20 +229,38 @@ export const ToolCallItem = memo(
     updateSessionMessages,
     hookExecutions,
   }: ToolCallItemProps): React.JSX.Element => {
+    // The correction state is the source of truth for the visible status:
+    // a parallel tool wrapper may settle and mark the call completed after
+    // correction has already started, which would otherwise hide the spinner.
+    const correctionRunning = toolCall.correction?.status === "running";
+    const displayToolCall = useMemo<ToolCallInfo>(
+      () =>
+        correctionRunning
+          ? {
+              ...toolCall,
+              status: "running",
+              result: undefined,
+              streamingStdout: undefined,
+              streamingStderr: undefined,
+            }
+          : toolCall,
+      [correctionRunning, toolCall],
+    );
+
     const rejection = useMemo(
-      () => parseToolRejection(toolCall.result),
-      [toolCall.result],
+      () => parseToolRejection(displayToolCall.result),
+      [displayToolCall.result],
     );
 
     const content = renderToolCall({
-      toolCall,
+      toolCall: displayToolCall,
       conversationId,
       messageId,
       updateSessionMessages,
       hookExecutions,
     });
 
-    if (!rejection) {
+    if (!rejection && !toolCall.correction) {
       return content;
     }
 
@@ -250,7 +269,10 @@ export const ToolCallItem = memo(
     return (
       <>
         {content}
-        <ToolRejectionNotice rejection={rejection} />
+        {toolCall.correction ? (
+          <ToolCorrectionTree correction={toolCall.correction} />
+        ) : null}
+        {rejection ? <ToolRejectionNotice rejection={rejection} /> : null}
       </>
     );
   },

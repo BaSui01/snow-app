@@ -501,6 +501,23 @@ pub fn append_tool_message(conversation_id: String, content: String) -> Result<(
     services::chat_conversations::append_tool_message(&database_path, &conversation_id, &content)
 }
 
+/// 用纠错成功后的参数替换已持久化的助手工具调用参数。返回是否命中并更新。
+pub fn update_tool_call_arguments(
+    conversation_id: String,
+    response_id: String,
+    call_id: String,
+    arguments_json: String,
+) -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_tool_call_arguments(
+        &database_path,
+        &conversation_id,
+        &response_id,
+        &call_id,
+        &arguments_json,
+    )
+}
+
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
     let mut records =

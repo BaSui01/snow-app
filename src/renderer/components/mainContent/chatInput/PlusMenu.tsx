@@ -1,6 +1,7 @@
 import {
   ArrowDownToLine,
   ClipboardList,
+  Drill,
   Feather,
   GitBranch,
   Plus,
@@ -62,6 +63,9 @@ export type PlusMenuProps = {
   autoFormatEnabled: boolean;
   onAutoFormatChange?: (enabled: boolean) => void;
   onRefreshAutoFormat?: () => void | Promise<boolean | void>;
+  toolCorrectionEnabled: boolean;
+  onToolCorrectionChange?: (enabled: boolean) => void;
+  onRefreshToolCorrection?: () => void | Promise<boolean | void>;
 };
 
 export const PlusMenu = ({
@@ -98,6 +102,9 @@ export const PlusMenu = ({
   autoFormatEnabled,
   onAutoFormatChange,
   onRefreshAutoFormat,
+  toolCorrectionEnabled,
+  onToolCorrectionChange,
+  onRefreshToolCorrection,
 }: PlusMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -138,6 +145,7 @@ export const PlusMenu = ({
         void onRefreshWorktreeMode?.();
         void onRefreshWorkflowMode?.();
         void onRefreshAutoFormat?.();
+        void onRefreshToolCorrection?.();
       }
       return next;
     });
@@ -149,6 +157,7 @@ export const PlusMenu = ({
     onRefreshWorktreeMode,
     onRefreshWorkflowMode,
     onRefreshAutoFormat,
+    onRefreshToolCorrection,
   ]);
 
   const handleItemClick = useCallback(
@@ -275,6 +284,29 @@ export const PlusMenu = ({
                   disabled={!onAutoFormatChange}
                   onChange={() => {
                     onAutoFormatChange?.(!autoFormatEnabled);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <Drill size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.toolCorrection")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.toolCorrectionDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.toolCorrection")}
+                  checked={toolCorrectionEnabled}
+                  disabled={!onToolCorrectionChange}
+                  onChange={() => {
+                    onToolCorrectionChange?.(!toolCorrectionEnabled);
                   }}
                   type="checkbox"
                 />

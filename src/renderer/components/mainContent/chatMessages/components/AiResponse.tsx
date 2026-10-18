@@ -267,7 +267,11 @@ export const AiResponse = memo(
             <ToolCallGroup
               count={toolCalls.length}
               timestamp={timestamp}
-              isRunning={toolCalls.some((tc) => tc.status === "running")}
+              isRunning={toolCalls.some(
+                (tc) =>
+                  tc.status === "running" ||
+                  tc.correction?.status === "running",
+              )}
               hasError={toolCalls.some((tc) => tc.status === "error")}
             >
               {groupedToolCalls.map((item) =>

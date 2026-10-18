@@ -1431,7 +1431,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           sessionDirId,
           directoryPath: ctx.directoryPath,
           responseId: response.id,
+          apiProfile: capturedOptions.apiProfile,
           isRunCancelled,
+          requestToolAuthorizations,
           awaitHookDecision,
           executeSubAgentActivation,
           executeSubAgentMainTool,
@@ -1459,6 +1461,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           name: string;
           callId: string;
           result: string;
+          corrected?: boolean;
         }[] = [];
         let executedResultIndex = 0;
         for (const toolCall of toolCalls) {

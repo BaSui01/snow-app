@@ -4,6 +4,10 @@ import type {
   PromptOptimizationRequest,
   PromptOptimizationResult,
 } from "../../preload/types/promptOptimization";
+import type {
+  ToolCorrectionRequest,
+  ToolCorrectionResponse,
+} from "../../preload/types/chat";
 
 export type NativePromptOptimizationRequest = Omit<
   PromptOptimizationRequest,
@@ -1927,6 +1931,8 @@ export type NativeBridge = ImageGenerationNativeApi & {
   setLiteMode: (enabled: boolean) => Promise<void>;
   getAutoFormat: () => Promise<boolean>;
   setAutoFormat: (enabled: boolean) => Promise<void>;
+  getToolCorrection: () => Promise<boolean>;
+  setToolCorrection: (enabled: boolean) => Promise<void>;
   /** 退出前落盘尚未执行的延迟自动格式化。 */
   flushPendingFileFormats: () => Promise<void>;
   getConversationModes: (
@@ -2471,6 +2477,13 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<void>;
   listTaskHistory: (conversationId: string) => Promise<string[]>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
+  /** 用纠错成功后的参数替换已持久化的助手工具调用参数。 */
+  updateToolCallArguments: (
+    conversationId: string,
+    responseId: string,
+    callId: string,
+    argumentsJson: string,
+  ) => Promise<boolean>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listUserMessages: (conversationId: string) => Promise<UserMessageSummary[]>;
   listChatMessagesPaginated: (
@@ -2550,6 +2563,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   abortResponseStream: (streamId: string) => boolean;
   abortToolExecution: (toolExecutionId: string, reason?: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
+  /** 使用基础模型修复失败工具调用的参数（渲染层负责重试与执行）。 */
+  correctToolCall: (
+    request: ToolCorrectionRequest,
+  ) => Promise<ToolCorrectionResponse>;
   listAvailableSkills: (projectId?: string) => Promise<SkillDefinition[]>;
   setSkillEnabled: (
     projectId: string | undefined,

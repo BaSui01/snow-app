@@ -253,6 +253,36 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "chat-conversations:update-tool-call-arguments",
+    async (
+      _event,
+      conversationId: unknown,
+      responseId: unknown,
+      callId: unknown,
+      argumentsJson: unknown,
+    ) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to update a tool call");
+      }
+      if (typeof responseId !== "string" || !responseId.trim()) {
+        throw new Error("Response ID is required to update a tool call");
+      }
+      if (typeof callId !== "string" || !callId.trim()) {
+        throw new Error("Tool call ID is required to update a tool call");
+      }
+      if (typeof argumentsJson !== "string" || !argumentsJson.trim()) {
+        throw new Error("Corrected tool arguments are required");
+      }
+
+      return native.updateToolCallArguments(
+        conversationId.trim(),
+        responseId.trim(),
+        callId.trim(),
+        argumentsJson,
+      );
+    },
+  );
+  ipcMain.handle(
     "chat-conversations:list-messages",
     (_event, conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

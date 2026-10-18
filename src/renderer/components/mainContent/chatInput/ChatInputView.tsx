@@ -135,6 +135,9 @@ export const ChatInputView = ({
   autoFormatEnabled,
   onAutoFormatChange,
   onRefreshAutoFormat,
+  toolCorrectionEnabled,
+  onToolCorrectionChange,
+  onRefreshToolCorrection,
   isCompacting,
   setManualValue,
   setIsManualMode,
@@ -1002,6 +1005,9 @@ export const ChatInputView = ({
             autoFormatEnabled={autoFormatEnabled}
             onAutoFormatChange={onAutoFormatChange}
             onRefreshAutoFormat={onRefreshAutoFormat}
+            toolCorrectionEnabled={toolCorrectionEnabled}
+            onToolCorrectionChange={onToolCorrectionChange}
+            onRefreshToolCorrection={onRefreshToolCorrection}
             handleAbort={handleAbort}
             handleSend={handleSend}
             apiConfigs={apiConfigs}

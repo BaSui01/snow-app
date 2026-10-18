@@ -134,3 +134,25 @@ export type ConversationImportSummary = {
   failedCount: number;
   results: ConversationImportFileResult[];
 };
+
+/** 工具执行失败后交给基础模型纠错的请求。 */
+export type ToolCorrectionRequest = {
+  toolName: string;
+  toolDescription: string;
+  inputSchemaJson: string;
+  originalArgumentsJson: string;
+  failure: string;
+  /** JSON 数组：[{ argumentsJson, error }] */
+  attemptsJson: string;
+  /** 1 起的本次纠错序号。 */
+  attempt: number;
+  /** 会话绑定的 API 档案；省略时使用全局激活档案。 */
+  apiProfile?: string;
+};
+
+/** 基础模型返回的纠正参数（不直接执行）。 */
+export type ToolCorrectionResponse = {
+  retry: boolean;
+  argumentsJson: string;
+  reasoning: string;
+};

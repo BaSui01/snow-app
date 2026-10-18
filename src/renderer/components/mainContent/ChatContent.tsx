@@ -38,6 +38,10 @@ import {
 } from "./chatInput/fileTagUtils";
 import { useTextSelectionQuote } from "./chatMessages/hooks/useTextSelectionQuote";
 import { directoryIdToPath } from "./chatMessages/utils/conversationHelpers";
+import {
+  refreshToolCorrectionPreference,
+  setToolCorrectionPreference,
+} from "./chatMessages/utils/toolCorrectionPreference";
 import { registerSessionDraftSaver } from "./chatInput/chatInputDraftBridge";
 
 type ChatContentProps = {
@@ -151,6 +155,12 @@ const ChatContentBody = ({
     } catch {
       return false;
     }
+  }, []);
+  const [toolCorrectionEnabled, setToolCorrectionEnabled] = useState(true);
+  const refreshToolCorrection = useCallback(async (): Promise<boolean> => {
+    const enabled = await refreshToolCorrectionPreference();
+    setToolCorrectionEnabled(enabled);
+    return enabled;
   }, []);
   const hasMessages = messages.length > 0;
 
@@ -518,6 +528,14 @@ const ChatContentBody = ({
     [refreshAutoFormat],
   );
 
+  // 切换自动纠错：乐观更新 UI，写入失败时回读真实状态。
+  const handleToolCorrectionChange = useCallback((enabled: boolean): void => {
+    setToolCorrectionEnabled(enabled);
+    void setToolCorrectionPreference(enabled).then((actual) => {
+      setToolCorrectionEnabled(actual);
+    });
+  }, []);
+
   const handleConfirmRollback = useCallback(
     async (mode: RollbackMode, deleteMemories?: boolean): Promise<void> => {
       // 返回真实 Promise：RollbackConfirmDialog 的确认按钮据此在整个
@@ -740,6 +758,9 @@ const ChatContentBody = ({
                 autoFormatEnabled={autoFormatEnabled}
                 onAutoFormatChange={handleAutoFormatChange}
                 onRefreshAutoFormat={refreshAutoFormat}
+                toolCorrectionEnabled={toolCorrectionEnabled}
+                onToolCorrectionChange={handleToolCorrectionChange}
+                onRefreshToolCorrection={refreshToolCorrection}
                 isCompacting={isCompactingActive}
               />
             )}

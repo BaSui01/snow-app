@@ -13,12 +13,12 @@ import {
   ListChecks,
   ListTree,
   MessageCircleQuestion,
+  Plug,
   ScanSearch,
   Search,
   Sparkles,
   Terminal,
   Workflow,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -64,7 +64,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   database: Database,
   telemetry: Activity,
   html: CodeXml,
-  generic: Wrench,
+  generic: Plug,
 };
 
 /** Resolve a fixed icon for every tool category. */

@@ -604,6 +604,28 @@ pub async fn append_tool_message(conversation_id: String, content: String) -> na
     .map_err(map_spawn_error)?
 }
 
+/// Replace the arguments of one persisted assistant tool call after the
+/// correction agent produced a successful retry. Returns whether a matching
+/// call was found and updated.
+#[napi]
+pub async fn update_tool_call_arguments(
+    conversation_id: String,
+    response_id: String,
+    call_id: String,
+    arguments_json: String,
+) -> napi::Result<bool> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::update_tool_call_arguments(
+            conversation_id,
+            response_id,
+            call_id,
+            arguments_json,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<ChatMessageRecord>> {
     tokio::task::spawn_blocking(move || crate::storage::list_chat_messages(conversation_id))

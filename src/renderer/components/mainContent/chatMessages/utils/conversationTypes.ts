@@ -79,6 +79,41 @@ export type HookExecutionRecord = {
   _resolveDecision?: (approved: boolean) => void;
 };
 
+export type ToolCorrectionAttemptStatus =
+  "running" | "failed" | "succeeded" | "rejected";
+
+export type ToolCorrectionAttempt = {
+  /** 1-based correction attempt index. */
+  index: number;
+  status: ToolCorrectionAttemptStatus;
+  /** Arguments proposed by the correction agent. */
+  arguments: string;
+  /** One-line explanation from the correction agent. */
+  reasoning?: string;
+  /** Raw failure returned by the executed corrected call. */
+  error?: string;
+  /** Raw result of the executed corrected call. */
+  result?: string;
+  startedAt: number;
+  finishedAt?: number;
+};
+
+export type ToolCorrectionStatus =
+  "running" | "succeeded" | "failed" | "abandoned";
+
+export type ToolCorrectionFailureCode =
+  "max_attempts" | "model_error" | "not_repairable" | "rejected" | "cancelled";
+
+export type ToolCorrectionState = {
+  status: ToolCorrectionStatus;
+  attempts: ToolCorrectionAttempt[];
+  /** Arguments of the original failed call. */
+  originalArguments: string;
+  failureCode?: ToolCorrectionFailureCode;
+  /** Technical detail of a model/transport failure. */
+  failureDetail?: string;
+};
+
 export type ToolCallInfo = {
   name: string;
   arguments: string;
@@ -86,6 +121,8 @@ export type ToolCallInfo = {
   interactionId: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
+  /** 工具失败后由纠错 Agent 修复的过程与结果（仅运行时状态，不落库）。 */
+  correction?: ToolCorrectionState;
   /** Runtime task binding; persisted task snapshots remain the source of truth. */
   imageGenerationTaskId?: string;
   imageGenerationBatchId?: string;

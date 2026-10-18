@@ -141,6 +141,7 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
     collect: async (ctx) => ({
       liteMode: await safe(() => window.snow.getLiteMode()),
       autoFormat: await safe(() => window.snow.getAutoFormat()),
+      toolCorrection: await safe(() => window.snow.getToolCorrection()),
       yoloMode: await safe(() => window.snow.getYoloMode()),
       requestLogging: {
         enabled: await safe(() => window.snow.getRequestLogging()),

@@ -504,6 +504,21 @@ export const CONFIG_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
   },
   {
     domain: "appSettings",
+    action: "setToolCorrection",
+    scope: null,
+    summary: l10n(
+      "Set the auto tool correction",
+      "设置自动纠错",
+      "設定自動糾錯",
+    ),
+    invoke: async ({ params }) => {
+      const enabled = requireBoolean(params, "enabled");
+      await callSnow("setToolCorrection", enabled);
+      return { enabled };
+    },
+  },
+  {
+    domain: "appSettings",
     action: "setImageLibraryDir",
     scope: null,
     summary: l10n(

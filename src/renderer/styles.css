@@ -14635,6 +14635,335 @@ body.is-panel-resizing * {
   overflow-wrap: anywhere;
 }
 
+/* ============================================================
+   Tool call correction tree (tct)
+   ============================================================ */
+.tct {
+  margin: 2px 0 0 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-light);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tct-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  transition: background 0.15s ease;
+}
+
+.tct-header::-webkit-details-marker {
+  display: none;
+}
+
+.tct-header:hover {
+  background: var(--bg-hover);
+}
+
+.tct-root-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tct--running .tct-root-icon {
+  color: var(--accent-blue, #3b82f6);
+}
+
+.tct--succeeded .tct-root-icon {
+  color: var(--accent-green, #22c55e);
+}
+
+.tct--failed .tct-root-icon {
+  color: var(--accent-red, #ef4444);
+}
+
+.tct-title {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tct-subtitle {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.tct-status {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.tct-status--running {
+  background: var(--accent-blue-bg, rgba(59, 130, 246, 0.15));
+  color: var(--accent-blue, #3b82f6);
+}
+
+.tct-status--succeeded {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text, #15803d);
+}
+
+.tct-status--failed {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text, #ef4444);
+}
+
+.tct-status--abandoned {
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+}
+
+.tct-count {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.tct-chevron {
+  flex-shrink: 0;
+  margin-left: 2px;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.tct-header:hover .tct-chevron {
+  opacity: 1;
+}
+
+.tct[open] > .tct-header .tct-chevron {
+  transform: rotate(90deg);
+}
+
+.tct-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.tct-attempt-detail.tct-original-detail {
+  margin-left: 0;
+}
+
+.tct-k {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.tct-pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tct-pre--error {
+  max-height: 120px;
+  color: var(--accent-red-text, #ef4444);
+}
+
+.tct-pre--muted {
+  max-height: 100px;
+  color: var(--text-tertiary);
+}
+
+.tct-tree {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  list-style: none;
+}
+
+.tct-tree::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 3px;
+  width: 1px;
+  background: var(--border-light);
+}
+
+.tct-node {
+  position: relative;
+  min-width: 0;
+}
+
+.tct-node::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: -9px;
+  width: 9px;
+  height: 1px;
+  background: var(--border-light);
+}
+
+.tct-node-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-tertiary);
+}
+
+.tct-node--running .tct-node-head > svg {
+  color: var(--accent-blue, #3b82f6);
+}
+
+.tct-node--succeeded .tct-node-head > svg {
+  color: var(--accent-green, #22c55e);
+}
+
+.tct-node--failed .tct-node-head > svg {
+  color: var(--accent-red, #ef4444);
+}
+
+.tct-node--rejected .tct-node-head > svg {
+  color: var(--accent-yellow, #d97706);
+}
+
+.tct-node-title {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.tct-attempt-status {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.tct-attempt-status--running {
+  color: var(--accent-blue, #3b82f6);
+}
+
+.tct-attempt-status--succeeded {
+  color: var(--accent-green-text, #15803d);
+}
+
+.tct-attempt-status--failed {
+  color: var(--accent-red-text, #ef4444);
+}
+
+.tct-attempt-status--rejected {
+  color: var(--accent-yellow, #d97706);
+}
+
+.tct-node-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.tct-reasoning {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 3px 0 0 17px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.tct-reasoning > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-tertiary);
+}
+
+.tct-node > .tct-pre {
+  margin: 4px 0 0 17px;
+}
+
+.tct-attempt-detail {
+  margin: 4px 0 0 17px;
+}
+
+.tct-attempt-detail > summary {
+  width: fit-content;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tct-attempt-detail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tct-attempt-detail > summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.tct-detail-block {
+  margin-top: 4px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.tct-failure {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text, #ef4444);
+  font-size: 11.5px;
+}
+
+.tct-replaced {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text, #15803d);
+  font-size: 11.5px;
+}
+
+.tct-replaced > svg {
+  flex-shrink: 0;
+}
+
 .tcn-chevron {
   flex-shrink: 0;
   transition:

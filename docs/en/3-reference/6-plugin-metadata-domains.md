@@ -209,6 +209,7 @@ Field-level sensitive: `proxyPassword` to `privacyConfig`, `apiKey` to `apiKeys`
 | --------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `liteMode`            | boolean \| null | Lite mode (disables the Browser / App Control / Terminal built-in servers)                                                       |
 | `autoFormat`          | boolean \| null | Prettier after file edits                                                                                                        |
+| `toolCorrection`      | boolean \| null | Auto tool correction (repair failed tool calls and retry)                                                                        |
 | `yoloMode`            | boolean \| null | Confirmation-free mode (read-only mirror; cannot be changed here)                                                                |
 | `requestLogging`      | object \| null  | `{ enabled: boolean, expiresAt: number }` request-body logging switch and expiry                                                 |
 | `keyboardShortcuts`   | object \| null  | 12 actions to `{ key, enabled, foregroundOnly }`; `key` looks like `mod+f`                                                       |

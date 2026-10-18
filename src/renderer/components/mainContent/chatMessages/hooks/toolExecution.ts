@@ -2,6 +2,7 @@ import {
   directoryIdToPath,
   formatMcpToolResultForModel,
   getErrorMessage,
+  isValidToolName,
   isUserQuestionCancellationResult,
   resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
@@ -29,6 +30,7 @@ import type {
   HookExecutionRecord,
   ToolAuthorizationDecision,
   ToolCallInfo,
+  ToolCorrectionState,
 } from "../utils/conversationTypes";
 import type { BashStreamChunk } from "../../../../../preload";
 import {
@@ -42,9 +44,25 @@ import {
   logImageGeneration,
 } from "./imageGenerationRuntime";
 import { settleImageGenerationReceipt } from "../utils/imageGenerationState";
+import {
+  appendToolCorrectionNote,
+  detectToolFailure,
+  isNonCorrectableToolFailure,
+  isToolCorrectionEligible,
+  runToolCorrection,
+  type ToolCorrectionSuccess,
+  type ToolCorrectionToolDefinition,
+} from "./toolCorrection";
+import { ensureToolCorrectionPreference } from "../utils/toolCorrectionPreference";
 
 export type ToolExecutionResult = {
-  structuredToolResults: { name: string; callId: string; result: string }[];
+  structuredToolResults: {
+    name: string;
+    callId: string;
+    result: string;
+    /** 结果来自纠错后的重新执行：不得写入只读调用缓存。 */
+    corrected?: boolean;
+  }[];
   hookAborted: boolean;
   hookAbortMessage: string;
   userQuestionCancelled: boolean;
@@ -71,6 +89,54 @@ const isFailedSubAgentResult = (result: string | undefined): boolean => {
   }
 };
 
+/**
+ * Apply Snow-owned argument defaults/injections shared by the normal execution
+ * path and the correction retry path.
+ */
+const prepareToolArguments = (
+  toolName: string,
+  argsJson: string,
+  options: { responseId?: string; sessionId?: string },
+): string => {
+  let toolArgs = argsJson;
+
+  if (toolName === "todo-todo-manage" && options.responseId) {
+    try {
+      const parsedArgs = JSON.parse(toolArgs) as Record<string, unknown>;
+      if (parsedArgs.action === "add") {
+        parsedArgs.responseId = options.responseId;
+        toolArgs = JSON.stringify(parsedArgs);
+      }
+    } catch {
+      // Invalid JSON is reported by the validation path.
+    }
+  }
+
+  if (toolName === "memory-save" && options.responseId) {
+    try {
+      const parsedArgs = JSON.parse(toolArgs) as Record<string, unknown>;
+      parsedArgs.responseId = options.responseId;
+      toolArgs = JSON.stringify(parsedArgs);
+    } catch {
+      // Invalid JSON is reported by the validation path.
+    }
+  }
+
+  if (toolName === "filesystem-create") {
+    try {
+      const parsedArgs = JSON.parse(toolArgs) as Record<string, unknown>;
+      if (typeof parsedArgs.overwrite !== "boolean") {
+        parsedArgs.overwrite = false;
+        toolArgs = JSON.stringify(parsedArgs);
+      }
+    } catch {
+      // Invalid JSON is reported by the validation path.
+    }
+  }
+
+  return injectSessionIdIntoToolArgs(toolName, toolArgs, options.sessionId);
+};
+
 export type ToolExecutorDeps = {
   ctx: ConversationContextValue;
   effectiveKey: string;
@@ -79,7 +145,14 @@ export type ToolExecutorDeps = {
   sessionDirId: string | undefined;
   directoryPath: string | undefined;
   responseId: string | undefined;
+  /** 会话绑定的 API 档案（纠错请求使用同一档案的基础模型）。 */
+  apiProfile: string | undefined;
   isRunCancelled: (key: string) => boolean;
+  requestToolAuthorizations: (
+    toolCalls: ToolCallInfo[],
+    conversationId: string,
+    projectId?: string,
+  ) => Promise<ToolAuthorizationDecision[]>;
   awaitHookDecision: (
     key: string,
     messageId: string,
@@ -128,7 +201,9 @@ export function createToolExecutor(
     sessionDirId,
     directoryPath,
     responseId,
+    apiProfile,
     isRunCancelled,
+    requestToolAuthorizations,
     awaitHookDecision,
     executeSubAgentActivation,
     executeSubAgentMainTool,
@@ -343,9 +418,225 @@ export function createToolExecutor(
           );
         };
 
-      // When the model requests multiple parallelizable tool calls in a single
-      // tool batch (sub-agent activations, sub-agent reactivations, image
-      // generations) they must run concurrently, not queued one after another.
+      // Tool definitions are fetched lazily once per executor: only failed
+      // calls need the schema, and most turns never fail.
+      let toolDefinitionsPromise: Promise<
+        Map<string, ToolCorrectionToolDefinition>
+      > | null = null;
+      const getToolDefinition = async (
+        toolName: string,
+      ): Promise<ToolCorrectionToolDefinition | null> => {
+        if (!toolDefinitionsPromise) {
+          toolDefinitionsPromise = window.snow
+            .listMcpTools()
+            .then(
+              (tools) =>
+                new Map(
+                  tools.map(
+                    (tool) =>
+                      [
+                        tool.name,
+                        {
+                          description: tool.description,
+                          inputSchemaJson: tool.inputSchemaJson,
+                        },
+                      ] as const,
+                  ),
+                ),
+            )
+            .catch(() => new Map<string, ToolCorrectionToolDefinition>());
+        }
+        const definitions = await toolDefinitionsPromise;
+        return definitions.get(toolName) ?? null;
+      };
+
+      /** 用纠错后的参数重新执行同一条工具调用。 */
+      const executeCorrectedTool = async (
+        correctedCall: ToolCallInfo,
+        argsJson: string,
+        workDir: string | undefined,
+      ): Promise<string> => {
+        const preparedArgs = prepareToolArguments(
+          correctedCall.name,
+          argsJson,
+          {
+            responseId,
+            sessionId: isPendingSessionKey(effectiveKey)
+              ? undefined
+              : effectiveKey,
+          },
+        );
+        return withToolWatchdog(
+          window.snow.callMcpTool(
+            correctedCall.name,
+            preparedArgs,
+            sessionDirId,
+            checkpointIds,
+            checkpointIds.length > 0 ? workDir : undefined,
+            undefined,
+            buildToolChunkHandler(correctedCall),
+            correctedCall.interactionId,
+            undefined,
+            sessionPlanMode(effectiveKey),
+            planApprovedSessionKeysRef.current.has(effectiveKey),
+            isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+          ),
+          resolveToolWatchdogMs(correctedCall.name, preparedArgs),
+        );
+      };
+
+      /** 把纠错进度同步到工具卡片。 */
+      const publishToolCorrection = (
+        correctedCall: ToolCallInfo,
+        correction: ToolCorrectionState,
+        settle: boolean,
+        originalResult: string,
+      ): void => {
+        const succeeded = correction.attempts.find(
+          (attempt) => attempt.status === "succeeded",
+        );
+        ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+          currentMessages.map((message) => {
+            if (message.id !== currentAssistantMessageId) return message;
+            return {
+              ...message,
+              toolCalls: updateFirstMatchingToolCall(
+                message.toolCalls,
+                correctedCall,
+                ["pending", "running", "completed", "error"],
+                (currentToolCall) => {
+                  if (succeeded?.result !== undefined) {
+                    return {
+                      ...currentToolCall,
+                      arguments: succeeded.arguments,
+                      result: succeeded.result,
+                      status: "completed" as const,
+                      correction,
+                      streamingStdout: undefined,
+                      streamingStderr: undefined,
+                    };
+                  }
+                  if (settle) {
+                    return {
+                      ...currentToolCall,
+                      result: originalResult,
+                      status: "completed" as const,
+                      correction,
+                      streamingStdout: undefined,
+                      streamingStderr: undefined,
+                    };
+                  }
+                  return {
+                    ...currentToolCall,
+                    status: "running" as const,
+                    result: undefined,
+                    correction,
+                    streamingStdout: undefined,
+                    streamingStderr: undefined,
+                  };
+                },
+              ),
+            };
+          }),
+        );
+      };
+
+      /** 让下一轮请求看到修正后的工具调用参数。 */
+      const persistCorrectedArguments = async (
+        correctedCall: ToolCallInfo,
+        argsJson: string,
+      ): Promise<void> => {
+        if (
+          !responseId ||
+          !correctedCall.callId ||
+          isPendingSessionKey(effectiveKey)
+        ) {
+          return;
+        }
+        await window.snow
+          .updateToolCallArguments(
+            effectiveKey,
+            responseId,
+            correctedCall.callId,
+            argsJson,
+          )
+          .catch(() => undefined);
+      };
+
+      /**
+       * 失败工具纠错入口：仅对可纠错的普通工具触发，最多 3 次。
+       * `settle` 为 true 时，纠错失败会把卡片恢复为原始结果
+       * （并行预启动路径不会再经过顺序路径的最终结算）。
+       */
+      const runCorrectionForTool = async (
+        correctedCall: ToolCallInfo,
+        failedResult: string,
+        workDir: string | undefined,
+        settle: boolean,
+      ): Promise<ToolCorrectionSuccess | null> => {
+        if (
+          !isToolCorrectionEligible(correctedCall.name) ||
+          !isValidToolName(correctedCall.name) ||
+          !(await ensureToolCorrectionPreference())
+        ) {
+          return null;
+        }
+        const failure = detectToolFailure(failedResult);
+        if (!failure || isNonCorrectableToolFailure(failure)) {
+          return null;
+        }
+
+        const outcome = await runToolCorrection({
+          toolName: correctedCall.name,
+          originalArguments: correctedCall.arguments,
+          failedResult,
+          apiProfile,
+          getToolDefinition: () => getToolDefinition(correctedCall.name),
+          requestCorrection: (request) => window.snow.correctToolCall(request),
+          authorize: async (argumentsJson, attempt) => {
+            const authorizationCall: ToolCallInfo = {
+              ...correctedCall,
+              arguments: argumentsJson,
+              interactionId: `${correctedCall.interactionId}-correction-${attempt}`,
+              status: "pending",
+              result: undefined,
+              correction: undefined,
+            };
+            const decisions = await requestToolAuthorizations(
+              [authorizationCall],
+              effectiveKey,
+              sessionDirId,
+            );
+            return decisions[0]?.status === "approved";
+          },
+          execute: async (argumentsJson) => {
+            try {
+              return await executeCorrectedTool(
+                correctedCall,
+                argumentsJson,
+                workDir,
+              );
+            } catch (error) {
+              abortTimedOutExecution(correctedCall, error);
+              throw error;
+            }
+          },
+          onUpdate: (correction) =>
+            publishToolCorrection(
+              correctedCall,
+              correction,
+              settle,
+              failedResult,
+            ),
+          isCancelled: () => isRunCancelled(effectiveKey),
+        });
+
+        if (outcome) {
+          await persistCorrectedArguments(correctedCall, outcome.arguments);
+        }
+        return outcome;
+      };
+
       // Pre-start every approved call up front and store the pending promises
       // keyed by tool index; the main loop below simply awaits the already-
       // running promise when it reaches each pre-started tool call.
@@ -889,12 +1180,30 @@ export function createToolExecutor(
           const { promise, afterHookEligible } =
             preStartedParallelTools.get(toolIndex)!;
           let parallelResult = await promise;
+          let parallelArguments = toolCall.arguments;
+          let parallelCorrected = false;
+          let parallelCorrectionReasoning: string | undefined;
+
+          // Read-only tools are pre-started in parallel; their failures still
+          // go through the correction agent before the afterToolCall hook.
+          const correctionOutcome = await runCorrectionForTool(
+            toolCall,
+            parallelResult,
+            sessionDirPath,
+            true,
+          );
+          if (correctionOutcome) {
+            parallelResult = correctionOutcome.result;
+            parallelArguments = correctionOutcome.arguments;
+            parallelCorrected = true;
+            parallelCorrectionReasoning = correctionOutcome.reasoning;
+          }
 
           if (afterHookEligible && parallelResult !== undefined) {
             try {
               const afterHookContext = JSON.stringify({
                 toolName: toolCall.name,
-                args: JSON.parse(toolCall.arguments),
+                args: JSON.parse(parallelArguments),
                 result: JSON.parse(parallelResult),
                 cwd: sessionDirPath ?? "",
               });
@@ -947,10 +1256,17 @@ export function createToolExecutor(
             }
           }
 
+          const baseModelResult = formatMcpToolResultForModel(parallelResult);
           structuredToolResults.push({
             name: toolCall.name,
             callId: toolCall.callId || "",
-            result: formatMcpToolResultForModel(parallelResult),
+            result: parallelCorrected
+              ? appendToolCorrectionNote(
+                  baseModelResult,
+                  parallelCorrectionReasoning ?? "",
+                )
+              : baseModelResult,
+            ...(parallelCorrected ? { corrected: true } : {}),
           });
 
           if (isRunCancelled(effectiveKey)) {
@@ -961,9 +1277,14 @@ export function createToolExecutor(
 
         let result: string | undefined;
         let fileTrackingRecorded = false;
-        const recordFileTracking = (): void => {
+        let correctedExecution = false;
+        let correctedReasoning: string | undefined;
+        const recordFileTracking = (
+          argsJson: string = toolCall.arguments,
+          force = false,
+        ): void => {
           if (
-            fileTrackingRecorded ||
+            (!force && fileTrackingRecorded) ||
             isPendingSessionKey(effectiveKey) ||
             result === undefined
           )
@@ -982,7 +1303,7 @@ export function createToolExecutor(
             });
           for (const change of extractFileChangesFromTool(
             toolCall.name,
-            toolCall.arguments,
+            argsJson,
             result,
           )) {
             ctx.recordFileChange(effectiveKey, {
@@ -1031,66 +1352,22 @@ export function createToolExecutor(
             (toolCall.name === "imagegen-generate"
               ? imageRegistrationError
               : null) ?? validateToolCall(toolCall);
-          const isValidationError = !!validationError;
+          let validationFailed = !!validationError;
           if (validationError) {
             result = validationError;
           } else {
             try {
-              let toolArgs = toolCall.arguments;
-              // todo-manage 的 add 动作注入当前 assistant responseId（回滚
-              // 跟踪）；会话隔离键由 Rust 分发层注入当前会话 ID，模型传入
-              // 的 sessionId 一律忽略。
-              if (toolCall.name === "todo-todo-manage" && responseId) {
-                try {
-                  const parsedArgs = JSON.parse(toolArgs) as Record<
-                    string,
-                    unknown
-                  >;
-                  if (parsedArgs.action === "add") {
-                    parsedArgs.responseId = responseId;
-                    toolArgs = JSON.stringify(parsedArgs);
-                  }
-                } catch {
-                  // If args are not valid JSON, let the tool fail naturally.
-                }
-              }
-
-              // memory-save 的响应级溯源：注入当前 assistant responseId
-              //（覆盖模型可能伪造的值），回滚据此圈定被回滚轮次保存的记忆。
-              if (toolCall.name === "memory-save" && responseId) {
-                try {
-                  const parsedArgs = JSON.parse(toolArgs) as Record<
-                    string,
-                    unknown
-                  >;
-                  parsedArgs.responseId = responseId;
-                  toolArgs = JSON.stringify(parsedArgs);
-                } catch {
-                  // If args are not valid JSON, let the tool fail naturally.
-                }
-              }
-
-              if (toolCall.name === "filesystem-create") {
-                try {
-                  const parsedArgs = JSON.parse(toolArgs) as Record<
-                    string,
-                    unknown
-                  >;
-                  if (typeof parsedArgs.overwrite !== "boolean") {
-                    parsedArgs.overwrite = false;
-                    toolArgs = JSON.stringify(parsedArgs);
-                  }
-                } catch {
-                  // If args are not valid JSON, let the tool fail naturally.
-                }
-              }
-
-              // Attach Snow-owned session metadata to command and persistent
-              // terminal tools. Pending conversations do not yet have a stable ID.
-              toolArgs = injectSessionIdIntoToolArgs(
+              // Shared Snow-owned argument defaults/injections. The model's
+              // sessionId is ignored: the dispatch layer owns the real one.
+              let toolArgs = prepareToolArguments(
                 toolCall.name,
-                toolArgs,
-                isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
+                toolCall.arguments,
+                {
+                  responseId,
+                  sessionId: isPendingSessionKey(effectiveKey)
+                    ? undefined
+                    : effectiveKey,
+                },
               );
 
               // Persist conversation and tool-call binding so bash commands can
@@ -1447,6 +1724,26 @@ export function createToolExecutor(
             }
           }
 
+          // Tool failed (including validation errors): let the correction
+          // agent repair the arguments and re-execute, up to 3 times. A
+          // successful repair replaces both the call arguments and the result
+          // before the card settles and the next model request is built.
+          if (!hookAborted && result !== undefined) {
+            const correctionOutcome = await runCorrectionForTool(
+              toolCall,
+              result,
+              sessionDirPath,
+              false,
+            );
+            if (correctionOutcome) {
+              result = correctionOutcome.result;
+              correctedExecution = true;
+              correctedReasoning = correctionOutcome.reasoning;
+              validationFailed = false;
+              recordFileTracking(correctionOutcome.arguments, true);
+            }
+          }
+
           ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
             currentMessages.map((currentMessage) => {
               if (currentMessage.id !== currentAssistantMessageId) {
@@ -1465,7 +1762,7 @@ export function createToolExecutor(
                       ? settleImageGenerationReceipt(currentToolCall, result)
                       : {
                           ...currentToolCall,
-                          status: isValidationError
+                          status: validationFailed
                             ? ("error" as const)
                             : (toolCall.name === "sub-agents-activate" ||
                                   toolCall.name === "sub-agents-continue") &&
@@ -1496,11 +1793,18 @@ export function createToolExecutor(
 
         // Cover rejections and thrown errors, without double-recording execution.
         recordFileTracking();
-        const modelToolResult = formatMcpToolResultForModel(result!);
+        const baseModelToolResult = formatMcpToolResultForModel(result!);
+        const modelToolResult = correctedExecution
+          ? appendToolCorrectionNote(
+              baseModelToolResult,
+              correctedReasoning ?? "",
+            )
+          : baseModelToolResult;
         structuredToolResults.push({
           name: toolCall.name,
           callId: toolCall.callId || "",
           result: modelToolResult,
+          ...(correctedExecution ? { corrected: true } : {}),
         });
 
         if (isRunCancelled(effectiveKey)) {

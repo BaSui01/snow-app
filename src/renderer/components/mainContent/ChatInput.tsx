@@ -62,6 +62,9 @@ export const ChatInput = ({
   autoFormatEnabled = false,
   onAutoFormatChange,
   onRefreshAutoFormat,
+  toolCorrectionEnabled = true,
+  onToolCorrectionChange,
+  onRefreshToolCorrection,
   isCompacting = false,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -130,6 +133,9 @@ export const ChatInput = ({
       autoFormatEnabled={autoFormatEnabled}
       onAutoFormatChange={onAutoFormatChange}
       onRefreshAutoFormat={onRefreshAutoFormat}
+      toolCorrectionEnabled={toolCorrectionEnabled}
+      onToolCorrectionChange={onToolCorrectionChange}
+      onRefreshToolCorrection={onRefreshToolCorrection}
       isCompacting={isCompacting}
     />
   );

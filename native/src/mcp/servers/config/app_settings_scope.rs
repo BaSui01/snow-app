@@ -1,11 +1,12 @@
 //! config 服务 `appSettings` 作用域：把散落在 system_settings 的零散开关集中
 //! 到一个域，便于 AI 排障时查看与调整。
 //!
-//! key = `liteMode` | `autoFormat` | `terminal` | `proxyBrowser` | `imageLibraryDir`
-//!        | `yoloMode`（只读）
+//! key = `liteMode` | `autoFormat` | `toolCorrection` | `terminal`
+//!        | `proxyBrowser` | `imageLibraryDir` | `yoloMode`（只读）
 //!
-//! - `liteMode` / `autoFormat`：布尔开关（精简模式禁用 Browser/App Control/Terminal
-//!   三个内置 MCP 服务器；自动格式化在编辑文件后用 Prettier 整理）。
+//! - `liteMode` / `autoFormat` / `toolCorrection`：布尔开关（精简模式禁用
+//!   Browser/App Control/Terminal 三个内置 MCP 服务器；自动格式化在编辑文件后
+//!   用 Prettier 整理；自动纠错在工具失败后交给基础模型修正参数并重试）。
 //! - `terminal` / `proxyBrowser`：UI 整体读写的 JSON blob，本域按**白名单字段 merge**
 //!   写入（未提供的字段与不属于白名单的字段——例如站点拦截规则 `blockedPatterns`
 //!   ——保持原值，后者由 app-control 工具维护）。
@@ -20,7 +21,8 @@ use serde_json::{json, Map, Value};
 
 use crate::storage::services::system_settings::{
     get_auto_format, get_image_library_dir, get_lite_mode, get_system_setting_value,
-    set_auto_format, set_image_library_dir, set_lite_mode, set_system_setting,
+    get_tool_correction, set_auto_format, set_image_library_dir, set_lite_mode,
+    set_system_setting, set_tool_correction,
 };
 
 const TOOL_GET: &str = "get";
@@ -29,6 +31,7 @@ const TOOL_DELETE: &str = "delete";
 
 const LITE_MODE_KEY: &str = "liteMode";
 const AUTO_FORMAT_KEY: &str = "autoFormat";
+const TOOL_CORRECTION_KEY: &str = "toolCorrection";
 const TERMINAL_KEY: &str = "terminal";
 const PROXY_BROWSER_KEY: &str = "proxyBrowser";
 const IMAGE_LIBRARY_DIR_KEY: &str = "imageLibraryDir";
@@ -121,6 +124,7 @@ fn state_for(db_path: &Path, key: &str) -> Result<Option<Value>> {
     let value = match key {
         LITE_MODE_KEY => json!(get_lite_mode(db_path)?),
         AUTO_FORMAT_KEY => json!(get_auto_format(db_path)?),
+        TOOL_CORRECTION_KEY => json!(get_tool_correction(db_path)?),
         TERMINAL_KEY => read_blob(db_path, TERMINAL_SETTING_CODE)?,
         PROXY_BROWSER_KEY => read_blob(db_path, PROXY_BROWSER_SETTING_CODE)?,
         IMAGE_LIBRARY_DIR_KEY => json!(get_image_library_dir(db_path)?),
@@ -134,6 +138,7 @@ fn all_keys() -> Vec<Value> {
     vec![
         json!({ "key": LITE_MODE_KEY, "type": "boolean", "sensitive": false, "readOnly": false }),
         json!({ "key": AUTO_FORMAT_KEY, "type": "boolean", "sensitive": false, "readOnly": false }),
+        json!({ "key": TOOL_CORRECTION_KEY, "type": "boolean", "sensitive": false, "readOnly": false }),
         json!({ "key": TERMINAL_KEY, "type": "object", "sensitive": false, "readOnly": false }),
         json!({ "key": PROXY_BROWSER_KEY, "type": "object", "sensitive": false, "readOnly": false }),
         json!({ "key": IMAGE_LIBRARY_DIR_KEY, "type": "string", "sensitive": false, "readOnly": false }),
@@ -154,6 +159,15 @@ fn write_setting(db_path: &Path, key: &str, value: &Value) -> Result<Value> {
                 Error::new(Status::InvalidArg, "autoFormat must be a boolean".to_string())
             })?;
             set_auto_format(db_path, enabled)?;
+        }
+        TOOL_CORRECTION_KEY => {
+            let enabled = value.as_bool().ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "toolCorrection must be a boolean".to_string(),
+                )
+            })?;
+            set_tool_correction(db_path, enabled)?;
         }
         TERMINAL_KEY => {
             let existing = read_blob(db_path, TERMINAL_SETTING_CODE)?;
@@ -251,7 +265,7 @@ pub(crate) fn execute_app_settings_scope(
             let value = state_for(db_path, key)?.ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    format!("Unknown appSettings key \"{key}\"; available keys: liteMode, autoFormat, terminal, proxyBrowser, imageLibraryDir, yoloMode"),
+                    format!("Unknown appSettings key \"{key}\"; available keys: liteMode, autoFormat, toolCorrection, terminal, proxyBrowser, imageLibraryDir, yoloMode"),
                 )
             })?;
             Ok(json!({

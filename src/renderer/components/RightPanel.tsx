@@ -72,6 +72,7 @@ import {
   type OpenTerminalCommandPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "../utils/generateComparePatch";
+import { hasCustomWindowFrame } from "../utils/platform";
 import { getFileTypeIcon } from "../utils/fileIcons";
 import { buildSshConnectParams } from "./sidebar/personalization/roleFileUtils";
 import type {
@@ -303,7 +304,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     },
     ref,
   ): React.JSX.Element => {
-    const isWindows = navigator.userAgent.includes("Win");
+    const hasCustomFrame = hasCustomWindowFrame();
     const { t, locale } = useI18n();
     const fullscreenShortcutLabel = useShortcutLabel(
       "toggleRightPanelFullscreen",
@@ -2024,7 +2025,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 </div>
               ))}
             </OverlayScrollbar>
-            {(isWindows || isDetachedWindow) && (
+            {(hasCustomFrame || isDetachedWindow) && (
               <div className="right-panel-tab-actions">
                 <PlusMenuButton
                   items={plusMenuItems}

@@ -12,7 +12,6 @@ import {
   APP_ICON_PATH,
   APP_WINDOW_ICON_PATH,
   isMacOS,
-  isWindows,
   macTrafficLightPosition,
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
@@ -206,7 +205,9 @@ export const createWindow = (): BrowserWindow => {
     title: "Snow App",
     icon: APP_ICON_PATH,
     titleBarStyle: isMacOS ? "hidden" : "default",
-    frame: isMacOS || isWindows ? false : true,
+    // macOS 保留原生红绿灯；Windows / Linux 无边框，标题栏、窗口控制按钮
+    // 与 LOGO 全部由渲染层自绘（见 renderer/components/TopBar.tsx）。
+    frame: false,
     ...(isMacOS ? { trafficLightPosition: macTrafficLightPosition } : {}),
     autoHideMenuBar: true,
     backgroundColor: getWindowBackgroundColor(),
@@ -263,8 +264,8 @@ export const createWindow = (): BrowserWindow => {
     mainWindow.setBackgroundColor(getWindowBackgroundColor());
   });
 
-  // Windows: 通知渲染进程窗口最大化状态变化（自定义标题栏需要同步图标）
-  if (isWindows) {
+  // Windows / Linux: 通知渲染进程窗口最大化状态变化（自绘标题栏需要同步图标）
+  if (!isMacOS) {
     const notifyMaximizeState = (): void => {
       safeSend(
         mainWindow.webContents,

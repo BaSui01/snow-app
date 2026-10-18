@@ -347,22 +347,22 @@ body.is-panel-resizing * {
   }
 }
 
-/* ===== Windows 合并式顶栏 =====
-   Windows 无原生标题栏：窗口控制按钮（最小化/最大化/关闭）嵌入 TopBar
-   右侧卡片、标准大小 LOGO 移至左侧卡片后，独立的窗口控制条整体移除，
-   顶栏合并为单行，把原本标题条的空缺区域利用起来。仅 Windows 生效。 */
-.app-shell.is-windows .top-bar-left {
+/* ===== Windows / Linux 合并式顶栏 =====
+   Windows 与 Linux 均无原生标题栏：窗口控制按钮（最小化/最大化/关闭）嵌入
+   TopBar 右侧卡片、标准大小 LOGO 移至左侧卡片后，独立的窗口控制条整体移除，
+   顶栏合并为单行，把原本标题条的空缺区域利用起来。 */
+.app-shell.is-custom-frame .top-bar-left {
   padding: 0 16px;
 }
 
 /* ===== macOS 原生全屏顶栏 =====
-   系统在全屏时会隐藏红绿灯按钮，左侧卡片改渲染 LOGO（与 Windows 方案一致），
+   系统在全屏时会隐藏红绿灯按钮，左侧卡片改渲染 LOGO（与 Windows / Linux 方案一致），
    同时去掉红绿灯安全区留白与侧栏折叠合并布局的偏移，避免左侧空一块。 */
-.app-shell:not(.is-windows) .top-bar.is-native-fullscreen .top-bar-left {
+.app-shell:not(.is-custom-frame) .top-bar.is-native-fullscreen .top-bar-left {
   padding: 0 16px;
 }
 
-.app-shell.sidebar-collapsed:not(.is-windows)
+.app-shell.sidebar-collapsed:not(.is-custom-frame)
   .top-bar.sidebar-collapsed.is-native-fullscreen
   .top-bar-main-leading {
   margin-left: 0;
@@ -388,14 +388,14 @@ body.is-panel-resizing * {
   border-radius: var(--radius-sm);
 }
 
-/* 右面板收起时第三列固定 49px，容纳不下窗口控制按钮：Windows 下按内容自适应 */
-.app-shell.is-windows.right-panel-collapsed .top-bar,
-.app-shell.is-windows.sidebar-collapsed.right-panel-collapsed .top-bar {
+/* 右面板收起时第三列固定 49px，容纳不下窗口控制按钮：自绘标题栏平台按内容自适应 */
+.app-shell.is-custom-frame.right-panel-collapsed .top-bar,
+.app-shell.is-custom-frame.sidebar-collapsed.right-panel-collapsed .top-bar {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
 }
 
 @media (max-width: 720px) {
-  .app-shell.is-windows.sidebar-collapsed.right-panel-collapsed .top-bar {
+  .app-shell.is-custom-frame.sidebar-collapsed.right-panel-collapsed .top-bar {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 }
@@ -408,7 +408,7 @@ body.is-panel-resizing * {
   grid-template-columns: minmax(0, 1fr) 49px;
 }
 
-.app-shell.is-windows.sidebar-collapsed.right-panel-collapsed
+.app-shell.is-custom-frame.sidebar-collapsed.right-panel-collapsed
   .top-bar.sidebar-collapsed {
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -417,7 +417,7 @@ body.is-panel-resizing * {
   grid-template-columns: 0px minmax(0, 1fr);
 }
 
-.app-shell.sidebar-collapsed:not(.is-windows)
+.app-shell.sidebar-collapsed:not(.is-custom-frame)
   .top-bar.sidebar-collapsed
   .top-bar-main-leading {
   margin-left: var(--traffic-light-merged-offset);
@@ -40104,12 +40104,12 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   background: var(--surface-island-muted);
 }
 
-/* Windows：tab 栏末尾的「新建 + 最大化」操作区与 tab 列表同行显示 */
-.app-shell.is-windows .right-panel-tabs {
+/* Windows / Linux：tab 栏末尾的「新建 + 最大化」操作区与 tab 列表同行显示 */
+.app-shell.is-custom-frame .right-panel-tabs {
   flex-direction: row;
 }
 
-.app-shell.is-windows .right-panel-tab-list {
+.app-shell.is-custom-frame .right-panel-tab-list {
   flex: 1;
   min-width: 0;
 }
@@ -40208,8 +40208,8 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .overlay-scrollbar-thumb:active::before {
   background: var(--scrollbar-thumb-active);
 }
-/* Windows：tab 操作区与 tab 列表同行，wrapper 占据剩余宽度 */
-.app-shell.is-windows .right-panel-tabs > .overlay-scrollbar {
+/* Windows / Linux：tab 操作区与 tab 列表同行，wrapper 占据剩余宽度 */
+.app-shell.is-custom-frame .right-panel-tabs > .overlay-scrollbar {
   flex: 1;
   min-width: 0;
 }

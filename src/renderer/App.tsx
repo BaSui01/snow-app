@@ -47,6 +47,7 @@ import { useTheme } from "./hooks/useTheme";
 import { ThemeBackgroundPetLayer } from "./components/pet/ThemeBackgroundPetLayer";
 import { ThemeBackgroundImageLayer } from "./components/sidebar/themeSettings/ThemeBackgroundImageLayer";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
+import { hasCustomWindowFrame } from "./utils/platform";
 import {
   CLOSE_BEHAVIOR_SETTING_CODE,
   CLOSE_BEHAVIOR_SETTING_NAME,
@@ -422,7 +423,7 @@ export const App = (): React.JSX.Element => {
   // 关闭确认弹窗的「不再询问」勾选：勾选后点退出/最小化会把对应行为
   // 写入设置，之后主进程 close 拦截直接自动执行，不再弹出确认。
   const [closeNeverAskAgain, setCloseNeverAskAgain] = useState(false);
-  const isWindows = navigator.userAgent.includes("Win");
+  const hasCustomFrame = hasCustomWindowFrame();
   const isMacOS = navigator.userAgent.includes("Mac");
   const { t } = useI18n();
   const { themeSettings } = useTheme();
@@ -827,7 +828,8 @@ export const App = (): React.JSX.Element => {
 
   const shellClasses = [
     "app-shell",
-    isWindows ? "is-windows" : "",
+    // Windows / Linux 无原生标题栏：复用合并式顶栏（LOGO + 自绘窗口按钮）样式。
+    hasCustomFrame ? "is-custom-frame" : "",
     isSidebarCollapsed ? "sidebar-collapsed" : "",
     isRightPanelCollapsed ? "right-panel-collapsed" : "",
     isRightPanelFullscreen ? "right-panel-fullscreen" : "",

@@ -179,7 +179,7 @@
   justify-content: flex-end;
 }
 
-:root[data-theme-preset="tesseract"] .app-shell.is-windows .top-bar-left {
+:root[data-theme-preset="tesseract"] .app-shell.is-custom-frame .top-bar-left {
   padding: 0 10px !important;
 }
 

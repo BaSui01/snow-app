@@ -43,6 +43,7 @@ import { emitNewChatRequested } from "./newChatEvents";
 import { getSettingsPageMeta } from "./settingsPages";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import type { MainContentView } from "./mainContent/types";
+import { hasCustomWindowFrame } from "../utils/platform";
 
 type TopBarProps = {
   activeView: MainContentView;
@@ -81,7 +82,7 @@ export const TopBar = ({
   onOpenTaskManager,
   onOpenPluginPanel,
 }: TopBarProps): React.JSX.Element => {
-  const isWindows = navigator.userAgent.includes("Win");
+  const hasCustomFrame = hasCustomWindowFrame();
   const isMacOS = navigator.userAgent.includes("Mac");
   const { t, locale } = useI18n();
   // 资源管理器显示位置偏好：仅“右侧面板”方案下提供 Plus 菜单入口。
@@ -784,9 +785,10 @@ export const TopBar = ({
     }
   };
 
-  // macOS 原生全屏时红绿灯被系统隐藏，复用 Windows 的 LOGO 方案填补左侧空缺。
+  // macOS 原生全屏时红绿灯被系统隐藏，复用无边框平台（Windows / Linux）的 LOGO
+  // 方案填补左侧空缺。
   const topBarLogo =
-    isWindows || isNativeFullScreen ? (
+    hasCustomFrame || isNativeFullScreen ? (
       <SnowLogo className="top-bar-logo" />
     ) : null;
 
@@ -857,7 +859,7 @@ export const TopBar = ({
   const rightCardActions = (
     <div className="top-bar-right-actions">
       <div className="snow-client-slot" data-snow-slot="topbar.actions" />
-      {!isWindows && (
+      {!hasCustomFrame && (
         <PlusMenuButton
           items={plusMenuItems}
           onAction={handlePlusMenuAction}
@@ -875,7 +877,7 @@ export const TopBar = ({
           <RightPanelToggleIcon size={16} strokeWidth={1.8} />
         </button>
       )}
-      {!isWindows && (
+      {!hasCustomFrame && (
         <button
           className="icon-btn ghost right-panel-fullscreen-btn"
           type="button"
@@ -886,7 +888,7 @@ export const TopBar = ({
           <FullscreenToggleIcon size={16} strokeWidth={1.8} />
         </button>
       )}
-      {isWindows && <WindowControlsButtons />}
+      {hasCustomFrame && <WindowControlsButtons />}
     </div>
   );
 

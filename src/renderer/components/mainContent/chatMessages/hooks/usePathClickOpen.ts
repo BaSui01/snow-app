@@ -1,5 +1,9 @@
 import { useCallback, useEffect } from "react";
-import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
+import { useI18n } from "../../../../i18n";
+import {
+  openResolvedLocalEntry,
+  openResolvedRemoteEntry,
+} from "../../../../utils/fileLinkOpen";
 
 /** 启发式判断文本是否像文件路径（含分隔符，或是带扩展名的文件名）。 */
 const looksLikePath = (value: string): boolean => {
@@ -10,17 +14,14 @@ const looksLikePath = (value: string): boolean => {
     return false;
   }
   return (
-    /[\\/]/.test(value) ||
-    /(?:^|[\\/])[^\\/]+\.[a-zA-Z0-9]{1,12}$/.test(value)
+    /[\\/]/.test(value) || /(?:^|[\\/])[^\\/]+\.[a-zA-Z0-9]{1,12}$/.test(value)
   );
 };
 
 /** 解析 `path:line`、`path:start-end` 或 Markdown `path#Lline`。 */
-const parsePathWithLine = (
-  raw: string
-): { path: string; line?: number } => {
+const parsePathWithLine = (raw: string): { path: string; line?: number } => {
   const cleaned = raw.replace(/^["'`]+|["'`]+$/g, "").trim();
-  const hashMatch = cleaned.match(/^(.+?)#L(\d+)$/i);
+  const hashMatch = cleaned.match(/^(.+?)#L(\d+)(?:-L?\d+)?$/i);
   if (hashMatch) {
     return { path: hashMatch[1], line: parseInt(hashMatch[2], 10) };
   }
@@ -32,42 +33,6 @@ const parsePathWithLine = (
   return { path: cleaned };
 };
 
-const isAbsoluteLocalPath = (path: string): boolean =>
-  /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("/");
-
-const resolveLocalPath = (
-  path: string,
-  cwd: string | undefined
-): string | undefined => {
-  if (!path) {
-    return undefined;
-  }
-  if (isAbsoluteLocalPath(path)) {
-    return path;
-  }
-  if (!cwd) {
-    return undefined;
-  }
-  const separator = cwd.includes("\\") ? "\\" : "/";
-  return `${cwd.replace(/[\\/]+$/, "")}${separator}${path.replace(
-    /^[\\/]+/,
-    ""
-  )}`;
-};
-
-/** 将 SSH URL/相对路径转换为 sshReadFile 所需的远程绝对路径。 */
-const resolveSshPath = (path: string, workspacePath: string): string => {
-  if (path.startsWith("ssh://")) {
-    return path.replace(/^ssh:\/\/[^/]+/, "") || "/";
-  }
-  if (path.startsWith("/")) {
-    return path;
-  }
-  const remoteRoot =
-    workspacePath.replace(/^ssh:\/\/[^/]+/, "").replace(/\/+$/, "") || "/";
-  return `${remoteRoot}/${path.replace(/^\/+/, "")}`.replace(/\/{2,}/g, "/");
-};
-
 const decodeHref = (href: string): string => {
   try {
     return decodeURIComponent(href);
@@ -76,27 +41,49 @@ const decodeHref = (href: string): string => {
   }
 };
 
+/** 当前存在非空文本选区（拖选文字时松开鼠标同样会触发 click，不应误开文件）。 */
+const hasTextSelection = (): boolean => {
+  const selection = window.getSelection();
+  return (
+    selection != null &&
+    !selection.isCollapsed &&
+    selection.toString().trim().length > 0
+  );
+};
+
+/** worker 标记为文件路径的 inline code（见 markdownWorker 的 code_inline 规则）。 */
+const FILE_PATH_CODE_SELECTOR = "code.md-file-path[data-file-path]";
+const FILE_PATH_MISSING_CLASS = "md-file-path-missing";
+
 /**
- * 聊天区 Ctrl(+Meta)+点击路径 → 右侧面板打开文件 的容器级委托。
+ * 聊天区路径点击 → 打开文件 的容器级委托。
  *
  * 性能设计：
- * - 渲染零扫描：不遍历消息文本，仅在用户主动 Ctrl+点击时识别目标元素。
+ * - 渲染零扫描：不遍历消息文本，仅在用户点击时识别目标元素。
  * - 单一委托：挂在常驻 chat-area，兼容消息虚拟化及 DOM 动态增删。
  * - Ctrl 状态用 body.classList 驱动纯 CSS，不触发 React re-render。
  *
- * 识别优先级：
+ * 普通点击：正文里被识别为文件路径的 inline code 与非 http(s) 的文件链接。
+ * Ctrl(+Meta)+点击，识别优先级：
  * 1. [data-path]：工具调用组件显式标记（精确）
  * 2. Markdown 文件链接的 href（启发式）
  * 3. inline code，排除 pre > code（启发式）
  * 4. [title] 中的完整路径（兜底）
+ *
+ * 路径先解析为真实存在的条目——本地工作区经 Rust（相对项目根 / 项目内后缀查找），
+ * SSH 工作区经主进程远端 stat / find：目录在资源管理器中展开高亮，本地文档与
+ * 媒体类文件交给系统默认应用，其余在右侧文件阅读器中打开；找不到时给触发元素
+ * 打上「未找到」标记。
  */
 export const usePathClickOpen = (
   directoryPath: string | undefined,
-  directoryId: string | undefined
+  directoryId: string | undefined,
 ): {
   onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onAuxClick: (event: React.MouseEvent<HTMLDivElement>) => void;
 } => {
+  const { t } = useI18n();
+
   useEffect(() => {
     const updateHeld = (held: boolean): void => {
       document.body.classList.toggle("ctrl-held", held);
@@ -125,36 +112,81 @@ export const usePathClickOpen = (
   }, []);
 
   const openPath = useCallback(
-    (raw: string, lineAttr?: string): void => {
+    (raw: string, lineAttr?: string, source?: HTMLElement): void => {
       const { path, line } = parsePathWithLine(raw);
-      const attrLine = lineAttr ? parseInt(lineAttr, 10) : undefined;
-      const focusLine = line ?? attrLine;
-      const isSshWorkspace = directoryPath?.startsWith("ssh://") ?? false;
-      const resolved =
-        isSshWorkspace && directoryPath
-          ? resolveSshPath(path, directoryPath)
-          : resolveLocalPath(path, directoryPath);
-      if (!resolved) {
+      if (!path) {
         return;
       }
-      rightPanelEvents.emit("open-file", {
-        filePath: resolved,
-        isSsh: isSshWorkspace,
-        sshWorkspacePath: isSshWorkspace ? directoryPath : undefined,
-        sshWorkspaceId: isSshWorkspace ? directoryId : undefined,
-        focusLine: focusLine && focusLine > 0 ? focusLine : undefined,
-      });
+      const attrLine = lineAttr ? parseInt(lineAttr, 10) : undefined;
+      const candidateLine = line ?? attrLine;
+      const focusLine =
+        candidateLine && candidateLine > 0 ? candidateLine : undefined;
+
+      const sshWorkspacePath = directoryPath?.startsWith("ssh://")
+        ? directoryPath
+        : null;
+      const resolving = sshWorkspacePath
+        ? window.snow.sshResolveFileLink(sshWorkspacePath, path)
+        : window.snow.resolveFileLink(directoryPath ?? null, path);
+
+      void resolving
+        .then((resolved) => {
+          if (!resolved) {
+            if (source) {
+              source.classList.add(FILE_PATH_MISSING_CLASS);
+              source.title = t("markdown.filePathNotFound");
+            }
+            return;
+          }
+          if (sshWorkspacePath) {
+            openResolvedRemoteEntry(
+              resolved,
+              { workspacePath: sshWorkspacePath, directoryId },
+              focusLine,
+            );
+            return;
+          }
+          openResolvedLocalEntry(resolved, focusLine);
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to resolve file path from chat", error);
+        });
     },
-    [directoryId, directoryPath]
+    [directoryId, directoryPath, t],
   );
 
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>): void => {
-      if (!event.ctrlKey && !event.metaKey) {
-        return;
-      }
       const target = event.target;
       if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (!event.ctrlKey && !event.metaKey) {
+        if (event.button !== 0 || hasTextSelection()) {
+          return;
+        }
+        // 正文中被识别为文件路径的 inline code：普通点击即打开。
+        const pathCode = target.closest<HTMLElement>(FILE_PATH_CODE_SELECTOR);
+        if (pathCode && !pathCode.closest("a[href]")) {
+          event.preventDefault();
+          openPath(pathCode.dataset.filePath ?? "", undefined, pathCode);
+          return;
+        }
+        // 非 http(s) 的文件链接：拦截默认导航（渲染进程导航到相对 URL
+        // 会让整个前端白屏），改为打开文件。
+        const anchor = target.closest<HTMLAnchorElement>("a[href]");
+        if (anchor) {
+          const href = anchor.getAttribute("href")?.trim() ?? "";
+          if (/^https?:\/\//i.test(href)) {
+            return;
+          }
+          const decoded = decodeHref(href);
+          if (looksLikePath(decoded)) {
+            event.preventDefault();
+            openPath(decoded, undefined, anchor);
+          }
+        }
         return;
       }
 
@@ -180,7 +212,7 @@ export const usePathClickOpen = (
         const decoded = decodeHref(href);
         if (looksLikePath(decoded)) {
           event.preventDefault();
-          openPath(decoded);
+          openPath(decoded, undefined, anchor);
         }
         return;
       }
@@ -191,7 +223,7 @@ export const usePathClickOpen = (
         const text = codeEl.textContent?.trim();
         if (text && looksLikePath(text)) {
           event.preventDefault();
-          openPath(text);
+          openPath(text, undefined, codeEl);
           return;
         }
       }
@@ -206,7 +238,7 @@ export const usePathClickOpen = (
         }
       }
     },
-    [openPath]
+    [openPath],
   );
 
   // auxclick 与 click 共用同一处理：Chromium 中 Ctrl/Cmd+点击或中键点击

@@ -4892,6 +4892,7 @@ export const en = {
   "browserFind.close": "Close find bar",
   "markdown.download": "Download",
   "markdown.downloadTable": "Download table",
+  "markdown.filePathNotFound": "File not found in the current project",
   "chat.message.collapse": "Collapse",
   "chat.message.expand": "Expand",
   "toolCall.lsp.multiFileSummary": "{{file}} and {{count}} more files",

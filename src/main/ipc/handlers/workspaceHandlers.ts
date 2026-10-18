@@ -546,6 +546,18 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:resolve-file-link",
+    (_event, rootDir: unknown, rawPath: unknown) => {
+      if (typeof rawPath !== "string" || !rawPath.trim()) {
+        throw new Error("File path is required");
+      }
+      const root =
+        typeof rootDir === "string" && rootDir.trim() ? rootDir.trim() : null;
+      return native.resolveFileLink(root, rawPath.trim());
+    },
+  );
+
+  ipcMain.handle(
     "workspace-directories:start-watch",
     (_event, dirPath: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {

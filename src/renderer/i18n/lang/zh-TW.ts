@@ -4547,6 +4547,7 @@ export const zhTW = {
   "browserFind.close": "關閉尋找",
   "markdown.download": "下載",
   "markdown.downloadTable": "下載表格",
+  "markdown.filePathNotFound": "目前專案中找不到該檔案",
   "chat.message.collapse": "收合",
   "chat.message.expand": "展開",
   "toolCall.lsp.multiFileSummary": "{{file}} 等 {{count}} 個檔案",

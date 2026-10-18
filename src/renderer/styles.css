@@ -13476,6 +13476,63 @@ body.is-panel-resizing * {
   font-size: var(--app-code-font-size, 12.5px);
 }
 
+/* inline code 中识别出的文件 / 目录路径（markdownWorker 的 md-file-path 标记）：
+   前置与资源管理器一致的文件类型图标；点击打开文件。只在有点击处理的容器
+   （聊天区 / 文件阅读器 markdown 预览）中呈现可点击态；点击后确认不存在的
+   路径降为普通样式。 */
+.md-file-path-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.md-file-path-icon:empty {
+  display: none;
+}
+
+.md-file-path-icon svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.chat-area .md-file-path,
+.file-viewer-markdown .md-file-path {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--accent-color) 55%,
+    transparent
+  );
+  text-underline-offset: 3px;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.chat-area .md-file-path:hover,
+.file-viewer-markdown .md-file-path:hover {
+  color: var(--accent-color);
+  text-decoration-style: solid;
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-tertiary));
+}
+
+.chat-area .md-file-path.md-file-path-missing,
+.file-viewer-markdown .md-file-path.md-file-path-missing {
+  cursor: default;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: var(--bg-tertiary);
+}
+
+.md-file-path.md-file-path-missing .md-file-path-icon {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
 /* Handoff tag（工作流交接文档折叠块，由 markdown-it handoff_block 生成）：
    收起态是与来源徽章同语言的主题色胶囊（accent 淡底 + 主题色交接图标 +
    chevron），点击展开主题色引用面板（accent 左竖线 + 淡底）。 */
@@ -59141,6 +59198,35 @@ img.plugin-icon {
   outline: 1px dashed var(--accent-color);
   outline-offset: -1px;
   background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+}
+
+/* 在资源管理器中定位（点击聊天正文中的目录路径）：目标行闪烁两次后淡出。
+   时长需与 ProjectExplorerContent 的 REVEAL_HIGHLIGHT_MS 一致。 */
+.explorer-tree-row--revealed::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--accent-color) 22%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent-color) 60%, transparent);
+  pointer-events: none;
+  content: "";
+  animation: explorer-reveal-flash 1.6s ease-out forwards;
+}
+
+@keyframes explorer-reveal-flash {
+  0%,
+  22%,
+  50% {
+    opacity: 1;
+  }
+  11%,
+  36% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* 上传确认弹窗：目标目录与待上传文件列表 */

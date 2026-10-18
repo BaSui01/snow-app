@@ -41,6 +41,12 @@ import type { FileTag } from "../mainContent/chatInput/fileTagUtils";
 import { INSERT_FILE_TAGS_EVENT } from "../mainContent/chatInput/fileTagUtils";
 import { buildSshConnectParams } from "../sidebar/personalization/roleFileUtils";
 import { explorerPlacementStore } from "../common/explorerPlacementStore";
+import {
+  explorerRevealStore,
+  normalizeComparablePath,
+  relativePathSegments,
+  type ExplorerRevealRequest,
+} from "../common/explorerRevealStore";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { rightPanelEvents } from "./rightPanelEvents";
 import { SshTransfersPanel } from "./SshTransfersPanel";
@@ -133,6 +139,25 @@ const flattenTree = (
 // 行高需与 styles.css 中 .explorer-tree-row 的 height 保持一致；
 // 目录行以「层级 × 行高」作为吸顶偏移，行高必须固定。
 const EXPLORER_ROW_HEIGHT = 24;
+// 定位高亮持续时长，需与 styles.css 中 explorer-reveal-flash 动画时长一致。
+const REVEAL_HIGHLIGHT_MS = 1600;
+
+const updateNodeByPath = (
+  nodes: TreeNode[],
+  targetPath: string,
+  update: (node: TreeNode) => TreeNode,
+): TreeNode[] =>
+  nodes.map((node) => {
+    if (node.path === targetPath) {
+      return update(node);
+    }
+    return node.children
+      ? {
+          ...node,
+          children: updateNodeByPath(node.children, targetPath, update),
+        }
+      : node;
+  });
 
 const removeNodeByPath = (nodes: TreeNode[], targetPath: string): TreeNode[] =>
   nodes
@@ -1619,6 +1644,151 @@ export function ProjectExplorerContent({
     expandedPathsRef.current = expandedPaths;
   }, [expandedPaths]);
 
+  // ===== 在资源管理器中定位（聊天正文 / 文件阅读器点击目录路径） =====
+  // 待定位目标：相对根目录的路径段，逐层等待目录加载、展开，最后高亮一次。
+  const [revealSegments, setRevealSegments] = useState<string[] | null>(null);
+  const [revealedRow, setRevealedRow] = useState<{
+    path: string;
+    depth: number;
+  } | null>(null);
+  const handledRevealSeqRef = useRef(0);
+
+  // 接收请求：只处理属于本实例工作区、且根目录已切换就绪的请求。树节点路径
+  // 本地为绝对路径、SSH 为远端裸路径，分别以 rootPath / rootRemotePath 为基准
+  // 计算路径段；切换项目期间基准仍是旧值（算不出路径段），此时不消费请求，
+  // 等新根目录就绪、effect 重跑后再接收。
+  useEffect(() => {
+    const treeRoot = isSsh ? rootRemotePath : rootPath;
+    if (!directoryId || !rootPath || !treeRoot) {
+      return;
+    }
+    const accept = (request: ExplorerRevealRequest | null): void => {
+      if (
+        !request ||
+        request.seq <= handledRevealSeqRef.current ||
+        request.directoryId !== directoryId ||
+        normalizeComparablePath(request.rootPath) !==
+          normalizeComparablePath(rootPath)
+      ) {
+        return;
+      }
+      const segments = relativePathSegments(treeRoot, request.path);
+      if (!segments) {
+        return;
+      }
+      handledRevealSeqRef.current = request.seq;
+      if (segments.length === 0) {
+        return;
+      }
+      // 搜索模式下树不可见，先退出搜索。
+      handleClearSearch();
+      setRevealSegments(segments);
+    };
+    accept(explorerRevealStore.latest());
+    return explorerRevealStore.subscribe(accept);
+  }, [directoryId, rootPath, rootRemotePath, isSsh, handleClearSearch]);
+
+  // 逐层定位：当前层未加载则触发加载并等待树更新后重入；任一层找不到即放弃。
+  useEffect(() => {
+    if (!revealSegments) {
+      return;
+    }
+    const startLoad = (path: string): void => {
+      setTree((prev) =>
+        updateNodeByPath(prev, path, (node) => ({ ...node, loading: true })),
+      );
+      void loadChildrenRef.current?.(path);
+    };
+
+    let nodes = tree;
+    let current: TreeNode | null = null;
+    const chain: string[] = [];
+    for (const segment of revealSegments) {
+      if (current) {
+        if (current.loading) {
+          return;
+        }
+        if (current.error) {
+          setRevealSegments(null);
+          return;
+        }
+        if (!current.loaded) {
+          startLoad(current.path);
+          return;
+        }
+        nodes = current.children ?? [];
+      } else if (nodes.length === 0 && isLoading) {
+        return;
+      }
+      const lower = segment.toLowerCase();
+      const match =
+        nodes.find((node) => node.name === segment) ??
+        nodes.find((node) => node.name.toLowerCase() === lower);
+      if (!match) {
+        setRevealSegments(null);
+        return;
+      }
+      chain.push(match.path);
+      current = match;
+    }
+
+    setRevealSegments(null);
+    const target = current;
+    if (!target) {
+      return;
+    }
+    // 目标目录自身也展开，直接看到其中内容。
+    if (target.isDirectory && !target.loaded && !target.loading) {
+      startLoad(target.path);
+    }
+    const toExpand = target.isDirectory ? chain : chain.slice(0, -1);
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      for (const path of toExpand) {
+        next.add(path);
+      }
+      return next;
+    });
+    setSelectedPaths(new Set([target.path]));
+    selectionAnchorRef.current = target.path;
+    setRevealedRow({ path: target.path, depth: chain.length - 1 });
+  }, [revealSegments, tree, isLoading]);
+
+  // 定位完成：滚动到目标行（避开上级吸顶行），高亮动画结束后清除标记。
+  useEffect(() => {
+    if (!revealedRow) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const container = treeRef.current;
+      const row = container?.querySelector<HTMLElement>(
+        `[data-explorer-path="${CSS.escape(revealedRow.path)}"]`,
+      );
+      // 吸顶行贴顶时其矩形不是自然位置，按外层节点容器计算偏移。
+      const anchor = row?.parentElement;
+      if (!container || !anchor) {
+        return;
+      }
+      const offset =
+        anchor.getBoundingClientRect().top -
+        container.getBoundingClientRect().top +
+        container.scrollTop;
+      const viewportTop = Math.max(
+        revealedRow.depth * EXPLORER_ROW_HEIGHT,
+        container.clientHeight / 3,
+      );
+      container.scrollTop = Math.max(0, offset - viewportTop);
+    });
+    const timer = window.setTimeout(
+      () => setRevealedRow(null),
+      REVEAL_HIGHLIGHT_MS,
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [revealedRow]);
+
   useEffect(() => {
     return window.snow.onSshProfileConnection((connection) => {
       if (connection.profileId !== sshProfileIdRef.current) {
@@ -1724,7 +1894,12 @@ export function ProjectExplorerContent({
             dropTargetPath === node.path
               ? " explorer-tree-row--drop-target"
               : ""
+          }${
+            revealedRow?.path === node.path
+              ? " explorer-tree-row--revealed"
+              : ""
           }`}
+          data-explorer-path={node.path}
           draggable
           onDragStart={(event) => handleTreeDragStart(event, node)}
           onDragOver={

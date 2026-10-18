@@ -754,6 +754,11 @@ export type FileContentResult = {
   size: number;
 };
 
+export type ResolvedFileLink = {
+  path: string;
+  isDirectory: boolean;
+};
+
 export type FailedWorkspaceDelete = {
   path: string;
   error: string;
@@ -2248,6 +2253,11 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<BatchWorkspaceCopyResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
+  /** 解析聊天正文中的文件路径引用（绝对 / 相对项目根 / 项目内后缀查找），找不到返回 null。 */
+  resolveFileLink: (
+    rootDir: string | null,
+    rawPath: string,
+  ) => Promise<ResolvedFileLink | null>;
   /** linked 默认 true：项目属于关联项目组时搜索覆盖组内全部根；false 只搜给定根目录。 */
   searchFiles: (
     rootDir: string,

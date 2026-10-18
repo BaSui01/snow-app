@@ -77,10 +77,11 @@ Web-derived information (search results, fetched pages, browsed sites) MUST be c
 
 ## Output Rendering
 
-Besides markdown, the chat UI renders math and diagrams:
+Besides markdown, the chat UI renders math, diagrams and clickable file paths:
 
 - **Math — KaTeX with dollar delimiters ONLY**: inline formulas use single dollar signs, e.g. `$E = mc^2$`; display blocks use `$$` on their own lines. NEVER use `\(...\)` or `\[...\]` delimiters — they are NOT rendered. Only KaTeX-supported commands work (others show as raw source); near currency-like `$` text, prefer code spans for literal amounts.
 - **Mermaid** — fenced `mermaid` blocks are auto-rendered as inline SVG, so use one when a diagram best expresses structure, relationships, or flow. Types: flowchart (`graph`/`flowchart`), sequence, class, state, ER, gantt, pie, journey, mindmap, timeline. Keep it readable: clear labels, no crossing lines, direction hints (`TD`, `LR`) within the available width. Syntax must be valid (a parse error falls back to raw source), and node labels are plain text — Mermaid does NOT support LaTeX inside them.
+- **File paths** — put each file reference in its own code span with the full path relative to the project root, e.g. `src/app/main.ts` or `src/app/main.ts:42` for a line (absolute paths also work; no spaces or extra words inside the span); end directory paths with `/`, e.g. `src/app/`. The UI makes them clickable: project files open in the built-in file viewer, directories are revealed in the project explorer, Office/PDF documents (`.docx`, `.xlsx`, `.pptx`, `.pdf`) open in the system default app.
 
 ## TODO Management
 

@@ -501,6 +501,226 @@ markdown.renderer.rules.md_source_badge = (tokens, idx): string => {
 };
 
 /**
+ * inline code 中的文件路径识别：命中时渲染为带 `md-file-path` 类与
+ * `data-file-path` 的 code，由 React 层（聊天区委托 / 文件阅读器）在点击时
+ * 解析并打开。这里只做纯文本判定，文件是否真实存在留到点击时由 Rust 校验。
+ *
+ * 判定规则（全部满足）：
+ *   - 无空白、长度受限，可带 `:行号`、`:起-止` 或 `#L行号` 后缀；
+ *   - 每段不含路径非法字符与常见代码符号（括号、逗号、分号等）；
+ *   - 末段扩展名属于已知文件类型，或是 Dockerfile / Makefile 等无扩展名文件；
+ *   - 无分隔符的裸文件名不能以易与成员访问混淆的扩展名结尾
+ *     （如 `console.log`、`process.env`、`arr.map`）；
+ *   - 带分隔符时首段不能像域名（排除 `example.com/a.html` 这类 URL）。
+ */
+const FILE_PATH_EXTENSIONS = new Set([
+  ...FAKE_LINK_FILE_EXTENSIONS,
+  "mdx",
+  "rst",
+  "tsv",
+  "jsonc",
+  "json5",
+  "mts",
+  "cts",
+  "astro",
+  "sass",
+  "styl",
+  "kts",
+  "scala",
+  "dart",
+  "lua",
+  "r",
+  "jl",
+  "pl",
+  "pm",
+  "ex",
+  "exs",
+  "erl",
+  "hs",
+  "clj",
+  "proto",
+  "graphql",
+  "gql",
+  "prisma",
+  "tf",
+  "gradle",
+  "properties",
+  "xlsm",
+  "ppt",
+  "pptx",
+  "odt",
+  "ods",
+  "odp",
+  "rtf",
+  "wps",
+  "et",
+  "dps",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "ico",
+  "wav",
+  "flac",
+  "mkv",
+  "webm",
+  "sln",
+  "csproj",
+  "vcxproj",
+  "xaml",
+  "plist",
+  "pem",
+  "crt",
+  "prettierrc",
+  "eslintrc",
+  "babelrc",
+  "nvmrc",
+  "dockerignore",
+  "gitattributes",
+]);
+
+/** 裸文件名（无分隔符）不认这些扩展名：与 JS 成员访问写法高度重叠。 */
+const AMBIGUOUS_BARE_EXTENSIONS = new Set([
+  "log",
+  "map",
+  "lock",
+  "env",
+  "ai",
+  "go",
+  "r",
+  "c",
+  "h",
+  "cc",
+  "ex",
+  "et",
+  "pm",
+  "pl",
+  "tf",
+  "properties",
+]);
+
+/** 无扩展名但常被直接引用的文件名（小写比较）。 */
+const EXTENSIONLESS_FILE_NAMES = new Set([
+  "dockerfile",
+  "makefile",
+  "license",
+  "readme",
+  "changelog",
+  "procfile",
+  "gemfile",
+  "rakefile",
+  "jenkinsfile",
+  "vagrantfile",
+]);
+
+const FILE_PATH_LINE_SUFFIX_RE = /(?::\d+(?:[-–]\d+)?|#L\d+(?:-L?\d+)?)$/i;
+const FILE_PATH_PREFIX_RE = /^(?:[a-zA-Z]:[\\/]|\.{1,2}[\\/]|[\\/])/;
+const FILE_PATH_SEGMENT_RE = /^[^\s\\/:*?"<>|`'(){},;=!&^%$#~]+$/;
+const DOMAIN_LIKE_SEGMENT_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i;
+
+/** 识别结果：路径类型（决定图标与打开方式）与末段名称（决定文件类型图标）。 */
+type PathReference = { kind: "file" | "dir"; name: string };
+
+const classifyPathReference = (raw: string): PathReference | null => {
+  const text = raw.trim();
+  if (!text || text.length > 260 || /\s/.test(text)) {
+    return null;
+  }
+  const path = text.replace(FILE_PATH_LINE_SUFFIX_RE, "");
+  const prefix = FILE_PATH_PREFIX_RE.exec(path)?.[0] ?? "";
+  const trailingSeparator = /[\\/]$/.test(path);
+  const body = path.slice(prefix.length).replace(/[\\/]+$/, "");
+  if (!body) {
+    return null;
+  }
+  const segments = body.split(/[\\/]/);
+  if (!segments.every((segment) => FILE_PATH_SEGMENT_RE.test(segment))) {
+    return null;
+  }
+  const hasSeparator =
+    prefix.length > 0 || trailingSeparator || segments.length > 1;
+  // 首段像域名（且不是 . 开头的隐藏目录）时视为 URL 片段，例如 example.com/a.html。
+  if (
+    segments.length > 1 &&
+    !prefix &&
+    !segments[0].startsWith(".") &&
+    DOMAIN_LIKE_SEGMENT_RE.test(segments[0])
+  ) {
+    return null;
+  }
+  const name = segments[segments.length - 1];
+  const dot = name.lastIndexOf(".");
+  if (dot < 0 || trailingSeparator) {
+    if (
+      !trailingSeparator &&
+      EXTENSIONLESS_FILE_NAMES.has(name.toLowerCase())
+    ) {
+      return { kind: "file", name };
+    }
+    return isLikelyDirectoryPath(prefix, trailingSeparator, segments)
+      ? { kind: "dir", name }
+      : null;
+  }
+  const extension = name.slice(dot + 1).toLowerCase();
+  if (!FILE_PATH_EXTENSIONS.has(extension)) {
+    return null;
+  }
+  // `.env`、`.gitignore` 这类点文件不受裸名歧义限制（点前为空）。
+  if (!hasSeparator && dot > 0 && AMBIGUOUS_BARE_EXTENSIONS.has(extension)) {
+    return null;
+  }
+  return { kind: "file", name };
+};
+
+/**
+ * 目录路径判定（末段无扩展名或以分隔符结尾）。为避免把 URL 路由（`/api/users`）、
+ * 日期（`2024/10/18`）、`and/or` 之类误认成目录，只接受：
+ *   - 以分隔符结尾（`src/components/`）；
+ *   - 盘符或 `./`、`../` 开头（`D:\proj\src`、`./scripts`）；
+ *   - 无前缀且至少三段（`src/renderer/components`）。
+ * 且每段都含字母。
+ */
+const isLikelyDirectoryPath = (
+  prefix: string,
+  trailingSeparator: boolean,
+  segments: string[],
+): boolean => {
+  if (!segments.every((segment) => /[a-zA-Z]/.test(segment))) {
+    return false;
+  }
+  if (trailingSeparator) {
+    return true;
+  }
+  if (/^(?:[a-zA-Z]:|\.{1,2})[\\/]$/.test(prefix)) {
+    return true;
+  }
+  return !prefix && segments.length >= 3;
+};
+
+// inline code：像文件路径时加上 md-file-path 标记与图标占位，其余保持默认渲染。
+// 文件类型图标由 React 层按 data-path-kind / data-path-name 填入占位
+// （图标组件依赖 react-dom/server，不放进 worker）。
+markdown.renderer.rules.code_inline = (tokens, idx, _options, _env, self) => {
+  const token = tokens[idx];
+  const content = token.content;
+  const reference = classifyPathReference(content);
+  if (reference) {
+    return (
+      `<code class="md-file-path" data-file-path="${attrEscape(
+        content.trim(),
+      )}" data-path-kind="${reference.kind}" data-path-name="${attrEscape(
+        reference.name,
+      )}">` +
+      `<span class="md-file-path-icon" aria-hidden="true"></span>` +
+      `${escapeHtml(content)}</code>`
+    );
+  }
+  return `<code${self.renderAttrs(token)}>${escapeHtml(content)}</code>`;
+};
+
+/**
  * 判断是否为本地图片路径：图库落盘引用（image/...，安装目录旁图库目录）、
  * 会话上传引用（upload/...，数据库目录旁的 upload 目录），或磁盘绝对路径
  * （D:/... 或 /...，模型引用项目内图片时常见）。这些路径在渲染进程中没有

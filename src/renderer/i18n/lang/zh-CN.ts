@@ -4597,6 +4597,7 @@ export const zhCN = {
   "browserFind.close": "关闭查找",
   "markdown.download": "下载",
   "markdown.downloadTable": "下载表格",
+  "markdown.filePathNotFound": "当前项目中未找到该文件",
   "chat.message.collapse": "收起",
   "chat.message.expand": "展开",
   "toolCall.lsp.multiFileSummary": "{{file}} 等 {{count}} 个文件",

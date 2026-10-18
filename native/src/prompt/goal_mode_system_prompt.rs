@@ -156,4 +156,8 @@ $$
 
 - NEVER use `\(...\)` or `\[...\]` delimiters — they are NOT rendered
 - Use only KaTeX-supported LaTeX commands; unsupported commands render as raw source
-- When a formula contains currency-like `$` text nearby, prefer code spans for literal dollar amounts to avoid ambiguity"#;
+- When a formula contains currency-like `$` text nearby, prefer code spans for literal dollar amounts to avoid ambiguity
+
+## File Path References
+
+Put each file reference in its own code span with the full path relative to the project root, e.g. `src/app/main.ts` or `src/app/main.ts:42` (no spaces or extra words inside the span); end directory paths with `/`, e.g. `src/app/`. The UI makes them clickable: project files open in the built-in file viewer, directories are revealed in the project explorer, Office/PDF documents open in the system default app."#;

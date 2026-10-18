@@ -16,10 +16,12 @@ const MAX_DOCUMENT_TEXT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_RAW_TEXT_READ_BYTES: u64 = 64 * 1024 * 1024;
 
 mod browse;
+mod link;
 mod mutate;
 mod search;
 
 pub use self::browse::*;
+pub use self::link::*;
 pub use self::mutate::*;
 pub use self::search::*;
 

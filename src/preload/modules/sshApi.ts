@@ -5,6 +5,7 @@ import type {
   FileSearchResult,
   ParsedSshUrl,
   RemoteWorkspaceFileSearchOptions,
+  ResolvedFileLink,
   SshCapabilities,
   SshAuthMethod,
   SshConfigHost,
@@ -137,6 +138,12 @@ export const sshApi = {
     remotePath: string,
   ): Promise<FileContentResult> =>
     ipcRenderer.invoke("ssh:read-file", sessionId, remotePath),
+  /** 在 SSH 工作区内解析路径引用（绝对 / 相对根 / 后缀查找），找不到为 null。 */
+  sshResolveFileLink: (
+    workspacePath: string,
+    rawPath: string,
+  ): Promise<ResolvedFileLink | null> =>
+    ipcRenderer.invoke("ssh:resolve-file-link", workspacePath, rawPath),
   sshWriteFile: (
     sessionId: string,
     remotePath: string,

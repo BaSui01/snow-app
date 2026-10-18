@@ -9,6 +9,7 @@ import type {
   FileSearchResult,
   GitCloneProgress,
   ProjectCollectionRecord,
+  ResolvedFileLink,
   WorkspaceDirectoryInput,
   WorkspaceDirectoryRecord,
   WorkspaceDirectoryVerifyReport,
@@ -290,6 +291,16 @@ export const workspaceApi = {
     ipcRenderer.invoke("workspace-directories:read-file", filePath),
   writeFileContent: (filePath: string, content: string): Promise<void> =>
     ipcRenderer.invoke("workspace-directories:write-file", filePath, content),
+  /** 解析正文中的文件路径引用：返回磁盘上真实存在的条目，找不到为 null。 */
+  resolveFileLink: (
+    rootDir: string | null,
+    rawPath: string,
+  ): Promise<ResolvedFileLink | null> =>
+    ipcRenderer.invoke(
+      "workspace-directories:resolve-file-link",
+      rootDir,
+      rawPath,
+    ),
   startDirectoryWatch: (dirPath: string): Promise<void> =>
     ipcRenderer.invoke("workspace-directories:start-watch", dirPath),
   stopDirectoryWatch: (dirPath: string): Promise<void> =>

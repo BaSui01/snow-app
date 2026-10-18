@@ -99,6 +99,12 @@ export type DirectoryEntry = {
   size: number;
 };
 
+/** 正文文件路径引用的解析结果（磁盘上真实存在的条目）。 */
+export type ResolvedFileLink = {
+  path: string;
+  isDirectory: boolean;
+};
+
 export type FailedWorkspaceDelete = {
   path: string;
   error: string;

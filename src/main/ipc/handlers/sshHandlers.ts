@@ -62,6 +62,7 @@ import {
   resolveSshConfigJumpHost,
 } from "../../ssh/sshConfig";
 import { buildSshConnectParams } from "../../ssh/remoteWorkspaceCommand";
+import { resolveRemoteFileLink } from "../../ssh/remoteFileLink";
 import { classifySshConnectError } from "../../ssh/sshErrors";
 
 const REMOTE_SEARCH_MAX_DEPTH = 15;
@@ -696,6 +697,23 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       } finally {
         disconnectSsh(sessionId);
       }
+    },
+  );
+
+  // 聊天正文 / 文件阅读器中的路径引用：在 SSH 工作区内解析为真实存在的条目。
+  ipcMain.handle(
+    "ssh:resolve-file-link",
+    async (_event, workspacePath: unknown, rawPath: unknown) => {
+      if (
+        typeof workspacePath !== "string" ||
+        !isSshPath(workspacePath.trim())
+      ) {
+        throw new Error("Remote workspace path is required");
+      }
+      if (typeof rawPath !== "string" || !rawPath.trim()) {
+        throw new Error("File path is required");
+      }
+      return resolveRemoteFileLink(workspacePath.trim(), rawPath.trim());
     },
   );
 

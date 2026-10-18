@@ -286,6 +286,13 @@ pub fn write_file_content(file_path: String, content: String) -> Result<()> {
     services::fs_explorer::write_file_content(&file_path, &content)
 }
 
+pub fn resolve_file_link(
+    root_dir: Option<String>,
+    raw_path: String,
+) -> Option<services::fs_explorer::ResolvedFileLink> {
+    services::fs_explorer::resolve_file_link(root_dir.as_deref(), &raw_path)
+}
+
 pub fn check_project_has_gitignore(project_id: String) -> Result<bool> {
     let database_path = ensure_database_file()?;
     let normalized_project_id = project_id.trim().to_string();

@@ -422,6 +422,17 @@ pub async fn write_file_content(file_path: String, content: String) -> napi::Res
         .map_err(map_spawn_error)?
 }
 
+/// 解析聊天正文中的文件路径引用（存在性校验 + 项目内后缀查找），找不到返回 null。
+#[napi]
+pub async fn resolve_file_link(
+    root_dir: Option<String>,
+    raw_path: String,
+) -> napi::Result<Option<crate::storage::services::fs_explorer::ResolvedFileLink>> {
+    tokio::task::spawn_blocking(move || crate::storage::resolve_file_link(root_dir, raw_path))
+        .await
+        .map_err(map_spawn_error)
+}
+
 /// 监听本地文件变更（父目录非递归监听 + 防抖），用于文件阅读器自动刷新。
 #[napi(
     ts_args_type = "filePath: string, debounceMs: number, onChange: (filePath: string) => void",

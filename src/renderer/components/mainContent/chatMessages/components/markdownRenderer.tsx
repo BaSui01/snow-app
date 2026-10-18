@@ -27,6 +27,7 @@ import { openTableExportMenu } from "./tableExport";
 import { openInSystemBrowser, openLinkOpenMenu } from "./linkOpenMenu";
 import { useI18n } from "../../../../i18n";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
+import { getFileTypeIconHtml } from "../../../../utils/fileIcons";
 import { Tooltip } from "../../../common/Tooltip";
 
 /**
@@ -256,6 +257,26 @@ const setMarkdownTableDownloadTitle = (title: string): void => {
   tableDownloadTitle = title;
 };
 
+/**
+ * 路径 inline code 的文件类型图标 HTML 缓存（与资源管理器同一套图标）。
+ * 静态渲染图标有一定开销，同名文件在一次会话中会反复出现，按类型 + 名称缓存。
+ */
+const PATH_ICON_CACHE_LIMIT = 512;
+const pathIconHtmlCache = new Map<string, string>();
+
+const getPathIconHtml = (name: string, isDirectory: boolean): string => {
+  const key = `${isDirectory ? "d" : "f"}:${name}`;
+  let html = pathIconHtmlCache.get(key);
+  if (html === undefined) {
+    html = getFileTypeIconHtml(name, isDirectory, false, 12);
+    if (pathIconHtmlCache.size >= PATH_ICON_CACHE_LIMIT) {
+      pathIconHtmlCache.clear();
+    }
+    pathIconHtmlCache.set(key, html);
+  }
+  return html;
+};
+
 /** 解析单块 HTML：只解析该块片段，不再对整篇内容做 DOM 级解析。 */
 const parseChunkNodes = (html: string): Node[] => {
   const template = document.createElement("template");
@@ -265,6 +286,16 @@ const parseChunkNodes = (html: string): Node[] => {
       .querySelectorAll<HTMLElement>("[data-table-action='download']")
       .forEach((button) => button.setAttribute("title", tableDownloadTitle));
   }
+  // 填入 worker 为路径 inline code 预留的图标占位。
+  template.content
+    .querySelectorAll<HTMLElement>("code.md-file-path > .md-file-path-icon")
+    .forEach((slot) => {
+      const code = slot.parentElement;
+      const name = code?.dataset.pathName;
+      if (name) {
+        slot.innerHTML = getPathIconHtml(name, code.dataset.pathKind === "dir");
+      }
+    });
   return Array.from(template.content.childNodes);
 };
 
@@ -876,6 +907,21 @@ export const MarkdownBlock = memo(
           if (onFileLinkClick && isFileLinkHref(href)) {
             e.preventDefault();
             onFileLinkClick(href);
+            return;
+          }
+        }
+
+        // --- inline code 文件路径（worker 标记的 md-file-path）---
+        // 宿主提供了回调（右侧文件阅读器）时由宿主打开；未提供时事件继续
+        // 冒泡，由聊天区的 usePathClickOpen 委托统一处理。
+        if (onFileLinkClick && e.button === 0) {
+          const pathCode = target.closest<HTMLElement>(
+            "code.md-file-path[data-file-path]",
+          );
+          const filePath = pathCode?.dataset.filePath;
+          if (filePath && !window.getSelection()?.toString().trim()) {
+            e.preventDefault();
+            onFileLinkClick(filePath);
             return;
           }
         }

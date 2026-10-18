@@ -10,6 +10,7 @@ import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import { explorerPlacementStore } from "./common/explorerPlacementStore";
+import { explorerRevealStore } from "./common/explorerRevealStore";
 import { NEW_CHAT_REQUESTED_EVENT } from "./newChatEvents";
 import { rightPanelEvents } from "./rightPanel/rightPanelEvents";
 import { shortcutEvents } from "./shortcutEvents";
@@ -142,6 +143,23 @@ export const Sidebar = ({
       }
     });
   }, [activeDirectory, handleSwitchToExplorer]);
+
+  // 「在资源管理器中定位」请求（聊天正文 / 文件阅读器点击目录路径）：按显示位置
+  // 打开目标工作区的资源管理器，内嵌侧栏且侧栏已折叠时先展开；展开与高亮
+  // 由资源管理器实例自行读取请求完成。
+  const isCollapsedRef = useRef(isCollapsed);
+  isCollapsedRef.current = isCollapsed;
+  useEffect(() => {
+    return explorerRevealStore.subscribe((request) => {
+      handleSwitchToExplorer(request.directoryId);
+      if (
+        explorerPlacementStore.get() === "sidebar" &&
+        isCollapsedRef.current
+      ) {
+        shortcutEvents.emit("toggle-sidebar");
+      }
+    });
+  }, [handleSwitchToExplorer]);
 
   useEffect(() => {
     const openSettings = (view?: string): void => {

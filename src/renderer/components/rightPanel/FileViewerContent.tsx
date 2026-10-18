@@ -36,6 +36,10 @@ import {
 
 import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { keyToDisplay } from "../../utils/shortcutUtils";
+import {
+  openResolvedLocalEntry,
+  openResolvedRemoteEntry,
+} from "../../utils/fileLinkOpen";
 import { useI18n } from "../../i18n";
 import { MarkdownBlock } from "../mainContent/chatMessages/components/markdownRenderer";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
@@ -1717,16 +1721,52 @@ export function FileViewerContent({
       if (!resolved) {
         return;
       }
+      // 先确认路径存在：目录在资源管理器中定位，本地 Office / PDF 等文档
+      // 交给系统默认应用，其余在文件阅读器中打开。
+      const focusLine = resolved.line;
+      if (!isSsh) {
+        void window.snow
+          .resolveFileLink(null, resolved.path)
+          .then((entry) => {
+            if (entry) {
+              openResolvedLocalEntry(entry, focusLine);
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to resolve markdown file link", error);
+          });
+        return;
+      }
+      if (sshWorkspaceRoot) {
+        void window.snow
+          .sshResolveFileLink(sshWorkspaceRoot, resolved.path)
+          .then((entry) => {
+            if (entry) {
+              openResolvedRemoteEntry(
+                entry,
+                {
+                  workspacePath: sshWorkspaceRoot,
+                  directoryId: sshWorkspaceId,
+                  sshSessionId,
+                },
+                focusLine,
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            console.error("Failed to resolve remote markdown file link", error);
+          });
+        return;
+      }
       rightPanelEvents.emit("open-file", {
         filePath: resolved.path,
         isSsh,
-        sshSessionId: isSsh ? sshSessionId : undefined,
-        sshWorkspaceRoot: isSsh ? sshWorkspaceRoot : undefined,
-        sshWorkspaceId: isSsh ? sshWorkspaceId : undefined,
-        focusLine: resolved.line,
+        sshSessionId,
+        sshWorkspaceId,
+        focusLine,
       });
     },
-    [filePath, isSsh, sshSessionId],
+    [filePath, isSsh, sshSessionId, sshWorkspaceRoot, sshWorkspaceId],
   );
 
   // Keyboard shortcuts handled inside the editor's onKeyDown (which runs before

@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.4.29
+
+## New Features
+
+- **Clickable File Paths**: file paths in chat messages open local or SSH remote files directly in the right panel.
+- **Isolated HTML Preview**: HTML code fences and file artifacts preview in isolation, with zoom controls, shared syntax highlighting and responsive panels.
+- **Image / Canvas Stream Cursor**: the streaming indicator now supports any image (including GIF) and JavaScript Canvas drawing scripts besides dots and icons.
+- **Scheduled Tasks After App Closed**: the system scheduler can wake the app in the background to run a task, and missed runs are caught up on the next launch.
+- **Privacy Masking Enhancements**: built-in rules can be switched off individually, custom regex rules are supported, and a new database connection string rule is included.
+- **Orphaned Data Cleanup**: scan and remove sessions, archives, snapshots and memories left behind by removed projects.
+- **Launch at Startup**: a new switch in General settings.
+
+## Improvements
+
+- Mobile remote control adds an `/api/live` real-time channel that pushes incremental state.
+- History requests are slimmed before reaching the model: the oldest images are dropped when over budget, and TODO results lose timestamps and fold completed items (local data is unchanged).
+- Hardened browser MCP contracts and debugger lifecycles.
+- The custom window frame now extends to Linux.
+- Deleted or archived sessions get tombstones so late persistence cannot rebuild them.
+
+## Bug Fixes
+
+- Fixed click-through in the file mention popup and truncated model names on wrapped lines.
+- Fixed the lost start point of run timing.
+- Fixed image generation not falling back to the URL when `b64_json` is empty.
+- Fixed a default API config being seeded when the config list is empty.
+
 ## v0.4.28
 
 ## New Features

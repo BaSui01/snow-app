@@ -104,44 +104,48 @@ pub(crate) async fn collect_openai_result(
     let mut content = Vec::new();
     let mut remote_urls = Vec::new();
     let mut generated = 0usize;
-    for item in items {
-        if let Some(b64) = item.get("b64_json").and_then(Value::as_str) {
-            if b64.trim().is_empty() {
-                continue;
-            }
+    for item in &items {
+        // b64_json 可选：为空字符串或缺失时回退 url
+        let b64 = item.get("b64_json").and_then(Value::as_str).unwrap_or("").trim();
+        if !b64.is_empty() {
             generated += 1;
             content.push(json!({
                 "type": "image",
                 "data": b64,
                 "mimeType": mime_type,
             }));
-        } else if let Some(url) = item.get("url").and_then(Value::as_str) {
-            let url = url.trim();
-            if url.is_empty() {
-                continue;
+            continue;
+        }
+        let url = item.get("url").and_then(Value::as_str).unwrap_or("").trim();
+        if url.is_empty() {
+            continue;
+        }
+        generated += 1;
+        match download_remote_image(&client, url).await {
+            Some((bytes, detected_mime)) => {
+                let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                content.push(json!({
+                    "type": "image",
+                    "data": data,
+                    "mimeType": detected_mime,
+                }));
             }
-            generated += 1;
-            match download_remote_image(&client, url).await {
-                Some((bytes, detected_mime)) => {
-                    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                    content.push(json!({
-                        "type": "image",
-                        "data": data,
-                        "mimeType": detected_mime,
-                    }));
-                }
-                None => {
-                    // 下载失败：保留 URL，前端以文本链接兜底展示
-                    remote_urls.push(url.to_string());
-                }
+            None => {
+                // 下载失败：保留 URL，前端以文本链接兜底展示
+                remote_urls.push(url.to_string());
             }
         }
     }
 
     if generated == 0 {
-        return Err(generic_error(
-            "Image generation returned no image data".to_string(),
-        ));
+        let receipt: String = serde_json::to_string(&items)
+            .unwrap_or_default()
+            .chars()
+            .take(300)
+            .collect();
+        return Err(generic_error(format!(
+            "Image generation returned no image data: response has neither b64_json nor url (receipt: {receipt})"
+        )));
     }
 
     Ok(build_result(

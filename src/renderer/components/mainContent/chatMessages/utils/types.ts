@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ChatFileArtifact } from "../components/chatFileArtifacts";
 import type {
   ConversationContextValue,
   HookExecutionRecord,
@@ -54,12 +55,16 @@ export type AiResponseProps = {
   /** True when the persisted assistant response represents a terminal
    *  failure; the body renders as an error notice instead of markdown. */
   isError?: boolean;
+  /** Only an explicitly eligible successful response may execute HTML automatically. */
+  htmlPreviewEligible?: boolean;
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
   showActions?: boolean;
   /** Optional production UI between response content and message actions. */
   footerContent?: ReactNode;
+  fileArtifacts?: readonly ChatFileArtifact[];
+  artifactWorkspace?: string;
   toolCalls?: ToolCallInfo[];
   /** Hook execution records bound to tool calls in this message (via
    *  toolCallInteractionId).  Rendered attached to the matching tool card

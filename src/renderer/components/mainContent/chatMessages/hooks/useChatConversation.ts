@@ -1276,6 +1276,13 @@ export const useChatConversation = (
     newChatGeneration,
     newChatRequested,
     conversationDirectoryId: activeSession?.directoryId,
+    // The execution snapshot belongs to activeKey, unlike the toolbar's live mode state.
+    conversationWorktreeMode: activeKey
+      ? sessionsRefData.current.get(activeKey)?.worktreeMode
+      : undefined,
+    conversationWorktreeId: activeKey
+      ? sessionsRefData.current.get(activeKey)?.worktreeId
+      : undefined,
     tokenUsage: activeSession?.tokenUsage ?? null,
     runTokenUsage: activeSession?.runTokenUsage ?? null,
     conversationTokenUsage: activeSession?.conversationTokenUsage ?? null,

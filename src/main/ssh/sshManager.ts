@@ -1110,19 +1110,37 @@ export const probeSshCapabilities = async (
   return capabilities;
 };
 
+export type SshReadOptions = { signal?: AbortSignal; maxBytes?: number };
+
+const assertSshReadSize = (size: number, maxBytes?: number): void => {
+  if (maxBytes === undefined) return;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError(
+      "SSH read byte limit must be a non-negative safe integer",
+    );
+  }
+  if (size > maxBytes) {
+    throw new SshOperationError({
+      code: "SSH_FILE_TOO_LARGE",
+      operation: "sftp_read",
+      message: "Remote file exceeds the permitted read size",
+    });
+  }
+};
+
 export const readSshFile = (
   sessionId: string,
   remotePath: string,
-  options?: { signal?: AbortSignal },
+  options?: SshReadOptions,
 ): Promise<Buffer> => {
-  return readSshFileRange(sessionId, remotePath, { signal: options?.signal });
+  return readSshFileRange(sessionId, remotePath, options);
 };
 
 /** Reads a bounded byte range directly through SFTP on POSIX and Windows OpenSSH. */
 export const readSshFileRange = (
   sessionId: string,
   remotePath: string,
-  options?: { offset?: number; length?: number; signal?: AbortSignal },
+  options?: SshReadOptions & { offset?: number; length?: number },
 ): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
     const session = getSshSession(sessionId);
@@ -1133,6 +1151,7 @@ export const readSshFileRange = (
 
     const chunks: Buffer[] = [];
     const signal = options?.signal;
+    let receivedBytes = 0;
     let settled = false;
     let stream:
       ReturnType<import("ssh2").SFTPWrapper["createReadStream"]> | undefined;
@@ -1143,6 +1162,7 @@ export const readSshFileRange = (
       if (settled) return;
       settled = true;
       cleanup();
+      chunks.length = 0;
       reject(error);
     };
     const onAbort = (): void => {
@@ -1165,6 +1185,7 @@ export const readSshFileRange = (
     }
 
     try {
+      assertSshReadSize(0, options?.maxBytes);
       const offset = Math.max(0, Math.floor(options?.offset ?? 0));
       const length = options?.length;
       stream = session.sftp.createReadStream(
@@ -1190,9 +1211,22 @@ export const readSshFileRange = (
     signal?.addEventListener("abort", onAbort, { once: true });
 
     activeStream.on("data", (chunk: Buffer) => {
-      if (!settled) {
-        chunks.push(chunk);
+      if (settled) return;
+      try {
+        assertSshReadSize(receivedBytes + chunk.length, options?.maxBytes);
+      } catch (error) {
+        settleAndReject(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        try {
+          activeStream.destroy();
+        } catch {
+          // Rejection is already settled and retained chunks have been discarded.
+        }
+        return;
       }
+      receivedBytes += chunk.length;
+      chunks.push(chunk);
     });
 
     activeStream.on("end", () => {
@@ -1705,7 +1739,7 @@ const createTemporaryPath = (remotePath: string): string => {
 export const readSshFileWithVersion = async (
   sessionId: string,
   remotePath: string,
-  options?: { signal?: AbortSignal },
+  options?: SshReadOptions,
 ): Promise<{ content: Buffer; version: SshFileVersion }> => {
   const session = getSshSession(sessionId);
   if (!session) {
@@ -1725,6 +1759,7 @@ export const readSshFileWithVersion = async (
     });
   }
   assertRegularFile(remotePath, before);
+  assertSshReadSize(before.size, options?.maxBytes);
   const content = await readSshFile(sessionId, remotePath, options);
   const after = await sftpLstat(
     session.sftp,

@@ -133,6 +133,7 @@ export const sshApi = {
     options: RemoteWorkspaceFileSearchOptions,
   ): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("ssh:search-workspace-files", workspacePath, options),
+  /** A session/profile handle or SSH workspace URL; workspace credentials stay in main. */
   sshReadFile: (
     sessionId: string,
     remotePath: string,

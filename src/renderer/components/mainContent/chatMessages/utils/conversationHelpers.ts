@@ -8,7 +8,10 @@ import type {
 } from "./conversationTypes";
 import type { ChatMessageRecord } from "../../../../../preload";
 import { getActiveLocale, tGlobal } from "../../../../i18n";
-import { resolveResponseDisposition } from "./responseDisposition";
+import {
+  isResponseHtmlPreviewEligible,
+  resolveResponseDisposition,
+} from "./responseDisposition";
 
 export const deleteCheckpoints = (checkpointIds: string[]): void => {
   for (const checkpointId of checkpointIds) {
@@ -764,6 +767,8 @@ export const buildConversationMessages = (
         thinkingTokenCount: record.thinkingTokenCount || undefined,
         timestamp: record.createdAt,
         status: messageStatus,
+        htmlPreviewEligible:
+          record.role !== "user" && isResponseHtmlPreviewEligible(record),
         responseId: record.responseId || undefined,
         checkpointId: record.checkpointId || undefined,
         model: record.model || undefined,

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
@@ -101,7 +102,47 @@ export default defineConfig({
         "@renderer": resolve(__dirname, "src/renderer"),
       },
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: "html-artifact-carrier-layout",
+        transformIndexHtml: {
+          order: "post",
+          handler(html, context) {
+            if (
+              resolve(context.filename) !==
+              resolve(__dirname, "src/renderer/htmlArtifactHost.html")
+            ) {
+              return html;
+            }
+            // Opaque file sandboxes cannot fetch external stylesheets. Embed only
+            // their layout rules after Vite processing, from the shared CSS source.
+            const css = readFileSync(
+              resolve(__dirname, "src/renderer/styles.css"),
+              "utf8",
+            );
+            const rules = ["html-artifact-frame", "html-artifact-carrier"].map(
+              (selector) => {
+                const matches = css.match(
+                  new RegExp(`^\\.${selector}\\s*\\{[^}]*\\}`, "gm"),
+                );
+                if (matches?.length !== 1) {
+                  throw new Error(
+                    `Expected one shared .${selector} layout rule`,
+                  );
+                }
+                return matches[0];
+              },
+            );
+            const marker = "<!-- html-artifact-layout -->";
+            if (!html.includes(marker)) {
+              throw new Error("HTML artifact layout marker is missing");
+            }
+            return html.replace(marker, `<style>${rules.join("\n")}</style>`);
+          },
+        },
+      },
+    ],
     worker: {
       rollupOptions: {
         output: {
@@ -113,6 +154,10 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, "src/renderer/index.html"),
+          htmlArtifactHost: resolve(
+            __dirname,
+            "src/renderer/htmlArtifactHost.html",
+          ),
           // 桌面宠物窗口页面（独立入口，输出 pet.html）。
           pet: resolve(__dirname, "src/renderer/pet.html"),
           // 独立面板窗口页面（右侧面板 tab「在新窗口中打开」，输出 detachedPanel.html）。

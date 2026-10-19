@@ -22,6 +22,20 @@ pub struct PrivacyToolResultsConfig {
     pub tools: Vec<String>,
 }
 
+/// 用户自定义脱敏规则（Rust regex 语法）。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PrivacyCustomRule {
+    pub id: String,
+    pub name: String,
+    pub pattern: String,
+    /// 遮罩的捕获组序号，0 为整段匹配。
+    pub group: u32,
+    /// 替换文本；为空时按字符数替换为 *。
+    pub replacement: String,
+    pub enabled: bool,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct PrivacySettings {
@@ -29,6 +43,9 @@ pub struct PrivacySettings {
     pub mode: String,
     pub api: PrivacyApiConfig,
     pub tool_results: PrivacyToolResultsConfig,
+    /// 已关闭的本地脱敏规则 id；缺省为空即全部启用。
+    pub disabled_rules: Vec<String>,
+    pub custom_rules: Vec<PrivacyCustomRule>,
 }
 
 impl PrivacySettings {
@@ -43,14 +60,25 @@ impl PrivacySettings {
         if self.api.model.is_empty() {
             self.api.model = "openai/privacy-filter".to_string();
         }
-        self.tool_results.tools = self
-            .tool_results
-            .tools
-            .iter()
-            .map(|tool| tool.trim().to_string())
-            .filter(|tool| !tool.is_empty())
-            .collect();
+        self.tool_results.tools = normalize_names(&self.tool_results.tools);
+        self.disabled_rules = normalize_names(&self.disabled_rules);
+        for rule in &mut self.custom_rules {
+            rule.id = rule.id.trim().to_string();
+            rule.name = rule.name.trim().to_string();
+        }
+        self.custom_rules.retain(|rule| !rule.id.is_empty() && !rule.pattern.is_empty());
     }
+}
+
+fn normalize_names(names: &[String]) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    for name in names {
+        let name = name.trim();
+        if !name.is_empty() && !result.iter().any(|item| item == name) {
+            result.push(name.to_string());
+        }
+    }
+    result
 }
 
 pub fn get_privacy_settings(database_path: &Path) -> Result<PrivacySettings> {

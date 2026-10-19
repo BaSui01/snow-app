@@ -43,7 +43,7 @@ export const PET_BACKGROUND_SCALE_MAX = 1.5;
 export const PET_BACKGROUND_SCALE_DEFAULT = 0.6;
 
 /** 界面字号范围与默认值。字号以 13px 为 100% 基准驱动整页缩放。 */
-export const UI_FONT_SIZE_MIN = 12;
+export const UI_FONT_SIZE_MIN = 10;
 export const UI_FONT_SIZE_MAX = 18;
 export const UI_FONT_SIZE_DEFAULT = 13;
 export const FONT_WEIGHT_MIN = 100;

@@ -25,8 +25,9 @@ use napi::bindgen_prelude::*;
 use regex::Regex;
 use serde_json::{json, Value};
 
-use crate::storage::services::privacy_settings::PrivacySettings;
+use crate::storage::services::privacy_settings::{PrivacyCustomRule, PrivacySettings};
 
+pub(crate) mod custom_rules;
 mod db_connection;
 
 type ApiResult<T> = std::result::Result<T, String>;
@@ -42,14 +43,57 @@ struct SensitiveMatch {
 }
 
 struct DirectSecretPattern {
+    rule_id: &'static str,
     pattern: Regex,
     match_type: &'static str,
     confidence: f64,
 }
 
+/// 本地脱敏规则元数据（供 UI 启停）。id 即持久化在 disabledRules 中的值。
+pub(crate) struct PrivacyRuleInfo {
+    pub id: &'static str,
+    pub group: &'static str,
+    pub label: &'static str,
+    pub example: &'static str,
+}
+
+pub(crate) const PRIVACY_RULES: &[PrivacyRuleInfo] = &[
+    PrivacyRuleInfo { id: "openai_key", group: "apiKey", label: "OpenAI-style key", example: "sk-..." },
+    PrivacyRuleInfo { id: "google_key", group: "apiKey", label: "Google API key", example: "AIza..." },
+    PrivacyRuleInfo { id: "github_token", group: "apiKey", label: "GitHub token", example: "github_pat_... / ghp_..." },
+    PrivacyRuleInfo { id: "slack_token", group: "apiKey", label: "Slack token", example: "xoxb-..." },
+    PrivacyRuleInfo { id: "stripe_key", group: "apiKey", label: "Stripe key", example: "sk_live_... / rk_test_..." },
+    PrivacyRuleInfo { id: "aws_access_key", group: "apiKey", label: "AWS access key", example: "AKIA... / ASIA..." },
+    PrivacyRuleInfo { id: "snow_key", group: "apiKey", label: "Snow key", example: "snow-..." },
+    PrivacyRuleInfo { id: "private_key_block", group: "credential", label: "PEM private key", example: "-----BEGIN PRIVATE KEY-----" },
+    PrivacyRuleInfo { id: "jwt", group: "credential", label: "JWT", example: "eyJ....eyJ....sig" },
+    PrivacyRuleInfo { id: "authorization", group: "credential", label: "Authorization token", example: "Bearer ... / Basic ..." },
+    PrivacyRuleInfo { id: "url_query_secret", group: "credential", label: "URL query secret", example: "?token=... &api_key=..." },
+    PrivacyRuleInfo { id: "context_secret", group: "credential", label: "Sensitive key-value", example: "password=... / api_key: ..." },
+    PrivacyRuleInfo { id: "cli_option_secret", group: "credential", label: "CLI secret option", example: "--token ... / --password ..." },
+    PrivacyRuleInfo { id: "db_connection", group: "credential", label: "Database connection string", example: "Server=...;User Id=...;Password=..." },
+    PrivacyRuleInfo { id: "china_id", group: "personal", label: "China ID card number", example: "15 / 18 digits, checksum validated" },
+    PrivacyRuleInfo { id: "china_mobile", group: "personal", label: "China mobile number", example: "1[3-9] + 9 digits" },
+    PrivacyRuleInfo { id: "global_phone", group: "personal", label: "International phone number", example: "+1 415 555 0100" },
+    PrivacyRuleInfo { id: "payment_card", group: "personal", label: "Payment card number", example: "13-19 digits, Luhn validated" },
+];
+
+/// 规则启停判定：disabled 为已关闭的规则 id 集合；custom 为已编译的自定义规则。
+struct RuleFilter<'a> {
+    disabled: &'a [String],
+    custom: &'a [custom_rules::CompiledCustomRule],
+}
+
+impl RuleFilter<'_> {
+    fn on(&self, rule_id: &str) -> bool {
+        !self.disabled.iter().any(|id| id == rule_id)
+    }
+}
+
 fn direct_secret_patterns() -> Vec<DirectSecretPattern> {
     vec![
         DirectSecretPattern {
+            rule_id: "private_key_block",
             pattern: Regex::new(
                 r"(?s)-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----",
             )
@@ -58,46 +102,55 @@ fn direct_secret_patterns() -> Vec<DirectSecretPattern> {
             confidence: 1.0,
         },
         DirectSecretPattern {
+            rule_id: "jwt",
             pattern: Regex::new(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b").unwrap(),
             match_type: "jwt",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "openai_key",
             pattern: Regex::new(r"\bsk-[A-Za-z0-9_-]{12,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "google_key",
             pattern: Regex::new(r"\bAIza[0-9A-Za-z_-]{20,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "github_token",
             pattern: Regex::new(r"\bgithub_pat_[A-Za-z0-9_]{22,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "github_token",
             pattern: Regex::new(r"\bgh[opsru]_[A-Za-z0-9]{20,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "slack_token",
             pattern: Regex::new(r"\bxox[abprs]-[A-Za-z0-9-]{12,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "stripe_key",
             pattern: Regex::new(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
         },
         DirectSecretPattern {
+            rule_id: "aws_access_key",
             pattern: Regex::new(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.9,
         },
         DirectSecretPattern {
+            rule_id: "snow_key",
             pattern: Regex::new(r"\bsnow-[A-Za-z0-9_-]{12,}\b").unwrap(),
             match_type: "api_key",
             confidence: 0.95,
@@ -457,34 +510,41 @@ fn is_valid_phone_number(value: &str) -> bool {
     true
 }
 
-fn collect_validated_matches(text: &str, matches: &mut Vec<SensitiveMatch>) {
-    let china_id_re = china_id_pattern();
-    for m in china_id_re.find_iter(text) {
-        if is_valid_chinese_id(m.as_str()) {
-            add_match(matches, m.start(), m.end(), "china_id", 0.95);
+fn collect_validated_matches(text: &str, matches: &mut Vec<SensitiveMatch>, filter: &RuleFilter) {
+    if filter.on("china_id") {
+        for m in china_id_pattern().find_iter(text) {
+            if is_valid_chinese_id(m.as_str()) {
+                add_match(matches, m.start(), m.end(), "china_id", 0.95);
+            }
         }
     }
-    let mobile_re = china_mobile_pattern();
-    for m in mobile_re.find_iter(text) {
-        add_match(matches, m.start(), m.end(), "phone", 0.9);
-    }
-    let global_phone_re = global_phone_pattern();
-    for m in global_phone_re.find_iter(text) {
-        if is_valid_phone_number(m.as_str()) {
+    if filter.on("china_mobile") {
+        for m in china_mobile_pattern().find_iter(text) {
             add_match(matches, m.start(), m.end(), "phone", 0.9);
         }
     }
-    let card_re = payment_card_pattern();
-    for m in card_re.find_iter(text) {
-        if is_valid_payment_card(m.as_str()) {
-            add_match(matches, m.start(), m.end(), "payment_card", 0.9);
+    if filter.on("global_phone") {
+        for m in global_phone_pattern().find_iter(text) {
+            if is_valid_phone_number(m.as_str()) {
+                add_match(matches, m.start(), m.end(), "phone", 0.9);
+            }
+        }
+    }
+    if filter.on("payment_card") {
+        for m in payment_card_pattern().find_iter(text) {
+            if is_valid_payment_card(m.as_str()) {
+                add_match(matches, m.start(), m.end(), "payment_card", 0.9);
+            }
         }
     }
 }
 
-fn collect_local_sensitive_matches(text: &str) -> Vec<SensitiveMatch> {
+fn collect_local_sensitive_matches(text: &str, filter: &RuleFilter) -> Vec<SensitiveMatch> {
     let mut matches = Vec::new();
     for pattern in direct_secret_patterns() {
+        if !filter.on(pattern.rule_id) {
+            continue;
+        }
         add_regex_matches(
             text,
             &mut matches,
@@ -494,50 +554,61 @@ fn collect_local_sensitive_matches(text: &str) -> Vec<SensitiveMatch> {
         );
     }
 
-    collect_context_matches_multi(
-        text,
-        &mut matches,
-        &quoted_context_pattern(),
-        1,
-        &[2, 3, 4],
-        "context_secret",
-        0.9,
-    );
-    collect_context_matches_multi(
-        text,
-        &mut matches,
-        &unquoted_context_pattern(),
-        1,
-        &[2],
-        "context_secret",
-        0.85,
-    );
-    add_regex_value_group_multi_matches(
-        text,
-        &mut matches,
-        &cli_option_pattern(),
-        &[2, 3, 4, 5],
-        "context_secret",
-        0.85,
-    );
-    add_regex_value_group_matches(
-        text,
-        &mut matches,
-        &authorization_pattern(),
-        2,
-        "authorization",
-        0.95,
-    );
-    add_regex_value_group_matches(
-        text,
-        &mut matches,
-        &url_query_pattern(),
-        3,
-        "url_query_secret",
-        0.85,
-    );
-    db_connection::collect_db_connection_matches(text, &mut matches);
-    collect_validated_matches(text, &mut matches);
+    if filter.on("context_secret") {
+        collect_context_matches_multi(
+            text,
+            &mut matches,
+            &quoted_context_pattern(),
+            1,
+            &[2, 3, 4],
+            "context_secret",
+            0.9,
+        );
+        collect_context_matches_multi(
+            text,
+            &mut matches,
+            &unquoted_context_pattern(),
+            1,
+            &[2],
+            "context_secret",
+            0.85,
+        );
+    }
+    if filter.on("cli_option_secret") {
+        add_regex_value_group_multi_matches(
+            text,
+            &mut matches,
+            &cli_option_pattern(),
+            &[2, 3, 4, 5],
+            "context_secret",
+            0.85,
+        );
+    }
+    if filter.on("authorization") {
+        add_regex_value_group_matches(
+            text,
+            &mut matches,
+            &authorization_pattern(),
+            2,
+            "authorization",
+            0.95,
+        );
+    }
+    if filter.on("url_query_secret") {
+        add_regex_value_group_matches(
+            text,
+            &mut matches,
+            &url_query_pattern(),
+            3,
+            "url_query_secret",
+            0.85,
+        );
+    }
+    if filter.on("db_connection") {
+        db_connection::collect_db_connection_matches(text, &mut matches);
+    }
+    collect_validated_matches(text, &mut matches, filter);
+    custom_rules::collect_matches(text, filter.custom, &mut matches);
     matches
 }
 
@@ -600,6 +671,12 @@ fn mask_payment_card(value: &str) -> String {
 }
 
 fn mask_value_by_type(match_type: &str, value: &str) -> String {
+    if let Some(replacement) = match_type.strip_prefix(custom_rules::TEXT_PREFIX) {
+        return replacement.to_string();
+    }
+    if match_type == custom_rules::MATCH_TYPE {
+        return "*".repeat(value.chars().count());
+    }
     if match_type == "private_key_block" {
         let lines: Vec<&str> = value.split('\n').collect();
         if lines.len() >= 2 {
@@ -842,32 +919,63 @@ fn restore_image_payloads(masked: &str, payloads: &[(String, String)]) -> Option
     Some(restored)
 }
 
-fn mask_local_rules(text: &str) -> String {
-    let matches = collect_local_sensitive_matches(text);
+fn mask_local_rules(text: &str, filter: &RuleFilter) -> String {
+    let matches = collect_local_sensitive_matches(text, filter);
     apply_matches(text, matches)
 }
 
+/// 全量规则遮罩（提示词上下文等内部场景，不受用户规则开关影响）。
 pub(crate) fn mask_local(text: &str) -> String {
+    mask_local_with(text, &[], &[])
+}
+
+/// 按用户关闭的内置规则跳过，并叠加启用的自定义规则后遮罩。
+pub(crate) fn mask_local_with(text: &str, disabled: &[String], custom: &[PrivacyCustomRule]) -> String {
+    let compiled = custom_rules::compile_rules(custom);
+    let filter = RuleFilter {
+        disabled,
+        custom: &compiled,
+    };
     let mut protected = text.to_string();
     let mut payloads = Vec::new();
     replace_image_data_url_spans(&mut protected, &mut payloads);
     if payloads.is_empty() {
-        return mask_local_rules(text);
+        return mask_local_rules(text, &filter);
     }
-    let masked = mask_local_rules(&protected);
+    let masked = mask_local_rules(&protected, &filter);
     restore_image_payloads(&masked, &payloads).unwrap_or(masked)
+}
+
+/// 仅应用自定义规则（API 模式远端脱敏后补充执行）。
+fn mask_custom_only(text: &str, custom: &[PrivacyCustomRule]) -> String {
+    let compiled = custom_rules::compile_rules(custom);
+    if compiled.is_empty() {
+        return text.to_string();
+    }
+    let mut matches = Vec::new();
+    custom_rules::collect_matches(text, &compiled, &mut matches);
+    apply_matches(text, matches)
 }
 
 /// Apply the configured privacy mode to already image-free text.
 async fn mask_text_raw(text: &str, settings: &PrivacySettings) -> String {
     if settings.mode == "api" && !settings.api.url.is_empty() {
         if let Ok(masked) = mask_with_api(text, settings).await {
-            return masked;
+            if settings.custom_rules.iter().all(|rule| !rule.enabled) {
+                return masked;
+            }
+            let custom = settings.custom_rules.clone();
+            let fallback = masked.clone();
+            return tokio::task::spawn_blocking(move || mask_custom_only(&masked, &custom))
+                .await
+                .unwrap_or(fallback);
         }
     }
 
     let text_owned = text.to_string();
-    match tokio::task::spawn_blocking(move || mask_local(&text_owned)).await {
+    let disabled = settings.disabled_rules.clone();
+    let custom = settings.custom_rules.clone();
+    match tokio::task::spawn_blocking(move || mask_local_with(&text_owned, &disabled, &custom)).await {
         Ok(masked) => masked,
         Err(_) => text.to_string(),
     }
@@ -899,7 +1007,9 @@ pub async fn mask_text(text: &str, settings: &PrivacySettings) -> String {
     // The remote filter rewrote a placeholder. Never let that lose the image:
     // mask locally and restore deterministically.
     let local_text = protected.clone();
-    let local_masked = tokio::task::spawn_blocking(move || mask_local(&local_text))
+    let disabled = settings.disabled_rules.clone();
+    let custom = settings.custom_rules.clone();
+    let local_masked = tokio::task::spawn_blocking(move || mask_local_with(&local_text, &disabled, &custom))
         .await
         .unwrap_or(protected);
     restore_image_payloads(&local_masked, &payloads).unwrap_or(local_masked)

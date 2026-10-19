@@ -223,12 +223,13 @@ Field-level sensitive: `proxyPassword` to `privacyConfig`, `apiKey` to `apiKeys`
 
 **Whole-domain sensitive: `privacyConfig`** · Not live · No parameters
 
-| Field         | Type    | Description                                                                                                  |
-| ------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `enabled`     | boolean | Master switch of the privacy filter                                                                          |
-| `mode`        | string  | `local` or `api`                                                                                             |
-| `api`         | object  | `{ url, apiKey, model }` (`apiKey` is a global sensitive field and is stripped unless `apiKeys` is declared) |
-| `toolResults` | object  | `{ tools: string[] }` fully qualified tool names routed through the filter                                   |
+| Field           | Type     | Description                                                                                                  |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `enabled`       | boolean  | Master switch of the privacy filter                                                                          |
+| `mode`          | string   | `local` or `api`                                                                                             |
+| `api`           | object   | `{ url, apiKey, model }` (`apiKey` is a global sensitive field and is stripped unless `apiKeys` is declared) |
+| `toolResults`   | object   | `{ tools: string[] }` fully qualified tool names routed through the filter                                   |
+| `disabledRules` | string[] | Switched-off local masking rule ids (an empty array means every rule is on)                                  |
 
 #### 4.1.5 `permissions`
 

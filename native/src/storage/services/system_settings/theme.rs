@@ -9,7 +9,7 @@ use super::{
 };
 
 // 排版数值范围与默认值，与渲染层 themeSettingsUtils 的 typography 常量保持一致。
-const UI_FONT_SIZE_MIN: f64 = 12.0;
+const UI_FONT_SIZE_MIN: f64 = 10.0;
 const UI_FONT_SIZE_MAX: f64 = 18.0;
 const DEFAULT_UI_FONT_SIZE: f64 = 13.0;
 const FONT_WEIGHT_MIN: f64 = 100.0;

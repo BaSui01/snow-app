@@ -33033,6 +33033,124 @@ body.is-panel-resizing * {
   color: var(--accent-red-text);
 }
 
+/* 隐私设置：分组开关列表 */
+.privacy-option-list {
+  display: flex;
+  max-height: 420px;
+  overflow-y: auto;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.privacy-option-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.privacy-option-group-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.privacy-option-group-title small,
+.privacy-option-count {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.privacy-option-group:last-child .sub-agent-tool-option:last-child {
+  border-bottom: none;
+}
+
+.privacy-tool-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-muted);
+}
+
+.privacy-tool-search input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.privacy-preview-input {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none !important;
+}
+
+.privacy-preview-input:focus,
+.privacy-preview-input:focus-visible {
+  border-color: var(--accent-color) !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.privacy-preview-output {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-muted);
+  color: var(--text-muted);
+}
+
+.privacy-preview-output svg {
+  flex-shrink: 0;
+}
+
+.privacy-preview-output pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .sub-agent-editor-form {
   display: flex;
   flex-direction: column;

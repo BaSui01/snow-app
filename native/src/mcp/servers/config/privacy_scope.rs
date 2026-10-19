@@ -7,6 +7,9 @@
 //! - `api.apiKey`：读取时掩码；写入时省略或传空字符串表示**保留旧值**
 //!   （与 apiProfiles 域一致），避免 AI 用占位符覆盖真实密钥。
 //! - `toolResults.tools`：需要脱敏的工具名单，提供时整体替换。
+//! - `disabledRules`：关闭的本地脱敏规则 id，提供时整体替换（id 见 `availableRules`）。
+//! - `customRules`：自定义正则规则，整体替换；`upsertCustomRules` 按 id/name 增量写入，
+//!   `removeCustomRules` 按 id/name 删除。
 //!
 //! ⚠️ 启用后工具结果会经过隐私过滤（本地或远端），会改变后续请求内容；
 //! 本域不提供 delete（用 `enabled=false` 关闭）。
@@ -16,6 +19,7 @@ use std::path::Path;
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 
+use crate::mcp::privacy_mask::custom_rules;
 use crate::storage::services::system_settings::PrivacySettings;
 
 const TOOL_GET: &str = "get";
@@ -24,6 +28,7 @@ const TOOL_DELETE: &str = "delete";
 
 const PRIVACY_KEY: &str = "settings";
 const SUPPORTED_MODES: &[&str] = &["local", "api"];
+const CUSTOM_RULE_FORMAT: &str = "{id?, name, pattern (Rust regex, use (?i) for case-insensitive), group? (capture group to mask, default 0 = whole match), replacement? (empty = mask with *), enabled? (default true)}";
 
 fn mask_secret(value: &str) -> Value {
     let chars: Vec<char> = value.chars().collect();
@@ -50,7 +55,18 @@ fn settings_view(settings: &PrivacySettings) -> Value {
         "toolResults": {
             "tools": settings.tool_results.tools,
         },
+        "disabledRules": settings.disabled_rules,
+        "availableRules": crate::mcp::privacy_mask::PRIVACY_RULES
+            .iter()
+            .map(|rule| rule.id)
+            .collect::<Vec<_>>(),
+        "customRules": custom_rules::rules_view(&settings.custom_rules),
+        "customRuleFormat": CUSTOM_RULE_FORMAT,
     })
+}
+
+fn invalid_arg(message: String) -> Error {
+    Error::new(Status::InvalidArg, message)
 }
 
 fn apply_settings(value: &Value) -> Result<Value> {
@@ -142,6 +158,44 @@ fn apply_settings(value: &Value) -> Result<Value> {
             }
             settings.tool_results.tools = names;
         }
+    }
+
+    if let Some(disabled_rules) = patch.get("disabledRules") {
+        let items = disabled_rules.as_array().ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "disabledRules must be an array of rule ids".to_string(),
+            )
+        })?;
+        let mut ids = Vec::new();
+        for item in items {
+            let id = item.as_str().map(str::trim).unwrap_or_default();
+            if !crate::mcp::privacy_mask::PRIVACY_RULES
+                .iter()
+                .any(|rule| rule.id == id)
+            {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("Unknown privacy rule id: {id}"),
+                ));
+            }
+            ids.push(id.to_string());
+        }
+        settings.disabled_rules = ids;
+    }
+
+    // 自定义规则：先整体替换，再增量 upsert，最后删除。
+    if let Some(rules) = patch.get("customRules") {
+        settings.custom_rules =
+            custom_rules::parse_rules(rules, &settings.custom_rules).map_err(invalid_arg)?;
+    }
+    if let Some(rules) = patch.get("upsertCustomRules") {
+        settings.custom_rules =
+            custom_rules::upsert_rules(settings.custom_rules, rules).map_err(invalid_arg)?;
+    }
+    if let Some(keys) = patch.get("removeCustomRules") {
+        settings.custom_rules =
+            custom_rules::remove_rules(settings.custom_rules, keys).map_err(invalid_arg)?;
     }
 
     crate::storage::set_privacy_settings(settings.clone())?;

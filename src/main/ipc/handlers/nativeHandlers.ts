@@ -250,6 +250,31 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setPrivacySettings(settings as never);
     },
   );
+  ipcMain.handle("settings:list-privacy-rules", () =>
+    native.listPrivacyRules(),
+  );
+  ipcMain.handle(
+    "settings:save-privacy-custom-rules",
+    (_event, content: unknown) => {
+      if (typeof content !== "string") {
+        throw new Error("Custom rules content must be a string");
+      }
+      return native.savePrivacyCustomRules(content);
+    },
+  );
+  ipcMain.handle(
+    "settings:preview-privacy-mask",
+    (_event, sample: unknown, disabledRules: unknown, customRules: unknown) => {
+      if (typeof sample !== "string") {
+        throw new Error("Preview sample must be a string");
+      }
+      return native.previewPrivacyMask(
+        sample,
+        Array.isArray(disabledRules) ? (disabledRules as string[]) : [],
+        Array.isArray(customRules) ? (customRules as never) : [],
+      );
+    },
+  );
   ipcMain.handle("settings:get-theme-settings", () =>
     native.getThemeSettings(),
   );

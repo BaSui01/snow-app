@@ -20,6 +20,8 @@ import type {
   OAuthLoginStatus,
   OAuthProviderInfo,
   OAuthQuotaSnapshot,
+  PrivacyCustomRule,
+  PrivacyRuleInfo,
   PrivacySettings,
   ProxyBrowserSettings,
   ResponsesApiRequest,
@@ -213,6 +215,21 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-privacy-settings"),
   setPrivacySettings: (settings: PrivacySettings): Promise<void> =>
     ipcRenderer.invoke("settings:set-privacy-settings", settings),
+  listPrivacyRules: (): Promise<PrivacyRuleInfo[]> =>
+    ipcRenderer.invoke("settings:list-privacy-rules"),
+  savePrivacyCustomRules: (content: string): Promise<PrivacyCustomRule[]> =>
+    ipcRenderer.invoke("settings:save-privacy-custom-rules", content),
+  previewPrivacyMask: (
+    sample: string,
+    disabledRules: string[],
+    customRules: PrivacyCustomRule[],
+  ): Promise<string> =>
+    ipcRenderer.invoke(
+      "settings:preview-privacy-mask",
+      sample,
+      disabledRules,
+      customRules,
+    ),
   getThemeSettings: (): Promise<ThemeSettings> =>
     ipcRenderer.invoke("settings:get-theme-settings"),
   setThemeSettings: (settings: ThemeSettings): Promise<void> =>

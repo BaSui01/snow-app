@@ -10,7 +10,7 @@ pub(crate) use crate::storage::services::api_config_transfer::{
     ApiConfigExportResult, ApiConfigImportOutcome, ApiConfigImportPreview,
 };
 pub(crate) use crate::storage::services::privacy_settings::{
-    PrivacyApiConfig, PrivacySettings, PrivacyToolResultsConfig,
+    PrivacyApiConfig, PrivacyCustomRule, PrivacySettings, PrivacyToolResultsConfig,
 };
 pub(crate) use crate::storage::services::theme_settings::{
     CustomTheme, ThemeBackground, ThemePalette, ThemeSettings, ThemeStreamCursor, ThemeTypography,

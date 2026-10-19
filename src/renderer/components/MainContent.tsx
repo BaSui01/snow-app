@@ -295,7 +295,7 @@ export const MainContent = ({
           ) : activeView === "theme-settings" ? (
             <ThemeSettingsPanel />
           ) : activeView === "privacy-settings" ? (
-            <PrivacySettingsPanel />
+            <PrivacySettingsPanel activeDirectory={activeDirectory} />
           ) : activeView === "remote-control-settings" ? (
             <RemoteControlSettingsPanel />
           ) : activeView === "keyboard-shortcuts-settings" ? (

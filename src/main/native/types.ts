@@ -314,6 +314,28 @@ export type PrivacySettings = {
   mode: string;
   api: PrivacyApiConfig;
   toolResults: PrivacyToolResultsConfig;
+  /** 关闭的本地脱敏规则 id；省略时后端保留已存储值。 */
+  disabledRules?: string[];
+  /** 自定义脱敏规则；省略时后端保留已存储值。 */
+  customRules?: PrivacyCustomRule[];
+};
+
+export type PrivacyCustomRule = {
+  id: string;
+  name: string;
+  pattern: string;
+  /** 遮罩的捕获组，0 为整段匹配。 */
+  group: number;
+  /** 替换文本；为空时按字符替换为 *。 */
+  replacement: string;
+  enabled: boolean;
+};
+
+export type PrivacyRuleInfo = {
+  id: string;
+  group: string;
+  label: string;
+  example: string;
 };
 
 /** Per-conversation Plan/Goal Mode overrides. `null` means the conversation
@@ -2097,6 +2119,13 @@ export type NativeBridge = ImageGenerationNativeApi & {
   setRequestLoggingExpiry: (expiresAtMs: number) => Promise<void>;
   getPrivacySettings: () => Promise<PrivacySettings>;
   setPrivacySettings: (settings: PrivacySettings) => Promise<void>;
+  listPrivacyRules: () => Promise<PrivacyRuleInfo[]>;
+  savePrivacyCustomRules: (content: string) => Promise<PrivacyCustomRule[]>;
+  previewPrivacyMask: (
+    sample: string,
+    disabledRules: string[],
+    customRules: PrivacyCustomRule[],
+  ) => Promise<string>;
   getThemeSettings: () => Promise<ThemeSettings>;
   setThemeSettings: (settings: ThemeSettings) => Promise<void>;
   getKeyboardShortcutsSettings: () => Promise<KeyboardShortcutsSettings>;

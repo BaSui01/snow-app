@@ -27,6 +27,8 @@ use serde_json::{json, Value};
 
 use crate::storage::services::privacy_settings::PrivacySettings;
 
+mod db_connection;
+
 type ApiResult<T> = std::result::Result<T, String>;
 
 /// Matches returned by the local rule engine. Byte offsets are used so the
@@ -534,6 +536,7 @@ fn collect_local_sensitive_matches(text: &str) -> Vec<SensitiveMatch> {
         "url_query_secret",
         0.85,
     );
+    db_connection::collect_db_connection_matches(text, &mut matches);
     collect_validated_matches(text, &mut matches);
     matches
 }
@@ -647,6 +650,10 @@ fn mask_value_by_type(match_type: &str, value: &str) -> String {
     }
     if match_type == "jwt" {
         return mask_secret_value(value, 6, 4);
+    }
+    // 连接串的主机/用户/密码整段遮罩，不留前缀
+    if match_type == "db_connection" {
+        return "*".repeat(value.chars().count());
     }
     mask_secret_value(value, 3, 0)
 }

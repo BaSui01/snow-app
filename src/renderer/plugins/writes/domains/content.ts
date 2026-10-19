@@ -1,6 +1,7 @@
 import { scheduledTasksStore } from "../../../hooks/scheduledTasksStore";
 import {
   abortConversationRun,
+  removeConversationTrees,
   sendMessageToConversation,
 } from "../../../components/mainContent/chatMessages/hooks/conversationMessageBridge";
 import {
@@ -455,7 +456,12 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     summary: l10n("Archive conversations", "归档会话", "封存工作階段"),
     invoke: async ({ params }) => {
       const conversationIds = requireStringArray(params, "conversationIds");
-      await callSnow("archiveConversations", conversationIds);
+      // 与侧栏归档同一收尾流程：先中止整棵会话树再归档（置顶会话不参与）。
+      await removeConversationTrees(
+        conversationIds,
+        () => callSnow("archiveConversations", conversationIds),
+        { skipPinned: true },
+      );
       commitConversationListChange();
       return { conversationIds };
     },
@@ -484,7 +490,12 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     invoke: async ({ params }) => {
       const conversationId = requireString(params, "conversationId");
       const deleteMemories = optionalBoolean(params, "deleteMemories");
-      await callSnow("deleteConversation", conversationId, deleteMemories);
+      // 与侧栏删除同一收尾流程：先中止整棵会话树（子代理、WorkFlow 节点）再删除。
+      await removeConversationTrees(
+        [conversationId],
+        () => callSnow("deleteConversation", conversationId, deleteMemories),
+        { skipPinned: false },
+      );
       commitConversationListChange();
       return { conversationId };
     },

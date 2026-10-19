@@ -289,6 +289,11 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
             })?;
     }
 
+    // 登记墓碑：仍在收尾的回合（含子代理 / WorkFlow 节点）迟到的持久化
+    // 据此丢弃，避免把刚删除的会话行重建出来。
+    super::record_conversation_tombstones(&transaction, &conversation_ids)
+        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+
     transaction
         .commit()
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
@@ -550,6 +555,10 @@ pub fn delete_conversations(
                 database::database_error(database_path, "delete conversation", error)
             })?;
     }
+
+    // 登记墓碑：覆盖全部级联目标，与单条删除一致。
+    super::record_conversation_tombstones(&transaction, &all_target_ids)
+        .map_err(|error| database::database_error(database_path, "delete conversations", error))?;
 
     transaction
         .commit()

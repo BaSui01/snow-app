@@ -41,6 +41,7 @@ import { useImageGenerationRuntime } from "./imageGenerationRuntime";
 import {
   useConversationAbortBridge,
   useConversationMessageBridge,
+  useConversationRemovalBridge,
 } from "./conversationMessageBridge";
 import {
   PLUGIN_CONVERSATION_LIST_CHANGED_EVENT,
@@ -888,6 +889,13 @@ export const useChatConversation = (
   ctx.abortWorkflowNodes = conversationManagementApi.abortWorkflowNodes;
   // 插件会话编排的中止通道：复用 handleAbort（见 conversationMessageBridge）。
   useConversationAbortBridge(ctx, conversationManagementApi.handleAbort);
+  // 插件会话编排的删除 / 归档通道：复用侧栏删除的收尾流程（中止整棵会话树、
+  // 清理草稿、移除当前会话时切到新会话）。
+  useConversationRemovalBridge(
+    ctx,
+    conversationManagementApi.abortConversation,
+    conversationManagementApi.handleNewChat,
+  );
 
   // --- 独立窗口归属 ---
   // 归属于某个独立窗口的会话（窗口内的会话 tab 与运行中的会话）只能在该窗口运行。

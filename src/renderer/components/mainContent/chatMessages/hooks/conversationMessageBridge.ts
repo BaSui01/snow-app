@@ -175,3 +175,114 @@ export const useConversationAbortBridge = (
     };
   }, []);
 };
+
+export type ConversationRemovalOptions = {
+  /** 归档会跳过置顶会话（Rust 侧不搬移），置顶会话也不应被中止。 */
+  skipPinned: boolean;
+};
+
+type ConversationRemover = (
+  conversationIds: string[],
+  remove: () => Promise<unknown>,
+  options: ConversationRemovalOptions,
+) => Promise<void>;
+
+let activeRemover: ConversationRemover | null = null;
+
+/**
+ * 从存储收集会话树全部 id（会话、直接子代理、WorkFlow 节点及节点派生的
+ * 子代理），与 Rust 删除 / 归档的级联范围一致。插件可操作任意项目的会话，
+ * 不能依赖侧栏只覆盖当前项目的树形缓存。
+ */
+const collectStoredConversationTreeIds = async (
+  rootIds: string[],
+): Promise<string[]> => {
+  if (rootIds.length === 0) {
+    return [];
+  }
+  const nodeMap = await window.snow.listWorkflowNodeSessionsByParents(rootIds);
+  const nodeIds = Object.values(nodeMap)
+    .flat()
+    .map((node) => node.conversationId);
+  const subAgentMap = await window.snow.listSubAgentConversationsByParents([
+    ...rootIds,
+    ...nodeIds,
+  ]);
+  const subAgentIds = Object.values(subAgentMap)
+    .flat()
+    .map((subAgent) => subAgent.conversationId);
+  return [...new Set([...rootIds, ...nodeIds, ...subAgentIds])];
+};
+
+const excludePinnedConversations = async (
+  conversationIds: string[],
+): Promise<string[]> => {
+  const records = await Promise.all(
+    conversationIds.map((id) => window.snow.getChatConversation(id)),
+  );
+  return conversationIds.filter(
+    (_id, index) => records[index]?.status !== "pin",
+  );
+};
+
+/**
+ * 删除 / 归档会话（插件会话编排），与侧栏删除 / 归档同一收尾流程：先中止
+ * 整棵会话树的运行，再执行 remove 完成存储操作，随后清理草稿；被移除的
+ * 包含当前会话时切到新会话。列表刷新由调用方负责。
+ */
+export const removeConversationTrees = (
+  conversationIds: string[],
+  remove: () => Promise<unknown>,
+  options: ConversationRemovalOptions,
+): Promise<void> => {
+  if (!activeRemover) {
+    return Promise.reject(new Error("Chat runtime is not ready"));
+  }
+  return activeRemover(conversationIds, remove, options);
+};
+
+/** 注册会话移除通道；abortConversation / handleNewChat 来自会话管理 Hook。 */
+export const useConversationRemovalBridge = (
+  ctx: ConversationContextValue,
+  abortConversation: (conversationId: string) => void,
+  handleNewChat: () => void,
+): void => {
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
+  const abortRef = useRef(abortConversation);
+  abortRef.current = abortConversation;
+  const newChatRef = useRef(handleNewChat);
+  newChatRef.current = handleNewChat;
+  useEffect(() => {
+    const remover: ConversationRemover = async (
+      conversationIds,
+      remove,
+      options,
+    ) => {
+      const rootIds = options.skipPinned
+        ? await excludePinnedConversations(conversationIds)
+        : conversationIds;
+      const targetIds = await collectStoredConversationTreeIds(rootIds);
+      for (const targetId of targetIds) {
+        abortRef.current(targetId);
+      }
+
+      await remove();
+
+      const current = ctxRef.current;
+      for (const targetId of targetIds) {
+        current.clearInputDraft(targetId);
+      }
+      const activeId = current.activeConversationIdRef.current;
+      if (activeId && targetIds.includes(activeId)) {
+        newChatRef.current();
+      }
+    };
+    activeRemover = remover;
+    return () => {
+      if (activeRemover === remover) {
+        activeRemover = null;
+      }
+    };
+  }, []);
+};

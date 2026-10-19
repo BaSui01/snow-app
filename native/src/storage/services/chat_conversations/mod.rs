@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrono::Utc;
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::super::database;
 use super::super::ChatConversationRecord;
@@ -14,12 +14,16 @@ mod task_history;
 pub use self::task_history::*;
 mod query;
 mod sub_agent;
+mod tombstones;
 mod workflow;
 
 pub use self::fork_truncate::*;
 pub use self::messages::*;
 pub use self::query::*;
 pub use self::sub_agent::*;
+pub(crate) use self::tombstones::{
+    clear_conversation_tombstones, is_conversation_tombstoned, record_conversation_tombstones,
+};
 pub use self::workflow::*;
 
 #[derive(Clone, Debug)]
@@ -329,7 +333,15 @@ pub fn store_chat_exchange(
 ) -> Result<Vec<String>> {
     database::open_connection(database_path)
         .and_then(|mut connection| {
-            let transaction = connection.transaction()?;
+            // 先读墓碑再写入：IMMEDIATE 在事务开始即取得写锁，保证与删除 /
+            // 归档事务串行，读到的墓碑状态在本事务提交前不会变化。
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            // 会话已被删除 / 归档（含级联的子代理、WorkFlow 节点会话）：
+            // 收尾中的回合迟到落库时整体丢弃，不得重建会话行与消息。
+            if is_conversation_tombstoned(&transaction, input.conversation_id)? {
+                return Ok(Vec::new());
+            }
             let mut persisted_user_message_ids = Vec::new();
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
@@ -1021,11 +1033,15 @@ pub fn set_conversation_runtime_config(
 
     database::open_connection(database_path)
         .and_then(|connection| {
+            // 已删除 / 归档的会话（存在墓碑）不再按 upsert 重建会话行。
             connection.execute(
                 "INSERT INTO chat_conversations (
                    id, conversation_id, thinking_strength, responses_fast_mode
                  )
-                 VALUES (?1, ?2, ?3, ?4)
+                 SELECT ?1, ?2, ?3, ?4
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM deleted_conversations WHERE conversation_id = ?2
+                  )
                  ON CONFLICT(conversation_id) DO UPDATE SET
                    thinking_strength = excluded.thinking_strength,
                    responses_fast_mode = excluded.responses_fast_mode",
@@ -1129,11 +1145,15 @@ pub fn set_conversation_modes(
 ) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
+            // 已删除 / 归档的会话（存在墓碑）不再按 upsert 重建会话行。
             connection.execute(
                 "INSERT INTO chat_conversations (
                    id, conversation_id, plan_mode, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget
                  )
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM deleted_conversations WHERE conversation_id = ?2
+                  )
                  ON CONFLICT(conversation_id) DO UPDATE SET
                    plan_mode = COALESCE(excluded.plan_mode, chat_conversations.plan_mode),
                    goal_mode = COALESCE(excluded.goal_mode, chat_conversations.goal_mode),
@@ -1175,6 +1195,8 @@ pub fn set_conversation_run_stats(
 ) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
+            // run 结束时才写入：会话若已在运行期间被删除 / 归档（存在墓碑），
+            // 丢弃这次统计而不是把会话行重建出来。
             connection.execute(
                 "INSERT INTO chat_conversations (
                    id, conversation_id,
@@ -1182,7 +1204,10 @@ pub fn set_conversation_run_stats(
                    run_cache_creation_input_tokens, run_cache_read_input_tokens,
                    last_run_duration_ms, run_ttft_sum_ms, run_request_count
                  )
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM deleted_conversations WHERE conversation_id = ?2
+                  )
                  ON CONFLICT(conversation_id) DO UPDATE SET
                    run_input_tokens = chat_conversations.run_input_tokens + excluded.run_input_tokens,
                    run_output_tokens = chat_conversations.run_output_tokens + excluded.run_output_tokens,

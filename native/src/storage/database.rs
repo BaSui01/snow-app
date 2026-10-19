@@ -17,6 +17,8 @@ use super::{
 
 /// Bumped whenever the schema changes; written to `PRAGMA user_version` after
 /// a successful `create_schema` so the app can detect stale databases.
+/// 57: deleted_conversations tombstones (late run persistence must not recreate
+/// deleted/archived conversations).
 /// 56: durable image generation batches/tasks, scoped lifecycle and notification claims.
 /// 55: existing application schema baseline.
 /// 54: independent file_review_annotations table and scoped indexes.
@@ -44,7 +46,7 @@ use super::{
 /// 32: api_configs canonical config_json migration plus conversation runtime config columns.
 /// 31: main's scheduled-tasks pre-script migration (30) + PR #65's three
 /// stream-interruption migrations (29 baseline + 4 total additions).
-const CURRENT_SCHEMA_VERSION: i64 = 56;
+const CURRENT_SCHEMA_VERSION: i64 = 57;
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -981,6 +983,16 @@ CREATE TABLE IF NOT EXISTS app_plugins (
            canvas_json TEXT NOT NULL DEFAULT '{}',
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            PRIMARY KEY (parent_conversation_id, interaction_id)
+         );
+
+         -- Conversation tombstones: ids removed from the runtime database by
+         -- delete/archive (cascade targets included). A run that is still
+         -- finishing (aborting stream, sub-agent, WorkFlow node) checks this
+         -- table and drops its late persistence instead of recreating the
+         -- conversation row. Restoring from the archive clears the entry.
+         CREATE TABLE IF NOT EXISTS deleted_conversations (
+           conversation_id TEXT PRIMARY KEY NOT NULL,
+           deleted_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
 
          CREATE TABLE IF NOT EXISTS chat_messages (

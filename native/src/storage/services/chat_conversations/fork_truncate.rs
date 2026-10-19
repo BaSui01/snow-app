@@ -579,6 +579,10 @@ fn truncate_conversation_from_id(
             .map_err(|error| {
                 database::database_error(database_path, "delete memory prompt snapshots", error)
             })?;
+        // 登记墓碑：仍在收尾的节点 run 迟到的持久化不得重建已删除的节点会话。
+        super::record_conversation_tombstones(transaction, &truncated_node_ids).map_err(
+            |error| database::database_error(database_path, "delete workflow node conversation", error),
+        )?;
     }
 
     // 被截断 flow 的 run 级状态与画布随截断一并清理：flow 卡片已被删除，

@@ -7,7 +7,10 @@ use rusqlite::{params, params_from_iter, Connection, TransactionBehavior};
 
 use super::super::database;
 use super::super::{ChatConversationPage, ChatConversationRecord};
-use super::chat_conversations::{cleanup_orphan_checkpoint_files, collect_conversation_checkpoint_ids};
+use super::chat_conversations::{
+    cleanup_orphan_checkpoint_files, clear_conversation_tombstones,
+    collect_conversation_checkpoint_ids, record_conversation_tombstones,
+};
 
 /// 归档冷数据库（archive.db）专用服务。
 ///
@@ -783,6 +786,12 @@ pub fn archive_conversations(
             })?;
     }
 
+    // 登记墓碑：归档后仍在收尾的回合（含子代理 / WorkFlow 节点）迟到的
+    // 持久化不得在运行库重建 active 会话行；还原时清除。
+    record_conversation_tombstones(&transaction, &all_target_ids).map_err(|error| {
+        database::database_error(main_database_path, "archive conversations", error)
+    })?;
+
     transaction
         .commit()
         .map_err(|error| {
@@ -1036,6 +1045,10 @@ pub fn restore_archived_conversations(
     }
 
     // ---- 拷贝回运行库 ----
+    // 还原的会话重新可用：先清除归档时登记的墓碑，后续回合才能正常持久化。
+    clear_conversation_tombstones(&transaction, &all_target_ids).map_err(|error| {
+        database::database_error(main_database_path, "restore archived conversations", error)
+    })?;
     // 会话 → 子代理会话 → 消息 → todo（外键依赖顺序）。
     // 还原的会话 updated_at 刷新为当前时间：会话列表按 updated_at 倒序，
     // 归档前的旧时间戳会让还原的会话排到列表深处甚至不可见。

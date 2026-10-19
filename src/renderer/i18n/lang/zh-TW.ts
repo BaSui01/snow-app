@@ -5341,6 +5341,9 @@ export const zhTW = {
   "settings.closeBehaviorAction": "關閉行為",
   "settings.closeBehaviorAsk": "每次詢問",
   "settings.closeBehaviorExit": "結束應用程式",
+  "settings.autoLaunch": "啟動",
+  "settings.autoLaunchInfo": "登入電腦時自動啟動 Snow App。",
+  "settings.autoLaunchEnabled": "開機自動啟動",
   "settings.usageSettings": "用量統計",
   "settings.usageSettingsInfo":
     "追蹤所有 API 呼叫的 token 用量，包括輸入、輸出和快取統計。",

@@ -19,4 +19,12 @@ export const resourceApi = {
   /** 清空应用 HTTP 缓存并强制重新加载界面 */
   clearAppCacheAndReload: (): Promise<void> =>
     ipcRenderer.invoke("app:clear-cache-and-reload"),
+
+  /** 读取开机自启动状态 */
+  getAutoLaunch: (): Promise<boolean> =>
+    ipcRenderer.invoke("app:get-auto-launch"),
+
+  /** 设置开机自启动，返回实际生效状态 */
+  setAutoLaunch: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke("app:set-auto-launch", enabled),
 };

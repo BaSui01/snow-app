@@ -5390,6 +5390,9 @@ export const zhCN = {
   "settings.closeBehaviorAction": "关闭行为",
   "settings.closeBehaviorAsk": "每次询问",
   "settings.closeBehaviorExit": "退出应用",
+  "settings.autoLaunch": "启动",
+  "settings.autoLaunchInfo": "登录电脑时自动启动 Snow App。",
+  "settings.autoLaunchEnabled": "开机自启动",
   "settings.usageSettings": "用量统计",
   "settings.usageSettingsInfo":
     "跟踪所有 API 调用的 token 用量，包括输入、输出和缓存统计。",

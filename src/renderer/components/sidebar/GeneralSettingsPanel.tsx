@@ -380,6 +380,24 @@ export function GeneralSettingsPanel(): React.JSX.Element {
   };
 
   const busySend = useBusySendBehavior();
+  // 开机自启动（默认关闭，状态以系统登录项为准）
+  const [autoLaunch, setAutoLaunch] = useState(false);
+
+  useEffect(() => {
+    window.snow
+      .getAutoLaunch()
+      .then(setAutoLaunch)
+      .catch(() => undefined);
+  }, []);
+
+  const handleAutoLaunchChange = (checked: boolean): void => {
+    setAutoLaunch(checked);
+    void window.snow
+      .setAutoLaunch(checked)
+      .then(setAutoLaunch)
+      .catch(() => setAutoLaunch(!checked));
+  };
+
   // 关闭 Snow App 时的行为（ask / exit / minimize，默认 ask）
   const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>("ask");
   const isMacPlatform = navigator.userAgent.includes("Mac");
@@ -1297,6 +1315,48 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                   {localeLabels[supportedLocale]}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "general" && (
+        <div className="api-settings-manual-form">
+          <div className="api-settings-manual-header">
+            <strong>
+              {t("settings.autoLaunch", { defaultValue: "Startup" })}
+            </strong>
+            <span>
+              {t("settings.autoLaunchInfo", {
+                defaultValue:
+                  "Launch Snow App automatically when you sign in to your computer.",
+              })}
+            </span>
+          </div>
+
+          <div className="api-settings-form-body">
+            <div className="settings-about-row">
+              <span className="settings-item-description">
+                {t("settings.autoLaunchEnabled", {
+                  defaultValue: "Launch at login",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={autoLaunch}
+                  onChange={(event) =>
+                    handleAutoLaunchChange(event.target.checked)
+                  }
+                  hidden
+                />
+                <span className="toggle-slider" aria-hidden="true" />
+                <span>
+                  {autoLaunch
+                    ? t("settings.enabled", { defaultValue: "已启用" })
+                    : t("settings.disabled", { defaultValue: "已关闭" })}
+                </span>
+              </label>
             </div>
           </div>
         </div>

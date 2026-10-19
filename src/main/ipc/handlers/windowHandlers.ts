@@ -26,6 +26,10 @@ import { refreshTrayStats } from "../../app/tray";
 import { registerGlobalShortcuts } from "../../app/globalShortcuts";
 import { clearWindowState } from "../../app/windowState";
 import {
+  getAutoLaunchEnabled,
+  setAutoLaunchEnabled,
+} from "../../app/autoLaunch";
+import {
   clearBrowserRouteRules,
   clearNetworkRecords,
   ensureNetworkRecording,
@@ -430,6 +434,12 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
       win.webContents.reloadIgnoringCache();
     }
   });
+
+  // 通用设置「开机自启动」：状态以系统登录项为准
+  ipcMain.handle("app:get-auto-launch", () => getAutoLaunchEnabled());
+  ipcMain.handle("app:set-auto-launch", (_event, enabled: unknown) =>
+    setAutoLaunchEnabled(enabled === true),
+  );
 
   // 渲染进程保存快捷键设置后调用：重新读取数据库并注册/注销
   // 全局生效的快捷键（foregroundOnly=false 的动作）。

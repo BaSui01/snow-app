@@ -5737,6 +5737,10 @@ export const en = {
   "settings.closeBehaviorAction": "Close action",
   "settings.closeBehaviorAsk": "Ask every time",
   "settings.closeBehaviorExit": "Quit the app",
+  "settings.autoLaunch": "Startup",
+  "settings.autoLaunchInfo":
+    "Launch Snow App automatically when you sign in to your computer.",
+  "settings.autoLaunchEnabled": "Launch at login",
   "settings.usageSettings": "Usage statistics",
   "settings.usageSettingsInfo":
     "Track token usage across all API calls, including input, output, and cache statistics.",

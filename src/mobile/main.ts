@@ -25,6 +25,7 @@ import { applyAccentColor, initTheme } from "./theme";
 import { initThreads, renderThreads } from "./threads";
 import { initTimeline, renderTimeline } from "./timeline";
 import { initTodos, renderTodos } from "./todos";
+import { correctionDigest } from "./tools/correction";
 import { initTopbar, renderTopbar } from "./topbar";
 import type { AppContext } from "./types";
 import { hideUnlock, initUnlock, showUnlock } from "./unlock";
@@ -92,6 +93,9 @@ const buildSignature = (next: SnowRemoteState): string =>
               (tool.result || "").length +
               ":" +
               (tool.streamingStdout || "").length +
+              ":" +
+              // 纠错 Agent 的尝试追加 / 状态与结果变化必须触发消息区重绘。
+              correctionDigest(tool.correction) +
               ":" +
               // workflow 卡片快照（节点进度）变化必须触发消息区重绘。
               workflowDigest(tool.workflow),

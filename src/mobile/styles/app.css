@@ -10,6 +10,7 @@
 
 /* 工具卡片样式按域拆分，随 app.css 一并打包；@import 必须在所有规则之前。 */
 @import "./tools/base.css";
+@import "./tools/correction.css";
 @import "./tools/diff.css";
 @import "./tools/filesystem.css";
 @import "./tools/exec.css";
@@ -2154,69 +2155,82 @@ textarea:focus-visible {
 .attachment-card.uploading {
   opacity: 0.72;
 }
-/* 待发送（Pending）消息区：输入区上方显示当前激活会话的排队消息，每条
-   可立即发送 / 撤回（会话隔离：数据随 /api/state 的激活会话切换）。 */
+/* 待发送（Pending）消息区：与桌面端一致——贴合输入框上沿的标签页式卡片，
+   行式列表（前沿图标 + 内容 + 立即发送 / 撤回），会话隔离随激活会话切换）。
+   与输入框同宽、同底色，并去掉相接处的边与圆角，拼成一体。 */
 .pending-messages {
   display: none;
-  padding: 0 2px 7px;
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 4px 10px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
   pointer-events: auto;
 }
 .pending-messages.has-items {
   display: block;
 }
-.pending-header {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 3px 5px;
-  color: var(--muted);
-  font-size: 10px;
+/* 日间模式下输入框与页面同色（见主题修正层），队列区跟随同一底色与线条色。 */
+html[data-theme="light"] .pending-messages {
+  background: #f5f6f8;
+  border-color: var(--line);
 }
-.pending-header-icon {
-  display: inline-flex;
-  flex: none;
-}
-.pending-header-icon .icn {
-  width: 11px;
-  height: 11px;
+/* 有待发送消息时，输入框去掉顶部边与顶部圆角，与上方的队列拼成同一张卡片。 */
+.pending-messages.has-items + .composer {
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 .pending-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 5px;
-  max-height: 138px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(144px, 20vh);
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
 }
 .pending-item {
+  flex-shrink: 0;
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 6px 7px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--secondary-control-bg);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 4px 2px 6px;
+  border-radius: 8px;
+  background: transparent;
+  transition: background-color 0.12s;
+}
+.pending-item:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+.pending-item-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.pending-item-icon .icn {
+  width: 13px;
+  height: 13px;
 }
 .pending-item-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 5px;
-}
-.pending-text {
-  color: var(--text);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
   white-space: pre-wrap;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  word-break: break-word;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 .pending-chip {
   display: inline-flex;
@@ -2228,6 +2242,8 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 10px;
   max-width: 100%;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 .pending-chip .icn {
   width: 10px;
@@ -2241,23 +2257,23 @@ textarea:focus-visible {
 .pending-item-actions {
   display: flex;
   flex: none;
+  align-items: center;
   gap: 4px;
-  padding-top: 1px;
 }
 .pending-action {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 50%;
   display: grid;
   place-items: center;
   background: transparent;
-  color: var(--muted);
+  color: var(--dim);
 }
 .pending-action .icn {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 .pending-action:active {
   transform: scale(0.9);
@@ -2265,7 +2281,6 @@ textarea:focus-visible {
 .pending-action.primary {
   background: var(--text);
   color: var(--bg);
-  border-color: transparent;
 }
 .pending-action:disabled {
   opacity: 0.4;

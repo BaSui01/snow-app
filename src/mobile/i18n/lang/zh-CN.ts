@@ -68,7 +68,6 @@ export const zhCN: Record<string, string> = {
   "remote.composer.send": "发送",
   "remote.composer.stop": "停止",
   "remote.composer.inputLabel": "消息",
-  "remote.pending.title": "待发送",
   "remote.pending.sendNow": "立即发送",
   "remote.pending.withdraw": "撤回",
   "remote.pending.sent": "已发送",
@@ -158,6 +157,8 @@ export const zhCN: Record<string, string> = {
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "目标",
+  "remote.appSettings.sectionTitle": "应用",
+  "remote.appSettings.toolCorrection": "自动纠错",
 
   // 附件
   "remote.attachments.maxCount": "每次最多选择 4 个附件",

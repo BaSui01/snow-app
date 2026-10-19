@@ -15,6 +15,7 @@
  */
 import type { SnowRemoteToolCall } from "../../renderer/types/remoteControl";
 import { agentsModule } from "./agents";
+import { createCorrectionPanel } from "./correction";
 import { execModule } from "./exec";
 import { filesystemModule } from "./filesystem";
 import { renderGenericTool } from "./generic";
@@ -66,8 +67,42 @@ const renderWith = (
   }
 };
 
+/**
+ * 把纠错面板挂进工具卡：优先追加到折叠体 .tc-body 末尾；卡片本身没有折叠体时
+ * 补一个 .tc-body 容器，保证与其它卡片的内边距 / 底色一致。
+ * previous 是工具级 diff 复用的旧卡片：沿用用户之前的展开状态，避免纠错进度
+ * 更新（签名变化触发重建）时面板突然收起。
+ */
+const attachCorrection = (
+  card: HTMLElement,
+  tool: SnowRemoteToolCall,
+  previous?: HTMLElement,
+): HTMLElement => {
+  if (!tool.correction) return card;
+  const panel = createCorrectionPanel(tool.correction);
+  const previousPanel = previous?.querySelector<HTMLDetailsElement>(".tc-corr");
+  if (previousPanel) panel.open = previousPanel.open;
+
+  const body = Array.from(card.children).find(
+    (child): child is HTMLElement =>
+      child instanceof HTMLElement && child.classList.contains("tc-body"),
+  );
+  if (body) {
+    body.append(panel);
+    return card;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "tc-body";
+  wrap.append(panel);
+  card.append(wrap);
+  return card;
+};
+
 /** 工具快照 → 卡片元素（永不返回 null：兜底卡保底）。 */
-export const createToolCallEl = (tool: SnowRemoteToolCall): HTMLElement => {
+export const createToolCallEl = (
+  tool: SnowRemoteToolCall,
+  previous?: HTMLElement,
+): HTMLElement => {
   const candidates: ToolCallRenderer[] = [];
   const exact = exactRenderers.get(tool.name);
   if (exact) candidates.push(exact);
@@ -77,9 +112,9 @@ export const createToolCallEl = (tool: SnowRemoteToolCall): HTMLElement => {
 
   for (const renderer of candidates) {
     const el = renderWith(renderer, tool);
-    if (el) return el;
+    if (el) return attachCorrection(el, tool, previous);
   }
-  return renderGenericTool(tool);
+  return attachCorrection(renderGenericTool(tool), tool, previous);
 };
 
 /** 相邻多个提问合并为 Tab 容器的渲染器（ops 模块实现，timeline 工具级 diff 调用）。 */

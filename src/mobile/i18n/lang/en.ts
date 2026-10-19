@@ -76,7 +76,6 @@ export const en: Record<string, string> = {
   "remote.composer.send": "Send",
   "remote.composer.stop": "Stop",
   "remote.composer.inputLabel": "Message",
-  "remote.pending.title": "Pending",
   "remote.pending.sendNow": "Send now",
   "remote.pending.withdraw": "Withdraw",
   "remote.pending.sent": "Sent",
@@ -174,6 +173,8 @@ export const en: Record<string, string> = {
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "Goal",
+  "remote.appSettings.sectionTitle": "App",
+  "remote.appSettings.toolCorrection": "Auto tool correction",
 
   // Attachments
   "remote.attachments.maxCount": "Up to 4 attachments at a time",

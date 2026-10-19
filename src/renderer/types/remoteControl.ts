@@ -1,3 +1,36 @@
+/** 纠错 Agent 的一次参数修复尝试（与桌面 ToolCorrectionAttempt 同源）。 */
+export type SnowRemoteToolCorrectionAttempt = {
+  /** 1-based 尝试序号。 */
+  index: number;
+  status: "running" | "failed" | "succeeded" | "rejected";
+  /** 纠错 Agent 修正后的参数（已脱敏）。 */
+  arguments: string;
+  /** 纠错 Agent 给出的一行修复理由。 */
+  reasoning?: string;
+  /** 修正调用执行失败时的原始错误。 */
+  error?: string;
+  /** 修正调用执行成功时的原始结果。 */
+  result?: string;
+  startedAt: number;
+  finishedAt?: number;
+};
+
+/** 工具失败后的纠错 Agent 状态（与桌面 ToolCorrectionState 同源）。 */
+export type SnowRemoteToolCorrection = {
+  status: "running" | "succeeded" | "failed" | "abandoned";
+  attempts: SnowRemoteToolCorrectionAttempt[];
+  /** 原始失败调用的参数（已脱敏）。 */
+  originalArguments: string;
+  failureCode?:
+    | "max_attempts"
+    | "model_error"
+    | "not_repairable"
+    | "rejected"
+    | "cancelled";
+  /** 模型 / 传输失败的技术细节。 */
+  failureDetail?: string;
+};
+
 export type SnowRemoteToolCall = {
   name: string;
   interactionId: string;
@@ -7,6 +40,8 @@ export type SnowRemoteToolCall = {
   result?: string;
   streamingStdout?: string;
   streamingStderr?: string;
+  /** 工具失败后由纠错 Agent 修复的过程与结果（仅参与的调用带此字段）。 */
+  correction?: SnowRemoteToolCorrection;
   userQuestion?: {
     questionId: string;
     question: string;
@@ -392,6 +427,11 @@ export type SnowRemoteState = {
   todos: SnowRemoteTodoItem[] | null;
   modes: SnowRemoteModesState;
   /**
+   * 「工具失败自动纠错」应用级开关（system_settings.tool_correction）。
+   * 与桌面 PlusMenu 的自动纠错开关同源，移动端动作面板可直接切换。
+   */
+  toolCorrection: boolean;
+  /**
    * 桌面当前生效的主题色（--accent-color 的计算值，规范化为 #rrggbb）。
    * 手机端把它应用到开关 / 选中态等强调色上，跟随 Snow APP 主题；
    * 解析失败时为空串，手机端保持自身默认。
@@ -589,6 +629,11 @@ export type SnowRemoteControlApi = {
   newChat: () => Promise<{ ok: true }>;
   /** 复用真实模式 setter 链；enabled=false 时关闭该模式。 */
   setMode: (mode: SnowRemoteModeId, enabled: boolean) => Promise<{ ok: true }>;
+  /**
+   * 切换「工具失败自动纠错」应用级开关：复用桌面 PlusMenu 的同一偏好
+   * （toolCorrectionPreference），写入 appSettings 并同步渲染层缓存。
+   */
+  setToolCorrection: (enabled: boolean) => Promise<{ ok: true }>;
   select: (
     conversationId: string,
     directoryId?: string,

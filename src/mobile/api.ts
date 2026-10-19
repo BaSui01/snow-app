@@ -218,6 +218,13 @@ export const setMode = (
     body: JSON.stringify({ mode, enabled }),
   });
 
+/** 切换「工具失败自动纠错」应用级开关（与桌面 PlusMenu 同一偏好）。 */
+export const setToolCorrection = (enabled: boolean): Promise<{ ok: true }> =>
+  request("/api/tool-correction", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+
 /**
  * 会话待办变更（add / update / delete）：复用桌面真实 todo-todo-manage 工具。
  * 变更后的最新列表随 /api/state 的 todos 字段回传，调用方刷新快照即可。

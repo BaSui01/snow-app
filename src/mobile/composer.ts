@@ -6,6 +6,7 @@ import {
   abortRun,
   discardAttachment,
   setMode,
+  setToolCorrection,
   sendMessage,
   uploadAttachment,
 } from "./api";
@@ -213,7 +214,7 @@ const modeLabel = (mode: SnowRemoteModeId): string => {
   }
 };
 
-const renderModeActions = (state: SnowRemoteState | null): void => {
+const renderActionToggles = (state: SnowRemoteState | null): void => {
   const modes = state?.modes;
   MODE_IDS.forEach((mode) => {
     const button = document.querySelector<HTMLElement>(
@@ -235,6 +236,19 @@ const renderModeActions = (state: SnowRemoteState | null): void => {
       button.removeAttribute("title");
     }
   });
+
+  // 应用级开关（自动纠错）：不受会话运行状态锁定。
+  const correctionButton = document.querySelector<HTMLElement>(
+    '[data-action="tool-correction"]',
+  );
+  const correctionToggle = correctionButton?.querySelector<HTMLElement>(
+    '[data-setting-toggle="toolCorrection"]',
+  );
+  if (correctionButton && correctionToggle) {
+    const enabled = Boolean(state?.toolCorrection);
+    correctionButton.setAttribute("aria-pressed", String(enabled));
+    correctionToggle.classList.toggle("on", enabled);
+  }
 };
 
 /** 已结束的子会话：子代理（含 cancelled）与 Workflow 节点（completed / failed）。 */
@@ -334,7 +348,7 @@ export const renderComposer = (next: SnowRemoteState | null): void => {
   const stop = $<HTMLButtonElement>("stopButton");
   stop.hidden = !next?.isStreaming;
   stop.disabled = Boolean(next?.isAborting);
-  renderModeActions(next);
+  renderActionToggles(next);
   renderAttachments();
 };
 
@@ -423,9 +437,10 @@ const handleActionClick = async (
     action === "commands" ||
     action === "theme";
   const modeAction = isModeAction(action);
+  // 开关类动作（模式 / 应用开关）不关闭动作面板，方便连续切换。
+  const toggleAction = modeAction || action === "tool-correction";
   if (panelAction) setActionSheetOpen(false);
-  // 模式开关不关闭动作面板，方便连续切换多个模式。
-  else if (!modeAction) closeOverlays(false);
+  else if (!toggleAction) closeOverlays(false);
 
   if (action === "image") {
     $<HTMLInputElement>("imagePicker").click();
@@ -471,6 +486,12 @@ const handleActionClick = async (
         name: modeLabel(action),
       }),
     );
+    await ctx.refresh(false);
+    return;
+  }
+  if (action === "tool-correction") {
+    await setToolCorrection(!latestState?.toolCorrection);
+    showNotice(t("remote.notice.settingsUpdated"));
     await ctx.refresh(false);
   }
 };

@@ -2003,6 +2003,37 @@ async fn handle_api(
         return Ok(json_response(StatusCode::OK, &value, Vec::new()));
     }
 
+    // 应用级开关：工具失败自动纠错（与桌面 PlusMenu 同一偏好源）。
+    if method == Method::POST && path == "/api/tool-correction" {
+        if !is_json_request(headers) {
+            return Ok(json_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                &json!({ "error": "Content-Type 必须是 application/json" }),
+                Vec::new(),
+            ));
+        }
+        let payload = read_json_body(body.take()).await?;
+        let enabled = match payload.get("enabled") {
+            Some(Value::Bool(value)) => *value,
+            Some(_) => {
+                return Ok(json_response(
+                    StatusCode::BAD_REQUEST,
+                    &json!({ "error": "enabled 必须是布尔值" }),
+                    Vec::new(),
+                ))
+            }
+            None => {
+                return Ok(json_response(
+                    StatusCode::BAD_REQUEST,
+                    &json!({ "error": "enabled 必填且必须是布尔值" }),
+                    Vec::new(),
+                ))
+            }
+        };
+        let value = bridge_call("setToolCorrection", json!([enabled])).await?;
+        return Ok(json_response(StatusCode::OK, &value, Vec::new()));
+    }
+
     if method == Method::POST && path == "/api/command" {
         if !is_json_request(headers) {
             return Ok(json_response(

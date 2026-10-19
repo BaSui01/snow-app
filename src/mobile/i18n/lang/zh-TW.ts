@@ -63,7 +63,6 @@ export const zhTW: Record<string, string> = {
   "remote.composer.send": "傳送",
   "remote.composer.stop": "停止",
   "remote.composer.inputLabel": "訊息",
-  "remote.pending.title": "待傳送",
   "remote.pending.sendNow": "立即傳送",
   "remote.pending.withdraw": "撤回",
   "remote.pending.sent": "已傳送",
@@ -153,6 +152,8 @@ export const zhTW: Record<string, string> = {
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "目標",
+  "remote.appSettings.sectionTitle": "應用",
+  "remote.appSettings.toolCorrection": "自動糾錯",
 
   // 附件
   "remote.attachments.maxCount": "每次最多選擇 4 個附件",

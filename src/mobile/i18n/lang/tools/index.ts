@@ -10,6 +10,7 @@
  */
 import * as agents from "./agents";
 import * as common from "./common";
+import * as correction from "./correction";
 import * as diff from "./diff";
 import * as exec from "./exec";
 import * as filesystem from "./filesystem";
@@ -28,6 +29,7 @@ const MODULES: { name: string; ns: Record<string, unknown> }[] = [
   { name: "search", ns: search as unknown as Record<string, unknown> },
   { name: "web", ns: web as unknown as Record<string, unknown> },
   { name: "agents", ns: agents as unknown as Record<string, unknown> },
+  { name: "correction", ns: correction as unknown as Record<string, unknown> },
   { name: "common", ns: common as unknown as Record<string, unknown> },
 ];
 

@@ -23,6 +23,10 @@ import type {
   ToolCallInfo,
 } from "./mainContent/chatMessages/utils/conversationTypes";
 import {
+  ensureToolCorrectionPreference,
+  setToolCorrectionPreference,
+} from "./mainContent/chatMessages/utils/toolCorrectionPreference";
+import {
   readLiveRemoteControlChatInput,
   readRemoteControlChatInput,
   type SnowRemoteChatInputPublication,
@@ -55,6 +59,7 @@ import type {
   SnowRemoteTodoItem,
   SnowRemoteTodoStatus,
   SnowRemoteToolCall,
+  SnowRemoteToolCorrection,
   SnowRemoteTokenUsage,
 } from "../types/remoteControl";
 
@@ -319,6 +324,33 @@ const toRemotePreview = (content: string | undefined): string => {
   return truncateTo(preview, 500) ?? "";
 };
 
+/**
+ * 纠错状态 → 远程 DTO：与工具参数 / 结果同一脱敏规则，修正参数、理由、
+ * 错误与结果都要过一遍 redactSensitiveToolText 才能跨远控边界。
+ */
+const toRemoteCorrection = (
+  correction: ToolCallInfo["correction"],
+): SnowRemoteToolCorrection | undefined => {
+  if (!correction) return undefined;
+  return {
+    status: correction.status,
+    originalArguments:
+      redactSensitiveToolText(correction.originalArguments) ?? "",
+    failureCode: correction.failureCode,
+    failureDetail: redactSensitiveToolText(correction.failureDetail),
+    attempts: correction.attempts.map((attempt) => ({
+      index: attempt.index,
+      status: attempt.status,
+      arguments: redactSensitiveToolText(attempt.arguments) ?? "",
+      reasoning: redactSensitiveToolText(attempt.reasoning),
+      error: redactSensitiveToolText(attempt.error),
+      result: redactSensitiveToolText(attempt.result),
+      startedAt: attempt.startedAt,
+      finishedAt: attempt.finishedAt,
+    })),
+  };
+};
+
 const toRemoteToolCall = (toolCall: ToolCallInfo): SnowRemoteToolCall => ({
   name: toolCall.name,
   interactionId: toolCall.interactionId,
@@ -331,6 +363,7 @@ const toRemoteToolCall = (toolCall: ToolCallInfo): SnowRemoteToolCall => ({
   result: redactSensitiveToolText(toolCall.result),
   streamingStdout: redactSensitiveToolText(toolCall.streamingStdout),
   streamingStderr: redactSensitiveToolText(toolCall.streamingStderr),
+  correction: toRemoteCorrection(toolCall.correction),
   userQuestion: toolCall.userQuestion
     ? {
         questionId: toolCall.userQuestion.questionId,
@@ -1893,6 +1926,9 @@ export const RemoteControlBridge = ({
             yolo: current.conversation.yoloMode,
             lite: current.conversation.liteMode,
           },
+          // 应用级开关：与桌面 PlusMenu 的自动纠错同源（模块级缓存，
+          // 桌面或手机任一侧切换后都即时可见）。
+          toolCorrection: await ensureToolCorrectionPreference(),
           theme: { accentColor: resolveThemeAccentColor() },
           chatInput: chatInputPublication
             ? toRemoteChatInput(chatInputPublication)
@@ -2181,6 +2217,16 @@ export const RemoteControlBridge = ({
           default:
             throw new Error("不支持的模式");
         }
+        return { ok: true };
+      },
+
+      // 工具失败自动纠错：应用级设置，复用桌面 PlusMenu 的偏好写入链路
+      // （toolCorrectionPreference 同步缓存 + appSettings 持久化）。
+      setToolCorrection: async (enabled): Promise<{ ok: true }> => {
+        if (typeof enabled !== "boolean") {
+          throw new Error("自动纠错开关必须是布尔值");
+        }
+        await setToolCorrectionPreference(enabled);
         return { ok: true };
       },
 

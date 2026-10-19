@@ -18,6 +18,7 @@ import { showNotice } from "./notice";
 import { openImageLightbox } from "./overlays";
 import { openRollbackSheet } from "./rollback";
 import { createAskGroupEl, createToolCallEl } from "./tools";
+import { correctionDigest } from "./tools/correction";
 import {
   attachMessageNode,
   detachMessageNode,
@@ -52,7 +53,8 @@ import {
  *
  * 消息模型：
  * - knownList 本地单调累积当前会话的全部已知消息（state 的消息窗口 +
- *   通过「加载更早」分页拿到的历史），并处理桌面端用户消息落库后
+ *   通过「加载更早」分页拿到的历史），合并时顺序以快照窗口为准（桌面向前
+ *   补页会把更早的消息插到窗口头部，见 mergeKnown），并处理桌面端用户消息落库后
  *   「前端临时 id → 数据库 snowflake id」的原地迁移（见
  *   reconcileRemappedUserIds），避免同一消息以新旧两个 id 重复出现；
  * - 「是否还有更早记录」以桌面会话的 DB 分页状态（state.hasOlderMessages）
@@ -260,6 +262,8 @@ const toolSignature = (tool: SnowRemoteToolCall): string =>
     (tool.result || "").length,
     (tool.streamingStdout || "").length,
     (tool.streamingStderr || "").length,
+    // 纠错 Agent 的尝试 / 状态 / 结果变化必须触发工具卡重建。
+    correctionDigest(tool.correction),
     // workflow 卡片快照（节点进度）参与签名：快照变化必须让消息签名变化，
     // 否则块级 diff 会被消息签名短路，卡片进度冻结。
     workflowDigest(tool.workflow),
@@ -329,7 +333,7 @@ type ToolListEntry = {
 const singleToolEntry = (tool: SnowRemoteToolCall): ToolListEntry => ({
   id: tool.interactionId,
   sig: toolSignature(tool),
-  create: () => createToolCallEl(tool),
+  create: (old) => createToolCallEl(tool, old),
 });
 
 /**
@@ -1086,23 +1090,57 @@ const reconcileRemappedUserIds = (incoming: SnowRemoteMessage[]): void => {
   }
 };
 
-/** state 窗口与本地已知消息合并：同 id 原地更新，新 id 追加到末尾。 */
+/**
+ * state 窗口与本地已知消息合并（同 id 取快照中的新值），顺序以快照窗口为准。
+ *
+ * 桌面下发的窗口是会话消息的连续尾段，但它不只在末尾增长：桌面切换会话后
+ * 若视口未填满会自动向前补页，新页插在窗口头部。若把新 id 一律追加到末尾，
+ * 这些更早的消息会被排到最后（乱序），knownList[0] 也不再是最早一条，
+ * 「加载更早」的分页锚点随之失效。
+ *
+ * 合并规则：
+ * - 本地首个落在窗口内的消息之前的部分原样保留为前缀（移动端自己翻页拿到
+ *   的更早历史、已滑出窗口的旧消息）；
+ * - 其后按窗口顺序排列；
+ * - 本地已知但窗口中已不存在的消息（单调累积保留）跟随它在本地的前一条
+ *   窗口内消息，维持原有相对位置；
+ * - 本地没有任何消息落在窗口内时，窗口整体追加到末尾。
+ */
 const mergeKnown = (incoming: SnowRemoteMessage[]): void => {
   if (!incoming.length) return;
   reconcileRemappedUserIds(incoming);
-  const indexById = new Map<string, number>();
-  knownList.forEach((item, index) => indexById.set(item.id, index));
-  for (const message of incoming) {
-    if (!isRenderableMessage(message)) continue;
-    const index = indexById.get(message.id);
-    if (index === undefined) {
-      knownList.push(message);
-      knownIds.add(message.id);
-      indexById.set(message.id, knownList.length - 1);
-    } else {
-      knownList[index] = message;
+  const windowList = incoming.filter(isRenderableMessage);
+  if (!windowList.length) return;
+  const windowIds = new Set(windowList.map((message) => message.id));
+  const firstHit = knownList.findIndex((message) => windowIds.has(message.id));
+  const merged =
+    firstHit === -1 ? [...knownList] : knownList.slice(0, firstHit);
+  const trailing = new Map<string, SnowRemoteMessage[]>();
+  if (firstHit !== -1) {
+    let anchorId = knownList[firstHit].id;
+    for (let index = firstHit + 1; index < knownList.length; index += 1) {
+      const message = knownList[index];
+      if (windowIds.has(message.id)) {
+        anchorId = message.id;
+        continue;
+      }
+      const group = trailing.get(anchorId);
+      if (group) group.push(message);
+      else trailing.set(anchorId, [message]);
     }
   }
+  const placed = new Set<string>();
+  for (const message of windowList) {
+    // 异常数据（窗口内重复 id）：只保留首次出现的位置。
+    if (placed.has(message.id)) continue;
+    placed.add(message.id);
+    merged.push(message);
+    const group = trailing.get(message.id);
+    if (group) merged.push(...group);
+  }
+  knownList = merged;
+  knownIds.clear();
+  for (const message of merged) knownIds.add(message.id);
 };
 
 // ── 公共入口 ──────────────────────────────────────────────────────────────

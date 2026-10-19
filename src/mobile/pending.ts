@@ -33,7 +33,7 @@ const chipHtml = (icon: MobileIconName, name: string, title?: string): string =>
 /** 分段 → 展示 HTML：文本按原文（保留换行）显示，其余渲染为 chip。 */
 const blockHtml = (block: SnowRemoteContentBlock): string => {
   if (block.type === "text") {
-    return `<span class="pending-text">${escapeHtml(block.text)}</span>`;
+    return escapeHtml(block.text);
   }
   if (block.type === "image") {
     return chipHtml("image", block.name || t("remote.message.imageAlt"));
@@ -74,18 +74,17 @@ export const renderPending = (next: SnowRemoteState | null): void => {
       const withdrawLabel = escapeHtml(t("remote.pending.withdraw"));
       return (
         `<li class="pending-item">` +
-        `<div class="pending-item-body">${body}</div>` +
+        `<span class="pending-item-icon">${iconMarkup("list-end")}</span>` +
+        `<span class="pending-item-body">${body}</span>` +
         `<div class="pending-item-actions">` +
         `<button class="pending-action primary" type="button" data-pending-action="send-now" data-pending-index="${index}" aria-label="${sendLabel}" title="${sendLabel}">${iconMarkup("arrow-up")}</button>` +
-        `<button class="pending-action" type="button" data-pending-action="withdraw" data-pending-index="${index}" aria-label="${withdrawLabel}" title="${withdrawLabel}">${iconMarkup("trash-2")}</button>` +
+        `<button class="pending-action" type="button" data-pending-action="withdraw" data-pending-index="${index}" aria-label="${withdrawLabel}" title="${withdrawLabel}">${iconMarkup("undo-2")}</button>` +
         `</div></li>`
       );
     })
     .join("");
   host.className = "pending-messages has-items";
-  host.innerHTML =
-    `<div class="pending-header"><span class="pending-header-icon">${iconMarkup("clock")}</span><span>${escapeHtml(t("remote.pending.title"))}</span></div>` +
-    `<ul class="pending-list">${rows}</ul>`;
+  host.innerHTML = `<ul class="pending-list">${rows}</ul>`;
 };
 
 export const initPending = (ctx: AppContext): void => {

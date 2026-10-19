@@ -1,0 +1,344 @@
+/*
+ * 工具失败纠错 Agent 面板样式（styles/tools/correction.css）。
+ *
+ * DOM 契约见 src/mobile/tools/correction.ts 顶部注释；面板挂在工具卡
+ * .tc-body 末尾（无折叠体时由 tools/index.ts 补一层 .tc-body）。
+ * 状态色沿用 app.css 的主题变量：--blue / --green / --red / --muted / --dim。
+ */
+
+.tc-corr {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+}
+
+/* ── 头部 ─────────────────────────────────────────────────────────────── */
+.tc-corr > summary.tc-corr-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 9px;
+  list-style: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tc-corr > summary.tc-corr-head::-webkit-details-marker {
+  display: none;
+}
+.tc-corr-icon,
+.tc-corr-node-icon,
+.tc-corr-reason-icon,
+.tc-corr-replaced-icon,
+.tc-corr-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+.tc-corr .icn {
+  width: 12px;
+  height: 12px;
+}
+.tc-corr-icon > .icn {
+  width: 13px;
+  height: 13px;
+}
+.tc-corr--running .tc-corr-icon {
+  color: var(--blue);
+}
+.tc-corr--succeeded .tc-corr-icon {
+  color: var(--green);
+}
+.tc-corr--failed .tc-corr-icon {
+  color: var(--red);
+}
+.tc-corr-title {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-weight: 600;
+}
+.tc-corr-subtitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tc-corr-state {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.tc-corr-state--running {
+  background: rgba(120, 168, 255, 0.14);
+  color: var(--blue);
+}
+.tc-corr-state--succeeded {
+  background: var(--green-dim);
+  color: var(--green);
+}
+.tc-corr-state--failed {
+  background: var(--red-dim);
+  color: var(--red);
+}
+.tc-corr-state--abandoned {
+  color: var(--dim);
+}
+.tc-corr-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tc-corr-chevron {
+  margin-left: auto;
+  transition: transform 0.18s ease;
+}
+.tc-corr[open] > .tc-corr-head > .tc-corr-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── 折叠体 ───────────────────────────────────────────────────────────── */
+.tc-corr-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 9px 9px;
+}
+
+.tc-corr-detail {
+  min-width: 0;
+}
+.tc-corr-detail > summary.tc-corr-detail-summary {
+  width: fit-content;
+  padding: 1px 4px;
+  border-radius: 4px;
+  list-style: none;
+  color: var(--dim);
+  font-size: 10.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tc-corr-detail > summary.tc-corr-detail-summary::-webkit-details-marker {
+  display: none;
+}
+.tc-corr-detail[open] > summary.tc-corr-detail-summary {
+  color: var(--muted);
+}
+.tc-corr-detail > .tc-corr-block {
+  margin-top: 5px;
+}
+
+.tc-corr-block {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.16);
+}
+.tc-corr-k {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 600;
+}
+.tc-corr-pre {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  color: #c3c9d3;
+  font:
+    10.5px/1.55 "SFMono-Regular",
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tc-corr-pre--error {
+  max-height: 120px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 114, 123, 0.28);
+  border-radius: 6px;
+  background: rgba(255, 114, 123, 0.08);
+  color: #ffb3b9;
+}
+.tc-corr-pre--muted {
+  color: var(--dim);
+}
+
+/* ── 尝试树 ───────────────────────────────────────────────────────────── */
+.tc-corr-tree {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 0 2px 11px;
+  list-style: none;
+}
+.tc-corr-tree::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: 1px;
+  background: var(--line);
+}
+.tc-corr-node {
+  position: relative;
+  min-width: 0;
+}
+.tc-corr-node::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: -9px;
+  width: 9px;
+  height: 1px;
+  background: var(--line);
+}
+.tc-corr-node-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.tc-corr-node--running .tc-corr-node-icon {
+  color: var(--blue);
+}
+.tc-corr-node--succeeded .tc-corr-node-icon {
+  color: var(--green);
+}
+.tc-corr-node--failed .tc-corr-node-icon {
+  color: var(--red);
+}
+.tc-corr-node--rejected .tc-corr-node-icon {
+  color: var(--amber);
+}
+.tc-corr-node-title {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 11px;
+}
+.tc-corr-attempt-state {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+.tc-corr-attempt-state--running {
+  color: var(--blue);
+}
+.tc-corr-attempt-state--succeeded {
+  color: var(--green);
+}
+.tc-corr-attempt-state--failed {
+  color: var(--red);
+}
+.tc-corr-attempt-state--rejected {
+  color: var(--amber);
+}
+.tc-corr-time {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dim);
+  font-size: 9.5px;
+}
+
+.tc-corr-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: 4px 0 0 17px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tc-corr-reason-icon {
+  margin-top: 2px;
+}
+.tc-corr-reason-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tc-corr-node > .tc-corr-pre {
+  margin-top: 5px;
+  margin-left: 17px;
+}
+.tc-corr-node > .tc-corr-detail {
+  margin-top: 4px;
+  margin-left: 17px;
+}
+
+/* ── 失败原因 / 已替换提示 ────────────────────────────────────────────── */
+.tc-corr-failure {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--red-dim);
+  color: #ffb3b9;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.tc-corr-replaced {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--green-dim);
+  color: var(--green);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tc-corr-replaced-icon {
+  color: var(--green);
+}
+.tc-corr-replaced-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── 浅色主题 ─────────────────────────────────────────────────────────── */
+html[data-theme="light"] .tc-corr {
+  background: #ffffff;
+}
+html[data-theme="light"] .tc-corr-block {
+  background: #f0f2f5;
+}
+html[data-theme="light"] .tc-corr-pre {
+  color: #28364f;
+}
+html[data-theme="light"] .tc-corr-pre--error {
+  background: rgba(220, 38, 38, 0.06);
+  color: #b91c1c;
+}
+html[data-theme="light"] .tc-corr-failure {
+  color: #b91c1c;
+}
+html[data-theme="light"] .tc-corr-state,
+html[data-theme="light"] .tc-corr-attempt-state {
+  background: rgba(15, 23, 42, 0.05);
+}

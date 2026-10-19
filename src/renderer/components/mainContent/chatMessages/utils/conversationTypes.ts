@@ -192,6 +192,9 @@ export type ChatConversationMessage = {
   isThinkingActive?: boolean;
   timestamp: string;
   status?: "sending" | "sent" | "incomplete" | "error";
+  /** 自动执行资格独立于展示状态；仅真实成功终态授予，取消后不可恢复。
+   *  不单独持久化，历史加载从原始响应 status 重新计算。 */
+  htmlPreviewEligible?: boolean;
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
@@ -981,6 +984,9 @@ export type UseChatConversationResult = {
   /** 用户显式点击「新建会话」后为 true；发送首条消息或选中其他会话时复位。 */
   newChatRequested: boolean;
   conversationDirectoryId: string | undefined;
+  /** Per-session execution binding; undefined until this session's runtime is ready. */
+  conversationWorktreeMode: boolean | undefined;
+  conversationWorktreeId: string | null | undefined;
   tokenUsage: TokenUsage | null;
   /** Real-time token probe for the current agent-loop iteration.
    *  Updated on every streaming chunk by the Rust backend; reset to 0

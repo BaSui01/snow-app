@@ -1,220 +1,120 @@
-/* ===== highlight.js theme — Light (AI Message + File Viewer + Compaction) ===== */
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs {
-  color: var(--text-primary);
+/* Shared highlight.js roles, scoped to source-code roots in every renderer. */
+.hljs {
+  color: var(--syntax-text);
   background: transparent;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-comment,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-quote {
-  color: #6b7280;
-  font-style: italic;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-keyword,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-tag,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-literal,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-section,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-link {
-  color: #8250df;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-function
-  .hljs-keyword {
-  color: #8250df;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-subst {
-  color: var(--text-primary);
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-string,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-attr,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-meta-string {
-  color: #0a3069;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-number,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-symbol,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-bullet,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-addition {
-  color: #0550ae;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-title,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-title.function_,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-name {
-  color: #6639ba;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-attribute,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-variable,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-template-variable {
-  color: #953800;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-built_in,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-type,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-class
-  .hljs-title {
-  color: #953800;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-tag {
-  color: #116329;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-class,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-id {
-  color: #953800;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-deletion {
-  color: #82071e;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-regexp {
-  color: #0a3069;
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-params {
-  color: var(--text-primary);
-}
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .hljs-meta {
-  color: #6b7280;
 }
 
-/* ===== highlight.js theme — Dark (AI Message + File Viewer + Compaction) ===== */
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs {
-  color: var(--text-primary);
-  background: transparent;
-}
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-comment,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-quote {
-  color: #8b949e;
+.hljs .hljs-comment,
+.hljs .hljs-quote {
+  color: var(--syntax-comment);
   font-style: italic;
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-keyword,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-tag,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-literal,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-section,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-link {
-  color: #bc8cff;
+
+.hljs .hljs-keyword,
+.hljs .hljs-literal,
+.hljs .hljs-operator {
+  color: var(--syntax-keyword);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-function
-  .hljs-keyword {
-  color: #bc8cff;
+
+.hljs .hljs-subst,
+.hljs .hljs-params,
+.hljs .hljs-punctuation {
+  color: var(--syntax-text);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-subst {
-  color: var(--text-primary);
+
+.hljs .hljs-string,
+.hljs .hljs-meta-string,
+.hljs .hljs-template-tag {
+  color: var(--syntax-string);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-string,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-attr,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-meta-string {
-  color: #a5d6ff;
+
+.hljs .hljs-number {
+  color: var(--syntax-number);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-number,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-symbol,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-bullet,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-addition {
-  color: #79c0ff;
+
+.hljs .hljs-symbol,
+.hljs .hljs-bullet,
+.hljs .hljs-char.escape_ {
+  color: var(--syntax-symbol);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-title,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-title.function_,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-name {
-  color: #d2a8ff;
+
+.hljs .hljs-title,
+.hljs .hljs-title.function_ {
+  color: var(--syntax-function);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-attribute,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-variable,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-template-variable {
-  color: #ffa657;
+
+.hljs .hljs-type,
+.hljs .hljs-built_in,
+.hljs .hljs-title.class_,
+.hljs .hljs-class .hljs-title {
+  color: var(--syntax-type);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-built_in,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-type,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-class
-  .hljs-title {
-  color: #ffa657;
+
+.hljs .hljs-tag,
+.hljs .hljs-name,
+.hljs .hljs-tag .hljs-name,
+.hljs .hljs-selector-tag {
+  color: var(--syntax-tag);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-tag {
-  color: #7ee787;
+
+.hljs .hljs-attr,
+.hljs .hljs-attribute,
+.hljs .hljs-property {
+  color: var(--syntax-attribute);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-class,
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-selector-id {
-  color: #ffa657;
+
+.hljs .hljs-variable,
+.hljs .hljs-template-variable {
+  color: var(--syntax-variable);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-deletion {
-  color: #ffa198;
+
+.hljs .hljs-meta {
+  color: var(--syntax-meta);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-regexp {
-  color: #a5d6ff;
+
+.hljs .hljs-meta .hljs-keyword {
+  color: var(--syntax-keyword);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-params {
-  color: var(--text-primary);
+
+.hljs .hljs-meta .hljs-string {
+  color: var(--syntax-string);
 }
-:root[data-theme="dark"]
-  :is(.ai-message, .file-viewer-code, .context-compaction-markdown)
-  .hljs-meta {
-  color: #8b949e;
+
+.hljs .hljs-regexp {
+  color: var(--syntax-regexp);
+}
+
+.hljs .hljs-selector-class,
+.hljs .hljs-selector-id,
+.hljs .hljs-selector-attr,
+.hljs .hljs-selector-pseudo {
+  color: var(--syntax-selector);
+}
+
+.hljs .hljs-addition {
+  color: var(--syntax-addition);
+  background: var(--syntax-addition-bg);
+}
+
+.hljs .hljs-deletion {
+  color: var(--syntax-deletion);
+  background: var(--syntax-deletion-bg);
+}
+
+.hljs .hljs-section {
+  color: var(--syntax-function);
+  font-weight: bold;
+}
+
+.hljs .hljs-link {
+  color: var(--syntax-function);
+  text-decoration: underline;
+}
+
+.hljs .hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs .hljs-strong {
+  font-weight: bold;
 }

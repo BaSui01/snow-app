@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { GitFork, Zap } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { ChatRunSummary } from "./ChatRunSummary";
@@ -6,6 +13,14 @@ import { VirtualizedMessage } from "./VirtualizedMessage";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
+import {
+  directoryIdToPath,
+  resolveConversationWorkspacePath,
+} from "../utils/conversationHelpers";
+import {
+  createChatFileArtifactCollector,
+  type ChatFileArtifact,
+} from "./chatFileArtifacts";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
@@ -33,6 +48,11 @@ export const ChatMessageList = ({
   const { locale, t } = useI18n();
   const {
     activeConversationId,
+    conversationDirectoryId,
+    conversationWorktreeMode,
+    conversationWorktreeId,
+    isLoadingInitialHistory,
+    sessionViewKey,
     handleForkConversation,
     handleSelectConversation,
     handleRollback,
@@ -51,6 +71,106 @@ export const ChatMessageList = ({
     conversationTtftSumMs,
     conversationRequestCount,
   } = useChatConversationContext();
+
+  const artifactBinding = useMemo(
+    () => ({
+      conversationId: activeConversationId,
+      directoryId: conversationDirectoryId,
+      worktreeMode: conversationWorktreeMode,
+      worktreeId: conversationWorktreeId,
+      ready:
+        Boolean(activeConversationId && conversationDirectoryId) &&
+        conversationWorktreeMode !== undefined &&
+        !isLoadingInitialHistory,
+    }),
+    [
+      activeConversationId,
+      conversationDirectoryId,
+      conversationWorktreeMode,
+      conversationWorktreeId,
+      isLoadingInitialHistory,
+      sessionViewKey,
+    ],
+  );
+  const [resolvedArtifactWorkspace, setResolvedArtifactWorkspace] = useState<{
+    binding: typeof artifactBinding;
+    path: string | undefined;
+  }>();
+  useEffect(() => {
+    if (!artifactBinding.ready || !artifactBinding.conversationId) return;
+    let cancelled = false;
+    void resolveConversationWorkspacePath(
+      artifactBinding.conversationId,
+      artifactBinding.directoryId,
+      directoryIdToPath(artifactBinding.directoryId),
+      artifactBinding.worktreeMode,
+      artifactBinding.worktreeId,
+    ).then(
+      (path) => {
+        if (!cancelled)
+          setResolvedArtifactWorkspace({ binding: artifactBinding, path });
+      },
+      () => {
+        // Invalid/missing WorkTree bindings must never fall back to the project root.
+        if (!cancelled)
+          setResolvedArtifactWorkspace({
+            binding: artifactBinding,
+            path: undefined,
+          });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [artifactBinding]);
+  // Invalidate synchronously on a switch, before passive effects can read an old file.
+  const artifactWorkspace =
+    resolvedArtifactWorkspace?.binding === artifactBinding
+      ? resolvedArtifactWorkspace.path
+      : undefined;
+  const collectArtifacts = useMemo(
+    () => createChatFileArtifactCollector(),
+    [artifactBinding],
+  );
+  const previousArtifacts = useRef(
+    new Map<string, readonly ChatFileArtifact[]>(),
+  );
+  const artifactsByOwner = useMemo(() => {
+    const grouped = new Map<string, ChatFileArtifact[]>();
+    // Even absolute paths are withheld until the session's execution binding is known.
+    for (const artifact of artifactWorkspace
+      ? collectArtifacts(messages, artifactWorkspace)
+      : []) {
+      const list = grouped.get(artifact.ownerId) ?? [];
+      list.push(artifact);
+      grouped.set(artifact.ownerId, list);
+    }
+    const stable = new Map<string, readonly ChatFileArtifact[]>();
+    for (const [owner, list] of grouped) {
+      const previous = previousArtifacts.current.get(owner);
+      stable.set(
+        owner,
+        previous &&
+          previous.length === list.length &&
+          previous.every((artifact, index) => {
+            const next = list[index];
+            return (
+              artifact.key === next.key &&
+              artifact.path === next.path &&
+              artifact.ownerId === next.ownerId &&
+              artifact.revision === next.revision &&
+              artifact.automatic === next.automatic &&
+              artifact.blocked === next.blocked &&
+              artifact.isSsh === next.isSsh
+            );
+          })
+          ? previous
+          : list,
+      );
+    }
+    previousArtifacts.current = stable;
+    return stable;
+  }, [messages, artifactWorkspace, collectArtifacts]);
 
   const lastAssistantMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -337,6 +457,8 @@ export const ChatMessageList = ({
         virtualization={virtualization}
         previouslyRendered={Boolean(message.idRemappedFrom)}
         message={message}
+        fileArtifacts={artifactsByOwner.get(message.id)}
+        artifactWorkspace={artifactWorkspace}
         isStreaming={isStreaming}
         isAborting={isAborting}
         lastAssistantMessageId={lastAssistantMessageId}

@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- html-artifact-layout -->
+  </head>
+  <body class="html-artifact-carrier">
+    <script>
+      (() => {
+        const ZOOM_TYPE = "snowapp-html-artifact-zoom";
+        const ZOOM_STATE_TYPE = "snowapp-html-artifact-zoom-state";
+        const ZOOM_STEP = 0.1;
+        const ZOOM_MIN = 0.25;
+        const ZOOM_MAX = 4;
+        const SCALE_PRECISION = 1000;
+        // Fit modes only ever shrink: a document that already fits keeps its own scale.
+        const MAX_FIT = 1;
+        let mode = "page";
+        let manual = 1;
+        let pending = 0;
+        let observer;
+        let zoomListener = null;
+
+        const clamp = (value) => Math.min(Math.max(value, ZOOM_MIN), ZOOM_MAX);
+
+        // `zoom` scales the layout viewport with it, so measuring at zoom 1 yields the
+        // document's own unscaled size; the applied scale maps that size onto the frame.
+        const naturalSize = () => {
+          const root = document.documentElement;
+          const previous = root.style.zoom;
+          root.style.zoom = "1";
+          const size = { width: root.scrollWidth, height: root.scrollHeight };
+          root.style.zoom = previous;
+          return size;
+        };
+
+        const targetZoom = () => {
+          if (mode === "manual") return manual;
+          const size = naturalSize();
+          const width = window.innerWidth / Math.max(size.width, 1);
+          const height = window.innerHeight / Math.max(size.height, 1);
+          return Math.min(
+            MAX_FIT,
+            mode === "width" ? width : Math.min(width, height),
+          );
+        };
+
+        const apply = () => {
+          pending = 0;
+          if (!document.body) return;
+          const root = document.documentElement;
+          const scale =
+            Math.round(clamp(targetZoom()) * SCALE_PRECISION) / SCALE_PRECISION;
+          const next = String(scale);
+          if (root.style.zoom !== next) root.style.zoom = next;
+          // Only bounded zoom state crosses back; no document content or host API is exposed.
+          parent.postMessage(
+            { type: ZOOM_STATE_TYPE, mode, factor: scale },
+            "*",
+          );
+        };
+
+        const schedule = () => {
+          if (!pending) pending = requestAnimationFrame(apply);
+        };
+
+        // Every write replaces the document and drops its listeners, so the carrier
+        // re-registers the zoom channel and the observed root after each write.
+        const bind = () => {
+          if (zoomListener) window.removeEventListener("message", zoomListener);
+          zoomListener = (event) => {
+            if (
+              event.source !== parent ||
+              !event.data ||
+              event.data.type !== ZOOM_TYPE
+            ) {
+              return;
+            }
+            if (event.data.action === "in" || event.data.action === "out") {
+              // Resolve relative steps here, against the live fit scale. Queued clicks
+              // also compose here rather than racing a stale renderer readout.
+              const delta = event.data.action === "in" ? ZOOM_STEP : -ZOOM_STEP;
+              manual =
+                Math.round(clamp(clamp(targetZoom()) + delta) * 100) / 100;
+              mode = "manual";
+            } else {
+              if (
+                event.data.mode !== "width" &&
+                event.data.mode !== "page" &&
+                event.data.mode !== "manual"
+              )
+                return;
+              if (
+                typeof event.data.factor !== "number" ||
+                !Number.isFinite(event.data.factor)
+              )
+                return;
+              mode = event.data.mode;
+              manual = clamp(event.data.factor);
+            }
+            schedule();
+          };
+          window.addEventListener("message", zoomListener);
+          window.removeEventListener("resize", schedule);
+          window.addEventListener("resize", schedule);
+          observer?.disconnect();
+          observer = new ResizeObserver(schedule);
+          observer.observe(document.documentElement);
+          schedule();
+        };
+
+        bind();
+
+        window.addEventListener("message", (event) => {
+          if (
+            event.source !== parent ||
+            !event.data ||
+            event.data.type !== "snow-html-artifact" ||
+            typeof event.data.source !== "string"
+          ) {
+            return;
+          }
+
+          document.title =
+            typeof event.data.title === "string" ? event.data.title : "";
+          document.open();
+          document.write(event.data.source);
+          document.close();
+          bind();
+        });
+      })();
+    </script>
+  </body>
+</html>

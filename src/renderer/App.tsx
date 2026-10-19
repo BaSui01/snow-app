@@ -528,11 +528,77 @@ export const App = (): React.JSX.Element => {
     };
   }, [clearAutoCollapsed]);
 
-  // 窗口缩窄时按缩窄方向自动收起对应侧面板，拉宽到足够宽度时自动恢复：
-  // 从左边缩窄 → 收起侧栏；从右边缩窄 → 收起右面板。
-  // 宽度 ≤ MOBILE_BREAKPOINT 视为手机尺寸，两侧面板全部收起，聊天区独占窗口。
-  useEffect(() => {
-    return window.snow.onWindowResizeEdgeChanged(({ edge, contentWidth }) => {
+  // 窗口缩窄时自动收起侧面板，拉宽到足够宽度时自动恢复：从左边缩窄 → 收起侧栏；
+  // 从右边缩窄 → 收起右面板；方向未知（角部拖拽 / 系统吸附 / 程序化改尺寸都不
+  // 上报方向）时右面板优先。宽度 ≤ MOBILE_BREAKPOINT 视为手机尺寸，两侧面板
+  // 全部收起，聊天区独占窗口。
+  // 收窄决策：宽度不足就收起面板，并记录为"可自动恢复"。每收起一个就按最新可见
+  // 宽度重算，避免多收一个面板；收起某面板真正释放的是它当前的宽度，按当前宽度
+  // 判定才能保证聊天区不会停在 MAIN_CONTENT_MIN_WIDTH 之下。
+  const collapsePanelsToFit = useCallback(
+    (contentWidth: number, edge: "left" | "right" | null): void => {
+      if (contentWidth <= MOBILE_BREAKPOINT) {
+        if (!isSidebarCollapsed) {
+          autoCollapsedRef.current.sidebar = true;
+          setIsSidebarCollapsed(true);
+        }
+        if (!isRightPanelCollapsed) {
+          autoCollapsedRef.current.rightPanel = true;
+          setIsRightPanelCollapsed(true);
+        }
+        return;
+      }
+      const order: ResizeTarget[] =
+        edge === "left"
+          ? ["sidebar", "right-panel"]
+          : ["right-panel", "sidebar"];
+      let nextSidebarCollapsed = isSidebarCollapsed;
+      let nextRightCollapsed = isRightPanelCollapsed;
+      for (const target of order) {
+        // Only visible panels can become auto-collapsed; preserve manual collapse.
+        if (target === "sidebar" ? nextSidebarCollapsed : nextRightCollapsed) {
+          continue;
+        }
+        const visibleSidebarWidth = nextSidebarCollapsed ? 0 : sidebarWidth;
+        const visibleRightPanelWidth = nextRightCollapsed ? 0 : rightPanelWidth;
+        const visibleChrome =
+          APP_LAYOUT_HORIZONTAL_PADDING +
+          (nextSidebarCollapsed ? 0 : PANEL_RESIZER_WIDTH) +
+          (nextRightCollapsed ? 0 : PANEL_RESIZER_WIDTH);
+        const need =
+          target === "sidebar"
+            ? sidebarWidth +
+              MAIN_CONTENT_MIN_WIDTH +
+              visibleRightPanelWidth +
+              visibleChrome
+            : rightPanelWidth +
+              MAIN_CONTENT_MIN_WIDTH +
+              visibleSidebarWidth +
+              visibleChrome;
+        if (contentWidth >= need) {
+          continue; // 该面板收起后已够宽，无需继续收起
+        }
+        if (target === "sidebar") {
+          nextSidebarCollapsed = true;
+          autoCollapsedRef.current.sidebar = true;
+        } else {
+          nextRightCollapsed = true;
+          autoCollapsedRef.current.rightPanel = true;
+        }
+      }
+      if (nextSidebarCollapsed !== isSidebarCollapsed) {
+        setIsSidebarCollapsed(nextSidebarCollapsed);
+      }
+      if (nextRightCollapsed !== isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(nextRightCollapsed);
+      }
+    },
+    [isSidebarCollapsed, isRightPanelCollapsed, sidebarWidth, rightPanelWidth],
+  );
+
+  // 宽度变化入口：缩窄交给收窄决策，拉宽按滞回恢复此前被自动收起的面板。
+  const handleContentWidthChange = useCallback(
+    (contentWidth: number, edge: "left" | "right" | null): void => {
       const prevWidth = lastContentWidthRef.current;
       lastContentWidthRef.current = contentWidth;
       if (contentWidth === prevWidth) {
@@ -547,14 +613,15 @@ export const App = (): React.JSX.Element => {
       if (contentWidth > prevWidth) {
         // 拉宽：宽度足够时恢复此前被自动收起的面板。
         // 顺序判定（先侧栏后右面板），右面板判定时计入侧栏即将展开的宽度，
-        // 避免两个面板同时恢复后超出窗口宽度。
+        // 避免两个面板同时恢复后超出窗口宽度。恢复成本按面板当前宽度计算，
+        // 与收窄判定同一口径，宽面板不会在窗口偏窄时反复收起/恢复。
         const auto = autoCollapsedRef.current;
         let nextSidebarCollapsed = isSidebarCollapsed;
         let nextRightCollapsed = isRightPanelCollapsed;
         if (auto.sidebar && isSidebarCollapsed) {
           const otherPanelWidth = isRightPanelCollapsed ? 0 : rightPanelWidth;
           const need =
-            SIDEBAR_MIN_WIDTH +
+            sidebarWidth +
             MAIN_CONTENT_MIN_WIDTH +
             otherPanelWidth +
             chrome +
@@ -566,7 +633,7 @@ export const App = (): React.JSX.Element => {
         if (auto.rightPanel && isRightPanelCollapsed) {
           const otherPanelWidth = nextSidebarCollapsed ? 0 : sidebarWidth;
           const need =
-            RIGHT_PANEL_MIN_WIDTH +
+            rightPanelWidth +
             MAIN_CONTENT_MIN_WIDTH +
             otherPanelWidth +
             chrome +
@@ -591,56 +658,64 @@ export const App = (): React.JSX.Element => {
       }
 
       // 缩窄：按方向自动收起对应面板，并记录为"可自动恢复"。
-      if (contentWidth <= MOBILE_BREAKPOINT) {
-        if (!isSidebarCollapsed) {
-          autoCollapsedRef.current.sidebar = true;
-          setIsSidebarCollapsed(true);
-        }
-        if (!isRightPanelCollapsed) {
-          autoCollapsedRef.current.rightPanel = true;
-          setIsRightPanelCollapsed(true);
-        }
-        return;
-      }
-      if (edge === "left" && !isSidebarCollapsed) {
-        const otherPanelWidth = isRightPanelCollapsed ? 0 : rightPanelWidth;
-        if (
-          contentWidth <
-          SIDEBAR_MIN_WIDTH + MAIN_CONTENT_MIN_WIDTH + otherPanelWidth + chrome
-        ) {
-          autoCollapsedRef.current.sidebar = true;
-          setIsSidebarCollapsed(true);
-        }
-      } else if (edge === "right" && !isRightPanelCollapsed) {
-        const otherPanelWidth = isSidebarCollapsed ? 0 : sidebarWidth;
-        if (
-          contentWidth <
-          RIGHT_PANEL_MIN_WIDTH +
-            MAIN_CONTENT_MIN_WIDTH +
-            otherPanelWidth +
-            chrome
-        ) {
-          autoCollapsedRef.current.rightPanel = true;
-          setIsRightPanelCollapsed(true);
-        }
-      }
-    });
-  }, [
-    isSidebarCollapsed,
-    isRightPanelCollapsed,
-    sidebarWidth,
-    rightPanelWidth,
-  ]);
+      collapsePanelsToFit(contentWidth, edge);
+    },
+    [
+      collapsePanelsToFit,
+      isSidebarCollapsed,
+      isRightPanelCollapsed,
+      sidebarWidth,
+      rightPanelWidth,
+    ],
+  );
 
-  // 启动时若窗口已是手机宽度，直接以两侧收起布局呈现，避免初始布局溢出；
-  // 收起属自动行为，记录标记以便拉宽后恢复默认布局。
+  useEffect(
+    () =>
+      window.snow.onWindowResizeEdgeChanged(({ edge, contentWidth }) =>
+        handleContentWidthChange(contentWidth, edge),
+      ),
+    [handleContentWidthChange],
+  );
+
+  // 主进程只在能判定方向时才上报（角部拖拽、系统吸附、程序化改尺寸都不上报），
+  // 这里用外壳宽度兜底：等一个回合确认没有方向事件处理过该宽度后，按右面板优先
+  // 的顺序收窄，聊天区不会在方向未知的缩放路径下被压扁。
   useEffect(() => {
-    if (window.innerWidth <= MOBILE_BREAKPOINT) {
-      autoCollapsedRef.current.sidebar = true;
-      autoCollapsedRef.current.rightPanel = true;
-      setIsSidebarCollapsed(true);
-      setIsRightPanelCollapsed(true);
+    const shell = appShellRef.current;
+    if (!shell) {
+      return;
     }
+    const measure = (): number =>
+      Math.round(shell.getBoundingClientRect().width);
+    let pending = 0;
+    const observer = new ResizeObserver(() => {
+      const width = measure();
+      window.clearTimeout(pending);
+      pending = window.setTimeout(() => {
+        pending = 0;
+        if (
+          width !== measure() ||
+          Math.abs(width - lastContentWidthRef.current) <= 1
+        ) {
+          return; // 宽度仍在变化，或方向逻辑已经处理过该宽度
+        }
+        handleContentWidthChange(width, null);
+      }, 80);
+    });
+    observer.observe(shell);
+    return () => {
+      window.clearTimeout(pending);
+      observer.disconnect();
+    };
+  }, [handleContentWidthChange]);
+
+  // 启动时（含窗口尺寸被系统恢复成窄宽度的情况）按同一规则收窄一次，避免一进来
+  // 就是聊天区被压扁的布局；收起属自动行为，记录标记以便拉宽后恢复默认布局。
+  // 经 ref 调用保持"仅挂载时执行"：手动展开的面板不会被随后的状态变化重新收起。
+  const collapsePanelsToFitRef = useRef(collapsePanelsToFit);
+  collapsePanelsToFitRef.current = collapsePanelsToFit;
+  useEffect(() => {
+    collapsePanelsToFitRef.current(window.innerWidth, null);
   }, []);
 
   const handleConfirmClose = useCallback((): void => {

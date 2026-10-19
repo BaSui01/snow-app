@@ -1,4 +1,27 @@
 import type { ChatConversationMessage } from "./conversationTypes";
+import {
+  isResponseHtmlPreviewEligible,
+  type ResponseDispositionInput,
+} from "./responseDisposition";
+
+/** 登记真实响应终态；已经被取消的消息不接受迟到的成功结果重新授权。 */
+export const settleResponseHtmlPreviewEligibility = (
+  messages: ChatConversationMessage[],
+  messageId: string,
+  response: ResponseDispositionInput,
+  cancelled: boolean,
+): ChatConversationMessage[] =>
+  messages.map((message) =>
+    message.id === messageId
+      ? {
+          ...message,
+          htmlPreviewEligible:
+            message.htmlPreviewEligible !== false &&
+            !cancelled &&
+            isResponseHtmlPreviewEligible(response),
+        }
+      : message,
+  );
 
 /** 单条消息的中止收尾（幂等）：落定流式态、清掉重试标记、结算未完成的工具调用。 */
 const settleMessage = (
@@ -6,6 +29,11 @@ const settleMessage = (
 ): ChatConversationMessage => ({
   ...message,
   status: message.status === "sending" ? "sent" : message.status,
+  htmlPreviewEligible:
+    message.role === "assistant" &&
+    (message.status === "sending" || message.isRetrying)
+      ? false
+      : message.htmlPreviewEligible,
   // 中止后不存在合法的「重试进行中」：无论消息当前是什么状态都清掉，
   // 否则最后一条 assistant 消息会一直显示「重试中」转圈。
   isRetrying: false,

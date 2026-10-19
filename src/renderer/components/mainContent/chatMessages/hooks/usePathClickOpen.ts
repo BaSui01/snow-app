@@ -4,19 +4,14 @@ import {
   openResolvedLocalEntry,
   openResolvedRemoteEntry,
 } from "../../../../utils/fileLinkOpen";
+import { localFileUrlToPath } from "../../../../utils/localFileUrl";
+import {
+  isFileLinkHref,
+  openBrowserFile,
+} from "../../../../utils/browserFileOpen";
 
 /** 启发式判断文本是否像文件路径（含分隔符，或是带扩展名的文件名）。 */
-const looksLikePath = (value: string): boolean => {
-  if (!value || value.length > 512 || /^https?:\/\//i.test(value)) {
-    return false;
-  }
-  if (/\s/.test(value)) {
-    return false;
-  }
-  return (
-    /[\\/]/.test(value) || /(?:^|[\\/])[^\\/]+\.[a-zA-Z0-9]{1,12}$/.test(value)
-  );
-};
+const looksLikePath = isFileLinkHref;
 
 /** 解析 `path:line`、`path:start-end` 或 Markdown `path#Lline`。 */
 const parsePathWithLine = (raw: string): { path: string; line?: number } => {
@@ -25,6 +20,7 @@ const parsePathWithLine = (raw: string): { path: string; line?: number } => {
   if (hashMatch) {
     return { path: hashMatch[1], line: parseInt(hashMatch[2], 10) };
   }
+  if (/^file:/i.test(cleaned)) return { path: cleaned };
   // 冒号后必须为纯数字，避免误伤 Windows 盘符（C:\foo）。
   const lineMatch = cleaned.match(/^(.+):(\d+)(?:[-–](\d+))?$/);
   if (lineMatch) {
@@ -113,18 +109,36 @@ export const usePathClickOpen = (
 
   const openPath = useCallback(
     (raw: string, lineAttr?: string, source?: HTMLElement): void => {
-      const { path, line } = parsePathWithLine(raw);
+      const parsed = parsePathWithLine(raw);
+      const isFileUrl = /^file:/i.test(parsed.path);
+      // A file URL is explicitly local, never reinterpret it as an SSH path.
+      if (isFileUrl && directoryPath?.startsWith("ssh://")) {
+        return;
+      }
+      const path = isFileUrl ? localFileUrlToPath(parsed.path) : parsed.path;
       if (!path) {
         return;
       }
+      // 仅接受本地路径与 ssh:// —— 其他 scheme（http、data、javascript 等）
+      // 不当作文件引用处理。
+      const explicitSsh = /^ssh:\/\//i.test(path);
+      if (
+        /^[a-z][a-z0-9+.-]*:/i.test(path) &&
+        !/^[a-z]:[\\/]/i.test(path) &&
+        !explicitSsh
+      ) {
+        return;
+      }
       const attrLine = lineAttr ? parseInt(lineAttr, 10) : undefined;
-      const candidateLine = line ?? attrLine;
+      const candidateLine = parsed.line ?? attrLine;
       const focusLine =
         candidateLine && candidateLine > 0 ? candidateLine : undefined;
 
-      const sshWorkspacePath = directoryPath?.startsWith("ssh://")
-        ? directoryPath
-        : null;
+      const sshWorkspacePath = explicitSsh
+        ? path
+        : directoryPath?.startsWith("ssh://")
+          ? directoryPath
+          : null;
       const resolving = sshWorkspacePath
         ? window.snow.sshResolveFileLink(sshWorkspacePath, path)
         : window.snow.resolveFileLink(directoryPath ?? null, path);
@@ -144,6 +158,10 @@ export const usePathClickOpen = (
               { workspacePath: sshWorkspacePath, directoryId },
               focusLine,
             );
+            return;
+          }
+          // HTML / PDF / 图片等浏览器可预览的本地文件在内置浏览器中打开。
+          if (openBrowserFile(resolved.path)) {
             return;
           }
           openResolvedLocalEntry(resolved, focusLine);
@@ -181,7 +199,7 @@ export const usePathClickOpen = (
           if (/^https?:\/\//i.test(href)) {
             return;
           }
-          const decoded = decodeHref(href);
+          const decoded = /^file:/i.test(href) ? href : decodeHref(href);
           if (looksLikePath(decoded)) {
             event.preventDefault();
             openPath(decoded, undefined, anchor);
@@ -209,7 +227,7 @@ export const usePathClickOpen = (
         if (/^https?:\/\//i.test(href)) {
           return;
         }
-        const decoded = decodeHref(href);
+        const decoded = /^file:/i.test(href) ? href : decodeHref(href);
         if (looksLikePath(decoded)) {
           event.preventDefault();
           openPath(decoded, undefined, anchor);

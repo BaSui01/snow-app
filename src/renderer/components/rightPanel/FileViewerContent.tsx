@@ -1,4 +1,7 @@
-import hljs from "highlight.js";
+import {
+  getCodeLanguageFromPath as getLanguageFromFileName,
+  highlightCodeHtml,
+} from "../../utils/syntaxHighlight";
 import {
   AlertCircle,
   CaseSensitive,
@@ -55,7 +58,6 @@ import {
   createLineIndex,
   createLineMapping,
   DEFAULT_LINE_HEIGHT,
-  escapeHtml,
   estimateMaxColumns,
   type FoldRegion,
 } from "./fileViewer/codeText";
@@ -180,64 +182,6 @@ const isComposingKeyboardEvent = (
   const nativeEvent = event.nativeEvent;
   const nativeEventWithKeyCode = nativeEvent as unknown as { keyCode?: number };
   return nativeEvent.isComposing || nativeEventWithKeyCode.keyCode === 229;
-};
-
-const getLanguageFromFileName = (fileName: string): string => {
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    ts: "typescript",
-    tsx: "typescript",
-    js: "javascript",
-    jsx: "javascript",
-    mjs: "javascript",
-    cjs: "javascript",
-    json: "json",
-    css: "css",
-    scss: "scss",
-    less: "less",
-    html: "xml",
-    htm: "xml",
-    xml: "xml",
-    svg: "xml",
-    md: "markdown",
-    markdown: "markdown",
-    py: "python",
-    rb: "ruby",
-    go: "go",
-    rs: "rust",
-    java: "java",
-    kt: "kotlin",
-    swift: "swift",
-    c: "c",
-    h: "c",
-    cpp: "cpp",
-    cc: "cpp",
-    cxx: "cpp",
-    hpp: "cpp",
-    cs: "csharp",
-    php: "php",
-    sh: "bash",
-    bash: "bash",
-    zsh: "bash",
-    yml: "yaml",
-    yaml: "yaml",
-    toml: "ini",
-    ini: "ini",
-    cfg: "ini",
-    sql: "sql",
-    graphql: "graphql",
-    gql: "graphql",
-    lua: "lua",
-    r: "r",
-    dart: "dart",
-    vue: "xml",
-    svelte: "xml",
-    dockerfile: "dockerfile",
-    makefile: "makefile",
-    diff: "diff",
-    patch: "diff",
-  };
-  return map[ext] ?? "";
 };
 
 const formatSize = (bytes: number): string => {
@@ -1024,20 +968,8 @@ export function FileViewerContent({
   ]);
 
   const highlightCode = useCallback(
-    (code: string): string => {
-      const lang = getLanguageFromFileName(fileName);
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return hljs.highlight(code, {
-            language: lang,
-            ignoreIllegals: true,
-          }).value;
-        } catch {
-          return escapeHtml(code);
-        }
-      }
-      return escapeHtml(code);
-    },
+    (code: string): string =>
+      highlightCodeHtml(code, getLanguageFromFileName(fileName)),
     [fileName],
   );
 

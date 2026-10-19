@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { AiResponse } from "./AiResponse";
+import type { ChatFileArtifact } from "./chatFileArtifacts";
 import { PluginMessageFooters } from "./PluginMessageFooters";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
@@ -12,6 +13,8 @@ import type {
 
 export type MessageContentProps = {
   message: ChatConversationMessage;
+  fileArtifacts?: readonly ChatFileArtifact[];
+  artifactWorkspace?: string;
   isStreaming: boolean;
   isAborting: boolean;
   lastAssistantMessageId: string | undefined;
@@ -48,6 +51,8 @@ export type MessageContentProps = {
 export const MessageContent = memo(
   ({
     message,
+    fileArtifacts,
+    artifactWorkspace,
     isStreaming,
     isAborting,
     lastAssistantMessageId,
@@ -134,6 +139,8 @@ export const MessageContent = memo(
     return (
       <div className="chat-message-hook-container">
         <AiResponse
+          fileArtifacts={fileArtifacts}
+          artifactWorkspace={artifactWorkspace}
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
           isRetrying={isLastAssistant && message.isRetrying}
@@ -142,6 +149,7 @@ export const MessageContent = memo(
           retryBackoffMs={message.retryBackoffMs}
           retryBackoffStartedAt={message.retryBackoffStartedAt}
           isError={message.status === "error"}
+          htmlPreviewEligible={message.htmlPreviewEligible}
           summary={message.content}
           timestamp={message.timestamp}
           thinking={message.thinking}

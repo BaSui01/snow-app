@@ -173,6 +173,8 @@ Editing and search shortcuts:
 - When a file reader has focus, `Ctrl/Cmd+F` opens **in-file search** instead of global search. A Markdown preview switches to source mode automatically;
 - Search has a match-case toggle. `Enter` goes to the next match, `Shift+Enter` to the previous match, and `Esc` closes search. Both view and edit modes navigate to the current match.
 
+The file reader shares language aliases, file-path language resolution, and light/dark syntax colors with chat code blocks, HTML source, and tool code views. Highlight caches are isolated by normalized language, chunk content, and context to prevent color leakage when the same text is opened as different languages; existing chunking and virtual scrolling remain unchanged.
+
 Large files:
 
 - Files with tens of thousands of lines render on demand (virtual scrolling): only the visible region is highlighted and measured, while folding, jumping to a line, and in-file search keep working;

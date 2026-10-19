@@ -17,6 +17,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "../../i18n";
+import {
+  getBrowserFileMimeType,
+  localPathToFileUrl,
+  openBrowserFile,
+} from "../../utils/browserFileOpen";
 import type { IdeInfo } from "../../../preload";
 import { IdeIcon } from "../icons/ideIcons";
 import { useMenuPosition } from "./mainSidebar/useMenuPosition";
@@ -493,6 +498,23 @@ export function ExplorerEntryContextMenu({
                 })}
               </span>
             </button>
+            {canOpenWith &&
+            !isDirectory &&
+            getBrowserFileMimeType(entryPath) &&
+            localPathToFileUrl(entryPath) ? (
+              <button
+                className="explorer-entry-context-menu-item"
+                onClick={() => {
+                  openBrowserFile(entryPath, isSsh);
+                  onClose();
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <ExternalLink size={13} />
+                <span>{t("toolCall.websearch.openInBrowser")}</span>
+              </button>
+            ) : null}
             {canOpenWithSystemApp ? (
               <button
                 className="explorer-entry-context-menu-item"

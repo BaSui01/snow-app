@@ -1712,11 +1712,47 @@ export const windowApi = {
       maxWidth?: number;
       maxFrames?: number;
       maxDurationMs?: number;
+      /** Renderer 持有渲染租约的唯一代际标识，不属于 MCP 参数。 */
+      recordingId?: string;
     },
-  ): Promise<{ started: boolean; file: string; startedAt: string }> =>
-    ipcRenderer.invoke("browser:screencast-start", webContentsId, options),
-  browserScreencastStop: (webContentsId: number): Promise<unknown> =>
-    ipcRenderer.invoke("browser:screencast-stop", webContentsId),
+  ): Promise<{
+    started: boolean;
+    file: string;
+    startedAt: string;
+    recordingId: string;
+  }> => ipcRenderer.invoke("browser:screencast-start", webContentsId, options),
+  browserScreencastStop: (
+    webContentsId: number,
+    recordingId?: string,
+  ): Promise<unknown> =>
+    ipcRenderer.invoke("browser:screencast-stop", webContentsId, recordingId),
+  /** 实际停止通知（含自动停止/销毁/detach/错误），仅发送给拥有者 Renderer。 */
+  onBrowserScreencastStopped: (
+    callback: (event: { webContentsId: number; recordingId: string }) => void,
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!payload || typeof payload !== "object") return;
+      const record = payload as {
+        webContentsId?: unknown;
+        recordingId?: unknown;
+      };
+      if (
+        typeof record.webContentsId !== "number" ||
+        !Number.isSafeInteger(record.webContentsId) ||
+        record.webContentsId <= 0 ||
+        typeof record.recordingId !== "string" ||
+        !record.recordingId
+      )
+        return;
+      callback({
+        webContentsId: record.webContentsId,
+        recordingId: record.recordingId,
+      });
+    };
+    ipcRenderer.on("browser:screencast-stopped", handler);
+    return () =>
+      ipcRenderer.removeListener("browser:screencast-stopped", handler);
+  },
   /** 模拟网络状态：offline=true 离线，false 恢复在线。 */
   browserNetworkState: (
     webContentsId: number,
@@ -1953,8 +1989,11 @@ export const windowApi = {
     error?: string;
     note?: string;
   }> => ipcRenderer.invoke("browser:trace", webContentsId, durationMs),
-  browserNetworkRequest: (recordId: number): Promise<unknown | null> =>
-    ipcRenderer.invoke("browser:network-request", recordId),
+  browserNetworkDetail: (
+    webContentsId: number,
+    requestId: number,
+  ): Promise<unknown | null> =>
+    ipcRenderer.invoke("browser:network-request", webContentsId, requestId),
   browserNetworkClear: (webContentsId: number): Promise<{ cleared: number }> =>
     ipcRenderer.invoke("browser:network-clear", webContentsId),
   browserDialogs: (webContentsId: number): Promise<unknown[]> =>

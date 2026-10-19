@@ -182,6 +182,20 @@ const parseSnapshotFile = async (filePath: string): Promise<ParsedSnapshot> => {
   }
   const nodeFields = meta.node_fields as string[];
   const edgeFields = meta.edge_fields as string[];
+  if (
+    !["type", "name", "id", "self_size", "edge_count"].every((field) =>
+      nodeFields.includes(field),
+    ) ||
+    !["type", "name_or_index", "to_node"].every((field) =>
+      edgeFields.includes(field),
+    ) ||
+    raw.nodes.length % nodeFields.length !== 0 ||
+    raw.edges.length % edgeFields.length !== 0
+  ) {
+    throw new Error(
+      "Heap snapshot has invalid fields or incomplete node/edge records",
+    );
+  }
   const typeTable = (tables: unknown, index: number): string[] => {
     if (!Array.isArray(tables)) {
       return [];
@@ -255,6 +269,22 @@ const nodeDetachedness = (parsed: ParsedSnapshot, index: number): number =>
     ? readNodeField(parsed, index, parsed.detachednessOffset)
     : 0;
 
+const edgeTargetIndex = (parsed: ParsedSnapshot, edge: number): number => {
+  // V8 stores a flat nodes-array offset, not a node ordinal. Never round a
+  // malformed offset into a real object or silently invent an unknown node.
+  const offset =
+    parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeToOffset];
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset >= parsed.nodes.length ||
+    offset % parsed.nodeFieldCount !== 0
+  ) {
+    throw new Error(`Invalid heap edge ${edge} to_node offset: ${offset}`);
+  }
+  return offset / parsed.nodeFieldCount;
+};
+
 const buildEdgeOffsets = (parsed: ParsedSnapshot): Uint32Array => {
   if (parsed.edgeOffsets) {
     return parsed.edgeOffsets;
@@ -263,7 +293,18 @@ const buildEdgeOffsets = (parsed: ParsedSnapshot): Uint32Array => {
   let cursor = 0;
   for (let index = 0; index < parsed.nodeCount; index++) {
     offsets[index] = cursor;
-    cursor += readNodeField(parsed, index, parsed.edgeCountOffset);
+    const count = readNodeField(parsed, index, parsed.edgeCountOffset);
+    if (
+      !Number.isSafeInteger(count) ||
+      count < 0 ||
+      count > parsed.edgeCount - cursor
+    ) {
+      throw new Error(`Invalid heap node ${index} edge_count: ${count}`);
+    }
+    cursor += count;
+  }
+  if (cursor !== parsed.edgeCount) {
+    throw new Error("Heap node edge counts do not match the edges array");
   }
   offsets[parsed.nodeCount] = cursor;
   parsed.edgeOffsets = offsets;
@@ -276,29 +317,24 @@ const buildReverseEdges = (
   if (parsed.reverseEdges) {
     return parsed.reverseEdges;
   }
+  const edgeOffsets = buildEdgeOffsets(parsed);
   const offsets = new Uint32Array(parsed.nodeCount + 1);
   for (let edge = 0; edge < parsed.edgeCount; edge++) {
-    const to = parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeToOffset];
-    if (to >= 0 && to < parsed.nodeCount) {
-      offsets[to + 1] += 1;
-    }
+    const to = edgeTargetIndex(parsed, edge);
+    offsets[to + 1] += 1;
   }
   for (let index = 1; index <= parsed.nodeCount; index++) {
     offsets[index] += offsets[index - 1];
   }
   const values = new Uint32Array(parsed.edgeCount);
   const cursor = Uint32Array.from(offsets.subarray(0, parsed.nodeCount));
-  const edgeOffsets = buildEdgeOffsets(parsed);
   for (let from = 0; from < parsed.nodeCount; from++) {
     const start = edgeOffsets[from];
     const end = edgeOffsets[from + 1];
     for (let edge = start; edge < end; edge++) {
-      const to =
-        parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeToOffset];
-      if (to >= 0 && to < parsed.nodeCount) {
-        values[cursor[to]] = from;
-        cursor[to] += 1;
-      }
+      const to = edgeTargetIndex(parsed, edge);
+      values[cursor[to]] = from;
+      cursor[to] += 1;
     }
   }
   parsed.reverseEdges = { offsets, values };
@@ -456,7 +492,7 @@ export const queryHeapObjects = async (
   const page = rows.slice(start, start + pageSize);
   return {
     file: filePath,
-    rows: page,
+    rows: page.map((row) => ({ ...row, nodeIndex: row.index })),
     total,
     pageIdx,
     pageSize,
@@ -474,6 +510,7 @@ const describeNode = (
   index: number,
 ): Record<string, unknown> => ({
   index,
+  nodeIndex: index,
   id: nodeId(parsed, index),
   name: nodeName(parsed, index),
   type: nodeType(parsed, index),
@@ -518,13 +555,13 @@ export const getHeapSnapshotEdges = async (
   for (let edge = start; edge < Math.min(end, start + limit); edge++) {
     const typeIndex =
       parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeTypeOffset];
-    const to = parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeToOffset];
+    const to = edgeTargetIndex(parsed, edge);
     rows.push({
       type: parsed.edgeTypes[typeIndex] ?? String(typeIndex),
       name: edgeName(parsed, edge),
       toIndex: to,
-      toName: to < parsed.nodeCount ? nodeName(parsed, to) : "?",
-      toType: to < parsed.nodeCount ? nodeType(parsed, to) : "unknown",
+      toName: nodeName(parsed, to),
+      toType: nodeType(parsed, to),
     });
   }
   const total = end - start;
@@ -553,15 +590,22 @@ export const getHeapSnapshotRetainers = async (
   const end = reverse.offsets[nodeIndex + 1];
   const edgeOffsets = buildEdgeOffsets(parsed);
   const rows: Record<string, unknown>[] = [];
+  // One source can retain this node through multiple edges of different types.
+  // Advance per source instead of repeatedly reporting its first matching edge.
+  const nextEdgeBySource = new Map<number, number>();
   for (let cursor = start; cursor < Math.min(end, start + limit); cursor++) {
     const from = reverse.values[cursor];
     let edgeTypeIndex = -1;
-    for (let edge = edgeOffsets[from]; edge < edgeOffsets[from + 1]; edge++) {
-      const to =
-        parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeToOffset];
+    for (
+      let edge = nextEdgeBySource.get(from) ?? edgeOffsets[from];
+      edge < edgeOffsets[from + 1];
+      edge++
+    ) {
+      const to = edgeTargetIndex(parsed, edge);
       if (to === nodeIndex) {
         edgeTypeIndex =
           parsed.edges[edge * parsed.edgeFieldCount + parsed.edgeTypeOffset];
+        nextEdgeBySource.set(from, edge + 1);
         break;
       }
     }
@@ -680,31 +724,56 @@ export const getHeapSnapshotDuplicateStrings = async (
 ): Promise<Record<string, unknown>> => {
   const parsed = await parseSnapshotFile(filePath);
   const counts = new Map<string, number>();
-  for (const value of parsed.strings) {
+  let stringCount = 0;
+  let eligibleStringCount = 0;
+  for (let index = 0; index < parsed.nodeCount; index++) {
+    if (nodeType(parsed, index) !== "string") {
+      continue;
+    }
+    stringCount += 1;
+    const value =
+      parsed.strings[readNodeField(parsed, index, parsed.nameOffset)];
+    if (typeof value !== "string") {
+      throw new Error(`Invalid heap string node ${index} name index`);
+    }
     if (value.length >= 8) {
+      eligibleStringCount += 1;
       counts.set(value, (counts.get(value) ?? 0) + 1);
     }
   }
-  const duplicates = [...counts.entries()]
+  // Character payload estimate: 2 bytes per UTF-16 code unit, excluding V8
+  // headers/alignment and its one-byte/cons/sliced string representations.
+  const groups = [...counts.entries()]
     .filter(([, count]) => count > 1)
-    .sort(
-      (left, right) => right[1] * right[0].length - left[1] * left[0].length,
-    )
-    .slice(0, topN)
     .map(([value, count]) => ({
-      value: value.length > 200 ? `${value.slice(0, 200)}…` : value,
+      value,
       count,
-      wastedBytes: (count - 1) * value.length,
-    }));
-  const totalWasted = duplicates.reduce(
+      wastedBytes: (count - 1) * value.length * 2,
+    }))
+    .sort((left, right) => right.wastedBytes - left.wastedBytes);
+  const totalWastedBytes = groups.reduce(
     (sum, entry) => sum + entry.wastedBytes,
     0,
   );
+  const duplicates = groups.slice(0, topN).map((entry) => ({
+    ...entry,
+    value:
+      entry.value.length > 200 ? `${entry.value.slice(0, 200)}…` : entry.value,
+  }));
   return {
     file: filePath,
-    stringCount: parsed.strings.length,
+    stringCount,
+    stringTableCount: parsed.strings.length,
+    eligibleStringCount,
+    duplicateGroupCount: groups.length,
+    byteSizeBasis:
+      "UTF-16 character payload estimate: 2 bytes per code unit; excludes V8 object overhead and representation differences",
     duplicates,
-    topWastedBytes: totalWasted,
+    totalWastedBytes,
+    topWastedBytes: duplicates.reduce(
+      (sum, entry) => sum + entry.wastedBytes,
+      0,
+    ),
   };
 };
 

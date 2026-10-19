@@ -2,6 +2,10 @@ import { app, session, webContents } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { snowLog } from "../../../utils/snowLogger";
+import {
+  clearBrowserDialogs,
+  handleBrowserDialogMessage,
+} from "../../browser/browserDialogs";
 
 /**
  * 内置浏览器调试数据收集：
@@ -84,7 +88,7 @@ type CdpNetworkState = {
 const cdpNetworkRecords = new Map<number, CdpNetworkState>();
 const mainFrameIds = new Map<number, string>();
 const MAX_ARCHIVED_GENERATIONS = 3;
-let nextCdpRecordId = 1;
+// CDP and webRequest records share nextRecordId, preventing ambiguous detail IDs.
 
 const findCdpRecord = (
   webContentsId: number,
@@ -320,25 +324,32 @@ export const queryNetworkRecords = (
   };
 };
 
-/** 按数字 id 获取单条网络记录（先查 CDP 各代际，再查 webRequest 降级记录）。 */
+/** 按目标 webContents 的数字 id 查询，绝不跨 tab 扫描。 */
 export const getNetworkRecord = (
+  webContentsId: number,
   recordId: number,
 ): BrowserNetworkRecord | undefined => {
-  for (const state of cdpNetworkRecords.values()) {
-    for (const record of state.current.values()) {
-      if (record.id === recordId) {
-        return record;
-      }
-    }
-    for (const generation of state.archived) {
+  if (
+    !Number.isSafeInteger(webContentsId) ||
+    webContentsId <= 0 ||
+    !Number.isSafeInteger(recordId) ||
+    recordId <= 0
+  )
+    return undefined;
+  const state = cdpNetworkRecords.get(webContentsId);
+  if (state) {
+    for (const generation of [state.current, ...state.archived]) {
       for (const record of generation.values()) {
-        if (record.id === recordId) {
+        if (record.id === recordId && record.webContentsId === webContentsId) {
           return record;
         }
       }
     }
   }
-  return networkRecords.find((record) => record.id === recordId);
+  return networkRecords.find(
+    (record) =>
+      record.id === recordId && record.webContentsId === webContentsId,
+  );
 };
 
 /** 统计某个 webContents 的 CDP 记录数（含归档代际）。 */
@@ -451,9 +462,8 @@ export const ensureNetworkRecording = async (
  * 仅做注册与消息路由，不主动 attach（普通浏览不 attach CDP，
  * 页面的 alert/confirm/prompt 走 Electron 原生对话框）；调试功能
  * （网络记录 / MCP / 登录态 / 路由 mock）按需调用 ensureWebContentsDebugger。
- * 调试会话激活期间 Chromium 会接管 JS 弹窗并挂起页面，而引擎无自绘
- * 弹窗 UI，此时对 Page.javascriptDialogOpening 直接拒绝应答（脚本拿到
- * false），保证页面不卡死。
+ * 调试期间的弹窗由共享 CDP 监听记录，允许拥有者经 IPC 查询/响应；
+ * 60 秒无人响应自动拒绝，避免页面永久挂起。
  */
 export const initBrowserWebviewRegistry = (): void => {
   if (dialogHandlerInitialized) {
@@ -471,11 +481,8 @@ export const initBrowserWebviewRegistry = (): void => {
     contents.debugger.on("message", (_event, method, params) => {
       switch (method) {
         case "Page.javascriptDialogOpening":
-          // 调试会话期间弹窗被 Chromium 接管且无 UI 可展示，
-          // 自动拒绝避免页面脚本永久挂起。
-          contents.debugger
-            .sendCommand("Page.handleJavaScriptDialog", { accept: false })
-            .catch(() => {});
+        case "Page.javascriptDialogClosed":
+          handleBrowserDialogMessage(contents, method, params);
           break;
         case "Network.requestWillBeSent":
           handleNetworkRequestWillBeSent(contents.id, params);
@@ -514,7 +521,13 @@ export const initBrowserWebviewRegistry = (): void => {
         void enableFetchInterception(contents).catch(() => {});
       }
     });
+    contents.debugger.on("detach", () => {
+      clearBrowserDialogs(contents.id);
+      debuggerDomainsEnabled.delete(contents.id);
+      networkRecordingEnabled.delete(contents.id);
+    });
     contents.once("destroyed", () => {
+      clearBrowserDialogs(contents.id);
       browserWebContentsIds.delete(contents.id);
       debuggerDomainsEnabled.delete(contents.id);
       networkRecordingEnabled.delete(contents.id);
@@ -649,7 +662,7 @@ const handleNetworkRequestWillBeSent = (
     return;
   }
   pushCdpRecord(webContentsId, {
-    id: nextCdpRecordId++,
+    id: nextRecordId++,
     webContentsId,
     requestId,
     url,

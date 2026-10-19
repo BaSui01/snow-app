@@ -5,6 +5,7 @@ import {
   createBrowserInstanceId,
   executeBrowserMcpCommand,
   getFocusedBrowserInstanceId,
+  isOfflineBrowserHeapOperation,
   parseBrowserMcpCommandArgs,
   waitForBrowserMcpInstance,
 } from "./browserMcpController";
@@ -110,6 +111,13 @@ export const useBrowserMcpCommandBridge = (
     return window.snow.registerBrowserCommandHandler(
       async (request: BrowserCommandRequest): Promise<string> => {
         const args = parseBrowserMcpCommandArgs(request.argsJson);
+
+        // 文件分析没有页面目标：保留浏览器代理开关与主进程路径校验，
+        // 不解析/聚焦实例，也不为离线分析展开或创建业务标签。
+        if (isOfflineBrowserHeapOperation(request.operation)) {
+          ensureBrowserAgentEnabled();
+          return executeBrowserMcpCommand(request.operation, request.argsJson);
+        }
 
         switch (request.operation) {
           case "create": {

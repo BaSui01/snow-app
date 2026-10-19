@@ -16,6 +16,8 @@ const DEFAULT_MAX_CONTENT_LENGTH: u64 = 20_000;
 const MIN_MAX_CONTENT_LENGTH: u64 = 1_000;
 const MAX_MAX_CONTENT_LENGTH: u64 = 100_000;
 const MAX_WAIT_TIME_MS: u64 = 30_000;
+// Record ids cross the JSON bridge into JavaScript numbers.
+const MAX_SAFE_RECORD_ID: u64 = 9_007_199_254_740_991;
 
 #[napi(object)]
 pub struct BrowserCommand {
@@ -126,7 +128,7 @@ impl McpService for BrowserService {
                             "description": "JavaScript to execute before any other script of the next document (one-shot; credential/storage access is blocked)."
                         },
                         "timeoutMs": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Navigation timeout in milliseconds (default 30000, range 1000-120000).",
                             "default": DEFAULT_TIMEOUT_MS,
                             "minimum": MIN_TIMEOUT_MS,
@@ -216,7 +218,7 @@ impl McpService for BrowserService {
                             "default": "png"
                         },
                         "quality": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Compression quality 0-100 for jpeg/webp formats (ignored for png).",
                             "minimum": 0,
                             "maximum": 100
@@ -246,7 +248,7 @@ impl McpService for BrowserService {
                             "default": "snapshot"
                         },
                         "durationMs": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Trace recording duration in milliseconds (trace action only, default 3000, range 1000-30000).",
                             "default": 3000,
                             "minimum": 1000,
@@ -258,7 +260,7 @@ impl McpService for BrowserService {
                             "default": false
                         },
                         "maxNodes": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum accessibility tree nodes to return (ax action only, default 200, range 1-1000).",
                             "default": 200,
                             "minimum": 1,
@@ -284,20 +286,20 @@ impl McpService for BrowserService {
                             "default": false
                         },
                         "limit": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum number of network requests to return (network action only, default 50, range 1-200).",
                             "default": 50,
                             "minimum": 1,
                             "maximum": 200
                         },
                         "pageIdx": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Zero-based page index for console/network listings (default 0).",
                             "minimum": 0,
                             "maximum": 1000
                         },
                         "pageSize": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Page size for console/network listings (when omitted all records are returned, up to 1000).",
                             "minimum": 1,
                             "maximum": 1000
@@ -318,15 +320,15 @@ impl McpService for BrowserService {
                             "description": "Only return network requests of these resource types (network action only), e.g. [\"XHR\", \"Fetch\", \"Document\"]."
                         },
                         "msgid": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Numeric id of the console message to retrieve (console_message action only; use action=console to obtain ids)."
                         },
                         "requestId": {
-                            "type": "string",
-                            "description": "Network request reference. For networkDetails: CDP request id from the network list (string). For network_detail: the numeric id of the request to retrieve full details for (use network action first to obtain ids)."
+                            "type": ["integer", "string"],
+                            "description": "For network_detail: positive safe integer record id (1-9007199254740991) from network; a trimmed decimal string is accepted and normalized to integer with the same runtime bound. For networkDetails: non-empty CDP requestId string, preserved as a string."
                         },
                         "maxBodyBytes": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum request/response body bytes to return (networkDetails action only, default 131072, range 1024-1048576).",
                             "default": 131072,
                             "minimum": 1024,
@@ -350,7 +352,7 @@ impl McpService for BrowserService {
                             "description": "URL pattern to mock (route action only). Plain text = substring match; /regex/ = regular expression match. Example: \"/api/users\" or \"/.*\\.png\""
                         },
                         "status": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "HTTP status code for the mocked response (route action only, default 200).",
                             "minimum": 100,
                             "maximum": 599
@@ -384,7 +386,7 @@ impl McpService for BrowserService {
                             "required": ["accept"]
                         },
                         "maxContentLength": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum page text length for snapshot (default 20000, range 1000-100000).",
                             "default": DEFAULT_MAX_CONTENT_LENGTH,
                             "minimum": MIN_MAX_CONTENT_LENGTH,
@@ -422,7 +424,7 @@ impl McpService for BrowserService {
                             "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "time": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Time to wait in milliseconds (maximum 30000). Mutually exclusive with text/textGone/selector/selectorGone.",
                             "minimum": 100,
                             "maximum": MAX_WAIT_TIME_MS
@@ -444,7 +446,7 @@ impl McpService for BrowserService {
                             "description": "CSS selector to wait for to disappear from the DOM (e.g. a loading spinner). Polls every 100ms until the element is gone or the timeout elapses. Mutually exclusive with time."
                         },
                         "timeoutMs": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum time to wait for text/textGone/selector/selectorGone conditions in milliseconds (default 30000, range 1000-120000). Ignored for fixed time waits.",
                             "default": DEFAULT_TIMEOUT_MS,
                             "minimum": MIN_TIMEOUT_MS,
@@ -657,7 +659,7 @@ impl McpService for BrowserService {
                             "default": false
                         },
                         "delayMs": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "When greater than 0, type one character at a time with this delay in milliseconds (default 0 = set value at once).",
                             "default": 0,
                             "minimum": 0,
@@ -864,7 +866,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "emulate".to_string(),
-                description: "Emulate browser features on the target page (CDP Emulation/Network domains): color scheme, CPU throttling, geolocation, extra HTTP headers, network conditions, user agent and viewport. Pass null (or an empty string for viewport) to clear a specific override. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Emulate browser features on the target page (CDP Emulation/Network domains): color scheme, CPU throttling, geolocation, extra HTTP headers, network conditions, user agent and viewport. Omitted fields are unchanged; null clears an override (colorScheme maps to auto, cpuThrottlingRate maps to 1). Empty userAgent/viewport also clear their overrides. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -873,23 +875,23 @@ impl McpService for BrowserService {
                             "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "colorScheme": {
-                            "type": "string",
-                            "enum": ["dark", "light", "auto"],
-                            "description": "Emulate prefers-color-scheme; auto clears the override."
+                            "type": ["string", "null"],
+                            "enum": ["dark", "light", "auto", null],
+                            "description": "Emulate prefers-color-scheme; auto or null clears the override."
                         },
                         "cpuThrottlingRate": {
-                            "type": "number",
-                            "description": "CPU slowdown factor, 1 disables throttling (range 1-20).",
+                            "type": ["number", "null"],
+                            "description": "CPU slowdown factor (range 1-20); 1 or null disables throttling.",
                             "minimum": 1,
                             "maximum": 20
                         },
                         "extraHttpHeaders": {
-                            "type": "object",
+                            "type": ["object", "null"],
                             "additionalProperties": { "type": "string" },
                             "description": "Extra HTTP headers sent with every page request; null clears them."
                         },
                         "geolocation": {
-                            "type": "object",
+                            "type": ["object", "null"],
                             "properties": {
                                 "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
                                 "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
@@ -899,16 +901,16 @@ impl McpService for BrowserService {
                             "description": "Geolocation override; null clears it."
                         },
                         "networkConditions": {
-                            "type": "string",
-                            "enum": ["Offline", "Slow 3G", "Fast 3G", "Slow 4G", "Fast 4G"],
+                            "type": ["string", "null"],
+                            "enum": ["Offline", "Slow 3G", "Fast 3G", "Slow 4G", "Fast 4G", null],
                             "description": "Network throttling preset; null restores online."
                         },
                         "userAgent": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "User agent override; an empty string clears it."
                         },
                         "viewport": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Device viewport \"<width>x<height>[x<devicePixelRatio>][,mobile][,touch][,landscape]\"; an empty string clears it."
                         }
                     }
@@ -926,13 +928,13 @@ impl McpService for BrowserService {
                             "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "width": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Viewport width in pixels (50-8000).",
                             "minimum": 50,
                             "maximum": 8000
                         },
                         "height": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Viewport height in pixels (50-8000).",
                             "minimum": 50,
                             "maximum": 8000
@@ -1017,13 +1019,13 @@ impl McpService for BrowserService {
                             "description": "Accessibility ref (uid from browser-devtools action=ax) of the element to inspect."
                         },
                         "pageIdx": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Zero-based page index for the matched rules list (default 0).",
                             "minimum": 0,
                             "maximum": 1000
                         },
                         "pageSize": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Matched rules per page (default 10, range 1-100).",
                             "minimum": 1,
                             "maximum": 100
@@ -1088,7 +1090,7 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "topN": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Number of constructors to list (default 30).",
                             "minimum": 1,
                             "maximum": 200
@@ -1117,7 +1119,7 @@ impl McpService for BrowserService {
                             "description": "V8 node type filter, e.g. object, closure, string, array, code."
                         },
                         "minSelfSize": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Minimum self size in bytes.",
                             "minimum": 0
                         },
@@ -1131,12 +1133,12 @@ impl McpService for BrowserService {
                             "description": "Sort order (default selfSize descending)."
                         },
                         "pageIdx": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Zero-based page index (default 0).",
                             "minimum": 0
                         },
                         "pageSize": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Rows per page (default 20, maximum 200).",
                             "minimum": 1,
                             "maximum": 200
@@ -1157,7 +1159,7 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "nodeIndex": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Node index from query/get results.",
                             "minimum": 0
                         }
@@ -1177,12 +1179,12 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "nodeIndex": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Node index from query/get results.",
                             "minimum": 0
                         },
                         "limit": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum edges to return (default 50, maximum 500).",
                             "minimum": 1,
                             "maximum": 500
@@ -1203,12 +1205,12 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "nodeIndex": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Node index from query/get results.",
                             "minimum": 0
                         },
                         "limit": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum retainers to return (default 50, maximum 500).",
                             "minimum": 1,
                             "maximum": 500
@@ -1229,18 +1231,18 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "nodeIndex": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Node index from query/get results.",
                             "minimum": 0
                         },
                         "maxDepth": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum path depth (default 6, maximum 30).",
                             "minimum": 1,
                             "maximum": 30
                         },
                         "maxPaths": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum number of paths to return (default 5, maximum 20).",
                             "minimum": 1,
                             "maximum": 20
@@ -1261,7 +1263,7 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the .heapsnapshot file."
                         },
                         "topN": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Number of entries to list (default 20, maximum 200).",
                             "minimum": 1,
                             "maximum": 200
@@ -1286,7 +1288,7 @@ impl McpService for BrowserService {
                             "description": "Absolute path of the later .heapsnapshot file."
                         },
                         "topN": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Entries per direction (default 30, maximum 200).",
                             "minimum": 1,
                             "maximum": 200
@@ -1311,25 +1313,25 @@ impl McpService for BrowserService {
                             "description": "Optional absolute path for the resulting .avi file (defaults to the app recordings folder)."
                         },
                         "quality": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "JPEG frame quality (default 70, range 1-100).",
                             "minimum": 1,
                             "maximum": 100
                         },
                         "maxWidth": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Optional maximum frame width in pixels.",
                             "minimum": 64,
                             "maximum": 3840
                         },
                         "maxFrames": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Frame cap before auto-stop (default 1200, maximum 6000).",
                             "minimum": 1,
                             "maximum": 6000
                         },
                         "maxDurationMs": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Duration cap before auto-stop in milliseconds (default 120000, maximum 600000).",
                             "minimum": 1000,
                             "maximum": 600000
@@ -1399,7 +1401,7 @@ impl McpService for BrowserService {
                             "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "maxLength": {
-                            "type": "number",
+                            "type": "integer",
                             "description": "Maximum number of characters to return (default 20000, range 1000-100000).",
                             "default": DEFAULT_MAX_CONTENT_LENGTH,
                             "minimum": MIN_MAX_CONTENT_LENGTH,
@@ -1430,7 +1432,19 @@ impl McpService for BrowserService {
             }),
         });
         for tool in &mut tools {
-            if matches!(tool.name.as_str(), "evaluate" | "get_tab_content" | "wait" | "click" | "type" | "fill_form" | "hover" | "select_option" | "upload-file" | "devtools") {
+            if matches!(
+                tool.name.as_str(),
+                "evaluate"
+                    | "get_tab_content"
+                    | "wait"
+                    | "click"
+                    | "type"
+                    | "fill_form"
+                    | "hover"
+                    | "select_option"
+                    | "upload-file"
+                    | "devtools"
+            ) {
                 tool.input_schema["properties"]["frameId"] = json!({
                     "type": "string",
                     "pattern": "^frame-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -1443,29 +1457,133 @@ impl McpService for BrowserService {
                 tool.description.push_str(" Optional frameId selects a document-scoped frame from browser-frames; stale IDs fail without fallback. Frame results and URLs are redacted.");
             }
         }
+        for tool in &mut tools {
+            let schema = &mut tool.input_schema;
+            match tool.name.as_str() {
+                "navigate" => {
+                    // Empty/null URL remains a compatibility placeholder on reload.
+                    schema["properties"]["url"]["type"] = json!(["string", "null"]);
+                    schema["properties"]["initScript"]["type"] = json!(["string", "null"]);
+                    schema["anyOf"] = json!([
+                        {"required": ["reload"], "properties": {"reload": {"const": true}, "url": {"pattern": "^\\s*$"}}},
+                        {"required": ["url"], "properties": {"reload": {"const": false}, "url": {"type": "string", "minLength": 1, "pattern": "^(https?://|file://)"}}}
+                    ]);
+                }
+                "click" => {
+                    schema["oneOf"] = json!([
+                        {"required": ["x", "y"], "not": {"anyOf": [{"required": ["selector"]}, {"required": ["text"]}, {"required": ["ref"]}, {"required": ["frameId"]}]}},
+                        {"anyOf": [{"required": ["selector"]}, {"required": ["text"]}, {"required": ["ref"]}], "not": {"anyOf": [{"required": ["x"]}, {"required": ["y"]}]}}
+                    ]);
+                }
+                "screenshot" => {
+                    schema["not"] = json!({"required": ["fullPage"], "properties": {"fullPage": {"const": true}}, "anyOf": [{"required": ["selector"]}, {"required": ["ref"]}]});
+                }
+                "wait" => {
+                    schema["oneOf"] = json!([
+                        {"required": ["time"], "not": {"anyOf": [{"required": ["text"]}, {"required": ["textGone"]}, {"required": ["selector"]}, {"required": ["selectorGone"]}]}},
+                        {"not": {"required": ["time"]}, "anyOf": [{"required": ["text"]}, {"required": ["textGone"]}, {"required": ["selector"]}, {"required": ["selectorGone"]}]}
+                    ]);
+                }
+                "evaluate" => {
+                    schema["oneOf"] = json!([{"required": ["expression"]}, {"required": ["function"]}, {"required": ["sourcePath"]}]);
+                }
+                "devtools" => {
+                    schema["properties"]["msgid"]["minimum"] = json!(1);
+                    schema["properties"]["fileName"]["pattern"] = json!("^[A-Za-z0-9._-]{1,100}$");
+                    schema["properties"]["fileName"]["maxLength"] = json!(100);
+                    for field in ["types", "resourceTypes"] {
+                        schema["properties"][field]["maxItems"] = json!(30);
+                    }
+                    let mut conditions = Vec::new();
+                    for (action, required) in [
+                        ("console_message", vec!["msgid"]),
+                        ("network_detail", vec!["requestId"]),
+                        ("networkDetails", vec!["requestId"]),
+                        ("networkState", vec!["state"]),
+                        ("route", vec!["pattern"]),
+                        ("storageRestore", vec!["fileName"]),
+                        ("cookieDelete", vec!["name", "domain"]),
+                    ] {
+                        conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": action}}}, "then": {"required": required}}));
+                    }
+                    conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": "networkDetails"}}}, "then": {"properties": {"requestId": {"type": "string", "minLength": 1}}}}));
+                    conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": "network_detail"}}}, "then": {"properties": {"requestId": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": MAX_SAFE_RECORD_ID}, {"type": "string", "pattern": "^\\s*0*[1-9][0-9]*\\s*$"}]}}}}));
+                    conditions.push(json!({"if": {"required": ["frameId"]}, "then": {"properties": {"action": {"enum": ["snapshot", "ax"]}}}}));
+                    schema["allOf"] = json!(conditions);
+                }
+                "fill_form" => schema["properties"]["elements"]["maxItems"] = json!(50),
+                "select_option" => schema["properties"]["values"]["minItems"] = json!(1),
+                "upload-file" => schema["properties"]["files"]["minItems"] = json!(1),
+                "performance_start_trace" => {
+                    schema["properties"]["categories"]["maxItems"] = json!(30)
+                }
+                "performance_analyze_insight" => {
+                    schema["properties"]["insightId"]["enum"] = json!([
+                        "long-tasks",
+                        "render-blocking",
+                        "lcp",
+                        "cls",
+                        "document-latency",
+                        "third-parties"
+                    ])
+                }
+                "query_heapsnapshot_objects" => {
+                    schema["properties"]["pageIdx"]["maximum"] = json!(100_000)
+                }
+                _ => {}
+            }
+        }
         tools
     }
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
-            | "list" | "evaluate" | "type" | "fill_form" | "drag" | "wait" | "press_key"
-            | "select_option" | "hover" | "upload-file" | "back"
-            | "forward" | "get_tab_content" | "frames"
-            | "emulate" | "resize_page" | "performance_start_trace" | "performance_stop_trace"
-            | "performance_analyze_insight" | "get_css_styles" | "audit"
-            | "take_heapsnapshot" | "get_heapsnapshot_summary" | "query_heapsnapshot_objects"
-            | "get_heapsnapshot_object_details" | "get_heapsnapshot_edges"
-            | "get_heapsnapshot_retainers" | "get_heapsnapshot_retaining_paths"
-            | "get_heapsnapshot_duplicate_strings" | "compare_heapsnapshots"
-            | "screencast_start" | "screencast_stop" | "list_page_tools" | "call_page_tool"
-            | "request_share" => {
-                Err(Error::new(
-                    Status::GenericFailure,
-                    "Browser tools must be executed through the asynchronous Electron command bridge"
-                        .to_string(),
-                ))
-            }
+            "create"
+            | "navigate"
+            | "click"
+            | "screenshot"
+            | "devtools"
+            | "close"
+            | "focus"
+            | "list"
+            | "evaluate"
+            | "type"
+            | "fill_form"
+            | "drag"
+            | "wait"
+            | "press_key"
+            | "select_option"
+            | "hover"
+            | "upload-file"
+            | "back"
+            | "forward"
+            | "get_tab_content"
+            | "frames"
+            | "emulate"
+            | "resize_page"
+            | "performance_start_trace"
+            | "performance_stop_trace"
+            | "performance_analyze_insight"
+            | "get_css_styles"
+            | "audit"
+            | "take_heapsnapshot"
+            | "get_heapsnapshot_summary"
+            | "query_heapsnapshot_objects"
+            | "get_heapsnapshot_object_details"
+            | "get_heapsnapshot_edges"
+            | "get_heapsnapshot_retainers"
+            | "get_heapsnapshot_retaining_paths"
+            | "get_heapsnapshot_duplicate_strings"
+            | "compare_heapsnapshots"
+            | "screencast_start"
+            | "screencast_stop"
+            | "list_page_tools"
+            | "call_page_tool"
+            | "request_share" => Err(Error::new(
+                Status::GenericFailure,
+                "Browser tools must be executed through the asynchronous Electron command bridge"
+                    .to_string(),
+            )),
             _ => Err(validation::unknown_tool_error(tool_name)),
         }
     }

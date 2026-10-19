@@ -42,6 +42,7 @@ import {
 } from "./browser/browserAgentSettings";
 import {
   clearBrowserNavigationState,
+  clearBrowserRecordingRenderLease,
   clearBrowserRouteRulesForInstance,
   executeBrowserMcpOperation,
   recordMainFrameNavigationFailure,
@@ -793,6 +794,7 @@ export const BrowserPanelContent = ({
     return () => {
       unregister();
       // 实例卸载时清理其累积的路由规则与导航状态,避免残留影响其他实例。
+      clearBrowserRecordingRenderLease(instanceId);
       clearBrowserRouteRulesForInstance(instanceId);
       clearBrowserNavigationState(instanceId);
     };

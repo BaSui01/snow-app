@@ -62,8 +62,38 @@ const TRACE_CATEGORIES = [
 type ActiveTrace = {
   chunks: string[];
   startedAt: number;
-  completeResolve: (() => void) | null;
+  completed: Promise<Error | null>;
+  finish: (error: Error | null) => void;
+  cleanup: () => void;
+  stopping: boolean;
 };
+
+// Bound CDP commands as well as tracingComplete; a detached debugger may never reply.
+const traceOperation = async (
+  operation: Promise<unknown>,
+  label: string,
+): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after 30 seconds`)),
+          30_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+const traceCommand = (
+  contents: Electron.WebContents,
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<void> =>
+  traceOperation(contents.debugger.sendCommand(method, params), method);
 
 const activeTraces = new Map<number, ActiveTrace>();
 const lastInsightDetails = new Map<
@@ -105,7 +135,7 @@ export const handleTraceMessage = (
       }
     }
   } else if (method === "Tracing.tracingComplete") {
-    active.completeResolve?.();
+    active.finish(null);
   }
 };
 
@@ -121,31 +151,99 @@ export const startBrowserTrace = async (
     );
   }
   const contents = getBrowserWebContents(webContentsId);
-  await ensureWebContentsDebugger(contents);
-  if (!contents.debugger.isAttached()) {
+  await traceOperation(
+    ensureWebContentsDebugger(contents),
+    "Browser debugger initialization",
+  );
+  // Capture while alive: the native getter can throw after target destruction.
+  const debuggerSession = contents.debugger;
+  if (!debuggerSession.isAttached()) {
     throw new Error(
       "Browser debugger is unavailable; close the page DevTools and retry",
     );
   }
+  // Recheck after the attach await to prevent concurrent starts on the same target.
+  if (activeTraces.has(webContentsId))
+    throw new Error("A performance trace is already running");
   const usedCategories =
     categories && categories.length > 0 ? categories : TRACE_CATEGORIES;
-  activeTraces.set(webContentsId, {
+  let finish!: (error: Error | null) => void;
+  const completed = new Promise<Error | null>((resolve) => {
+    finish = resolve;
+  });
+  let cleaned = false;
+  const abort = () => {
+    if (cleaned) return;
+    finish(
+      new Error("Browser target destroyed or debugger detached during trace"),
+    );
+    if (activeTraces.get(webContentsId) === active)
+      lastInsightDetails.delete(webContentsId);
+    active.cleanup();
+  };
+  const active: ActiveTrace = {
     chunks: [],
     startedAt: Date.now(),
-    completeResolve: null,
-  });
+    completed,
+    finish,
+    stopping: false,
+    cleanup: () => {
+      if (cleaned) return;
+      cleaned = true;
+      // Each resource is best-effort; cleanup must not hide the trace error.
+      try {
+        contents.removeListener("destroyed", abort);
+      } catch {}
+      try {
+        debuggerSession.removeListener("detach", abort);
+      } catch {}
+      if (activeTraces.get(webContentsId) === active)
+        activeTraces.delete(webContentsId);
+    },
+  };
+  activeTraces.set(webContentsId, active);
+  contents.once("destroyed", abort);
+  debuggerSession.once("detach", abort);
   try {
-    await contents.debugger.sendCommand("Tracing.start", {
-      categories: usedCategories,
-      transferMode: "ReportEvents",
-    });
+    await Promise.race([
+      traceCommand(contents, "Tracing.start", {
+        categories: usedCategories.join(","),
+        transferMode: "ReportEvents",
+      }),
+      completed.then((error) => {
+        if (error) throw error;
+      }),
+    ]);
+    if (
+      activeTraces.get(webContentsId) !== active ||
+      contents.isDestroyed() ||
+      !debuggerSession.isAttached()
+    )
+      throw new Error("Browser debugger became unavailable");
   } catch (error) {
-    activeTraces.delete(webContentsId);
+    active.finish(
+      error instanceof Error ? error : new Error("Trace start failed"),
+    );
+    // Keep this target reserved until best-effort engine cleanup settles; a late
+    // Tracing.end must never stop a newly started recording.
+    try {
+      if (
+        activeTraces.get(webContentsId) === active &&
+        !contents.isDestroyed() &&
+        debuggerSession.isAttached()
+      ) {
+        await traceCommand(contents, "Tracing.end");
+      }
+    } catch {
+      // Preserve the original start failure, including native lifecycle errors.
+    } finally {
+      active.cleanup();
+    }
     throw error;
   }
   return {
     started: true,
-    startedAt: new Date().toISOString(),
+    startedAt: new Date(active.startedAt).toISOString(),
     categories: usedCategories,
   };
 };
@@ -160,29 +258,33 @@ export const stopBrowserTrace = async (
       "No active performance trace; call performance_start_trace first",
     );
   }
-  const contents = getBrowserWebContents(webContentsId);
-  if (!contents.debugger.isAttached()) {
-    activeTraces.delete(webContentsId);
-    throw new Error(
-      "Browser debugger is unavailable; close the page DevTools and retry",
-    );
-  }
+  if (active.stopping) throw new Error("Performance trace is already stopping");
+  active.stopping = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const completed = new Promise<void>((resolve, reject) => {
-    active.completeResolve = resolve;
-    timer = setTimeout(
-      () => reject(new Error("Trace completion timed out after 30 seconds")),
-      30_000,
-    );
-  });
   try {
-    await contents.debugger.sendCommand("Tracing.end");
-    await completed;
+    const contents = getBrowserWebContents(webContentsId);
+    if (!contents.debugger.isAttached())
+      throw new Error("Browser debugger is unavailable");
+    // Observe the deadline before sending end, so command failure cannot leave a
+    // rejected completion promise unobserved or a timer waiting in the background.
+    const deadline = new Promise<Error>((resolve) => {
+      timer = setTimeout(
+        () => resolve(new Error("Trace completion timed out after 30 seconds")),
+        30_000,
+      );
+    });
+    const result = await Promise.race([
+      (async () => {
+        await traceCommand(contents, "Tracing.end");
+        return active.completed;
+      })(),
+      deadline,
+    ]);
+    if (result) throw result;
   } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-    activeTraces.delete(webContentsId);
+    if (timer) clearTimeout(timer);
+    active.finish(new Error("Trace stopped"));
+    active.cleanup();
   }
   const durationMs = Date.now() - active.startedAt;
   const events = parseChunks(active.chunks);
@@ -229,7 +331,14 @@ export const runBrowserTrace = async (
       error: error instanceof Error ? error.message : String(error),
     };
   }
-  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  await new Promise((resolve) =>
+    setTimeout(
+      resolve,
+      Number.isFinite(durationMs)
+        ? Math.min(30_000, Math.max(1_000, durationMs))
+        : 3_000,
+    ),
+  );
   try {
     return await stopBrowserTrace(webContentsId);
   } catch (error) {

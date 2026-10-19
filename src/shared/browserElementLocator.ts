@@ -93,6 +93,23 @@ export const buildElementLocatorScript = (
     throw new Error('Target element is disabled');
   }
   element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  await new Promise((resolve) => {
+    let finished = false;
+    let firstFrame;
+    let secondFrame;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (firstFrame !== undefined) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
+      resolve();
+    };
+    // Background/hidden webviews may never schedule animation frames.
+    const timer = setTimeout(finish, 100);
+    firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(finish);
+    });
+  });
   ${actionBody}
 })()`;

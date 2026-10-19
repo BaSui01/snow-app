@@ -48,13 +48,26 @@ import { useI18n } from "../../../../i18n";
 import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
-import { localizeToolError } from "./shared/toolErrorDisplay";
+import { BrowserToolError } from "./BrowserToolError";
+import {
+  BrowserExtendedResult,
+  EXTENDED_BROWSER_OPERATIONS,
+  getBrowserExtendedSummary,
+  type ExtendedBrowserOperation,
+} from "./BrowserExtendedResults";
+import {
+  formatBrowserDisplayJson,
+  getBrowserOutcome,
+  sanitizeBrowserDisplayValue,
+} from "./browserToolPresentation";
+import "./BrowserToolCall.css";
 
 type BrowserToolCallProps = {
   toolCall: ToolCallInfo;
 };
 
 type BrowserOperation =
+  | ExtendedBrowserOperation
   | "create"
   | "navigate"
   | "click"
@@ -214,7 +227,7 @@ const stringifyResultValue = (value: unknown): string => {
     return value;
   }
   try {
-    return JSON.stringify(value, null, 2);
+    return formatBrowserDisplayJson(value);
   } catch {
     return String(value);
   }
@@ -249,7 +262,7 @@ const parseClickedElement = (value: unknown): ClickedElement | null => {
   return {
     tagName: asString(value.tagName) ?? "?",
     id: asString(value.id) ?? null,
-    text: asString(value.text) ?? "",
+    text: asString(value.text) ?? asString(value.content) ?? "",
     href: asString(value.href) ?? null,
   };
 };
@@ -302,7 +315,7 @@ const parseSnapshot = (value: unknown): SnapshotData | null => {
             scrollHeight: asNumber(documentSize.scrollHeight) as number,
           }
         : null,
-    text: asString(value.text) ?? "",
+    text: asString(value.text) ?? asString(value.content) ?? "",
     links: rawLinks
       .filter(isRecord)
       .map((link) => ({
@@ -718,19 +731,14 @@ const EvaluateView = ({
           <code>{expression}</code>
         </div>
       ) : null}
-      {error ? (
-        <div className="tool-call-error">
-          <AlertCircle size={12} aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      ) : null}
+      {error ? <BrowserToolError message={error} /> : null}
       {resultValue !== undefined ? (
         <section className="tool-call-section">
           <span className="tool-call-section-label">
             {t("toolCall.browser.result")}
           </span>
           <pre className="tool-call-section-pre tool-call-browser-eval-result">
-            {stringifyResultValue(resultValue)}
+            {stringifyResultValue(sanitizeBrowserDisplayValue(resultValue))}
           </pre>
         </section>
       ) : null}
@@ -830,15 +838,16 @@ const WaitView = ({
 }): React.JSX.Element | null => {
   const { t } = useI18n();
   const time = asNumber(args?.time);
-  const text = asString(args?.text);
-  const textGone = asString(args?.textGone);
+  const conditions = [
+    ["text", "toolCall.browser.wait.text"],
+    ["textGone", "toolCall.browser.wait.textGone"],
+    ["selector", "toolCall.browser.extended.waitSelector"],
+    ["selectorGone", "toolCall.browser.extended.waitSelectorGone"],
+  ].filter(([field]) => asString(args?.[field]));
   const waitedMs = asNumber(data?.waitedMs);
   const url = asString(data?.url);
   const title = asString(data?.title);
   const instanceId = asString(data?.instanceId);
-  if (time === undefined && !text && !textGone) {
-    return null;
-  }
   return (
     <>
       <div className="tool-call-browser-target">
@@ -847,15 +856,16 @@ const WaitView = ({
           <span className="tool-call-browser-target-text">
             {t("toolCall.browser.wait.time", { values: { count: time } })}
           </span>
-        ) : text ? (
-          <span className="tool-call-browser-target-text">
-            {t("toolCall.browser.wait.text")} "{text}"
-          </span>
-        ) : textGone ? (
-          <span className="tool-call-browser-target-text">
-            {t("toolCall.browser.wait.textGone")} "{textGone}"
-          </span>
         ) : null}
+        {conditions.map(([field, key]) => (
+          <span className="tool-call-browser-target-text" key={field}>
+            {t(key)}{" "}
+            <code>{String(sanitizeBrowserDisplayValue(args?.[field]))}</code>
+          </span>
+        ))}
+        {time === undefined && conditions.length === 0
+          ? t("toolCall.browser.extended.resultEmpty")
+          : null}
       </div>
       {waitedMs !== undefined ? (
         <StatusRow
@@ -1160,15 +1170,22 @@ const FillFormView = ({
   if (elements.length === 0 && results.length === 0) {
     return null;
   }
-  const failureCount = asNumber(data?.failureCount) ?? 0;
-  const failed = results.filter(isRecord).filter((item) => item.ok !== true);
+  const failed = results.filter(isRecord).filter((item) => item.ok === false);
+  const failureCount = asNumber(data?.failureCount) ?? failed.length;
+  const successCount =
+    asNumber(data?.successCount) ??
+    results.filter(isRecord).filter((item) => item.ok === true).length;
   return (
     <>
       <StatusRow
         icon={ListChecks}
-        label={t("toolCall.browser.filledCount", {
-          values: { count: results.length || elements.length },
-        })}
+        label={
+          data
+            ? t("toolCall.browser.filledCount", {
+                values: { count: successCount },
+              })
+            : t("toolNames.browser-fill_form")
+        }
       >
         {failureCount > 0 ? (
           <Tag tone="amber">
@@ -1179,12 +1196,11 @@ const FillFormView = ({
         ) : null}
       </StatusRow>
       {failed.map((item, index) => (
-        <div key={index} className="tool-call-error">
-          <AlertCircle size={12} aria-hidden="true" />
-          <span>
-            {asString(item.error) ?? t("toolCall.browser.fillFailed")}
-          </span>
-        </div>
+        <BrowserToolError
+          key={index}
+          message={asString(item.error) ?? t("toolCall.browser.fillFailed")}
+          compact
+        />
       ))}
     </>
   );
@@ -1837,8 +1853,9 @@ const DevtoolsAxView = ({
 }): React.JSX.Element | null => {
   const { t } = useI18n();
   // accessibility 可能是数组（其他调用方）或 serializeAxTree 的文本树字符串。
-  const tree: AxTreeLine[] = Array.isArray(data?.accessibility)
-    ? (data.accessibility as unknown[])
+  const accessibility = data?.accessibility ?? data?.tree;
+  const tree: AxTreeLine[] = Array.isArray(accessibility)
+    ? (accessibility as unknown[])
         .map((node) => {
           if (!isRecord(node)) {
             return null;
@@ -1851,16 +1868,16 @@ const DevtoolsAxView = ({
           } satisfies AxTreeLine;
         })
         .filter((node): node is AxTreeLine => node !== null)
-    : typeof data?.accessibility === "string"
-      ? data.accessibility
+    : typeof accessibility === "string"
+      ? accessibility
           .split("\n")
           .map(parseAxLine)
           .filter((node): node is AxTreeLine => node !== null)
       : [];
-  const stats = isRecord(data?.stats) ? data.stats : null;
+  const stats = isRecord(data?.stats) ? data.stats : data;
   const emitted =
     typeof stats?.emitted === "number" ? stats.emitted : tree.length;
-  const truncated = stats?.truncated === true;
+  const truncated = stats?.truncated === true || tree.length > 60;
   return (
     <>
       {stats ? (
@@ -1874,6 +1891,11 @@ const DevtoolsAxView = ({
             <Tag tone="amber">{t("toolCall.browser.axTruncated")}</Tag>
           ) : null}
         </div>
+      ) : null}
+      {tree.length === 0 ? (
+        <p className="tool-call-section-text">
+          {t("toolCall.browser.extended.resultEmpty")}
+        </p>
       ) : null}
       {tree.length > 0 ? (
         <div className="tool-call-browser-ax">
@@ -1915,7 +1937,7 @@ const DevtoolsView = ({
   const instanceId = asString(data?.instanceId);
 
   const snapshot =
-    action === "snapshot" && data ? parseSnapshot(data.snapshot) : null;
+    action === "snapshot" && data ? parseSnapshot(data.snapshot ?? data) : null;
   const messages =
     action === "console" && data ? parseConsoleMessages(data.messages) : null;
   const opened = data?.opened === true;
@@ -2028,9 +2050,9 @@ const DevtoolsView = ({
     stateRow !== null;
   const fallbackText =
     action === "trace" && data
-      ? JSON.stringify(data.trace ?? data, null, 2)
+      ? formatBrowserDisplayJson(data.trace ?? data)
       : !hasDedicatedView && data
-        ? JSON.stringify(data, null, 2)
+        ? formatBrowserDisplayJson(data)
         : "";
 
   return (
@@ -2175,7 +2197,7 @@ const ListView = ({
 
 /* ---------------- 主组件 ---------------- */
 
-const RUNNING_LABEL_KEYS: Record<BrowserOperation, string> = {
+const RUNNING_LABEL_KEYS: Partial<Record<BrowserOperation, string>> = {
   create: "toolCall.browser.running.create",
   navigate: "toolCall.browser.running.navigate",
   click: "toolCall.browser.running.click",
@@ -2220,9 +2242,23 @@ export const BrowserToolCall = ({
   );
 
   const isRunning = toolCall.status === "running";
-  const hasError = parsedResult.type === "error";
-  const effectiveStatus = hasError ? "error" : toolCall.status;
   const data = parsedResult.type === "success" ? parsedResult.data : null;
+  const outcome = getBrowserOutcome(operation, parsedArgs, data);
+  const hasError =
+    parsedResult.type === "error" ||
+    outcome.kind === "error" ||
+    toolCall.status === "error";
+  const effectiveStatus = hasError ? "error" : toolCall.status;
+  const errorMessage =
+    parsedResult.type === "error"
+      ? parsedResult.message
+      : parsedResult.type === "raw" && toolCall.status === "error"
+        ? parsedResult.text
+        : outcome.kind === "error"
+          ? (outcome.message ?? t("toolCall.browser.extended.failed"))
+          : toolCall.status === "error"
+            ? t("toolCall.browser.extended.failed")
+            : undefined;
 
   /* 头部 displayName：优先展示 URL host / 选择器 / 实例 ID 等上下文 */
   const argUrl = asString(parsedArgs?.url);
@@ -2234,7 +2270,9 @@ export const BrowserToolCall = ({
   const resultUrl = asString(data?.url);
   const snapshotHost = (() => {
     const snapshot =
-      operation === "devtools" && data ? parseSnapshot(data.snapshot) : null;
+      operation === "devtools" && data
+        ? parseSnapshot(data.snapshot ?? data)
+        : null;
     return snapshot?.url ? getHost(snapshot.url) : "";
   })();
 
@@ -2271,11 +2309,16 @@ export const BrowserToolCall = ({
       const elements = Array.isArray(parsedArgs?.elements)
         ? parsedArgs.elements
         : [];
-      displayName =
-        elements.length > 0
-          ? t("toolCall.browser.filledCount", {
-              values: { count: elements.length },
-            })
+      const succeeded =
+        asNumber(data?.successCount) ??
+        (Array.isArray(data?.results)
+          ? data.results.filter(isRecord).filter((item) => item.ok === true)
+              .length
+          : 0);
+      displayName = data
+        ? t("toolCall.browser.filledCount", { values: { count: succeeded } })
+        : elements.length > 0
+          ? `${t("toolNames.browser-fill_form")} (${elements.length})`
           : undefined;
       break;
     }
@@ -2357,6 +2400,9 @@ export const BrowserToolCall = ({
       displayName = instanceId ? shortInstanceId(instanceId) : undefined;
       break;
     }
+    default:
+      displayName = getBrowserExtendedSummary(operation, parsedArgs, data, t);
+      break;
   }
 
   /* 头部 meta 徽章：按操作给出最有信息量的摘要 */
@@ -2470,7 +2516,7 @@ export const BrowserToolCall = ({
           );
         }
         if (action === "snapshot") {
-          const snapshot = parseSnapshot(data.snapshot);
+          const snapshot = parseSnapshot(data.snapshot ?? data);
           if (snapshot) {
             return (
               <span className="tool-call-browser-meta">
@@ -2504,13 +2550,17 @@ export const BrowserToolCall = ({
           }
         }
         if (action === "ax") {
-          const stats = isRecord(data.stats) ? data.stats : null;
+          const stats = isRecord(data.stats) ? data.stats : data;
           const count =
-            typeof stats?.emitted === "number"
+            typeof stats.emitted === "number"
               ? stats.emitted
               : Array.isArray(data.accessibility)
                 ? data.accessibility.length
-                : 0;
+                : typeof (data.accessibility ?? data.tree) === "string"
+                  ? String(data.accessibility ?? data.tree)
+                      .split(String.fromCharCode(10))
+                      .filter((line) => line.trim()).length
+                  : 0;
           if (count > 0) {
             return (
               <span className="tool-call-browser-meta">
@@ -2624,8 +2674,48 @@ export const BrowserToolCall = ({
         );
       case "list":
         return <ListView data={data} />;
+      case "request_share":
+        return (
+          <StatusRow
+            icon={Bot}
+            label={t(
+              data?.shared === true
+                ? "toolCall.browser.shareGranted"
+                : "toolCall.browser.shareDenied",
+            )}
+          >
+            {asString(data?.instanceId) ? (
+              <InstanceChip instanceId={String(data?.instanceId)} />
+            ) : null}
+            {asString(data?.reason) ? (
+              <Tag>{String(sanitizeBrowserDisplayValue(data?.reason))}</Tag>
+            ) : null}
+          </StatusRow>
+        );
       default:
-        return null;
+        if (EXTENDED_BROWSER_OPERATIONS.some((name) => name === operation)) {
+          return (
+            <BrowserExtendedResult
+              operation={operation as ExtendedBrowserOperation}
+              args={parsedArgs}
+              data={data}
+            />
+          );
+        }
+        return (
+          <section className="tool-call-section">
+            <span className="tool-call-section-label">
+              {t("toolCall.browser.result")}
+            </span>
+            {data ? (
+              <pre className="tool-call-section-pre">
+                {formatBrowserDisplayJson(data)}
+              </pre>
+            ) : (
+              <p>{t("toolCall.browser.extended.resultUnavailable")}</p>
+            )}
+          </section>
+        );
     }
   };
 
@@ -2633,22 +2723,8 @@ export const BrowserToolCall = ({
      也需要展示参数，让卡片在运行期间就有内容可看。 */
   const showArgsWhilePending =
     parsedResult.type === "empty" &&
-    (operation === "click" ||
-      operation === "evaluate" ||
-      operation === "type" ||
-      operation === "fill_form" ||
-      operation === "drag" ||
-      operation === "wait" ||
-      operation === "press_key" ||
-      operation === "hover" ||
-      operation === "select_option" ||
-      operation === "upload-file" ||
-      operation === "screenshot" ||
-      operation === "devtools" ||
-      operation === "close" ||
-      operation === "focus" ||
-      operation === "create" ||
-      operation === "navigate");
+    (isRunning || toolCall.status === "pending") &&
+    parsedArgs !== null;
 
   return (
     <ToolCallNode
@@ -2662,42 +2738,65 @@ export const BrowserToolCall = ({
         argInstanceId
       }
       status={effectiveStatus}
-      meta={meta}
-      className="tool-call-browser"
+      meta={
+        <>
+          {outcome.kind === "partial" ? (
+            <Tag tone="amber">
+              {t("toolCall.browser.extended.partialFailure")}
+            </Tag>
+          ) : null}
+          {hasError ? <Tag>{t("toolCall.browser.extended.failed")}</Tag> : null}
+          {meta}
+        </>
+      }
+      className={`tool-call-browser browser-result-${outcome.kind}`}
     >
       <div className="tool-call-body tool-call-browser-body">
         {parsedResult.type === "success" ? renderSuccess() : null}
+        {parsedResult.type === "success" && RUNNING_LABEL_KEYS[operation] ? (
+          <details className="tool-call-section">
+            <summary className="tool-call-section-label">
+              {t("toolCall.browser.extended.technicalDetails")}
+            </summary>
+            <pre className="tool-call-section-pre">
+              {formatBrowserDisplayJson(data)}
+            </pre>
+          </details>
+        ) : null}
 
         {showArgsWhilePending ? renderSuccess() : null}
 
         {/* 错误 */}
-        {parsedResult.type === "error" ? (
-          <div className="tool-call-error">
-            <AlertCircle size={12} aria-hidden="true" />
-            <span>{localizeToolError(t, parsedResult.message)}</span>
-          </div>
-        ) : null}
+        {errorMessage ? <BrowserToolError message={errorMessage} /> : null}
 
         {/* 原始结果兜底 */}
-        {parsedResult.type === "raw" ? (
+        {parsedResult.type === "raw" && !hasError ? (
           <section className="tool-call-section">
             <span className="tool-call-section-label">
               {t("toolCall.browser.result")}
             </span>
-            <pre className="tool-call-section-pre">{parsedResult.text}</pre>
+            <pre className="tool-call-section-pre">
+              {String(sanitizeBrowserDisplayValue(parsedResult.text))}
+            </pre>
           </section>
         ) : null}
 
         {/* 等待 / 执行中 */}
         {parsedResult.type === "empty" ? (
-          <PendingBlock
-            isRunning={isRunning}
-            runningLabel={t(
-              RUNNING_LABEL_KEYS[operation] ??
-                "toolCall.browser.running.default",
-            )}
-            waitingLabel={t("toolCall.browser.waiting")}
-          />
+          isRunning || toolCall.status === "pending" ? (
+            <PendingBlock
+              isRunning={isRunning}
+              runningLabel={t(
+                RUNNING_LABEL_KEYS[operation] ??
+                  "toolCall.browser.running.default",
+              )}
+              waitingLabel={t("toolCall.browser.waiting")}
+            />
+          ) : !hasError ? (
+            <p className="tool-call-section-text">
+              {t("toolCall.browser.extended.resultEmpty")}
+            </p>
+          ) : null
         ) : null}
       </div>
     </ToolCallNode>

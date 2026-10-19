@@ -2,7 +2,7 @@ export type BrowserMcpCommandArgs = Record<string, unknown>;
 
 export type BrowserMcpCommandHandler = (
   operation: string,
-  args: BrowserMcpCommandArgs
+  args: BrowserMcpCommandArgs,
 ) => Promise<unknown>;
 
 type InstanceWaiter = {
@@ -43,7 +43,7 @@ export const focusBrowserMcpInstance = (instanceId: string): void => {
 
 export const registerBrowserMcpInstance = (
   instanceId: string,
-  handler: BrowserMcpCommandHandler
+  handler: BrowserMcpCommandHandler,
 ): (() => void) => {
   instances.set(instanceId, handler);
   focusedInstanceId = instanceId;
@@ -74,7 +74,9 @@ export const registerBrowserMcpInstance = (
         for (const waiter of waiters) {
           clearTimeout(waiter.timer);
           waiter.reject(
-            new Error(`Browser instance was closed before it became ready: ${instanceId}`)
+            new Error(
+              `Browser instance was closed before it became ready: ${instanceId}`,
+            ),
           );
         }
         instanceWaiters.delete(instanceId);
@@ -85,7 +87,7 @@ export const registerBrowserMcpInstance = (
 
 export const waitForBrowserMcpInstance = (
   instanceId: string,
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
 ): Promise<void> => {
   if (instances.has(instanceId)) {
     return Promise.resolve();
@@ -108,11 +110,36 @@ export const waitForBrowserMcpInstance = (
   });
 };
 
+// 仅包含离线文件分析；take 仍需页面授权、实例与 webContents。
+const OFFLINE_HEAP_ACTIONS = new Map<
+  string,
+  Exclude<Parameters<typeof window.snow.browserHeap>[0], "take">
+>([
+  ["get_heapsnapshot_summary", "summary"],
+  ["query_heapsnapshot_objects", "query"],
+  ["get_heapsnapshot_object_details", "details"],
+  ["get_heapsnapshot_edges", "edges"],
+  ["get_heapsnapshot_retainers", "retainers"],
+  ["get_heapsnapshot_retaining_paths", "paths"],
+  ["get_heapsnapshot_duplicate_strings", "strings"],
+  ["compare_heapsnapshots", "compare"],
+]);
+
+export const isOfflineBrowserHeapOperation = (operation: string): boolean =>
+  OFFLINE_HEAP_ACTIONS.has(operation);
+
 export const executeBrowserMcpCommand = async (
   operation: string,
-  argsJson: string
+  argsJson: string,
 ): Promise<string> => {
   const args = parseCommandArgs(argsJson);
+  const offlineHeapAction = OFFLINE_HEAP_ACTIONS.get(operation);
+  if (offlineHeapAction) {
+    // 原 IPC 的主进程文件路径校验仍负责拒绝非法/越权路径。
+    return JSON.stringify(
+      await window.snow.browserHeap(offlineHeapAction, args),
+    );
+  }
   const requestedInstanceId =
     typeof args.instanceId === "string" ? args.instanceId.trim() : "";
   const useFocusedInstance =
@@ -122,7 +149,7 @@ export const executeBrowserMcpCommand = async (
     : requestedInstanceId;
   if (!instanceId) {
     throw new Error(
-      `No embedded browser is available for browser ${operation}; open and focus a browser tab first`
+      `No embedded browser is available for browser ${operation}; open and focus a browser tab first`,
     );
   }
 

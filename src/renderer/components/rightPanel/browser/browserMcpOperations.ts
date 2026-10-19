@@ -8,7 +8,11 @@ import {
   type AxNode,
 } from "./browserAxSnapshot";
 import type { BrowserMcpCommandArgs } from "./browserMcpController";
-import { withCaptureRenderMode } from "./captureRenderMode";
+import {
+  acquireCaptureRenderLease,
+  withCaptureRenderMode,
+  type CaptureRenderLease,
+} from "./captureRenderMode";
 
 const TEXT_PREVIEW_LENGTH = 160;
 
@@ -220,9 +224,13 @@ const requiredRawString = (
 const optionalString = (
   args: BrowserMcpCommandArgs,
   field: string,
+  emptyAsMissing = false,
 ): string | undefined => {
   const value = args[field];
   if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (emptyAsMissing && typeof value === "string" && !value.trim()) {
     return undefined;
   }
   if (typeof value !== "string" || !value.trim()) {
@@ -231,13 +239,32 @@ const optionalString = (
   return value.trim();
 };
 
+/** Payload 复用非空校验，但不沿用结构字段的 trim；导航空白仍可视为缺省。 */
+const optionalPayloadString = (
+  args: BrowserMcpCommandArgs,
+  field: string,
+  emptyAsMissing = false,
+): string | undefined => {
+  const validated = optionalString(args, field, emptyAsMissing);
+  return validated === undefined ? undefined : (args[field] as string);
+};
+
+const requiredPayloadString = (
+  args: BrowserMcpCommandArgs,
+  field: string,
+): string => {
+  requiredString(args, field);
+  return args[field] as string;
+};
+
 const currentPageMetadata = async (
   webview: Electron.WebviewTag,
   instanceId: string,
 ): Promise<{ instanceId: string; url: string; title: string }> => ({
   instanceId,
   url: webview.getURL(),
-  title: await webview.executeJavaScript("document.title || ''"),
+  // JS dialog 会暂停页面脚本；metadata 必须使用原生 getter，避免阻塞响应入口。
+  title: webview.getTitle(),
 });
 
 /** 等待一次加载完成（did-stop-loading）；trigger 触发导航/重载。 */
@@ -356,10 +383,16 @@ const navigate = async (
     typeof args.timeoutMs === "number" ? args.timeoutMs : 30_000;
   const reload = args.reload === true;
   const ignoreCache = args.ignoreCache === true;
-  const initScript = optionalString(args, "initScript");
-  const url = optionalString(args, "url") ?? "";
+  // Blank optional navigation fields mean no script / no URL, not invalid input.
+  const initScript = optionalPayloadString(args, "initScript", true);
+  const url = optionalString(args, "url", true) ?? "";
   if (!reload && !url) {
     throw new Error("url is required unless reload=true for browser-navigate");
+  }
+  if (reload && url) {
+    throw new Error(
+      "url cannot be combined with reload=true for browser-navigate",
+    );
   }
   const webContentsId = webview.getWebContentsId();
   let scriptId: string | null = null;
@@ -418,8 +451,8 @@ const locateElementTarget = async (
   height?: number;
   element: unknown;
 }> => {
-  const selector = optionalString(args, "selector");
-  const text = optionalString(args, "text");
+  const selector = optionalPayloadString(args, "selector");
+  const text = optionalPayloadString(args, "text");
   const ref = optionalString(args, "ref");
   if (ref) {
     const { info } = await resolveRefHandle(
@@ -612,8 +645,8 @@ const type = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const selector = optionalString(args, "selector");
-  const text = optionalString(args, "text");
+  const selector = optionalPayloadString(args, "selector");
+  const text = optionalPayloadString(args, "text");
   const ref = optionalString(args, "ref");
   const value = requiredRawString(args, "value");
   const submit = args.submit === true;
@@ -786,15 +819,19 @@ const emulatePage = async (
   passthrough(webview, instanceId, () =>
     window.snow.browserEmulate(webview.getWebContentsId(), {
       colorScheme:
-        args.colorScheme === "dark" ||
-        args.colorScheme === "light" ||
-        args.colorScheme === "auto"
-          ? args.colorScheme
-          : undefined,
+        args.colorScheme === null
+          ? "auto"
+          : args.colorScheme === "dark" ||
+              args.colorScheme === "light" ||
+              args.colorScheme === "auto"
+            ? args.colorScheme
+            : undefined,
       cpuThrottlingRate:
-        typeof args.cpuThrottlingRate === "number"
-          ? args.cpuThrottlingRate
-          : undefined,
+        args.cpuThrottlingRate === null
+          ? 1
+          : typeof args.cpuThrottlingRate === "number"
+            ? args.cpuThrottlingRate
+            : undefined,
       extraHttpHeaders:
         args.extraHttpHeaders === null
           ? null
@@ -887,7 +924,7 @@ const cssStyles = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const selector = optionalString(args, "selector");
+  const selector = optionalPayloadString(args, "selector");
   const ref = optionalString(args, "ref");
   let backendNodeId: number | undefined;
   if (ref) {
@@ -929,73 +966,137 @@ const auditPage = async (
     ),
   );
 
-const HEAP_ACTIONS = new Map<
-  string,
-  | "take"
-  | "summary"
-  | "query"
-  | "details"
-  | "edges"
-  | "retainers"
-  | "paths"
-  | "strings"
-  | "compare"
->([
-  ["take_heapsnapshot", "take"],
-  ["get_heapsnapshot_summary", "summary"],
-  ["query_heapsnapshot_objects", "query"],
-  ["get_heapsnapshot_object_details", "details"],
-  ["get_heapsnapshot_edges", "edges"],
-  ["get_heapsnapshot_retainers", "retainers"],
-  ["get_heapsnapshot_retaining_paths", "paths"],
-  ["get_heapsnapshot_duplicate_strings", "strings"],
-  ["compare_heapsnapshots", "compare"],
-]);
-
 const heapOperation = async (
   webview: Electron.WebviewTag,
   instanceId: string,
-  operation: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const action = HEAP_ACTIONS.get(operation);
-  if (!action) {
-    throw new Error(`Unsupported heap operation: ${operation}`);
-  }
-  return passthrough(webview, instanceId, () =>
-    window.snow.browserHeap(action, {
+): Promise<unknown> =>
+  passthrough(webview, instanceId, () =>
+    window.snow.browserHeap("take", {
       ...args,
-      ...(action === "take"
-        ? { webContentsId: webview.getWebContentsId() }
-        : {}),
+      webContentsId: webview.getWebContentsId(),
     }),
   );
+
+type RecordingRenderLease = {
+  webContentsId: number;
+  recordingId: string;
+  render: CaptureRenderLease;
+  cancelled: boolean;
+  stopped: boolean;
+};
+const recordingRenderLeases = new Map<string, RecordingRenderLease>();
+let unsubscribeRecordingStopped: (() => void) | undefined;
+
+const releaseRecordingRenderLease = (
+  instanceId: string,
+  lease: RecordingRenderLease,
+): void => {
+  lease.render.release();
+  if (recordingRenderLeases.get(instanceId) === lease)
+    recordingRenderLeases.delete(instanceId);
+  if (recordingRenderLeases.size === 0) {
+    unsubscribeRecordingStopped?.();
+    unsubscribeRecordingStopped = undefined;
+  }
+};
+
+/** 卸载立即释放本 pane；带代际 id 停止，不能误停止随后启动的另一场录屏。 */
+export const clearBrowserRecordingRenderLease = (instanceId: string): void => {
+  const lease = recordingRenderLeases.get(instanceId);
+  if (!lease) return;
+  lease.cancelled = true;
+  releaseRecordingRenderLease(instanceId, lease);
+  void window.snow
+    .browserScreencastStop(lease.webContentsId, lease.recordingId)
+    .catch(() => {});
 };
 
 const screencastStart = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> =>
-  passthrough(webview, instanceId, () =>
-    window.snow.browserScreencastStart(webview.getWebContentsId(), {
-      filePath: optionalString(args, "filePath"),
-      quality: typeof args.quality === "number" ? args.quality : undefined,
-      maxWidth: typeof args.maxWidth === "number" ? args.maxWidth : undefined,
-      maxFrames:
-        typeof args.maxFrames === "number" ? args.maxFrames : undefined,
-      maxDurationMs:
-        typeof args.maxDurationMs === "number" ? args.maxDurationMs : undefined,
-    }),
-  );
+): Promise<unknown> => {
+  if (recordingRenderLeases.has(instanceId))
+    throw new Error(
+      "A screencast is already starting or recording for this browser tab",
+    );
+  const lease: RecordingRenderLease = {
+    webContentsId: webview.getWebContentsId(),
+    recordingId: crypto.randomUUID(),
+    render: acquireCaptureRenderLease(instanceId),
+    cancelled: false,
+    stopped: false,
+  };
+  recordingRenderLeases.set(instanceId, lease);
+  try {
+    const metadata = await currentPageMetadata(webview, instanceId);
+    if (!unsubscribeRecordingStopped) {
+      unsubscribeRecordingStopped = window.snow.onBrowserScreencastStopped(
+        (event) => {
+          for (const [id, active] of recordingRenderLeases) {
+            if (
+              active.webContentsId === event.webContentsId &&
+              active.recordingId === event.recordingId
+            ) {
+              active.stopped = true;
+              releaseRecordingRenderLease(id, active);
+            }
+          }
+        },
+      );
+    }
+    await lease.render.ready;
+    if (lease.cancelled)
+      throw new Error("Browser tab was closed before recording started");
+    const result = await window.snow.browserScreencastStart(
+      lease.webContentsId,
+      {
+        recordingId: lease.recordingId,
+        filePath: optionalString(args, "filePath"),
+        quality: typeof args.quality === "number" ? args.quality : undefined,
+        maxWidth: typeof args.maxWidth === "number" ? args.maxWidth : undefined,
+        maxFrames:
+          typeof args.maxFrames === "number" ? args.maxFrames : undefined,
+        maxDurationMs:
+          typeof args.maxDurationMs === "number"
+            ? args.maxDurationMs
+            : undefined,
+      },
+    );
+    if (lease.cancelled) {
+      // 卸载可能早于主进程 session 创建；start 返回后再次按代际停止。
+      await window.snow
+        .browserScreencastStop(lease.webContentsId, lease.recordingId)
+        .catch(() => {});
+      throw new Error("Browser tab was closed while recording started");
+    }
+    if (!result.started) releaseRecordingRenderLease(instanceId, lease);
+    return { ...metadata, ...result };
+  } catch (error) {
+    releaseRecordingRenderLease(instanceId, lease);
+    throw error;
+  }
+};
 
 const screencastStop = async (
   webview: Electron.WebviewTag,
   instanceId: string,
-): Promise<unknown> =>
-  passthrough(webview, instanceId, () =>
-    window.snow.browserScreencastStop(webview.getWebContentsId()),
-  );
+): Promise<unknown> => {
+  const lease = recordingRenderLeases.get(instanceId);
+  return passthrough(webview, instanceId, async () => {
+    const result = await window.snow.browserScreencastStop(
+      webview.getWebContentsId(),
+      lease?.recordingId,
+    );
+    // IPC 成功返回时录屏已实际结束；通知可能尚在消息队列中。
+    if (lease) {
+      lease.stopped = true;
+      releaseRecordingRenderLease(instanceId, lease);
+    }
+    return result;
+  });
+};
 
 const PAGE_TOOL_REGISTRY_SNIPPET = `const registry = window.__snowPageTools;
   const entries = Array.isArray(registry) ? registry : registry && typeof registry === 'object' ? Object.values(registry) : [];`;
@@ -1035,7 +1136,7 @@ const callPageTool = async (
   const params = args.params ?? null;
   const result = await webview.executeJavaScript(`(async () => {
     ${PAGE_TOOL_REGISTRY_SNIPPET}
-    const target = entries.find((candidate) => candidate && typeof candidate === 'object' && candidate.name === ${JSON.stringify(name)});
+    const target = entries.find((candidate) => candidate && typeof candidate === 'object' && typeof candidate.name === 'string' && candidate.name.trim() === ${JSON.stringify(name)});
     if (!target) throw new Error('Page tool not found: ' + ${JSON.stringify(name)});
     if (typeof target.run !== 'function') throw new Error('Page tool has no run() function');
     const value = await target.run(${JSON.stringify(params)});
@@ -1246,7 +1347,7 @@ const screenshotInRenderMode = async (
   const quality = typeof args.quality === "number" ? args.quality : undefined;
   const filePath = optionalString(args, "filePath");
   const fullPage = args.fullPage === true;
-  const selector = optionalString(args, "selector");
+  const selector = optionalPayloadString(args, "selector");
   const ref = optionalString(args, "ref");
   const webContentsId = webview.getWebContentsId();
 
@@ -1342,7 +1443,7 @@ const screenshotInRenderMode = async (
   if (result.savedTo) {
     return {
       ...metadata,
-      fullPage: fullPage || clip !== null,
+      fullPage: fullPage && clip === null,
       savedTo: result.savedTo,
       bytes: result.bytes,
       mimeType: result.mimeType,
@@ -1354,7 +1455,7 @@ const screenshotInRenderMode = async (
   }
   return {
     ...metadata,
-    fullPage: fullPage || clip !== null,
+    fullPage: fullPage && clip === null,
     bytes: result.bytes,
     mimeType: result.mimeType,
     element: elementInfo,
@@ -1430,8 +1531,8 @@ const hover = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const selector = optionalString(args, "selector");
-  const text = optionalString(args, "text");
+  const selector = optionalPayloadString(args, "selector");
+  const text = optionalPayloadString(args, "text");
   const exact = args.exact === true;
   const locateScript = buildElementLocatorScript(
     selector ?? null,
@@ -1475,8 +1576,8 @@ const selectOption = async (
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> => {
-  const selector = optionalString(args, "selector");
-  const text = optionalString(args, "text");
+  const selector = optionalPayloadString(args, "selector");
+  const text = optionalPayloadString(args, "text");
   const exact = args.exact === true;
   const values = args.values;
   if (!Array.isArray(values) || values.length === 0) {
@@ -1595,8 +1696,8 @@ const devtools = async (
     };
   }
   if (action === "console") {
-    const level = typeof args.level === "string" ? args.level : undefined;
-    const minLevel = level !== undefined ? CONSOLE_LEVEL_MIN[level] : undefined;
+    const level = typeof args.level === "string" ? args.level : "info";
+    const minLevel = CONSOLE_LEVEL_MIN[level] ?? CONSOLE_LEVEL_MIN.info;
     const types = Array.isArray(args.types)
       ? args.types.filter((item): item is string => typeof item === "string")
       : undefined;
@@ -1604,14 +1705,26 @@ const devtools = async (
     const pageSize =
       typeof args.pageSize === "number" ? args.pageSize : undefined;
     const includePreserved = args.includePreserved === true;
-    const webviewFallback = async (note?: string): Promise<unknown> => {
-      const messages =
-        minLevel === undefined
-          ? consoleMessages
-          : consoleMessages.filter((entry) => {
-              const entryLevel = (entry as { level?: unknown }).level;
-              return typeof entryLevel === "number" && entryLevel >= minLevel;
-            });
+    const webviewFallback = async (
+      note: string,
+    ): Promise<Record<string, unknown>> => {
+      const messages = consoleMessages.filter((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        const message = entry as {
+          level?: unknown;
+          type?: unknown;
+          kind?: unknown;
+        };
+        if (typeof message.level !== "number" || message.level < minLevel)
+          return false;
+        // Electron console-message 没有 CDP type；以其已知级别映射 kind，
+        // 未知类别不可误匹配显式 types（例如 log/debug）。
+        const kind =
+          message.type ??
+          message.kind ??
+          ["verbose", "info", "warning", "error"][message.level];
+        return !types?.length || types.includes(String(kind));
+      });
       const total = messages.length;
       const size = pageSize ?? Math.max(total, 1);
       const paged =
@@ -1623,50 +1736,62 @@ const devtools = async (
         source: "webview",
         messages: paged,
         total,
-        level: level ?? "all",
-        ...(note ? { note } : {}),
+        level,
+        note,
       };
     };
+    let response: Record<string, unknown> | undefined;
     try {
-      const result = await window.snow.browserConsoleRecords(
-        webview.getWebContentsId(),
-        { level: minLevel, types, pageIdx, pageSize, includePreserved },
-      );
-      if (
+      let result:
+        | Awaited<ReturnType<typeof window.snow.browserConsoleRecords>>
+        | undefined;
+      try {
+        result = await window.snow.browserConsoleRecords(
+          webview.getWebContentsId(),
+          { level: minLevel, types, pageIdx, pageSize, includePreserved },
+        );
+      } catch {
+        // CDP 不可用时仍应用相同 level/types 过滤，并共用 finally 清理。
+      }
+      if (!result) {
+        response = await webviewFallback(
+          "CDP console capture is unavailable; falling back to the webview console-message stream (no stack traces).",
+        );
+      } else if (
         result.total === 0 &&
         consoleMessages.length > 0 &&
         !includePreserved
       ) {
-        // CDP 采集刚启用（缓存为空）：退回 webview console-message 事件流。
-        return webviewFallback(
+        response = await webviewFallback(
           "CDP console capture just started; showing webview console-message data (no stack traces). Query again after the next messages.",
         );
+      } else {
+        response = {
+          ...(await currentPageMetadata(webview, instanceId)),
+          source: "cdp",
+          messages: result.messages,
+          total: result.total,
+          pageIdx: result.pageIdx,
+          pageSize: result.pageSize,
+          hasMore: result.hasMore,
+          archivedGenerations: result.archivedGenerations,
+          level,
+        };
       }
-      let cleared: number | null = null;
+    } finally {
       if (args.clearConsole === true) {
-        const clearResult = await window.snow.browserConsoleClear(
-          webview.getWebContentsId(),
-        );
-        cleared = clearResult.cleared;
+        try {
+          const cleared = await window.snow.browserConsoleClear(
+            webview.getWebContentsId(),
+          );
+          if (response) response.cleared = cleared.cleared;
+        } catch {
+          // 不把清理失败伪报成功，也不吞掉已成功读取的 fallback 数据。
+          if (response) response.clearError = "CDP console clear failed";
+        }
       }
-      return {
-        ...(await currentPageMetadata(webview, instanceId)),
-        source: "cdp",
-        messages: result.messages,
-        total: result.total,
-        pageIdx: result.pageIdx,
-        pageSize: result.pageSize,
-        hasMore: result.hasMore,
-        archivedGenerations: result.archivedGenerations,
-        level: level ?? "all",
-        ...(cleared !== null ? { cleared } : {}),
-      };
-    } catch {
-      // CDP 不可用（如页面 DevTools 打开占用调试会话）：回退 webview console-message 数据。
-      return webviewFallback(
-        "CDP console capture is unavailable; falling back to the webview console-message stream (no stack traces).",
-      );
     }
+    return response;
   }
   if (action === "console_message") {
     const messageId =
@@ -1695,16 +1820,29 @@ const devtools = async (
     };
   }
   if (action === "network") {
-    const filter = optionalString(args, "filter");
+    const filter = optionalPayloadString(args, "filter");
     const includeStatic = args.static === true;
     const resourceTypes = Array.isArray(args.resourceTypes)
       ? args.resourceTypes.filter(
           (item): item is string => typeof item === "string",
         )
       : undefined;
-    const pageIdx = typeof args.pageIdx === "number" ? args.pageIdx : undefined;
-    const pageSize =
-      typeof args.pageSize === "number" ? args.pageSize : undefined;
+    const pageIdx =
+      typeof args.pageIdx === "number" && Number.isFinite(args.pageIdx)
+        ? Math.max(0, Math.min(1000, Math.floor(args.pageIdx)))
+        : 0;
+    // 显式 pageSize 优先（分页上限 1000）；旧 limit 默认 50，上限 200。
+    const explicitPageSize =
+      typeof args.pageSize === "number" && Number.isFinite(args.pageSize);
+    const requestedSize = explicitPageSize
+      ? (args.pageSize as number)
+      : typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? args.limit
+        : 50;
+    const pageSize = Math.max(
+      1,
+      Math.min(explicitPageSize ? 1000 : 200, Math.floor(requestedSize)),
+    );
     const includePreserved = args.includePreserved === true;
     const result = await window.snow.browserNetworkRequests(
       webview.getWebContentsId(),
@@ -1719,11 +1857,11 @@ const devtools = async (
     );
     return {
       ...(await currentPageMetadata(webview, instanceId)),
-      requests: result.records,
+      requests: result.records.slice(0, pageSize),
       total: result.total,
-      pageIdx: result.pageIdx,
-      pageSize: result.pageSize,
-      hasMore: result.hasMore,
+      pageIdx,
+      pageSize,
+      hasMore: result.hasMore || result.records.length > pageSize,
       archivedGenerations: result.archivedGenerations,
       source: result.source,
       static: includeStatic,
@@ -1731,13 +1869,23 @@ const devtools = async (
     };
   }
   if (action === "network_detail") {
-    const requestId = args.requestId;
-    if (typeof requestId !== "number") {
+    const requestId =
+      typeof args.requestId === "string" && /^\d+$/.test(args.requestId.trim())
+        ? Number(args.requestId.trim())
+        : args.requestId;
+    if (
+      typeof requestId !== "number" ||
+      !Number.isSafeInteger(requestId) ||
+      requestId <= 0
+    ) {
       throw new Error(
-        "requestId is required for browser-devtools network_detail",
+        "requestId must be a positive safe integer for browser-devtools network_detail",
       );
     }
-    const record = await window.snow.browserNetworkRequest(requestId);
+    const record = await window.snow.browserNetworkDetail(
+      webview.getWebContentsId(),
+      requestId,
+    );
     if (!record) {
       return {
         ...(await currentPageMetadata(webview, instanceId)),
@@ -1764,7 +1912,7 @@ const devtools = async (
     };
   }
   if (action === "networkDetails") {
-    const requestId = requiredString(args, "requestId");
+    const requestId = requiredPayloadString(args, "requestId");
     const maxBodyBytes =
       typeof args.maxBodyBytes === "number" ? args.maxBodyBytes : undefined;
     const requestFilePath = optionalString(args, "requestFilePath");
@@ -1796,7 +1944,7 @@ const devtools = async (
     };
   }
   if (action === "route") {
-    const pattern = requiredString(args, "pattern");
+    const pattern = requiredPayloadString(args, "pattern");
     const rule: BrowserRouteRule = {
       pattern,
       status: typeof args.status === "number" ? args.status : undefined,
@@ -1885,7 +2033,7 @@ const devtools = async (
     };
   }
   if (action === "cookieDelete") {
-    const name = requiredString(args, "name");
+    const name = requiredPayloadString(args, "name");
     const domain = requiredString(args, "domain");
     const result = await window.snow.browserCookieDelete(
       webview.getWebContentsId(),
@@ -2004,15 +2152,7 @@ export const executeBrowserMcpOperation = async (
     case "audit":
       return auditPage(webview, instanceId, args);
     case "take_heapsnapshot":
-    case "get_heapsnapshot_summary":
-    case "query_heapsnapshot_objects":
-    case "get_heapsnapshot_object_details":
-    case "get_heapsnapshot_edges":
-    case "get_heapsnapshot_retainers":
-    case "get_heapsnapshot_retaining_paths":
-    case "get_heapsnapshot_duplicate_strings":
-    case "compare_heapsnapshots":
-      return heapOperation(webview, instanceId, operation, args);
+      return heapOperation(webview, instanceId, args);
     case "screencast_start":
       return screencastStart(webview, instanceId, args);
     case "screencast_stop":

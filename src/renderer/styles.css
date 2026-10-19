@@ -51753,6 +51753,102 @@ pre.file-viewer-code {
   outline-offset: 2px;
 }
 
+/* 半选（项目下仅勾选了部分分类） */
+.cleanup-category-check.partial .cleanup-category-box {
+  border-color: var(--text-primary);
+}
+
+.cleanup-category-check.partial .cleanup-category-box::after {
+  content: "";
+  position: absolute;
+  top: 5.5px;
+  left: 3px;
+  width: 6px;
+  height: 1.6px;
+  border-radius: 1px;
+  background: var(--text-primary);
+}
+
+/* ---- 通用设置：孤儿项目数据（按项目分组 + 分类芯片） ---- */
+.orphan-project-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.orphan-project-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.orphan-project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.orphan-project-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orphan-project-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 22px;
+}
+
+.orphan-category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.orphan-category-chip:hover {
+  border-color: var(--border-color);
+}
+
+.orphan-category-chip.active {
+  border-color: var(--text-tertiary);
+  color: var(--text-secondary);
+}
+
+.orphan-category-chip:has(input:disabled) {
+  cursor: default;
+}
+
+.orphan-category-name {
+  font-weight: 600;
+}
+
+.orphan-category-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 .general-storage-text .settings-item-description {
   line-height: 1.35;
 }

@@ -33,6 +33,7 @@ import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
 import { ChangelogSection } from "./ChangelogSection";
+import { OrphanProjectCleanupSection } from "./OrphanProjectCleanupSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useBusySendBehavior } from "../../constants/busySendBehavior";
 import { CustomSelect } from "../common/CustomSelect";
@@ -1787,6 +1788,9 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      {/* 孤儿项目数据：已移除项目残留的会话 / 归档 / 快照等 */}
+      {activeTab === "storage" && <OrphanProjectCleanupSection />}
 
       {activeTab === "general" && (
         <div className="api-settings-manual-form">

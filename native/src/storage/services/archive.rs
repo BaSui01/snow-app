@@ -71,7 +71,7 @@ const WORKFLOW_CANVAS_COLUMNS: &str =
 /// ATTACH 到运行库连接的事务中，WAL 模式的 -shm 锁索引在跨库写事务中
 /// 容易触发 SQLITE_LOCKED；rollback journal 无此问题。归档库是低频
 /// 冷数据，读写并发极低，rollback journal 完全够用。
-fn open_archive_connection(archive_path: &Path) -> rusqlite::Result<Connection> {
+pub(crate) fn open_archive_connection(archive_path: &Path) -> rusqlite::Result<Connection> {
     let connection = Connection::open(archive_path)?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.busy_timeout(Duration::from_secs(5))?;

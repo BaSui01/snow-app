@@ -94,6 +94,56 @@ pub struct CleanupDeleteResult {
     pub errors: Vec<String>,
 }
 
+/// 孤儿项目数据：单个分类的统计。
+#[napi(object)]
+pub struct OrphanProjectCategoryStats {
+    /// conversations / archives / snapshots / memories / memos / scheduledTasks / reviews / metadata
+    pub id: String,
+    /// 条目数（会话类为顶层会话数）
+    pub count: i64,
+    /// 附加计数（会话类为消息数，定时任务为运行记录数，其余为 0）
+    pub detail_count: i64,
+    /// 磁盘占用（仅快照统计，其余为 0）
+    pub bytes: i64,
+}
+
+/// 孤儿项目数据：一个已从项目列表移除的 directory_id 及其残留。
+#[napi(object)]
+pub struct OrphanProjectGroup {
+    pub directory_id: String,
+    /// local / ssh（由 directory_id 前缀解析）
+    pub kind: String,
+    /// 由 directory_id 解析出的原路径
+    pub path: String,
+    /// 最近会话的更新时间（无会话为空）
+    pub last_activity_at: String,
+    /// 最近的几个会话标题
+    pub sample_titles: Vec<String>,
+    pub categories: Vec<OrphanProjectCategoryStats>,
+}
+
+#[napi(object)]
+pub struct OrphanProjectScanResult {
+    pub projects: Vec<OrphanProjectGroup>,
+}
+
+/// 孤儿项目数据：删除目标（项目 + 勾选的分类）。
+#[napi(object)]
+pub struct OrphanProjectDeleteTarget {
+    pub directory_id: String,
+    pub categories: Vec<String>,
+}
+
+#[napi(object)]
+pub struct OrphanProjectDeleteResult {
+    /// 删除的条目数（会话 / 快照 / 行记录合计）
+    pub deleted_items: i64,
+    /// 释放的快照字节数
+    pub deleted_bytes: i64,
+    /// 失败信息（最多 20 条）
+    pub errors: Vec<String>,
+}
+
 #[napi(object)]
 pub struct ApiConfigInput {
     pub profile_name: String,

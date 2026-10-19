@@ -34,6 +34,7 @@ pub mod lsp_server_configs;
 pub mod project_lsp_server_configs;
 pub mod lsp_diagnostic_cache;
 pub mod memos;
+pub mod orphan_projects;
 pub mod pets;
 pub mod privacy_settings;
 pub mod project_collections;

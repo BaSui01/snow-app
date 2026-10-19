@@ -3378,6 +3378,33 @@ export const en = {
   "settings.cleanupDelete": "Delete selected",
   "settings.cleanupDeleting": "Cleaning...",
   "settings.cleanupRescan": "Rescan",
+  "settings.orphanTitle": "Removed project data",
+  "settings.orphanInfo":
+    "Find chats, archives, snapshots and other data left behind by projects removed from the project list. Re-adding the same folder reconnects its data, so only delete what you no longer need.",
+  "settings.orphanTotal": "{{count}} project(s) · snapshots {{size}}",
+  "settings.orphanNone": "No leftover data from removed projects.",
+  "settings.orphanLastActive": "Last active {{time}}",
+  "settings.orphanConversationCount": "{{count}} · {{messages}} msgs",
+  "settings.orphanCatConversations": "Chats",
+  "settings.orphanCatArchives": "Archived",
+  "settings.orphanCatSnapshots": "Snapshots",
+  "settings.orphanCatMemories": "Memories",
+  "settings.orphanCatMemos": "Memos",
+  "settings.orphanCatScheduledTasks": "Scheduled tasks",
+  "settings.orphanCatReviews": "Review notes",
+  "settings.orphanCatMetadata": "Metadata",
+  "settings.orphanSelected":
+    "{{projects}} project(s), {{categories}} category(ies) selected",
+  "settings.orphanSelectHint":
+    "Select projects or individual data types to delete.",
+  "settings.orphanWillDelete":
+    "Will delete {{items}} item(s) and free {{size}} of snapshots",
+  "settings.orphanConfirmTitle": "Delete removed project data",
+  "settings.orphanConfirmMessage":
+    "This permanently deletes {{items}} item(s) (snapshots {{size}}) from {{projects}} removed project(s). This cannot be undone.",
+  "settings.orphanDone": "Removed {{items}} item(s), freed {{size}}",
+  "settings.orphanDoneWithErrors":
+    "Removed {{items}} item(s), freed {{size}}; {{errors}} failed",
   "settings.cleanupCategorySize": "{{files}} files · {{size}}",
   "settings.cleanupCategoryEmpty": "Empty",
   "settings.cleanupConfirmTitle": "Delete data",

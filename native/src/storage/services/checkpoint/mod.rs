@@ -1740,6 +1740,11 @@ fn prune_empty_parent_directories(root: &Path, paths: &[String]) {
     }
 }
 
+/// 检查点快照目录（供孤儿数据扫描统计占用）。
+pub(crate) fn checkpoint_directory(checkpoint_id: &str) -> Result<PathBuf> {
+    checkpoint_dir(checkpoint_id)
+}
+
 /// Delete a checkpoint and release its Git reference. Content-addressed
 /// objects are intentionally retained: eager global garbage collection scanned
 /// every checkpoint after each best-effort delete and raced concurrent writers.

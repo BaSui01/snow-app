@@ -6,6 +6,9 @@ import type {
   DatabaseKind,
   DatabaseOptimizeResult,
   DatabaseRepairResult,
+  OrphanProjectDeleteResult,
+  OrphanProjectDeleteTarget,
+  OrphanProjectScanResult,
   StorageLocationKind,
   StorageLocations,
   StorageMigrationProgress,
@@ -78,4 +81,14 @@ export const storageApi = {
     maxAgeDays: number,
   ): Promise<CleanupDeleteResult> =>
     ipcRenderer.invoke("storage:cleanup-delete", categories, maxAgeDays),
+
+  /** 扫描孤儿项目（已从项目列表移除但仍有残留数据的 directory_id） */
+  scanOrphanProjects: (): Promise<OrphanProjectScanResult> =>
+    ipcRenderer.invoke("storage:orphan-scan"),
+
+  /** 删除孤儿项目的选中分类数据 */
+  deleteOrphanProjectData: (
+    targets: OrphanProjectDeleteTarget[],
+  ): Promise<OrphanProjectDeleteResult> =>
+    ipcRenderer.invoke("storage:orphan-delete", targets),
 };

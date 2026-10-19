@@ -1236,6 +1236,51 @@ export type CleanupDeleteResult = {
   errors: string[];
 };
 
+/** 孤儿项目数据：分类 id（与 Rust 侧 orphan_projects 服务一一对应） */
+export type OrphanProjectCategoryId =
+  | "conversations"
+  | "archives"
+  | "snapshots"
+  | "memories"
+  | "memos"
+  | "scheduledTasks"
+  | "reviews"
+  | "metadata";
+
+export type OrphanProjectCategoryStats = {
+  id: OrphanProjectCategoryId;
+  count: number;
+  /** 会话类为消息数，定时任务为运行记录数 */
+  detailCount: number;
+  /** 仅快照统计磁盘占用 */
+  bytes: number;
+};
+
+/** 已从项目列表移除、但仍有残留数据的项目 */
+export type OrphanProjectGroup = {
+  directoryId: string;
+  kind: string;
+  path: string;
+  lastActivityAt: string;
+  sampleTitles: string[];
+  categories: OrphanProjectCategoryStats[];
+};
+
+export type OrphanProjectScanResult = {
+  projects: OrphanProjectGroup[];
+};
+
+export type OrphanProjectDeleteTarget = {
+  directoryId: string;
+  categories: OrphanProjectCategoryId[];
+};
+
+export type OrphanProjectDeleteResult = {
+  deletedItems: number;
+  deletedBytes: number;
+  errors: string[];
+};
+
 export type UserMessageSummary = {
   id: string;
   content: string;
@@ -3192,6 +3237,12 @@ export type NativeBridge = ImageGenerationNativeApi & {
     categories: CleanupCategoryId[],
     maxAgeDays: number,
   ) => Promise<CleanupDeleteResult>;
+  /** 扫描孤儿项目（已移除项目残留的会话 / 归档 / 快照等） */
+  scanOrphanProjects: () => Promise<OrphanProjectScanResult>;
+  /** 删除孤儿项目的选中分类数据 */
+  deleteOrphanProjectData: (
+    targets: OrphanProjectDeleteTarget[],
+  ) => Promise<OrphanProjectDeleteResult>;
   /** 探测本机浏览器（Chrome/Edge/Chromium/Firefox）及其配置文件与数据量 */
   browserImportListSources: () => Promise<BrowserImportSource[]>;
   /** 解密并导出指定浏览器配置文件的已保存密码（明文，仅供主进程加密落盘） */

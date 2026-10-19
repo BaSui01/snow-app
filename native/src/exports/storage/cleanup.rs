@@ -6,6 +6,7 @@
 use super::*;
 
 use crate::storage::services::cleanup;
+use crate::storage::services::orphan_projects;
 
 /// 扫描本地数据分类的磁盘占用（`days_list` 为需要一并统计的天数档位，
 /// 如 [7, 15, 30, 90]；结果中每个分类会返回对应档位可清理的文件数与字节数）。
@@ -34,4 +35,44 @@ pub async fn delete_cleanup_data(
     tokio::task::spawn_blocking(move || cleanup::delete(&categories, max_age_days))
         .await
         .map_err(map_spawn_error)?
+}
+
+/// 扫描已从项目列表移除、但仍残留会话 / 归档 / 快照等数据的项目。
+#[napi]
+pub async fn scan_orphan_projects() -> napi::Result<crate::storage::OrphanProjectScanResult> {
+    tokio::task::spawn_blocking(|| {
+        let database_path = crate::storage::ensure_database_file()?;
+        let archive_path = crate::storage::ensure_archive_database_file()?;
+        orphan_projects::scan(&database_path, &archive_path)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// 删除孤儿项目的选中分类数据（每个目标为 directory_id + 分类 id 列表）。
+#[napi]
+pub async fn delete_orphan_project_data(
+    targets: Vec<crate::storage::OrphanProjectDeleteTarget>,
+) -> napi::Result<crate::storage::OrphanProjectDeleteResult> {
+    let mut parsed = Vec::with_capacity(targets.len());
+    for target in targets {
+        let categories = target
+            .categories
+            .iter()
+            .map(|id| orphan_projects::OrphanCategory::parse(id))
+            .collect::<napi::Result<Vec<_>>>()?;
+        if !categories.is_empty() && !target.directory_id.trim().is_empty() {
+            parsed.push((target.directory_id, categories));
+        }
+    }
+    if parsed.is_empty() {
+        return Err(Error::from_reason("No orphan project data selected"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let database_path = crate::storage::ensure_database_file()?;
+        let archive_path = crate::storage::ensure_archive_database_file()?;
+        orphan_projects::delete(&database_path, &archive_path, &parsed)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }

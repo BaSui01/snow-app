@@ -7,6 +7,10 @@ import type {
   DatabaseOptimizeResult,
   DatabaseRepairResult,
   NativeBridge,
+  OrphanProjectCategoryId,
+  OrphanProjectDeleteResult,
+  OrphanProjectDeleteTarget,
+  OrphanProjectScanResult,
   StorageLocationKind,
   StorageMigrationProgress,
 } from "../../native/types";
@@ -28,6 +32,22 @@ const CLEANUP_CATEGORY_IDS: readonly CleanupCategoryId[] = [
 const isCleanupCategoryId = (value: unknown): value is CleanupCategoryId =>
   typeof value === "string" &&
   (CLEANUP_CATEGORY_IDS as readonly string[]).includes(value);
+
+/** 孤儿项目数据分类 id（与 Rust 侧 orphan_projects 服务保持一致） */
+const ORPHAN_CATEGORY_IDS: readonly OrphanProjectCategoryId[] = [
+  "conversations",
+  "archives",
+  "snapshots",
+  "memories",
+  "memos",
+  "scheduledTasks",
+  "reviews",
+  "metadata",
+];
+
+const isOrphanCategoryId = (value: unknown): value is OrphanProjectCategoryId =>
+  typeof value === "string" &&
+  (ORPHAN_CATEGORY_IDS as readonly string[]).includes(value);
 
 /**
  * 存储位置（数据库 / 检查点 / 上传图片）IPC。
@@ -228,6 +248,39 @@ export const registerStorageHandlers = (native: NativeBridge): void => {
           ? Math.floor(maxAgeDays)
           : 0;
       return native.deleteCleanupData(selected, days);
+    },
+  );
+
+  ipcMain.handle(
+    "storage:orphan-scan",
+    async (): Promise<OrphanProjectScanResult> => native.scanOrphanProjects(),
+  );
+
+  ipcMain.handle(
+    "storage:orphan-delete",
+    async (_event, targets: unknown): Promise<OrphanProjectDeleteResult> => {
+      const selected: OrphanProjectDeleteTarget[] = Array.isArray(targets)
+        ? targets.flatMap((target): OrphanProjectDeleteTarget[] => {
+            if (!target || typeof target !== "object") {
+              return [];
+            }
+            const { directoryId, categories } = target as Record<
+              string,
+              unknown
+            >;
+            if (typeof directoryId !== "string" || !directoryId.trim()) {
+              return [];
+            }
+            const valid = Array.isArray(categories)
+              ? categories.filter(isOrphanCategoryId)
+              : [];
+            return valid.length > 0 ? [{ directoryId, categories: valid }] : [];
+          })
+        : [];
+      if (selected.length === 0) {
+        throw new Error("No orphan project data selected");
+      }
+      return native.deleteOrphanProjectData(selected);
     },
   );
 };

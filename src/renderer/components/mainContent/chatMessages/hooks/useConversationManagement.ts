@@ -472,11 +472,16 @@ export const useConversationManagement = (
                 if (existing && !isConversationCacheExpired(existing)) {
                   return prev;
                 }
+                const liveRef = ctx.sessionsRefData.current.get(trimmedId);
                 const isCurrentlyStreaming = Boolean(
                   existing?.isStreaming ||
                   ctx.streamingConversationIds.has(trimmedId) ||
-                  ctx.sessionsRefData.current.get(trimmedId)?.isSending,
+                  liveRef?.isSending,
                 );
+                // 运行中冷加载：起点从 runtime ref 恢复，避免计时停在 0s。
+                const restoredStartedAt = isCurrentlyStreaming
+                  ? existing?.streamStartedAt || liveRef?.runStartedAt || 0
+                  : 0;
                 return {
                   ...prev,
                   [trimmedId]: {
@@ -507,7 +512,7 @@ export const useConversationManagement = (
                     runTtftSumMs: 0,
                     runRequestCount: 0,
                     baselineCheckpointId,
-                    streamStartedAt: 0,
+                    streamStartedAt: restoredStartedAt,
                     // 历史会话回显 DB 持久化的会话累计（token + 耗时）。
                     runTokenUsage: null,
                     conversationTokenUsage: {

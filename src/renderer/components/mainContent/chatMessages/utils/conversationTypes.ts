@@ -421,6 +421,8 @@ export type ConversationSessionRef = {
   /** 本次 run 的 TTFT 总和与请求数（ref 同步镜像，供收尾持久化读取）。 */
   runTtftSumMs: number;
   runRequestCount: number;
+  /** 本轮 run 起点（ref 镜像，不随 UI state 回收丢失；0/缺省表示未运行）。 */
+  runStartedAt?: number;
   /** Whether WorkTree Mode was active when this session was last used. */
   worktreeMode: boolean;
   /** WorkTree id bound or pending for this session. */

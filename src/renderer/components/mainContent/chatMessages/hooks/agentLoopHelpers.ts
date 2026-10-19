@@ -222,6 +222,19 @@ export const resetRunStreamMetrics = (
   }
 };
 
+/** 记录本轮 run 起点：runtime ref 为可靠来源（UI state 可能已被 TTL 回收），
+ *  同时写入 UI state 驱动计时。返回起点时间戳。 */
+export const markRunStarted = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  startedAt: number = Date.now(),
+): number => {
+  const refSession = ctx.sessionsRefData.current.get(sessionKey);
+  if (refSession) refSession.runStartedAt = startedAt;
+  ctx.updateSessionField(sessionKey, "streamStartedAt", startedAt);
+  return startedAt;
+};
+
 /** Reset per-iteration transient probes before each agent-loop iteration
  *  (every `createResponseStream` call). Unlike `resetRunStreamMetrics` this
  *  must NOT touch run-level metrics (`runTtftMs` / `runTokenUsage`), which

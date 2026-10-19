@@ -57,6 +57,7 @@ import {
   remapPersistedUserMessageIds,
   resetIterationStreamMetrics,
   resetRunStreamMetrics,
+  markRunStarted,
 } from "./agentLoopHelpers";
 import {
   createSubAgentActivation,
@@ -394,8 +395,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // Reset per-run and per-iteration probes before the first model request.
       resetRunStreamMetrics(ctx, sessionKey);
 
-      const runStartedAt = Date.now();
-      ctx.updateSessionField(sessionKey, "streamStartedAt", runStartedAt);
+      const runStartedAt = markRunStarted(ctx, sessionKey);
       ctx.addStreamingId(sessionKey);
       ctx.updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,

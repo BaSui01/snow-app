@@ -54,6 +54,7 @@ import {
   createStreamIdHandler,
   resetIterationStreamMetrics,
   resetRunStreamMetrics,
+  markRunStarted,
 } from "./agentLoopHelpers";
 
 // ---------------------------------------------------------------------------
@@ -1293,7 +1294,7 @@ const createRunForceSendLoop = (
       }
       ctx.updateSessionField(subConvId, "isStreaming", true);
       resetRunStreamMetrics(ctx, subConvId);
-      ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
+      markRunStarted(ctx, subConvId);
       ctx.addStreamingId(subConvId);
       lastSummary = await subAgentRunLoop([
         { role: "user", content: forceSendText },
@@ -1384,8 +1385,12 @@ const createSubAgentFinalizer = (
     }
     ctx.updateSessionField(convId, "isStreaming", false);
     // 固化本次 run 总耗时（置 0 前读取），累加进会话统计（内存 + DB）。
+    // 起点优先取 runtime ref：UI state 可能已被 TTL 回收。
     const finalizeStartedAt =
-      ctx.sessionsRef.current?.[convId]?.streamStartedAt ?? 0;
+      finalRef?.runStartedAt ||
+      ctx.sessionsRef.current?.[convId]?.streamStartedAt ||
+      0;
+    if (finalRef) finalRef.runStartedAt = 0;
     if (finalizeStartedAt > 0) {
       const finalizeDurationMs = Math.max(0, Date.now() - finalizeStartedAt);
       const finalRefStats = ctx.sessionsRefData.current.get(convId);
@@ -1589,7 +1594,7 @@ const createSubAgentResume = (
     resumeRef.activeTaskMessages = messages;
     ctx.updateSessionField(subConvId, "isStreaming", true);
     resetRunStreamMetrics(ctx, subConvId);
-    ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
+    markRunStarted(ctx, subConvId);
     ctx.addStreamingId(subConvId);
     ctx.setSubAgentSessionEvent({
       parentConversationId,
@@ -1876,7 +1881,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       resetRunStreamMetrics(ctx, subConvId);
       // Anchor the accumulating timer start for the sub-agent session so
       // its StreamMetrics timer is independent of the parent session.
-      ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
+      markRunStarted(ctx, subConvId);
       ctx.addStreamingId(subConvId);
 
       const subUserMessage: ChatConversationMessage = {

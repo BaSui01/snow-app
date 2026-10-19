@@ -530,6 +530,9 @@ pub async fn prepare_context_request(
     //     AI API, which would reject the request outright. ---
     ensure_tool_pairing(&mut messages);
 
+    // 历史图片按总量老化 / TODO 结果精简（仅请求副本）。
+    super::history_trim::trim_history_for_request(&mut messages, request.database_path);
+
     Ok(PreparedConversationRequest {
         conversation_id,
         messages,

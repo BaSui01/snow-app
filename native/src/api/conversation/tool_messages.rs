@@ -192,7 +192,7 @@ pub fn parse_tool_results_with_images(
 /// 不能只靠 `contains("@@image:")` 判定——grep 等搜索结果 JSON 内嵌的匹配行
 /// 文本可能恰好含该字样，会把非图片 base64 发给视觉模型；因此命中该字样后
 /// 仍按结构逐一核对。反向（不含该字样必不是图片）成立，可作廉价预检。
-fn has_image_tags(result: &str) -> bool {
+pub(crate) fn has_image_tags(result: &str) -> bool {
     // 廉价预检：绝大多数结果不含图片标签，避免对超大 JSON 结果做无谓解析。
     if !result.contains("@@image:") {
         return false;

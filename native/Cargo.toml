@@ -29,6 +29,9 @@ tokio = { version = "1.39.2", features = ["io-util", "process", "rt", "rt-multi-
 tokio-util = { version = "0.7", features = ["compat"] }
 # 手机远控 HTTP 服务：原生侧直接监听端口、处理请求与鉴权。
 axum = "0.8"
+# 远控 /api/live：直接接管 HTTP 升级连接（复用 axum 已依赖的版本）。
+hyper = "1"
+hyper-util = { version = "0.1", features = ["tokio"] }
 url = "2"
 percent-encoding = "2"
 getrandom = "0.2"

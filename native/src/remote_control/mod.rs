@@ -8,6 +8,8 @@ pub mod assets;
 pub mod attachments;
 pub mod auth;
 pub mod bridge;
+pub mod json_patch;
+pub mod live;
 pub mod server;
 pub mod unauthorized;
 
@@ -205,6 +207,7 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
         .map_err(|error| format!("读取监听端口失败：{error}"))?
         .port();
 
+    let (closed_tx, closed_rx) = tokio::sync::watch::channel(false);
     let context = Arc::new(ServerContext {
         policy: ServerPolicy::Lan,
         mobile_dir: options.mobile_dir.clone(),
@@ -214,6 +217,7 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
         generation: generation.clone(),
         unlock_tokens: FailureGuard::tokens(),
         unlock_codes: FailureGuard::codes(),
+        closed: closed_rx,
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);
@@ -221,6 +225,7 @@ pub async fn start_server(options: StartOptions) -> Result<RemoteControlState, S
         let _ = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
+                let _ = closed_tx.send(true);
             })
             .await;
     });
@@ -352,6 +357,7 @@ async fn start_wan_listener_locked(
         .local_addr()
         .map_err(|error| format!("读取公网隧道端口失败：{error}"))?
         .port();
+    let (closed_tx, closed_rx) = tokio::sync::watch::channel(false);
     let context = Arc::new(ServerContext {
         policy: ServerPolicy::Wan,
         mobile_dir,
@@ -361,6 +367,7 @@ async fn start_wan_listener_locked(
         generation,
         unlock_tokens: FailureGuard::tokens(),
         unlock_codes: FailureGuard::codes(),
+        closed: closed_rx,
     });
     let (shutdown, shutdown_rx) = tokio::sync::oneshot::channel();
     let app = server::router(context);
@@ -368,6 +375,7 @@ async fn start_wan_listener_locked(
         let _ = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = shutdown_rx.await;
+                let _ = closed_tx.send(true);
             })
             .await;
     });

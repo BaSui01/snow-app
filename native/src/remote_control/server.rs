@@ -17,13 +17,19 @@ use axum::http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Re
 use axum::Router;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
+use hyper::upgrade::OnUpgrade;
+use hyper_util::rt::TokioIo;
 use serde_json::{json, Value};
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
+use tokio_tungstenite::WebSocketStream;
 use url::Url;
 
 use super::assets::{self, MOBILE_ASSET_PATH_PREFIX};
 use super::attachments::{self, AttachError, AttachmentKind, RemoteAttachmentContext};
 use super::auth::{encode_query_component, now_ms, secret_matches, WanAuth};
 use super::bridge::{self, BridgeError};
+use super::live;
 use super::unauthorized;
 use crate::storage::services::app_lock;
 
@@ -71,6 +77,8 @@ const MAX_UNLOCK_TOKEN_LENGTH: usize = 512;
 const MAX_UNLOCK_CODE_LENGTH: usize = 12;
 /// 令牌解锁成功后写入的公网会话 Cookie 有效期（令牌本身不设过期）。
 const WAN_COOKIE_MAX_AGE: i64 = 365 * 24 * 60 * 60;
+/// 实时通道单条客户端消息上限（只有控制指令）。
+const LIVE_MAX_MESSAGE_BYTES: usize = 64 * 1024;
 
 /// 监听器策略：局域网或公网，两者都只认各自的长期令牌。
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,6 +102,8 @@ pub struct ServerContext {
     pub unlock_tokens: FailureGuard,
     /// 身份验证器动态码解锁失败限流。
     pub unlock_codes: FailureGuard,
+    /// 监听器关闭信号：实时通道据此断开长连接。
+    pub closed: tokio::sync::watch::Receiver<bool>,
 }
 
 /// 解锁失败限流：滑动窗口内记录的失败时间戳，超窗自动放行。
@@ -312,10 +322,16 @@ pub fn router(context: Arc<ServerContext>) -> Router {
 }
 
 async fn handle(State(context): State<Arc<ServerContext>>, request: Request<Body>) -> Response<Body> {
-    match process(&context, request).await {
+    let mutating = !matches!(*request.method(), Method::GET | Method::HEAD);
+    let response = match process(&context, request).await {
         Ok(response) => response,
         Err(error) => error.into_response(),
+    };
+    // 变更操作后立即刷新实时通道，手机无需等下一拍。
+    if mutating {
+        live::nudge();
     }
+    response
 }
 
 // ─── 响应构造 ──────────────────────────────────────────────────────────────
@@ -369,8 +385,22 @@ fn json_response(
     build_response(status, "application/json; charset=utf-8", body, headers)
 }
 
-/// 移动页 HTML：无内联脚本权限（脚本 / 样式均为同源独立资源）。
-const MOBILE_PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+/// 移动页 HTML 的 CSP：无内联脚本权限（脚本 / 样式均为同源独立资源），
+/// connect-src 显式放行同主机 ws/wss（部分 WebView 的 'self' 不覆盖 ws 协议）。
+fn mobile_page_csp(headers: &HeaderMap) -> String {
+    let host = header_text(headers, "host").filter(|host| {
+        !host.is_empty()
+            && host
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b':' | b'[' | b']'))
+    });
+    let connect = match host {
+        Some(host) => format!("'self' ws://{host} wss://{host}"),
+        None => "'self'".to_string(),
+    };
+    format!("default-src 'self'; script-src 'self'; style-src 'self'; connect-src {connect}; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+}
+
 /// 引导页 HTML：无脚本、无外部资源。
 const UNAUTHORIZED_PAGE_CSP: &str = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
@@ -767,13 +797,101 @@ fn is_authorized(context: &ServerContext, headers: &HeaderMap, url: &Url, reques
     }
 }
 
+// ─── 实时通道 ──────────────────────────────────────────────────────────────
+
+fn header_has_token(headers: &HeaderMap, name: &str, token: &str) -> bool {
+    header_text(headers, name)
+        .map(|value| value.split(',').any(|part| part.trim().eq_ignore_ascii_case(token)))
+        .unwrap_or(false)
+}
+
+/// WebSocket 握手必须同源（Cookie 鉴权下防跨站劫持）。
+fn is_same_origin_upgrade(context: &ServerContext, headers: &HeaderMap) -> bool {
+    if context.is_wan() {
+        return has_expected_wan_origin(headers, context);
+    }
+    let (Some(origin), Some(host)) = (header_text(headers, "origin"), header_text(headers, "host")) else {
+        return false;
+    };
+    origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"))
+        .map(|rest| rest.eq_ignore_ascii_case(&host))
+        .unwrap_or(false)
+}
+
+/// 会话存续期间的凭据复查：令牌轮换 / 服务重启后代数变化，公网令牌更换后失效。
+fn live_still_authorized(context: &ServerContext, generation: u64, wan_credential: Option<&str>) -> bool {
+    if context.generation() != generation {
+        return false;
+    }
+    match context.wan_auth.as_ref() {
+        Some(auth) if context.is_wan() => auth.authorize(wan_credential),
+        _ => true,
+    }
+}
+
+/// /api/live：校验握手后把连接交给实时通道。
+fn accept_live(
+    context: &Arc<ServerContext>,
+    headers: &HeaderMap,
+    on_upgrade: Option<OnUpgrade>,
+    request_generation: u64,
+    wan_credential: Option<String>,
+) -> Response<Body> {
+    let key = header_text(headers, "sec-websocket-key");
+    let handshake_valid = header_has_token(headers, "upgrade", "websocket")
+        && header_has_token(headers, "connection", "upgrade")
+        && header_text(headers, "sec-websocket-version").as_deref() == Some("13");
+    let (Some(key), Some(on_upgrade), true) = (key, on_upgrade, handshake_valid) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            &json!({ "error": "需要 WebSocket 握手" }),
+            Vec::new(),
+        );
+    };
+    if !is_same_origin_upgrade(context, headers) {
+        return json_response(
+            StatusCode::FORBIDDEN,
+            &json!({ "error": "请求来源无效" }),
+            Vec::new(),
+        );
+    }
+    let accept = derive_accept_key(key.trim().as_bytes());
+    let session_context = context.clone();
+    tokio::spawn(async move {
+        let Ok(upgraded) = on_upgrade.await else {
+            return;
+        };
+        let mut config = WebSocketConfig::default();
+        config.max_message_size = Some(LIVE_MAX_MESSAGE_BYTES);
+        config.max_frame_size = Some(LIVE_MAX_MESSAGE_BYTES);
+        let socket =
+            WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, Some(config)).await;
+        let closed = session_context.closed.clone();
+        live::run_session(socket, closed, move || {
+            live_still_authorized(&session_context, request_generation, wan_credential.as_deref())
+        })
+        .await;
+    });
+    Response::builder()
+        .status(StatusCode::SWITCHING_PROTOCOLS)
+        .header(header::UPGRADE, "websocket")
+        .header(header::CONNECTION, "Upgrade")
+        .header(header::SEC_WEBSOCKET_ACCEPT, accept)
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(Body::empty())
+        .unwrap_or_else(|_| Response::new(Body::empty()))
+}
+
 // ─── 主流程 ────────────────────────────────────────────────────────────────
 
 async fn process(
     context: &Arc<ServerContext>,
     request: Request<Body>,
 ) -> Result<Response<Body>, ApiError> {
-    let (parts, body) = request.into_parts();
+    let (mut parts, body) = request.into_parts();
+    let on_upgrade = parts.extensions.remove::<OnUpgrade>();
     let method = parts.method.clone();
     let headers = parts.headers.clone();
     let mut body = Some(body);
@@ -851,6 +969,21 @@ async fn process(
         ));
     }
 
+    if method == Method::GET && path == "/api/live" {
+        let wan_credential = if context.is_wan() {
+            cookie_value(&headers, WAN_COOKIE_NAME).or_else(|| query_param(&url, "token"))
+        } else {
+            None
+        };
+        return Ok(accept_live(
+            context,
+            &headers,
+            on_upgrade,
+            request_generation,
+            wan_credential,
+        ));
+    }
+
     if method == Method::GET && path == "/" {
         let Some(html) = assets::read_mobile_index_html(&context.mobile_dir).await else {
             return Ok(json_response(
@@ -859,7 +992,7 @@ async fn process(
                 Vec::new(),
             ));
         };
-        let mut extra = vec![("Content-Security-Policy", MOBILE_PAGE_CSP.to_string())];
+        let mut extra = vec![("Content-Security-Policy", mobile_page_csp(&headers))];
         let token_from_query = url
             .query_pairs()
             .find(|(key, _)| key == "token")

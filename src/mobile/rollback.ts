@@ -15,6 +15,7 @@ import {
 import { $ } from "./dom";
 import { t } from "./i18n";
 import { iconMarkup, type MobileIconName } from "./icons";
+import { isLiveReady, setLiveRollbackListener } from "./live";
 import { showNotice } from "./notice";
 import {
   beginOverlay,
@@ -197,6 +198,7 @@ const resetState = (): void => {
   renderedSignature = "";
   generation += 1;
   clearPoll();
+  setLiveRollbackListener(null);
 };
 
 const schedulePoll = (): void => {
@@ -210,6 +212,13 @@ const schedulePoll = (): void => {
 
 const poll = async (requestGeneration: number): Promise<void> => {
   if (!active || requestGeneration !== generation) return;
+  if (isLiveReady()) {
+    // 实时通道在线：由服务端推送回滚状态，定时器只用于掉线后回落轮询。
+    setLiveRollbackListener((next) => applyState(next, requestGeneration));
+    schedulePoll();
+    return;
+  }
+  setLiveRollbackListener(null);
   try {
     const next = await fetchRollbackState();
     applyState(next, requestGeneration);

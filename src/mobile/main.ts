@@ -7,6 +7,15 @@ import { sessionContextKey } from "./format";
 import { initI18n, t } from "./i18n";
 import { hydrateIcons, iconMarkup } from "./icons";
 import { initInteractions, renderInteractions } from "./interactions";
+import {
+  initLive,
+  isLiveReady,
+  setLivePaused,
+  startLive,
+  stopLive,
+  syncLive,
+  wakeLive,
+} from "./live";
 import { showNotice } from "./notice";
 import { initOverlays } from "./overlays";
 import { closeRemotePanels, initPanels, renderPanels } from "./panels";
@@ -22,9 +31,12 @@ import { hideUnlock, initUnlock, showUnlock } from "./unlock";
 import { initWorkflow, workflowDigest } from "./workflow";
 
 /**
- * Mobile 远控页入口：装配各功能模块，维护 /api/state 轮询与整体渲染。
+ * Mobile 远控页入口：装配各功能模块，维护状态同步与整体渲染。
  *
- * 渲染策略与旧版一致：
+ * 状态同步：优先走 /api/live 实时通道（服务端推送增量补丁），
+ * 通道不可用时回落到 /api/state 轮询。
+ *
+ * 渲染策略：
  * - 每轮快照都刷新廉价区域（顶栏、chips、面板列表、会话列表、交互卡片）；
  * - 消息区通过签名比较跳过无变化的整段重建，并维护自动跟随与「回到底部」按钮；
  * - 失败时展示离线占位，401 提示重新配对。
@@ -109,38 +121,60 @@ const render = (next: SnowRemoteState): void => {
 const offlineHtml = (message: string): string =>
   `<div class="empty"><div><div class="empty-mark">${iconMarkup("wifi-off")}</div><strong>${escapeHtml(message)}</strong><span>${t("remote.empty.offline.hint")}</span><button class="empty-action" type="button" data-unlock-open>${t("remote.unlock.open")}</button></div></div>`;
 
+const showState = (next: SnowRemoteState): void => {
+  syncSessionContext(sessionContextKey(next));
+  currentState = next;
+  hideUnlock();
+  render(next);
+};
+
+const showOffline = (
+  message: string,
+  unauthorized: boolean,
+  silent?: boolean,
+): void => {
+  closeRemotePanels();
+  // 消息区被占位替换，恢复后必须整段重建。
+  lastSignature = "";
+  $("statusDot").className = "status-dot offline";
+  $("threadTitle").textContent = unauthorized
+    ? t("remote.empty.unauthorized.title")
+    : t("remote.empty.failed.title");
+  $("runBadge").textContent = t("remote.badge.offline");
+  $("messages").innerHTML = offlineHtml(message);
+  if (unauthorized) showUnlock("");
+  if (!silent) showNotice(message, true);
+};
+
 const refresh = async (silent?: boolean): Promise<void> => {
+  // 实时通道在线：请求服务端立即采集并推送增量，无需整份拉取。
+  if (isLiveReady() && (await syncLive())) return;
   const generation = ++requestGeneration;
   try {
     const next = await fetchState();
     if (generation !== requestGeneration) return;
-    syncSessionContext(sessionContextKey(next));
-    currentState = next;
-    hideUnlock();
-    render(next);
+    showState(next);
+    startLive();
   } catch (error) {
     if (generation !== requestGeneration) return;
-    closeRemotePanels();
     const unauthorized = isUnauthorizedError(error);
+    if (unauthorized) stopLive();
     const message = unauthorized
       ? t("remote.error.unauthorized")
       : (error as Error).message || t("remote.error.offline");
-    $("statusDot").className = "status-dot offline";
-    $("threadTitle").textContent = unauthorized
-      ? t("remote.empty.unauthorized.title")
-      : t("remote.empty.failed.title");
-    $("runBadge").textContent = t("remote.badge.offline");
-    $("messages").innerHTML = offlineHtml(message);
-    if (unauthorized) showUnlock("");
-    if (!silent) showNotice(message, true);
+    showOffline(message, unauthorized, silent);
   }
 };
 
+/** HTTP 轮询仅在实时通道不可用时兜底。 */
 const schedule = (): void => {
   if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = null;
+  if (isLiveReady()) return;
   pollTimer = setTimeout(
     async () => {
-      await refresh(true);
+      pollTimer = null;
+      if (!isLiveReady()) await refresh(true);
       schedule();
     },
     document.hidden ? 5000 : 1000,
@@ -175,11 +209,37 @@ initPending(ctx);
 initTodos(ctx);
 initControls(ctx);
 initUnlock(() => refresh(false));
+initLive({
+  onState: (next) => {
+    // 作废在途的 HTTP 拉取，避免旧快照覆盖推送结果。
+    requestGeneration += 1;
+    showState(next);
+  },
+  onError: (_status, message) => {
+    requestGeneration += 1;
+    showOffline(message || t("remote.error.offline"), false, true);
+  },
+  onOpen: () => {
+    schedule();
+  },
+  onClose: (unauthorized) => {
+    if (unauthorized) {
+      showOffline(t("remote.error.unauthorized"), true, true);
+    } else {
+      void refresh(true);
+    }
+    schedule();
+  },
+});
 renderControls(null);
 renderComposer(null);
 
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) void refresh(true);
+  setLivePaused(document.hidden);
+  if (!document.hidden) {
+    wakeLive();
+    void refresh(true);
+  }
   schedule();
 });
 window.addEventListener("pageshow", () => {
@@ -201,4 +261,6 @@ if (viewport) {
 if (location.search) {
   history.replaceState(null, "", location.pathname + location.hash);
 }
+setLivePaused(document.hidden);
+startLive();
 schedule();

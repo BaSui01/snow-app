@@ -4025,6 +4025,8 @@ dependencies = [
  "futures",
  "getrandom 0.2.17",
  "http",
+ "hyper",
+ "hyper-util",
  "image",
  "libc",
  "lsp-types",

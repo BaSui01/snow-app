@@ -557,6 +557,7 @@ export const FileMentionPopup = forwardRef<
           }
         }
       }, 150);
+      return;
     }
 
     if (isContentMode) {

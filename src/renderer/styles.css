@@ -12840,10 +12840,16 @@ body.is-panel-resizing * {
   opacity: 1;
 }
 
+/* 模型名不截断：空间不足时在条目内部换行，保证完整名称可见 */
 .chat-run-summary-model {
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  align-items: flex-start;
+}
+
+/* 图标与首行文字垂直居中（12px 图标在 18px 行高内的偏移） */
+.chat-run-summary-model .model-brand-icon {
+  margin-top: 3px;
 }
 
 .chat-run-summary-sep {

@@ -3,6 +3,8 @@ import type {
   NativeBridge,
   ScheduledTaskRecordInput,
 } from "../../native/types";
+import { buildScheduledWakeLaunchSpec } from "../../app/scheduledWakeLaunch";
+import { snowLog } from "../../../utils/snowLogger";
 
 const requireTaskId = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) {
@@ -157,5 +159,26 @@ export const registerScheduledTaskHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle("scheduled-tasks:reconcile-runs", () => {
     return native.reconcileScheduledTaskRuns();
+  });
+
+  // 同步「关闭后仍执行」的最近唤醒时间到系统调度；null 表示清除注册
+  ipcMain.handle("scheduled-tasks:sync-wake", async (_event, at: unknown) => {
+    const target = typeof at === "string" && at.trim() ? at.trim() : undefined;
+    if (target !== undefined && Number.isNaN(Date.parse(target))) {
+      throw new Error("Invalid wake time");
+    }
+    const spec = buildScheduledWakeLaunchSpec();
+    try {
+      return await native.syncScheduledWake({ at: target, ...spec });
+    } catch (error) {
+      snowLog.warn({
+        module: "scheduled-task",
+        func: "syncScheduledWake",
+        message: "Failed to sync system wake schedule",
+        context: target ?? "clear",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   });
 };

@@ -516,7 +516,7 @@ export const en = {
   "scheduledTask.executorUnavailable":
     "AI Loop unavailable — tasks will not run until the chat is ready.",
   "scheduledTask.lifetimeHint":
-    "Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped.",
+    'Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped, unless "Run even when the app is closed" is enabled.',
   "scheduledTask.clearAll": "Clear all",
   "scheduledTask.confirmClearAll":
     "Remove all scheduled tasks? This cannot be undone.",
@@ -553,6 +553,9 @@ export const en = {
     'Exit 0 = run AI, exit 1 = skip. Or print a JSON line: {"run":false,"reason":"...","output":"..."} — "output" fills the {{SCRIPT_OUTPUT}} placeholder in the prompt.',
   "scheduledTask.preScriptTimeout": "Timeout (s)",
   "scheduledTask.runOnScriptError": "Run AI even if the script fails",
+  "scheduledTask.wakeWhenClosed": "Run even when the app is closed",
+  "scheduledTask.wakeWhenClosedHint":
+    "After the app quits, the system scheduler launches it in the background shortly before the run time. A run missed while the computer was off runs once on the next launch.",
   "scheduledTask.skipCount": "{{count}} skipped",
   "scheduledTask.filterAll": "All",
   "scheduledTask.filterProject": "Current project",

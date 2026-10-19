@@ -26,7 +26,10 @@ import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useI18n } from "../../i18n";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { useSplitResize } from "../../hooks/useSplitResize";
-import { validateSchedule } from "../../hooks/scheduledTasksStore";
+import {
+  isWakeWhenClosed,
+  validateSchedule,
+} from "../../hooks/scheduledTasksStore";
 import type {
   ApiConfigRecord,
   Model,
@@ -271,6 +274,7 @@ export function ScheduledTasksPanel({
     clearTasks,
     clearGlobalTasks,
     togglePauseTask,
+    setTaskWakeWhenClosed,
     runTaskNow,
     isExecutorReady,
   } = useScheduledTasks(directoryId, directoryPath);
@@ -299,6 +303,8 @@ export function ScheduledTasksPanel({
   );
   const [dailyHour, setDailyHour] = useState("9");
   const [dailyMinute, setDailyMinute] = useState("0");
+  // 应用关闭后仍执行（系统调度唤醒）
+  const [wakeWhenClosed, setWakeWhenClosed] = useState(false);
   // pre-script (optional)
   const [preScriptOpen, setPreScriptOpen] = useState(false);
   const [preScript, setPreScript] = useState("");
@@ -422,6 +428,7 @@ export function ScheduledTasksPanel({
     setIntervalUnit("minutes");
     setDailyHour("9");
     setDailyMinute("0");
+    setWakeWhenClosed(false);
     setSelectedApiProfile("");
     setBasicModelOverride("");
     setAdvancedModelOverride("");
@@ -1089,6 +1096,7 @@ export function ScheduledTasksPanel({
   );
 
   const buildSchedule = useCallback((): ScheduledTaskSchedule => {
+    const wake = wakeWhenClosed ? { wakeWhenClosed: true } : {};
     if (taskType === "once") {
       const timestamp = Date.parse(`${executeAtLocal}:00`);
       return {
@@ -1096,6 +1104,7 @@ export function ScheduledTasksPanel({
         executeAt: Number.isNaN(timestamp)
           ? executeAtLocal
           : new Date(timestamp).toISOString(),
+        ...wake,
       };
     }
 
@@ -1106,6 +1115,7 @@ export function ScheduledTasksPanel({
         type: "recurring",
         mode: "interval",
         intervalMs: Number.isFinite(value) ? value * unitMs : 0,
+        ...wake,
       };
     }
 
@@ -1114,6 +1124,7 @@ export function ScheduledTasksPanel({
       mode: "daily",
       hour: Number.parseInt(dailyHour, 10),
       minute: Number.parseInt(dailyMinute, 10),
+      ...wake,
     };
   }, [
     dailyHour,
@@ -1123,6 +1134,7 @@ export function ScheduledTasksPanel({
     intervalValue,
     recurringMode,
     taskType,
+    wakeWhenClosed,
   ]);
 
   const handleCreate = useCallback(async (): Promise<void> => {
@@ -1674,6 +1686,22 @@ export function ScheduledTasksPanel({
                 </dd>
               </div>
             </dl>
+            <label className="toggle-switch scheduled-tasks-switch-field scheduled-tasks-wake-toggle">
+              <input
+                checked={isWakeWhenClosed(selectedTask)}
+                disabled={selectedTask.status === "completed"}
+                onChange={(event) =>
+                  setTaskWakeWhenClosed(selectedTask.id, event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+              <span>
+                {t("scheduledTask.wakeWhenClosed", {
+                  defaultValue: "Run even when the app is closed",
+                })}
+              </span>
+            </label>
           </section>
 
           <section
@@ -2406,6 +2434,26 @@ export function ScheduledTasksPanel({
               )}
             </>
           )}
+
+          <label className="toggle-switch scheduled-tasks-switch-field scheduled-tasks-wake-toggle">
+            <input
+              checked={wakeWhenClosed}
+              onChange={(event) => setWakeWhenClosed(event.target.checked)}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span>
+              {t("scheduledTask.wakeWhenClosed", {
+                defaultValue: "Run even when the app is closed",
+              })}
+            </span>
+          </label>
+          <div className="scheduled-tasks-pre-script-hint">
+            {t("scheduledTask.wakeWhenClosedHint", {
+              defaultValue:
+                "After the app quits, the system scheduler launches it in the background shortly before the run time. A run missed while the computer was off runs once on the next launch.",
+            })}
+          </div>
         </section>
 
         <section className="scheduled-tasks-form-section">
@@ -2606,7 +2654,7 @@ export function ScheduledTasksPanel({
             <div className="scheduled-tasks-lifetime-hint">
               {t("scheduledTask.lifetimeHint", {
                 defaultValue:
-                  "Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped.",
+                  'Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped, unless "Run even when the app is closed" is enabled.',
               })}
             </div>
           </div>

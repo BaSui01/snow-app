@@ -95,6 +95,11 @@ export const scheduledTaskApi = {
    *  once at startup before hydration reads the run history. */
   reconcileScheduledTaskRuns: (): Promise<number> =>
     ipcRenderer.invoke("scheduled-tasks:reconcile-runs"),
+  /** 同步「关闭后仍执行」的最近唤醒时间到系统调度；null 表示清除。 */
+  syncScheduledWake: (
+    at: string | null,
+  ): Promise<{ registered: boolean; launchAt?: string }> =>
+    ipcRenderer.invoke("scheduled-tasks:sync-wake", at),
   /** Runs a pre-script shell command in the given cwd. Never blocks: the
    *  Rust backend spawns the process on the tokio runtime. */
   runPreScript: (

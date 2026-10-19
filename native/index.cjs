@@ -70,6 +70,8 @@ const requiredExports = [
   "appendScheduledTaskRun",
   "finalizeScheduledTaskRun",
   "reconcileScheduledTaskRuns",
+  // 定时任务「关闭后仍执行」的系统级唤醒注册
+  "syncScheduledWake",
   // 历史会话引用 chip 悬停预览（@@conversation: 标签注入内容预览）
   "previewConversationAttachment",
   // Markdown 表格导出（CSV / XLSX 字节由 Rust 生成）

@@ -33,7 +33,8 @@ type CreateTaskInput = Omit<CreateScheduledTaskInput, "directoryId"> & {
  * Persistence: the store hydrates from the backend SQLite database on startup
  * (task definitions, pause state and run history survive restarts). Execution
  * still requires the renderer process to be alive — a task whose fire time
- * passes while the app is closed is skipped on the next launch.
+ * passes while the app is closed is skipped on the next launch, unless
+ * schedule.wakeWhenClosed lets the OS scheduler relaunch the app.
  */
 export const useScheduledTasks = (
   directoryId: string,
@@ -49,6 +50,7 @@ export const useScheduledTasks = (
   clearTasks: () => void;
   clearGlobalTasks: () => void;
   togglePauseTask: (id: string) => void;
+  setTaskWakeWhenClosed: (id: string, enabled: boolean) => void;
   runTaskNow: (id: string) => Promise<void>;
   isExecutorReady: boolean;
 } => {
@@ -167,6 +169,13 @@ export const useScheduledTasks = (
     scheduledTasksStore.togglePause(id);
   }, []);
 
+  const setTaskWakeWhenClosed = useCallback(
+    (id: string, enabled: boolean): void => {
+      scheduledTasksStore.setWakeWhenClosed(id, enabled);
+    },
+    [],
+  );
+
   const runTaskNow = useCallback((id: string): Promise<void> => {
     return scheduledTasksStore.runNow(id);
   }, []);
@@ -179,6 +188,7 @@ export const useScheduledTasks = (
     clearTasks,
     clearGlobalTasks,
     togglePauseTask,
+    setTaskWakeWhenClosed,
     runTaskNow,
     isExecutorReady,
   };

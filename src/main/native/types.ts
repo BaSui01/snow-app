@@ -263,6 +263,21 @@ export type PreScriptResult = {
   timedOut: boolean;
 };
 
+/** 系统级唤醒注册参数（定时任务「关闭后仍执行」）。 */
+export type ScheduledWakeOptions = {
+  /** 下次任务时间（ISO）；省略表示清除注册。 */
+  at?: string;
+  label: string;
+  program: string;
+  args: string[];
+  env?: Record<string, string>;
+};
+
+export type ScheduledWakeResult = {
+  registered: boolean;
+  launchAt?: string;
+};
+
 export type AppLogRecord = {
   id: string;
   level: string;
@@ -2985,6 +3000,9 @@ export type NativeBridge = ImageGenerationNativeApi & {
     timeoutMs: number,
     envJson: string,
   ) => Promise<PreScriptResult>;
+  syncScheduledWake: (
+    options: ScheduledWakeOptions,
+  ) => Promise<ScheduledWakeResult>;
   listAppLogs: (
     level: string,
     module: string,

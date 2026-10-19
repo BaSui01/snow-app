@@ -302,7 +302,7 @@ impl McpService for AppControlService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_CREATE_SCHEDULED_TASK.to_string(),
-                description: "Create a new scheduled task in the Snow App. Tasks are saved in the local database and kept after restarting the app; executions missed while the app is closed are skipped. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \"once\" (executes a single time at a chosen start time) or \"recurring\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\"run\":bool,\"reason\":string,\"output\":string,\"prompt\":string} — \"output\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \"prompt\" fully overrides it, and \"reason\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway. Creation is idempotent when `id` is provided: retrying a call with the same id returns the already-created task instead of creating a duplicate.".to_string(),
+                description: "Create a new scheduled task in the Snow App. Tasks are saved in the local database and kept after restarting the app; executions missed while the app is closed are skipped unless schedule.wakeWhenClosed is true. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \"once\" (executes a single time at a chosen start time) or \"recurring\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\"run\":bool,\"reason\":string,\"output\":string,\"prompt\":string} — \"output\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \"prompt\" fully overrides it, and \"reason\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway. Creation is idempotent when `id` is provided: retrying a call with the same id returns the already-created task instead of creating a duplicate.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -347,6 +347,10 @@ impl McpService for AppControlService {
                                 "minute": {
                                     "type": "integer",
                                     "description": "Minute of hour (0-59) for a daily schedule. Required when mode is \\\"daily\\\"."
+                                },
+                                "wakeWhenClosed": {
+                                    "type": "boolean",
+                                    "description": "Optional. When true, the OS scheduler (launchd / Task Scheduler / systemd) relaunches the app in the background before the run time even if the app was quit, and a run missed while the computer was off runs once on the next launch. Default false."
                                 }
                             },
                             "required": ["type"]
@@ -1039,6 +1043,11 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
                 format!("schedule.type must be \"once\" or \"recurring\", received \"{other}\""),
             ));
         }
+    }
+
+    // 应用关闭后仍执行：仅在显式为 true 时写入
+    if schedule.get("wakeWhenClosed").and_then(Value::as_bool) == Some(true) {
+        normalized.insert("wakeWhenClosed".to_string(), json!(true));
     }
 
     // Optional per-task configuration fields. Values are trimmed here, and empty

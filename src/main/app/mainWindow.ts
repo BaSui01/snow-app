@@ -183,7 +183,9 @@ const applyDevToolsSnowIcon = (contents: WebContents): void => {
   });
 };
 
-export const createWindow = (): BrowserWindow => {
+export const createWindow = (
+  options: { show?: boolean } = {},
+): BrowserWindow => {
   // macOS 关闭窗口后进程不退出，用户点击 dock 图标会重新 createWindow。
   // 此时需重置 closeConfirmed，使新窗口关闭时仍弹出二次确认。
   closeConfirmed = false;
@@ -204,6 +206,8 @@ export const createWindow = (): BrowserWindow => {
     minHeight: 600,
     title: "Snow App",
     icon: APP_ICON_PATH,
+    // 系统调度唤醒时后台启动，不显示窗口
+    show: options.show ?? true,
     titleBarStyle: isMacOS ? "hidden" : "default",
     // macOS 保留原生红绿灯；Windows / Linux 无边框，标题栏、窗口控制按钮
     // 与 LOGO 全部由渲染层自绘（见 renderer/components/TopBar.tsx）。
@@ -226,9 +230,13 @@ export const createWindow = (): BrowserWindow => {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAutoHideMenuBar(true);
 
-  // 恢复上次退出时的最大化状态。
+  // 恢复上次退出时的最大化状态（maximize 会顺带显示窗口，隐藏启动时推迟到首次显示）。
   if (savedState?.isMaximized) {
-    mainWindow.maximize();
+    if (options.show === false) {
+      mainWindow.once("show", () => mainWindow.maximize());
+    } else {
+      mainWindow.maximize();
+    }
   }
 
   // 主窗口自身的 DevTools（如 F12）也应用 Snow 图标。

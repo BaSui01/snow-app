@@ -488,7 +488,7 @@ export const zhTW = {
   "scheduledTask.executorUnavailable":
     "AI Loop 不可用 — 在聊天就緒前任務不會執行。",
   "scheduledTask.lifetimeHint":
-    "任務保存在本地，重新啟動應用後仍會保留並繼續執行；應用未執行時錯過的執行會被跳過。",
+    "任務保存在本地，重新啟動應用後仍會保留並繼續執行；應用未執行時錯過的執行會被跳過（開啟「應用程式關閉後仍執行」的任務除外）。",
   "scheduledTask.clearAll": "全部清除",
   "scheduledTask.confirmClearAll": "確定清除所有定時任務？此操作不可撤銷。",
   "scheduledTask.runNow": "立即執行",
@@ -524,6 +524,9 @@ export const zhTW = {
     '退出碼 0 = 執行 AI，1 = 跳過。或輸出一行 JSON：{"run":false,"reason":"...","output":"..."}——"output" 會填入 prompt 中的 {{SCRIPT_OUTPUT}} 佔位符。',
   "scheduledTask.preScriptTimeout": "逾時（秒）",
   "scheduledTask.runOnScriptError": "腳本出錯時仍執行 AI",
+  "scheduledTask.wakeWhenClosed": "應用程式關閉後仍執行",
+  "scheduledTask.wakeWhenClosedHint":
+    "應用程式結束後，由系統排程在執行時間前於背景啟動應用程式；關機等原因錯過的執行會在下次啟動後補跑一次。",
   "scheduledTask.skipCount": "跳過 {{count}} 次",
   "scheduledTask.filterAll": "全部",
   "scheduledTask.filterProject": "當前項目",

@@ -46,6 +46,7 @@ import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { ensureBuiltinPets } from "../pets/ensureBuiltinPet";
 import { registerRequestProxy } from "../requestProxy/requestProxy";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
+import { isScheduledWakeLaunch } from "./scheduledWakeLaunch";
 import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
 import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
 import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
@@ -100,6 +101,16 @@ export const bootstrapApplication = (): void => {
       });
       markCloseConfirmed();
       app.quit();
+      return;
+    }
+
+    // 系统调度唤醒时应用已在运行：调度器自行触发，不打扰用户
+    if (isScheduledWakeLaunch(commandLine)) {
+      snowLog.info({
+        module: "app/bootstrap",
+        func: "second-instance",
+        message: "Scheduled wake ignored, application already running",
+      });
       return;
     }
 
@@ -166,7 +177,19 @@ export const bootstrapApplication = (): void => {
     // 完整的 loading 动画，而非空白/黑屏过渡。
     // 应用锁先落库：启用时本次启动必须重新验证身份，重启不可绕过。
     void lockAppOnStartup();
-    const mainWindow = createWindow();
+    // 系统调度唤醒：后台启动，仅保留托盘（macOS 同时隐藏 Dock 图标）
+    const wakeLaunch = isScheduledWakeLaunch();
+    if (wakeLaunch && isMacOS) {
+      app.dock?.hide();
+    }
+    const mainWindow = createWindow({ show: !wakeLaunch });
+    if (wakeLaunch) {
+      snowLog.info({
+        module: "app/bootstrap",
+        func: "whenReady",
+        message: "Launched by scheduled wake, main window hidden",
+      });
+    }
 
     const stopScheduledTaskWakeup = startScheduledTaskWakeup(mainWindow);
 

@@ -27085,6 +27085,12 @@ body.is-panel-resizing * {
   white-space: normal;
 }
 
+/* 应用关闭后仍执行开关 */
+.scheduled-tasks-wake-toggle {
+  align-self: flex-start;
+  margin-top: 10px;
+}
+
 /* 思考强度选择触发按钮（弹出 ThinkingStrengthMenu，与聊天输入区共用） */
 .thinking-menu-wrap {
   position: relative;

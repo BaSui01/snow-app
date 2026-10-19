@@ -67,6 +67,27 @@ const appendRunHistory = (
  * Electron main process also sends wakeups because renderer timers are throttled
  * while the app is in the background. */
 const TICK_MS = 5_000;
+/** 同步系统唤醒时间的防抖间隔。 */
+const WAKE_SYNC_DEBOUNCE_MS = 1_500;
+
+/** 任务是否开启「应用关闭后仍执行」。 */
+export const isWakeWhenClosed = (task: ScheduledTaskRecord): boolean =>
+  task.schedule.wakeWhenClosed === true;
+
+/** 需要系统拉起应用的最近任务时间；没有则返回 null。 */
+const computeNextWakeAt = (
+  tasks: Iterable<ScheduledTaskRecord>,
+): string | null => {
+  let earliest: number | null = null;
+  for (const task of tasks) {
+    if (!isWakeWhenClosed(task) || task.paused || !task.nextRunAt) continue;
+    if (task.status === "completed" || task.status === "running") continue;
+    const ms = Date.parse(task.nextRunAt);
+    if (Number.isNaN(ms)) continue;
+    if (earliest === null || ms < earliest) earliest = ms;
+  }
+  return earliest === null ? null : new Date(earliest).toISOString();
+};
 
 type Executor = (
   prompt: string,
@@ -436,6 +457,42 @@ export class ScheduledTasksStore {
   private persistence: PersistenceAdapter | null = null;
   private hydratePromise: Promise<void> | null = null;
 
+  private wakeSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 上次同步的唤醒时间；undefined = 尚未同步（首次必发，清理残留注册）。 */
+  private lastWakeSync: string | null | undefined = undefined;
+  /** 串行化唤醒同步，避免系统注册乱序覆盖。 */
+  private wakeSyncQueue: Promise<void> = Promise.resolve();
+
+  /** 防抖同步最近唤醒时间到系统调度（仅在水合完成后）。 */
+  private scheduleWakeSync = (): void => {
+    if (!this.hydrated) return;
+    if (
+      typeof window === "undefined" ||
+      typeof window.snow?.syncScheduledWake !== "function"
+    ) {
+      return;
+    }
+    if (this.wakeSyncTimer) clearTimeout(this.wakeSyncTimer);
+    this.wakeSyncTimer = setTimeout(this.flushWakeSync, WAKE_SYNC_DEBOUNCE_MS);
+  };
+
+  private flushWakeSync = (): void => {
+    this.wakeSyncTimer = null;
+    const next = computeNextWakeAt(this.tasks.values());
+    if (next === this.lastWakeSync) return;
+    this.lastWakeSync = next;
+    this.wakeSyncQueue = this.wakeSyncQueue
+      .then(() => window.snow.syncScheduledWake(next))
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          // 失败后允许下次变更重试
+          this.lastWakeSync = undefined;
+          console.warn("[scheduledTasks] Failed to sync system wake:", error);
+        },
+      );
+  };
+
   /** Starts the coarse tick loop. Safe to call multiple times. */
   private ensureTick = (): void => {
     if (this.tickTimer) return;
@@ -461,6 +518,8 @@ export class ScheduledTasksStore {
    */
   setExecutor = (executor: Executor): (() => void) => {
     this.executors.add(executor);
+    // 启动期间到期（补跑）的任务在执行器就绪后立即触发
+    void this.dueTasks();
     return () => {
       this.executors.delete(executor);
     };
@@ -500,6 +559,7 @@ export class ScheduledTasksStore {
   };
 
   private notify = (): void => {
+    this.scheduleWakeSync();
     for (const listener of this.listeners) {
       try {
         listener();
@@ -923,6 +983,30 @@ export class ScheduledTasksStore {
     return updated;
   };
 
+  /** 切换任务的「应用关闭后仍执行」开关。 */
+  setWakeWhenClosed = (
+    id: string,
+    enabled: boolean,
+  ): ScheduledTaskRecord | null => {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    const schedule: ScheduledTaskSchedule = { ...task.schedule };
+    if (enabled) {
+      schedule.wakeWhenClosed = true;
+    } else {
+      delete schedule.wakeWhenClosed;
+    }
+    const updated: ScheduledTaskRecord = {
+      ...task,
+      schedule,
+      updatedAt: new Date().toISOString(),
+    };
+    this.tasks.set(id, updated);
+    this.persistUpsert(updated);
+    this.notify();
+    return updated;
+  };
+
   /** Wakeup entry point used by the Electron main process while the renderer
    * is background-throttled. */
   wake = (): void => {
@@ -931,6 +1015,8 @@ export class ScheduledTasksStore {
 
   /** Triggers all tasks whose nextRunAt is due and not paused/running. */
   private dueTasks = async (): Promise<void> => {
+    // 执行器未就绪（启动早期）时保持到期状态，注册后再触发
+    if (!this.currentExecutor()) return;
     const now = Date.now();
     const due: ScheduledTaskRecord[] = [];
     for (const task of this.tasks.values()) {
@@ -1349,8 +1435,9 @@ export const reconcileAfterRestart = (
   }
 
   // Expired schedules: once-tasks are done (they never fire again); recurring
-  // tasks advance to the next plan point.
-  if (!task.paused && task.nextRunAt) {
+  // tasks advance to the next plan point. 开启关闭后仍执行的任务保留到期时间，
+  // 启动后补跑一次。
+  if (!task.paused && task.nextRunAt && !isWakeWhenClosed(task)) {
     const nextMs = Date.parse(task.nextRunAt);
     if (!Number.isNaN(nextMs) && nextMs <= now) {
       if (task.schedule.type === "once") {

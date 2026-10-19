@@ -5,7 +5,9 @@
  * pause state and run history all survive app restarts. The scheduler itself
  * (timers, the tick loop) runs in the renderer process, so tasks only execute
  * while the app is running; a task whose fire time passes while the app is
- * closed is skipped and its schedule advances to the next plan point.
+ * closed is skipped and its schedule advances to the next plan point, unless
+ * schedule.wakeWhenClosed is set (the OS scheduler relaunches the app and a
+ * missed run is caught up once).
  *
  * A task wraps a user-configured prompt that is sent to the existing AI Loop
  * (via buildFromContent, which creates a new chat conversation and auto-sends,
@@ -30,6 +32,8 @@ export type ScheduledTaskSchedule = {
   hour?: number;
   /** Minute of hour (0-59) for daily schedule. Required when mode === "daily". */
   minute?: number;
+  /** 应用关闭后仍执行：由系统调度在到点前拉起应用，错过的执行启动后补跑一次。 */
+  wakeWhenClosed?: boolean;
 };
 
 /** Internal runtime status of a task (derived from the scheduler, not stored). */

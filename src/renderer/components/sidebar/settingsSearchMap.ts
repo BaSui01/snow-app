@@ -2342,6 +2342,22 @@ const RAW_GROUPS: RawGroup[] = [
         ["custom svg", "自定义 svg"],
       ],
       [
+        "theme.streamCursor.typeImage",
+        "field",
+        "settings.themeStreamCursorTypeImage",
+        "Custom image",
+        [],
+        ["custom image", "gif", "自定义图片"],
+      ],
+      [
+        "theme.streamCursor.typeCanvas",
+        "field",
+        "settings.themeStreamCursorTypeCanvas",
+        "Canvas script",
+        [],
+        ["canvas", "script", "脚本", "动画代码"],
+      ],
+      [
         "theme.streamCursor.size",
         "field",
         "settings.themeStreamCursorSize",

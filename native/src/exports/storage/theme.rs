@@ -328,6 +328,27 @@ pub async fn save_theme_stream_cursor_svg(source_path: String) -> napi::Result<S
 }
 
 #[napi]
+pub async fn save_theme_stream_cursor_image(source_path: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::save_theme_stream_cursor_image(source_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn save_theme_stream_cursor_script(source_path: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::save_theme_stream_cursor_script(source_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn read_theme_stream_cursor_script(script_path: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::read_theme_stream_cursor_script(script_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn delete_theme_stream_cursor_svg(svg_path: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::delete_theme_stream_cursor_svg(svg_path))
         .await

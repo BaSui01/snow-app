@@ -1837,6 +1837,8 @@ export type GitLogEntry = {
   filesChanged: number;
   /** 是否已推送到远端：被任一远端跟踪分支（refs/remotes/*）包含。 */
   pushed: boolean;
+  /** 是否落后：在 upstream 上但 HEAD 尚未包含（未拉取）。 */
+  behind: boolean;
 };
 export type GitCommitFile = {
   path: string;
@@ -2135,6 +2137,9 @@ export type NativeBridge = ImageGenerationNativeApi & {
   saveThemeBackgroundImage: (sourcePath: string) => Promise<string>;
   deleteThemeBackgroundImage: (imagePath: string) => Promise<void>;
   saveThemeStreamCursorSvg: (sourcePath: string) => Promise<string>;
+  saveThemeStreamCursorImage: (sourcePath: string) => Promise<string>;
+  saveThemeStreamCursorScript: (sourcePath: string) => Promise<string>;
+  readThemeStreamCursorScript: (scriptPath: string) => Promise<string>;
   deleteThemeStreamCursorSvg: (svgPath: string) => Promise<void>;
   getCodebaseProjectScopeSettings: (
     projectId: string,

@@ -3714,6 +3714,21 @@ export const en = {
   "settings.themeStreamCursorTypeLucide": "Built-in icon",
   "settings.themeStreamCursorTypeSnowBot": "Snow Bot",
   "settings.themeStreamCursorTypeCustom": "Custom SVG",
+  "settings.themeStreamCursorTypeImage": "Custom image",
+  "settings.themeStreamCursorSelectImage": "Select image",
+  "settings.themeStreamCursorSelectImageDialogTitle":
+    "Select stream cursor image",
+  "settings.themeStreamCursorSaveImageError":
+    "Failed to save stream cursor image",
+  "settings.themeStreamCursorTypeCanvas": "Canvas script",
+  "settings.themeStreamCursorSelectScript": "Select script",
+  "settings.themeStreamCursorSelectScriptDialogTitle":
+    "Select stream cursor drawing script",
+  "settings.themeStreamCursorSaveScriptError":
+    "Failed to save stream cursor script",
+  "settings.themeStreamCursorCanvasHint":
+    "The script must define draw(ctx, size, t, dark): ctx is already scaled for the device pixel ratio, size is in CSS pixels, t is elapsed seconds, dark tells whether the dark theme is active. It runs in an isolated Worker without access to the page or app APIs.",
+  "settings.themeStreamCursorCanvasError": "Script error: {{message}}",
   "settings.themeStreamCursorSelectSvg": "Select SVG",
   "settings.themeStreamCursorSelectDialogTitle": "Select stream cursor SVG",
   "settings.themeStreamCursorRemoveSvg": "Remove",

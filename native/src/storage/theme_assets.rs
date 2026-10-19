@@ -149,6 +149,137 @@ pub fn save_theme_stream_cursor_svg(source_path: String) -> Result<String> {
     Ok(dest_path.to_string_lossy().into_owned())
 }
 
+/// 流式光标脚本大小上限（1 MB），防止误选大文件拖慢渲染。
+const STREAM_CURSOR_SCRIPT_MAX_BYTES: u64 = 1024 * 1024;
+
+/// 把源文件复制进 ~/.snowapp/stream-cursors/，返回目标绝对路径。
+fn copy_into_stream_cursors(source_path: &str, prefix: &str, extension: &str) -> Result<String> {
+    let trimmed_source = source_path.trim();
+    if trimmed_source.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Stream cursor source path is required".to_string(),
+        ));
+    }
+
+    let source = std::path::Path::new(trimmed_source);
+    if !source.is_file() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("Stream cursor source file does not exist: {trimmed_source}"),
+        ));
+    }
+
+    let storage_dir = ensure_storage_dir()?;
+    let cursors_dir = storage_dir.join("stream-cursors");
+    fs::create_dir_all(&cursors_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create stream-cursors directory at '{}': {error}",
+            cursors_dir.display()
+        ))
+    })?;
+
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let random_suffix = uuid::Uuid::new_v4().simple().to_string();
+    let dest_file_name = format!("{prefix}-{timestamp}-{random_suffix}.{extension}");
+    let dest_path = cursors_dir.join(&dest_file_name);
+
+    fs::copy(source, &dest_path).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to copy stream cursor file to '{}': {error}",
+            dest_path.display()
+        ))
+    })?;
+
+    Ok(dest_path.to_string_lossy().into_owned())
+}
+
+/// 将用户选择的任意图片复制到 ~/.snowapp/stream-cursors/，保留原扩展名（如 gif）。
+pub fn save_theme_stream_cursor_image(source_path: String) -> Result<String> {
+    // 不限制图片类型，仅过滤非法扩展名字符；无扩展名时回退 png。
+    let extension = std::path::Path::new(source_path.trim())
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .filter(|ext| !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| "png".to_string());
+    copy_into_stream_cursors(&source_path, "cursor-img", &extension)
+}
+
+/// 保存 canvas 绘制脚本，统一落盘为 .js。
+pub fn save_theme_stream_cursor_script(source_path: String) -> Result<String> {
+    let size = fs::metadata(source_path.trim())
+        .map(|meta| meta.len())
+        .unwrap_or(0);
+    if size > STREAM_CURSOR_SCRIPT_MAX_BYTES {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Stream cursor script exceeds the 1 MB limit".to_string(),
+        ));
+    }
+    copy_into_stream_cursors(&source_path, "cursor-script", "js")
+}
+
+/// 直接把脚本源码写入 stream-cursors 目录（供 AI 内联提交脚本）。
+pub fn write_theme_stream_cursor_script(code: &str) -> Result<String> {
+    if code.len() as u64 > STREAM_CURSOR_SCRIPT_MAX_BYTES {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Stream cursor script exceeds the 1 MB limit".to_string(),
+        ));
+    }
+    let cursors_dir = ensure_storage_dir()?.join("stream-cursors");
+    fs::create_dir_all(&cursors_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create stream-cursors directory at '{}': {error}",
+            cursors_dir.display()
+        ))
+    })?;
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let random_suffix = uuid::Uuid::new_v4().simple().to_string();
+    let dest_path = cursors_dir.join(format!("cursor-script-{timestamp}-{random_suffix}.js"));
+    fs::write(&dest_path, code).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to write stream cursor script to '{}': {error}",
+            dest_path.display()
+        ))
+    })?;
+    Ok(dest_path.to_string_lossy().into_owned())
+}
+
+/// 读取 canvas 绘制脚本内容；只允许读取 stream-cursors 目录内的文件。
+pub fn read_theme_stream_cursor_script(script_path: String) -> Result<String> {
+    let trimmed = script_path.trim();
+    if trimmed.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Stream cursor script path is required".to_string(),
+        ));
+    }
+
+    let cursors_dir = paths::app_storage_dir()?.join("stream-cursors");
+    let canonical_cursors = cursors_dir.canonicalize().map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to resolve stream-cursors directory: {error}"
+        ))
+    })?;
+    let canonical_target = std::path::Path::new(trimmed)
+        .canonicalize()
+        .map_err(|error| {
+            Error::from_reason(format!("Failed to resolve stream cursor script: {error}"))
+        })?;
+    if !canonical_target.starts_with(&canonical_cursors) {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Refused to read a file outside the stream-cursors directory".to_string(),
+        ));
+    }
+
+    fs::read_to_string(&canonical_target).map_err(|error| {
+        Error::from_reason(format!("Failed to read stream cursor script: {error}"))
+    })
+}
+
 /// 删除指定的流式光标 SVG 文件。传入空字符串时静默返回 Ok。
 pub fn delete_theme_stream_cursor_svg(svg_path: String) -> Result<()> {
     let trimmed = svg_path.trim();

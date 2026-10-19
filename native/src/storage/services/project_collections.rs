@@ -159,8 +159,9 @@ pub fn update_project_collection_color(
 
 /// 解析 `directory_id` 所属的关联项目组（合集）。
 ///
-/// 返回 `None` 表示该项目未关联（不在任何合集中，或合集内有效本地项目不足 2 个）；
-/// SSH 成员与路径为空的成员不参与，因为本地搜索工具无法读取远端路径。
+/// 返回 `None` 表示该项目未关联（已断开关联、不在任何合集中，或合集内有效本地
+/// 项目不足 2 个）；SSH 成员与路径为空的成员不参与，因为本地搜索工具无法读取
+/// 远端路径。自身断开关联的项目也不再并入兄弟根。
 pub fn resolve_linked_project_roots(
     database_path: &Path,
     directory_id: &str,
@@ -172,11 +173,13 @@ pub fn resolve_linked_project_roots(
 
     database::open_connection(database_path)
         .and_then(|connection| {
+            // 断开关联（linked = 0）的项目本身不参与关联：既不并入兄弟根，
+            // 也不以它为起点搜索组内其他项目。
             let collection_id: Option<String> = connection
                 .query_row(
                     "SELECT collection_id
                        FROM collection_members
-                      WHERE directory_id = ?1
+                      WHERE directory_id = ?1 AND linked = 1
                       LIMIT 1",
                     [trimmed],
                     |row| row.get(0),
@@ -218,11 +221,13 @@ pub fn resolve_linked_project_roots_by_path(
             let Some(directory_id) = directory_id else {
                 return Ok(None);
             };
+            // 断开关联（linked = 0）的项目不再以它为起点解析兄弟根，
+            // 文件搜索 / grep 立即退回单根行为。
             let collection_id: Option<String> = connection
                 .query_row(
                     "SELECT collection_id
                        FROM collection_members
-                      WHERE directory_id = ?1
+                      WHERE directory_id = ?1 AND linked = 1
                       LIMIT 1",
                     [directory_id],
                     |row| row.get(0),

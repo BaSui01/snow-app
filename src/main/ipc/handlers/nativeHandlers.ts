@@ -1,4 +1,4 @@
-import { ipcMain, nativeTheme } from "electron";
+import { BrowserWindow, ipcMain, nativeTheme } from "electron";
 import { randomUUID } from "node:crypto";
 import { setFlagsFromString } from "node:v8";
 import type {
@@ -328,6 +328,33 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         throw new Error("Stream cursor SVG source path is required");
       }
       return native.saveThemeStreamCursorSvg(sourcePath);
+    },
+  );
+  ipcMain.handle(
+    "theme:save-stream-cursor-image",
+    (_event, sourcePath: unknown) => {
+      if (typeof sourcePath !== "string" || !sourcePath.trim()) {
+        throw new Error("Stream cursor image source path is required");
+      }
+      return native.saveThemeStreamCursorImage(sourcePath);
+    },
+  );
+  ipcMain.handle(
+    "theme:save-stream-cursor-script",
+    (_event, sourcePath: unknown) => {
+      if (typeof sourcePath !== "string" || !sourcePath.trim()) {
+        throw new Error("Stream cursor script source path is required");
+      }
+      return native.saveThemeStreamCursorScript(sourcePath);
+    },
+  );
+  ipcMain.handle(
+    "theme:read-stream-cursor-script",
+    (_event, scriptPath: unknown) => {
+      if (typeof scriptPath !== "string" || !scriptPath.trim()) {
+        throw new Error("Stream cursor script path is required");
+      }
+      return native.readThemeStreamCursorScript(scriptPath);
     },
   );
   ipcMain.handle(
@@ -1283,6 +1310,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           readConfigScope(argsJson) === "customCommands"
         ) {
           safeSend(event.sender, "customCommands:changed");
+        }
+        // 流式指示器（streamCursor 作用域）写入主题设置：通知所有窗口重载主题。
+        if (
+          (toolName === "config-set" || toolName === "config-delete") &&
+          readConfigScope(argsJson) === "streamCursor"
+        ) {
+          for (const win of BrowserWindow.getAllWindows()) {
+            safeSend(win.webContents, "theme:settings-changed");
+          }
         }
         return result;
       } finally {

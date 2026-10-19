@@ -937,4 +937,64 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       return result.canceled ? null : (result.filePaths[0] ?? null);
     },
   );
+  ipcMain.handle(
+    "theme:select-stream-cursor-image",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select stream cursor image";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile"],
+        filters: [
+          {
+            name: "Images",
+            extensions: [
+              "gif",
+              "png",
+              "apng",
+              "webp",
+              "jpg",
+              "jpeg",
+              "avif",
+              "bmp",
+              "svg",
+              "ico",
+            ],
+          },
+          { name: "All files", extensions: ["*"] },
+        ],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+  );
+  ipcMain.handle(
+    "theme:select-stream-cursor-script",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select stream cursor script";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile"],
+        filters: [
+          { name: "JavaScript", extensions: ["js", "mjs"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+  );
 };

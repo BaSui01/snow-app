@@ -43,7 +43,10 @@ import { ThemeTypographySection } from "./themeSettings/ThemeTypographySection";
 import { ThemeModeSelector } from "./themeSettings/ThemeModeSelector";
 import { ThemePresetGrid } from "./themeSettings/ThemePresetGrid";
 import { ThemePreview } from "./themeSettings/ThemePreview";
-import { ThemeStreamCursorSection } from "./themeSettings/ThemeStreamCursorSection";
+import {
+  ThemeStreamCursorSection,
+  type StreamCursorAssetKind,
+} from "./themeSettings/ThemeStreamCursorSection";
 
 type EditorTab = "light" | "dark";
 
@@ -419,32 +422,54 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     setForm((previous: ThemeSettings) => ({ ...previous, typography }));
   };
 
-  const handleSelectSvg = async (): Promise<void> => {
+  const handleSelectCursorAsset = async (
+    kind: StreamCursorAssetKind,
+  ): Promise<void> => {
     setIsBusy(true);
     setError("");
     setStatus("");
     try {
-      const title = t("settings.themeStreamCursorSelectDialogTitle", {
-        defaultValue: "Select stream cursor SVG",
-      });
-      const sourcePath = await window.snow.selectThemeStreamCursorSvg(title);
+      const sourcePath =
+        kind === "svg"
+          ? await window.snow.selectThemeStreamCursorSvg(
+              t("settings.themeStreamCursorSelectDialogTitle", {
+                defaultValue: "Select stream cursor SVG",
+              }),
+            )
+          : kind === "image"
+            ? await window.snow.selectThemeStreamCursorImage(
+                t("settings.themeStreamCursorSelectImageDialogTitle", {
+                  defaultValue: "Select stream cursor image",
+                }),
+              )
+            : await window.snow.selectThemeStreamCursorScript(
+                t("settings.themeStreamCursorSelectScriptDialogTitle", {
+                  defaultValue: "Select stream cursor drawing script",
+                }),
+              );
       if (!sourcePath) {
         return;
       }
-      // 替换 SVG 时先删除旧文件，避免冗余文件堆积。
+      // 替换时先删除旧文件，避免冗余文件堆积。
       const previousSvgPath = form.streamCursor.svgPath;
       if (previousSvgPath) {
         await window.snow
           .deleteThemeStreamCursorSvg(previousSvgPath)
           .catch(() => {
-            // 旧文件删除失败不阻塞新 SVG 上传。
+            // 旧文件删除失败不阻塞新文件上传。
           });
       }
-      const savedPath = await window.snow.saveThemeStreamCursorSvg(sourcePath);
+      const savedPath =
+        kind === "svg"
+          ? await window.snow.saveThemeStreamCursorSvg(sourcePath)
+          : kind === "image"
+            ? await window.snow.saveThemeStreamCursorImage(sourcePath)
+            : await window.snow.saveThemeStreamCursorScript(sourcePath);
       setForm((previous: ThemeSettings) => ({
         ...previous,
         streamCursor: {
-          iconType: "custom",
+          iconType:
+            kind === "svg" ? "custom" : kind === "image" ? "image" : "canvas",
           lucideName: "",
           svgPath: savedPath,
           iconSize: previous.streamCursor.iconSize,
@@ -454,9 +479,17 @@ export function ThemeSettingsPanel(): React.JSX.Element {
       setError(
         e instanceof Error
           ? e.message
-          : t("settings.themeStreamCursorSaveError", {
-              defaultValue: "Failed to save stream cursor SVG",
-            }),
+          : kind === "svg"
+            ? t("settings.themeStreamCursorSaveError", {
+                defaultValue: "Failed to save stream cursor SVG",
+              })
+            : kind === "image"
+              ? t("settings.themeStreamCursorSaveImageError", {
+                  defaultValue: "Failed to save stream cursor image",
+                })
+              : t("settings.themeStreamCursorSaveScriptError", {
+                  defaultValue: "Failed to save stream cursor script",
+                }),
       );
     } finally {
       setIsBusy(false);
@@ -868,7 +901,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
             disabled={busy}
             busy={isBusy}
             onChange={handleStreamCursorChange}
-            onSelectSvg={handleSelectSvg}
+            onSelectAsset={handleSelectCursorAsset}
             onRemoveSvg={handleRemoveSvg}
           />
 

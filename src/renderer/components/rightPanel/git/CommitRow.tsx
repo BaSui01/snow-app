@@ -25,6 +25,11 @@ import {
 import { formatDate } from "./gitGraphUtils";
 
 const ARC_KAPPA = 0.5523;
+// 未推送提交的空心圆配色（绿色，区别于泳道色）
+const UNPUSHED_COLOR = "var(--accent-green)";
+const UNPUSHED_FILL = "var(--accent-green-bg)";
+// 落后（未拉取）提交：红色虚线空心圆
+const BEHIND_COLOR = "var(--accent-red)";
 
 type CommitRowProps = {
   row: GraphRow;
@@ -98,7 +103,9 @@ export function CommitRow({
   return (
     <div>
       <div
-        className={`git-graph-row${isSelected ? " selected" : ""}`}
+        className={`git-graph-row${isSelected ? " selected" : ""}${
+          row.commit.behind ? " behind" : ""
+        }`}
         onClick={() => onActivate(row.commit.hash)}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -189,14 +196,26 @@ export function CommitRow({
               strokeWidth={2}
             />
           ))}
-          <circle
-            cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
-            cy={ROW_HEIGHT / 2}
-            r={DOT_RADIUS}
-            fill={row.commit.pushed ? dotColor : "var(--bg-primary)"}
-            stroke={row.commit.pushed ? "var(--bg-primary)" : dotColor}
-            strokeWidth={2}
-          />
+          {row.commit.behind ? (
+            <circle
+              cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
+              cy={ROW_HEIGHT / 2}
+              r={DOT_RADIUS}
+              fill="var(--bg-primary)"
+              stroke={BEHIND_COLOR}
+              strokeWidth={2}
+              strokeDasharray="2.5 1.8"
+            />
+          ) : (
+            <circle
+              cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
+              cy={ROW_HEIGHT / 2}
+              r={DOT_RADIUS}
+              fill={row.commit.pushed ? dotColor : UNPUSHED_FILL}
+              stroke={row.commit.pushed ? "var(--bg-primary)" : UNPUSHED_COLOR}
+              strokeWidth={row.commit.pushed ? 2 : 2.5}
+            />
+          )}
         </svg>
         <div className="git-graph-info">
           <span className="git-graph-message">{row.commit.message}</span>

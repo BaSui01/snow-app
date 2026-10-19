@@ -39248,6 +39248,11 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   background: var(--bg-active);
 }
 
+/* 落后（未拉取）提交：文字半透明 */
+.git-graph-row.behind .git-graph-info {
+  opacity: 0.5;
+}
+
 .git-graph-svg {
   flex-shrink: 0;
   /* Let lane strokes extend 1px past the row boundary so they overlap the

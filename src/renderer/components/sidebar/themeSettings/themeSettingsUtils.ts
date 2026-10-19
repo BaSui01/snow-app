@@ -470,7 +470,11 @@ export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
   const source = isRecord(value) ? value : {};
   const rawType = toText(source.iconType) || "dot";
   const iconType: ThemeStreamCursor["iconType"] =
-    rawType === "lucide" || rawType === "custom" || rawType === "snowbot"
+    rawType === "lucide" ||
+    rawType === "custom" ||
+    rawType === "snowbot" ||
+    rawType === "image" ||
+    rawType === "canvas"
       ? rawType
       : "dot";
   const lucideName = toText(source.lucideName);
@@ -493,7 +497,7 @@ export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
     }
     return { iconType, lucideName, svgPath: "", iconSize };
   }
-  // iconType === "custom"
+  // iconType === "custom" | "image" | "canvas"
   if (!svgPath) {
     return { iconType: "dot", lucideName: "", svgPath: "", iconSize };
   }

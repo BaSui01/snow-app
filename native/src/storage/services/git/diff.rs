@@ -194,26 +194,35 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
     // commits with no changes produce no shortstat line (additions/deletions
     // stay 0). The stat vocabulary is hardcoded English in git and does not
     // follow the system locale.
-    let output = run_git_raw(
+    // 额外遍历当前分支的 upstream，让落后（未拉取）的远端提交也进入提交图。
+    let upstream = run_git(
         repo_path,
-        &[
-            "log",
-            "HEAD",
-            // 顶层排序：与 git log --graph / VSCode 的行序一致——合并提交的
-            // 第二父分支紧跟其第一父展开，主线不会被更新的侧分支提交挤到
-            // 后面的车道；--skip/--max-count 分页在位序上依然连续。
-            "--topo-order",
-            "--decorate=full",
-            "--decorate-refs-exclude=refs/remotes/*/HEAD",
-            "--shortstat",
-            format_arg,
-            "--date=iso",
-            "--skip",
-            &skip_str,
-            "--max-count",
-            &max_count_str,
-        ],
-    )?;
+        &["rev-parse", "--verify", "--quiet", "@{upstream}"],
+    )
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty());
+
+    let mut log_args: Vec<&str> = vec!["log", "HEAD"];
+    if let Some(hash) = upstream.as_deref() {
+        log_args.push(hash);
+    }
+    log_args.extend_from_slice(&[
+        // 顶层排序：与 git log --graph / VSCode 的行序一致——合并提交的
+        // 第二父分支紧跟其第一父展开，主线不会被更新的侧分支提交挤到
+        // 后面的车道；--skip/--max-count 分页在位序上依然连续。
+        "--topo-order",
+        "--decorate=full",
+        "--decorate-refs-exclude=refs/remotes/*/HEAD",
+        "--shortstat",
+        format_arg,
+        "--date=iso",
+        "--skip",
+        &skip_str,
+        "--max-count",
+        &max_count_str,
+    ]);
+    let output = run_git_raw(repo_path, &log_args)?;
 
     let mut entries: Vec<GitLogEntry> = Vec::new();
 
@@ -247,6 +256,7 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
                 deletions: 0,
                 files_changed: 0,
                 pushed: true,
+                behind: false,
             };
 
             if parts.len() > 9 {
@@ -263,8 +273,28 @@ pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogE
     }
 
     mark_pushed(repo_path, &mut entries);
+    if let Some(hash) = upstream.as_deref() {
+        mark_behind(repo_path, hash, &mut entries);
+    }
 
     Ok(entries)
+}
+
+/// 标记落后提交：upstream 可达但 HEAD 不可达（`HEAD..upstream`）。
+fn mark_behind(repo_path: &str, upstream: &str, entries: &mut [GitLogEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+    let range = format!("HEAD..{upstream}");
+    let behind: HashSet<String> = run_git(repo_path, &["rev-list", &range])
+        .map(|output| output.split_whitespace().map(str::to_string).collect())
+        .unwrap_or_default();
+    if behind.is_empty() {
+        return;
+    }
+    for entry in entries {
+        entry.behind = behind.contains(&entry.hash);
+    }
 }
 
 /// 判定窗口内每个提交是否已推送到远端（被任一远端跟踪分支包含）。

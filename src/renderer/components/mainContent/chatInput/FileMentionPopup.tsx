@@ -344,6 +344,16 @@ export const FileMentionPopup = forwardRef<
   // `@:项目/` 显式限定了关联项目组的某个成员：搜索只覆盖该根目录，不再并入
   // 组内其他项目；普通 `@` 搜索保持「一次覆盖关联项目组全部根」的行为。
   const includeLinkedRoots = scopedDirectory ? false : undefined;
+  // 关联状态签名：断开关联 / 重新关联后，即使查询词不变也要重算搜索结果，
+  // 避免弹窗停留在旧的关联范围上。
+  const linkedSignature = useMemo(
+    () =>
+      linkedDirectories
+        .map((directory) => directory.directoryId)
+        .sort()
+        .join(","),
+    [linkedDirectories],
+  );
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
@@ -492,7 +502,7 @@ export const FileMentionPopup = forwardRef<
     const isNaturalLanguage = searchQuery.startsWith("?");
     // `@!技能关键词`：感叹号前缀表示 Skills 搜索模式，列出已启用的技能。
     const isSkillMode = rawTrimmed.startsWith("!");
-    const searchKey = `${searchRoot?.directoryId ?? ""}\n${searchQuery}`;
+    const searchKey = `${searchRoot?.directoryId ?? ""}\n${linkedSignature}\n${searchQuery}`;
     // 只在真正发起新搜索前替换防抖定时器：依赖变化但查询未变的重跑（如目录
     // 列表异步加载完成刷新了 searchRoot 引用）若取消已排队的搜索，会因去重
     // 而不再重发——@ 后一次性粘贴的查询词就永远不会被搜索。过期的回调由
@@ -749,6 +759,7 @@ export const FileMentionPopup = forwardRef<
     directoryScope,
     scopedDirectory,
     includeLinkedRoots,
+    linkedSignature,
     projectId,
     isContentMode,
     contentQuery,

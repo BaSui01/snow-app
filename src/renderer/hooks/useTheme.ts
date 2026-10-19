@@ -98,6 +98,18 @@ export const useTheme = (): {
     };
   }, [reloadTheme]);
 
+  // AI 经 config 工具改了主题：先重载并写缓存，再派发 theme:changed 让各订阅方同步。
+  useEffect(() => {
+    if (typeof window.snow?.onThemeSettingsChanged !== "function") {
+      return;
+    }
+    return window.snow.onThemeSettingsChanged(() => {
+      void reloadTheme().then(() => {
+        window.dispatchEvent(new CustomEvent("theme:changed"));
+      });
+    });
+  }, [reloadTheme]);
+
   // 监听系统暗色模式变化（仅 mode === "system" 时需要重新应用）。
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

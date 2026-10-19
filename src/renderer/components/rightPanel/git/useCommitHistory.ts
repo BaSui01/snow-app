@@ -205,19 +205,27 @@ export function useCommitHistory(
         return;
       }
 
-      const freshMeta = new Map<string, { refs: string; pushed: boolean }>();
+      const freshMeta = new Map<
+        string,
+        { refs: string; pushed: boolean; behind: boolean }
+      >();
       for (let i = newCount; i < scanned.length; i++) {
         freshMeta.set(scanned[i].hash, {
           refs: scanned[i].refs,
           pushed: scanned[i].pushed,
+          behind: scanned[i].behind,
         });
       }
+      const isSameMeta = (
+        commit: GitLogEntry,
+        fresh: { refs: string; pushed: boolean; behind: boolean },
+      ): boolean =>
+        fresh.refs === commit.refs &&
+        fresh.pushed === commit.pushed &&
+        fresh.behind === commit.behind;
       const metaChanged = loaded.some((commit) => {
         const fresh = freshMeta.get(commit.hash);
-        return (
-          fresh !== undefined &&
-          (fresh.refs !== commit.refs || fresh.pushed !== commit.pushed)
-        );
+        return fresh !== undefined && !isSameMeta(commit, fresh);
       });
       if (newCount === 0 && !metaChanged) {
         return;
@@ -238,9 +246,7 @@ export function useCommitHistory(
           if (fresh === undefined) {
             return commit;
           }
-          return fresh.refs === commit.refs && fresh.pushed === commit.pushed
-            ? commit
-            : { ...commit, refs: fresh.refs, pushed: fresh.pushed };
+          return isSameMeta(commit, fresh) ? commit : { ...commit, ...fresh };
         });
         return newCount > 0
           ? [...scanned.slice(0, newCount), ...merged]

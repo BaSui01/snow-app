@@ -1113,11 +1113,22 @@ export const remoteGetGitLog = async (
   const skipCount = skip > 0 ? Math.floor(skip) : 0;
   const maxCount = limit <= 0 ? 50 : Math.floor(limit);
 
+  // 额外遍历 upstream，让落后（未拉取）的远端提交也进入提交图。
+  const upstream = (
+    await runRemoteGitRaw(workspacePath, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "@{upstream}",
+    ]).catch(() => "")
+  ).trim();
+
   let output: string;
   try {
     output = await runRemoteGitRaw(workspacePath, [
       "log",
       "HEAD",
+      ...(upstream ? [upstream] : []),
       "--topo-order",
       "--decorate=full",
       "--shortstat",
@@ -1133,6 +1144,19 @@ export const remoteGetGitLog = async (
   }
 
   const unpushed = await remoteUnpushedHashes(workspacePath);
+  const behind = new Set(
+    upstream
+      ? (
+          await runRemoteGitRaw(workspacePath, [
+            "rev-list",
+            `HEAD..${upstream}`,
+          ]).catch(() => "")
+        )
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : [],
+  );
   const entries: GitLogEntry[] = [];
 
   // `--shortstat` appends a diffstat line (e.g. "1 file changed,
@@ -1162,6 +1186,7 @@ export const remoteGetGitLog = async (
         deletions: parseShortstatCount(statText, "deletion"),
         filesChanged: parseShortstatCount(statText, "file"),
         pushed: !unpushed.has(parts[0]),
+        behind: behind.has(parts[0]),
       });
     }
   }

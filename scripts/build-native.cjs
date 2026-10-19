@@ -4,6 +4,7 @@ const {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
 } = require("node:fs");
@@ -128,11 +129,21 @@ function getArtifactPath(t) {
 }
 
 function copyNativeBinding(artifactPath, outputPath, platformName) {
+  // 先写临时文件再原子替换：原地覆盖会让 macOS 代码签名缓存命中旧 inode，
+  // 新版进程加载该 .node 时会被内核以 SIGKILL(Code Signature Invalid) 终止。
+  const tempPath = `${outputPath}.${process.pid}.tmp`;
   try {
-    copyFileSync(artifactPath, outputPath);
+    copyFileSync(artifactPath, tempPath);
+    renameSync(tempPath, outputPath);
     console.log(`Native binding written to ${outputPath}`);
+    return;
   } catch (error) {
-    if (error?.code !== "EBUSY") {
+    try {
+      unlinkSync(tempPath);
+    } catch {
+      // 临时文件可能未创建
+    }
+    if (error?.code !== "EBUSY" && error?.code !== "EPERM") {
       throw error;
     }
 

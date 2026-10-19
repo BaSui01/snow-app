@@ -246,8 +246,32 @@ export const apiConfigApi = {
     ipcRenderer.invoke("theme:select-stream-cursor-svg", dialogTitle),
   saveThemeStreamCursorSvg: (sourcePath: string): Promise<string> =>
     ipcRenderer.invoke("theme:save-stream-cursor-svg", sourcePath),
+  selectThemeStreamCursorImage: (
+    dialogTitle?: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("theme:select-stream-cursor-image", dialogTitle),
+  saveThemeStreamCursorImage: (sourcePath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:save-stream-cursor-image", sourcePath),
+  selectThemeStreamCursorScript: (
+    dialogTitle?: string,
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("theme:select-stream-cursor-script", dialogTitle),
+  saveThemeStreamCursorScript: (sourcePath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:save-stream-cursor-script", sourcePath),
+  readThemeStreamCursorScript: (scriptPath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:read-stream-cursor-script", scriptPath),
   deleteThemeStreamCursorSvg: (svgPath: string): Promise<void> =>
     ipcRenderer.invoke("theme:delete-stream-cursor-svg", svgPath),
+  /** 主题设置被 AI 侧改动（config 的 streamCursor 作用域）后由主进程广播。 */
+  onThemeSettingsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+    ipcRenderer.on("theme:settings-changed", handler);
+    return () => {
+      ipcRenderer.removeListener("theme:settings-changed", handler);
+    };
+  },
   setThemeBackgroundColor: (color: string): Promise<void> =>
     ipcRenderer.invoke("theme:set-background-color", color),
   setThemeTrafficLightY: (y: number): Promise<void> =>

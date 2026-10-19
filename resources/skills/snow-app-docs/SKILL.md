@@ -25,7 +25,7 @@ description: >-
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
   customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
   usage/appSettings/privacy/codebase/keyboardShortcuts/workspace/plugins/
-  customCommands), including
+  customCommands/streamCursor), including
   project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills/customCommands
   via `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).

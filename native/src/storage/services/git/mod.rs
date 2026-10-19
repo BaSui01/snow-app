@@ -208,6 +208,8 @@ pub struct GitLogEntry {
     pub files_changed: i32,
     /// 是否已推送到远端：该提交被任一远端跟踪分支（refs/remotes/*）包含。
     pub pushed: bool,
+    /// 是否落后：在 upstream 上但当前 HEAD 尚未包含（未拉取）。
+    pub behind: bool,
 }
 
 #[napi(object)]

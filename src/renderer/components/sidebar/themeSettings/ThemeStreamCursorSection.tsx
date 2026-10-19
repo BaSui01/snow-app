@@ -1,10 +1,11 @@
-import { FileUp, Trash2 } from "lucide-react";
+import { FileCode, FileUp, ImageUp, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { RangeSlider } from "../../common/RangeSlider";
 import { AnimatedSnowBotIcon } from "../../icons/AnimatedSnowBotIcon";
 import { STREAM_CURSOR_LUCIDE_ICONS } from "./streamCursorIcons";
+import { StreamCursorCanvas } from "./StreamCursorCanvas";
 import type { ThemeStreamCursor } from "./types";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
 
@@ -13,8 +14,21 @@ type ThemeStreamCursorSectionProps = {
   disabled?: boolean;
   busy?: boolean;
   onChange: (cursor: ThemeStreamCursor) => void;
-  onSelectSvg: () => Promise<void>;
+  onSelectAsset: (kind: StreamCursorAssetKind) => Promise<void>;
   onRemoveSvg: () => Promise<void>;
+};
+
+export type StreamCursorAssetKind = "svg" | "image" | "script";
+
+const isSvgPath = (path: string): boolean => /\.svg$/i.test(path);
+const isScriptPath = (path: string): boolean => /\.js$/i.test(path);
+
+const ASSET_KIND_BY_TYPE: Partial<
+  Record<ThemeStreamCursor["iconType"], StreamCursorAssetKind>
+> = {
+  custom: "svg",
+  image: "image",
+  canvas: "script",
 };
 
 export function ThemeStreamCursorSection({
@@ -22,11 +36,36 @@ export function ThemeStreamCursorSection({
   disabled,
   busy,
   onChange,
-  onSelectSvg,
+  onSelectAsset,
   onRemoveSvg,
 }: ThemeStreamCursorSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const isBusy = disabled || busy;
+  const assetKind = ASSET_KIND_BY_TYPE[cursor.iconType] ?? null;
+  const AssetIcon =
+    assetKind === "script"
+      ? FileCode
+      : assetKind === "image"
+        ? ImageUp
+        : FileUp;
+  const selectLabel =
+    assetKind === "script"
+      ? t("settings.themeStreamCursorSelectScript", {
+          defaultValue: "Select script",
+        })
+      : assetKind === "image"
+        ? t("settings.themeStreamCursorSelectImage", {
+            defaultValue: "Select image",
+          })
+        : t("settings.themeStreamCursorSelectSvg", {
+            defaultValue: "Select SVG",
+          });
+
+  // 脚本运行错误：换脚本后清空。
+  const [scriptError, setScriptError] = useState("");
+  useEffect(() => {
+    setScriptError("");
+  }, [cursor.svgPath]);
 
   // 本地 state 用于滑块拖动期间的即时 UI 响应，与 ThemeBackgroundSection 模式一致。
   const [localSize, setLocalSize] = useState(cursor.iconSize);
@@ -44,7 +83,11 @@ export function ThemeStreamCursorSection({
 
   const handleTypeChange = (iconType: string): void => {
     const resolved: ThemeStreamCursor["iconType"] =
-      iconType === "lucide" || iconType === "custom" || iconType === "snowbot"
+      iconType === "lucide" ||
+      iconType === "custom" ||
+      iconType === "snowbot" ||
+      iconType === "image" ||
+      iconType === "canvas"
         ? iconType
         : "dot";
     if (resolved === "dot") {
@@ -68,11 +111,26 @@ export function ThemeStreamCursorSection({
         svgPath: "",
         iconSize: cursor.iconSize,
       });
+    } else if (resolved === "image") {
+      // 路径字段共用；SVG 也是图片可沿用，脚本不行。
+      onChange({
+        iconType: "image",
+        lucideName: "",
+        svgPath: isScriptPath(cursor.svgPath) ? "" : cursor.svgPath,
+        iconSize: cursor.iconSize,
+      });
+    } else if (resolved === "canvas") {
+      onChange({
+        iconType: "canvas",
+        lucideName: "",
+        svgPath: isScriptPath(cursor.svgPath) ? cursor.svgPath : "",
+        iconSize: cursor.iconSize,
+      });
     } else {
       onChange({
         iconType: "custom",
         lucideName: "",
-        svgPath: cursor.svgPath,
+        svgPath: isSvgPath(cursor.svgPath) ? cursor.svgPath : "",
         iconSize: cursor.iconSize,
       });
     }
@@ -133,6 +191,18 @@ export function ThemeStreamCursorSection({
                 defaultValue: "Custom SVG",
               }),
             },
+            {
+              value: "image",
+              label: t("settings.themeStreamCursorTypeImage", {
+                defaultValue: "Custom image",
+              }),
+            },
+            {
+              value: "canvas",
+              label: t("settings.themeStreamCursorTypeCanvas", {
+                defaultValue: "Canvas script",
+              }),
+            },
           ]}
         />
       </div>
@@ -157,10 +227,10 @@ export function ThemeStreamCursorSection({
         </div>
       )}
 
-      {cursor.iconType === "custom" && (
+      {assetKind && (
         <div className="api-settings-form-grid">
           <div className="theme-stream-cursor-preview">
-            {cursor.svgPath ? (
+            {cursor.svgPath && assetKind !== "script" ? (
               <img
                 src={themeBgUrl(cursor.svgPath)}
                 alt=""
@@ -168,7 +238,7 @@ export function ThemeStreamCursorSection({
               />
             ) : (
               <span className="theme-background-placeholder">
-                <FileUp size={24} strokeWidth={1.6} />
+                <AssetIcon size={24} strokeWidth={1.6} />
               </span>
             )}
           </div>
@@ -176,15 +246,11 @@ export function ThemeStreamCursorSection({
             <button
               type="button"
               className="api-settings-form-btn secondary"
-              onClick={() => void onSelectSvg()}
+              onClick={() => void onSelectAsset(assetKind)}
               disabled={isBusy}
             >
-              <FileUp size={15} strokeWidth={1.8} />
-              <span>
-                {t("settings.themeStreamCursorSelectSvg", {
-                  defaultValue: "Select SVG",
-                })}
-              </span>
+              <AssetIcon size={15} strokeWidth={1.8} />
+              <span>{selectLabel}</span>
             </button>
             {cursor.svgPath && (
               <button
@@ -203,6 +269,23 @@ export function ThemeStreamCursorSection({
             )}
           </div>
         </div>
+      )}
+
+      {assetKind === "script" && (
+        <span className="settings-item-description theme-stream-cursor-script-hint">
+          {t("settings.themeStreamCursorCanvasHint", {
+            defaultValue:
+              "The script must define draw(ctx, size, t, dark): ctx is already scaled for the device pixel ratio, size is in CSS pixels, t is elapsed seconds, dark tells whether the dark theme is active. It runs in an isolated Worker without access to the page or app APIs.",
+          })}
+        </span>
+      )}
+      {assetKind === "script" && scriptError && (
+        <span className="theme-stream-cursor-script-error">
+          {t("settings.themeStreamCursorCanvasError", {
+            defaultValue: "Script error: {{message}}",
+            values: { message: scriptError },
+          })}
+        </span>
       )}
 
       {/* 尺寸滑块 + 实时预览 */}
@@ -233,6 +316,22 @@ export function ThemeStreamCursorSection({
                   height: `${localSize}px`,
                   backgroundImage: `url("${themeBgUrl(cursor.svgPath)}")`,
                 }}
+              />
+            )}
+            {cursor.iconType === "image" && cursor.svgPath && (
+              <img
+                src={themeBgUrl(cursor.svgPath)}
+                alt=""
+                draggable={false}
+                className="stream-cursor-image-icon"
+                style={{ height: `${localSize}px` }}
+              />
+            )}
+            {cursor.iconType === "canvas" && cursor.svgPath && (
+              <StreamCursorCanvas
+                scriptPath={cursor.svgPath}
+                size={localSize}
+                onError={setScriptError}
               />
             )}
           </div>

@@ -238,7 +238,9 @@ impl ThemeBackground {
 /// - "lucide"：使用内置 lucide 图标，由 lucide_name 指定
 /// - "custom"：使用用户上传的 SVG，由 svg_path 指定文件路径
 /// - "snowbot"：内置 Snow Bot 动态机器人图标
-/// icon_type 为 "lucide" 时 svg_path 应为空；为 "custom" 时 lucide_name 应为空。
+/// - "image"：用户上传的任意图片（含 GIF），原样显示无动画，路径复用 svg_path
+/// - "canvas"：用户上传的 JS 绘制脚本（Worker 中运行），路径复用 svg_path
+/// icon_type 为 "lucide" 时 svg_path 应为空；为 "custom"/"image"/"canvas" 时 lucide_name 应为空。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeStreamCursor {
@@ -253,7 +255,7 @@ impl ThemeStreamCursor {
         self.icon_type = self.icon_type.trim().to_string();
         if !matches!(
             self.icon_type.as_str(),
-            "dot" | "lucide" | "custom" | "snowbot"
+            "dot" | "lucide" | "custom" | "snowbot" | "image" | "canvas"
         ) {
             self.icon_type = "dot".to_string();
         }
@@ -278,7 +280,7 @@ impl ThemeStreamCursor {
                     self.icon_type = "dot".to_string();
                 }
             }
-            "custom" => {
+            "custom" | "image" | "canvas" => {
                 self.lucide_name.clear();
                 if self.svg_path.is_empty() {
                     self.icon_type = "dot".to_string();

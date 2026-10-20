@@ -3468,6 +3468,11 @@ export const zhCN = {
   "settings.themePresetCompact": "无界",
   "settings.themePresetTesseract": "超立方",
   "settings.themePresetRococo": "洛可可玫瑰",
+  "settings.themeLayoutStyle": "风格",
+  "settings.themeLayoutStyleInfo":
+    "孤岛为三段独立卡片（默认）；层叠让侧栏融入背景，主区与右侧面板逐层覆盖。",
+  "settings.themeLayoutStyleIsland": "孤岛",
+  "settings.themeLayoutStyleLayered": "层叠",
   "settings.themeCustomTitle": "自定义主题",
   "settings.themeCustomInfo":
     "启用后可调整每一个颜色，浅色和深色调色板分别编辑。",

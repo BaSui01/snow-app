@@ -44,6 +44,10 @@ import { CONVERSATION_SELECTED_EVENT } from "./components/mainContent/chatMessag
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
+import {
+  readPanelCollapsedState,
+  writePanelCollapsedState,
+} from "./utils/layoutPanelState";
 import { ThemeBackgroundPetLayer } from "./components/pet/ThemeBackgroundPetLayer";
 import { ThemeBackgroundImageLayer } from "./components/sidebar/themeSettings/ThemeBackgroundImageLayer";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
@@ -406,8 +410,24 @@ export const App = (): React.JSX.Element => {
     },
     [],
   );
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  // 左右面板的收起状态是全局偏好：首屏优先从 localStorage 恢复；
+  // 首次使用层叠风格（尚无记忆）时沿用其右面板默认收起。
+  const [initialPanelState] = useState(() => {
+    const stored = readPanelCollapsedState();
+    return {
+      sidebar: stored?.sidebar ?? false,
+      rightPanel:
+        stored?.rightPanel ??
+        document.documentElement.getAttribute("data-layout-style") ===
+          "layered",
+    };
+  });
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    initialPanelState.sidebar,
+  );
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(
+    initialPanelState.rightPanel,
+  );
   const [isRightPanelFullscreen, setIsRightPanelFullscreen] = useState(false);
   // 拖宽右面板进入越界区后的"待全屏"状态：主内容区据此显示遮罩提醒。
   const [isRightPanelFullscreenPending, setIsRightPanelFullscreenPending] =
@@ -423,6 +443,39 @@ export const App = (): React.JSX.Element => {
   // 关闭确认弹窗的「不再询问」勾选：勾选后点退出/最小化会把对应行为
   // 写入设置，之后主进程 close 拦截直接自动执行，不再弹出确认。
   const [closeNeverAskAgain, setCloseNeverAskAgain] = useState(false);
+
+  // 运行中把布局风格切到「层叠」时，右面板无条件收起一次；之后就跟随全局记忆，
+  // 由用户操作决定展开/收起，不再被风格反复打断。
+  useEffect(() => {
+    const root = document.documentElement;
+    let previousStyle = root.getAttribute("data-layout-style") ?? "";
+    const observer = new MutationObserver(() => {
+      const layoutStyle = root.getAttribute("data-layout-style") ?? "";
+      if (layoutStyle === previousStyle) {
+        return;
+      }
+      previousStyle = layoutStyle;
+      if (layoutStyle !== "layered") {
+        return;
+      }
+      setIsRightPanelFullscreen(false);
+      setIsRightPanelCollapsed(true);
+    });
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["data-layout-style"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // 面板收起状态变化后写入全局记忆（顶栏按钮、快捷键、自动收窄都会经过这里）。
+  useEffect(() => {
+    writePanelCollapsedState({
+      sidebar: isSidebarCollapsed,
+      rightPanel: isRightPanelCollapsed,
+    });
+  }, [isSidebarCollapsed, isRightPanelCollapsed]);
+
   const hasCustomFrame = hasCustomWindowFrame();
   const isMacOS = navigator.userAgent.includes("Mac");
   const { t } = useI18n();

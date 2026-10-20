@@ -10,6 +10,7 @@ import {
   BACKGROUND_IMAGE_LIMIT,
   applyBackgroundToDocument,
   applyFontFamilyToDocument,
+  applyLayoutStyleToDocument,
   applyPaletteToDocument,
   applyThemePresetToDocument,
   applyStreamCursorToDocument,
@@ -26,6 +27,7 @@ import {
 } from "./themeSettings/themeSettingsUtils";
 import type {
   ThemeBackground,
+  ThemeLayoutStyle,
   ThemeMode,
   ThemePalette,
   ThemeSettings,
@@ -41,6 +43,7 @@ import { ThemeColorEditor } from "./themeSettings/ThemeColorEditor";
 import { ThemeFontSection } from "./themeSettings/ThemeFontSection";
 import { ThemeTypographySection } from "./themeSettings/ThemeTypographySection";
 import { ThemeModeSelector } from "./themeSettings/ThemeModeSelector";
+import { ThemeLayoutStyleSelector } from "./themeSettings/ThemeLayoutStyleSelector";
 import { ThemePresetGrid } from "./themeSettings/ThemePresetGrid";
 import { ThemePreview } from "./themeSettings/ThemePreview";
 import {
@@ -228,6 +231,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
       form.mode === "system" ? systemDark : form.mode === "dark";
     applyThemeModeToDocument(form.mode);
     applyThemePresetToDocument(form.presetId);
+    applyLayoutStyleToDocument(form.layoutStyle);
     const palette = resolveActivePalette(form, effectiveDark);
     applyPaletteToDocument(palette);
 
@@ -265,6 +269,10 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
   const handleModeChange = (mode: ThemeMode): void => {
     setForm((previous: ThemeSettings) => ({ ...previous, mode }));
+  };
+
+  const handleLayoutStyleChange = (layoutStyle: ThemeLayoutStyle): void => {
+    setForm((previous: ThemeSettings) => ({ ...previous, layoutStyle }));
   };
 
   const handlePresetSelect = (presetId: string): void => {
@@ -783,6 +791,27 @@ export function ThemeSettingsPanel(): React.JSX.Element {
               mode={form.mode}
               disabled={busy}
               onChange={handleModeChange}
+            />
+          </div>
+
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.themeLayoutStyle", {
+                  defaultValue: "Layout style",
+                })}
+              </strong>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.themeLayoutStyleInfo", {
+                defaultValue:
+                  "Island keeps three separate cards (default); Layered blends the sidebar into the background and stacks the main area and right panel over each other.",
+              })}
+            </span>
+            <ThemeLayoutStyleSelector
+              layoutStyle={form.layoutStyle}
+              disabled={busy}
+              onChange={handleLayoutStyleChange}
             />
           </div>
 

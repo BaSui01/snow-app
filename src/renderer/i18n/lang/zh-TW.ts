@@ -3470,6 +3470,11 @@ export const zhTW = {
   "settings.themePresetCompact": "無界",
   "settings.themePresetTesseract": "超立方",
   "settings.themePresetRococo": "洛可可玫瑰",
+  "settings.themeLayoutStyle": "風格",
+  "settings.themeLayoutStyleInfo":
+    "孤島為三段獨立卡片（預設）；層疊讓側欄融入背景，主區與右側面板逐層覆蓋。",
+  "settings.themeLayoutStyleIsland": "孤島",
+  "settings.themeLayoutStyleLayered": "層疊",
   "settings.themeCustomTitle": "自訂主題",
   "settings.themeCustomInfo":
     "啟用後可調整每一個顏色，淺色和深色調色盤分別編輯。",

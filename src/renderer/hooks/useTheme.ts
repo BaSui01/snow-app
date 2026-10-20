@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   applyBackgroundToDocument,
   applyFontFamilyToDocument,
+  applyLayoutStyleToDocument,
   applyPaletteToDocument,
   applyThemePresetToDocument,
   applyStreamCursorToDocument,
@@ -40,6 +41,7 @@ export const useTheme = (): {
         settings.mode === "system" ? systemDark : settings.mode === "dark";
       applyThemeModeToDocument(settings.mode);
       applyThemePresetToDocument(settings.presetId);
+      applyLayoutStyleToDocument(settings.layoutStyle);
       const palette = resolveActivePalette(settings, isDark);
       applyPaletteToDocument(palette);
 

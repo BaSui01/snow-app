@@ -3666,6 +3666,11 @@ export const en = {
   "settings.themePresetCompact": "Horizon",
   "settings.themePresetTesseract": "Tesseract",
   "settings.themePresetRococo": "Rose Rococo",
+  "settings.themeLayoutStyle": "Layout style",
+  "settings.themeLayoutStyleInfo":
+    "Island keeps three separate cards (default); Layered blends the sidebar into the background and stacks the main area and right panel over each other.",
+  "settings.themeLayoutStyleIsland": "Island",
+  "settings.themeLayoutStyleLayered": "Layered",
   "settings.themeCustomTitle": "Custom theme",
   "settings.themeCustomInfo":
     "Enable to fine-tune every color. Light and dark palettes are edited separately.",

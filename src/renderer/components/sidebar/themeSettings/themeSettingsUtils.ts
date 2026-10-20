@@ -3,6 +3,7 @@ import type {
   ThemeBackground,
   ThemeBackgroundSource,
   ThemeCarouselOrder,
+  ThemeLayoutStyle,
   ThemePalette,
   ThemeSettings,
   ThemeMode,
@@ -260,6 +261,7 @@ export const COLOR_GROUPS: ColorGroup[] = [
 export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   mode: "system",
   presetId: DEFAULT_THEME_PRESET_ID,
+  layoutStyle: "island",
   custom: {
     light: getPresetById(DEFAULT_THEME_PRESET_ID)?.light ?? emptyPalette(),
     dark: getPresetById(DEFAULT_THEME_PRESET_ID)?.dark ?? emptyPalette(),
@@ -558,10 +560,22 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
   const rawMode = toText(source.mode) || "system";
   const mode: ThemeMode =
     rawMode === "light" || rawMode === "dark" ? rawMode : "system";
-  const presetId = toText(source.presetId) || DEFAULT_THEME_PRESET_ID;
+  const rawPresetId = toText(source.presetId) || DEFAULT_THEME_PRESET_ID;
+  const presetId = resolvePresetId(rawPresetId);
+  const rawLayoutStyle = toText(source.layoutStyle);
+  const layoutStyle: ThemeLayoutStyle =
+    rawLayoutStyle === "layered"
+      ? "layered"
+      : rawLayoutStyle === "island"
+        ? "island"
+        : // 兼容临时单主题时期（presetId 为 minimal/layered）留下的旧数据/旧缓存。
+          rawPresetId === "minimal" || rawPresetId === "layered"
+          ? "layered"
+          : "island";
   return {
     mode,
     presetId,
+    layoutStyle,
     custom: normalizeCustomTheme(source.custom),
     background: normalizeThemeBackground(source.background),
     fontFamily: toText(source.fontFamily),
@@ -621,6 +635,11 @@ export function applyThemePresetToDocument(presetId: string): void {
     presetId.trim() || DEFAULT_THEME_PRESET_ID,
   );
   root.setAttribute("data-theme-preset", normalizedPresetId);
+}
+
+/** Apply the global layout style so the layout style layer (island / layered) can react. */
+export function applyLayoutStyleToDocument(style: ThemeLayoutStyle): void {
+  document.documentElement.setAttribute("data-layout-style", style);
 }
 
 /**
@@ -794,6 +813,7 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
 
   applyThemeModeToDocument(settings.mode);
   applyThemePresetToDocument(settings.presetId);
+  applyLayoutStyleToDocument(settings.layoutStyle);
   const palette = resolveActivePalette(settings, isDark);
   applyPaletteToDocument(palette);
 

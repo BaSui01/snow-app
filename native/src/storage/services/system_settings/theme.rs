@@ -356,6 +356,7 @@ impl ThemeTypography {
 pub struct ThemeSettings {
     pub mode: String,
     pub preset_id: String,
+    pub layout_style: String,
     pub custom: CustomTheme,
     pub background: ThemeBackground,
     pub font_family: String,
@@ -372,6 +373,17 @@ impl ThemeSettings {
         self.preset_id = self.preset_id.trim().to_string();
         if self.preset_id.is_empty() {
             self.preset_id = "snow".to_string();
+        }
+        self.layout_style = self.layout_style.trim().to_string();
+        if self.layout_style.is_empty() {
+            // 临时单主题时期的旧数据默认迁移到层叠风格。
+            self.layout_style = if matches!(self.preset_id.as_str(), "minimal" | "layered") {
+                "layered".to_string()
+            } else {
+                "island".to_string()
+            };
+        } else if !matches!(self.layout_style.as_str(), "island" | "layered") {
+            self.layout_style = "island".to_string();
         }
         self.custom.normalize();
         self.background.normalize();

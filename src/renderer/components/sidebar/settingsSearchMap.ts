@@ -1977,7 +1977,15 @@ const RAW_GROUPS: RawGroup[] = [
         "settings.themePresets",
         "Preset themes",
         [],
-        ["preset", "预设主题", "配色"],
+        ["preset", "theme", "预设", "主题"],
+      ],
+      [
+        "theme.layoutStyle",
+        "field",
+        "settings.themeLayoutStyle",
+        "Style",
+        [],
+        ["layout", "style", "island", "layered", "孤岛", "层叠"],
       ],
       [
         "theme.preset.snow",

@@ -458,6 +458,7 @@ export type ThemeBackground = {
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
+  layoutStyle: string;
   custom: CustomTheme;
   background: ThemeBackground;
 };

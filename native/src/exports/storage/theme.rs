@@ -255,6 +255,7 @@ impl From<ThemeTypographyNapi> for ThemeTypography {
 pub struct ThemeSettingsNapi {
     pub mode: String,
     pub preset_id: String,
+    pub layout_style: String,
     pub custom: CustomThemeNapi,
     pub background: ThemeBackgroundNapi,
     pub font_family: String,
@@ -267,6 +268,7 @@ impl From<ThemeSettings> for ThemeSettingsNapi {
         ThemeSettingsNapi {
             mode: s.mode,
             preset_id: s.preset_id,
+            layout_style: s.layout_style,
             custom: s.custom.into(),
             background: s.background.into(),
             font_family: s.font_family,
@@ -281,6 +283,7 @@ impl From<ThemeSettingsNapi> for ThemeSettings {
         ThemeSettings {
             mode: s.mode,
             preset_id: s.preset_id,
+            layout_style: s.layout_style,
             custom: s.custom.into(),
             background: s.background.into(),
             font_family: s.font_family,

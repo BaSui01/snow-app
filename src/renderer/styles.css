@@ -54531,6 +54531,7 @@ pre.file-viewer-code {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
+  border-radius: 5px 5px 0 0;
 }
 
 .settings-changelog-node-header:hover {

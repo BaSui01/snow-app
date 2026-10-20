@@ -1218,6 +1218,9 @@ const LEGACY_PRESET_ID_ALIASES: Record<string, string> = {
   "solarized-dark": "solarized",
   // anthropic 预设已更名为 cream，映射旧 id 以兼容已持久化的选择。
   anthropic: "cream",
+  // 临时的「极简/层叠」单主题已改为全局布局风格，旧预设 id 回退到 snow。
+  minimal: "snow",
+  layered: "snow",
 };
 
 export const resolvePresetId = (id: string): string =>

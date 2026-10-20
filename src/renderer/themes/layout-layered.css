@@ -1,0 +1,277 @@
+/* ===== Layered (层叠) Layout Style =====
+   与主题配色解耦的全局布局风格，通过 html[data-layout-style="layered"] 开启。
+   配色全部取自当前主题的调色板变量：
+   - 侧栏完全融入应用背景，不构成独立表面；
+   - 主内容作为浮层压在侧栏之上（左缘压住侧栏）；
+   - 右侧面板再压在主内容之上（左缘压住主区）；
+   - 三块之间没有任何间隙，只用圆角与投影表达层叠关系。
+
+   本文件必须最后引入：主题预设里有大量 !important 的表面/间距声明，
+   这里用同优先级的 !important + 更高选择器权重统一覆盖布局。 */
+
+:root[data-layout-style="layered"] {
+  --island-shadow: none;
+  --backdrop-blur-lg: none;
+  /* 浮层向左压住下一层的宽度（左侧只压住侧栏内边距） */
+  --layered-overlap-left: 8px;
+  --layered-overlap-right: 18px;
+  /* 投影的 spread 取负值，让阴影不向相邻边溢出，接缝处不会出现阴影带 */
+  --layered-sheet-shadow-left: -10px 0 16px -10px rgba(15, 23, 42, 0.16);
+  --layered-sheet-shadow-right: 10px 0 16px -10px rgba(15, 23, 42, 0.1);
+  --layered-sheet-shadow-bottom: 0 12px 22px -14px rgba(15, 23, 42, 0.14);
+}
+
+:root[data-layout-style="layered"][data-theme="dark"] {
+  --layered-sheet-shadow-left: -10px 0 18px -10px rgba(0, 0, 0, 0.6);
+  --layered-sheet-shadow-right: 10px 0 18px -10px rgba(0, 0, 0, 0.4);
+  --layered-sheet-shadow-bottom: 0 12px 24px -14px rgba(0, 0, 0, 0.55);
+}
+
+/* ==========================================================================
+   1. 顶栏：顶部留白保留，列间零间隙
+   ========================================================================== */
+
+:root[data-layout-style="layered"] .app-shell,
+:root[data-layout-style="layered"] .app-layout {
+  background: var(--app-bg) !important;
+}
+
+:root[data-layout-style="layered"] .app-layout {
+  padding: 0 10px 10px !important;
+  gap: 0 !important;
+}
+
+:root[data-layout-style="layered"] .top-bar {
+  height: calc(var(--header-height) + 10px) !important;
+  min-height: calc(var(--header-height) + 10px) !important;
+  padding: 10px 10px 0 !important;
+  border: none !important;
+  background: var(--app-bg) !important;
+}
+
+/* 顶栏始终保留三列轨道：收起时只把对应轨道宽度过渡到 0，与下方面板的
+   宽度过渡同曲线，避免顶栏先于面板跳变；三段用显式列定位，收起任一段
+   时其余两段不会串列。 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .top-bar {
+  gap: 0 !important;
+  grid-template-columns:
+    var(--sidebar-width) minmax(0, 1fr)
+    var(--right-panel-width) !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell.sidebar-collapsed:not(.right-panel-fullscreen)
+  .top-bar {
+  grid-template-columns:
+    0px minmax(0, 1fr)
+    var(--right-panel-width) !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell.right-panel-collapsed:not(.right-panel-fullscreen)
+  .top-bar {
+  grid-template-columns:
+    var(--sidebar-width) minmax(0, 1fr)
+    0px !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell.sidebar-collapsed.right-panel-collapsed:not(
+    .right-panel-fullscreen
+  )
+  .top-bar {
+  grid-template-columns: 0px minmax(0, 1fr) 0px !important;
+}
+
+/* 右面板全屏：保持三列结构（主区 0 宽），显式列定位依赖三列轨道 */
+:root[data-layout-style="layered"] .app-shell.right-panel-fullscreen .top-bar {
+  grid-template-columns: var(--sidebar-width) 0px minmax(0, 1fr) !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell.sidebar-collapsed.right-panel-fullscreen
+  .top-bar {
+  grid-template-columns: 0px 0px minmax(0, 1fr) !important;
+}
+
+/* ==========================================================================
+   2. 左侧：完全融入应用背景
+   ========================================================================== */
+
+:root[data-layout-style="layered"] .top-bar-left {
+  position: relative !important;
+  z-index: 0 !important;
+  grid-row: 1 !important;
+  grid-column: 1 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  /* 随轨道宽度一起展开/收起，超出部分裁切 */
+  overflow: hidden !important;
+}
+
+:root[data-layout-style="layered"] .sidebar {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ==========================================================================
+   3. 中部：覆盖左侧
+   ========================================================================== */
+
+:root[data-layout-style="layered"] .top-bar-main {
+  position: relative !important;
+  z-index: 1 !important;
+  grid-row: 1 !important;
+  grid-column: 2 !important;
+  border: none !important;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+  background: var(--surface-island-strong) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-layout-style="layered"] .main-content {
+  position: relative !important;
+  /* 不加 !important：全屏聊天悬浮卡片依赖更高优先级的 z-index: 40 */
+  z-index: 21;
+  border: none !important;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
+  background: var(--surface-island-strong) !important;
+  box-shadow:
+    var(--layered-sheet-shadow-left), var(--layered-sheet-shadow-right),
+    var(--layered-sheet-shadow-bottom) !important;
+  backdrop-filter: none !important;
+  /* 只保留全屏淡入淡出；内边距随面板状态瞬时切换，避免覆盖量与面板不同步 */
+  transition: opacity 0.2s ease !important;
+}
+
+/* 主区左缘压住侧栏，顶栏中段同步前移保持同列 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.sidebar-collapsed):not(.right-panel-fullscreen)
+  .top-bar-main {
+  margin-left: calc(-1 * var(--layered-overlap-left)) !important;
+}
+
+/* 主区右缘伸到右面板下方，让右面板的圆角落在主区表面上而不是背景上 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-collapsed):not(.right-panel-fullscreen)
+  .top-bar-main {
+  margin-right: calc(-1 * var(--layered-overlap-right)) !important;
+  /* 被右面板压住的角不再保留圆角，避免在任何情况下露出中部圆角 */
+  border-top-right-radius: 0 !important;
+  /* 内容让开被压住的宽度，按钮不会被右段遮住 */
+  padding-right: calc(16px + var(--layered-overlap-right)) !important;
+}
+
+/* 主体内容同样让开覆盖区，滚动条与输入框不会被右面板压住 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-collapsed):not(.right-panel-fullscreen)
+  .main-content {
+  padding-right: calc(10px + var(--layered-overlap-right)) !important;
+  /* 右缘被右面板覆盖：直角收边，圆角只由最上层（右面板）露出 */
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* ==========================================================================
+   4. 右侧：覆盖中部
+   ========================================================================== */
+
+:root[data-layout-style="layered"] .top-bar-right {
+  position: relative !important;
+  z-index: 2 !important;
+  grid-row: 1 !important;
+  grid-column: 3 !important;
+  border: none !important;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+  background: var(--bg-secondary) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 右面板收起时右段卡片会卸载，用伪元素接住这块表面并随第三列轨道一起收拢，
+   避免顶部表面先于下方面板消失 */
+:root[data-layout-style="layered"] .top-bar::after {
+  display: none;
+  position: relative;
+  z-index: 2;
+  grid-row: 1;
+  grid-column: 3;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--bg-secondary);
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell.right-panel-collapsed:not(.right-panel-fullscreen)
+  .top-bar::after {
+  display: block;
+}
+
+:root[data-layout-style="layered"] .right-panel:not(.right-panel-detached) {
+  position: relative !important;
+  z-index: 22;
+  border: none !important;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
+  /* 纯色表面：覆盖主区时不透出下层内容 */
+  background: var(--bg-secondary) !important;
+  /* 左边缘不再投影，只保留底部一层很浅的落影 */
+  box-shadow: var(--layered-sheet-shadow-bottom) !important;
+  backdrop-filter: none !important;
+}
+
+/* 右侧面板顶部 tab 栏与内容同色，去掉上下色差 */
+:root[data-layout-style="layered"] .right-panel-tabs {
+  background: var(--bg-secondary) !important;
+}
+
+/* ==========================================================================
+   5. 零间隙：布局分隔条不占宽度，只保留抓取命中区
+   ========================================================================== */
+
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .app-layout
+  > .panel-resizer {
+  width: 0 !important;
+  min-width: 0 !important;
+  margin-right: 0 !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .app-layout
+  > .sidebar-resizer {
+  margin-left: calc(-1 * var(--layered-overlap-left)) !important;
+}
+
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .app-layout
+  > .right-panel-resizer {
+  margin-left: calc(-1 * var(--layered-overlap-right)) !important;
+}
+
+/* 0 宽拖拽条的透明命中区，保持边缘可拖拽 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .app-layout
+  > .panel-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 16px;
+  background: transparent;
+  content: "";
+  transform: translateX(-50%);
+}

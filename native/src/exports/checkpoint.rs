@@ -127,11 +127,11 @@ pub async fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
 ) -> napi::Result<Vec<CheckpointFileChange>> {
-    // 预览必须在完整文件工具 before→执行→after 周期完成后再读取，避免观察到
-    // 工具执行中的中间状态；文件工具仍可在等待期间继续使用更细粒度的同文件锁。
+    // 只读查询持共享读锁：可与文件工具、bash 扫描并行，不再等整个编辑周期；
+    // 与恢复（独占写锁）互斥，并发漂移由链尾 states_match 门控过滤。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.write_owned().await;
+    let _operation_guard = operation_lock.read_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -151,9 +151,10 @@ pub async fn list_checkpoint_changes_batch(
     include_all: Option<bool>,
 ) -> napi::Result<Vec<CheckpointFileChange>> {
     let include_all = include_all.unwrap_or(false);
+    // 只读查询持共享读锁：回滚预览不再等待同项目的编辑、bash 扫描与外部 MCP。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.write_owned().await;
+    let _operation_guard = operation_lock.read_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -192,11 +193,10 @@ pub async fn list_checkpoint_diffs(
     include_all: Option<bool>,
 ) -> napi::Result<Vec<CheckpointFileDiff>> {
     let include_all = include_all.unwrap_or(false);
-    // diff 必须在完整文件工具 before→执行→after 周期完成后再读取，避免观察到
-    // 工具执行中的中间状态；实际 restore 同样由独占锁保护。
+    // diff 同样只读：持共享读锁，可与文件工具并行；实际 restore 由独占写锁保护。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.write_owned().await;
+    let _operation_guard = operation_lock.read_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);
@@ -220,9 +220,10 @@ pub async fn list_checkpoint_diffs_batch(
     include_all: Option<bool>,
 ) -> napi::Result<Vec<CheckpointFileDiff>> {
     let include_all = include_all.unwrap_or(false);
+    // 只读查询持共享读锁（与恢复的独占写锁互斥）。
     let operation_lock =
         crate::storage::services::checkpoint::checkpoint_operation_lock(&work_dir)?;
-    let _operation_guard = operation_lock.write_owned().await;
+    let _operation_guard = operation_lock.read_owned().await;
     if is_ssh_path(&work_dir) {
         let callback = checkpoint_remote_callback()?;
         let client = RemoteCheckpointClient::new(&callback);

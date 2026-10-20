@@ -198,24 +198,32 @@ export const useRollback = (ctx: ConversationContextValue) => {
               await new Promise((resolve) => setTimeout(resolve, 100));
             }
           }
-          let conversationRecord: Awaited<
-            ReturnType<typeof window.snow.getChatConversation>
-          > = null;
-          let runtimeConfig: Awaited<
-            ReturnType<typeof window.snow.getConversationRuntimeConfig>
-          > | null = null;
-          if (convId) {
-            const [recordResult, runtimeResult] = await Promise.allSettled([
-              window.snow.getChatConversation(convId),
-              window.snow.getConversationRuntimeConfig(convId),
+          // Best effort 读取：失败按 null 处理，回滚流程继续。
+          const loadOrNull = async <T>(
+            loader: () => Promise<T>,
+          ): Promise<T | null> => {
+            try {
+              return await loader();
+            } catch {
+              return null;
+            }
+          };
+          // 会话记录、运行时配置与整条历史互不依赖：并行读取，避免长会话上
+          // 串行 IPC 往返叠加。
+          const [conversationRecord, runtimeConfig, fullHistory] =
+            await Promise.all([
+              convId
+                ? loadOrNull(() => window.snow.getChatConversation(convId))
+                : Promise.resolve(null),
+              convId
+                ? loadOrNull(() =>
+                    window.snow.getConversationRuntimeConfig(convId),
+                  )
+                : Promise.resolve(null),
+              convId
+                ? loadOrNull(() => window.snow.listChatMessages(convId))
+                : Promise.resolve(null),
             ]);
-            if (recordResult.status === "fulfilled") {
-              conversationRecord = recordResult.value;
-            }
-            if (runtimeResult.status === "fulfilled") {
-              runtimeConfig = runtimeResult.value;
-            }
-          }
           const rollbackConversationState: RollbackConversationState = {
             model:
               capturedInputState?.model ||
@@ -239,30 +247,19 @@ export const useRollback = (ctx: ConversationContextValue) => {
           };
           let checkpointIds = initialCheckpointIds;
           // 全量历史记录（分页窗口外也要覆盖）：目标消息未落库时保持 null，
-          // flow 收集回退到内存消息。
-          let truncatedHistoryRecords: Awaited<
-            ReturnType<typeof window.snow.listChatMessages>
-          > | null = null;
-          if (convId) {
-            try {
-              const fullHistory = await window.snow.listChatMessages(convId);
-              const fullTargetIndex = fullHistory.findIndex(
-                (record) => record.id === messageId,
-              );
-              if (fullTargetIndex >= 0) {
-                checkpointIds = fullHistory
-                  .slice(fullTargetIndex)
-                  .filter(
-                    (record) => record.role === "user" && record.checkpointId,
-                  )
-                  .map((record) => record.checkpointId as string);
-                // 只看截断边界之后的消息：目标之前的 flow 与本次回滚无关，
-                // 不能误删其节点会话。
-                truncatedHistoryRecords = fullHistory.slice(fullTargetIndex);
-              }
-            } catch {
-              // 使用当前已加载消息作为回退，仍保持消息数组顺序。
-            }
+          // flow 收集回退到内存消息；历史读取失败同样回退。
+          const fullTargetIndex = fullHistory
+            ? fullHistory.findIndex((record) => record.id === messageId)
+            : -1;
+          const truncatedHistoryRecords =
+            fullHistory && fullTargetIndex >= 0
+              ? fullHistory.slice(fullTargetIndex)
+              : null;
+          if (fullHistory && fullTargetIndex >= 0) {
+            checkpointIds = fullHistory
+              .slice(fullTargetIndex)
+              .filter((record) => record.role === "user" && record.checkpointId)
+              .map((record) => record.checkpointId as string);
           }
           checkpointIds = [...new Set(checkpointIds)];
 
@@ -272,40 +269,6 @@ export const useRollback = (ctx: ConversationContextValue) => {
           const flowIds = truncatedHistoryRecords
             ? collectWorkflowFlowIdsFromRecords(truncatedHistoryRecords)
             : collectWorkflowFlowIdsFromMessages(messages.slice(targetIndex));
-          let workflowFlowCount = 0;
-          let flowCheckpointIds: string[] = [];
-          let workflowNodeIds: string[] = [];
-          if (convId && flowIds.length > 0) {
-            // Best effort — 回滚在无 flow 元数据时仍照常进行
-            const impact = await resolveWorkflowFlowImpact(convId, flowIds);
-            workflowNodeIds = impact.nodeConversationIds;
-            flowCheckpointIds = impact.flowCheckpointIds;
-            workflowFlowCount = impact.flowCount;
-          }
-
-          // 变更预览必须包含 flow checkpoint：节点（尤其 bash）对工作区的
-          // 改动只记录在 flow_checkpoint 里，父会话 checkpoint 看不到它们。
-          const previewCheckpointIds = [
-            ...new Set([...checkpointIds, ...flowCheckpointIds]),
-          ];
-          let changes: CheckpointFileChange[] = [];
-          if (previewCheckpointIds.length > 0 && sessionWorkDir) {
-            try {
-              // includeAll=false（rollback preview 语义）：Rust 侧按路径合并
-              // 整条链（最早 original → 最新 expected）后，只列出当前状态仍
-              // 处于链尾后状态的文件——与 restoreCheckpoints 的实际恢复范围
-              // 完全一致。先新建再编辑的文件因此显示为"新增（回滚会删除它）"，
-              // 而不是"修改"。true 的"文件面板"语义会把后来被覆盖/漂移的
-              // 痕迹也列出来，造成"回滚列表混入无关文件"。
-              changes = await window.snow.listCheckpointChangesBatch(
-                previewCheckpointIds,
-                sessionWorkDir,
-                false,
-              );
-            } catch {
-              // Best effort — show dialog without changes on error
-            }
-          }
 
           // TODO 检测需要边界后的第一条 assistant responseId：todo_items 按
           // response_id 关联创建它的响应。截断边界优先使用持久化消息 id
@@ -320,15 +283,84 @@ export const useRollback = (ctx: ConversationContextValue) => {
               }
             }
           }
+          const todoBoundary = todoBoundaryResponseId;
 
-          // Fetch TODO items that will be deleted alongside the rollback.
-          let todoItems: RollbackTodoItem[] = [];
-          if (convId && todoBoundaryResponseId) {
+          // flow 级联影响与 TODO 查询互不依赖：并行执行。
+          const [impact, todoJson] = await Promise.all([
+            convId && flowIds.length > 0
+              ? loadOrNull(() => resolveWorkflowFlowImpact(convId, flowIds))
+              : Promise.resolve(null),
+            convId && todoBoundary
+              ? loadOrNull(() =>
+                  window.snow.listTodosForRollback(convId, todoBoundary),
+                )
+              : Promise.resolve(null),
+          ]);
+          const workflowNodeIds = impact?.nodeConversationIds ?? [];
+          const flowCheckpointIds = impact?.flowCheckpointIds ?? [];
+          const workflowFlowCount = impact?.flowCount ?? 0;
+
+          // 变更预览必须包含 flow checkpoint：节点（尤其 bash）对工作区的
+          // 改动只记录在 flow_checkpoint 里，父会话 checkpoint 看不到它们。
+          const previewCheckpointIds = [
+            ...new Set([...checkpointIds, ...flowCheckpointIds]),
+          ];
+          const loadChanges = async (): Promise<CheckpointFileChange[]> => {
+            if (previewCheckpointIds.length === 0 || !sessionWorkDir) {
+              return [];
+            }
             try {
-              const todoJson = await window.snow.listTodosForRollback(
-                convId,
-                todoBoundaryResponseId,
+              // includeAll=false（rollback preview 语义）：Rust 侧按路径合并
+              // 整条链（最早 original → 最新 expected）后，只列出当前状态仍
+              // 处于链尾后状态的文件——与 restoreCheckpoints 的实际恢复范围
+              // 完全一致。
+              return await window.snow.listCheckpointChangesBatch(
+                previewCheckpointIds,
+                sessionWorkDir,
+                false,
               );
+            } catch {
+              // Best effort — show dialog without changes on error
+              return [];
+            }
+          };
+          // 记忆清理清单：被回滚轮次（边界与截断一致：优先持久化消息
+          // id，失败轮次无 responseId）保存的项目记忆，加上将随回滚级联
+          // 删除的 WorkFlow 节点会话的全部记忆。用户确认时可勾选一并删除。
+          const loadMemoryItems = async (): Promise<RollbackMemoryItem[]> => {
+            if (!convId) {
+              return [];
+            }
+            try {
+              const memories = await window.snow.listProjectMemoriesForRollback(
+                convId,
+                persistedMessageId,
+                todoBoundary,
+                workflowNodeIds,
+              );
+              return memories
+                .filter((record) => record.memoryId)
+                .map((record) => ({
+                  memoryId: record.memoryId,
+                  title: record.title,
+                  kind: record.kind,
+                }));
+            } catch {
+              // Best effort — show empty on error
+              return [];
+            }
+          };
+
+          // 变更预览与记忆查询互不依赖：并行执行。
+          const [changes, memoryItems] = await Promise.all([
+            loadChanges(),
+            loadMemoryItems(),
+          ]);
+
+          // TODO 清单解析（Rust 侧返回 JSON 字符串）。
+          let todoItems: RollbackTodoItem[] = [];
+          if (todoJson) {
+            try {
               const parsed = JSON.parse(todoJson) as unknown;
               if (Array.isArray(parsed)) {
                 todoItems = parsed
@@ -345,30 +377,6 @@ export const useRollback = (ctx: ConversationContextValue) => {
                   }))
                   .filter((item) => item.id);
               }
-            } catch {
-              // Best effort — show empty on error
-            }
-          }
-
-          // 记忆清理清单：被回滚轮次（边界与截断一致：优先持久化消息
-          // id，失败轮次无 responseId）保存的项目记忆，加上将随回滚级联
-          // 删除的 WorkFlow 节点会话的全部记忆。用户确认时可勾选一并删除。
-          let memoryItems: RollbackMemoryItem[] = [];
-          if (convId) {
-            try {
-              const memories = await window.snow.listProjectMemoriesForRollback(
-                convId,
-                persistedMessageId,
-                todoBoundaryResponseId,
-                workflowNodeIds,
-              );
-              memoryItems = memories
-                .filter((record) => record.memoryId)
-                .map((record) => ({
-                  memoryId: record.memoryId,
-                  title: record.title,
-                  kind: record.kind,
-                }));
             } catch {
               // Best effort — show empty on error
             }
@@ -416,7 +424,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
             void window.snow.writeLog("WARN", {
               module: "checkpoint",
               func: "handleRollback",
-              message: "Rollback workspace resolution failed; refusing project-root fallback",
+              message:
+                "Rollback workspace resolution failed; refusing project-root fallback",
               context: JSON.stringify({ conversationId: convId ?? "" }),
               error: getErrorMessage(error),
             });

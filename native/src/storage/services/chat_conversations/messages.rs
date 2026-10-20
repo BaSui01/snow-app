@@ -1260,6 +1260,49 @@ fn collect_inline_upload_paths(
     Ok(paths)
 }
 
+/// 收集仍被任意消息引用的内联图片路径：把逐文件的全表 LIKE 合并为一次
+/// （按 SQLite 变量上限分块的）扫描，避免按图片数叠加 N 次全表扫描。
+fn collect_referenced_upload_paths(
+    connection: &rusqlite::Connection,
+    relative_paths: &[String],
+) -> HashSet<String> {
+    const TAG_PREFIX: &str = "@@image:upload/";
+    let mut referenced = HashSet::new();
+    for chunk in relative_paths.chunks(MAX_VARIABLES) {
+        let conditions = (1..=chunk.len())
+            .map(|index| format!("content LIKE ?{index}"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let Ok(mut statement) =
+            connection.prepare(&format!("SELECT content FROM chat_messages WHERE {conditions}"))
+        else {
+            continue;
+        };
+        let patterns: Vec<String> = chunk
+            .iter()
+            .map(|path| format!("%@@image:{path}@@%"))
+            .collect();
+        let Ok(rows) =
+            statement.query_map(params_from_iter(patterns.iter()), |row| row.get::<_, String>(0))
+        else {
+            continue;
+        };
+        for content in rows.flatten() {
+            let mut rest = content.as_str();
+            while let Some(tag_start) = rest.find(TAG_PREFIX) {
+                let value_start = tag_start + TAG_PREFIX.len();
+                let value_and_rest = &rest[value_start..];
+                let Some(tag_end) = value_and_rest.find("@@") else {
+                    break;
+                };
+                referenced.insert(format!("upload/{}", &value_and_rest[..tag_end]));
+                rest = &value_and_rest[tag_end + 2..];
+            }
+        }
+    }
+    referenced
+}
+
 /// 删除不再被任何消息引用的内联图片文件（孤儿清理）。
 /// 引用检查与物理删除失败仅记录日志，不阻断会话删除。
 fn cleanup_orphan_upload_files(
@@ -1277,17 +1320,10 @@ fn cleanup_orphan_upload_files(
     let Ok(canonical_root) = upload_root.canonicalize() else {
         return;
     };
+    // 一次（分块）扫描给出全部仍被引用的路径，替代按图片逐张全表 LIKE。
+    let referenced = collect_referenced_upload_paths(connection, relative_paths);
     for relative in relative_paths {
-        // 仍被其他会话消息引用则保留
-        let like_pattern = format!("%@@image:{}@@%", relative);
-        let referenced: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM chat_messages WHERE content LIKE ?1)",
-                params![like_pattern],
-                |row| row.get(0),
-            )
-            .unwrap_or(false);
-        if referenced {
+        if referenced.contains(relative) {
             continue;
         }
         // 防路径穿越：解析后必须仍位于 upload 根目录内

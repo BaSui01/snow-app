@@ -154,6 +154,10 @@ export const PluginScriptsSection = ({
   const market = useMarketStore();
   const { buildFromContent } = useChatConversationContext();
   const [busyScriptId, setBusyScriptId] = useState<string | null>(null);
+  const [updateAllProgress, setUpdateAllProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installUrl, setInstallUrl] = useState("");
@@ -182,6 +186,22 @@ export const PluginScriptsSection = ({
 
   const isEmpty = state.status === "ready" && state.scripts.length === 0;
   const createBoxOpen = createOpen ?? isEmpty;
+
+  // 可批量更新的脚本（市场有更高版本且满足最低应用版本要求）。
+  const updatableScripts = useMemo(() => {
+    const targets: { scriptId: string; entry: MarketPluginEntry }[] = [];
+    for (const script of state.scripts) {
+      const entry = findMarketEntry(market.entries, script.scriptId, "script");
+      if (!entry || !hasMarketUpdate(script.version, entry.version)) {
+        continue;
+      }
+      if (isMarketEntryTooNew(entry, market.appVersion)) {
+        continue;
+      }
+      targets.push({ scriptId: script.scriptId, entry });
+    }
+    return targets;
+  }, [market.appVersion, market.entries, state.scripts]);
 
   const startCreate = useCallback((): void => {
     setError(null);
@@ -356,6 +376,37 @@ export const PluginScriptsSection = ({
     [],
   );
 
+  // 依次更新所有可更新脚本，失败的条目计入汇总提示。
+  const handleUpdateAll = useCallback(async () => {
+    const targets = updatableScripts;
+    if (targets.length === 0 || updateAllProgress) {
+      return;
+    }
+    setError(null);
+    setUpdateAllProgress({ done: 0, total: targets.length });
+    let failed = 0;
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      setBusyScriptId(target.scriptId);
+      try {
+        await pluginStore.installFromMarket(target.entry);
+      } catch {
+        failed += 1;
+      }
+      setUpdateAllProgress({ done: index + 1, total: targets.length });
+    }
+    setBusyScriptId(null);
+    setUpdateAllProgress(null);
+    if (failed > 0) {
+      setError(
+        t("plugins.updateAllFailed", {
+          values: { count: failed },
+          defaultValue: "{{count}} plugin(s) failed to update",
+        }),
+      );
+    }
+  }, [t, updatableScripts, updateAllProgress]);
+
   return (
     <>
       <div className="plugins-toolbar">
@@ -387,6 +438,38 @@ export const PluginScriptsSection = ({
           <RefreshCw size={14} strokeWidth={1.8} />
           <span>{t("plugins.refresh", { defaultValue: "Refresh" })}</span>
         </button>
+        {updatableScripts.length > 0 && (
+          <button
+            className="plugins-toolbar-btn primary"
+            type="button"
+            disabled={updateAllProgress !== null}
+            title={t("plugins.updateAllHint", {
+              values: { count: updatableScripts.length },
+              defaultValue: "{{count}} plugin(s) have a newer version",
+            })}
+            onClick={() => void handleUpdateAll()}
+          >
+            {updateAllProgress ? (
+              <Loader2 size={14} className="spin" />
+            ) : (
+              <Download size={14} strokeWidth={1.8} />
+            )}
+            <span>
+              {updateAllProgress
+                ? t("plugins.updatingAll", {
+                    values: {
+                      done: updateAllProgress.done,
+                      total: updateAllProgress.total,
+                    },
+                    defaultValue: "Updating {{done}}/{{total}}…",
+                  })
+                : t("plugins.updateAll", {
+                    values: { count: updatableScripts.length },
+                    defaultValue: "Update all ({{count}})",
+                  })}
+            </span>
+          </button>
+        )}
         <button
           className={`plugins-toolbar-btn${createBoxOpen ? " active" : ""}`}
           type="button"

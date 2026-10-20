@@ -238,6 +238,8 @@ The model fields of `app-control-createScheduledTask` follow these rules:
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `config-logs-read` | Read current-conversation Snow App SQLite logs, including bounded/redacted API request and response bodies; excludes Snow CLI logs | `level`, `module`, time range, `limit` (max 100), `offset` |
 
+This tool is **disabled by default**; enable it per project in the MCP panel before the model can see it.
+
 `items`, `total`, and `hasMore` remain scoped to the current conversation. Details return log metadata and bounded context/error; API records additionally return bounded `requestBody` / `responseBody` fields. Before persistence, the logger redacts sensitive-name fields and exact occurrences of the active API key; request headers are not logged. This cannot guarantee detection of every credential format, so review details before sharing. `systemSummary` returns application-wide counts under the same level/module/time filters, without pagination: total, unassociated-row count, fixed main/renderer source counts and four log-level counts. It returns no identifiers, text, context/errors or payloads from other conversations or unassociated rows. Rows without a conversation ID may be new system logs; they contribute only to the summary, never details. If current-conversation `total=0`, compare `systemSummary.total`. Empty/whitespace optional string filters mean omitted.
 
 ### config

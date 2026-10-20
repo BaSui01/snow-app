@@ -161,6 +161,7 @@ fn scope_state(db_path: &Path, project_id: Option<&str>) -> Result<Value> {
                 "disabledTools": settings.disabled_tool_names,
                 "disabledServerIds": settings.disabled_server_ids,
                 "enabledServerIds": settings.enabled_server_ids,
+                "enabledTools": settings.enabled_tool_names,
             }))
         }
         None => {

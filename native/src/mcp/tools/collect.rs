@@ -412,7 +412,8 @@ pub(crate) fn tool_name_is_enabled(
     }
 
     let Some(scope) = scope else {
-        return true;
+        // 无项目上下文：默认关闭的工具不暴露
+        return !crate::storage::services::system_settings::is_default_disabled_tool(full_name);
     };
 
     scope.is_server_enabled(&builtin_scope_server_id(server_id)) && scope.is_tool_enabled(full_name)
@@ -602,6 +603,14 @@ pub(crate) async fn ensure_project_tool_enabled(
         return Ok(());
     }
     let Some(scope) = scope else {
+        if crate::storage::services::system_settings::is_default_disabled_tool(tool_name) {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!(
+                    "MCP tool is disabled by default and requires explicit per-project enablement: {tool_name}"
+                ),
+            ));
+        }
         return Ok(());
     };
     let (server_scope_id, project_owned) = if server_id == "skills"

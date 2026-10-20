@@ -123,6 +123,13 @@ const PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX: &str = "project_tool_approval_s
 const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] =
     &["terminal", "lsp", "computer-use", "browser", "html"];
 
+/// 默认关闭的单个内置工具（所属服务器默认开启），需按项目显式启用。
+pub const DEFAULT_DISABLED_BUILTIN_TOOLS: &[&str] = &["config-logs-read"];
+
+pub fn is_default_disabled_tool(tool_name: &str) -> bool {
+    DEFAULT_DISABLED_BUILTIN_TOOLS.contains(&tool_name)
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct McpProjectScopeSettings {
@@ -134,6 +141,8 @@ pub struct McpProjectScopeSettings {
     /// with `DEFAULT_DISABLED_BUILTIN_SERVERS`: a server in that list is
     /// only enabled when it appears here.
     pub enabled_server_ids: BTreeSet<String>,
+    /// 默认关闭工具的启用白名单（配合 `DEFAULT_DISABLED_BUILTIN_TOOLS`）。
+    pub enabled_tool_names: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -171,7 +180,13 @@ impl McpProjectScopeSettings {
     }
 
     pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
-        !self.disabled_tool_names.contains(tool_name)
+        if self.disabled_tool_names.contains(tool_name) {
+            return false;
+        }
+        if is_default_disabled_tool(tool_name) {
+            return self.enabled_tool_names.contains(tool_name);
+        }
+        true
     }
 
     fn set_server_enabled(&mut self, server_id: &str, enabled: bool) {
@@ -192,6 +207,16 @@ impl McpProjectScopeSettings {
     }
 
     fn set_tool_enabled(&mut self, tool_name: &str, enabled: bool) {
+        if is_default_disabled_tool(tool_name) {
+            // 默认关闭工具走白名单，同时清掉可能残留的黑名单项
+            self.disabled_tool_names.remove(tool_name);
+            if enabled {
+                self.enabled_tool_names.insert(tool_name.to_string());
+            } else {
+                self.enabled_tool_names.remove(tool_name);
+            }
+            return;
+        }
         update_disabled_set(&mut self.disabled_tool_names, tool_name, enabled);
     }
 
@@ -200,6 +225,7 @@ impl McpProjectScopeSettings {
         self.disabled_server_ids = normalized_set(&self.disabled_server_ids);
         self.disabled_tool_names = normalized_set(&self.disabled_tool_names);
         self.enabled_server_ids = normalized_set(&self.enabled_server_ids);
+        self.enabled_tool_names = normalized_set(&self.enabled_tool_names);
     }
 }
 

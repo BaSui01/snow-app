@@ -2,14 +2,15 @@
 //! 到一个域，便于 AI 排障时查看与调整。
 //!
 //! key = `liteMode` | `autoFormat` | `toolCorrection` | `terminal`
-//!        | `proxyBrowser` | `imageLibraryDir` | `yoloMode`（只读）
+//!        | `proxyBrowser` | `blockedPatterns` | `imageLibraryDir` | `yoloMode`（只读）
 //!
 //! - `liteMode` / `autoFormat` / `toolCorrection`：布尔开关（精简模式禁用
 //!   Browser/App Control/Terminal 三个内置 MCP 服务器；自动格式化在编辑文件后
 //!   用 Prettier 整理；自动纠错在工具失败后交给基础模型修正参数并重试）。
 //! - `terminal` / `proxyBrowser`：UI 整体读写的 JSON blob，本域按**白名单字段 merge**
-//!   写入（未提供的字段与不属于白名单的字段——例如站点拦截规则 `blockedPatterns`
-//!   ——保持原值，后者由 app-control 工具维护）。
+//!   写入（未提供的字段与不属于白名单的字段保持原值）。
+//! - `blockedPatterns`：站点拦截规则，读取在此；写入由 call.rs 路由到渲染层
+//!   （需 JS RegExp 校验并即时应用代理设置）。
 //! - `imageLibraryDir`：图片库自定义目录，空字符串表示用默认目录。
 //! - `yoloMode`：全自动免确认开关，**故意只读**（安全红线）。UI「隐私/工具授权」
 //!   与授权流程是唯一写入口，避免 AI 自行关闭工具的确认要求。
@@ -34,6 +35,7 @@ const AUTO_FORMAT_KEY: &str = "autoFormat";
 const TOOL_CORRECTION_KEY: &str = "toolCorrection";
 const TERMINAL_KEY: &str = "terminal";
 const PROXY_BROWSER_KEY: &str = "proxyBrowser";
+const BLOCKED_PATTERNS_KEY: &str = "blockedPatterns";
 const IMAGE_LIBRARY_DIR_KEY: &str = "imageLibraryDir";
 const YOLO_MODE_KEY: &str = "yoloMode";
 
@@ -53,8 +55,7 @@ const TERMINAL_WRITABLE_FIELDS: &[&str] = &[
     "lineHeight",
 ];
 
-/// 允许通过本域写入的代理/浏览器字段。`blockedPatterns`（站点拦截规则）刻意不在
-/// 白名单内：它由 app-control-getBlockedPatterns / updateBlockedPatterns 维护。
+/// 允许通过本域写入的代理/浏览器字段。`blockedPatterns` 走独立键，不在白名单内。
 const PROXY_BROWSER_WRITABLE_FIELDS: &[&str] = &[
     "enabled",
     "host",
@@ -127,6 +128,11 @@ fn state_for(db_path: &Path, key: &str) -> Result<Option<Value>> {
         TOOL_CORRECTION_KEY => json!(get_tool_correction(db_path)?),
         TERMINAL_KEY => read_blob(db_path, TERMINAL_SETTING_CODE)?,
         PROXY_BROWSER_KEY => read_blob(db_path, PROXY_BROWSER_SETTING_CODE)?,
+        BLOCKED_PATTERNS_KEY => read_blob(db_path, PROXY_BROWSER_SETTING_CODE)?
+            .get(BLOCKED_PATTERNS_KEY)
+            .filter(|value| value.is_array())
+            .cloned()
+            .unwrap_or_else(|| json!([])),
         IMAGE_LIBRARY_DIR_KEY => json!(get_image_library_dir(db_path)?),
         YOLO_MODE_KEY => json!(crate::storage::get_yolo_mode()?),
         _ => return Ok(None),
@@ -141,6 +147,7 @@ fn all_keys() -> Vec<Value> {
         json!({ "key": TOOL_CORRECTION_KEY, "type": "boolean", "sensitive": false, "readOnly": false }),
         json!({ "key": TERMINAL_KEY, "type": "object", "sensitive": false, "readOnly": false }),
         json!({ "key": PROXY_BROWSER_KEY, "type": "object", "sensitive": false, "readOnly": false }),
+        json!({ "key": BLOCKED_PATTERNS_KEY, "type": "array", "sensitive": false, "readOnly": false }),
         json!({ "key": IMAGE_LIBRARY_DIR_KEY, "type": "string", "sensitive": false, "readOnly": false }),
         json!({ "key": YOLO_MODE_KEY, "type": "boolean", "sensitive": false, "readOnly": true }),
     ]
@@ -212,6 +219,13 @@ fn write_setting(db_path: &Path, key: &str, value: &Value) -> Result<Value> {
         YOLO_MODE_KEY => {
             return Err(Error::new(Status::InvalidArg, YOLO_MODE_NOTE.to_string()));
         }
+        // 正常由 call.rs 路由到渲染层，走到这里说明调用路径绕过了路由。
+        BLOCKED_PATTERNS_KEY => {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "blockedPatterns writes must go through the config-set tool call (renderer bridge)".to_string(),
+            ));
+        }
         other => {
             return Err(Error::new(
                 Status::InvalidArg,
@@ -265,7 +279,7 @@ pub(crate) fn execute_app_settings_scope(
             let value = state_for(db_path, key)?.ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    format!("Unknown appSettings key \"{key}\"; available keys: liteMode, autoFormat, toolCorrection, terminal, proxyBrowser, imageLibraryDir, yoloMode"),
+                    format!("Unknown appSettings key \"{key}\"; available keys: liteMode, autoFormat, toolCorrection, terminal, proxyBrowser, blockedPatterns, imageLibraryDir, yoloMode"),
                 )
             })?;
             Ok(json!({
@@ -323,7 +337,7 @@ mod tests {
             Some("keep")
         );
 
-        // blockedPatterns 由 app-control 维护，不属于本域白名单。
+        // blockedPatterns 走独立键，不属于 proxyBrowser 白名单。
         assert!(merge_blob_fields(
             &existing,
             &json!({ "blockedPatterns": [] }),

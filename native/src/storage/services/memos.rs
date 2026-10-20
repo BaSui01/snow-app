@@ -51,6 +51,13 @@ pub fn list_memos(
         .map_err(|error| database::database_error(database_path, "list memos", error))
 }
 
+/// 按 memo_id 读取单条备忘，不存在返回 None。
+pub fn get_memo(database_path: &Path, memo_id: &str) -> Result<Option<MemoRecord>> {
+    database::open_connection(database_path)
+        .and_then(|connection| fetch_memo_by_id(&connection, memo_id))
+        .map_err(|error| database::database_error(database_path, "get memo", error))
+}
+
 /// Updates the content of an existing memo and refreshes `updated_at`.
 /// Returns the updated record, or an error if no row matched `memo_id`.
 pub fn update_memo_content(

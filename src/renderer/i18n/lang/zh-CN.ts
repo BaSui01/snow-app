@@ -1612,6 +1612,7 @@ export const zhCN = {
   "toolNames.app-control-createConversation": "新建会话",
   "toolNames.app-control-sendConversationMessage": "投递会话消息",
   "toolNames.app-control-activateConversation": "打开会话",
+  "toolNames.app-control-conversation": "会话操作",
   "toolNames.app-control-requestApproval": "计划审批",
   "toolNames.app-control-getMemo": "读取备忘",
   "toolNames.app-control-listMemos": "列出备忘",
@@ -4230,8 +4231,9 @@ export const zhCN = {
   "mcpBuiltinServer.desc.codebase": "在已索引的代码库中做语义检索",
   "mcpBuiltinServer.desc.codelens": "跳转定义、引用与文件结构",
   "mcpBuiltinServer.desc.appControl":
-    "控制 Snow App 自身（设置、备忘录、模式）",
-  "mcpBuiltinServer.desc.config": "读取与修改应用配置",
+    "控制 Snow App 自身（模式、设置页、会话）",
+  "mcpBuiltinServer.desc.config":
+    "读取与修改应用配置（含备忘录、定时任务、项目）",
   "mcpBuiltinServer.desc.terminal": "在右侧面板打开交互式终端会话",
   "mcpBuiltinServer.desc.imagegen": "生成与编辑图片",
   "mcpBuiltinServer.desc.lsp": "语言服务器诊断与代码导航",

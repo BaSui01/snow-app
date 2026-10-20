@@ -1,13 +1,8 @@
-//! config 服务 `scheduledTasks` 作用域（只读）：让 AI 看到定时任务的定义、
-//! 状态与运行历史。
+//! config 服务 `scheduledTasks` 作用域：读取定时任务定义、状态与运行历史。
 //!
-//! ⚠️ 本作用域**刻意不提供写能力**：定时任务的调度器（定时器、tick 循环）运行在
-//! 渲染进程，任务 store 只在 App 启动时从数据库 hydrate 一次，之后以内存状态为
-//! 权威。直接写 `scheduled_tasks` 表不会在本次运行中生效（既不会创建定时器，
-//! 也会被 UI 后续的内存回写覆盖），因此增删改必须走渲染进程通道：
-//!   - 新建任务：`app-control-createScheduledTask`（渲染进程会立即注册定时器）；
-//!   - 修改/暂停/删除：界面「定时任务」面板。
-//! 读取（本作用域）没有这个问题：数据库就是运行历史的持久化真源。
+//! 调度器运行在渲染进程，任务 store 只在启动时 hydrate，直接写表不会生效：
+//!   - 新建：`config-set key="new"` 在 tools/call.rs 路由到渲染端（立即注册定时器）；
+//!   - 修改/暂停/删除：界面「定时任务」面板；本模块对其余写操作一律拒绝。
 
 use std::path::Path;
 
@@ -25,8 +20,42 @@ const MAX_HISTORY_ROWS: usize = 20;
 const TOOL_GET: &str = "get";
 const TOOL_SET: &str = "set";
 
-/// 写操作统一拒绝并给出正确通道，避免 AI 用"看起来生效但实际不会执行"的写法。
-const WRITE_GUIDANCE: &str = "scheduledTasks is read-only because the scheduler runs in the renderer process and the task store hydrates from the database only at app startup. Create tasks with app-control-createScheduledTask (the renderer registers the timer immediately); edit, pause, or delete them in the app's Scheduled Tasks panel. Direct database writes would not take effect until the next app restart and can be overwritten by the UI.";
+/// 非 key="new" 的写操作统一拒绝并给出正确通道。
+const WRITE_GUIDANCE: &str = "scheduledTasks only supports creating tasks via config-set key=\"new\" (see createGuidance from config-list scope=scheduledTasks). The scheduler runs in the renderer process and the task store hydrates from the database only at app startup, so editing, pausing or deleting tasks must be done in the app's Scheduled Tasks panel.";
+
+/// 创建契约（原 createScheduledTask 的参数说明）。
+fn create_guidance() -> Value {
+    json!({
+        "call": "config-set scope=scheduledTasks key=\"new\" value={...}",
+        "behavior": "Tasks are saved in the local database and survive restarts. Each run sends `prompt` to a NEW auto-sent chat conversation with access to all tools. Runs missed while the app is closed are skipped unless schedule.wakeWhenClosed is true. The task binds to the active project (global when none).",
+        "fields": {
+            "id": "optional idempotency key (max 128 chars); retrying with the same id returns the existing task instead of a duplicate",
+            "name": "required, human-readable name",
+            "prompt": "required, prompt sent on each run; may contain {{SCRIPT_OUTPUT}}",
+            "schedule": {
+                "type": "required: \"once\" | \"recurring\"",
+                "executeAt": "type=once: ISO 8601 timestamp WITH timezone offset, e.g. 2026-08-12T10:00:00+08:00",
+                "mode": "type=recurring: \"interval\" | \"daily\"",
+                "intervalMs": "mode=interval: integer ms, 60000 (1 minute) to 366 days",
+                "hour": "mode=daily: 0-23",
+                "minute": "mode=daily: 0-59",
+                "wakeWhenClosed": "optional bool: the OS scheduler relaunches the app in the background before the run time; a run missed while the computer was off runs once on the next launch"
+            },
+            "apiProfile": "optional API profile name for the fired conversation (default: active profile)",
+            "model": "optional model id for the fired conversation (default: the profile's model)",
+            "basicModel": "optional base model id, kept for display/config alignment only",
+            "thinkingStrength": "optional per-run thinking override, e.g. none | low | medium | high",
+            "preScript": "optional shell command run in the project directory before the AI Loop",
+            "preScriptTimeoutMs": "optional 1000-300000 (default 60000); timeout counts as a script error",
+            "runOnScriptError": "optional bool (default false): still run the AI Loop when the script fails"
+        },
+        "preScriptProtocol": "exit 0 = run, exit 1 = skip this round; or print a JSON object as the LAST stdout line: {\"run\":false,\"reason\":\"...\"} skips and records the reason, {\"run\":true,\"output\":\"...\"} injects output into {{SCRIPT_OUTPUT}}, {\"prompt\":\"...\"} fully overrides the prompt. Any other exit code, timeout or spawn failure is a script error.",
+        "examples": [
+            {"name": "Daily report", "prompt": "Summarize yesterday's commits", "schedule": {"type": "recurring", "mode": "daily", "hour": 9, "minute": 0}},
+            {"name": "Reminder", "prompt": "Remind me to review PRs", "schedule": {"type": "once", "executeAt": "2026-08-12T10:00:00+08:00"}}
+        ]
+    })
+}
 
 fn preview(text: &str, max_chars: usize) -> String {
     let mut chars = text.chars();
@@ -114,7 +143,7 @@ fn task_detail(record: &ScheduledTaskRecord) -> Value {
     detail
 }
 
-/// Dispatches `config-list/get` for the `scheduledTasks` scope (read-only).
+/// Dispatches `config-list/get` for the `scheduledTasks` scope（创建由 call.rs 路由）。
 pub(crate) fn execute_scheduled_tasks_scope(
     tool_name: &str,
     args: &Value,
@@ -135,8 +164,8 @@ pub(crate) fn execute_scheduled_tasks_scope(
             Ok(json!({
                 "scope": "scheduledTasks",
                 "file": null,
-                "readOnly": true,
                 "note": WRITE_GUIDANCE,
+                "createGuidance": create_guidance(),
                 "count": items.len(),
                 "keys": [{
                     "key": "tasks",
@@ -172,7 +201,6 @@ pub(crate) fn execute_scheduled_tasks_scope(
             Ok(json!({
                 "scope": "scheduledTasks",
                 "key": key,
-                "readOnly": true,
                 "note": WRITE_GUIDANCE,
                 "value": task_detail(task),
             }))

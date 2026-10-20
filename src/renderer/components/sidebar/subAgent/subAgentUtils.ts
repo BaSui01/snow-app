@@ -8,9 +8,7 @@ export const SUB_AGENT_ALL_TOOLS_MARKER = "*";
 export const SUB_AGENT_RESERVED_TOOL_NAMES = new Set<string>([
   ...SUB_AGENT_MAIN_TOOL_NAMES,
   "app-control-requestApproval",
-  "app-control-createConversation",
-  "app-control-sendConversationMessage",
-  "app-control-activateConversation",
+  "app-control-conversation",
   "workflow-workflow-generate",
   "workflow-workflow-resume",
 ]);

@@ -173,6 +173,39 @@ const makeRowRange = (
   return null;
 };
 
+type SearchLineBand = { line: number; current: boolean };
+
+/** 行窗口 [firstLine, lastLine] 内的命中行（去重），用于整行底色。 */
+const collectMatchLines = (
+  matches: SearchMatch[],
+  firstLine: number,
+  lastLine: number,
+  currentLine: number,
+): SearchLineBand[] => {
+  let from = matches.length;
+  let lo = 0;
+  let hi = matches.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (matches[mid].line >= firstLine) {
+      from = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  const bands: SearchLineBand[] = [];
+  let prev = -1;
+  for (let i = from; i < matches.length; i += 1) {
+    const { line } = matches[i];
+    if (line > lastLine) break;
+    if (line === prev) continue;
+    prev = line;
+    bands.push({ line, current: line === currentLine });
+  }
+  return bands;
+};
+
 /** IME 组合输入中的按键（如中文输入法候选词确认的 Enter）：一律忽略。
  * 组合期间 preventDefault 会吞掉候选词上屏，导致中文无法输入
  * 搜索框/编辑器（isComposing 为 true，部分平台报 keyCode 229）。 */
@@ -1093,6 +1126,8 @@ export function FileViewerContent({
   const plainTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const plainGutterRef = useRef<HTMLSpanElement | null>(null);
   const plainHighlightRef = useRef<HTMLPreElement | null>(null);
+  const plainMirrorRef = useRef<HTMLDivElement | null>(null);
+  const plainBandsRef = useRef<HTMLDivElement | null>(null);
   const editScrollRef = useRef<HTMLDivElement | null>(null);
   const [plainRange, setPlainRange] = useState({ start: 0, end: 0 });
 
@@ -1132,9 +1167,18 @@ export function FileViewerContent({
     if (gutter) {
       gutter.style.transform = `translateY(${offsetY}px)`;
     }
+    const shift = `translate(${-textarea.scrollLeft}px, ${offsetY}px)`;
     const highlight = plainHighlightRef.current;
     if (highlight) {
-      highlight.style.transform = `translate(${-textarea.scrollLeft}px, ${offsetY}px)`;
+      highlight.style.transform = shift;
+    }
+    const mirror = plainMirrorRef.current;
+    if (mirror) {
+      mirror.style.transform = shift;
+    }
+    const bands = plainBandsRef.current;
+    if (bands) {
+      bands.style.transform = `translateY(${offsetY}px)`;
     }
     setPlainRange((prev) =>
       prev.start === start && prev.end === end ? prev : { start, end },
@@ -2229,6 +2273,120 @@ export function FileViewerContent({
     searchOpen,
   ]);
 
+  // 查看模式命中行整行底色：关键词横向滚出视窗时仍能感知命中所在行。
+  const viewSearchBands = useMemo<SearchLineBand[]>(() => {
+    if (editMode || !searchOpen || searchMatches.length === 0) return [];
+    const current =
+      searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
+    return collectMatchLines(
+      searchMatches,
+      lineMapping.toSource(rowRange.start + 1),
+      lineMapping.toSource(rowRange.end),
+      current?.line ?? -1,
+    ).filter((band) => !lineMapping.isHidden(band.line));
+  }, [
+    editMode,
+    lineMapping,
+    rowRange.end,
+    rowRange.start,
+    searchIndex,
+    searchMatches,
+    searchOpen,
+  ]);
+
+  // 编辑模式匹配高亮：与编辑器同排版的透明镜像文本，命中段包 span 着色；
+  // 镜像含完整文本以撑满内容宽度，命中行整行底色挂在其内。
+  // 大文件编辑只镜像可视行窗口（与高亮层同步位移）。
+  const editSearchMirror = useMemo(() => {
+    if (!editMode || !searchOpen || searchMatches.length === 0) return null;
+    let from = 0;
+    let to = editedContent.length;
+    let firstLine = 1;
+    let lastLine = Number.MAX_SAFE_INTEGER;
+    if (plainEditor) {
+      if (!plainIndex || plainRange.end <= plainRange.start) return null;
+      from = plainIndex.starts[plainRange.start];
+      to = plainIndex.starts[Math.min(plainRange.end, plainIndex.total)];
+      firstLine = plainRange.start + 1;
+      lastLine = plainRange.end;
+    }
+    const current =
+      searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
+    const bands = collectMatchLines(
+      searchMatches,
+      firstLine,
+      lastLine,
+      current?.line ?? -1,
+    );
+    if (bands.length === 0) return null;
+    let first = searchMatches.length;
+    let lo = 0;
+    let hi = searchMatches.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (searchMatches[mid].end > from) {
+        first = mid;
+        hi = mid - 1;
+      } else {
+        lo = mid + 1;
+      }
+    }
+    const nodes: React.ReactNode[] = [];
+    let cursor = from;
+    let marks = 0;
+    for (let i = first; i < searchMatches.length; i += 1) {
+      const match = searchMatches[i];
+      if (match.start >= to) break;
+      if (marks >= SEARCH_MARK_RENDER_LIMIT && match !== current) continue;
+      const start = Math.max(match.start, cursor);
+      const end = Math.min(match.end, to);
+      if (end <= start) continue;
+      if (start > cursor) nodes.push(editedContent.slice(cursor, start));
+      nodes.push(
+        <span
+          key={i}
+          className={`file-viewer-search-mark-inline${
+            match === current ? " current" : ""
+          }`}
+        >
+          {editedContent.slice(start, end)}
+        </span>,
+      );
+      cursor = end;
+      marks += 1;
+    }
+    if (cursor < to) nodes.push(editedContent.slice(cursor, to));
+    return { nodes, bands, firstLine };
+  }, [
+    editMode,
+    editedContent,
+    plainEditor,
+    plainIndex,
+    plainRange.end,
+    plainRange.start,
+    searchIndex,
+    searchMatches,
+    searchOpen,
+  ]);
+
+  const renderSearchBands = (
+    bands: SearchLineBand[],
+    lineTop: (line: number) => number,
+  ) =>
+    bands.map((band) => (
+      <div
+        key={`band-${band.line}`}
+        className={`file-viewer-search-line${band.current ? " current" : ""}`}
+        style={{ top: lineTop(band.line), height: codeMetrics.lineHeight }}
+      />
+    ));
+
+  // 镜像层挂载时补一次位移同步，否则要等下一次滚动才对齐。
+  const plainMirrorMounted = plainEditor && editSearchMirror != null;
+  useLayoutEffect(() => {
+    if (plainMirrorMounted) syncPlainView();
+  }, [plainMirrorMounted, syncPlainView]);
+
   const buildMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
     if (!virtualSource) {
@@ -2328,6 +2486,12 @@ export function FileViewerContent({
               ref={marksLayerRef}
               aria-hidden="true"
             >
+              {renderSearchBands(
+                viewSearchBands,
+                (line) =>
+                  codeMetrics.paddingTop +
+                  (lineMapping.toVisual(line) - 1) * codeMetrics.lineHeight,
+              )}
               {searchMarkRects.map((rect, i) => (
                 <div
                   key={i}
@@ -2383,6 +2547,28 @@ export function FileViewerContent({
           </span>
         </code>
         <div className="file-viewer-edit-layer">
+          {editSearchMirror ? (
+            <div
+              className="file-viewer-edit-search-bands"
+              ref={plainBandsRef}
+              aria-hidden="true"
+            >
+              {renderSearchBands(
+                editSearchMirror.bands,
+                (line) =>
+                  (line - editSearchMirror.firstLine) * codeMetrics.lineHeight,
+              )}
+            </div>
+          ) : null}
+          {editSearchMirror ? (
+            <div
+              className="file-viewer-edit-search-mirror file-viewer-edit-search-mirror--plain"
+              ref={plainMirrorRef}
+              aria-hidden="true"
+            >
+              {editSearchMirror.nodes}
+            </div>
+          ) : null}
           {plainHighlighter?.enabled ? (
             <pre
               className="hljs file-viewer-edit-highlight"
@@ -2425,6 +2611,18 @@ export function FileViewerContent({
             {editLineNumbers}
           </code>
           <div className="file-viewer-editor-wrap">
+            {editSearchMirror ? (
+              <div
+                className="file-viewer-edit-search-mirror"
+                aria-hidden="true"
+              >
+                {renderSearchBands(
+                  editSearchMirror.bands,
+                  (line) => (line - 1) * codeMetrics.lineHeight,
+                )}
+                {editSearchMirror.nodes}
+              </div>
+            ) : null}
             <Editor
               value={editedContent}
               onValueChange={handleValueChange}

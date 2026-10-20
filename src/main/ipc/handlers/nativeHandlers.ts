@@ -77,6 +77,21 @@ const readConfigScope = (argsJson: string): string | null => {
   }
 };
 
+/** 解析 config-* 参数 key 中逗号分隔的 id 列表。 */
+const readConfigKeyList = (argsJson: string): string[] => {
+  try {
+    const key = (JSON.parse(argsJson) as { key?: unknown } | null)?.key;
+    return typeof key === "string"
+      ? key
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 export const registerNativeHandlers = (native: NativeBridge): void => {
   registerImageGenerationHandlers(native);
   // SSH checkpoint 需要一个独立于工具调用链的远程命令通道：renderer 的
@@ -1332,6 +1347,17 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           readConfigScope(argsJson) === "customCommands"
         ) {
           safeSend(event.sender, "customCommands:changed");
+        }
+        // 备忘录（memos 作用域）：广播刷新备忘面板，delete 时附带被删 memoId。
+        if (
+          (toolName === "config-set" || toolName === "config-delete") &&
+          readConfigScope(argsJson) === "memos"
+        ) {
+          safeSend(
+            event.sender,
+            "memos:changed",
+            toolName === "config-delete" ? readConfigKeyList(argsJson) : [],
+          );
         }
         // 流式指示器（streamCursor 作用域）写入主题设置：通知所有窗口重载主题。
         if (

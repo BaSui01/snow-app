@@ -47393,16 +47393,15 @@ pre.file-viewer-code {
   position: absolute;
   background: color-mix(
     in srgb,
-    var(--accent-amber-text, #d97706) 28%,
+    var(--accent-amber-text, #d97706) 40%,
     transparent
   );
   border-radius: 2px;
 }
 
 .file-viewer-search-mark.current {
-  background: color-mix(in srgb, var(--accent-color, #4f8cff) 45%, transparent);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--accent-color, #4f8cff) 70%, transparent);
+  background: color-mix(in srgb, var(--accent-color, #4f8cff) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-color, #4f8cff);
 }
 
 /* Edit mode mirrors the view mode layout: this is the single scroll container
@@ -47432,6 +47431,79 @@ pre.file-viewer-code {
 .file-viewer-editor-wrap {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+/* 编辑模式搜索镜像层：透明文本与编辑器同排版，垫在高亮/输入层下方，
+   只露出命中段的底色。 */
+.file-viewer-edit-search-mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: 0;
+  padding: 0 14px 0 10px;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-family: inherit;
+  font-size: inherit;
+  font-style: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  pointer-events: none;
+  user-select: none;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.file-viewer-edit-search-mirror--plain {
+  will-change: transform;
+}
+
+/* 大文件编辑的命中行底色层：只随 textarea 纵向位移，横向始终铺满视窗。 */
+.file-viewer-edit-search-bands {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* 命中行整行底色（查看/编辑共用），当前命中行更深。 */
+.file-viewer-search-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: color-mix(
+    in srgb,
+    var(--accent-amber-text, #d97706) 9%,
+    transparent
+  );
+}
+
+.file-viewer-search-line.current {
+  background: color-mix(in srgb, var(--accent-color, #4f8cff) 16%, transparent);
+}
+
+.file-viewer-search-mark-inline {
+  position: relative;
+  background: color-mix(
+    in srgb,
+    var(--accent-amber-text, #d97706) 40%,
+    transparent
+  );
+  border-radius: 2px;
+}
+
+.file-viewer-search-mark-inline.current {
+  background: color-mix(in srgb, var(--accent-color, #4f8cff) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-color, #4f8cff);
 }
 
 /* The library overlays a transparent <textarea> on the highlighted <pre>. They

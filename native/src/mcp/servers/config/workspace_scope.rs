@@ -1,8 +1,8 @@
 //! config 服务 `workspace` 作用域：工作区（项目）清单与关联项目组管理。
 //!
-//! - `key=directories`（**只读**）：工作区清单（directoryId、名称、路径、类型、
-//!   激活状态、排序、路径健康状态）。项目的新增/删除/重新定位涉及目录校验与数据
-//!   迁移，仍由 UI 与 `app-control-createProject` 负责，本域不开放。
+//! - `key=directories`：工作区清单（directoryId、名称、路径、类型、激活状态、排序、
+//!   路径健康状态）。`config-set value={action:"create", name, parentPath?}` 在
+//!   tools/call.rs 路由到渲染端建项目；删除/重新定位仍由 UI 负责。
 //! - `key=collections`（读写）：项目分组（合集 = 关联项目组）。`config-set` 用
 //!   action 分发：`{action:"create", name}` / `{action:"rename", collectionId, name}`
 //!   / `{action:"setColor", collectionId, color}` / `{action:"setMemberLinked",
@@ -354,7 +354,7 @@ pub(crate) fn execute_workspace_scope(
                 return Err(Error::new(
                     Status::InvalidArg,
                     format!(
-                        "workspace only supports writing key \"{COLLECTIONS_KEY}\" ({DIRECTORIES_KEY} is read-only; project create/delete/relocate stays in the UI and app-control-createProject)"
+                        "workspace only supports writing key \"{COLLECTIONS_KEY}\", or key \"{DIRECTORIES_KEY}\" with value={{action:\"create\", name, parentPath?}} to create a project; project delete/relocate stays in the UI"
                     ),
                 ));
             }

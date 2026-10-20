@@ -49,23 +49,22 @@ The rules apply as follows:
 
 Use domain boundaries for recommended rules. For example, in JSON tool arguments write `(^|\\.)example\\.com$`: `(^|\\.)` means the start of the domain or a preceding dot, so it matches `example.com` and its subdomains; `$` requires the match to end at the domain boundary and avoids matching a longer domain. Do not pass unvalidated user input as a regular expression.
 
-The AI can maintain the rules with dedicated tools:
+The AI can maintain the rules through the `appSettings` scope of the `config` tools:
 
-| Tool                                | Purpose                                      |
-| ----------------------------------- | -------------------------------------------- |
-| `app-control-getBlockedPatterns`    | Read the current global rule array and count |
-| `app-control-updateBlockedPatterns` | Add, remove, or fully replace rules          |
+| Call                                               | Purpose                             |
+| -------------------------------------------------- | ----------------------------------- |
+| `config-get scope=appSettings key=blockedPatterns` | Read the current global rule array  |
+| `config-set scope=appSettings key=blockedPatterns` | Add, remove, or fully replace rules |
 
-Arguments for `app-control-updateBlockedPatterns`:
+The `value` of `config-set` may be a rule array (full replace), or an object with exactly one operation key:
 
 ```json
 {
-  "operation": "add | remove | replace",
-  "patterns": ["(^|\\\\.)example\\\\.com$"]
+  "add": ["(^|\\\\\\\\.)example\\\\\\\\.com$"]
 }
 ```
 
-Operation semantics:
+The operation key is `add`, `remove`, or `replace`, with these semantics:
 
 - `add`: trim surrounding whitespace, remove exact duplicates, and preserve existing order;
 - `remove`: delete exact complete strings;

@@ -25,8 +25,8 @@ description: >-
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
   customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
   usage/appSettings/privacy/codebase/keyboardShortcuts/workspace/plugins/
-  customCommands/streamCursor), including
-  project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills/customCommands
+  customCommands/streamCursor/memos), including
+  project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills/customCommands/memos
   via `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).
 enable: true
@@ -37,8 +37,6 @@ allowed-tools:
   - config-delete
   - user-interaction-askUserQuestion
   - app-control-openSettings
-  - app-control-getBlockedPatterns
-  - app-control-updateBlockedPatterns
   - bash-terminal-execute
   - filesystem-read
   - filesystem-replace_edit
@@ -173,22 +171,25 @@ allowed-tools:
 - **App 生效配置（DB 域）**：`mcpServers`（App 实际生效的 MCP 服务器 + 工具级启停，
   `projectId` 区分全局/项目；写入用 `source=manual`，不会被 Snow CLI 同步删除）、
   `requestLogging`（`key=settings`，开启必须带过期时间，到期自动复位）、`toolApproval`
-  （项目级工具免确认白名单；全局仍走 `permissions` 域）、`scheduledTasks` 与 `usage`
-  为只读域（前者调度器在渲染进程，写入被拒绝并指向 `app-control-createScheduledTask`）。
+  （项目级工具免确认白名单；全局仍走 `permissions` 域）、`scheduledTasks`（仅
+  `config-set key="new"` 新建任务，契约见 list 返回的 `createGuidance`；改/删/暂停在
+  UI）与只读域 `usage`。
   → `3-参考手册/2-内置工具参考.md`
 - **集中开关 / 索引 / 隐私 / 快捷键 / 工作区（DB 域）**：`appSettings`（`liteMode`、
-  `autoFormat`、`toolCorrection`、`terminal`、`proxyBrowser`、`imageLibraryDir`；`yoloMode` 只读）、
+  `autoFormat`、`toolCorrection`、`terminal`、`proxyBrowser`、`imageLibraryDir`、
+  `blockedPatterns`；`yoloMode` 只读）、
   `privacy`（apiKey 写入空值保留旧值，`mode=local|api`）、`codebase`（全局白名单
   merge，改 embedding 配置后需重建索引；项目级 `scope` 三态覆盖，未设置继承全局）、
   `keyboardShortcuts`（按动作稀疏 merge，读取附带键位冲突）、`workspace`
-  （`directories` 只读、`collections` 按 action 增改、`collection:<id>` 读取、
-  delete 需确认）。
+  （`directories` 可读，`value={action:"create", name, parentPath?}` 新建项目；
+  `collections` 按 action 增改、`collection:<id>` 读取、delete 需确认）。
   → `3-参考手册/2-内置工具参考.md`
 - **站点拦截规则**：`blockedPatterns` 是应用全局数组，实际存储在应用数据库系统设置
   `proxy_browser_settings`，影响 `websearch` 结果过滤和 `websearch-fetch` 抓取拒绝，
-  不是项目级配置。优先使用 `app-control-getBlockedPatterns` 读取，使用
-  `app-control-updateBlockedPatterns` 按 `add`/`remove`/`replace` 维护；工具和设置面板
-  按 JavaScript `RegExp` 校验规则。`config` 的 `proxy` scope 不支持该字段，不要直接
+  不是项目级配置。用 `config-get scope=appSettings key=blockedPatterns` 读取，
+  `config-set scope=appSettings key=blockedPatterns` 维护（value 为数组整体替换，或
+  `{add|remove|replace: [...]}`）；写入与设置面板一样按 JavaScript `RegExp` 校验规则。
+  `config` 的 `proxy` scope 不支持该字段，不要直接
   编辑 `proxy-config.json` 维护运行时拦截规则。→ `4-配置代理与网络.md`、
   `3-参考手册/2-内置工具参考.md`
 - **日志（只读）**：`logs` 域（list 列文件、get 读尾部 `limit` 默认 200 最大

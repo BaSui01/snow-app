@@ -94,7 +94,7 @@ Proxy and browser config.
 | `browserPath`      | string  | Browser executable path                   |
 | `browserDebugPort` | integer | Browser debug port                        |
 
-> `blockedPatterns` is not a file field in the current `proxy` scope or in `~/.snow/proxy-config.json`, so it must not be maintained with `config-set scope=proxy`. It is stored in the app database system setting `proxy_browser_settings`; use the Proxy & Browser settings panel or `app-control-getBlockedPatterns` / `app-control-updateBlockedPatterns`.
+> `blockedPatterns` is not a file field in the current `proxy` scope or in `~/.snow/proxy-config.json`, so it must not be maintained with `config-set scope=proxy`. It is stored in the app database system setting `proxy_browser_settings`; use the Proxy & Browser settings panel or `config-get` / `config-set scope=appSettings key=blockedPatterns`.
 
 ## 4. active-profile.json (scope: `app`)
 

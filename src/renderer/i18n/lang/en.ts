@@ -1700,6 +1700,7 @@ export const en = {
   "toolNames.app-control-createConversation": "New conversation",
   "toolNames.app-control-sendConversationMessage": "Send to conversation",
   "toolNames.app-control-activateConversation": "Open conversation",
+  "toolNames.app-control-conversation": "Conversation",
   "toolNames.app-control-requestApproval": "Plan approval",
   "toolNames.app-control-getMemo": "Read memo",
   "toolNames.app-control-listMemos": "List memos",
@@ -4511,8 +4512,9 @@ export const en = {
   "mcpBuiltinServer.desc.codelens":
     "Jump to definitions, references, and file outlines",
   "mcpBuiltinServer.desc.appControl":
-    "Control Snow App itself (settings, memos, modes)",
-  "mcpBuiltinServer.desc.config": "Read and change app configuration",
+    "Control Snow App itself (modes, settings pages, conversations)",
+  "mcpBuiltinServer.desc.config":
+    "Read and change app configuration (incl. memos, scheduled tasks, projects)",
   "mcpBuiltinServer.desc.terminal":
     "Open interactive terminal sessions in the side panel",
   "mcpBuiltinServer.desc.imagegen": "Generate and edit images",

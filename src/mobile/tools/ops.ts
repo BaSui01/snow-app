@@ -508,6 +508,17 @@ const appDisplayOf = (
         ? `${dyn("app.op.openSettings", operation)} · ${page}`
         : dyn("app.op.openSettings", operation);
     }
+    case "conversation": {
+      const base = dyn("app.op.conversation", operation);
+      const action = args ? asString(args.action) : undefined;
+      const subject = args
+        ? (asString(args.title) ??
+          asString(args.text) ??
+          asString(args.conversationId))
+        : undefined;
+      const head = action ? `${base} · ${action}` : base;
+      return subject ? `${head} · ${clip(subject)}` : head;
+    }
     case "listMemos": {
       const total = memoCount(result);
       if (total !== undefined) return tr("app.memoListed", { count: total });

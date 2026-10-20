@@ -1613,6 +1613,7 @@ export const zhTW = {
   "toolNames.app-control-createConversation": "新增工作階段",
   "toolNames.app-control-sendConversationMessage": "投遞工作階段訊息",
   "toolNames.app-control-activateConversation": "開啟工作階段",
+  "toolNames.app-control-conversation": "工作階段操作",
   "toolNames.app-control-requestApproval": "計畫審批",
   "toolNames.app-control-getMemo": "讀取備忘",
   "toolNames.app-control-listMemos": "列出備忘",
@@ -4179,8 +4180,9 @@ export const zhTW = {
   "mcpBuiltinServer.desc.codebase": "在已索引的程式碼庫中做語意檢索",
   "mcpBuiltinServer.desc.codelens": "跳轉定義、參照與檔案結構",
   "mcpBuiltinServer.desc.appControl":
-    "控制 Snow App 本身（設定、備忘錄、模式）",
-  "mcpBuiltinServer.desc.config": "讀取與修改應用程式設定",
+    "控制 Snow App 本身（模式、設定頁、工作階段）",
+  "mcpBuiltinServer.desc.config":
+    "讀取與修改應用程式設定（含備忘錄、定時任務、專案）",
   "mcpBuiltinServer.desc.terminal": "在右側面板開啟互動式終端工作階段",
   "mcpBuiltinServer.desc.imagegen": "生成與編輯圖片",
   "mcpBuiltinServer.desc.lsp": "語言伺服器診斷與程式碼導覽",

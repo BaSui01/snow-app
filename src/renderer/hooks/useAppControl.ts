@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { MainContentView } from "../components/mainContent/types";
 import type {
-  MemoRecord,
-  MemoStatus,
   ProxyBrowserSettings,
   WorkspaceDirectoryRecord,
 } from "../../preload";
@@ -23,29 +21,6 @@ import {
   activateConversationById,
   createConversationInDirectory,
 } from "../plugins/writes/conversationOps";
-
-/** Fetches every memo of a project (paginated, with a hard page cap). */
-const fetchAllMemos = async (
-  directoryId: string,
-  status?: MemoStatus,
-): Promise<MemoRecord[]> => {
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 10;
-  const all: MemoRecord[] = [];
-  let offset = 0;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const result = await window.snow.listMemos(
-      directoryId,
-      PAGE_SIZE,
-      offset,
-      status,
-    );
-    all.push(...result.items);
-    if (!result.hasMore) break;
-    offset += result.items.length;
-  }
-  return all;
-};
 
 export const APP_CONTROL_OPEN_SETTINGS_EVENT = "app-control:open-settings";
 export const APP_CONTROL_MEMO_CREATED_EVENT = "app-control:memo-created";
@@ -91,6 +66,15 @@ export const useAppControl = ({
     setActiveMainViewRef.current = setActiveMainView;
   }, [setActiveMainView]);
 
+  // AI 经 config memos 作用域改库后刷新备忘面板与徽标。
+  useEffect(
+    () =>
+      window.snow.onMemosChanged((deletedIds) => {
+        notifyMemosAiChanged(deletedIds);
+      }),
+    [],
+  );
+
   useEffect(() => {
     const unregister = window.snow.registerAppControlHandler(
       async (request) => {
@@ -100,133 +84,6 @@ export const useAppControl = ({
         >;
 
         switch (request.action) {
-          case "create_memo": {
-            const directory = activeDirectoryRef.current;
-            if (!directory) {
-              throw new Error("No active project directory");
-            }
-            const content = (payload.content as string) ?? "";
-            const memo = await window.snow.createMemo(
-              directory.directoryId,
-              content,
-            );
-            notifyMemosAiChanged();
-            return JSON.stringify({
-              success: true,
-              memoId: memo.memoId,
-              content: memo.content,
-              status: memo.status,
-            });
-          }
-
-          case "list_memos": {
-            const directory = activeDirectoryRef.current;
-            if (!directory) {
-              throw new Error("No active project directory");
-            }
-            const rawStatus = payload.status as string | undefined;
-            const status =
-              rawStatus === "pending" || rawStatus === "done"
-                ? rawStatus
-                : undefined;
-            const memos = await fetchAllMemos(directory.directoryId, status);
-            return JSON.stringify({
-              success: true,
-              total: memos.length,
-              memos,
-            });
-          }
-
-          case "get_memo": {
-            const directory = activeDirectoryRef.current;
-            if (!directory) {
-              throw new Error("No active project directory");
-            }
-            const memoId = (payload.memoId as string) ?? "";
-            if (!memoId.trim()) {
-              throw new Error("memoId is required");
-            }
-            // Project isolation: only memos of the current project are visible.
-            const memos = await fetchAllMemos(directory.directoryId);
-            const memo = memos.find((item) => item.memoId === memoId);
-            if (!memo) {
-              throw new Error(
-                `Memo not found in the current project: ${memoId}`,
-              );
-            }
-            return JSON.stringify({ success: true, memo });
-          }
-
-          case "update_memo_status": {
-            const directory = activeDirectoryRef.current;
-            if (!directory) {
-              throw new Error("No active project directory");
-            }
-            const memoId = (payload.memoId as string) ?? "";
-            const status = payload.status as string;
-            if (!memoId.trim()) {
-              throw new Error("memoId is required");
-            }
-            if (status !== "pending" && status !== "done") {
-              throw new Error(
-                `status must be "pending" or "done", received "${status}"`,
-              );
-            }
-            // Project isolation: refuse to mutate a memo that does not belong
-            // to the current project.
-            const memos = await fetchAllMemos(directory.directoryId);
-            const memo = memos.find((item) => item.memoId === memoId);
-            if (!memo) {
-              throw new Error(
-                `Memo not found in the current project: ${memoId}`,
-              );
-            }
-            const updated = await window.snow.updateMemoStatus(memoId, status);
-            notifyMemosAiChanged();
-            return JSON.stringify({ success: true, memo: updated });
-          }
-
-          case "delete_memo": {
-            const directory = activeDirectoryRef.current;
-            if (!directory) {
-              throw new Error("No active project directory");
-            }
-            const rawIds = Array.isArray(payload.memoIds)
-              ? payload.memoIds
-              : [];
-            const memoIds = rawIds.filter(
-              (id): id is string => typeof id === "string",
-            );
-            if (memoIds.length === 0) {
-              throw new Error("memoId is required");
-            }
-            // Project isolation: validate the whole batch before deleting, so a
-            // single foreign or missing id refuses every deletion.
-            const memos = await fetchAllMemos(directory.directoryId);
-            const ownIds = new Set(memos.map((item) => item.memoId));
-            const missing = memoIds.filter((id) => !ownIds.has(id));
-            if (missing.length > 0) {
-              throw new Error(
-                `Memo not found in the current project: ${missing.join(", ")}`,
-              );
-            }
-            const deleted = await window.snow.deleteMemos(memoIds);
-            notifyMemosAiChanged(memoIds);
-            return JSON.stringify({ success: true, deleted, memoIds });
-          }
-
-          case "get_blocked_patterns": {
-            const raw = await window.snow.getSystemSettingValue(
-              PROXY_BROWSER_SETTING_CODE,
-            );
-            const settings = readProxyBrowserSettingsJson(raw);
-            return JSON.stringify({
-              success: true,
-              blockedPatterns: settings.blockedPatterns,
-              count: settings.blockedPatterns.length,
-            });
-          }
-
           case "update_blocked_patterns": {
             const operation = payload.operation as string;
             const rawPatterns = payload.patterns;

@@ -288,7 +288,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    ScheduleTimer["Renderer Task Scheduler (Cron / Interval)"] --> TaskRun["app-control-createScheduledTask"]
+    ScheduleTimer["Renderer Task Scheduler (Cron / Interval)"] --> TaskRun["config-set scope=scheduledTasks"]
     TaskRun --> TaskStore[("SQLite scheduled_tasks table")]
     TaskRun --> HookTrigger["Lifecycle Hook (onSessionStart)"]
     HookTrigger --> HeadlessLoop["Headless useAgentLoop automated session"]

@@ -112,18 +112,30 @@ const formatInterval = (intervalMs: number): string => {
   return `${intervalMs}ms`;
 };
 
+/** 合并后的 conversation 工具按 action 复用旧渲染分支。 */
+const CONVERSATION_ACTION_OPERATIONS: Record<string, string> = {
+  create: "createConversation",
+  send: "sendConversationMessage",
+  activate: "activateConversation",
+};
+
 export const AppControlToolCall = ({
   toolCall,
 }: AppControlToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
-  const operation = toolCall.name.startsWith("app-control-")
-    ? toolCall.name.slice("app-control-".length)
-    : toolCall.name;
-
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments],
   );
+  const rawOperation = toolCall.name.startsWith("app-control-")
+    ? toolCall.name.slice("app-control-".length)
+    : toolCall.name;
+  const operation =
+    rawOperation === "conversation"
+      ? (CONVERSATION_ACTION_OPERATIONS[asString(parsedArgs?.action) ?? ""] ??
+        rawOperation)
+      : rawOperation;
+
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
     [toolCall.result],

@@ -39,4 +39,20 @@ export const memoApi = {
     ipcRenderer.invoke("memos:delete-many", memoIds),
   getMemoCountSummary: (directoryId: string): Promise<MemoCountSummary> =>
     ipcRenderer.invoke("memos:count-summary", directoryId),
+  /** AI 经 config memos 作用域改库后由主进程广播，参数为本次删除的 memoId。 */
+  onMemosChanged: (callback: (deletedIds: string[]) => void): (() => void) => {
+    const handler = (_event: unknown, deletedIds: unknown): void => {
+      callback(
+        Array.isArray(deletedIds)
+          ? deletedIds.filter((id): id is string => typeof id === "string")
+          : [],
+      );
+    };
+
+    ipcRenderer.on("memos:changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("memos:changed", handler);
+    };
+  },
 };

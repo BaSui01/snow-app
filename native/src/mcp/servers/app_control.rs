@@ -5,25 +5,13 @@ use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
-use super::id_list_arg;
 use super::user_interaction::{UserQuestionCallback, UserQuestionCommand};
 
 pub const SERVER_ID: &str = "app-control";
 
-const TOOL_CREATE_MEMO: &str = "createMemo";
-const TOOL_LIST_MEMOS: &str = "listMemos";
-const TOOL_GET_MEMO: &str = "getMemo";
-const TOOL_UPDATE_MEMO_STATUS: &str = "updateMemoStatus";
-const TOOL_DELETE_MEMO: &str = "deleteMemo";
-const TOOL_GET_BLOCKED_PATTERNS: &str = "getBlockedPatterns";
-const TOOL_UPDATE_BLOCKED_PATTERNS: &str = "updateBlockedPatterns";
 const TOOL_SET_MODE: &str = "setMode";
 const TOOL_OPEN_SETTINGS: &str = "openSettings";
-const TOOL_CREATE_SCHEDULED_TASK: &str = "createScheduledTask";
-const TOOL_CREATE_PROJECT: &str = "createProject";
-const TOOL_CREATE_CONVERSATION: &str = "createConversation";
-const TOOL_SEND_CONVERSATION_MESSAGE: &str = "sendConversationMessage";
-const TOOL_ACTIVATE_CONVERSATION: &str = "activateConversation";
+const TOOL_CONVERSATION: &str = "conversation";
 const TOOL_REQUEST_APPROVAL: &str = "requestApproval";
 
 const APPROVE_OPTION: &str = "Approve and execute the plan";
@@ -31,7 +19,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "create_memo" | "list_memos" | "get_memo" | "update_memo_status" | "delete_memo" | "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
+    /// Action identifier: "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -59,23 +47,22 @@ impl AppControlService {
         }
 
         let (action, payload) = match tool_name {
-            TOOL_CREATE_MEMO => validate_create_memo_args(args)?,
-            TOOL_LIST_MEMOS => validate_list_memos_args(args)?,
-            TOOL_GET_MEMO => validate_get_memo_args(args)?,
-            TOOL_UPDATE_MEMO_STATUS => validate_update_memo_status_args(args)?,
-            TOOL_DELETE_MEMO => validate_delete_memo_args(args)?,
-            TOOL_GET_BLOCKED_PATTERNS => validate_get_blocked_patterns_args(args)?,
-            TOOL_UPDATE_BLOCKED_PATTERNS => validate_update_blocked_patterns_args(args)?,
             TOOL_SET_MODE => validate_set_mode_args(args)?,
             TOOL_OPEN_SETTINGS => validate_open_settings_args(args)?,
-            TOOL_CREATE_SCHEDULED_TASK => validate_create_scheduled_task_args(args)?,
-            TOOL_CREATE_PROJECT => validate_create_project_args(args)?,
-            TOOL_CREATE_CONVERSATION => validate_create_conversation_args(args)?,
-            TOOL_SEND_CONVERSATION_MESSAGE => validate_send_conversation_message_args(args)?,
-            TOOL_ACTIVATE_CONVERSATION => validate_activate_conversation_args(args)?,
+            TOOL_CONVERSATION => validate_conversation_args(args)?,
             _ => return Err(unknown_tool_error(tool_name)),
         };
 
+        self.dispatch(action, payload, on_app_control).await
+    }
+
+    /// 把已校验的动作转发给渲染层执行（config-set 路由也复用此入口）。
+    pub async fn dispatch(
+        &self,
+        action: String,
+        payload: Value,
+        on_app_control: &AppControlCallback,
+    ) -> napi::Result<Value> {
         let command = AppControlCommand {
             action,
             payload_json: serde_json::to_string(&payload).map_err(|error| {
@@ -120,126 +107,6 @@ impl McpService for AppControlService {
 
     fn tools(&self) -> Vec<McpTool> {
         vec![
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_CREATE_MEMO.to_string(),
-                description: "Create a new memo (note) in the Snow App memo panel. The memo content supports plain text. Returns the created memo record.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "content": {
-                            "type": "string",
-                            "description": "The text content for the new memo."
-                        }
-                    },
-                    "required": ["content"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_LIST_MEMOS.to_string(),
-                description: "List memos of the CURRENT project (the project the active conversation belongs to). Returns memo records with full content, status (pending/done) and timestamps. Optionally filter by status. Memos of other projects are never exposed.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "status": {
-                            "type": "string",
-                            "enum": ["pending", "done"],
-                            "description": "Optional status filter: \\\"pending\\\" or \\\"done\\\". Omit to list all memos."
-                        }
-                    }
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_GET_MEMO.to_string(),
-                description: "Read a single memo of the CURRENT project by memoId, returning its full content and status. Fails if the memo does not exist in the current project.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "memoId": {
-                            "type": "string",
-                            "description": "The memoId of the memo to read."
-                        }
-                    },
-                    "required": ["memoId"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_UPDATE_MEMO_STATUS.to_string(),
-                description: "Update the status of a memo (pending/done) in the CURRENT project. Use \\\"done\\\" to close (complete) a memo after its content has been executed, \\\"pending\\\" to reopen it. Fails for memos of other projects.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "memoId": {
-                            "type": "string",
-                            "description": "The memoId of the memo to update."
-                        },
-                        "status": {
-                            "type": "string",
-                            "enum": ["pending", "done"],
-                            "description": "The new status: \\\"done\\\" closes the memo, \\\"pending\\\" reopens it."
-                        }
-                    },
-                    "required": ["memoId", "status"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_DELETE_MEMO.to_string(),
-                description: "Permanently delete one or more memos of the CURRENT project by memoId. DESTRUCTIVE: before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. memoId may be an array to delete several memos in one call under a single confirmation. The whole batch is refused without deleting anything if any memoId does not exist in the current project. Prefer updateMemoStatus to mark a memo done when it may still be useful.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "memoId": {
-                            "oneOf": [
-                                { "type": "string", "description": "The memoId of a single memo to delete." },
-                                { "type": "array", "items": { "type": "string" }, "description": "The memoIds of the memos to delete." }
-                            ],
-                            "description": "A memoId string, or an array of memoIds for batch deletion."
-                        },
-                        "confirmed": {
-                            "type": "boolean",
-                            "description": "MUST be true and may only be set after explicit user approval via askUserQuestion."
-                        }
-                    },
-                    "required": ["memoId", "confirmed"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_GET_BLOCKED_PATTERNS.to_string(),
-                description: "Read the global site-blocking regex rules used by web search and page fetching. Returns the current JavaScript-style regex strings and their count. This setting is global to the Snow App, not project-scoped.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_UPDATE_BLOCKED_PATTERNS.to_string(),
-                description: "Update the global site-blocking regex rules used by web search and page fetching. Use operation add, remove, or replace. Rules are JavaScript regular-expression strings; add removes empty values and exact duplicates, remove deletes exact strings, and replace writes the supplied list. The setting is global to the Snow App, not project-scoped.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "operation": {
-                            "type": "string",
-                            "enum": ["add", "remove", "replace"],
-                            "description": "How to change the current rules."
-                        },
-                        "patterns": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "minLength": 1
-                            },
-                            "description": "Regex strings to add, remove, or use as the complete replacement list."
-                        }
-                    },
-                    "required": ["operation", "patterns"]
-                }),
-            },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET_MODE.to_string(),
@@ -301,167 +168,34 @@ impl McpService for AppControlService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
-                name: TOOL_CREATE_SCHEDULED_TASK.to_string(),
-                description: "Create a new scheduled task in the Snow App. Tasks are saved in the local database and kept after restarting the app; executions missed while the app is closed are skipped unless schedule.wakeWhenClosed is true. When a task fires, its prompt is sent to the AI Loop (a new chat conversation is created and auto-sent), giving the task access to all tools. A task is either \"once\" (executes a single time at a chosen start time) or \"recurring\" (repeats either at a fixed interval or every day at a fixed time). Optionally a preScript (shell command, run in the project directory) decides whether the AI Loop fires: exit code 0 = run, 1 = skip; or the last stdout line may be a JSON object {\"run\":bool,\"reason\":string,\"output\":string,\"prompt\":string} — \"output\" is injected into the {{SCRIPT_OUTPUT}} placeholder in the prompt, \"prompt\" fully overrides it, and \"reason\" is recorded when skipped (also written to app logs). Non-zero/non-1 exit, timeout or spawn failure counts as a script error: by default the AI Loop does not run (task recorded as error); set runOnScriptError=true to run anyway. Creation is idempotent when `id` is provided: retrying a call with the same id returns the already-created task instead of creating a duplicate.".to_string(),
+                name: TOOL_CONVERSATION.to_string(),
+                description: "Orchestrate top-level conversations of the CURRENT project. action=\"create\": new conversation with `title`; optional `text` is written as an initial user message WITHOUT an AI reply unless `autoReply=true`; returns conversationId. action=\"send\": deliver `text` to `conversationId` (starts a turn when idle, queued when busy; returns started | queued; sub-agent/WorkFlow conversations are rejected). action=\"activate\": switch the UI to `conversationId`.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "id": {
+                        "action": {
                             "type": "string",
-                            "description": "Optional idempotency key (max 128 characters). When provided and a task with this id already exists, the existing task is returned instead of creating a duplicate — safe to reuse when retrying a timed-out or failed tool call."
+                            "enum": ["create", "send", "activate"],
+                            "description": "Operation to perform."
                         },
-                        "name": {
-                            "type": "string",
-                            "description": "A human-readable name for the task."
-                        },
-                        "prompt": {
-                            "type": "string",
-                            "description": "The prompt sent to the AI Loop on each execution. The task runs with access to all tools."
-                        },
-                        "schedule": {
-                            "type": "object",
-                            "description": "When the task runs.",
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": ["once", "recurring"],
-                                    "description": "\\\"once\\\" = execute a single time at executeAt; \\\"recurring\\\" = repeat."
-                                },
-                                "executeAt": {
-                                    "type": "string",
-                                    "description": "ISO 8601 timestamp (UTC) for the single execution. Required when type is \\\"once\\\"."
-                                },
-                                "mode": {
-                                    "type": "string",
-                                    "enum": ["interval", "daily"],
-                                    "description": "Recurring mode: \\\"interval\\\" = every intervalMs; \\\"daily\\\" = every day at hour:minute. Required when type is \\\"recurring\\\"."
-                                },
-                                "intervalMs": {
-                                    "type": "number",
-                                    "description": "Milliseconds between executions. Required when mode is \\\"interval\\\". Minimum 60000 (1 minute)."
-                                },
-                                "hour": {
-                                    "type": "integer",
-                                    "description": "Hour of day (0-23) for a daily schedule. Required when mode is \\\"daily\\\"."
-                                },
-                                "minute": {
-                                    "type": "integer",
-                                    "description": "Minute of hour (0-59) for a daily schedule. Required when mode is \\\"daily\\\"."
-                                },
-                                "wakeWhenClosed": {
-                                    "type": "boolean",
-                                    "description": "Optional. When true, the OS scheduler (launchd / Task Scheduler / systemd) relaunches the app in the background before the run time even if the app was quit, and a run missed while the computer was off runs once on the next launch. Default false."
-                                }
-                            },
-                            "required": ["type"]
-                        },
-                        "apiProfile": {
-                            "type": "string",
-                            "description": "Optional API config profile name that serves this task's fired conversation. When omitted, the task uses the app's currently active profile."
-                        },
-                        "basicModel": {
-                            "type": "string",
-                            "description": "Optional base model id retained for display and configuration alignment with the selected API profile. It does not change task execution semantics; the advanced model used for execution remains the model field."
-                        },
-                        "model": {
-                            "type": "string",
-                            "description": "Optional model id used for the task's fired conversation. When omitted, the selected profile's default model is used."
-                        },
-                        "thinkingStrength": {
-                            "type": "string",
-                            "description": "Optional thinking strength override for the task's fired conversation, e.g. \"none\", \"low\", \"medium\", \"high\" (provider-dependent values accepted). Applied per-request in memory; the profile config is never mutated. When omitted, the selected profile's configured thinking strength is used."
-                        },
-                        "preScript": {
-                            "type": "string",
-                            "description": "Optional shell command run in the project directory before the AI Loop. Exit 0 = run the AI Loop, exit 1 = skip this round. The last stdout line may instead be a JSON object: {\"run\":false,\"reason\":\"...\"} skips and records the reason; {\"run\":true,\"output\":\"...\"} injects output into the {{SCRIPT_OUTPUT}} placeholder in the prompt; {\"prompt\":\"...\"} fully overrides the prompt. Skipped runs and their script output are recorded in the app logs."
-                        },
-                        "preScriptTimeoutMs": {
-                            "type": "integer",
-                            "description": "Pre-script timeout in ms (1000-300000, default 60000). On timeout the process is killed and the run is treated as a script error."
-                        },
-                        "runOnScriptError": {
-                            "type": "boolean",
-                            "description": "When true, a pre-script failure (exit other than 0/1, timeout, spawn error) still proceeds to the AI Loop with the failure noted in the prompt. Default false."
-                        }
-                    },
-                    "required": ["name", "prompt", "schedule"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_CREATE_PROJECT.to_string(),
-                description: "Create a new project (workspace directory) in the Snow App. The project folder is created on disk and registered as the active project. Provide `name` and an optional `parentPath`; when `parentPath` is omitted, the user is prompted to choose the save location interactively. Returns the created project record with its directoryId, name and path."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "The project (folder) name. Must not contain path separators or invalid characters."
-                        },
-                        "parentPath": {
-                            "type": "string",
-                            "description": "Optional absolute path of the parent directory where the project folder is created. When omitted, the user is asked to pick the save location."
-                        }
-                    },
-                    "required": ["name"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_CREATE_CONVERSATION.to_string(),
-                description: "Create a new top-level conversation (chat session) in the CURRENT project. Optional `text` is written as an initial user message WITHOUT starting an AI reply; set `autoReply=true` (requires `text`) to also start one AI turn with that text. Use it to set up a participant session (e.g. a role setting) or to hand a task to an independent session. Returns the new conversationId.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Title of the new conversation."
+                            "description": "create: title of the new conversation."
                         },
                         "text": {
                             "type": "string",
-                            "description": "Optional initial user message. Written to the conversation without triggering an AI reply unless autoReply is true."
+                            "description": "create: optional initial user message; send: message to deliver."
                         },
                         "autoReply": {
                             "type": "boolean",
-                            "description": "When true, the AI starts one turn with `text` right after creation. Default false. Requires `text`."
-                        }
-                    },
-                    "required": ["title"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_SEND_CONVERSATION_MESSAGE.to_string(),
-                description: "Send a user message to a specific top-level conversation of the CURRENT project. If the target is idle, a new AI turn starts immediately; if it is busy, the message is queued and sent after the current turn. Returns the delivery status (started | queued). Sub-agent and WorkFlow node conversations are rejected.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "conversationId": {
-                            "type": "string",
-                            "description": "The target conversation id (must belong to the current project)."
+                            "description": "create: start one AI turn with `text` right after creation (requires `text`). Default false."
                         },
-                        "text": {
-                            "type": "string",
-                            "description": "The user message text to deliver."
-                        }
-                    },
-                    "required": ["conversationId", "text"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_ACTIVATE_CONVERSATION.to_string(),
-                description: "Switch the app UI to a conversation of the CURRENT project so the user sees it. Only conversations of the current project can be activated.".to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
                         "conversationId": {
                             "type": "string",
-                            "description": "The conversation id to open (must belong to the current project)."
+                            "description": "send/activate: target conversation id (must belong to the current project)."
                         }
                     },
-                    "required": ["conversationId"]
+                    "required": ["action"]
                 }),
             },
             McpTool {
@@ -492,19 +226,7 @@ impl McpService for AppControlService {
                     "{SERVER_ID}-{TOOL_REQUEST_APPROVAL} must be executed through the asynchronous Electron interaction bridge"
                 ),
             )),
-            TOOL_CREATE_MEMO
-            | TOOL_LIST_MEMOS
-            | TOOL_GET_MEMO
-            | TOOL_UPDATE_MEMO_STATUS
-            | TOOL_GET_BLOCKED_PATTERNS
-            | TOOL_UPDATE_BLOCKED_PATTERNS
-            | TOOL_SET_MODE
-            | TOOL_OPEN_SETTINGS
-            | TOOL_CREATE_SCHEDULED_TASK
-            | TOOL_CREATE_PROJECT
-            | TOOL_CREATE_CONVERSATION
-            | TOOL_SEND_CONVERSATION_MESSAGE
-            | TOOL_ACTIVATE_CONVERSATION => Err(Error::new(
+            TOOL_SET_MODE | TOOL_OPEN_SETTINGS | TOOL_CONVERSATION => Err(Error::new(
                 Status::GenericFailure,
                 format!(
                     "{SERVER_ID}-{tool_name} must be executed through the asynchronous Electron app control bridge"
@@ -592,146 +314,76 @@ fn required_plan_summary(args: &Value) -> napi::Result<String> {
     Ok(summary.to_string())
 }
 
-fn validate_create_memo_args(args: &Value) -> napi::Result<(String, Value)> {
-    let content = args
-        .get("content")
+/// config-set 中必须由渲染层执行的目标，命中时返回 (action, payload)，否则交给 config 服务。
+pub fn route_config_set(args: &Value) -> Option<napi::Result<(String, Value)>> {
+    let scope = args.get("scope").and_then(Value::as_str).map(str::trim)?;
+    let key = args
+        .get("key")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "content is required and must be a non-empty string for createMemo".to_string(),
-            )
-        })?;
-
-    Ok(("create_memo".to_string(), json!({ "content": content })))
-}
-
-fn validate_list_memos_args(args: &Value) -> napi::Result<(String, Value)> {
-    let status = args.get("status").and_then(Value::as_str).map(str::trim);
-    if let Some(status) = status {
-        if status != "pending" && status != "done" {
-            return Err(Error::new(
-                Status::InvalidArg,
-                format!(
-                    "status must be \"pending\" or \"done\" for listMemos, received \"{status}\""
-                ),
-            ));
+        .unwrap_or("");
+    let value = decode_config_value(args.get("value"));
+    match (scope, key) {
+        ("appSettings", "blockedPatterns") => Some(blocked_patterns_payload(&value)),
+        ("scheduledTasks", "new") => Some(validate_create_scheduled_task_args(&value)),
+        ("workspace", "directories")
+            if value.get("action").and_then(Value::as_str).map(str::trim) == Some("create") =>
+        {
+            Some(validate_create_project_args(&value))
         }
+        _ => None,
     }
-    let mut payload = serde_json::Map::new();
-    if let Some(status) = status {
-        payload.insert("status".to_string(), json!(status));
-    }
-    Ok(("list_memos".to_string(), Value::Object(payload)))
 }
 
-fn validate_get_memo_args(args: &Value) -> napi::Result<(String, Value)> {
-    let memo_id = args
-        .get("memoId")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "memoId is required and must be a non-empty string for getMemo".to_string(),
-            )
-        })?;
-
-    Ok(("get_memo".to_string(), json!({ "memoId": memo_id })))
+/// 兼容模型把 value 序列化成 JSON 字符串的情况。
+fn decode_config_value(raw: Option<&Value>) -> Value {
+    match raw {
+        Some(Value::String(text)) => serde_json::from_str::<Value>(text.trim())
+            .unwrap_or_else(|_| Value::String(text.clone())),
+        Some(other) => other.clone(),
+        None => Value::Null,
+    }
 }
 
-fn validate_update_memo_status_args(args: &Value) -> napi::Result<(String, Value)> {
-    let memo_id = args
-        .get("memoId")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "memoId is required and must be a non-empty string for updateMemoStatus".to_string(),
-            )
-        })?;
-    let status = args
-        .get("status")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "status is required for updateMemoStatus (\"pending\" or \"done\")".to_string(),
-            )
-        })?;
-    if status != "pending" && status != "done" {
-        return Err(Error::new(
+/// value：数组 = 整体替换；{add|remove|replace: [...]}；或 {operation, patterns}。
+fn blocked_patterns_payload(value: &Value) -> napi::Result<(String, Value)> {
+    let invalid = || {
+        Error::new(
             Status::InvalidArg,
-            format!(
-                "status must be \"pending\" or \"done\" for updateMemoStatus, received \"{status}\""
-            ),
-        ));
+            "blockedPatterns value must be an array (full replace), {add: [...]}, {remove: [...]}, {replace: [...]} or {operation: \"add\"|\"remove\"|\"replace\", patterns: [...]}".to_string(),
+        )
+    };
+    let (operation, patterns) = match value {
+        Value::Array(_) => ("replace", value),
+        Value::Object(map) => match map.get("operation").and_then(Value::as_str) {
+            Some(operation) => (operation.trim(), map.get("patterns").ok_or_else(invalid)?),
+            None => {
+                let present: Vec<&str> = ["add", "remove", "replace"]
+                    .into_iter()
+                    .filter(|operation| map.contains_key(*operation))
+                    .collect();
+                if present.len() != 1 {
+                    return Err(invalid());
+                }
+                (present[0], map.get(present[0]).ok_or_else(invalid)?)
+            }
+        },
+        _ => return Err(invalid()),
+    };
+    if !matches!(operation, "add" | "remove" | "replace") {
+        return Err(invalid());
     }
-
-    Ok((
-        "update_memo_status".to_string(),
-        json!({ "memoId": memo_id, "status": status }),
-    ))
-}
-
-fn validate_delete_memo_args(args: &Value) -> napi::Result<(String, Value)> {
-    let confirmed = args
-        .get("confirmed")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if !confirmed {
-        return Err(Error::new(
-            Status::GenericFailure,
-            "DESTRUCTIVE: deleteMemo requires confirmed: true. First ask the user for explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true.".to_string(),
-        ));
-    }
-    let memo_ids = id_list_arg(args, "memoId")?;
-
-    Ok(("delete_memo".to_string(), json!({ "memoIds": memo_ids })))
-}
-
-fn validate_get_blocked_patterns_args(_args: &Value) -> napi::Result<(String, Value)> {
-    Ok(("get_blocked_patterns".to_string(), json!({})))
-}
-
-fn validate_update_blocked_patterns_args(args: &Value) -> napi::Result<(String, Value)> {
-    let operation = args
-        .get("operation")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| matches!(*value, "add" | "remove" | "replace"))
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "operation is required for updateBlockedPatterns (\"add\", \"remove\", or \"replace\")".to_string(),
-            )
-        })?;
-    let patterns = args
-        .get("patterns")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "patterns is required and must be an array of strings for updateBlockedPatterns".to_string(),
-            )
-        })?;
-
-    let mut normalized = Vec::with_capacity(patterns.len());
-    for pattern in patterns {
-        let pattern = pattern
+    let items = patterns.as_array().ok_or_else(invalid)?;
+    let mut normalized = Vec::with_capacity(items.len());
+    for item in items {
+        let pattern = item
             .as_str()
             .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .filter(|text| !text.is_empty())
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "patterns must contain only non-empty strings for updateBlockedPatterns".to_string(),
+                    "blockedPatterns must contain only non-empty strings".to_string(),
                 )
             })?;
         normalized.push(pattern.to_string());
@@ -848,7 +500,7 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "name is required and must be a non-empty string for createScheduledTask"
+                "name is required and must be a non-empty string for scheduledTasks"
                     .to_string(),
             )
         })?;
@@ -861,7 +513,7 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "prompt is required and must be a non-empty string for createScheduledTask"
+                "prompt is required and must be a non-empty string for scheduledTasks"
                     .to_string(),
             )
         })?;
@@ -879,7 +531,7 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
             return Err(Error::new(
                 Status::InvalidArg,
                 format!(
-                    "id must be at most {MAX_SCHEDULED_TASK_ID_LEN} characters for createScheduledTask"
+                    "id must be at most {MAX_SCHEDULED_TASK_ID_LEN} characters for scheduledTasks"
                 ),
             ));
         }
@@ -891,7 +543,7 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "schedule is required and must be an object for createScheduledTask".to_string(),
+                "schedule is required and must be an object for scheduledTasks".to_string(),
             )
         })?;
 
@@ -1136,14 +788,14 @@ fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "name is required and must be a non-empty string for createProject".to_string(),
+                "name is required and must be a non-empty string for workspace action=create".to_string(),
             )
         })?;
 
     if name.contains(['/', '\\']) {
         return Err(Error::new(
             Status::InvalidArg,
-            format!("name must not contain path separators for createProject, received \"{name}\""),
+            format!("name must not contain path separators, received \"{name}\""),
         ));
     }
 
@@ -1163,8 +815,22 @@ fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
     Ok(("create_project".to_string(), Value::Object(payload)))
 }
 
+fn validate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    match args.get("action").and_then(Value::as_str).map(str::trim) {
+        Some("create") => validate_create_conversation_args(args),
+        Some("send") => validate_send_conversation_message_args(args),
+        Some("activate") => validate_activate_conversation_args(args),
+        other => Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "action must be \"create\", \"send\" or \"activate\" for {SERVER_ID}-{TOOL_CONVERSATION}, received {other:?}"
+            ),
+        )),
+    }
+}
+
 fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
-    let title = required_trimmed_str(args, "title", TOOL_CREATE_CONVERSATION)?;
+    let title = required_trimmed_str(args, "title", "conversation action=create")?;
     let text = args
         .get("text")
         .and_then(Value::as_str)
@@ -1177,7 +843,7 @@ fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Valu
     if auto_reply && text.is_none() {
         return Err(Error::new(
             Status::InvalidArg,
-            "text is required when autoReply is true for createConversation".to_string(),
+            "text is required when autoReply is true for conversation action=create".to_string(),
         ));
     }
 
@@ -1192,8 +858,8 @@ fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Valu
 }
 
 fn validate_send_conversation_message_args(args: &Value) -> napi::Result<(String, Value)> {
-    let conversation_id = required_trimmed_str(args, "conversationId", TOOL_SEND_CONVERSATION_MESSAGE)?;
-    let text = required_trimmed_str(args, "text", TOOL_SEND_CONVERSATION_MESSAGE)?;
+    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=send")?;
+    let text = required_trimmed_str(args, "text", "conversation action=send")?;
 
     Ok((
         "send_conversation_message".to_string(),
@@ -1202,7 +868,7 @@ fn validate_send_conversation_message_args(args: &Value) -> napi::Result<(String
 }
 
 fn validate_activate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
-    let conversation_id = required_trimmed_str(args, "conversationId", TOOL_ACTIVATE_CONVERSATION)?;
+    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=activate")?;
 
     Ok((
         "activate_conversation".to_string(),
@@ -1229,7 +895,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_CREATE_MEMO}, {SERVER_ID}-{TOOL_LIST_MEMOS}, {SERVER_ID}-{TOOL_GET_MEMO}, {SERVER_ID}-{TOOL_UPDATE_MEMO_STATUS}, {SERVER_ID}-{TOOL_GET_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_UPDATE_BLOCKED_PATTERNS}, {SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CREATE_SCHEDULED_TASK}, {SERVER_ID}-{TOOL_CREATE_PROJECT}, {SERVER_ID}-{TOOL_CREATE_CONVERSATION}, {SERVER_ID}-{TOOL_SEND_CONVERSATION_MESSAGE}, {SERVER_ID}-{TOOL_ACTIVATE_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
         ),
     )
 }

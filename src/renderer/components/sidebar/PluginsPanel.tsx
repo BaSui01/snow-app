@@ -1,4 +1,5 @@
 import {
+  CircleArrowUp,
   Database,
   Download,
   FileCode2,
@@ -106,6 +107,38 @@ export const PluginsPanel = ({
     }
     return targets;
   }, [market.appVersion, market.entries, state.plugins]);
+
+  // 可更新的脚本插件数量（用于 tab 更新标记）
+  const updatableScriptCount = useMemo(
+    () =>
+      clientScripts.scripts.filter((script) => {
+        const entry = findMarketEntry(
+          market.entries,
+          script.scriptId,
+          "script",
+        );
+        return (
+          entry !== null &&
+          hasMarketUpdate(script.version, entry.version) &&
+          !isMarketEntryTooNew(entry, market.appVersion)
+        );
+      }).length,
+    [clientScripts.scripts, market.appVersion, market.entries],
+  );
+  const totalUpdateCount = updatablePlugins.length + updatableScriptCount;
+
+  const renderUpdateIcon = (count: number, size: number) =>
+    count > 0 ? (
+      <span
+        className="sidebar-update-icon"
+        title={t("plugins.updateAvailable", {
+          values: { count },
+          defaultValue: "{{count}} plugin updates available",
+        })}
+      >
+        <CircleArrowUp size={size} strokeWidth={2} />
+      </span>
+    ) : null;
 
   // 进入页面时拉取最新插件清单（侧栏徽标只关心数量，清单随页面加载）。
   useEffect(() => {
@@ -327,6 +360,7 @@ export const PluginsPanel = ({
           >
             <Puzzle size={14} strokeWidth={1.8} />
             <span>{t("plugins.tabList", { defaultValue: "Plugin list" })}</span>
+            {renderUpdateIcon(totalUpdateCount, 13)}
             <small>{state.plugins.length + clientScripts.scripts.length}</small>
           </button>
           <button
@@ -376,6 +410,7 @@ export const PluginsPanel = ({
                 <Puzzle size={13} strokeWidth={1.8} />
                 {t("plugins.tabPlugins", { defaultValue: "Panel plugins" })}
                 <small>{state.plugins.length}</small>
+                {renderUpdateIcon(updatablePlugins.length, 12)}
               </button>
               <button
                 aria-selected={listTab === "scripts"}
@@ -389,6 +424,7 @@ export const PluginsPanel = ({
                 <FileCode2 size={13} strokeWidth={1.8} />
                 {t("plugins.tabScripts", { defaultValue: "Script plugins" })}
                 <small>{clientScripts.scripts.length}</small>
+                {renderUpdateIcon(updatableScriptCount, 12)}
               </button>
             </div>
 

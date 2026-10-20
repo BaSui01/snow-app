@@ -17,6 +17,8 @@ export type PlusMenuItem = {
   icon: LucideIcon;
   /** 分组标识：与上一项不同时在下拉菜单中插入分隔线。 */
   section?: string;
+  /** 分隔线左侧的分组文字（与右键菜单的带文字分隔线一致）。 */
+  sectionLabel?: string;
   /** 自定义图标节点（插件图标等），优先于 icon。 */
   iconNode?: React.ReactNode;
   title?: string;
@@ -98,12 +100,23 @@ export const PlusMenuButton = ({
               <div className="top-bar-plus-dropdown-group" key={item.id}>
                 {index > 0 &&
                   item.section &&
-                  item.section !== previousSection && (
+                  item.section !== previousSection &&
+                  (item.sectionLabel ? (
+                    <div
+                      className="top-bar-plus-dropdown-divider labeled"
+                      role="separator"
+                      aria-label={item.sectionLabel}
+                    >
+                      <span className="top-bar-plus-dropdown-divider-label">
+                        {item.sectionLabel}
+                      </span>
+                    </div>
+                  ) : (
                     <div
                       className="top-bar-plus-dropdown-divider"
                       role="separator"
                     />
-                  )}
+                  ))}
                 <button
                   className="top-bar-plus-dropdown-item"
                   type="button"

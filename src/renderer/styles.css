@@ -57764,6 +57764,32 @@ pre.file-viewer-code {
   background: var(--border-subtle, var(--border-light));
 }
 
+/* 带分组文字的分隔线：文字在左，横线填充剩余宽度（与右键菜单一致）。 */
+.top-bar-plus-dropdown-divider.labeled {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: auto;
+  margin: 6px 8px 2px;
+  background: transparent;
+}
+
+.top-bar-plus-dropdown-divider.labeled::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle, var(--border-light));
+}
+
+.top-bar-plus-dropdown-divider-label {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
 .plugin-panel-root {
   width: 100%;
   height: 100%;

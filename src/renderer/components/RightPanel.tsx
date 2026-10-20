@@ -1655,6 +1655,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           title: `${resolveLocalized(plugin.name, locale)} · ${panelTitle}`,
           icon: Puzzle,
           section: "plugins",
+          sectionLabel: t("rightPanel.tabContextGroupPlugins", {
+            defaultValue: "Plugins",
+          }),
           iconNode: (
             <PluginIcon
               pluginId={plugin.pluginId}

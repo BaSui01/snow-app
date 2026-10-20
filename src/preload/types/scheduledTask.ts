@@ -161,11 +161,15 @@ export type PreScriptResult = {
   timedOut: boolean;
 };
 
-/** Input shape for updating an existing task's run configuration. Only the
- *  optional per-task overrides can change after creation; name, prompt and
- *  schedule are immutable. An omitted/empty field clears the override, falling
- *  back to the app's current defaults (same semantics as creation). */
+/** Input shape for updating an existing task. name/prompt/schedule/directoryId
+ *  are kept when omitted; run-config overrides are cleared when omitted/empty
+ *  (same semantics as creation). */
 export type UpdateScheduledTaskInput = {
+  name?: string;
+  prompt?: string;
+  schedule?: ScheduledTaskSchedule;
+  /** "" = global task. */
+  directoryId?: string;
   apiProfile?: string;
   basicModel?: string;
   model?: string;

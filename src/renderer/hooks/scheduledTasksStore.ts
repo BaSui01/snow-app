@@ -927,19 +927,68 @@ export class ScheduledTasksStore {
     }
   };
 
-  /** Updates a task's run-configuration overrides (API profile, models,
-   *  thinking strength). Everything else (name, prompt, schedule, history,
-   *  status) is preserved. Omitted/empty fields clear the override, falling
-   *  back to the app's current defaults — same semantics as creation.
-   *  Returns the updated record, or null when the task does not exist. */
+  /** Updates a task. name/prompt/schedule/directoryId are kept when omitted;
+   *  run-config overrides are cleared when omitted/empty. Invalid input
+   *  throws. Returns null when the task does not exist. */
   update = (
     id: string,
     input: UpdateScheduledTaskInput,
   ): ScheduledTaskRecord | null => {
     const task = this.tasks.get(id);
     if (!task) return null;
+
+    let name = task.name;
+    if (input.name !== undefined) {
+      name = input.name.trim();
+      if (!name) throw new Error("name is required");
+    }
+    let prompt = task.prompt;
+    if (input.prompt !== undefined) {
+      prompt = input.prompt.trim();
+      if (!prompt) throw new Error("prompt is required");
+    }
+    const timeoutMs = input.preScriptTimeoutMs;
+    if (
+      timeoutMs !== undefined &&
+      (!Number.isFinite(timeoutMs) ||
+        timeoutMs < PRE_SCRIPT_MIN_TIMEOUT_MS ||
+        timeoutMs > PRE_SCRIPT_MAX_TIMEOUT_MS)
+    ) {
+      throw new Error(
+        `preScriptTimeoutMs must be between ${PRE_SCRIPT_MIN_TIMEOUT_MS} and ${PRE_SCRIPT_MAX_TIMEOUT_MS} ms, received ${timeoutMs}`,
+      );
+    }
+
+    // 调度变更：重算下次执行；已完成的一次性任务重新激活
+    let scheduleFields: Partial<ScheduledTaskRecord> = {};
+    if (input.schedule !== undefined) {
+      validateSchedule(input.schedule);
+      const isRunning = task.status === "running";
+      const nextRunMs = computeNextRunMs(input.schedule, Date.now());
+      scheduleFields = {
+        schedule: input.schedule,
+        status: isRunning || task.status === "error" ? task.status : "pending",
+        // once 任务没有暂停概念，修改调度时同时解除暂停
+        paused: input.schedule.type === "once" ? false : task.paused,
+      };
+      const paused = scheduleFields.paused;
+      if (!isRunning) {
+        scheduleFields.nextRunAt =
+          !paused && nextRunMs != null
+            ? new Date(nextRunMs).toISOString()
+            : undefined;
+      }
+    }
+
     const updated: ScheduledTaskRecord = {
       ...task,
+      ...scheduleFields,
+      name,
+      prompt,
+      directoryId:
+        input.directoryId !== undefined
+          ? input.directoryId.trim()
+          : task.directoryId,
       apiProfile: input.apiProfile?.trim() || undefined,
       basicModel: input.basicModel?.trim() || undefined,
       model: input.model?.trim() || undefined,

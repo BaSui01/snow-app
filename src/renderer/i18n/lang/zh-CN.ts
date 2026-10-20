@@ -558,6 +558,8 @@ export const zhCN = {
   "scheduledTask.saveConfig": "保存",
   "scheduledTask.cancelEdit": "取消",
   "scheduledTask.errorSaveFailed": "保存失败",
+  "scheduledTask.editTask": "编辑任务",
+  "scheduledTask.editTaskTitle": "编辑定时任务",
   "sidebar.chatTimeRunning": "运行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",

@@ -220,15 +220,20 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     domain: "scheduledTasks",
     action: "update",
     scope: "scheduledTasks",
-    summary: l10n(
-      "Update a scheduled task run config",
-      "更新定时任务运行配置",
-      "更新定時任務執行設定",
-    ),
+    summary: l10n("Update a scheduled task", "更新定时任务", "更新定時任務"),
     invoke: async ({ params }) => {
       const taskId = requireString(params, "taskId");
       await scheduledTasksStore.ensureHydrated();
       const updated = scheduledTasksStore.update(taskId, {
+        name: optionalString(params, "name"),
+        prompt: optionalString(params, "prompt"),
+        schedule:
+          params.schedule === undefined ? undefined : buildSchedule(params),
+        // "" = 改为全局任务
+        directoryId:
+          params.directoryId === ""
+            ? ""
+            : optionalString(params, "directoryId"),
         apiProfile: optionalString(params, "apiProfile"),
         basicModel: optionalString(params, "basicModel"),
         model: optionalString(params, "model"),

@@ -559,6 +559,8 @@ export const zhTW = {
   "scheduledTask.saveConfig": "儲存",
   "scheduledTask.cancelEdit": "取消",
   "scheduledTask.errorSaveFailed": "儲存失敗",
+  "scheduledTask.editTask": "編輯任務",
+  "scheduledTask.editTaskTitle": "編輯定時任務",
   "sidebar.chatTimeRunning": "執行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",

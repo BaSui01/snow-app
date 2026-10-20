@@ -589,6 +589,8 @@ export const en = {
   "scheduledTask.saveConfig": "Save",
   "scheduledTask.cancelEdit": "Cancel",
   "scheduledTask.errorSaveFailed": "Failed to save changes",
+  "scheduledTask.editTask": "Edit task",
+  "scheduledTask.editTaskTitle": "Edit scheduled task",
   "sidebar.chatTimeRunning": "Running",
   "sidebar.chatTimeToday": "Today",
   "sidebar.chatTimeYesterday": "Yesterday",

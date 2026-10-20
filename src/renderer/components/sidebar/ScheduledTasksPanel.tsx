@@ -42,11 +42,13 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
 import {
+  buildSegmentsHtml,
   createChipHtml,
   createImageChipHtml,
   createSkillChipHtml,
   insertHtmlAtSelection,
   isEditableContentEmpty,
+  parseContentSegments,
   readEditableContent,
   renumberImageChips,
   type FileTag,
@@ -66,7 +68,7 @@ import { ApiModelCombobox } from "./apiSettings/ApiModelCombobox";
 
 type RecurringMode = "interval" | "daily";
 type TaskFilter = "all" | "project" | "global";
-type TaskPanelMode = "details" | "create";
+type TaskPanelMode = "details" | "create" | "edit";
 type TaskStatusKey = "pending" | "running" | "completed" | "error" | "paused";
 
 type Translate = (
@@ -326,10 +328,8 @@ export function ScheduledTasksPanel({
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  /** 详情视图「运行配置」编辑模式：正在编辑运行配置的任务 id（null = 只读）。 */
-  const [editingConfigTaskId, setEditingConfigTaskId] = useState<string | null>(
-    null,
-  );
+  /** 正在编辑的任务 id（panelMode === "edit" 时有效）。 */
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearGlobalOpen, setClearGlobalOpen] = useState(false);
@@ -429,6 +429,10 @@ export function ScheduledTasksPanel({
     setDailyHour("9");
     setDailyMinute("0");
     setWakeWhenClosed(false);
+    setPreScriptOpen(false);
+    setPreScript("");
+    setPreScriptTimeout("60");
+    setRunOnScriptError(false);
     setSelectedApiProfile("");
     setBasicModelOverride("");
     setAdvancedModelOverride("");
@@ -437,20 +441,39 @@ export function ScheduledTasksPanel({
     resetModelOptions();
   }, [directoryId, resetModelOptions]);
 
-  /** 退出运行配置编辑模式：清空与创建表单共用的草稿状态，避免残留。 */
-  const exitEditConfig = useCallback((): void => {
-    setEditingConfigTaskId(null);
-    setFormError(null);
-    setSelectedApiProfile("");
-    setBasicModelOverride("");
-    setAdvancedModelOverride("");
-    setThinkingStrength("");
-    resetModelOptions();
-  }, [resetModelOptions]);
-
-  /** 进入运行配置编辑模式：用任务当前的覆盖值填充草稿。 */
-  const startEditConfig = useCallback(
+  /** 进入完整编辑模式：用任务当前的全部字段填充表单草稿。 */
+  const startEditTask = useCallback(
     (task: ScheduledTaskRecord): void => {
+      setName(task.name);
+      setPrompt(task.prompt);
+      setIsMentionOpen(false);
+      setMentionQuery("");
+      mentionStartOffsetRef.current = -1;
+      setTaskScope(task.directoryId ? "project" : "global");
+
+      const schedule = task.schedule;
+      setTaskType(schedule.type);
+      const executeAtMs = schedule.executeAt
+        ? Date.parse(schedule.executeAt)
+        : Number.NaN;
+      setExecuteAtLocal(
+        toLocalDateTimeInput(
+          Number.isNaN(executeAtMs) ? Date.now() + 60_000 : executeAtMs,
+        ),
+      );
+      setRecurringMode(schedule.mode === "daily" ? "daily" : "interval");
+      const intervalMs = schedule.intervalMs ?? 5 * 60_000;
+      if (intervalMs % 3_600_000 === 0) {
+        setIntervalUnit("hours");
+        setIntervalValue(String(intervalMs / 3_600_000));
+      } else {
+        setIntervalUnit("minutes");
+        setIntervalValue(String(intervalMs / 60_000));
+      }
+      setDailyHour(String(schedule.hour ?? 9));
+      setDailyMinute(String(schedule.minute ?? 0));
+      setWakeWhenClosed(schedule.wakeWhenClosed === true);
+
       setSelectedApiProfile(task.apiProfile ?? "");
       setBasicModelOverride(task.basicModel ?? "");
       setAdvancedModelOverride(task.model ?? "");
@@ -465,68 +488,41 @@ export function ScheduledTasksPanel({
       setPreScriptOpen(Boolean(task.preScript));
       resetModelOptions();
       setFormError(null);
-      setEditingConfigTaskId(task.id);
+      setEditingTaskId(task.id);
+      setSelectedTaskId(task.id);
+      setPanelMode("edit");
     },
     [resetModelOptions],
   );
 
-  /** 保存运行配置：空字符串 = 清除覆盖（回到继承语义）。 */
-  const saveEditConfig = useCallback((): void => {
-    const taskId = editingConfigTaskId;
-    if (!taskId) return;
-    const trimmedPreScript = preScript.trim();
-    const timeoutValue = Number.parseFloat(preScriptTimeout);
-    if (trimmedPreScript && !Number.isFinite(timeoutValue)) {
-      setFormError(
-        t("scheduledTask.errorInvalidTimeout", {
-          defaultValue: "Pre-script timeout must be a number",
-        }),
-      );
-      return;
-    }
-    const updated = updateTask(taskId, {
-      apiProfile: selectedApiProfile.trim() || undefined,
-      basicModel: basicModelOverride.trim() || undefined,
-      model: advancedModelOverride.trim() || undefined,
-      thinkingStrength: thinkingStrength.trim() || undefined,
-      preScript: trimmedPreScript || undefined,
-      preScriptTimeoutMs: trimmedPreScript
-        ? Math.round(timeoutValue * 1000)
-        : undefined,
-      runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
-    });
-    if (updated) {
-      exitEditConfig();
-    } else {
-      setFormError(
-        t("scheduledTask.errorSaveFailed", {
-          defaultValue: "Failed to save changes",
-        }),
-      );
-    }
-  }, [
-    advancedModelOverride,
-    basicModelOverride,
-    editingConfigTaskId,
-    exitEditConfig,
-    preScript,
-    preScriptTimeout,
-    runOnScriptError,
-    selectedApiProfile,
-    t,
-    thinkingStrength,
-    updateTask,
-  ]);
+  /** 取消编辑，回到任务详情。 */
+  const cancelEditTask = useCallback((): void => {
+    setEditingTaskId(null);
+    resetFormDraft();
+    setPanelMode("details");
+  }, [resetFormDraft]);
 
-  // 被编辑的任务被删除/清除时自动退出编辑模式（如删除、清空项目任务）。
+  // 被编辑的任务被删除/清除时自动退出编辑模式
   useEffect(() => {
     if (
-      editingConfigTaskId !== null &&
-      !tasks.some((task) => task.id === editingConfigTaskId)
+      editingTaskId !== null &&
+      !tasks.some((task) => task.id === editingTaskId)
     ) {
-      exitEditConfig();
+      cancelEditTask();
     }
-  }, [editingConfigTaskId, exitEditConfig, tasks]);
+  }, [cancelEditTask, editingTaskId, tasks]);
+
+  // 进入编辑时把任务提示词还原为编辑器内容（含 chip）
+  useEffect(() => {
+    if (panelMode !== "edit") return;
+    const editor = promptInputRef.current;
+    if (!editor) return;
+    editor.innerHTML = buildSegmentsHtml(parseContentSegments(prompt));
+    renumberImageChips(editor);
+    editor.dataset.empty = isEditableContentEmpty(prompt) ? "true" : "false";
+    // 仅在进入编辑时还原，输入过程不覆盖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelMode, editingTaskId]);
 
   useEffect(() => {
     if (!directoryId && taskScope === "project") {
@@ -591,7 +587,7 @@ export function ScheduledTasksPanel({
   }, [panelMode, selectedTaskId, tasks.length, visibleTasks]);
 
   useEffect(() => {
-    if (panelMode !== "create") return;
+    if (panelMode === "details") return;
     const frame = window.requestAnimationFrame(() => {
       nameInputRef.current?.focus();
     });
@@ -1137,7 +1133,7 @@ export function ScheduledTasksPanel({
     wakeWhenClosed,
   ]);
 
-  const handleCreate = useCallback(async (): Promise<void> => {
+  const handleSubmit = useCallback(async (): Promise<void> => {
     setFormError(null);
     if (taskScope === "project" && !directoryId) {
       setFormError(
@@ -1189,32 +1185,59 @@ export function ScheduledTasksPanel({
       );
       return;
     }
+    const runConfig = {
+      apiProfile: selectedApiProfile || undefined,
+      basicModel: basicModelOverride.trim() || undefined,
+      model: advancedModelOverride.trim() || undefined,
+      thinkingStrength: thinkingStrength || undefined,
+      preScript: trimmedPreScript || undefined,
+      preScriptTimeoutMs: trimmedPreScript
+        ? Math.round(timeoutValue * 1000)
+        : undefined,
+      runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
+    };
+    const isEdit = panelMode === "edit" && editingTaskId !== null;
     setIsCreating(true);
     try {
-      const created = createTask({
-        name: trimmedName,
-        prompt: trimmedPrompt,
-        schedule,
-        ...(taskScope === "global" ? { directoryId: "" } : {}),
-        apiProfile: selectedApiProfile || undefined,
-        basicModel: basicModelOverride.trim() || undefined,
-        model: advancedModelOverride.trim() || undefined,
-        thinkingStrength: thinkingStrength || undefined,
-        preScript: trimmedPreScript || undefined,
-        preScriptTimeoutMs: trimmedPreScript
-          ? Math.round(timeoutValue * 1000)
-          : undefined,
-        runOnScriptError: trimmedPreScript ? runOnScriptError : undefined,
-      });
+      if (isEdit) {
+        const editingTask = tasks.find((task) => task.id === editingTaskId);
+        const updated = updateTask(editingTaskId, {
+          name: trimmedName,
+          prompt: trimmedPrompt,
+          schedule,
+          directoryId:
+            taskScope === "global"
+              ? ""
+              : editingTask?.directoryId || directoryId,
+          ...runConfig,
+        });
+        if (!updated) {
+          throw new Error("task not found");
+        }
+        setEditingTaskId(null);
+        setSelectedTaskId(updated.id);
+      } else {
+        const created = createTask({
+          name: trimmedName,
+          prompt: trimmedPrompt,
+          schedule,
+          ...(taskScope === "global" ? { directoryId: "" } : {}),
+          ...runConfig,
+        });
+        setSelectedTaskId(created.id);
+      }
       setFilter("all");
-      setSelectedTaskId(created.id);
       setPanelMode("details");
       resetFormDraft();
     } catch (error) {
       setFormError(
-        t("scheduledTask.errorCreateFailed", {
-          defaultValue: "Failed to create task",
-        }),
+        isEdit
+          ? t("scheduledTask.errorSaveFailed", {
+              defaultValue: "Failed to save changes",
+            })
+          : t("scheduledTask.errorCreateFailed", {
+              defaultValue: "Failed to create task",
+            }),
       );
     } finally {
       setIsCreating(false);
@@ -1225,20 +1248,27 @@ export function ScheduledTasksPanel({
     buildSchedule,
     createTask,
     directoryId,
+    editingTaskId,
     name,
+    panelMode,
+    preScript,
+    preScriptTimeout,
     prompt,
     resetFormDraft,
+    runOnScriptError,
     selectedApiProfile,
     taskScope,
+    tasks,
     thinkingStrength,
     t,
+    updateTask,
   ]);
 
   const openCreatePanel = useCallback((): void => {
     resetFormDraft();
-    exitEditConfig();
+    setEditingTaskId(null);
     setPanelMode("create");
-  }, [exitEditConfig, resetFormDraft]);
+  }, [resetFormDraft]);
 
   const closeCreatePanel = useCallback((): void => {
     setFormError(null);
@@ -1266,6 +1296,10 @@ export function ScheduledTasksPanel({
     }
     if (isThinkingMenuOpen) {
       setIsThinkingMenuOpen(false);
+      return;
+    }
+    if (panelMode === "edit") {
+      cancelEditTask();
       return;
     }
     if (panelMode === "create" && tasks.length > 0) {
@@ -1414,8 +1448,9 @@ export function ScheduledTasksPanel({
             task.status === "running" ? " is-running" : ""
           }`}
           onClick={() => {
-            if (editingConfigTaskId !== task.id) {
-              exitEditConfig();
+            if (panelMode === "edit") {
+              setEditingTaskId(null);
+              resetFormDraft();
             }
             setSelectedTaskId(task.id);
             setPanelMode("details");
@@ -1624,6 +1659,17 @@ export function ScheduledTasksPanel({
               </button>
             )}
             <button
+              aria-label={t("scheduledTask.editTask", {
+                defaultValue: "Edit task",
+              })}
+              className="scheduled-task-action-btn"
+              onClick={() => startEditTask(selectedTask)}
+              type="button"
+            >
+              <Pencil size={14} strokeWidth={1.8} />
+              {t("scheduledTask.editConfig", { defaultValue: "Edit" })}
+            </button>
+            <button
               aria-label={t("scheduledTask.delete", {
                 defaultValue: "Delete",
               })}
@@ -1714,101 +1760,62 @@ export function ScheduledTasksPanel({
                   defaultValue: "Run configuration",
                 })}
               </h3>
-              {editingConfigTaskId !== selectedTask.id && (
-                <button
-                  aria-label={t("scheduledTask.editConfig", {
-                    defaultValue: "Edit",
-                  })}
-                  className="scheduled-task-edit-btn"
-                  onClick={() => startEditConfig(selectedTask)}
-                  type="button"
-                >
-                  <Pencil size={13} strokeWidth={1.8} />
-                  {t("scheduledTask.editConfig", { defaultValue: "Edit" })}
-                </button>
-              )}
+              <button
+                aria-label={t("scheduledTask.editTask", {
+                  defaultValue: "Edit task",
+                })}
+                className="scheduled-task-edit-btn"
+                onClick={() => startEditTask(selectedTask)}
+                type="button"
+              >
+                <Pencil size={13} strokeWidth={1.8} />
+                {t("scheduledTask.editConfig", { defaultValue: "Edit" })}
+              </button>
             </div>
-            {editingConfigTaskId === selectedTask.id ? (
-              <div className="scheduled-task-config-edit">
-                {renderRunConfigFields()}
-                <div className="scheduled-task-config-edit-footer">
-                  {formError && (
-                    <div className="scheduled-tasks-form-error" role="alert">
-                      <AlertCircle size={14} strokeWidth={1.8} />
-                      <span>{formError}</span>
-                    </div>
-                  )}
-                  <div className="scheduled-tasks-form-actions">
-                    <button
-                      className="scheduled-tasks-cancel-btn"
-                      onClick={exitEditConfig}
-                      type="button"
-                    >
-                      {t("scheduledTask.cancelEdit", {
-                        defaultValue: "Cancel",
-                      })}
-                    </button>
-                    <button
-                      className="scheduled-tasks-create-btn"
-                      onClick={saveEditConfig}
-                      type="button"
-                    >
-                      <Check size={14} strokeWidth={2} />
-                      {t("scheduledTask.saveConfig", {
-                        defaultValue: "Save",
-                      })}
-                    </button>
-                  </div>
-                </div>
+            <dl className="scheduled-task-config-grid">
+              <div>
+                <dt>
+                  {t("scheduledTask.apiProfile", {
+                    defaultValue: "API config",
+                  })}
+                </dt>
+                <dd className={selectedTask.apiProfile ? "" : " inherited"}>
+                  {apiProfileLabel}
+                </dd>
               </div>
-            ) : (
-              <dl className="scheduled-task-config-grid">
-                <div>
-                  <dt>
-                    {t("scheduledTask.apiProfile", {
-                      defaultValue: "API config",
-                    })}
-                  </dt>
-                  <dd className={selectedTask.apiProfile ? "" : " inherited"}>
-                    {apiProfileLabel}
-                  </dd>
-                </div>
-                <div>
-                  <dt>
-                    {t("scheduledTask.basicModel", {
-                      defaultValue: "Basic model",
-                    })}
-                  </dt>
-                  <dd className={selectedTask.basicModel ? "" : " inherited"}>
-                    {selectedTask.basicModel || inheritedProfileLabel}
-                  </dd>
-                </div>
-                <div>
-                  <dt>
-                    {t("scheduledTask.advancedModel", {
-                      defaultValue: "Advanced model",
-                    })}
-                  </dt>
-                  <dd className={selectedTask.model ? "" : " inherited"}>
-                    {selectedTask.model || inheritedProfileLabel}
-                  </dd>
-                </div>
-                <div>
-                  <dt>
-                    {t("scheduledTask.thinkingStrength", {
-                      defaultValue: "Thinking strength",
-                    })}
-                  </dt>
-                  <dd
-                    className={
-                      selectedTask.thinkingStrength ? "" : " inherited"
-                    }
-                  >
-                    {thinkingLabel}
-                  </dd>
-                </div>
-              </dl>
-            )}
+              <div>
+                <dt>
+                  {t("scheduledTask.basicModel", {
+                    defaultValue: "Basic model",
+                  })}
+                </dt>
+                <dd className={selectedTask.basicModel ? "" : " inherited"}>
+                  {selectedTask.basicModel || inheritedProfileLabel}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {t("scheduledTask.advancedModel", {
+                    defaultValue: "Advanced model",
+                  })}
+                </dt>
+                <dd className={selectedTask.model ? "" : " inherited"}>
+                  {selectedTask.model || inheritedProfileLabel}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {t("scheduledTask.thinkingStrength", {
+                    defaultValue: "Thinking strength",
+                  })}
+                </dt>
+                <dd
+                  className={selectedTask.thinkingStrength ? "" : " inherited"}
+                >
+                  {thinkingLabel}
+                </dd>
+              </div>
+            </dl>
           </section>
 
           <section
@@ -2126,381 +2133,403 @@ export function ScheduledTasksPanel({
     </>
   );
 
-  const renderCreateForm = (): React.JSX.Element => (
-    <form
-      className="scheduled-tasks-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleCreate();
-      }}
-    >
-      <header className="scheduled-tasks-form-header">
-        <div className="scheduled-tasks-form-title">
-          <Plus size={16} strokeWidth={2} />
-          <span>
-            {t("scheduledTask.createNew", {
-              defaultValue: "New scheduled task",
-            })}
-          </span>
-        </div>
-        {tasks.length > 0 && (
-          <button
-            className="scheduled-tasks-back-btn"
-            onClick={closeCreatePanel}
-            type="button"
-          >
-            {t("scheduledTask.backToDetails", {
-              defaultValue: "Back to details",
-            })}
-          </button>
-        )}
-      </header>
-
-      <div className="scheduled-tasks-form-scroll">
-        <section className="scheduled-tasks-form-section">
-          <h3>
-            {t("scheduledTask.basicInfoTitle", {
-              defaultValue: "Basic information",
-            })}
-          </h3>
-          <label className="scheduled-tasks-field">
-            <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
-            <input
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t("scheduledTask.namePlaceholder", {
-                defaultValue: "e.g. Daily code review reminder",
-              })}
-              ref={nameInputRef}
-              type="text"
-              value={name}
-            />
-          </label>
-
-          <div className="scheduled-tasks-field">
-            <span>{t("scheduledTask.prompt", { defaultValue: "Prompt" })}</span>
-            <div className="scheduled-tasks-prompt-editor">
-              <FileMentionPopup
-                ref={mentionPopupRef}
-                visible={isMentionOpen}
-                query={mentionQuery}
-                onClose={handleCloseMention}
-                onSelect={handleMentionSelect}
-                onSelectBatch={handleMentionSelectBatch}
-                textareaRef={promptInputRef}
-                onNavigateTo={replaceMentionQuery}
-                style={mentionPopupStyle}
-                portal
-              />
-              <div
-                aria-label={t("scheduledTask.prompt", {
-                  defaultValue: "Prompt",
-                })}
-                aria-multiline="true"
-                className="scheduled-tasks-prompt-textarea input-field-editable"
-                contentEditable
-                data-empty="true"
-                data-placeholder={t("scheduledTask.promptPlaceholder", {
-                  defaultValue:
-                    "Prompt sent to the AI Loop on each run. The task has access to all tools.",
-                })}
-                onClick={handlePromptClick}
-                onDragLeave={handlePromptDragLeave}
-                onDragOver={handlePromptDragOver}
-                onDrop={handlePromptDrop}
-                onInput={handlePromptInput}
-                onKeyDown={handlePromptKeyDown}
-                onPaste={handlePromptPaste}
-                ref={promptInputRef}
-                role="textbox"
-                suppressContentEditableWarning
-              />
-            </div>
-          </div>
-
-          <div className="scheduled-tasks-field">
-            <span>{t("scheduledTask.scope", { defaultValue: "Scope" })}</span>
-            <div
-              aria-label={t("scheduledTask.scope", { defaultValue: "Scope" })}
-              className="scheduled-tasks-segmented"
-              role="group"
-            >
-              <button
-                aria-pressed={taskScope === "project"}
-                className={`scheduled-tasks-segmented-btn${
-                  taskScope === "project" ? " active" : ""
-                }`}
-                disabled={!directoryId}
-                onClick={() => setTaskScope("project")}
-                title={
-                  !directoryId
-                    ? t("scheduledTask.scopeProjectDisabled", {
-                        defaultValue: "No active project",
-                      })
-                    : undefined
-                }
-                type="button"
-              >
-                <FolderKanban size={13} strokeWidth={1.9} />
-                {t("scheduledTask.scopeProject", {
-                  defaultValue: "Current project",
-                })}
-              </button>
-              <button
-                aria-pressed={taskScope === "global"}
-                className={`scheduled-tasks-segmented-btn${
-                  taskScope === "global" ? " active" : ""
-                }`}
-                onClick={() => setTaskScope("global")}
-                type="button"
-              >
-                <Globe size={13} strokeWidth={1.9} />
-                {t("scheduledTask.scopeGlobal", { defaultValue: "Global" })}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="scheduled-tasks-form-section">
-          <h3>
-            {t("scheduledTask.scheduleSettingsTitle", {
-              defaultValue: "Schedule settings",
-            })}
-          </h3>
-          <div className="scheduled-tasks-field">
+  const renderCreateForm = (): React.JSX.Element => {
+    const isEdit = panelMode === "edit";
+    const closeForm = isEdit ? cancelEditTask : closeCreatePanel;
+    return (
+      <form
+        className="scheduled-tasks-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSubmit();
+        }}
+      >
+        <header className="scheduled-tasks-form-header">
+          <div className="scheduled-tasks-form-title">
+            {isEdit ? (
+              <Pencil size={16} strokeWidth={2} />
+            ) : (
+              <Plus size={16} strokeWidth={2} />
+            )}
             <span>
-              {t("scheduledTask.taskType", { defaultValue: "Task type" })}
-            </span>
-            <div
-              aria-label={t("scheduledTask.taskType", {
-                defaultValue: "Task type",
-              })}
-              className="scheduled-tasks-segmented"
-              role="group"
-            >
-              <button
-                aria-pressed={taskType === "once"}
-                className={`scheduled-tasks-segmented-btn${
-                  taskType === "once" ? " active" : ""
-                }`}
-                onClick={() => setTaskType("once")}
-                type="button"
-              >
-                <CalendarClock size={13} strokeWidth={1.9} />
-                {t("scheduledTask.typeOnce", { defaultValue: "Once" })}
-              </button>
-              <button
-                aria-pressed={taskType === "recurring"}
-                className={`scheduled-tasks-segmented-btn${
-                  taskType === "recurring" ? " active" : ""
-                }`}
-                onClick={() => setTaskType("recurring")}
-                type="button"
-              >
-                <Repeat size={13} strokeWidth={1.9} />
-                {t("scheduledTask.typeRecurring", {
-                  defaultValue: "Recurring",
-                })}
-              </button>
-            </div>
-          </div>
-
-          {taskType === "once" ? (
-            <label className="scheduled-tasks-field">
-              <span>
-                {t("scheduledTask.startTime", { defaultValue: "Start time" })}
-              </span>
-              <input
-                onChange={(event) => setExecuteAtLocal(event.target.value)}
-                type="datetime-local"
-                value={executeAtLocal}
-              />
-            </label>
-          ) : (
-            <>
-              <div className="scheduled-tasks-field">
-                <span>
-                  {t("scheduledTask.recurringMode", {
-                    defaultValue: "Repeat mode",
+              {isEdit
+                ? t("scheduledTask.editTaskTitle", {
+                    defaultValue: "Edit scheduled task",
+                  })
+                : t("scheduledTask.createNew", {
+                    defaultValue: "New scheduled task",
                   })}
-                </span>
-                <div
-                  aria-label={t("scheduledTask.recurringMode", {
-                    defaultValue: "Repeat mode",
-                  })}
-                  className="scheduled-tasks-segmented"
-                  role="group"
-                >
-                  <button
-                    aria-pressed={recurringMode === "interval"}
-                    className={`scheduled-tasks-segmented-btn${
-                      recurringMode === "interval" ? " active" : ""
-                    }`}
-                    onClick={() => setRecurringMode("interval")}
-                    type="button"
-                  >
-                    <Repeat size={13} strokeWidth={1.9} />
-                    {t("scheduledTask.modeInterval", {
-                      defaultValue: "Interval",
-                    })}
-                  </button>
-                  <button
-                    aria-pressed={recurringMode === "daily"}
-                    className={`scheduled-tasks-segmented-btn${
-                      recurringMode === "daily" ? " active" : ""
-                    }`}
-                    onClick={() => setRecurringMode("daily")}
-                    type="button"
-                  >
-                    <Clock size={13} strokeWidth={1.9} />
-                    {t("scheduledTask.modeDaily", { defaultValue: "Daily" })}
-                  </button>
-                </div>
-              </div>
-
-              {recurringMode === "interval" ? (
-                <div className="scheduled-tasks-field-row">
-                  <label className="scheduled-tasks-field">
-                    <span>
-                      {t("scheduledTask.intervalValue", {
-                        defaultValue: "Every",
-                      })}
-                    </span>
-                    <input
-                      min="1"
-                      onChange={(event) => setIntervalValue(event.target.value)}
-                      type="number"
-                      value={intervalValue}
-                    />
-                  </label>
-                  <label className="scheduled-tasks-field">
-                    <span>
-                      {t("scheduledTask.intervalUnit", {
-                        defaultValue: "Unit",
-                      })}
-                    </span>
-                    <CustomSelect
-                      onChange={(value) =>
-                        setIntervalUnit(value as "minutes" | "hours")
-                      }
-                      options={[
-                        {
-                          value: "minutes",
-                          label: t("scheduledTask.unitMinutes", {
-                            defaultValue: "minutes",
-                          }),
-                        },
-                        {
-                          value: "hours",
-                          label: t("scheduledTask.unitHours", {
-                            defaultValue: "hours",
-                          }),
-                        },
-                      ]}
-                      value={intervalUnit}
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="scheduled-tasks-field-row">
-                  <label className="scheduled-tasks-field">
-                    <span>
-                      {t("scheduledTask.dailyHour", { defaultValue: "Hour" })}
-                    </span>
-                    <CustomSelect
-                      onChange={setDailyHour}
-                      options={Array.from({ length: 24 }, (_, hour) => ({
-                        value: hour.toString(),
-                        label: pad2(hour),
-                      }))}
-                      value={dailyHour}
-                    />
-                  </label>
-                  <label className="scheduled-tasks-field">
-                    <span>
-                      {t("scheduledTask.dailyMinute", {
-                        defaultValue: "Minute",
-                      })}
-                    </span>
-                    <CustomSelect
-                      onChange={setDailyMinute}
-                      options={Array.from({ length: 60 }, (_, minute) => ({
-                        value: minute.toString(),
-                        label: pad2(minute),
-                      }))}
-                      value={dailyMinute}
-                    />
-                  </label>
-                </div>
-              )}
-            </>
-          )}
-
-          <label className="toggle-switch scheduled-tasks-switch-field scheduled-tasks-wake-toggle">
-            <input
-              checked={wakeWhenClosed}
-              onChange={(event) => setWakeWhenClosed(event.target.checked)}
-              type="checkbox"
-            />
-            <span className="toggle-slider" />
-            <span>
-              {t("scheduledTask.wakeWhenClosed", {
-                defaultValue: "Run even when the app is closed",
-              })}
             </span>
-          </label>
-          <div className="scheduled-tasks-pre-script-hint">
-            {t("scheduledTask.wakeWhenClosedHint", {
-              defaultValue:
-                "After the app quits, the system scheduler launches it in the background shortly before the run time. A run missed while the computer was off runs once on the next launch.",
-            })}
           </div>
-        </section>
-
-        <section className="scheduled-tasks-form-section">
-          <h3>
-            {t("scheduledTask.runConfigSettingsTitle", {
-              defaultValue: "Run configuration",
-            })}
-          </h3>
-          {renderRunConfigFields()}
-        </section>
-      </div>
-
-      <footer className="scheduled-tasks-form-footer">
-        {formError && (
-          <div className="scheduled-tasks-form-error" role="alert">
-            <AlertCircle size={14} strokeWidth={1.8} />
-            <span>{formError}</span>
-          </div>
-        )}
-        <div className="scheduled-tasks-form-actions">
           {tasks.length > 0 && (
             <button
-              className="scheduled-tasks-cancel-btn"
-              onClick={closeCreatePanel}
+              className="scheduled-tasks-back-btn"
+              onClick={closeForm}
               type="button"
             >
-              {t("scheduledTask.cancelCreate", {
-                defaultValue: "Cancel creation",
+              {t("scheduledTask.backToDetails", {
+                defaultValue: "Back to details",
               })}
             </button>
           )}
-          <button
-            className="scheduled-tasks-create-btn"
-            disabled={isCreating || (taskScope === "project" && !directoryId)}
-            type="submit"
-          >
-            {isCreating ? (
-              <Loader2 className="spin" size={15} strokeWidth={2.2} />
+        </header>
+
+        <div className="scheduled-tasks-form-scroll">
+          <section className="scheduled-tasks-form-section">
+            <h3>
+              {t("scheduledTask.basicInfoTitle", {
+                defaultValue: "Basic information",
+              })}
+            </h3>
+            <label className="scheduled-tasks-field">
+              <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
+              <input
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t("scheduledTask.namePlaceholder", {
+                  defaultValue: "e.g. Daily code review reminder",
+                })}
+                ref={nameInputRef}
+                type="text"
+                value={name}
+              />
+            </label>
+
+            <div className="scheduled-tasks-field">
+              <span>
+                {t("scheduledTask.prompt", { defaultValue: "Prompt" })}
+              </span>
+              <div className="scheduled-tasks-prompt-editor">
+                <FileMentionPopup
+                  ref={mentionPopupRef}
+                  visible={isMentionOpen}
+                  query={mentionQuery}
+                  onClose={handleCloseMention}
+                  onSelect={handleMentionSelect}
+                  onSelectBatch={handleMentionSelectBatch}
+                  textareaRef={promptInputRef}
+                  onNavigateTo={replaceMentionQuery}
+                  style={mentionPopupStyle}
+                  portal
+                />
+                <div
+                  aria-label={t("scheduledTask.prompt", {
+                    defaultValue: "Prompt",
+                  })}
+                  aria-multiline="true"
+                  className="scheduled-tasks-prompt-textarea input-field-editable"
+                  contentEditable
+                  data-empty="true"
+                  data-placeholder={t("scheduledTask.promptPlaceholder", {
+                    defaultValue:
+                      "Prompt sent to the AI Loop on each run. The task has access to all tools.",
+                  })}
+                  onClick={handlePromptClick}
+                  onDragLeave={handlePromptDragLeave}
+                  onDragOver={handlePromptDragOver}
+                  onDrop={handlePromptDrop}
+                  onInput={handlePromptInput}
+                  onKeyDown={handlePromptKeyDown}
+                  onPaste={handlePromptPaste}
+                  ref={promptInputRef}
+                  role="textbox"
+                  suppressContentEditableWarning
+                />
+              </div>
+            </div>
+
+            <div className="scheduled-tasks-field">
+              <span>{t("scheduledTask.scope", { defaultValue: "Scope" })}</span>
+              <div
+                aria-label={t("scheduledTask.scope", { defaultValue: "Scope" })}
+                className="scheduled-tasks-segmented"
+                role="group"
+              >
+                <button
+                  aria-pressed={taskScope === "project"}
+                  className={`scheduled-tasks-segmented-btn${
+                    taskScope === "project" ? " active" : ""
+                  }`}
+                  disabled={!directoryId}
+                  onClick={() => setTaskScope("project")}
+                  title={
+                    !directoryId
+                      ? t("scheduledTask.scopeProjectDisabled", {
+                          defaultValue: "No active project",
+                        })
+                      : undefined
+                  }
+                  type="button"
+                >
+                  <FolderKanban size={13} strokeWidth={1.9} />
+                  {t("scheduledTask.scopeProject", {
+                    defaultValue: "Current project",
+                  })}
+                </button>
+                <button
+                  aria-pressed={taskScope === "global"}
+                  className={`scheduled-tasks-segmented-btn${
+                    taskScope === "global" ? " active" : ""
+                  }`}
+                  onClick={() => setTaskScope("global")}
+                  type="button"
+                >
+                  <Globe size={13} strokeWidth={1.9} />
+                  {t("scheduledTask.scopeGlobal", { defaultValue: "Global" })}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="scheduled-tasks-form-section">
+            <h3>
+              {t("scheduledTask.scheduleSettingsTitle", {
+                defaultValue: "Schedule settings",
+              })}
+            </h3>
+            <div className="scheduled-tasks-field">
+              <span>
+                {t("scheduledTask.taskType", { defaultValue: "Task type" })}
+              </span>
+              <div
+                aria-label={t("scheduledTask.taskType", {
+                  defaultValue: "Task type",
+                })}
+                className="scheduled-tasks-segmented"
+                role="group"
+              >
+                <button
+                  aria-pressed={taskType === "once"}
+                  className={`scheduled-tasks-segmented-btn${
+                    taskType === "once" ? " active" : ""
+                  }`}
+                  onClick={() => setTaskType("once")}
+                  type="button"
+                >
+                  <CalendarClock size={13} strokeWidth={1.9} />
+                  {t("scheduledTask.typeOnce", { defaultValue: "Once" })}
+                </button>
+                <button
+                  aria-pressed={taskType === "recurring"}
+                  className={`scheduled-tasks-segmented-btn${
+                    taskType === "recurring" ? " active" : ""
+                  }`}
+                  onClick={() => setTaskType("recurring")}
+                  type="button"
+                >
+                  <Repeat size={13} strokeWidth={1.9} />
+                  {t("scheduledTask.typeRecurring", {
+                    defaultValue: "Recurring",
+                  })}
+                </button>
+              </div>
+            </div>
+
+            {taskType === "once" ? (
+              <label className="scheduled-tasks-field">
+                <span>
+                  {t("scheduledTask.startTime", { defaultValue: "Start time" })}
+                </span>
+                <input
+                  onChange={(event) => setExecuteAtLocal(event.target.value)}
+                  type="datetime-local"
+                  value={executeAtLocal}
+                />
+              </label>
             ) : (
-              <Plus size={15} strokeWidth={2.2} />
+              <>
+                <div className="scheduled-tasks-field">
+                  <span>
+                    {t("scheduledTask.recurringMode", {
+                      defaultValue: "Repeat mode",
+                    })}
+                  </span>
+                  <div
+                    aria-label={t("scheduledTask.recurringMode", {
+                      defaultValue: "Repeat mode",
+                    })}
+                    className="scheduled-tasks-segmented"
+                    role="group"
+                  >
+                    <button
+                      aria-pressed={recurringMode === "interval"}
+                      className={`scheduled-tasks-segmented-btn${
+                        recurringMode === "interval" ? " active" : ""
+                      }`}
+                      onClick={() => setRecurringMode("interval")}
+                      type="button"
+                    >
+                      <Repeat size={13} strokeWidth={1.9} />
+                      {t("scheduledTask.modeInterval", {
+                        defaultValue: "Interval",
+                      })}
+                    </button>
+                    <button
+                      aria-pressed={recurringMode === "daily"}
+                      className={`scheduled-tasks-segmented-btn${
+                        recurringMode === "daily" ? " active" : ""
+                      }`}
+                      onClick={() => setRecurringMode("daily")}
+                      type="button"
+                    >
+                      <Clock size={13} strokeWidth={1.9} />
+                      {t("scheduledTask.modeDaily", { defaultValue: "Daily" })}
+                    </button>
+                  </div>
+                </div>
+
+                {recurringMode === "interval" ? (
+                  <div className="scheduled-tasks-field-row">
+                    <label className="scheduled-tasks-field">
+                      <span>
+                        {t("scheduledTask.intervalValue", {
+                          defaultValue: "Every",
+                        })}
+                      </span>
+                      <input
+                        min="1"
+                        onChange={(event) =>
+                          setIntervalValue(event.target.value)
+                        }
+                        type="number"
+                        value={intervalValue}
+                      />
+                    </label>
+                    <label className="scheduled-tasks-field">
+                      <span>
+                        {t("scheduledTask.intervalUnit", {
+                          defaultValue: "Unit",
+                        })}
+                      </span>
+                      <CustomSelect
+                        onChange={(value) =>
+                          setIntervalUnit(value as "minutes" | "hours")
+                        }
+                        options={[
+                          {
+                            value: "minutes",
+                            label: t("scheduledTask.unitMinutes", {
+                              defaultValue: "minutes",
+                            }),
+                          },
+                          {
+                            value: "hours",
+                            label: t("scheduledTask.unitHours", {
+                              defaultValue: "hours",
+                            }),
+                          },
+                        ]}
+                        value={intervalUnit}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="scheduled-tasks-field-row">
+                    <label className="scheduled-tasks-field">
+                      <span>
+                        {t("scheduledTask.dailyHour", { defaultValue: "Hour" })}
+                      </span>
+                      <CustomSelect
+                        onChange={setDailyHour}
+                        options={Array.from({ length: 24 }, (_, hour) => ({
+                          value: hour.toString(),
+                          label: pad2(hour),
+                        }))}
+                        value={dailyHour}
+                      />
+                    </label>
+                    <label className="scheduled-tasks-field">
+                      <span>
+                        {t("scheduledTask.dailyMinute", {
+                          defaultValue: "Minute",
+                        })}
+                      </span>
+                      <CustomSelect
+                        onChange={setDailyMinute}
+                        options={Array.from({ length: 60 }, (_, minute) => ({
+                          value: minute.toString(),
+                          label: pad2(minute),
+                        }))}
+                        value={dailyMinute}
+                      />
+                    </label>
+                  </div>
+                )}
+              </>
             )}
-            {t("scheduledTask.create", { defaultValue: "Create task" })}
-          </button>
+
+            <label className="toggle-switch scheduled-tasks-switch-field scheduled-tasks-wake-toggle">
+              <input
+                checked={wakeWhenClosed}
+                onChange={(event) => setWakeWhenClosed(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+              <span>
+                {t("scheduledTask.wakeWhenClosed", {
+                  defaultValue: "Run even when the app is closed",
+                })}
+              </span>
+            </label>
+            <div className="scheduled-tasks-pre-script-hint">
+              {t("scheduledTask.wakeWhenClosedHint", {
+                defaultValue:
+                  "After the app quits, the system scheduler launches it in the background shortly before the run time. A run missed while the computer was off runs once on the next launch.",
+              })}
+            </div>
+          </section>
+
+          <section className="scheduled-tasks-form-section">
+            <h3>
+              {t("scheduledTask.runConfigSettingsTitle", {
+                defaultValue: "Run configuration",
+              })}
+            </h3>
+            {renderRunConfigFields()}
+          </section>
         </div>
-      </footer>
-    </form>
-  );
+
+        <footer className="scheduled-tasks-form-footer">
+          {formError && (
+            <div className="scheduled-tasks-form-error" role="alert">
+              <AlertCircle size={14} strokeWidth={1.8} />
+              <span>{formError}</span>
+            </div>
+          )}
+          <div className="scheduled-tasks-form-actions">
+            {tasks.length > 0 && (
+              <button
+                className="scheduled-tasks-cancel-btn"
+                onClick={closeForm}
+                type="button"
+              >
+                {isEdit
+                  ? t("scheduledTask.cancelEdit", { defaultValue: "Cancel" })
+                  : t("scheduledTask.cancelCreate", {
+                      defaultValue: "Cancel creation",
+                    })}
+              </button>
+            )}
+            <button
+              className="scheduled-tasks-create-btn"
+              disabled={isCreating || (taskScope === "project" && !directoryId)}
+              type="submit"
+            >
+              {isCreating ? (
+                <Loader2 className="spin" size={15} strokeWidth={2.2} />
+              ) : isEdit ? (
+                <Check size={15} strokeWidth={2.2} />
+              ) : (
+                <Plus size={15} strokeWidth={2.2} />
+              )}
+              {isEdit
+                ? t("scheduledTask.saveConfig", { defaultValue: "Save" })
+                : t("scheduledTask.create", { defaultValue: "Create task" })}
+            </button>
+          </div>
+        </footer>
+      </form>
+    );
+  };
 
   const filterOptions: Array<{
     key: TaskFilter;
@@ -2671,7 +2700,7 @@ export function ScheduledTasksPanel({
         />
 
         <main className="scheduled-tasks-content">
-          {panelMode === "create" ? renderCreateForm() : renderDetails()}
+          {panelMode === "details" ? renderDetails() : renderCreateForm()}
         </main>
       </div>
 

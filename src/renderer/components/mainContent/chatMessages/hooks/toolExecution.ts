@@ -617,6 +617,9 @@ export function createToolExecutor(
           originalArguments: correctedCall.arguments,
           failedResult,
           apiProfile,
+          conversationId: isPendingSessionKey(effectiveKey)
+            ? undefined
+            : effectiveKey,
           getToolDefinition: () => getToolDefinition(correctedCall.name),
           requestCorrection: (request) => window.snow.correctToolCall(request),
           authorize: async (argumentsJson, attempt) => {

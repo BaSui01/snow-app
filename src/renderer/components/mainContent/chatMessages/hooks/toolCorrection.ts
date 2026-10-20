@@ -119,6 +119,8 @@ export type ToolCorrectionRunOptions = {
   failedResult: string;
   /** 会话绑定的 API 档案；省略时由后端使用全局激活档案。 */
   apiProfile?: string;
+  /** 所属会话 ID，用于展开 {{session_id}} 自定义请求头。 */
+  conversationId?: string;
   getToolDefinition: () => Promise<ToolCorrectionToolDefinition | null>;
   requestCorrection: (request: {
     toolName: string;
@@ -129,6 +131,7 @@ export type ToolCorrectionRunOptions = {
     attemptsJson: string;
     attempt: number;
     apiProfile?: string;
+    conversationId?: string;
   }) => Promise<{ retry: boolean; argumentsJson: string; reasoning: string }>;
   /** 修正后的调用必须重新经过用户授权；返回 false 时终止纠错。 */
   authorize: (argumentsJson: string, attempt: number) => Promise<boolean>;
@@ -244,6 +247,7 @@ export const runToolCorrection = async (
         ),
         attempt: attemptIndex,
         apiProfile: options.apiProfile,
+        conversationId: options.conversationId,
       });
     } catch (error) {
       state.status = "failed";

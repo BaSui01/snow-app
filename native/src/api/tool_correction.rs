@@ -50,6 +50,9 @@ pub struct ToolCorrectionRequest {
     /// API profile bound to the conversation. Empty/omitted follows the
     /// globally active profile.
     pub api_profile: Option<String>,
+    /// Conversation the failed tool call belongs to; expands `{{session_id}}`
+    /// custom headers the same way as the main flow.
+    pub conversation_id: Option<String>,
 }
 
 /// The basic model's repair decision.
@@ -74,7 +77,10 @@ pub async fn correct_tool_call(
     }
 
     let (database_path, api_config, custom_headers, model) =
-        resolve_correction_llm_context(request.api_profile.as_deref())?;
+        resolve_correction_llm_context(
+            request.api_profile.as_deref(),
+            request.conversation_id.as_deref().unwrap_or(""),
+        )?;
     let user_content = build_correction_user_content(&request);
 
     let text = tokio::time::timeout(
@@ -97,6 +103,7 @@ pub async fn correct_tool_call(
 /// model. Missing profiles fall back to the globally active profile.
 fn resolve_correction_llm_context(
     api_profile: Option<&str>,
+    conversation_id: &str,
 ) -> Result<(
     PathBuf,
     crate::storage::ApiConfigRecord,
@@ -116,10 +123,10 @@ fn resolve_correction_llm_context(
 
     let model = resolve_basic_model(None, &api_config.basic_model)?;
 
-    // The correction belongs to no conversation: drop session placeholders and
-    // apply profile headers so OAuth-backed profiles keep working.
+    // Session placeholders resolve to the owning conversation (same as the main
+    // flow); OAuth headers keep OAuth-backed profiles working.
     let mut custom_headers = context.custom_headers;
-    crate::api::common::expand_custom_header_session_id(&mut custom_headers, "");
+    crate::api::common::expand_custom_header_session_id(&mut custom_headers, conversation_id);
     crate::api::oauth::provider::apply_request_headers(&api_config, &mut custom_headers);
 
     Ok((database_path, api_config, custom_headers, model))

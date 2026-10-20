@@ -151,6 +151,8 @@ export type ToolCorrectionRequest = {
   attempt: number;
   /** 会话绑定的 API 档案；省略时使用全局激活档案。 */
   apiProfile?: string;
+  /** 所属会话 ID，用于展开 {{session_id}} 自定义请求头。 */
+  conversationId?: string;
 };
 
 /** 基础模型返回的纠正参数（不直接执行）。 */

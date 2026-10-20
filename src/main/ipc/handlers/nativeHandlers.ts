@@ -781,6 +781,11 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         typeof record.apiProfile === "string" && record.apiProfile.trim()
           ? record.apiProfile.trim()
           : undefined,
+      conversationId:
+        typeof record.conversationId === "string" &&
+        record.conversationId.trim()
+          ? record.conversationId.trim()
+          : undefined,
     });
   });
   ipcMain.handle("skills:list", (_event, projectId: unknown) => {

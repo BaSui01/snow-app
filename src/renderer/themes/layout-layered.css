@@ -181,6 +181,15 @@
   border-bottom-right-radius: 0 !important;
 }
 
+/* 反向的一侧：主区左缘压住侧栏 --layered-overlap-left，会连带吃掉侧栏内容
+   自身的内边距，导航行高亮、搜索框、滚动条都会贴到主区表面上。这里补一段
+   右内边距，让左侧栏与下一层之间保留与右侧面板一致的 10px 呼吸位。 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .sidebar-content-wrapper {
+  padding-right: 10px;
+}
+
 /* ==========================================================================
    4. 右侧：覆盖中部
    ========================================================================== */
@@ -274,4 +283,16 @@
   background: transparent;
   content: "";
   transform: translateX(-50%);
+}
+
+/* ==========================================================================
+   6. 用户消息定位遮罩
+   ========================================================================== */
+
+/* 定位遮罩由 UserMessageRail portal 到 body，基础 z-index 只有 3；层叠风格把
+   .main-content（21）与 .right-panel（22）都抬成了独立层，主区又是不透明表面，
+   遮罩会被整个盖住，定位期间的骨架屏就看不见。这里把它抬到主区与右侧面板、
+   全屏聊天悬浮卡片（40）之上，仍低于顶栏（50）与各类弹层（9999+）。 */
+:root[data-layout-style="layered"] .user-message-locate-overlay {
+  z-index: 45;
 }

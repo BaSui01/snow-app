@@ -109,7 +109,13 @@ pub(crate) fn upsert_project_mcp_server_config_with_connection(
             "Stdio MCP server command is required",
         ));
     }
-    validate_json_string_array(&item.args_json, "Args").map_err(project_mcp_error_from_napi)?;
+    // api 传输的 args_json 存放接口定义对象
+    if transport_type == "api" {
+        validate_json_object(&item.args_json, "Custom API definition")
+            .map_err(project_mcp_error_from_napi)?;
+    } else {
+        validate_json_string_array(&item.args_json, "Args").map_err(project_mcp_error_from_napi)?;
+    }
     validate_json_string_object(&item.env_json, "Environment")
         .map_err(project_mcp_error_from_napi)?;
     validate_json_string_object(&item.headers_json, "Headers")
@@ -398,6 +404,7 @@ fn normalize_transport_type(value: &str) -> Result<String> {
     match value.trim() {
         "stdio" | "local" => Ok("stdio".to_string()),
         "http" => Ok("http".to_string()),
+        "api" => Ok("api".to_string()),
         transport => Err(Error::new(
             Status::InvalidArg,
             format!("Unsupported MCP transport: {transport}"),
@@ -430,6 +437,22 @@ fn validate_json_string_array(value: &str, label: &str) -> Result<()> {
         return Err(Error::new(
             Status::InvalidArg,
             format!("{label} must be a JSON string array"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_json_object(value: &str, label: &str) -> Result<()> {
+    let parsed = serde_json::from_str::<serde_json::Value>(value).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("{label} must be valid JSON: {error}"),
+        )
+    })?;
+    if !parsed.is_object() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("{label} must be a JSON object"),
         ));
     }
     Ok(())

@@ -876,6 +876,28 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
 
     return native.listMcpServerTools(configServerId.trim());
   });
+  // 自定义 API MCP：按草稿发送测试请求
+  ipcMain.handle("mcp:test-api-endpoint", (_event, input: unknown) => {
+    if (!input || typeof input !== "object") {
+      throw new Error("Test input is required");
+    }
+    const source = input as Record<string, unknown>;
+    const text = (value: unknown): string =>
+      typeof value === "string" ? value : "";
+    const endpointIndex = Number(source.endpointIndex);
+    if (!Number.isInteger(endpointIndex) || endpointIndex < 0) {
+      throw new Error("Endpoint index is invalid");
+    }
+    const timeoutMs = Number(source.timeoutMs);
+    return native.testMcpApiEndpoint({
+      baseUrl: text(source.baseUrl),
+      headersJson: text(source.headersJson) || "{}",
+      specJson: text(source.specJson) || "{}",
+      endpointIndex,
+      argumentsJson: text(source.argumentsJson) || "{}",
+      ...(Number.isInteger(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+    });
+  });
   ipcMain.handle("mcp:list-project-servers", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

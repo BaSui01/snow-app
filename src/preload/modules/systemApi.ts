@@ -32,6 +32,8 @@ import type {
   CodebaseSphereLayout,
   CodebaseSyncProgress,
   CodebaseSyncResult,
+  McpApiTestInput,
+  McpApiTestResult,
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
@@ -803,6 +805,9 @@ export const systemApi = {
     ipcRenderer.invoke("skills:list-github"),
   listMcpServerTools: (configServerId: string): Promise<McpToolStatus[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
+  /** 自定义 API MCP：按草稿发送测试请求。 */
+  testMcpApiEndpoint: (input: McpApiTestInput): Promise<McpApiTestResult> =>
+    ipcRenderer.invoke("mcp:test-api-endpoint", input),
   listMcpProjectServers: (
     projectId: string,
   ): Promise<McpProjectServerStatus[]> =>

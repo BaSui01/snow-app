@@ -1585,6 +1585,35 @@ export type McpToolStatus = McpToolDefinition & {
   enabled: boolean;
 };
 
+export type McpApiHeader = {
+  name: string;
+  value: string;
+};
+
+export type McpApiTestInput = {
+  baseUrl: string;
+  headersJson: string;
+  specJson: string;
+  endpointIndex: number;
+  argumentsJson: string;
+  timeoutMs?: number;
+};
+
+export type McpApiTestResult = {
+  ok: boolean;
+  error?: string | null;
+  method: string;
+  url: string;
+  requestHeaders: McpApiHeader[];
+  requestBody: string;
+  status?: number | null;
+  statusText: string;
+  elapsedMs: number;
+  responseHeaders: McpApiHeader[];
+  contentType: string;
+  body: string;
+};
+
 export type SkillDefinition = {
   id: string;
   name: string;
@@ -2704,6 +2733,7 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<SkillUninstallResult>;
   listGithubSkills: () => Promise<GithubSkillRecord[]>;
   listMcpServerTools: (configServerId: string) => Promise<McpToolStatus[]>;
+  testMcpApiEndpoint: (input: McpApiTestInput) => Promise<McpApiTestResult>;
   listMcpProjectServers: (
     projectId: string,
   ) => Promise<McpProjectServerStatus[]>;

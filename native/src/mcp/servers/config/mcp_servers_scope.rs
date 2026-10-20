@@ -39,7 +39,7 @@ const NEW_KEY: &str = "new";
 /// 因此本域写入的服务器不会被"同步 Snow CLI MCP 设置"的差集逻辑删掉。
 const MANUAL_SOURCE: &str = "manual";
 
-const SUPPORTED_TRANSPORTS: &[&str] = &["stdio", "sse", "http"];
+const SUPPORTED_TRANSPORTS: &[&str] = &["stdio", "sse", "http", "api"];
 
 /// 配置写入后对后续工具发现立即生效；已建立的服务器连接可能需要重连。
 const APPLY_NOTE: &str = "Server configs are written to the database and picked up by the next tool discovery. A server that already has a live MCP session may need the app to restart (or the session to reconnect) before a changed command/url/env takes effect.";
@@ -367,7 +367,7 @@ fn set_server(
             "A stdio MCP server requires a non-empty `command`".to_string(),
         ));
     }
-    if transport_type != "stdio" && url.is_empty() {
+    if matches!(transport_type.as_str(), "http" | "sse") && url.is_empty() {
         return Err(Error::new(
             Status::InvalidArg,
             format!("A {transport_type} MCP server requires a non-empty `url`"),

@@ -33451,6 +33451,353 @@ body.is-panel-resizing * {
   opacity: 0.55;
 }
 
+/* 自定义 API MCP 编辑器 */
+.mcp-api-section,
+.mcp-api-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-api-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcp-api-hint {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mcp-api-endpoint {
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-muted);
+}
+
+.mcp-api-endpoint.expanded {
+  border-color: var(--accent-color);
+}
+
+.mcp-api-endpoint-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 4px;
+}
+
+.mcp-api-endpoint-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.mcp-api-endpoint-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.mcp-api-endpoint-toggle:focus-visible {
+  outline: 1px solid var(--accent-color);
+  outline-offset: -1px;
+}
+
+.mcp-api-endpoint-toggle strong {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.mcp-api-endpoint-path {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-api-method {
+  flex-shrink: 0;
+  min-width: 52px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mcp-api-method.method-get {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.mcp-api-method.method-put,
+.mcp-api-method.method-patch {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.mcp-api-method.method-delete {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.mcp-api-endpoint-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+/* 与 .api-settings-field 输入框统一外观，避免回落到原生样式与系统焦点色 */
+.mcp-api-textarea,
+.mcp-api-param-row input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.mcp-api-textarea:focus,
+.mcp-api-param-row input:not([type="checkbox"]):focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.mcp-api-textarea:disabled,
+.mcp-api-param-row input:not([type="checkbox"]):disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.mcp-api-textarea::placeholder,
+.mcp-api-param-row input::placeholder {
+  color: var(--text-muted);
+}
+
+.mcp-api-textarea {
+  display: block;
+  min-height: 120px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.mcp-api-textarea.compact {
+  min-height: 56px;
+}
+
+.mcp-api-textarea.code {
+  font-family: var(--font-mono);
+}
+
+.mcp-api-body-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.mcp-api-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mcp-api-param-row {
+  display: grid;
+  grid-template-columns:
+    minmax(90px, 1.2fr) 100px 100px auto minmax(70px, 1fr)
+    minmax(100px, 1.6fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.mcp-api-param-required {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mcp-api-param-required input {
+  margin: 0;
+  accent-color: var(--accent-color);
+}
+
+.mcp-api-param-required input:focus-visible {
+  outline: none;
+}
+
+.mcp-api-test {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.mcp-api-test-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-api-test-header strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.mcp-api-test-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.mcp-api-test-inputs .api-settings-field > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.mcp-api-test-inputs small {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.mcp-api-required {
+  color: var(--accent-red);
+  font-style: normal;
+}
+
+.mcp-api-test-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--accent-red-text);
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.mcp-api-test-error svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mcp-api-test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-api-test-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.mcp-api-test-status {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.mcp-api-test-status.ok {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.mcp-api-test-status.error,
+.mcp-api-test-status.failed {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.mcp-api-test-meta {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.mcp-api-test-url {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-api-test-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.mcp-api-test-tab {
+  padding: 4px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mcp-api-test-tab.active {
+  border-bottom-color: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.mcp-api-test-output {
+  overflow: auto;
+  max-height: 360px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface-island-muted);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .mcp-tool-details-section {
   display: flex;
   flex-direction: column;

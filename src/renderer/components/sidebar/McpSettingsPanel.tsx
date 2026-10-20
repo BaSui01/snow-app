@@ -30,6 +30,7 @@ import {
   formatMcpSaveError,
 } from "./mcpSettings/mcpErrorMessages";
 import { builtinServerDescriptionKey } from "./mcpSettings/builtinServerDescriptions";
+import { validateApiSpec } from "./mcpSettings/mcpApiUtils";
 import {
   EMPTY_MCP_SERVER_DRAFT,
   createMcpPair,
@@ -459,9 +460,27 @@ export function McpSettingsPanel({
       return;
     }
 
+    if (currentDraft.transportType === "api") {
+      const apiError = validateApiSpec(currentDraft.api);
+      if (apiError) {
+        setError(
+          t(apiError.key, {
+            defaultValue: apiError.defaultValue,
+            values: apiError.values,
+          }),
+        );
+        setStatus("");
+        return;
+      }
+    }
+
     if (
       hasDuplicatePairKey(currentDraft.env) ||
-      hasDuplicatePairKey(currentDraft.headers)
+      hasDuplicatePairKey(currentDraft.headers) ||
+      hasDuplicatePairKey(currentDraft.api.cookies) ||
+      currentDraft.api.endpoints.some((endpoint) =>
+        hasDuplicatePairKey(endpoint.headers),
+      )
     ) {
       setError(
         t("settings.mcpDuplicateKey", {
@@ -513,6 +532,10 @@ export function McpSettingsPanel({
           toInput(currentDraft, maxSortOrder + 1),
         );
         setServers(items);
+        // 已获取过工具的服务器保存后静默刷新，避免展示旧 schema
+        if (currentDraft.serverId && toolsByServerId[currentDraft.serverId]) {
+          void refreshGlobalServerTools(currentDraft.serverId);
+        }
       } else if (operationProjectId) {
         const maxSortOrder = projectServerConfigs.reduce(
           (max, server) => Math.max(max, server.sortOrder),
@@ -579,6 +602,27 @@ export function McpSettingsPanel({
       setServers(items);
     } catch (e) {
       setError(formatMcpSaveError(e, t));
+    }
+  };
+
+  /** 保存后静默重新发现全局服务器工具；失败时丢弃旧缓存。 */
+  const refreshGlobalServerTools = async (serverId: string): Promise<void> => {
+    setFetchingToolServerIds((previous) => new Set(previous).add(serverId));
+    try {
+      const tools = await window.snow.listMcpServerTools(serverId);
+      setToolsByServerId((previous) => ({ ...previous, [serverId]: tools }));
+    } catch {
+      setToolsByServerId((previous) => {
+        const next = { ...previous };
+        delete next[serverId];
+        return next;
+      });
+    } finally {
+      setFetchingToolServerIds((previous) => {
+        const next = new Set(previous);
+        next.delete(serverId);
+        return next;
+      });
     }
   };
 

@@ -151,3 +151,33 @@ export type ProjectMcpServerConfigRecord = Omit<
   timeoutMs: number | null;
   updatedAt: string;
 };
+
+export type McpApiHeader = {
+  name: string;
+  value: string;
+};
+
+/** 自定义 API MCP 测试请求（使用编辑中的草稿，无需保存）。 */
+export type McpApiTestInput = {
+  baseUrl: string;
+  headersJson: string;
+  specJson: string;
+  endpointIndex: number;
+  argumentsJson: string;
+  timeoutMs?: number;
+};
+
+export type McpApiTestResult = {
+  ok: boolean;
+  error?: string | null;
+  method: string;
+  url: string;
+  requestHeaders: McpApiHeader[];
+  requestBody: string;
+  status?: number | null;
+  statusText: string;
+  elapsedMs: number;
+  responseHeaders: McpApiHeader[];
+  contentType: string;
+  body: string;
+};

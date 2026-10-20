@@ -324,6 +324,14 @@ pub async fn list_mcp_server_tools(
     list_server_tools(config_server_id).await
 }
 
+/// 自定义 API MCP：按草稿配置发送一次测试请求（无需先保存）。
+#[napi]
+pub async fn test_mcp_api_endpoint(
+    input: crate::mcp::external::api::McpApiTestInput,
+) -> napi::Result<crate::mcp::external::api::McpApiTestResult> {
+    crate::mcp::external::api::test_api_endpoint(input).await
+}
+
 #[napi]
 pub async fn list_mcp_project_servers(
     project_id: String,

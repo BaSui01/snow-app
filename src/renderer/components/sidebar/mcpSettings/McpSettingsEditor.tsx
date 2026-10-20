@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { CustomSelect } from "../../common/CustomSelect";
+import { McpApiEndpointsEditor } from "./McpApiEndpointsEditor";
 import { McpKeyValueEditor } from "./McpKeyValueEditor";
 import { McpStringListEditor } from "./McpStringListEditor";
 import {
@@ -22,11 +23,6 @@ import {
   parseDraftJson,
 } from "./mcpSettingsUtils";
 import type { McpServerDraft, McpServerTool } from "./types";
-
-const TRANSPORT_OPTIONS = [
-  { value: "stdio", label: "stdio" },
-  { value: "http", label: "http" },
-];
 
 /** JSON 语法高亮（hljs 已负责 HTML 转义；容错失败时手动转义兜底）。 */
 const highlightJson = (code: string): string => {
@@ -101,6 +97,19 @@ export function McpSettingsEditor({
 }: McpSettingsEditorProps): React.JSX.Element {
   const { t } = useI18n();
   const isHttp = draft.transportType === "http";
+  const isApi = draft.transportType === "api";
+  const usesUrl = isHttp || isApi;
+  const transportOptions = useMemo(
+    () => [
+      { value: "stdio", label: "stdio" },
+      { value: "http", label: "http" },
+      {
+        value: "api",
+        label: t("settings.mcpTransportApi", { defaultValue: "Custom API" }),
+      },
+    ],
+    [t],
+  );
   const [toolFilter, setToolFilter] = useState("");
   const [editMode, setEditMode] = useState<"form" | "json">("form");
   const [jsonText, setJsonText] = useState(() => draftToJson(draft));
@@ -332,7 +341,7 @@ export function McpSettingsEditor({
               </span>
               <CustomSelect
                 value={draft.transportType}
-                options={TRANSPORT_OPTIONS}
+                options={transportOptions}
                 onChange={(value) => onDraftChange({ transportType: value })}
                 disabled={isBusy}
               />
@@ -352,20 +361,28 @@ export function McpSettingsEditor({
             </label>
             <label className="api-settings-field wide">
               <span>
-                {isHttp
-                  ? t("settings.mcpUrl", { defaultValue: "URL" })
-                  : t("settings.mcpCommand", { defaultValue: "Command" })}
+                {isApi
+                  ? t("settings.mcpApiBaseUrl", { defaultValue: "Base URL" })
+                  : isHttp
+                    ? t("settings.mcpUrl", { defaultValue: "URL" })
+                    : t("settings.mcpCommand", { defaultValue: "Command" })}
               </span>
               <input
-                value={isHttp ? draft.url : draft.command}
+                value={usesUrl ? draft.url : draft.command}
                 onChange={(event) =>
                   onDraftChange(
-                    isHttp
+                    usesUrl
                       ? { url: event.target.value }
                       : { command: event.target.value },
                   )
                 }
-                placeholder={isHttp ? "https://example.com/mcp" : "npx"}
+                placeholder={
+                  isApi
+                    ? "https://api.example.com"
+                    : isHttp
+                      ? "https://example.com/mcp"
+                      : "npx"
+                }
                 disabled={isBusy}
               />
             </label>
@@ -387,7 +404,7 @@ export function McpSettingsEditor({
             </label>
           </div>
 
-          {!isHttp && (
+          {!usesUrl && (
             <McpStringListEditor
               title={t("settings.mcpArgs", { defaultValue: "Args" })}
               items={draft.args}
@@ -405,23 +422,31 @@ export function McpSettingsEditor({
             />
           )}
 
-          <McpKeyValueEditor
-            title={t("settings.mcpEnvironment", {
-              defaultValue: "Environment",
-            })}
-            pairs={draft.env}
-            isBusy={isBusy}
-            namePlaceholder="API_KEY"
-            valuePlaceholder="value"
-            onUpdatePair={(pairId, field, value) =>
-              onUpdatePair("env", pairId, field, value)
-            }
-            onAddPair={() => onAddPair("env")}
-            onRemovePair={(pairId) => onRemovePair("env", pairId)}
-          />
+          {!isApi && (
+            <McpKeyValueEditor
+              title={t("settings.mcpEnvironment", {
+                defaultValue: "Environment",
+              })}
+              pairs={draft.env}
+              isBusy={isBusy}
+              namePlaceholder="API_KEY"
+              valuePlaceholder="value"
+              onUpdatePair={(pairId, field, value) =>
+                onUpdatePair("env", pairId, field, value)
+              }
+              onAddPair={() => onAddPair("env")}
+              onRemovePair={(pairId) => onRemovePair("env", pairId)}
+            />
+          )}
 
           <McpKeyValueEditor
-            title={t("settings.mcpHeaders", { defaultValue: "Headers" })}
+            title={
+              isApi
+                ? t("settings.mcpApiSharedHeaders", {
+                    defaultValue: "Shared headers",
+                  })
+                : t("settings.mcpHeaders", { defaultValue: "Headers" })
+            }
             pairs={draft.headers}
             isBusy={isBusy}
             namePlaceholder="Authorization"
@@ -432,6 +457,14 @@ export function McpSettingsEditor({
             onAddPair={() => onAddPair("headers")}
             onRemovePair={(pairId) => onRemovePair("headers", pairId)}
           />
+
+          {isApi && (
+            <McpApiEndpointsEditor
+              draft={draft}
+              isBusy={isBusy}
+              onChange={(api) => onDraftChange({ api })}
+            />
+          )}
 
           <div className="mcp-tool-details-section">
             <div className="mcp-tool-details-header">

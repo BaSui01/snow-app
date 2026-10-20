@@ -1,3 +1,4 @@
+pub mod api;
 mod http;
 mod stdio;
 
@@ -699,6 +700,7 @@ macro_rules! impl_client_handle {
 
 impl_client_handle!(stdio::StdioMcpClient);
 impl_client_handle!(http::HttpMcpClient);
+impl_client_handle!(api::ApiMcpClient);
 
 /// 服务器协商结果记忆：key -> 该服务器不支持 server/discover、只支持
 /// legacy initialize 握手（HTTP 的 key 为 URL，stdio 为命令指纹）。
@@ -782,6 +784,10 @@ impl ExternalMcpClient {
                 let client = http::HttpMcpClient::connect(config).await?;
                 Box::new(client)
             }
+            "api" => {
+                let client = api::ApiMcpClient::connect(config).await?;
+                Box::new(client)
+            }
             transport => {
                 return Err(Error::from_reason(format!(
                     "Unsupported external MCP transport: {transport}"
@@ -803,6 +809,10 @@ impl ExternalMcpClient {
             }
             "http" => {
                 let client = http::HttpMcpClient::connect_legacy(config).await?;
+                Box::new(client)
+            }
+            "api" => {
+                let client = api::ApiMcpClient::connect(config).await?;
                 Box::new(client)
             }
             transport => {

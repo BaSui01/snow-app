@@ -1,4 +1,11 @@
 import type { McpServerConfigInput } from "../../../../preload";
+import {
+  apiSpecFromJson,
+  apiSpecFromValue,
+  apiSpecToJson,
+  apiSpecToObject,
+  createEmptyApiSpec,
+} from "./mcpApiUtils";
 import type { McpTranslate } from "./mcpErrorMessages";
 import type {
   McpKeyValuePair,
@@ -30,6 +37,7 @@ export const EMPTY_MCP_SERVER_DRAFT: McpServerDraft = {
   args: [],
   env: [],
   headers: [],
+  api: createEmptyApiSpec(),
   enabled: true,
   timeoutMs: "",
   sortOrder: 0,
@@ -108,6 +116,10 @@ export const toDraft = (server: McpServerConfigLike): McpServerDraft => ({
   args: argsFromJson(server.argsJson),
   env: pairsFromJson(server.envJson),
   headers: pairsFromJson(server.headersJson),
+  api:
+    server.transportType === "api"
+      ? apiSpecFromJson(server.argsJson)
+      : createEmptyApiSpec(),
   enabled: server.enabled,
   timeoutMs: server.timeoutMs ? String(server.timeoutMs) : "",
   sortOrder: server.sortOrder,
@@ -125,7 +137,11 @@ const toScopedInput = (
   transportType: draft.transportType,
   url: draft.url.trim(),
   command: draft.command.trim(),
-  argsJson: argsToJson(draft.args),
+  // api 传输的 argsJson 存放接口定义
+  argsJson:
+    draft.transportType === "api"
+      ? apiSpecToJson(draft.api)
+      : argsToJson(draft.args),
   envJson: pairsToJson(draft.env),
   headersJson: pairsToJson(draft.headers),
   enabled: draft.enabled,
@@ -152,7 +168,9 @@ export const toProjectInput = (
   toScopedInput(draft, fallbackSortOrder, draft.serverId, "project");
 
 export const getMcpServerEndpoint = (server: McpServerConfigLike): string =>
-  server.transportType === "http" ? server.url : server.command;
+  server.transportType === "http" || server.transportType === "api"
+    ? server.url
+    : server.command;
 
 /**
  * 将 draft 序列化为可读的 JSON 文本（用于 JSON 编辑模式）。
@@ -179,6 +197,10 @@ export const draftToJson = (draft: McpServerDraft): string => {
     if (draft.url.trim()) {
       server.url = draft.url;
     }
+  } else if (draft.transportType === "api") {
+    if (draft.url.trim()) {
+      server.url = draft.url;
+    }
   } else {
     if (draft.command.trim()) {
       server.command = draft.command;
@@ -199,6 +221,14 @@ export const draftToJson = (draft: McpServerDraft): string => {
   const headers = pairsToObject(draft.headers);
   if (Object.keys(headers).length > 0) {
     server.headers = headers;
+  }
+
+  if (draft.transportType === "api") {
+    const spec = apiSpecToObject(draft.api);
+    if (Object.keys(spec.cookies as Record<string, string>).length > 0) {
+      server.cookies = spec.cookies;
+    }
+    server.endpoints = spec.endpoints;
   }
 
   if (!draft.enabled) {
@@ -466,6 +496,8 @@ const SERVER_CONFIG_KEYS = new Set([
   "timeout",
   "timeoutMs",
   "name",
+  "endpoints",
+  "cookies",
 ]);
 
 /**
@@ -534,15 +566,19 @@ export const parseDraftJson = (
   }
 
   const transportType =
-    source.type === "http" || source.transportType === "http"
-      ? "http"
-      : source.type === "stdio" ||
-          source.type === "local" ||
-          source.transportType === "stdio"
-        ? "stdio"
-        : typeof source.url === "string" && source.url.trim()
-          ? "http"
-          : "stdio";
+    source.type === "api" ||
+    source.transportType === "api" ||
+    Array.isArray(source.endpoints)
+      ? "api"
+      : source.type === "http" || source.transportType === "http"
+        ? "http"
+        : source.type === "stdio" ||
+            source.type === "local" ||
+            source.transportType === "stdio"
+          ? "stdio"
+          : typeof source.url === "string" && source.url.trim()
+            ? "http"
+            : "stdio";
 
   const asString = (value: unknown): string =>
     typeof value === "string" ? value : "";
@@ -591,6 +627,8 @@ export const parseDraftJson = (
     args: asStringArray(source.args),
     env: asPairs(envSource),
     headers: asPairs(source.headers),
+    api:
+      transportType === "api" ? apiSpecFromValue(source) : createEmptyApiSpec(),
     enabled: source.enabled !== false,
     timeoutMs: timeoutValue,
   };

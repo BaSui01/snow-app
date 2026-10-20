@@ -27,6 +27,38 @@ export type McpStringItem = {
   value: string;
 };
 
+export type McpApiParamDraft = {
+  id: string;
+  name: string;
+  /** string | number | integer | boolean | object | array */
+  type: string;
+  required: boolean;
+  description: string;
+  /** query | path | header | body */
+  location: string;
+  defaultValue: string;
+};
+
+export type McpApiEndpointDraft = {
+  id: string;
+  name: string;
+  description: string;
+  method: string;
+  path: string;
+  headers: McpKeyValuePair[];
+  params: McpApiParamDraft[];
+  /** none | json | form | multipart | raw */
+  bodyType: string;
+  bodyTemplate: string;
+  rawContentType: string;
+};
+
+/** 自定义 API 传输的接口定义（持久化到 argsJson）。 */
+export type McpApiSpecDraft = {
+  cookies: McpKeyValuePair[];
+  endpoints: McpApiEndpointDraft[];
+};
+
 export type McpServerDraft = {
   serverId: string;
   name: string;
@@ -36,6 +68,7 @@ export type McpServerDraft = {
   args: McpStringItem[];
   env: McpKeyValuePair[];
   headers: McpKeyValuePair[];
+  api: McpApiSpecDraft;
   enabled: boolean;
   timeoutMs: string;
   sortOrder: number;

@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type {
   McpServerConfigInput,
@@ -37,7 +43,7 @@ type SnowCliMcpConfig = {
 
 const deleteServerFromSettingsFile = (
   filePath: string,
-  serverName: string
+  serverName: string,
 ): void => {
   if (!existsSync(filePath)) {
     return;
@@ -45,9 +51,14 @@ const deleteServerFromSettingsFile = (
 
   let settings: Record<string, unknown>;
   try {
-    settings = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    settings = JSON.parse(readFileSync(filePath, "utf8")) as Record<
+      string,
+      unknown
+    >;
   } catch (error) {
-    throw new Error(`Failed to read MCP settings file: ${filePath}`, { cause: error });
+    throw new Error(`Failed to read MCP settings file: ${filePath}`, {
+      cause: error,
+    });
   }
 
   if (!isRecord(settings.mcpServers) || !(serverName in settings.mcpServers)) {
@@ -62,11 +73,13 @@ const deleteServerFromSettingsFile = (
     writeFileSync(
       temporaryPath,
       `${JSON.stringify({ ...settings, mcpServers: nextServers }, null, 2)}\n`,
-      "utf8"
+      "utf8",
     );
     renameSync(temporaryPath, filePath);
   } catch (error) {
-    throw new Error(`Failed to update MCP settings file: ${filePath}`, { cause: error });
+    throw new Error(`Failed to update MCP settings file: ${filePath}`, {
+      cause: error,
+    });
   } finally {
     if (existsSync(temporaryPath)) {
       unlinkSync(temporaryPath);
@@ -81,17 +94,17 @@ export const deleteSnowCliMcpServerConfig = (serverName: string): void => {
 export const deleteSnowCliProjectMcpServerConfig = async (
   native: NativeBridge,
   projectId: string,
-  serverName: string
+  serverName: string,
 ): Promise<void> => {
   const directory = (await native.listWorkspaceDirectories()).find(
-    (item) => item.directoryId === projectId
+    (item) => item.directoryId === projectId,
   );
   if (!directory) {
     throw new Error(`Project directory not found: ${projectId}`);
   }
   deleteServerFromSettingsFile(
     join(directory.path, ".snow", "settings.json"),
-    serverName
+    serverName,
   );
 };
 
@@ -100,10 +113,14 @@ const toServerId = (scope: string, name: string): string =>
 
 const normalizeTransportType = (
   value: unknown,
-  server: Record<string, unknown>
+  server: Record<string, unknown>,
 ): string => {
   if (value === "http") {
     return "http";
+  }
+
+  if (value === "api") {
+    return "api";
   }
 
   if (value === "stdio" || value === "local") {
@@ -139,7 +156,7 @@ const normalizeStringArray = (value: unknown): string[] => {
 
 const normalizeServer = (
   name: string,
-  rawServer: unknown
+  rawServer: unknown,
 ): SnowCliMcpServer | null => {
   if (!name.trim() || !isRecord(rawServer)) {
     return null;
@@ -168,7 +185,7 @@ const normalizeServer = (
 const readConfigByScope = (
   scope: McpScope,
   filePath: string,
-  projectId?: string
+  projectId?: string,
 ): SnowCliMcpConfig => {
   if (!existsSync(filePath)) {
     return { scope, servers: [], projectId };
@@ -191,7 +208,7 @@ const readConfigByScope = (
 const toNativeInput = (
   scope: McpScope,
   server: SnowCliMcpServer,
-  sortOrder: number
+  sortOrder: number,
 ): McpServerConfigInput => ({
   serverId: toServerId(scope, server.name),
   name: server.name,
@@ -209,7 +226,7 @@ const toNativeInput = (
 
 const persistMcpConfigs = async (
   native: NativeBridge,
-  configs: SnowCliMcpConfig[]
+  configs: SnowCliMcpConfig[],
 ): Promise<void> => {
   const nextIds = new Set<string>();
 
@@ -231,7 +248,7 @@ const persistMcpConfigs = async (
 
 const persistProjectMcpConfigs = async (
   native: NativeBridge,
-  configs: SnowCliMcpConfig[]
+  configs: SnowCliMcpConfig[],
 ): Promise<void> => {
   for (const config of configs) {
     if (!config.projectId) {
@@ -274,7 +291,7 @@ const persistProjectMcpConfigs = async (
 };
 
 export const readSnowCliMcpConfig = async (
-  native: NativeBridge
+  native: NativeBridge,
 ): Promise<McpServerConfigRecord[]> => {
   const configs = [readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE)];
 
@@ -285,7 +302,7 @@ export const readSnowCliMcpConfig = async (
     const projectConfig = readConfigByScope(
       PROJECT_SCOPE,
       projectFilePath,
-      directory.directoryId
+      directory.directoryId,
     );
     if (projectConfig.servers.length > 0) {
       projectConfigs.push(projectConfig);
@@ -336,8 +353,20 @@ const assertJsonObject = (value: string, fieldName: string): void => {
   }
 };
 
+const assertJsonDocumentObject = (value: string, fieldName: string): void => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value || "{}");
+  } catch {
+    throw new Error(`${fieldName} must be valid JSON`);
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${fieldName} must be a JSON object`);
+  }
+};
+
 export const normalizeMcpServerConfig = (
-  value: unknown
+  value: unknown,
 ): McpServerConfigInput => {
   const source = isRecord(value) ? value : {};
   const name = toText(source.name).trim();
@@ -352,7 +381,12 @@ export const normalizeMcpServerConfig = (
     throw new Error("MCP server name is required");
   }
 
-  assertJsonArray(argsJson, "Args");
+  // api 传输的 argsJson 存放接口定义对象
+  if (transportType === "api") {
+    assertJsonDocumentObject(argsJson, "Custom API definition");
+  } else {
+    assertJsonArray(argsJson, "Args");
+  }
   assertJsonObject(envJson, "Environment");
   assertJsonObject(headersJson, "Headers");
 
@@ -382,7 +416,7 @@ export const normalizeMcpServerConfig = (
 };
 
 export const normalizeProjectMcpServerConfig = (
-  value: unknown
+  value: unknown,
 ): McpServerConfigInput => {
   const normalized = normalizeMcpServerConfig(value);
   const source = isRecord(value) ? value : {};

@@ -724,6 +724,7 @@ export function PrivacySettingsPanel({
                     groups={toolGroups}
                     icon={Wrench}
                     disabled={isBusy}
+                    defaultCollapsed={!toolQuery.trim()}
                     onToggle={(id, checked) => setToolsChecked([id], checked)}
                     onToggleGroup={setToolsChecked}
                   />

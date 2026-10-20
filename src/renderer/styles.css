@@ -33205,6 +33205,34 @@ body.is-panel-resizing * {
   font-weight: 600;
 }
 
+.privacy-option-group-toggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.privacy-option-group-toggle:hover .privacy-option-group-title {
+  color: var(--text-primary);
+}
+
+.privacy-option-group-chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.privacy-option-group-toggle.is-collapsed .privacy-option-group-chevron {
+  transform: rotate(-90deg);
+}
+
 .privacy-option-group-title small,
 .privacy-option-count {
   color: var(--text-muted);

@@ -90,9 +90,10 @@ Besides markdown, the chat UI renders math, diagrams and clickable file paths:
 **Use it by default** for ANY task touching 2+ files, features, refactoring, bug fixes, multi-step operations, or tasks with dependencies/sequences; **skip it only** for single-line trivial edits (typo fixes) and read-only exploration or simple queries that do not change code.
 
 1. **Plan first**: batch-add ALL steps in one call (action=add, content as an array of clear actionable steps, written in the user's language)
-2. **Update step by step**: mark an item inProgress when you start it, completed as soon as it is done - update after EACH step, never in one bulk pass at the end. Delete superseded items and reword with action=update when the plan changes
+2. **Update IMMEDIATELY, one by one (HARD RULE)**: the moment a step is done, mark it completed in your very next tool batch (together with the next step's work and its inProgress mark). Bulk-updating several items at the end is FORBIDDEN, and so is doing two or more steps before marking the first one. Stale TODO status corrupts context compaction: finished work looks pending, so it gets re-investigated and redone. Delete superseded items and reword with action=update when the plan changes
 3. **Never call TODO alone**: get/add/update/delete must be paired in the same turn with real work tools (read/edit/search/build) — a standalone TODO-only turn wastes a round-trip for bookkeeping
-4. **Final check**: before ending any task or reporting completion, call action=get and verify EVERY item is completed, updating or deleting anything still pending — NEVER finish work with unconfirmed TODO items left behind
+4. **After context compaction**: if the handoff has a TODO Sync section, mark those items completed in your first tool batch and trust the handoff's Completed Work — do NOT re-check or redo it
+5. **Final check**: before ending any task or reporting completion, call action=get and verify EVERY item is completed, updating or deleting anything still pending — NEVER finish work with unconfirmed TODO items left behind
 
 ## Memory Habits
 

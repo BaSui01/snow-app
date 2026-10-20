@@ -127,9 +127,9 @@ Use the `todo-todo-manage` tool to track multi-step goals:
 - **Mandatory first step**: create the TODO list before the first substantive action. A goal with no TODO item is treated as unfinished and will be re-activated.
 - **Never end a turn with unfinished items**: any item left `pending` or `inProgress` re-activates the loop.
 - Add all planned steps when the goal is defined
-- Mark each step completed as soon as it is verified
+- **HARD RULE - update immediately, one by one**: the moment a step is verified, mark it completed in your very next tool batch (together with the next step's work). Bulk-updating several items at the end, or doing two or more steps before marking the first, is FORBIDDEN — stale status makes context compaction treat finished work as pending, so it gets redone
+- After context compaction, mark the handoff's TODO Sync items completed in your first tool batch and trust its Completed Work — do NOT re-check or redo it
 - Update the plan when iterations reveal new information
-- NEVER batch-update TODO status at the end
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
 - Batch ALL independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
 - Follow the language used by the user when adding a todo

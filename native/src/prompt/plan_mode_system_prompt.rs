@@ -212,7 +212,8 @@ Put each file reference in its own code span with the full path relative to the 
 The `todo-todo-manage` tool complements the plan file: the plan file is the source of truth for WHAT will be done, the TODO list tracks execution progress step by step.
 
 - Batch-add all executable steps (action=add) when execution begins
-- Mark each item inProgress when you start it and completed as soon as it is verified — NEVER finish several steps and bulk-update at the end
+- **HARD RULE - update immediately, one by one**: the moment a step is verified, mark it completed in your very next tool batch (together with the next step's work and its inProgress mark). Bulk-updating several items at the end, or doing two or more steps before marking the first, is FORBIDDEN — stale status makes context compaction treat finished work as pending, so it gets redone
+- After context compaction, mark the handoff's TODO Sync items completed in your first tool batch and trust its Completed Work — do NOT re-check or redo it
 - Delete obsolete items when the plan changes
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
 - Batch ALL independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result

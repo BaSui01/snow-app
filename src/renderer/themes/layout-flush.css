@@ -29,48 +29,95 @@
 }
 
 /* ==========================================================================
-   2. 顶栏：底色即分隔线色，列间 1px 缝隙与底部 1px 内边距露出分隔线
+   2. 顶栏：列间零间隙，分隔线由左右段的边框画出（与下方 1px 拖拽条对齐）
    ========================================================================== */
 
 :root[data-layout-style="flush"] .top-bar {
-  padding: 0 0 1px !important;
-  column-gap: 1px !important;
+  padding: 0 !important;
+  column-gap: 0 !important;
   border: none !important;
-  background: var(--flush-divider) !important;
+  border-bottom: 1px solid var(--flush-divider) !important;
+  background: var(--app-bg) !important;
 }
 
-/* 全屏：中段收成 1px 列充当分隔线 */
+/* 同层叠风格：始终保留三列轨道，收起时轨道宽度过渡到 0，与下方面板同曲线；
+   左右轨道各多 1px 容纳分隔线。 */
 :root[data-layout-style="flush"]
-  .app-shell.right-panel-fullscreen:not(.sidebar-collapsed)
+  .app-shell:not(.right-panel-fullscreen)
   .top-bar {
-  column-gap: 0 !important;
-  grid-template-columns: var(--sidebar-width) 1px minmax(0, 1fr) !important;
+  grid-template-columns:
+    calc(var(--sidebar-width) + 1px) minmax(0, 1fr)
+    calc(var(--right-panel-width) + 1px) !important;
 }
 
 :root[data-layout-style="flush"]
-  .app-shell.right-panel-fullscreen.sidebar-collapsed
+  .app-shell.sidebar-collapsed:not(.right-panel-fullscreen)
   .top-bar {
-  column-gap: 0 !important;
+  grid-template-columns:
+    0px minmax(0, 1fr)
+    calc(var(--right-panel-width) + 1px) !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell.right-panel-collapsed:not(.right-panel-fullscreen)
+  .top-bar {
+  grid-template-columns:
+    calc(var(--sidebar-width) + 1px) minmax(0, 1fr)
+    0px !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell.sidebar-collapsed.right-panel-collapsed:not(
+    .right-panel-fullscreen
+  )
+  .top-bar {
+  grid-template-columns: 0px minmax(0, 1fr) 0px !important;
+}
+
+/* 全屏：主区 0 宽，保持三列结构 */
+:root[data-layout-style="flush"] .app-shell.right-panel-fullscreen .top-bar {
+  grid-template-columns:
+    calc(var(--sidebar-width) + 1px) 0px
+    minmax(0, 1fr) !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell.sidebar-collapsed.right-panel-fullscreen
+  .top-bar {
+  grid-template-columns: 0px 0px minmax(0, 1fr) !important;
 }
 
 :root[data-layout-style="flush"]
   :is(.top-bar-left, .top-bar-main, .top-bar-right) {
+  grid-row: 1 !important;
   border: none !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
 }
 
+/* 显式列定位：收起任一段时其余段不串列；左段随轨道收拢并裁切 */
 :root[data-layout-style="flush"] .top-bar-left {
+  grid-column: 1 !important;
+  overflow: hidden !important;
+  border-right: 1px solid var(--flush-divider) !important;
   background: var(--flush-surface-side) !important;
 }
 
 :root[data-layout-style="flush"] .top-bar-main {
+  grid-column: 2 !important;
   background: var(--flush-surface-main) !important;
 }
 
 :root[data-layout-style="flush"] .top-bar-right {
+  grid-column: 3 !important;
   background: var(--flush-surface-right) !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell:not(.right-panel-fullscreen)
+  .top-bar-right {
+  border-left: 1px solid var(--flush-divider) !important;
 }
 
 /* ==========================================================================

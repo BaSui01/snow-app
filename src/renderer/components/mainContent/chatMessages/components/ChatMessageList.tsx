@@ -135,12 +135,43 @@ export const ChatMessageList = ({
   const previousArtifacts = useRef(
     new Map<string, readonly ChatFileArtifact[]>(),
   );
+  // Even absolute paths are withheld until the session's execution binding is known.
+  const collectedArtifacts = useMemo(
+    () =>
+      artifactWorkspace ? collectArtifacts(messages, artifactWorkspace) : [],
+    [messages, artifactWorkspace, collectArtifacts],
+  );
+  // 文件卡片默认隐藏，仅渲染用户手动展开的
+  const [revealedArtifacts, setRevealedArtifacts] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  useEffect(() => {
+    setRevealedArtifacts(new Set());
+  }, [artifactBinding]);
+  const collectedArtifactsRef = useRef(collectedArtifacts);
+  collectedArtifactsRef.current = collectedArtifacts;
+  const toggleFileArtifact = useCallback(
+    (key: string, open?: boolean): boolean => {
+      if (!collectedArtifactsRef.current.some((item) => item.key === key)) {
+        return false;
+      }
+      setRevealedArtifacts((prev) => {
+        const has = prev.has(key);
+        const next = open ?? !has;
+        if (next === has) return prev;
+        const updated = new Set(prev);
+        if (next) updated.add(key);
+        else updated.delete(key);
+        return updated;
+      });
+      return true;
+    },
+    [],
+  );
   const artifactsByOwner = useMemo(() => {
     const grouped = new Map<string, ChatFileArtifact[]>();
-    // Even absolute paths are withheld until the session's execution binding is known.
-    for (const artifact of artifactWorkspace
-      ? collectArtifacts(messages, artifactWorkspace)
-      : []) {
+    for (const artifact of collectedArtifacts) {
+      if (!revealedArtifacts.has(artifact.key)) continue;
       const list = grouped.get(artifact.ownerId) ?? [];
       list.push(artifact);
       grouped.set(artifact.ownerId, list);
@@ -170,7 +201,7 @@ export const ChatMessageList = ({
     }
     previousArtifacts.current = stable;
     return stable;
-  }, [messages, artifactWorkspace, collectArtifacts]);
+  }, [collectedArtifacts, revealedArtifacts]);
 
   const lastAssistantMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -459,6 +490,7 @@ export const ChatMessageList = ({
         message={message}
         fileArtifacts={artifactsByOwner.get(message.id)}
         artifactWorkspace={artifactWorkspace}
+        onToggleFileArtifact={toggleFileArtifact}
         isStreaming={isStreaming}
         isAborting={isAborting}
         lastAssistantMessageId={lastAssistantMessageId}

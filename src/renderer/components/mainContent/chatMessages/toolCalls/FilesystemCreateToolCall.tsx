@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { HtmlFilePreviewButton } from "./shared/HtmlFilePreviewButton";
 import { getFileName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
 import { localizeToolError } from "./shared/toolErrorDisplay";
@@ -145,11 +146,23 @@ export const FilesystemCreateToolCall = ({
       displayNameDataPath={filePath}
       status={effectiveStatus}
       meta={
-        lineCount > 0 ? (
-          <span className="tool-call-diff-stats">
-            <span className="tool-call-diff-add">+{lineCount}</span>
-          </span>
-        ) : null
+        <>
+          {lineCount > 0 ? (
+            <span className="tool-call-diff-stats">
+              <span className="tool-call-diff-add">+{lineCount}</span>
+            </span>
+          ) : null}
+          <HtmlFilePreviewButton
+            filePath={
+              parsedResult.type === "success" && parsedResult.path
+                ? parsedResult.path
+                : filePath
+            }
+            enabled={
+              toolCall.status === "completed" && parsedResult.type === "success"
+            }
+          />
+        </>
       }
       className="tool-call-filesystem-create"
       lazyBody

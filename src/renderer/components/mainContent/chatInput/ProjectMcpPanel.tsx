@@ -18,6 +18,10 @@ import { useI18n } from "../../../i18n";
 import { formatMcpError } from "../../sidebar/mcpSettings/mcpErrorMessages";
 import { builtinServerDescriptionKey } from "../../sidebar/mcpSettings/builtinServerDescriptions";
 import { builtinServerIcon } from "../../sidebar/mcpSettings/builtinServerIcons";
+import {
+  McpSearchInput,
+  matchesMcpQuery,
+} from "../../sidebar/mcpSettings/McpSearchInput";
 import { Modal } from "../../common/Modal";
 import { LITE_MODE_CHANGED_EVENT } from "../chatMessages/hooks/useToolAuthorization";
 import { notifyMcpServerStateChanged } from "./mcpServerEvents";
@@ -85,6 +89,7 @@ export const ProjectMcpPanel = ({
     useState<ToolErrorsByServerId>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const pendingServerIdsRef = useRef<Set<string>>(new Set());
   const pendingToolNamesRef = useRef<Set<string>>(new Set());
   const catalogGenerationRef = useRef(0);
@@ -376,13 +381,30 @@ export const ProjectMcpPanel = ({
     ? servers.find((server) => server.id === focusServerId)
     : undefined;
   const visibleServers = focusedServer ? [focusedServer] : servers;
-  const systemServers = visibleServers.filter(
+  const isSearching = searchQuery.trim().length > 0;
+  const serverSelfMatches = (server: McpProjectServerStatus): boolean => {
+    const key = builtinServerDescriptionKey(server.id);
+    return matchesMcpQuery(searchQuery, server.name, key ? t(key) : undefined);
+  };
+  const toolMatches = (tool: McpProjectToolStatus): boolean =>
+    matchesMcpQuery(
+      searchQuery,
+      toolDisplayName(tool.name),
+      tool.name,
+      tool.description,
+    );
+  const searchedServers = isSearching
+    ? visibleServers.filter(
+        (server) => serverSelfMatches(server) || server.tools.some(toolMatches),
+      )
+    : visibleServers;
+  const systemServers = searchedServers.filter(
     (server) => server.source === "system",
   );
-  const projectOwnedServers = visibleServers.filter(
+  const projectOwnedServers = searchedServers.filter(
     (server) => server.source === "project",
   );
-  const externalServers = visibleServers.filter(
+  const externalServers = searchedServers.filter(
     (server) => server.source === "external",
   );
   const serverGroups = [
@@ -390,9 +412,10 @@ export const ProjectMcpPanel = ({
     { title: t("projectMcp.projectServers"), servers: projectOwnedServers },
     { title: t("projectMcp.globalServers"), servers: externalServers },
   ];
-  const visibleGroups = focusedServer
-    ? serverGroups.filter((group) => group.servers.length > 0)
-    : serverGroups;
+  const visibleGroups =
+    focusedServer || isSearching
+      ? serverGroups.filter((group) => group.servers.length > 0)
+      : serverGroups;
 
   const renderServerGroup = (
     title: string,
@@ -407,9 +430,13 @@ export const ProjectMcpPanel = ({
         <div className="project-mcp-empty">{t("projectMcp.emptyGroup")}</div>
       ) : (
         groupServers.map((server) => {
-          const expanded = expandedServerIds.has(server.id);
+          // 仅因工具命中搜索时自动展开，并只列出命中的工具
+          const matchedByTools = isSearching && !serverSelfMatches(server);
+          const expanded = expandedServerIds.has(server.id) || matchedByTools;
           // 工具来自列表缓存（Rust 进程内 TTL 缓存）或展开时的按需发现结果。
-          const tools = server.tools;
+          const tools = matchedByTools
+            ? server.tools.filter(toolMatches)
+            : server.tools;
           const toolsRetrying = loadingToolServerIds.has(server.id);
           const toolError = toolErrorsByServerId[server.id];
           const toolsLoading =
@@ -485,7 +512,7 @@ export const ProjectMcpPanel = ({
                       : server.toolsPending
                         ? t("projectMcp.toolsPending")
                         : t("projectMcp.toolCount", {
-                            values: { count: tools.length },
+                            values: { count: server.tools.length },
                           })}
                   </span>
                 </button>
@@ -712,6 +739,11 @@ export const ProjectMcpPanel = ({
               </button>
             )}
           </div>
+          <McpSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t("projectMcp.searchPlaceholder")}
+          />
           {loadError ? (
             <div className="project-mcp-load-error">
               <AlertCircle size={15} />
@@ -719,6 +751,11 @@ export const ProjectMcpPanel = ({
             </div>
           ) : null}
           <div className="project-mcp-list">
+            {isSearching && visibleGroups.length === 0 ? (
+              <div className="project-mcp-empty">
+                {t("projectMcp.searchEmpty")}
+              </div>
+            ) : null}
             {visibleGroups.map((group) => (
               <Fragment key={group.title}>
                 {renderServerGroup(group.title, group.servers)}

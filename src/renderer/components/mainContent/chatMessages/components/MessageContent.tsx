@@ -15,6 +15,8 @@ export type MessageContentProps = {
   message: ChatConversationMessage;
   fileArtifacts?: readonly ChatFileArtifact[];
   artifactWorkspace?: string;
+  /** 切换 HTML 文件卡片显隐（open 缺省为取反）；文件卡片不存在时返回 false。 */
+  onToggleFileArtifact?: (key: string, open?: boolean) => boolean;
   isStreaming: boolean;
   isAborting: boolean;
   lastAssistantMessageId: string | undefined;
@@ -53,6 +55,7 @@ export const MessageContent = memo(
     message,
     fileArtifacts,
     artifactWorkspace,
+    onToggleFileArtifact,
     isStreaming,
     isAborting,
     lastAssistantMessageId,
@@ -141,6 +144,7 @@ export const MessageContent = memo(
         <AiResponse
           fileArtifacts={fileArtifacts}
           artifactWorkspace={artifactWorkspace}
+          onToggleFileArtifact={onToggleFileArtifact}
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
           isRetrying={isLastAssistant && message.isRetrying}

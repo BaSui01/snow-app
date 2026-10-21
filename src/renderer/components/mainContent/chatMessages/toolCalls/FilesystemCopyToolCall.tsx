@@ -10,6 +10,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileName, pathsReferToSameFile } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { HtmlFilePreviewButton } from "./shared/HtmlFilePreviewButton";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 
 type FilesystemCopyToolCallProps = {
@@ -324,12 +325,18 @@ export const FilesystemCopyToolCall = ({
       displayNameDataPath={filePath}
       status={effectiveStatus}
       meta={
-        stats ? (
-          <span className="tool-call-diff-stats">
-            <span className="tool-call-diff-add">+{stats.additions}</span>
-            <span className="tool-call-diff-del">-{stats.deletions}</span>
-          </span>
-        ) : null
+        <>
+          {stats ? (
+            <span className="tool-call-diff-stats">
+              <span className="tool-call-diff-add">+{stats.additions}</span>
+              <span className="tool-call-diff-del">-{stats.deletions}</span>
+            </span>
+          ) : null}
+          <HtmlFilePreviewButton
+            filePath={filePath}
+            enabled={toolCall.status === "completed" && success !== null}
+          />
+        </>
       }
       className="tool-call-filesystem-copy"
       lazyBody

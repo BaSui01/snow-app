@@ -15,7 +15,12 @@ import { ToolAuthorizationDialog } from "../dialogs/ToolAuthorizationDialog";
 import { SensitiveCommandConfirmDialog } from "../toolCalls/SensitiveCommandConfirmDialog";
 import { MarkdownBlock } from "./markdownRenderer";
 import { ChatFileArtifactCard } from "./ChatFileArtifactCard";
-import { artifactFileKey, resolveArtifactHref } from "./chatFileArtifacts";
+import {
+  artifactFileKey,
+  resolveArtifactHref,
+  resolveArtifactPath,
+} from "./chatFileArtifacts";
+import { HTML_FILE_PREVIEW_ATTR } from "../toolCalls/shared/HtmlFilePreviewButton";
 import type { AiResponseProps } from "../utils/types";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
@@ -96,7 +101,6 @@ export const AiResponse = memo(
     retryBackoffMs,
     retryBackoffStartedAt,
     isError = false,
-    htmlPreviewEligible = false,
     incompleteVariant,
     interruptionReason,
     recoveryOutcome,
@@ -104,6 +108,7 @@ export const AiResponse = memo(
     footerContent,
     fileArtifacts,
     artifactWorkspace,
+    onToggleFileArtifact,
     toolCalls = [],
     hookExecutions = [],
     pendingToolAuthorizations = [],
@@ -122,14 +127,6 @@ export const AiResponse = memo(
     const normalizedThinking = thinking?.trim();
     const normalizedSummary = summary.trim();
     const summaryClassName = "ai-message-summary";
-    const autoPreviewHtml =
-      htmlPreviewEligible &&
-      !isStreaming &&
-      !isError &&
-      !isAborting &&
-      !isRetrying &&
-      !incompleteVariant &&
-      !interruptionReason;
     const hasToolCalls = toolCalls.length > 0;
     const showFooterTime =
       !isStreaming && !hasToolCalls && showMessageTime && Boolean(timestamp);
@@ -219,35 +216,33 @@ export const AiResponse = memo(
         className="ai-message"
         aria-label="AI response"
         onClickCapture={(event) => {
-          if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey)
-            return;
+          if (!onToggleFileArtifact) return;
           const target = event.target;
           if (!(target instanceof Element)) return;
+          // tcn-header 上的 HTML 预览按钮：切换对应文件卡片
+          const previewButton = target.closest<HTMLElement>(
+            `[${HTML_FILE_PREVIEW_ATTR}]`,
+          );
+          if (previewButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            const path = resolveArtifactPath(
+              previewButton.getAttribute(HTML_FILE_PREVIEW_ATTR) ?? "",
+              artifactWorkspace,
+            );
+            if (path) onToggleFileArtifact(artifactFileKey(path));
+            return;
+          }
+          if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey)
+            return;
           const anchor = target.closest<HTMLAnchorElement>("a[href]");
           const href = anchor?.getAttribute("href");
           if (!href) return;
           const path = resolveArtifactHref(href, artifactWorkspace);
-          if (
-            !path ||
-            !fileArtifacts?.some(
-              (artifact) => artifact.key === artifactFileKey(path),
-            )
-          )
+          if (!path || !onToggleFileArtifact(artifactFileKey(path), true))
             return;
-          const card = Array.from(
-            event.currentTarget.querySelectorAll<HTMLElement>(
-              "[data-file-artifact-key]",
-            ),
-          ).find(
-            (node) => node.dataset.fileArtifactKey === artifactFileKey(path),
-          );
-          if (!card) return;
           event.preventDefault();
           event.stopPropagation();
-          card
-            .querySelector<HTMLButtonElement>(".chat-file-artifact-load")
-            ?.click();
-          card.scrollIntoView({ block: "nearest" });
         }}
       >
         {/* data-quote-source：划词引用的有效区域（AI 正文 / 思考块） */}
@@ -289,7 +284,6 @@ export const AiResponse = memo(
                 className={summaryClassName}
                 content={normalizedSummary}
                 streaming={isStreaming}
-                autoPreviewHtml={autoPreviewHtml}
               />
             )
           ) : null}
@@ -305,7 +299,6 @@ export const AiResponse = memo(
                   className="ai-message-section-body"
                   content={section.body}
                   streaming={isStreaming}
-                  autoPreviewHtml={autoPreviewHtml}
                 />
               )}
             </section>
@@ -352,6 +345,7 @@ export const AiResponse = memo(
               key={`${conversationId}:${artifact.key}:${artifact.revision}:${artifact.blocked}`}
               artifact={artifact}
               workspace={artifactWorkspace}
+              onClose={onToggleFileArtifact}
             />
           ))}
 

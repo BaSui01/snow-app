@@ -30,13 +30,11 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-.chat-file-artifact-action:focus-visible,
-.chat-file-artifact-load:focus-visible {
+.chat-file-artifact-action:focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
-.chat-file-artifact-status,
-.chat-file-artifact-load {
+.chat-file-artifact-status {
   padding: 16px;
   color: var(--text-secondary);
 }
@@ -118,6 +116,12 @@
 }
 .html-artifact-block[data-html-view="preview"] .html-artifact-code {
   display: none;
+}
+/* 与普通代码块保持一致的内边距 */
+.html-artifact-block .html-artifact-code pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 12px 14px;
 }
 .html-artifact-frame {
   display: block;
@@ -14794,6 +14798,29 @@ body.is-panel-resizing * {
   flex-shrink: 0;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+/* 写入 HTML 文件后 tcn-header 上的预览开关 */
+.tcn-html-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.tcn-html-preview-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+.tcn-html-preview-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 /* 工具调用被用户拒绝时的理由提示条：常驻显示（不随卡片展开状态隐藏），
@@ -34174,6 +34201,16 @@ body.is-panel-resizing * {
 
 .mcp-tool-details-search-clear:hover {
   color: var(--text-primary);
+}
+
+/* 列表级搜索框 */
+.mcp-list-search {
+  flex-shrink: 0;
+  padding: 7px 10px 7px 30px;
+}
+
+.mcp-list-search input {
+  font-size: 12px;
 }
 
 .mcp-tool-details-empty {

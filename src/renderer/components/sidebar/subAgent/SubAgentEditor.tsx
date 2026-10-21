@@ -1,7 +1,9 @@
 import { AlertCircle, Loader2, Save, Wrench, X } from "lucide-react";
+import { useState } from "react";
 import type { ApiConfigRecord, Model } from "../../../../preload";
 import { CustomSelect } from "../../common/CustomSelect";
 import { useI18n } from "../../../i18n";
+import { McpSearchInput, matchesMcpQuery } from "../mcpSettings/McpSearchInput";
 import { usesAllTools } from "./subAgentUtils";
 import type { SubAgentDraft, SubAgentToolOption } from "./types";
 
@@ -40,7 +42,11 @@ export function SubAgentEditor({
   onSave,
 }: SubAgentEditorProps): React.JSX.Element {
   const { t } = useI18n();
+  const [toolQuery, setToolQuery] = useState("");
   const allToolsEnabled = usesAllTools(draft.toolNames);
+  const filteredToolOptions = toolOptions.filter((tool) =>
+    matchesMcpQuery(toolQuery, tool.name, tool.serverName, tool.description),
+  );
   const unavailableToolNames = allToolsEnabled
     ? []
     : draft.toolNames.filter(
@@ -257,32 +263,51 @@ export function SubAgentEditor({
               </span>
             </div>
           ) : (
-            <div className="sub-agent-tool-options">
-              {toolOptions.map((tool) => (
-                <label
-                  className="sub-agent-tool-option toggle-switch"
-                  key={tool.name}
-                >
-                  <input
-                    type="checkbox"
-                    checked={
-                      allToolsEnabled || draft.toolNames.includes(tool.name)
-                    }
-                    disabled={isBusy}
-                    onChange={() => toggleTool(tool.name)}
-                  />
-                  <span className="toggle-slider" />
-                  <Wrench size={14} />
-                  <span className="sub-agent-tool-option-content">
-                    <strong>{tool.name}</strong>
-                    <small>
-                      {tool.serverName}
-                      {tool.description ? ` · ${tool.description}` : ""}
-                    </small>
+            <>
+              <McpSearchInput
+                value={toolQuery}
+                onChange={setToolQuery}
+                placeholder={t("settings.subAgentToolSearchPlaceholder", {
+                  defaultValue: "Search tools by name, server or description",
+                })}
+              />
+              {filteredToolOptions.length === 0 ? (
+                <div className="sub-agent-tool-state">
+                  <span>
+                    {t("settings.subAgentToolSearchEmpty", {
+                      defaultValue: "No tools match the search.",
+                    })}
                   </span>
-                </label>
-              ))}
-            </div>
+                </div>
+              ) : (
+                <div className="sub-agent-tool-options">
+                  {filteredToolOptions.map((tool) => (
+                    <label
+                      className="sub-agent-tool-option toggle-switch"
+                      key={tool.name}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          allToolsEnabled || draft.toolNames.includes(tool.name)
+                        }
+                        disabled={isBusy}
+                        onChange={() => toggleTool(tool.name)}
+                      />
+                      <span className="toggle-slider" />
+                      <Wrench size={14} />
+                      <span className="sub-agent-tool-option-content">
+                        <strong>{tool.name}</strong>
+                        <small>
+                          {tool.serverName}
+                          {tool.description ? ` · ${tool.description}` : ""}
+                        </small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
           )}
           {!isToolCatalogLoading && unavailableToolNames.length > 0 ? (
             <div className="sub-agent-tool-state is-error">

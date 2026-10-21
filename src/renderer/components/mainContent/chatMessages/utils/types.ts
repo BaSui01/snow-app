@@ -65,6 +65,8 @@ export type AiResponseProps = {
   footerContent?: ReactNode;
   fileArtifacts?: readonly ChatFileArtifact[];
   artifactWorkspace?: string;
+  /** 切换 HTML 文件卡片显隐（open 缺省为取反）；文件卡片不存在时返回 false。 */
+  onToggleFileArtifact?: (key: string, open?: boolean) => boolean;
   toolCalls?: ToolCallInfo[];
   /** Hook execution records bound to tool calls in this message (via
    *  toolCallInteractionId).  Rendered attached to the matching tool card

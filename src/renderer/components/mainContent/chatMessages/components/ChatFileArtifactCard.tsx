@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw, X } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { openBrowserFile } from "../../../../utils/browserFileOpen";
 import { highlightCodeHtml } from "../../../../utils/syntaxHighlight";
@@ -110,13 +110,16 @@ export const ChatFileArtifactCard = memo(
   ({
     artifact,
     workspace,
+    onClose,
   }: {
     artifact: ChatFileArtifact;
     workspace: string | undefined;
+    onClose?: (key: string, open?: boolean) => boolean;
   }): React.JSX.Element => {
     const { t } = useI18n();
-    const { path, automatic, blocked, isSsh } = artifact;
-    const [requested, setRequested] = useState(automatic);
+    const { path, blocked, isSsh } = artifact;
+    // 卡片仅在用户手动展开后挂载，挂载即加载
+    const [requested, setRequested] = useState(true);
     const [generation, setGeneration] = useState(0);
     const [loaded, setLoaded] = useState<LoadState>(null);
     const requestSequence = useRef(0);
@@ -212,20 +215,22 @@ export const ChatFileArtifactCard = memo(
               <ExternalLink size={15} />
             </button>
           ) : null}
+          {onClose ? (
+            <button
+              type="button"
+              className="chat-file-artifact-action"
+              title={t("chat.fileArtifact.close")}
+              aria-label={t("chat.fileArtifact.close")}
+              onClick={() => onClose(artifact.key, false)}
+            >
+              <X size={15} />
+            </button>
+          ) : null}
         </div>
         {status ? (
           <div className="chat-file-artifact-status" role="status">
             {status}
           </div>
-        ) : null}
-        {!requested && !blocked ? (
-          <button
-            type="button"
-            className="chat-file-artifact-load"
-            onClick={refresh}
-          >
-            {t("chat.fileArtifact.load")}
-          </button>
         ) : null}
         {!blocked && loaded && "source" in loaded ? (
           <HtmlFileRuntime source={loaded.source} />

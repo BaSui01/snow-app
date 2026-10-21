@@ -25,6 +25,7 @@ import {
   type McpSettingsListItem,
 } from "./mcpSettings/McpSettingsList";
 import { McpSettingsSummary } from "./mcpSettings/McpSettingsSummary";
+import { McpSearchInput, matchesMcpQuery } from "./mcpSettings/McpSearchInput";
 import {
   formatMcpError,
   formatMcpSaveError,
@@ -106,6 +107,7 @@ export function McpSettingsPanel({
   >(() => new Set());
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [serverQuery, setServerQuery] = useState("");
   const loadGenerationRef = useRef(0);
   // 正在进行后台工具发现的服务器（按 scope 服务器 id 去重），
   // 避免同一台服务器被并发发现两次。
@@ -850,6 +852,14 @@ export function McpSettingsPanel({
   );
   const isGlobalScope = activeScope === "global";
   const activeServers = isGlobalScope ? globalListItems : projectListItems;
+  // 按服务器名称、详情及已获取的工具名/描述过滤
+  const filteredServers = activeServers.filter(
+    (server) =>
+      matchesMcpQuery(serverQuery, server.name, server.detail) ||
+      (toolsByServerId[server.serverId] ?? []).some((tool) =>
+        matchesMcpQuery(serverQuery, tool.name, tool.description),
+      ),
+  );
   const enabledCount = activeServers.filter(
     (server) => server.enabled && server.globalEnabled,
   ).length;
@@ -858,14 +868,19 @@ export function McpSettingsPanel({
     : t("settings.mcpProjectListTitle", {
         defaultValue: "Project MCP servers",
       });
-  const emptyMessage = isGlobalScope
-    ? t("settings.mcpNoServers", {
-        defaultValue:
-          "No MCP servers yet. Sync from Snow CLI settings.json or add one manually.",
-      })
-    : t("settings.mcpProjectNoServers", {
-        defaultValue: "No MCP servers are available for this project.",
-      });
+  const emptyMessage =
+    serverQuery.trim() && activeServers.length > 0
+      ? t("settings.mcpServerSearchEmpty", {
+          defaultValue: "No MCP servers match the search.",
+        })
+      : isGlobalScope
+        ? t("settings.mcpNoServers", {
+            defaultValue:
+              "No MCP servers yet. Sync from Snow CLI settings.json or add one manually.",
+          })
+        : t("settings.mcpProjectNoServers", {
+            defaultValue: "No MCP servers are available for this project.",
+          });
 
   const handleProjectToggle = async (
     server: McpSettingsListItem,
@@ -1258,8 +1273,15 @@ export function McpSettingsPanel({
         </div>
 
         <div className="api-settings-form-body">
+          <McpSearchInput
+            value={serverQuery}
+            onChange={setServerQuery}
+            placeholder={t("settings.mcpServerSearchPlaceholder", {
+              defaultValue: "Search servers or tools",
+            })}
+          />
           <McpSettingsList
-            servers={activeServers}
+            servers={filteredServers}
             isBusy={isBusy}
             listTitle={listTitle}
             emptyMessage={emptyMessage}

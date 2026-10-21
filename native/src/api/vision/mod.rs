@@ -27,7 +27,7 @@ mod providers;
 
 pub(crate) use file_read::describe_image_file;
 pub(crate) use image_parsing::{global_cache, textify_parsed_content};
-pub(crate) use providers::describe_image;
+pub(crate) use providers::{describe_image, vision_cache_key};
 
 /// 视觉文本化的默认提示词前缀，引导视觉模型输出结构化描述。
 pub(crate) const DEFAULT_VISION_PROMPT: &str = "Please describe this image in detail. Focus on text content, layout, visual elements, colors, and any notable features. If the image contains code, diagrams, or technical content, describe them precisely. Output in the same language as the user's prompt.";
@@ -37,7 +37,7 @@ pub(crate) const DEFAULT_VISION_PROMPT: &str = "Please describe this image in de
 pub(crate) const VISION_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
 
 /// 进程内缓存：避免同一张图片在多轮对话中重复调用视觉模型。
-/// Key 为图片 base64 数据的 blake3 哈希，Value 为文本化结果。
+/// Key 为图片 base64 数据 + 提示词的 blake3 哈希，Value 为文本化结果。
 pub(crate) type VisionCache = Arc<RwLock<HashMap<String, String>>>;
 
 /// 判断当前 API 配置是否需要视觉文本化。

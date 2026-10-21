@@ -38,7 +38,7 @@ pub(crate) async fn describe_image(
     user_prompt: &str,
     cancel_token: Option<&CancellationToken>,
 ) -> Result<String> {
-    let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
+    let cache_key = vision_cache_key(image, user_prompt);
 
     if let Some(cached) = global_cache().read().await.get(&cache_key) {
         return Ok(cached.clone());
@@ -82,6 +82,15 @@ pub(crate) async fn describe_image(
         .await
         .insert(cache_key, trimmed.clone());
     Ok(trimmed)
+}
+
+/// 缓存键：图片内容 + 分析提示词（issue #241：同图不同问法需各自缓存）。
+pub(crate) fn vision_cache_key(image: &ChatImage, user_prompt: &str) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(image.data.as_bytes());
+    hasher.update(&[0]);
+    hasher.update(user_prompt.trim().as_bytes());
+    hasher.finalize().to_hex().to_string()
 }
 
 fn build_vision_prompt(user_prompt: &str) -> String {

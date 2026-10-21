@@ -131,7 +131,7 @@ pub(crate) async fn textify_parsed_content(
             async move {
                 // 命中 blake3 内容缓存时直接复用已有描述（describe_image 内部仍会
                 // 二次确认，此处预查仅为让进度事件准确区分 cached / describing）。
-                let cache_key = blake3::hash(image.data.as_bytes()).to_hex().to_string();
+                let cache_key = vision_cache_key(image, &parsed.text);
                 let cached = global_cache().read().await.contains_key(&cache_key);
                 emit_vision_status(
                     on_chunk,

@@ -122,6 +122,13 @@
   backdrop-filter: none !important;
 }
 
+/* 侧栏透明后底色只剩 --app-bg，树吸顶铺底去掉 muted 叠层，避免色差块 */
+:root[data-layout-style="layered"]
+  .sidebar-tree-list
+  :is(.project-collection-row, .tree-project-row-wrap)::before {
+  background-image: none;
+}
+
 /* ==========================================================================
    3. 中部：覆盖左侧
    ========================================================================== */
@@ -268,6 +275,11 @@
   .app-layout
   > .right-panel-resizer {
   margin-left: calc(-1 * var(--layered-overlap-right)) !important;
+}
+
+/* 层叠风格的布局拖拽条不显示悬停/拖拽高亮，只保留 col-resize 指针 */
+:root[data-layout-style="layered"] .app-layout > .panel-resizer::before {
+  display: none !important;
 }
 
 /* 0 宽拖拽条的透明命中区，保持边缘可拖拽 */

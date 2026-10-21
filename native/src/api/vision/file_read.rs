@@ -10,7 +10,7 @@ use super::*;
 ///
 /// 限制：单张 20MB 上限；仅接受图片扩展名。主模型支持视觉时直接复用主
 /// 通道，否则回退到主 API 配置的 vision 通道（chat / responses /
-/// anthropic / gemini）；结果走 [`describe_image`] 的 blake3 内容缓存。
+/// anthropic / gemini）；结果走 [`describe_image`] 的 blake3 缓存（图片 + prompt）。
 /// API 档案与自定义请求头跟随会话绑定（与主流程一致），无会话时用全局激活档案。
 pub(crate) async fn describe_image_file(
     path: &str,

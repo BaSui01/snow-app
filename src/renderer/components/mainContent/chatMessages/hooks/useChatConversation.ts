@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatInputSendOptions } from "../../chatInput/types";
+import type {
+  BackgroundRunResult,
+  ChatInputSendOptions,
+} from "../../chatInput/types";
 import type {
   AutoSendRequest,
   ConversationInputRuntimeState,
@@ -1238,6 +1241,53 @@ export const useChatConversation = (
     [],
   );
 
+  // 后台 run 并等待结束（定时任务工作流节点）：conversationId 给定时续写该会话，
+  // 否则新建后台会话。总会 resolve（失败以 success=false 返回）。
+  const runBackgroundConversation = useCallback(
+    async (
+      content: string,
+      directoryId?: string,
+      options?: ScheduledTaskRunOptions,
+      taskName?: string,
+      conversationId?: string,
+    ): Promise<BackgroundRunResult> => {
+      const message = content.trim();
+      if (!message) {
+        return {
+          conversationId: conversationId ?? "",
+          output: "",
+          success: false,
+          error: "Prompt is empty",
+        };
+      }
+      const configs = await window.snow.listApiConfigs();
+      const activeConfig =
+        configs.find((config) => config.isActive) ?? configs[0];
+      let targetSessionKey = conversationId?.trim() ?? "";
+      if (!targetSessionKey) {
+        backgroundSessionSeqRef.current += 1;
+        targetSessionKey = getBackgroundPendingSessionKey(
+          backgroundSessionSeqRef.current,
+        );
+      }
+      return new Promise<BackgroundRunResult>((resolve) => {
+        handleSendMessageRef.current(message, {
+          ...resolveAutoSendOptions({
+            autoSendOverride: options ?? null,
+            apiConfigs: configs,
+            selectedModel: activeConfig?.advancedModel,
+            selectedApiProfile: activeConfig?.profileName,
+          }),
+          targetSessionKey,
+          targetDirectoryId: directoryId?.trim() || undefined,
+          triggeredByTaskName: conversationId ? undefined : taskName,
+          onRunSettled: resolve,
+        });
+      });
+    },
+    [],
+  );
+
   // 同一请求只允许一个输入区实例认领一次（输入区重建、多实例挂载时防重复发送）。
   const claimAutoSend = useCallback((id: number): boolean => {
     if (activeAutoSendRef.current?.id !== id || autoSendClaimedRef.current) {
@@ -1359,6 +1409,7 @@ export const useChatConversation = (
     getRuntimeInputState,
     buildFromContent,
     startBackgroundConversation,
+    runBackgroundConversation,
     autoSendRequest: activeAutoSend,
     claimAutoSend,
     completeAutoSend,

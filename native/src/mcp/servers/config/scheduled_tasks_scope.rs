@@ -1,8 +1,8 @@
 //! config 服务 `scheduledTasks` 作用域：读取定时任务定义、状态与运行历史。
 //!
 //! 调度器运行在渲染进程，任务 store 只在启动时 hydrate，直接写表不会生效：
-//!   - 新建：`config-set key="new"` 在 tools/call.rs 路由到渲染端（立即注册定时器）；
-//!   - 修改/暂停/删除：界面「定时任务」面板；本模块对其余写操作一律拒绝。
+//! 所有写操作（新建/修改/暂停/立即执行/取消运行/删除）由 tools/call.rs 路由到渲染端 store；
+//! 本模块只负责读取，未经路由的写调用一律拒绝。
 
 use std::path::Path;
 
@@ -20,8 +20,20 @@ const MAX_HISTORY_ROWS: usize = 20;
 const TOOL_GET: &str = "get";
 const TOOL_SET: &str = "set";
 
-/// 非 key="new" 的写操作统一拒绝并给出正确通道。
-const WRITE_GUIDANCE: &str = "scheduledTasks only supports creating tasks via config-set key=\"new\" (see createGuidance from config-list scope=scheduledTasks). The scheduler runs in the renderer process and the task store hydrates from the database only at app startup, so editing, pausing or deleting tasks must be done in the app's Scheduled Tasks panel.";
+/// 写操作说明（list/get 的 note，以及未经渲染端路由时的拒绝信息）。
+const WRITE_GUIDANCE: &str = "scheduledTasks writes are executed by the app's live scheduler: config-set key=\"new\" creates a task (see createGuidance); config-set key=<taskId> updates / pauses / runs / cancels it (see manageGuidance); config-delete key=<taskId> confirmed=true deletes it. Only tasks of the current project and global tasks can be changed.";
+
+/// 修改/暂停/立即执行/取消/删除契约。
+fn manage_guidance() -> Value {
+    json!({
+        "update": "config-set scope=scheduledTasks key=<taskId> value={name?, prompt?, schedule?, workflow?, apiProfile?, model?, basicModel?, thinkingStrength?, preScript?, preScriptTimeoutMs?, runOnScriptError?, paused?}. Omitted fields keep their current values; null or \"\" clears apiProfile/model/basicModel/thinkingStrength/preScript; schedule REPLACES the whole schedule (re-send wakeWhenClosed if needed) and recomputes the next run; workflow replaces the node graph, workflow=null switches back to a single-prompt task. Changes to a running workflow apply from the next run.",
+        "pause": "value={paused: true|false}; one-time (type=once) tasks cannot be paused. A running workflow keeps its in-flight nodes but starts no new ones while paused.",
+        "runNow": "value={action: \"runNow\"} starts a run immediately in the background (rejected when the task is already running); check progress with config-get key=<taskId>.",
+        "cancelRun": "value={action: \"cancelRun\"} stops a running WORKFLOW run (remaining nodes are cancelled; nodes already executing finish in their own conversations). A single-prompt run cannot be cancelled here.",
+        "delete": "config-delete scope=scheduledTasks key=<taskId> confirmed=true removes the task and its run history. DESTRUCTIVE: confirm with the user via askUserQuestion first.",
+        "action": "`action` cannot be combined with other fields in the same call."
+    })
+}
 
 /// 创建契约（原 createScheduledTask 的参数说明）。
 fn create_guidance() -> Value {
@@ -31,7 +43,7 @@ fn create_guidance() -> Value {
         "fields": {
             "id": "optional idempotency key (max 128 chars); retrying with the same id returns the existing task instead of a duplicate",
             "name": "required, human-readable name",
-            "prompt": "required, prompt sent on each run; may contain {{SCRIPT_OUTPUT}}",
+            "prompt": "required for a single-prompt task, sent on each run; may contain {{SCRIPT_OUTPUT}}. Optional when `workflow` is set (defaults to a summary of the node prompts)",
             "schedule": {
                 "type": "required: \"once\" | \"recurring\"",
                 "executeAt": "type=once: ISO 8601 timestamp WITH timezone offset, e.g. 2026-08-12T10:00:00+08:00",
@@ -47,12 +59,35 @@ fn create_guidance() -> Value {
             "thinkingStrength": "optional per-run thinking override, e.g. none | low | medium | high",
             "preScript": "optional shell command run in the project directory before the AI Loop",
             "preScriptTimeoutMs": "optional 1000-300000 (default 60000); timeout counts as a script error",
-            "runOnScriptError": "optional bool (default false): still run the AI Loop when the script fails"
+            "runOnScriptError": "optional bool (default false): still run the AI Loop when the script fails",
+            "workflow": {
+                "description": "optional: turns the task into a WORKFLOW task (same as the panel's workflow canvas). Each scheduled run executes the node graph instead of a single prompt; the pre-script runs once per run and {{SCRIPT_OUTPUT}} is injected into every node prompt",
+                "contextMode": "optional \"handoff\" (default: each node gets a new conversation and receives its upstream nodes' final replies) | \"none\" (new conversation, nothing passed) | \"shared\" (all nodes run in one conversation in order)",
+                "nodes": "required non-empty array of {id, label?, prompt, apiProfile?, model?, basicModel?, thinkingStrength?, position?:{x,y}}; id must be unique, prompt must be self-contained; per-node model fields override the task-level ones; omit position to auto-layout left-to-right",
+                "edges": "optional array of {source, target, delayMs?}: target starts after source completes, waiting delayMs (0 to 366 days, default 0). A node with several upstream edges starts after ALL of them complete (max of finish time + delay). Nodes without incoming edges start immediately and run in parallel. The graph must be acyclic (validated)",
+                "failure": "the first failed node stops the whole run; remaining nodes are cancelled"
+            }
         },
         "preScriptProtocol": "exit 0 = run, exit 1 = skip this round; or print a JSON object as the LAST stdout line: {\"run\":false,\"reason\":\"...\"} skips and records the reason, {\"run\":true,\"output\":\"...\"} injects output into {{SCRIPT_OUTPUT}}, {\"prompt\":\"...\"} fully overrides the prompt. Any other exit code, timeout or spawn failure is a script error.",
         "examples": [
             {"name": "Daily report", "prompt": "Summarize yesterday's commits", "schedule": {"type": "recurring", "mode": "daily", "hour": 9, "minute": 0}},
-            {"name": "Reminder", "prompt": "Remind me to review PRs", "schedule": {"type": "once", "executeAt": "2026-08-12T10:00:00+08:00"}}
+            {"name": "Reminder", "prompt": "Remind me to review PRs", "schedule": {"type": "once", "executeAt": "2026-08-12T10:00:00+08:00"}},
+            {
+                "name": "Nightly research report",
+                "schedule": {"type": "recurring", "mode": "daily", "hour": 2, "minute": 0},
+                "workflow": {
+                    "contextMode": "handoff",
+                    "nodes": [
+                        {"id": "collect", "label": "Collect", "prompt": "Collect today's open issues and summarize them"},
+                        {"id": "commits", "label": "Commits", "prompt": "Summarize today's commits"},
+                        {"id": "report", "label": "Report", "prompt": "Write a daily report from the upstream outputs"}
+                    ],
+                    "edges": [
+                        {"source": "collect", "target": "report"},
+                        {"source": "commits", "target": "report", "delayMs": 600000}
+                    ]
+                }
+            }
         ]
     })
 }
@@ -112,15 +147,26 @@ fn task_summary(record: &ScheduledTaskRecord) -> Value {
         "thinkingStrength": record.thinking_strength,
         "historyCount": history.len(),
         "lastRunStatus": last_run.map(|run| run.status.clone()),
+        "runMode": (if record.workflow_json.is_some() { "workflow" } else { "prompt" }),
         "updatedAt": record.updated_at,
         "createdAt": record.created_at,
     })
+}
+
+/// 解析可选 JSON 列，失败时保留原文。
+fn optional_json(raw: &Option<String>) -> Value {
+    match raw {
+        Some(text) => serde_json::from_str::<Value>(text).unwrap_or_else(|_| json!({ "raw": text })),
+        None => Value::Null,
+    }
 }
 
 fn task_detail(record: &ScheduledTaskRecord) -> Value {
     let mut detail = task_summary(record);
     if let Value::Object(map) = &mut detail {
         map.insert("prompt".to_string(), json!(record.prompt));
+        map.insert("workflow".to_string(), optional_json(&record.workflow_json));
+        map.insert("workflowRun".to_string(), optional_json(&record.workflow_run_json));
         map.insert(
             "preScript".to_string(),
             json!(record.pre_script.clone().unwrap_or_default()),
@@ -143,7 +189,7 @@ fn task_detail(record: &ScheduledTaskRecord) -> Value {
     detail
 }
 
-/// Dispatches `config-list/get` for the `scheduledTasks` scope（创建由 call.rs 路由）。
+/// Dispatches `config-list/get` for the `scheduledTasks` scope（写操作由 call.rs 路由到渲染端）。
 pub(crate) fn execute_scheduled_tasks_scope(
     tool_name: &str,
     args: &Value,
@@ -166,6 +212,7 @@ pub(crate) fn execute_scheduled_tasks_scope(
                 "file": null,
                 "note": WRITE_GUIDANCE,
                 "createGuidance": create_guidance(),
+                "manageGuidance": manage_guidance(),
                 "count": items.len(),
                 "keys": [{
                     "key": "tasks",
@@ -202,6 +249,7 @@ pub(crate) fn execute_scheduled_tasks_scope(
                 "scope": "scheduledTasks",
                 "key": key,
                 "note": WRITE_GUIDANCE,
+                "manageGuidance": manage_guidance(),
                 "value": task_detail(task),
             }))
         }

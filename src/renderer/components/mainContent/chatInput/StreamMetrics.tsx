@@ -1,6 +1,7 @@
 import { ArrowDown, Clock, Gauge, Pause, Play, Timer } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { formatDuration } from "../../../utils/formatDuration";
 import { formatTtft } from "../../../utils/formatTtft";
 import { Tooltip } from "../../common/Tooltip";
 
@@ -26,14 +27,6 @@ export type StreamMetricsProps = {
 
 const formatTokenCount = (count: number): string =>
   count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
-
-const formatDuration = (ms: number): string => {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}m${remainingSeconds}s`;
-};
 
 const formatTokPerSec = (tokens: number, elapsedMs: number): string => {
   if (elapsedMs <= 0 || tokens <= 0) return "--";

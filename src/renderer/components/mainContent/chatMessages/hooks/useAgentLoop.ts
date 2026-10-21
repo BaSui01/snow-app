@@ -192,8 +192,23 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
       // 后台会话（startBackgroundConversation）的目标项目与任务名随本次发送
       // 传入，不进入 capturedOptions，避免写进 activeSendOptions / 排队消息。
-      const { targetDirectoryId, triggeredByTaskName, ...sendOptions } =
-        options;
+      const {
+        targetDirectoryId,
+        triggeredByTaskName,
+        onRunSettled,
+        ...sendOptions
+      } = options;
+      // 未进入 run 的提前返回也要回调，避免调用方永久等待
+      const rejectRun = (error: string): void => {
+        onRunSettled?.({
+          conversationId: isPendingSessionKey(options.targetSessionKey)
+            ? ""
+            : (options.targetSessionKey ?? ""),
+          output: "",
+          success: false,
+          error,
+        });
+      };
       let capturedOptions = captureChatInputSendOptions(sendOptions);
       // 程序化发送（pending 队列自动冲刷）携带目标会话 key：消息必须发到
       // 队列所属的会话，而不是用户当前停留的视图会话。
@@ -208,9 +223,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // finishing parent loop flushing its pending queue while the user is
       // viewing the terminated sub-agent conversation).
       if (existingRef?.subAgentTerminated) {
+        rejectRun("Conversation is read-only");
         return;
       }
       if (existingRef?.isSending) {
+        if (onRunSettled) {
+          rejectRun("Conversation is busy");
+          return;
+        }
         const running = existingRef.activeSendOptions;
         // A steer cannot change the running provider/model/settings or turn kind.
         // Manual compaction has no active task snapshot and only accepts follow-ups.
@@ -260,6 +280,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       if (isFirstMessage && sessionWorktreeMode && !targetPendingWorktree) {
         // 用内置提示弹窗代替系统 alert：置入文案，由 ChatContent 渲染。
         ctx.setWorktreeModeNotice(t("git.worktreesPendingSessionHint"));
+        rejectRun("Worktree mode requires a selected worktree");
         return;
       }
       const rollbackState =
@@ -1893,6 +1914,28 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           ),
         );
       };
+      // 后台 run 结束回调：取最后一条助手回复作为输出
+      const settleRun = (): void => {
+        if (!onRunSettled) return;
+        const cancelled = isRunCancelled(finalSessionKey);
+        const lastAssistant = ctx.sessionsRef.current[
+          finalSessionKey
+        ]?.messages.findLast((message) => message.role === "assistant");
+        const failed =
+          runFailed || cancelled || lastAssistant?.status === "error";
+        onRunSettled({
+          conversationId: isPendingSessionKey(finalSessionKey)
+            ? ""
+            : finalSessionKey,
+          output: lastAssistant?.content ?? "",
+          success: !failed,
+          error: failed
+            ? cancelled
+              ? "Run was stopped"
+              : lastAssistant?.content || "Run failed"
+            : undefined,
+        });
+      };
       void initCheckpointAndRun()
         .catch(reportRunError)
         .finally(async () => {
@@ -1971,6 +2014,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 // Hook failure must not resurrect a stopped run.
               });
             window.snow.notifyPetTurnEnded(petTurnId, true);
+            settleRun();
             return;
           }
           ref.activeSendOptions = undefined;
@@ -2045,7 +2089,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           await finalizeTaskHistory();
 
           const ownsSession = !!ref && ref.runId === currentRunId;
-          if (!ownsSession) return;
+          if (!ownsSession) {
+            settleRun();
+            return;
+          }
           if (ownsSession) {
             ref.isSending = false;
             ref.activeTaskMessages = undefined;
@@ -2059,6 +2106,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ctx.pauseControllerRef.current.delete(finalSessionKey);
             ctx.removeStreamingId(finalSessionKey);
           }
+          // 解锁后再回调：续写同一会话的下游节点不会撞上 isSending
+          settleRun();
 
           if (!isPendingSessionKey(finalSessionKey)) {
             void window.snow

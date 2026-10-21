@@ -109,7 +109,13 @@ pub fn reconcile_interrupted_runs(database_path: &Path) -> Result<u32> {
             let updated = connection.execute(
                 "UPDATE scheduled_task_runs
                     SET status = 'error', error = 'Interrupted by app shutdown'
-                  WHERE status = 'running'",
+                  WHERE status = 'running'
+                    AND task_id NOT IN (
+                      SELECT id FROM scheduled_tasks
+                       WHERE workflow_run_json <> ''
+                         AND json_valid(workflow_run_json)
+                         AND json_extract(workflow_run_json, '$.status') = 'running'
+                    )",
                 [],
             )?;
             Ok(updated as u32)
@@ -126,7 +132,7 @@ fn list_with_connection(connection: &Connection) -> rusqlite::Result<Vec<Schedul
                 status, paused, next_run_at, last_run_at, run_count, last_error,
                 pre_script, pre_script_timeout_ms, run_on_script_error,
                 skip_count, last_skipped_at, last_skip_reason,
-                created_at, updated_at
+                created_at, updated_at, workflow_json, workflow_run_json
            FROM scheduled_tasks
           ORDER BY created_at ASC, id ASC",
     )?;
@@ -182,13 +188,13 @@ fn upsert_with_connection(
              status, paused, next_run_at, last_run_at, run_count, last_error,
              pre_script, pre_script_timeout_ms, run_on_script_error,
              skip_count, last_skipped_at, last_skip_reason,
-             created_at, updated_at
+             created_at, updated_at, workflow_json, workflow_run_json
          ) VALUES (
              ?1, ?2, ?3, ?4, ?5,
              ?6, ?7, ?8, ?9,
              ?10, ?11, ?12, ?13, ?14, ?15,
              ?16, ?17, ?18, ?19, ?20, ?21,
-             ?22, ?23
+             ?22, ?23, ?24, ?25
          )
          ON CONFLICT(id) DO UPDATE SET
              directory_id = excluded.directory_id,
@@ -211,6 +217,8 @@ fn upsert_with_connection(
              skip_count = excluded.skip_count,
              last_skipped_at = excluded.last_skipped_at,
              last_skip_reason = excluded.last_skip_reason,
+             workflow_json = excluded.workflow_json,
+             workflow_run_json = excluded.workflow_run_json,
              updated_at = excluded.updated_at",
         params![
             input.id,
@@ -240,6 +248,8 @@ fn upsert_with_connection(
             input.last_skip_reason,
             input.created_at,
             input.updated_at,
+            input.workflow_json.as_deref().unwrap_or(""),
+            input.workflow_run_json.as_deref().unwrap_or(""),
         ],
     )?;
     fetch_task_by_id(connection, &input.id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
@@ -296,7 +306,7 @@ fn fetch_task_by_id(
                 status, paused, next_run_at, last_run_at, run_count, last_error,
                 pre_script, pre_script_timeout_ms, run_on_script_error,
                 skip_count, last_skipped_at, last_skip_reason,
-                created_at, updated_at
+                created_at, updated_at, workflow_json, workflow_run_json
            FROM scheduled_tasks
           WHERE id = ?1",
     )?;
@@ -357,8 +367,15 @@ fn map_task_row(row: &Row) -> rusqlite::Result<ScheduledTaskRecord> {
         last_skip_reason: row.get(20)?,
         created_at: row.get(21)?,
         updated_at: row.get(22)?,
+        workflow_json: non_empty(row.get::<_, Option<String>>(23)?),
+        workflow_run_json: non_empty(row.get::<_, Option<String>>(24)?),
         history: Vec::new(),
     })
+}
+
+/// 空字符串列折叠为 None（前端按缺省处理）。
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.filter(|text| !text.trim().is_empty())
 }
 
 /// Maps a `scheduled_task_runs` row starting at column `offset`.

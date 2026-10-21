@@ -6,7 +6,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::super::builtin::{execute_builtin_tool, sanitize_tool_full_name};
-use super::super::servers::app_control::{route_config_set, AppControlCallback, AppControlService};
+use super::super::servers::app_control::{
+    route_config_delete, route_config_set, AppControlCallback, AppControlService,
+};
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
 use super::super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::super::servers::codebase::CodebaseService;
@@ -578,11 +580,12 @@ pub async fn call_mcp_tool(
         AppControlService::new()
             .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
             .await?
-    } else if let Some(routed) = (tool_full_name == "config-set")
-        .then(|| route_config_set(&args))
-        .flatten()
-    {
-        // 依赖渲染层状态的 config-set 目标（定时任务/新建项目/站点拦截）走 app-control 桥。
+    } else if let Some(routed) = match tool_full_name.as_str() {
+        "config-set" => route_config_set(&args, project_id.as_deref()),
+        "config-delete" => route_config_delete(&args, project_id.as_deref()),
+        _ => None,
+    } {
+        // 依赖渲染层状态的 config 写操作（定时任务/新建项目/站点拦截）走 app-control 桥。
         let (action, payload) = routed?;
         AppControlService::new()
             .dispatch(action, payload, &on_app_control)

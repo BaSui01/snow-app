@@ -19,7 +19,7 @@ const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
-    /// Action identifier: "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
+    /// Action identifier: "get_blocked_patterns" | "update_blocked_patterns" | "set_mode" | "open_settings" | "create_scheduled_task" | "update_scheduled_task" | "delete_scheduled_task" | "run_scheduled_task_now" | "cancel_scheduled_task_run" | "create_project" | "create_conversation" | "send_conversation_message" | "activate_conversation"
     pub action: String,
     /// JSON-encoded action payload
     pub payload_json: String,
@@ -315,7 +315,10 @@ fn required_plan_summary(args: &Value) -> napi::Result<String> {
 }
 
 /// config-set 中必须由渲染层执行的目标，命中时返回 (action, payload)，否则交给 config 服务。
-pub fn route_config_set(args: &Value) -> Option<napi::Result<(String, Value)>> {
+pub fn route_config_set(
+    args: &Value,
+    project_id: Option<&str>,
+) -> Option<napi::Result<(String, Value)>> {
     let scope = args.get("scope").and_then(Value::as_str).map(str::trim)?;
     let key = args
         .get("key")
@@ -326,6 +329,14 @@ pub fn route_config_set(args: &Value) -> Option<napi::Result<(String, Value)>> {
     match (scope, key) {
         ("appSettings", "blockedPatterns") => Some(blocked_patterns_payload(&value)),
         ("scheduledTasks", "new") => Some(validate_create_scheduled_task_args(&value)),
+        ("scheduledTasks", "") => Some(Err(Error::new(
+            Status::InvalidArg,
+            "scheduledTasks requires key = \"new\" (create) or an existing task id (update / pause / runNow / cancelRun)".to_string(),
+        ))),
+        ("scheduledTasks", task_id) => Some(
+            validate_manage_scheduled_task_args(task_id, &value)
+                .map(|(action, payload)| (action, with_project_id(payload, project_id))),
+        ),
         ("workspace", "directories")
             if value.get("action").and_then(Value::as_str).map(str::trim) == Some("create") =>
         {
@@ -505,18 +516,24 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
             )
         })?;
 
+    // 工作流模式：prompt 可省略（渲染端用节点摘要填充）
+    let workflow = match args.get("workflow") {
+        None | Some(Value::Null) => None,
+        Some(raw) => Some(normalize_scheduled_workflow(raw)?),
+    };
+
     let prompt = args
         .get("prompt")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "prompt is required and must be a non-empty string for scheduledTasks"
-                    .to_string(),
-            )
-        })?;
+        .filter(|s| !s.is_empty());
+    if prompt.is_none() && workflow.is_none() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "prompt is required and must be a non-empty string for scheduledTasks (or pass `workflow` for a workflow task)"
+                .to_string(),
+        ));
+    }
 
     // Optional idempotency id: when the model retries a timed-out tool call
     // with the same id, the renderer returns the already-created task instead
@@ -546,7 +563,536 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
                 "schedule is required and must be an object for scheduledTasks".to_string(),
             )
         })?;
+    let normalized = normalize_schedule(schedule)?;
 
+    // Optional per-task configuration fields. Values are trimmed here, and empty
+    // strings are omitted. basicModel is retained for display/config alignment;
+    // model remains the advanced model used by the task's fired conversation.
+    let mut payload = serde_json::Map::new();
+    if let Some(id) = id {
+        payload.insert("id".to_string(), json!(id));
+    }
+    payload.insert("name".to_string(), json!(name));
+    if let Some(prompt) = prompt {
+        payload.insert("prompt".to_string(), json!(prompt));
+    }
+    payload.insert("schedule".to_string(), Value::Object(normalized));
+    if let Some(workflow) = workflow {
+        payload.insert("workflow".to_string(), workflow);
+    }
+    for (key, value) in [
+        (
+            "apiProfile",
+            args.get("apiProfile")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "basicModel",
+            args.get("basicModel")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "model",
+            args.get("model")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+        (
+            "thinkingStrength",
+            args.get("thinkingStrength")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
+        ),
+    ] {
+        if let Some(value) = value {
+            payload.insert(key.to_string(), json!(value));
+        }
+    }
+
+    // Optional pre-script fields (validated here for an actionable model error;
+    // the renderer-side store applies the same constraints as single source
+    // of truth).
+    if let Some(pre_script) = args
+        .get("preScript")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        payload.insert("preScript".to_string(), json!(pre_script));
+
+        if let Some(timeout_ms) = args.get("preScriptTimeoutMs").and_then(Value::as_i64) {
+            if !(1000..=300_000).contains(&timeout_ms) {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("preScriptTimeoutMs must be 1000-300000 ms, received {timeout_ms}"),
+                ));
+            }
+            payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
+        }
+
+        if let Some(run_on_error) = args.get("runOnScriptError").and_then(Value::as_bool) {
+            payload.insert("runOnScriptError".to_string(), json!(run_on_error));
+        }
+    }
+
+    Ok((
+        "create_scheduled_task".to_string(),
+        Value::Object(payload),
+    ))
+}
+
+/// key=<taskId> 允许的写字段。
+const SCHEDULED_TASK_UPDATE_FIELDS: &[&str] = &[
+    "name",
+    "prompt",
+    "schedule",
+    "workflow",
+    "apiProfile",
+    "basicModel",
+    "model",
+    "thinkingStrength",
+    "preScript",
+    "preScriptTimeoutMs",
+    "runOnScriptError",
+    "paused",
+];
+
+/// key=<taskId> 的写操作：value={action:"runNow"|"cancelRun"} 或字段修改（含 paused）。
+fn validate_manage_scheduled_task_args(
+    task_id: &str,
+    value: &Value,
+) -> napi::Result<(String, Value)> {
+    let invalid = |message: String| Error::new(Status::InvalidArg, message);
+    if task_id.chars().count() > MAX_SCHEDULED_TASK_ID_LEN {
+        return Err(invalid(format!(
+            "task id must be at most {MAX_SCHEDULED_TASK_ID_LEN} characters"
+        )));
+    }
+    let object = value.as_object().ok_or_else(|| {
+        invalid("scheduledTasks value must be an object (fields to update, or {action: \"runNow\" | \"cancelRun\"})".to_string())
+    })?;
+
+    if let Some(action) = object.get("action") {
+        let action = action.as_str().map(str::trim).unwrap_or("");
+        let routed = match action {
+            "runNow" => "run_scheduled_task_now",
+            "cancelRun" => "cancel_scheduled_task_run",
+            other => {
+                return Err(invalid(format!(
+                    "action must be \"runNow\" or \"cancelRun\", received \"{other}\""
+                )))
+            }
+        };
+        if object.len() > 1 {
+            return Err(invalid(
+                "action cannot be combined with other fields; send updates in a separate call"
+                    .to_string(),
+            ));
+        }
+        return Ok((routed.to_string(), json!({ "taskId": task_id })));
+    }
+
+    if let Some(unknown) = object
+        .keys()
+        .find(|key| !SCHEDULED_TASK_UPDATE_FIELDS.contains(&key.as_str()))
+    {
+        return Err(invalid(format!(
+            "Unknown scheduledTasks field \"{unknown}\". Updatable fields: [{}], or {{action: \"runNow\" | \"cancelRun\"}}",
+            SCHEDULED_TASK_UPDATE_FIELDS.join(", ")
+        )));
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("taskId".to_string(), json!(task_id));
+    for key in ["name", "prompt"] {
+        if let Some(raw) = object.get(key) {
+            let text = raw
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| invalid(format!("{key} must be a non-empty string")))?;
+            payload.insert(key.to_string(), json!(text));
+        }
+    }
+    if let Some(raw) = object.get("schedule") {
+        let schedule = raw
+            .as_object()
+            .ok_or_else(|| invalid("schedule must be an object".to_string()))?;
+        payload.insert(
+            "schedule".to_string(),
+            Value::Object(normalize_schedule(schedule)?),
+        );
+    }
+    match object.get("workflow") {
+        None => {}
+        Some(Value::Null) => {
+            payload.insert("workflow".to_string(), Value::Null);
+        }
+        Some(raw) => {
+            payload.insert("workflow".to_string(), normalize_scheduled_workflow(raw)?);
+        }
+    }
+    // 运行配置：省略 = 保持，null / "" = 清除
+    for key in ["apiProfile", "basicModel", "model", "thinkingStrength", "preScript"] {
+        match object.get(key) {
+            None => {}
+            Some(Value::Null) => {
+                payload.insert(key.to_string(), json!(""));
+            }
+            Some(Value::String(text)) => {
+                payload.insert(key.to_string(), json!(text.trim()));
+            }
+            Some(_) => return Err(invalid(format!("{key} must be a string or null"))),
+        }
+    }
+    if let Some(raw) = object.get("preScriptTimeoutMs") {
+        let timeout_ms = raw
+            .as_i64()
+            .filter(|ms| (1000..=300_000).contains(ms))
+            .ok_or_else(|| invalid("preScriptTimeoutMs must be an integer 1000-300000".to_string()))?;
+        payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
+    }
+    for key in ["runOnScriptError", "paused"] {
+        if let Some(raw) = object.get(key) {
+            let flag = raw
+                .as_bool()
+                .ok_or_else(|| invalid(format!("{key} must be a boolean")))?;
+            payload.insert(key.to_string(), json!(flag));
+        }
+    }
+    if payload.len() == 1 {
+        return Err(invalid(format!(
+            "No fields to update. Updatable fields: [{}], or {{action: \"runNow\" | \"cancelRun\"}}",
+            SCHEDULED_TASK_UPDATE_FIELDS.join(", ")
+        )));
+    }
+
+    Ok(("update_scheduled_task".to_string(), Value::Object(payload)))
+}
+
+/// config-delete 中由渲染层执行的目标（当前仅定时任务）。
+pub fn route_config_delete(
+    args: &Value,
+    project_id: Option<&str>,
+) -> Option<napi::Result<(String, Value)>> {
+    let scope = args.get("scope").and_then(Value::as_str).map(str::trim)?;
+    if scope != "scheduledTasks" {
+        return None;
+    }
+    let key = args
+        .get("key")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if args.get("confirmed").and_then(Value::as_bool) != Some(true) {
+        return Some(Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "config-delete is destructive and requires explicit user confirmation. Before calling it, use the `askUserQuestion` tool from the `user-interaction` server to show the user which scheduled task will be deleted (scope=`scheduledTasks`, key=`{key}`) together with its run history, wait for approval, then retry with `confirmed: true`."
+            ),
+        )));
+    }
+    if key.is_empty() {
+        return Some(Err(Error::new(
+            Status::InvalidArg,
+            "scheduledTasks delete requires key = task id".to_string(),
+        )));
+    }
+    Some(Ok((
+        "delete_scheduled_task".to_string(),
+        with_project_id(json!({ "taskId": key }), project_id),
+    )))
+}
+
+/// 注入会话所属项目，渲染端据此限制可操作的任务范围。
+fn with_project_id(mut payload: Value, project_id: Option<&str>) -> Value {
+    if let (Some(project_id), Value::Object(map)) = (
+        project_id.map(str::trim).filter(|id| !id.is_empty()),
+        &mut payload,
+    ) {
+        map.insert("projectId".to_string(), json!(project_id));
+    }
+    payload
+}
+
+/// 工作流画布自动布局间距（节点宽约 160px）。
+const WORKFLOW_LAYOUT_X: f64 = 240.0;
+const WORKFLOW_LAYOUT_Y: f64 = 140.0;
+
+fn trimmed_field<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+/// 规范化定时任务工作流：拓扑校验复用 workflow::validate_graph，缺坐标时按层自动布局。
+fn normalize_scheduled_workflow(raw: &Value) -> napi::Result<Value> {
+    let invalid = |message: String| Error::new(Status::InvalidArg, message);
+    let raw = match raw {
+        Value::String(text) => serde_json::from_str::<Value>(text.trim())
+            .map_err(|_| invalid("workflow must be a JSON object".to_string()))?,
+        other => other.clone(),
+    };
+    let object = raw.as_object().ok_or_else(|| {
+        invalid("workflow must be an object {contextMode?, nodes, edges?}".to_string())
+    })?;
+
+    let context_mode = match object
+        .get("contextMode")
+        .and_then(Value::as_str)
+        .map(str::trim)
+    {
+        None | Some("") => "handoff",
+        Some(mode @ ("handoff" | "none" | "shared")) => mode,
+        Some(other) => {
+            return Err(invalid(format!(
+                "workflow.contextMode must be \"handoff\", \"none\" or \"shared\", received \"{other}\""
+            )))
+        }
+    };
+
+    let raw_nodes = object
+        .get("nodes")
+        .and_then(Value::as_array)
+        .filter(|items| !items.is_empty())
+        .ok_or_else(|| invalid("workflow.nodes must be a non-empty array".to_string()))?;
+    let mut nodes: Vec<serde_json::Map<String, Value>> = Vec::with_capacity(raw_nodes.len());
+    let mut positions: Vec<Option<(f64, f64)>> = Vec::with_capacity(raw_nodes.len());
+    for (index, node) in raw_nodes.iter().enumerate() {
+        let id = trimmed_field(node, "id")
+            .ok_or_else(|| invalid(format!("workflow.nodes[{index}].id is required")))?;
+        let prompt = trimmed_field(node, "prompt").ok_or_else(|| {
+            invalid(format!("workflow.nodes[{index}] (\"{id}\") requires a non-empty prompt"))
+        })?;
+        let label = trimmed_field(node, "label")
+            .or_else(|| trimmed_field(node, "name"))
+            .unwrap_or(id);
+        let mut item = serde_json::Map::new();
+        item.insert("id".to_string(), json!(id));
+        item.insert("label".to_string(), json!(label));
+        item.insert("prompt".to_string(), json!(prompt));
+        for key in ["apiProfile", "basicModel", "model", "thinkingStrength"] {
+            if let Some(value) = trimmed_field(node, key) {
+                item.insert(key.to_string(), json!(value));
+            }
+        }
+        positions.push(node.get("position").and_then(|position| {
+            Some((position.get("x")?.as_f64()?, position.get("y")?.as_f64()?))
+        }));
+        nodes.push(item);
+    }
+
+    let raw_edges: &[Value] = match object.get("edges") {
+        None | Some(Value::Null) => &[],
+        Some(Value::Array(items)) => items.as_slice(),
+        Some(_) => return Err(invalid("workflow.edges must be an array".to_string())),
+    };
+    let mut seen_edges = std::collections::HashSet::new();
+    let mut edges: Vec<Value> = Vec::with_capacity(raw_edges.len());
+    for (index, edge) in raw_edges.iter().enumerate() {
+        let source = trimmed_field(edge, "source")
+            .ok_or_else(|| invalid(format!("workflow.edges[{index}].source is required")))?;
+        let target = trimmed_field(edge, "target")
+            .ok_or_else(|| invalid(format!("workflow.edges[{index}].target is required")))?;
+        let delay_ms = match edge.get("delayMs") {
+            None | Some(Value::Null) => 0,
+            Some(value) => value.as_i64().ok_or_else(|| {
+                invalid(format!(
+                    "workflow.edges[{index}].delayMs must be an integer number of milliseconds"
+                ))
+            })?,
+        };
+        if !(0..=MAX_SCHEDULED_INTERVAL_MS).contains(&delay_ms) {
+            return Err(invalid(format!(
+                "workflow.edges[{index}].delayMs must be 0-{MAX_SCHEDULED_INTERVAL_MS} ms, received {delay_ms}"
+            )));
+        }
+        if seen_edges.insert(format!("{source}->{target}")) {
+            edges.push(json!({ "source": source, "target": target, "delayMs": delay_ms }));
+        }
+    }
+
+    let node_values: Vec<Value> = nodes.iter().cloned().map(Value::Object).collect();
+    let (order, errors) = super::workflow::validate_graph(&node_values, &edges);
+    if !errors.is_empty() {
+        return Err(invalid(format!("Invalid workflow: {}", errors.join("; "))));
+    }
+
+    if positions.iter().all(Option::is_some) {
+        for (item, position) in nodes.iter_mut().zip(positions) {
+            if let Some((x, y)) = position {
+                item.insert("position".to_string(), json!({ "x": x, "y": y }));
+            }
+        }
+    } else {
+        // 任一节点缺坐标：按最长路径分层，左到右排布
+        let mut depth: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for id in &order {
+            let level = edges
+                .iter()
+                .filter(|edge| edge.get("target").and_then(Value::as_str) == Some(id.as_str()))
+                .filter_map(|edge| edge.get("source").and_then(Value::as_str))
+                .filter_map(|source| depth.get(source).map(|level| level + 1))
+                .max()
+                .unwrap_or(0);
+            depth.insert(id.clone(), level);
+        }
+        let mut rows: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        for item in nodes.iter_mut() {
+            let id = item.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let level = depth.get(&id).copied().unwrap_or(0);
+            let row = rows.entry(level).or_insert(0);
+            item.insert(
+                "position".to_string(),
+                json!({
+                    "x": level as f64 * WORKFLOW_LAYOUT_X,
+                    "y": *row as f64 * WORKFLOW_LAYOUT_Y,
+                }),
+            );
+            *row += 1;
+        }
+    }
+
+    Ok(json!({
+        "contextMode": context_mode,
+        "nodes": nodes,
+        "edges": edges,
+    }))
+}
+
+fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
+    let name = args
+        .get("name")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "name is required and must be a non-empty string for workspace action=create".to_string(),
+            )
+        })?;
+
+    if name.contains(['/', '\\']) {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("name must not contain path separators, received \"{name}\""),
+        ));
+    }
+
+    // parentPath 可选：未提供时由渲染层弹出目录选择框让用户指定保存位置。
+    let parent_path = args
+        .get("parentPath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("name".to_string(), json!(name));
+    if let Some(parent_path) = parent_path {
+        payload.insert("parentPath".to_string(), json!(parent_path));
+    }
+
+    Ok(("create_project".to_string(), Value::Object(payload)))
+}
+
+fn validate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    match args.get("action").and_then(Value::as_str).map(str::trim) {
+        Some("create") => validate_create_conversation_args(args),
+        Some("send") => validate_send_conversation_message_args(args),
+        Some("activate") => validate_activate_conversation_args(args),
+        other => Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "action must be \"create\", \"send\" or \"activate\" for {SERVER_ID}-{TOOL_CONVERSATION}, received {other:?}"
+            ),
+        )),
+    }
+}
+
+fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    let title = required_trimmed_str(args, "title", "conversation action=create")?;
+    let text = args
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let auto_reply = args
+        .get("autoReply")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if auto_reply && text.is_none() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "text is required when autoReply is true for conversation action=create".to_string(),
+        ));
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert("title".to_string(), json!(title));
+    if let Some(text) = text {
+        payload.insert("text".to_string(), json!(text));
+    }
+    payload.insert("autoReply".to_string(), json!(auto_reply));
+
+    Ok(("create_conversation".to_string(), Value::Object(payload)))
+}
+
+fn validate_send_conversation_message_args(args: &Value) -> napi::Result<(String, Value)> {
+    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=send")?;
+    let text = required_trimmed_str(args, "text", "conversation action=send")?;
+
+    Ok((
+        "send_conversation_message".to_string(),
+        json!({ "conversationId": conversation_id, "text": text }),
+    ))
+}
+
+fn validate_activate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
+    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=activate")?;
+
+    Ok((
+        "activate_conversation".to_string(),
+        json!({ "conversationId": conversation_id }),
+    ))
+}
+
+/// 读取必填非空字符串参数（去首尾空白）。
+fn required_trimmed_str(args: &Value, key: &str, tool: &str) -> napi::Result<String> {
+    args.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                format!("{key} is required and must be a non-empty string for {tool}"),
+            )
+        })
+}
+
+fn unknown_tool_error(tool_name: &str) -> Error {
+    Error::new(
+        Status::GenericFailure,
+        format!(
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
+        ),
+    )
+}
+
+/// 校验并规范化 schedule（新建与修改共用）。
+fn normalize_schedule(
+    schedule: &serde_json::Map<String, Value>,
+) -> napi::Result<serde_json::Map<String, Value>> {
     let schedule_type = schedule
         .get("type")
         .and_then(Value::as_str)
@@ -702,200 +1248,5 @@ fn validate_create_scheduled_task_args(args: &Value) -> napi::Result<(String, Va
         normalized.insert("wakeWhenClosed".to_string(), json!(true));
     }
 
-    // Optional per-task configuration fields. Values are trimmed here, and empty
-    // strings are omitted. basicModel is retained for display/config alignment;
-    // model remains the advanced model used by the task's fired conversation.
-    let mut payload = serde_json::Map::new();
-    if let Some(id) = id {
-        payload.insert("id".to_string(), json!(id));
-    }
-    payload.insert("name".to_string(), json!(name));
-    payload.insert("prompt".to_string(), json!(prompt));
-    payload.insert("schedule".to_string(), Value::Object(normalized));
-    for (key, value) in [
-        (
-            "apiProfile",
-            args.get("apiProfile")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        ),
-        (
-            "basicModel",
-            args.get("basicModel")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        ),
-        (
-            "model",
-            args.get("model")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        ),
-        (
-            "thinkingStrength",
-            args.get("thinkingStrength")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty()),
-        ),
-    ] {
-        if let Some(value) = value {
-            payload.insert(key.to_string(), json!(value));
-        }
-    }
-
-    // Optional pre-script fields (validated here for an actionable model error;
-    // the renderer-side store applies the same constraints as single source
-    // of truth).
-    if let Some(pre_script) = args
-        .get("preScript")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        payload.insert("preScript".to_string(), json!(pre_script));
-
-        if let Some(timeout_ms) = args.get("preScriptTimeoutMs").and_then(Value::as_i64) {
-            if !(1000..=300_000).contains(&timeout_ms) {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("preScriptTimeoutMs must be 1000-300000 ms, received {timeout_ms}"),
-                ));
-            }
-            payload.insert("preScriptTimeoutMs".to_string(), json!(timeout_ms));
-        }
-
-        if let Some(run_on_error) = args.get("runOnScriptError").and_then(Value::as_bool) {
-            payload.insert("runOnScriptError".to_string(), json!(run_on_error));
-        }
-    }
-
-    Ok((
-        "create_scheduled_task".to_string(),
-        Value::Object(payload),
-    ))
-}
-
-fn validate_create_project_args(args: &Value) -> napi::Result<(String, Value)> {
-    let name = args
-        .get("name")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "name is required and must be a non-empty string for workspace action=create".to_string(),
-            )
-        })?;
-
-    if name.contains(['/', '\\']) {
-        return Err(Error::new(
-            Status::InvalidArg,
-            format!("name must not contain path separators, received \"{name}\""),
-        ));
-    }
-
-    // parentPath 可选：未提供时由渲染层弹出目录选择框让用户指定保存位置。
-    let parent_path = args
-        .get("parentPath")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-
-    let mut payload = serde_json::Map::new();
-    payload.insert("name".to_string(), json!(name));
-    if let Some(parent_path) = parent_path {
-        payload.insert("parentPath".to_string(), json!(parent_path));
-    }
-
-    Ok(("create_project".to_string(), Value::Object(payload)))
-}
-
-fn validate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
-    match args.get("action").and_then(Value::as_str).map(str::trim) {
-        Some("create") => validate_create_conversation_args(args),
-        Some("send") => validate_send_conversation_message_args(args),
-        Some("activate") => validate_activate_conversation_args(args),
-        other => Err(Error::new(
-            Status::InvalidArg,
-            format!(
-                "action must be \"create\", \"send\" or \"activate\" for {SERVER_ID}-{TOOL_CONVERSATION}, received {other:?}"
-            ),
-        )),
-    }
-}
-
-fn validate_create_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
-    let title = required_trimmed_str(args, "title", "conversation action=create")?;
-    let text = args
-        .get("text")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let auto_reply = args
-        .get("autoReply")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    if auto_reply && text.is_none() {
-        return Err(Error::new(
-            Status::InvalidArg,
-            "text is required when autoReply is true for conversation action=create".to_string(),
-        ));
-    }
-
-    let mut payload = serde_json::Map::new();
-    payload.insert("title".to_string(), json!(title));
-    if let Some(text) = text {
-        payload.insert("text".to_string(), json!(text));
-    }
-    payload.insert("autoReply".to_string(), json!(auto_reply));
-
-    Ok(("create_conversation".to_string(), Value::Object(payload)))
-}
-
-fn validate_send_conversation_message_args(args: &Value) -> napi::Result<(String, Value)> {
-    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=send")?;
-    let text = required_trimmed_str(args, "text", "conversation action=send")?;
-
-    Ok((
-        "send_conversation_message".to_string(),
-        json!({ "conversationId": conversation_id, "text": text }),
-    ))
-}
-
-fn validate_activate_conversation_args(args: &Value) -> napi::Result<(String, Value)> {
-    let conversation_id = required_trimmed_str(args, "conversationId", "conversation action=activate")?;
-
-    Ok((
-        "activate_conversation".to_string(),
-        json!({ "conversationId": conversation_id }),
-    ))
-}
-
-/// 读取必填非空字符串参数（去首尾空白）。
-fn required_trimmed_str(args: &Value, key: &str, tool: &str) -> napi::Result<String> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                format!("{key} is required and must be a non-empty string for {tool}"),
-            )
-        })
-}
-
-fn unknown_tool_error(tool_name: &str) -> Error {
-    Error::new(
-        Status::GenericFailure,
-        format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
-        ),
-    )
+    Ok(normalized)
 }

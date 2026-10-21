@@ -515,8 +515,6 @@ export const en = {
   "scheduledTask.emptyHint": "No scheduled tasks yet. Create one on the right.",
   "scheduledTask.executorUnavailable":
     "AI Loop unavailable — tasks will not run until the chat is ready.",
-  "scheduledTask.lifetimeHint":
-    'Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped, unless "Run even when the app is closed" is enabled.',
   "scheduledTask.clearAll": "Clear all",
   "scheduledTask.confirmClearAll":
     "Remove all scheduled tasks? This cannot be undone.",
@@ -589,6 +587,71 @@ export const en = {
   "scheduledTask.saveConfig": "Save",
   "scheduledTask.cancelEdit": "Cancel",
   "scheduledTask.errorSaveFailed": "Failed to save changes",
+  "scheduledTask.workflow.runMode": "Run mode",
+  "scheduledTask.workflow.modePrompt": "Single prompt",
+  "scheduledTask.workflow.modeWorkflow": "Workflow",
+  "scheduledTask.workflow.title": "Workflow",
+  "scheduledTask.workflow.contextMode": "Context between nodes",
+  "scheduledTask.workflow.context.handoff": "Hand off output",
+  "scheduledTask.workflow.context.shared": "Shared conversation",
+  "scheduledTask.workflow.context.none": "Independent",
+  "scheduledTask.workflow.contextHint.handoff":
+    "Each node runs in a new conversation; the final replies of its upstream nodes are appended to its prompt.",
+  "scheduledTask.workflow.contextHint.shared":
+    "All nodes are sent one after another in the same conversation and share its full context. Parallel branches run in sequence.",
+  "scheduledTask.workflow.contextHint.none":
+    "Each node runs in a new conversation; nothing is passed between nodes, the flow only controls the order.",
+  "scheduledTask.workflow.defaultConfigHint":
+    "The settings below are the defaults for nodes without their own API config. {{SCRIPT_OUTPUT}} works in every node prompt.",
+  "scheduledTask.workflow.stopRun": "Stop workflow",
+  "scheduledTask.workflow.detailsHint":
+    "Click a node that has run to open its conversation.",
+  "scheduledTask.workflow.conversationDeleted":
+    "This node's conversation has been deleted or archived.",
+  "scheduledTask.workflow.errorNoNodes":
+    "Add at least one node to the workflow",
+  "scheduledTask.workflow.errorEmptyPrompt":
+    'Node "{{name}}" has an empty prompt',
+  "scheduledTask.workflow.errorInvalid": "Invalid workflow: {{reason}}",
+  "scheduledTask.workflow.delayNone": "No delay",
+  "scheduledTask.workflow.delay.seconds": "{{value}}s",
+  "scheduledTask.workflow.delay.minutes": "{{value}} min",
+  "scheduledTask.workflow.delay.hours": "{{value}} h",
+  "scheduledTask.workflow.delay.days": "{{value}} d",
+  "scheduledTask.workflow.unit.seconds": "Seconds",
+  "scheduledTask.workflow.unit.minutes": "Minutes",
+  "scheduledTask.workflow.unit.hours": "Hours",
+  "scheduledTask.workflow.unit.days": "Days",
+  "scheduledTask.workflow.waitUntil": "Waiting until {{time}}",
+  "scheduledTask.workflow.nodeStatus.waiting": "Waiting",
+  "scheduledTask.workflow.nodeStatus.scheduled": "Ready",
+  "scheduledTask.workflow.nodeStatus.running": "Running",
+  "scheduledTask.workflow.nodeStatus.completed": "Completed",
+  "scheduledTask.workflow.nodeStatus.failed": "Failed",
+  "scheduledTask.workflow.nodeStatus.cancelled": "Cancelled",
+  "scheduledTask.workflow.startTag": "Start",
+  "scheduledTask.workflow.newNodeName": "Step {{index}}",
+  "scheduledTask.workflow.addNode": "Add node",
+  "scheduledTask.workflow.nodeEditHint": "Right-click or click to edit",
+  "scheduledTask.workflow.expandCanvas": "Enlarge canvas",
+  "scheduledTask.workflow.collapseCanvas": "Collapse",
+  "scheduledTask.workflow.expandedHint":
+    "The canvas is open in an enlarged window.",
+  "scheduledTask.workflow.emptyCanvas":
+    "Right-click the canvas or use Add node to start.",
+  "scheduledTask.workflow.editDelay": "Set delay",
+  "scheduledTask.workflow.delayHint":
+    "Wait this long after the upstream node finishes. 0 = start immediately.",
+  "scheduledTask.workflow.deleteEdge": "Delete connection",
+  "scheduledTask.workflow.editNode": "Edit node",
+  "scheduledTask.workflow.deleteNode": "Delete node",
+  "scheduledTask.workflow.nodeName": "Node name",
+  "scheduledTask.workflow.nodePrompt": "Prompt",
+  "scheduledTask.workflow.nodePromptPlaceholder": "What this step should do",
+  "scheduledTask.workflow.inheritTaskConfig": "Inherit task run config",
+  "scheduledTask.workflow.openConversationHint":
+    "Click to open the node conversation",
+  "scheduledTask.workflow.done": "Done",
   "scheduledTask.editTask": "Edit task",
   "scheduledTask.editTaskTitle": "Edit scheduled task",
   "sidebar.chatTimeRunning": "Running",
@@ -789,8 +852,6 @@ export const en = {
     "This sub-agent failed. The conversation is read-only.",
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
-  "chat.subAgentFinished.budgetExceeded":
-    "This sub-agent exhausted its runtime budget and stopped dispatching new tools. It is waiting for the main agent to extend the budget or end the task.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
   "chat.workflowNodeFinished.completed":
     "This workflow node has finished. The conversation is read-only.",

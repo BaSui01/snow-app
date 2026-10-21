@@ -47,16 +47,6 @@ import {
   resolveSubAgentRuntimeConfig,
 } from "./subAgentRuntimeConfig";
 import {
-  getSubAgentBudgetTracker,
-  parseSubAgentBudgetPatch,
-  parseSubAgentBudgetSpec,
-  peekSubAgentBudgetSnapshot,
-} from "./subAgentBudget";
-import type {
-  SubAgentBudgetPatch,
-  SubAgentBudgetSnapshot,
-} from "./subAgentBudget";
-import {
   applySubAgentAcceptanceReport,
   buildSubAgentAcceptancePrompt,
   hasSubAgentAcceptance,
@@ -112,8 +102,6 @@ export type SubAgentResumer = {
   resume: (
     messages: { role: "user"; content: string }[],
     checkpointIds?: string[],
-    /** continue 显式预算变更；缺省保持现有计数与上限（子代理不能自行续期）。 */
-    budgetPatch?: SubAgentBudgetPatch | null,
   ) => Promise<string>;
 };
 
@@ -145,29 +133,6 @@ export type SubAgentActivationDeps = {
 // 子代理运行工厂（激活与重启后从 DB 恢复共用）
 // ---------------------------------------------------------------------------
 
-/** 预算快照的可序列化形式（工具回执 / continue 回执 / 子代理列表共用）。 */
-const serializeSubAgentBudget = (
-  snapshot: SubAgentBudgetSnapshot,
-): Record<string, unknown> => ({
-  maxToolCalls: snapshot.maxToolCalls,
-  usedToolCalls: snapshot.usedToolCalls,
-  maxRunMs: snapshot.maxRunMs,
-  elapsedMs: snapshot.elapsedMs,
-  exceeded: snapshot.exceeded,
-  blocked: snapshot.blocked,
-});
-
-/** 未派发工具调用的结果：明确标记为预算超限、未执行。 */
-const buildBudgetBlockedToolResult = (
-  snapshot: SubAgentBudgetSnapshot,
-): string =>
-  JSON.stringify({
-    success: false,
-    error: "BUDGET_EXCEEDED",
-    reason: `Runtime budget reached (${snapshot.blocked ?? snapshot.exceeded}); this tool call was NOT dispatched.`,
-    budget: serializeSubAgentBudget(snapshot),
-  });
-
 /**
  * 记录一次工具执行证据并在子代理看到的工具结果前加上证据 id。只有附带
  * 验收清单时才生效：没有清单时原样返回模型结果，不改变子代理行为。
@@ -187,34 +152,6 @@ const withSubAgentEvidence = (
     result: rawResult,
   });
   return evidenceId ? `[evidence ${evidenceId}]\n${modelResult}` : modelResult;
-};
-
-/** 回执里的「最后执行位置」：倒数第一条已结算（completed/error）的工具调用。 */
-const collectLastSubAgentToolAction = (
-  messages: ChatConversationMessage[] | undefined,
-): Record<string, unknown> | null => {
-  if (!messages) return null;
-  for (
-    let messageIndex = messages.length - 1;
-    messageIndex >= 0;
-    messageIndex--
-  ) {
-    const toolCalls = messages[messageIndex].toolCalls;
-    if (!toolCalls?.length) continue;
-    for (let callIndex = toolCalls.length - 1; callIndex >= 0; callIndex--) {
-      const toolCall = toolCalls[callIndex];
-      if (toolCall.status !== "completed" && toolCall.status !== "error") {
-        continue;
-      }
-      return {
-        toolName: toolCall.name,
-        callId: toolCall.callId ?? "",
-        status: toolCall.status,
-        resultPreview: (toolCall.result ?? "").slice(0, 400),
-      };
-    }
-  }
-  return null;
 };
 
 export type SubAgentRunLoop = (
@@ -281,9 +218,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       options.conversationRuntimeConfigOverride.responsesFastMode ===
         sendOptions.responsesFastMode);
   let stopped = false;
-  // 运行时执行预算：按子代理会话注册，跨工具递归 / 自动压缩 / continue 保持。
-  // 缺省不设置上限时 budget snapshot 全为 null，行为与之前完全一致。
-  const budget = getSubAgentBudgetTracker(subConvId);
   let activeCheckpointId: string | undefined;
   let activeCheckpointWorkDir = subCheckpointWorkDir;
   const createPendingCheckpoint = async (): Promise<string | undefined> => {
@@ -870,18 +804,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       ),
     );
 
-    // 运行时预算（确定性强制，不依赖模型自觉）：授权前先按剩余额度裁剪本批
-    // 待派发调用，避免为不会执行的调用弹出授权框；真正派发时再逐次预留，
-    // 因此并行批次中排在预算之外的调用一律不派发。被拒绝的调用不消耗额度。
-    const budgetDispatchLimit = Math.min(
-      subToolCalls.length,
-      budget.remainingToolCalls(),
-    );
-    const dispatchToolCalls = subToolCalls.slice(0, budgetDispatchLimit);
-    const budgetBlockedCalls: ToolCallInfo[] = [];
-    if (budgetDispatchLimit < subToolCalls.length) {
-      budgetBlockedCalls.push(...subToolCalls.slice(budgetDispatchLimit));
-    }
+    const dispatchToolCalls = subToolCalls;
 
     const subAuthorizationDecisions = await requestToolAuthorizations(
       dispatchToolCalls,
@@ -976,15 +899,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
           }),
         );
         continue;
-      }
-
-      // 派发前的运行时检查：时长超限或调用数用尽时不再派发任何新工具，
-      // 本批剩余调用（含被拒绝分支之后的所有调用）如实标记为未执行。
-      if (!budget.reserveToolCall()) {
-        budgetBlockedCalls.push(
-          ...subToolCalls.slice(subToolIndex, budgetDispatchLimit),
-        );
-        break;
       }
 
       const subToolArgs = injectSessionIdIntoToolArgs(
@@ -1259,39 +1173,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       }
     }
 
-    // 运行时预算阻断：不再派发新工具，也不再请求模型（避免模型继续重试）。
-    // 已完成内容与最后执行位置保留；未派发的调用如实标记为未执行，已发出的
-    // 请求/正在执行的工具不撤销。
-    if (budgetBlockedCalls.length > 0) {
-      stopped = true;
-      budget.markStop();
-      const blockedSnapshot = budget.snapshot();
-      const blockedResult = buildBudgetBlockedToolResult(blockedSnapshot);
-      ctx.updateSessionMessages(subConvId, (currentMessages) =>
-        currentMessages.map((currentMessage) => {
-          if (currentMessage.id !== subAssistantMessageId) {
-            return currentMessage;
-          }
-          let toolCalls = currentMessage.toolCalls;
-          for (const blockedCall of budgetBlockedCalls) {
-            toolCalls = updateFirstMatchingToolCall(
-              toolCalls,
-              blockedCall,
-              ["pending", "running"],
-              (currentToolCall) => ({
-                ...currentToolCall,
-                status: "error" as const,
-                result: blockedResult,
-              }),
-            );
-          }
-          return { ...currentMessage, toolCalls };
-        }),
-      );
-      const blockedNotice = `Sub-agent stopped: runtime budget exceeded (${blockedSnapshot.blocked ?? blockedSnapshot.exceeded}), so ${budgetBlockedCalls.length} further tool call(s) were NOT dispatched. Awaiting the main agent's decision: extend the budget (sub-agents-continue with budget { mode: "add" }) or end the task.`;
-      return subResponse.content || blockedNotice;
-    }
-
     const subToolResultMessage: ChatConversationMessage = {
       id: createMessageId("tool"),
       role: "tool",
@@ -1524,7 +1405,7 @@ type SubAgentFinalizerDeps = {
 type SubAgentFinalizeFn = (
   convId: string,
   summary: string,
-  status: "completed" | "failed" | "budget_exceeded",
+  status: "completed" | "failed",
 ) => Promise<string>;
 
 /** 子代理回合统一收尾工厂：标记只读、清理运行状态、广播终止事件、持久化
@@ -1561,14 +1442,6 @@ const createSubAgentFinalizer = (
         summary = getErrorMessage(error);
         status = "failed";
       }
-    }
-    // 已在运行时被预算拦下的回合不能按「完成」交回主控；force-send 之后仍被
-    // 拦下同样如此。快照同时用于回执里的实际计数与阻塞原因。
-    const budgetTracker = getSubAgentBudgetTracker(convId);
-    const budgetSnapshot = budgetTracker.snapshot();
-    const budgetStopped = budgetTracker.consumeStop();
-    if (status === "completed" && budgetStopped) {
-      status = "budget_exceeded";
     }
     // 验收回执：只在主控附带清单时启用。证据 id 必须命中本会话真实的工具
     // 执行日志；声称 completed 但缺少有效证据的项一律降级为 unverified，
@@ -1741,33 +1614,6 @@ const createSubAgentFinalizer = (
         }
       : {};
 
-    // 预算超限：不合成为「完成」，把已完成内容、实际计数、最后执行位置与
-    // 任务上下文一起交回主控，由主控/用户显式决定追加预算或结束。
-    if (status === "budget_exceeded") {
-      return JSON.stringify({
-        success: false,
-        status: "budget_exceeded",
-        error:
-          'BUDGET_EXCEEDED: the sub-agent stopped before dispatching new tool calls. Extend the budget with sub-agents-continue (budget.mode="add") or end the task.',
-        reason: budgetSnapshot.blocked ?? budgetSnapshot.exceeded,
-        conversationId: convId,
-        agentName: getAgentName(),
-        summary: effectiveSummary,
-        budget: serializeSubAgentBudget(budgetSnapshot),
-        lastAction: collectLastSubAgentToolAction(
-          ctx.sessionsRef.current?.[convId]?.messages,
-        ),
-        task: {
-          parentConversationId,
-          promptPreview: prompt.slice(0, 400),
-        },
-        ...acceptancePayload,
-        instruction: acceptanceInstruction
-          ? `The sub-agent stopped dispatching new tool calls because its runtime budget was exhausted. Nothing was rolled back: completed steps stay applied and the conversation history is preserved. Decide explicitly: extend the budget and continue the SAME task with sub-agents-continue (budget { mode: "add", maxToolCalls, maxRunMs }), adjust the goal, or end the task. Never repeat steps that already succeeded. ${acceptanceInstruction}`
-          : 'The sub-agent stopped dispatching new tool calls because its runtime budget was exhausted. Nothing was rolled back: completed steps stay applied and the conversation history is preserved. Decide explicitly: extend the budget and continue the SAME task with sub-agents-continue (budget { mode: "add", maxToolCalls, maxRunMs }), adjust the goal, or end the task. Never repeat steps that already succeeded.',
-      });
-    }
-
     return JSON.stringify({
       success: true,
       conversationId: convId,
@@ -1815,14 +1661,7 @@ const createSubAgentResume = (
   return async (
     messages: { role: "user"; content: string }[],
     checkpointIds?: string[],
-    budgetPatch?: SubAgentBudgetPatch | null,
   ): Promise<string> => {
-    // 预算变更只能由主控的 continue 显式提出；缺省保持现有计数与上限
-    // （已超限的会话必须显式追加/重置后才能继续派发工具）。
-    const budget = getSubAgentBudgetTracker(subConvId);
-    if (budgetPatch) {
-      budget.apply(budgetPatch);
-    }
     const resumeRef = ctx.sessionsRefData.current.get(subConvId);
     if (!resumeRef) {
       return JSON.stringify({
@@ -1847,8 +1686,6 @@ const createSubAgentResume = (
       return JSON.stringify({
         success: true,
         queued: true,
-        budgetAdjusted: Boolean(budgetPatch),
-        budget: serializeSubAgentBudget(budget.snapshot()),
         acceptance: peekSubAgentAcceptanceSnapshot(subConvId),
         note: "The target sub-agent is still running; the message was queued as a Pending message and will be delivered at the end of its current round.",
       });
@@ -1966,14 +1803,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         error: "agentId, summary and prompt are required",
       });
     }
-    // 可选的运行时执行预算：由运行时在每次工具派发前强制检查，缺省无限制。
-    const budgetParse = parseSubAgentBudgetSpec(parsedArgs.budget);
-    if (budgetParse.errors.length) {
-      return JSON.stringify({
-        success: false,
-        error: `Invalid sub-agent budget: ${budgetParse.errors.join("; ")}`,
-      });
-    }
     // 可选的验收清单：子代理必须按项回执状态并引用真实工具证据。
     const acceptanceParse = parseSubAgentAcceptanceCriteria(
       parsedArgs.acceptance,
@@ -2027,8 +1856,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       subConversationId = `sub-${Date.now()}-${Math.random()
         .toString(36)
         .slice(2, 10)}`;
-      // 预算按新的子代理会话初始化（计数与计时归零）。
-      getSubAgentBudgetTracker(subConversationId).initialize(budgetParse.spec);
       // 验收清单按新的子代理会话注册；未附带清单时不创建追踪器。
       initializeSubAgentAcceptance(subConversationId, acceptanceParse.criteria);
 
@@ -2507,7 +2334,6 @@ export const createSubAgentMainToolExecutor = (
           agentName: event.agentName,
           status: event.status,
           resumable: subAgentResumers.has(event.conversationId),
-          budget: peekSubAgentBudgetSnapshot(event.conversationId),
           acceptance: peekSubAgentAcceptanceSnapshot(event.conversationId),
         }));
       // DB 持久化记录：应用重启后也能列出；status 取持久化的终态。
@@ -2520,20 +2346,14 @@ export const createSubAgentMainToolExecutor = (
           conversationId: record.conversationId,
           agentId: record.subAgentId,
           agentName: record.subAgentName,
-          status: ([
-            "running",
-            "completed",
-            "failed",
-            "cancelled",
-            "budget_exceeded",
-          ].includes(record.subAgentStatus)
+          status: (["running", "completed", "failed", "cancelled"].includes(
+            record.subAgentStatus,
+          )
             ? record.subAgentStatus
             : "completed") as SubAgentSessionEvent["status"],
           // 持久化记录均可尝试恢复（continue 时按需重建，失败会返回错误）。
           resumable: subAgentResumers.has(record.conversationId),
-          // 应用重启后预算追踪器不再存在（新运行重新计数）。
-          budget: peekSubAgentBudgetSnapshot(record.conversationId),
-          // 验收清单同样只存在于本次运行期（重启后为 null）。
+          // 验收清单只存在于本次运行期（重启后为 null）。
           acceptance: peekSubAgentAcceptanceSnapshot(record.conversationId),
         }));
       } catch {
@@ -2571,15 +2391,6 @@ export const createSubAgentMainToolExecutor = (
         return JSON.stringify({
           success: false,
           error: "conversationId and message are required",
-        });
-      }
-      // 预算变更必须显式：不传 budget 时保持现有计数与上限（已超限的子代理
-      // 会立即再次交回主控，必须由主控决定追加额度或结束）。
-      const budgetParse = parseSubAgentBudgetPatch(args.budget);
-      if (budgetParse.errors.length) {
-        return JSON.stringify({
-          success: false,
-          error: `Invalid sub-agent budget: ${budgetParse.errors.join("; ")}`,
         });
       }
       // 可选的清单补充：只在目标子代理归属校验通过后写入其验收记录。
@@ -2644,7 +2455,6 @@ export const createSubAgentMainToolExecutor = (
       return resumer.resume(
         [{ role: "user", content: queuedText }],
         checkpointIds,
-        budgetParse.patch,
       );
     }
 

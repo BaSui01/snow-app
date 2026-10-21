@@ -1,5 +1,6 @@
 import type {
   AutoSendRequest,
+  BackgroundRunResult,
   ChatInputSendOptions,
   ConversationInputRuntimeState,
 } from "../../chatInput/types";
@@ -278,9 +279,8 @@ export type SubAgentSessionEvent = {
   /** Activation summary supplied by the parent agent; doubles as the
    *  sub-agent conversation's title and summary (sidebar list label). */
   summary: string;
-  /** 运行终态。budget_exceeded = 运行时预算（工具调用数/运行时长）用尽，
-   *  停止派发新工具并交回主控，等待主控决定追加预算或结束。 */
-  status: "running" | "completed" | "failed" | "cancelled" | "budget_exceeded";
+  /** 运行终态。 */
+  status: "running" | "completed" | "failed" | "cancelled";
   timestamp: number;
   /** The interactionId of the parent tool call that activated this sub-agent.
    *  Used to match the event to the correct SubAgentToolCall UI when multiple
@@ -1122,6 +1122,14 @@ export type UseChatConversationResult = {
     options?: ScheduledTaskRunOptions,
     taskName?: string,
   ) => Promise<void>;
+  /** 后台 run 并等待其结束；conversationId 给定时续写该会话。 */
+  runBackgroundConversation: (
+    content: string,
+    directoryId?: string,
+    options?: ScheduledTaskRunOptions,
+    taskName?: string,
+    conversationId?: string,
+  ) => Promise<BackgroundRunResult>;
   /** Head of the auto-send queue awaiting delivery by the ChatInput. */
   autoSendRequest: AutoSendRequest | null;
   /** Claims the head request for sending; false when it was already claimed

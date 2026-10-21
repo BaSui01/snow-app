@@ -86,6 +86,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_sub_agent_configs_model(connection)?;
     migrate_builtin_general_agent_defaults(connection)?;
     migrate_scheduled_tasks_pre_script(connection)?;
+    migrate_scheduled_tasks_workflow(connection)?;
     migrate_api_configs_partial_retry_max_chars(connection)?;
     migrate_api_configs_config_json(connection)?;
     migrate_api_configs_sort_order(connection)?;
@@ -1232,6 +1233,27 @@ fn migrate_scheduled_tasks_pre_script(connection: &Connection) -> rusqlite::Resu
             "ALTER TABLE scheduled_tasks ADD COLUMN last_skip_reason TEXT",
             [],
         )?;
+    }
+
+    Ok(())
+}
+
+/// 定时任务工作流：定义与运行状态两列（幂等）。
+fn migrate_scheduled_tasks_workflow(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(scheduled_tasks)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    for column in ["workflow_json", "workflow_run_json"] {
+        if !columns.iter().any(|existing| existing == column) {
+            connection.execute(
+                &format!(
+                    "ALTER TABLE scheduled_tasks ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                ),
+                [],
+            )?;
+        }
     }
 
     Ok(())

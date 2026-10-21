@@ -37,12 +37,26 @@ import type {
   ScheduledTaskRunOptions,
   ScheduledTaskRunRecord,
   ScheduledTaskSchedule,
+  ScheduledTaskWorkflow,
+  ScheduledTaskWorkflowRun,
   UpdateScheduledTaskInput,
 } from "../../preload";
 import type {
   ScheduledTaskWireRecord,
   ScheduledTaskWireRun,
 } from "../../preload/modules/scheduledTaskApi";
+import type { BackgroundRunResult } from "../components/mainContent/chatInput/types";
+import {
+  applyNodeResult,
+  buildWorkflowNodePrompt,
+  buildWorkflowPromptSummary,
+  cancelWorkflowRunState,
+  collectDueNodeIds,
+  createWorkflowRun,
+  nextWorkflowDueMs,
+  normalizeWorkflow,
+  resumeWorkflowRunAfterRestart,
+} from "./scheduledTaskWorkflow";
 
 /** Minimum interval for interval-mode recurring tasks. */
 const MIN_INTERVAL_MS = 60_000;
@@ -74,13 +88,26 @@ const WAKE_SYNC_DEBOUNCE_MS = 1_500;
 export const isWakeWhenClosed = (task: ScheduledTaskRecord): boolean =>
   task.schedule.wakeWhenClosed === true;
 
+/** 任务是否有进行中的工作流运行。 */
+export const hasActiveWorkflowRun = (task: ScheduledTaskRecord): boolean =>
+  task.workflowRun?.status === "running";
+
 /** 需要系统拉起应用的最近任务时间；没有则返回 null。 */
 const computeNextWakeAt = (
   tasks: Iterable<ScheduledTaskRecord>,
 ): string | null => {
   let earliest: number | null = null;
   for (const task of tasks) {
-    if (!isWakeWhenClosed(task) || task.paused || !task.nextRunAt) continue;
+    if (!isWakeWhenClosed(task) || task.paused) continue;
+    // 工作流延时等待中的节点同样需要唤醒
+    if (hasActiveWorkflowRun(task) && task.workflowRun) {
+      const due = nextWorkflowDueMs(task.workflowRun);
+      if (due !== null && (earliest === null || due < earliest)) {
+        earliest = due;
+      }
+      continue;
+    }
+    if (!task.nextRunAt) continue;
     if (task.status === "completed" || task.status === "running") continue;
     const ms = Date.parse(task.nextRunAt);
     if (Number.isNaN(ms)) continue;
@@ -95,6 +122,14 @@ type Executor = (
   directoryId: string,
   options: ScheduledTaskRunOptions,
 ) => void | Promise<void>;
+/** 工作流节点执行器：等待 run 结束；conversationId 给定时续写该会话。 */
+type NodeExecutor = (
+  prompt: string,
+  taskName: string,
+  directoryId: string,
+  options: ScheduledTaskRunOptions,
+  conversationId?: string,
+) => Promise<BackgroundRunResult>;
 /** Placeholder inside a task prompt that the pre-script's JSON "output"
  *  field is injected into (replaced with "" when the script provides none). */
 export const SCRIPT_OUTPUT_PLACEHOLDER = "{{SCRIPT_OUTPUT}}";
@@ -262,7 +297,19 @@ export const fromWire = (
     skipCount: wire.skipCount ?? 0,
     lastSkippedAt: wire.lastSkippedAt,
     lastSkipReason: wire.lastSkipReason,
+    workflow: parseJsonField<ScheduledTaskWorkflow>(wire.workflowJson),
+    workflowRun: parseJsonField<ScheduledTaskWorkflowRun>(wire.workflowRunJson),
   };
+};
+
+/** 解析可选 JSON 列，失败返回 undefined。 */
+const parseJsonField = <T>(raw: string | undefined): T | undefined => {
+  if (!raw?.trim()) return undefined;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
 };
 
 /** Converts a rich record into the wire shape for upsert (history lives in
@@ -285,6 +332,10 @@ export const toWire = (
   skipCount: record.skipCount,
   lastSkippedAt: record.lastSkippedAt,
   lastSkipReason: record.lastSkipReason,
+  workflowJson: record.workflow ? JSON.stringify(record.workflow) : undefined,
+  workflowRunJson: record.workflowRun
+    ? JSON.stringify(record.workflowRun)
+    : undefined,
   status: record.status,
   paused: record.paused,
   nextRunAt: record.nextRunAt,
@@ -429,7 +480,10 @@ export class ScheduledTasksStore {
   private tasks = new Map<string, ScheduledTaskRecord>();
   private listeners = new Set<Listener>();
   private executors = new Set<Executor>();
+  private nodeExecutors = new Set<NodeExecutor>();
   private scriptRunners = new Set<ScriptRunner>();
+  /** 正在执行的工作流节点（`taskId:nodeId`），防重复启动。 */
+  private activeWorkflowNodes = new Set<string>();
 
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   /** Currently in-flight execution task ids, to prevent overlapping runs. */
@@ -531,6 +585,23 @@ export class ScheduledTasksStore {
     return () => {
       this.scriptRunners.delete(runner);
     };
+  };
+
+  /** 注册工作流节点执行器（等待 run 结束）。 */
+  setNodeExecutor = (executor: NodeExecutor): (() => void) => {
+    this.nodeExecutors.add(executor);
+    void this.dueTasks();
+    return () => {
+      this.nodeExecutors.delete(executor);
+    };
+  };
+
+  private currentNodeExecutor = (): NodeExecutor | null => {
+    let current: NodeExecutor | null = null;
+    for (const executor of this.nodeExecutors) {
+      current = executor;
+    }
+    return current;
   };
 
   /** 最近一次注册的执行器（多个宿主同时注册时与旧行为一致）。 */
@@ -647,6 +718,8 @@ export class ScheduledTasksStore {
       if (this.tasks.has(record.id)) continue;
       const { task, changed } = reconcileAfterRestart(record, now);
       this.tasks.set(task.id, task);
+      // 进行中的工作流由 dueTasks 继续推进，不允许重复触发
+      if (hasActiveWorkflowRun(task)) this.runningIds.add(task.id);
       if (changed) dirty.push(task);
     }
 
@@ -675,6 +748,8 @@ export class ScheduledTasksStore {
     } else {
       this.notify();
     }
+    // 恢复进行中的工作流（执行器已就绪时立即推进）
+    void this.dueTasks();
   };
 
   /** Lists tasks. When a directoryId is given, returns that project's tasks
@@ -717,7 +792,13 @@ export class ScheduledTasksStore {
     if (!name) {
       throw new Error("name is required");
     }
-    const prompt = (input.prompt ?? "").trim();
+    const workflow = input.workflow
+      ? normalizeWorkflow(input.workflow)
+      : undefined;
+    // 工作流模式：prompt 字段存节点摘要
+    const prompt =
+      (input.prompt ?? "").trim() ||
+      (workflow ? buildWorkflowPromptSummary(workflow) : "");
     if (!prompt) {
       throw new Error("prompt is required");
     }
@@ -765,6 +846,7 @@ export class ScheduledTasksStore {
         nextRunMs != null ? new Date(nextRunMs).toISOString() : undefined,
       runCount: 0,
       skipCount: 0,
+      workflow,
     };
     this.tasks.set(record.id, record);
     this.ensureTick();
@@ -942,11 +1024,22 @@ export class ScheduledTasksStore {
       name = input.name.trim();
       if (!name) throw new Error("name is required");
     }
-    let prompt = task.prompt;
-    if (input.prompt !== undefined) {
-      prompt = input.prompt.trim();
-      if (!prompt) throw new Error("prompt is required");
+    // undefined = 保持；null = 切回单提示词
+    const workflow =
+      input.workflow === undefined
+        ? task.workflow
+        : input.workflow === null
+          ? undefined
+          : normalizeWorkflow(input.workflow);
+    let prompt = input.prompt !== undefined ? input.prompt.trim() : task.prompt;
+    // 传入新工作流且未给 prompt 时，用节点摘要刷新
+    if (
+      workflow &&
+      (!prompt || (input.workflow && input.prompt === undefined))
+    ) {
+      prompt = buildWorkflowPromptSummary(workflow);
     }
+    if (!prompt) throw new Error("prompt is required");
     const timeoutMs = input.preScriptTimeoutMs;
     if (
       timeoutMs !== undefined &&
@@ -1005,6 +1098,7 @@ export class ScheduledTasksStore {
             // NOT NULL and an undefined value would fail the whole upsert.
             (task.runOnScriptError ?? false),
       updatedAt: new Date().toISOString(),
+      workflow,
     };
     this.tasks.set(id, updated);
     this.persistUpsert(updated);
@@ -1018,7 +1112,9 @@ export class ScheduledTasksStore {
     const updated: ScheduledTaskRecord = {
       ...task,
       paused: !task.paused,
-      status: !task.paused ? "pending" : task.status,
+      // 进行中的工作流保持 running：暂停只停止启动新节点
+      status:
+        !task.paused && !hasActiveWorkflowRun(task) ? "pending" : task.status,
       nextRunAt: !task.paused
         ? new Date(
             computeNextRunMs(task.schedule, Date.now()) ?? Date.now(),
@@ -1069,6 +1165,11 @@ export class ScheduledTasksStore {
     const now = Date.now();
     const due: ScheduledTaskRecord[] = [];
     for (const task of this.tasks.values()) {
+      // 进行中的工作流：推进到期节点
+      if (hasActiveWorkflowRun(task)) {
+        this.pumpWorkflow(task.id);
+        continue;
+      }
       if (task.paused) continue;
       if (task.status === "running") continue;
       if (task.status === "completed") continue; // once-task already fired
@@ -1123,11 +1224,14 @@ export class ScheduledTasksStore {
       }
     }
 
+    let handedOff = false;
     try {
-      if (!executor) {
+      if (task.workflow ? !this.currentNodeExecutor() : !executor) {
         throw new Error("No executor registered (AI Loop unavailable)");
       }
       let prompt = task.prompt;
+      let scriptOutput: string | undefined;
+      let scriptNote: string | undefined;
 
       if (task.preScript) {
         let decision: PreScriptDecision;
@@ -1175,8 +1279,10 @@ export class ScheduledTasksStore {
         // run: apply placeholder injection / prompt override
         if (decision.action === "error") {
           // runOnScriptError: inform the AI Loop about the script failure
-          prompt = `${task.prompt}\n\n[Pre-script failed: ${decision.errorMessage}]`;
+          scriptNote = `[Pre-script failed: ${decision.errorMessage}]`;
+          prompt = `${task.prompt}\n\n${scriptNote}`;
         } else {
+          scriptOutput = decision.output;
           prompt = applyScriptOutput(
             decision.promptOverride ?? task.prompt,
             decision.output,
@@ -1184,7 +1290,19 @@ export class ScheduledTasksStore {
         }
       }
 
-      await executor(prompt, task.name, task.directoryId, {
+      // 工作流：交给节点调度，运行结束时再收尾
+      if (task.workflow) {
+        this.beginWorkflowRun(id, task.workflow, {
+          startedAt,
+          runId,
+          scriptOutput,
+          scriptNote,
+        });
+        handedOff = true;
+        return;
+      }
+
+      await executor!(prompt, task.name, task.directoryId, {
         apiProfile: task.apiProfile,
         basicModel: task.basicModel,
         model: task.model,
@@ -1205,34 +1323,224 @@ export class ScheduledTasksStore {
         this.persistUpsert(next);
       }
     } finally {
-      this.runningIds.delete(id);
-
-      // Finalize the persisted run entry (best-effort).
-      if (runId && this.persistence) {
-        const after = this.tasks.get(id);
-        const last = after?.history?.[after.history.length - 1];
-        const status: "completed" | "error" =
-          last?.status === "error" ? "error" : "completed";
-        const durationMs =
-          last?.durationMs ??
-          (Number.isNaN(Date.parse(startedAt))
-            ? undefined
-            : Date.now() - Date.parse(startedAt));
-        this.enqueuePersist(() =>
-          this.persistence!.finalizeRun(
-            id,
-            runId,
-            status,
-            durationMs,
-            last?.error,
-          ),
-        ).catch((error) =>
-          console.warn("[scheduledTasks] Failed to finalize task run:", error),
-        );
+      if (handedOff) {
+        this.notify();
+      } else {
+        this.finalizeExecution(id, runId, startedAt);
       }
-
-      this.notify();
     }
+  };
+
+  /** 结束一次执行：释放运行锁并收尾 run 行。 */
+  private finalizeExecution = (
+    id: string,
+    runId: string | undefined,
+    startedAt: string,
+  ): void => {
+    this.runningIds.delete(id);
+
+    // Finalize the persisted run entry (best-effort).
+    if (runId && this.persistence) {
+      const after = this.tasks.get(id);
+      const last = after?.history?.[after.history.length - 1];
+      const status: "completed" | "error" =
+        last?.status === "error" ? "error" : "completed";
+      const durationMs =
+        last?.durationMs ??
+        (Number.isNaN(Date.parse(startedAt))
+          ? undefined
+          : Date.now() - Date.parse(startedAt));
+      this.enqueuePersist(() =>
+        this.persistence!.finalizeRun(
+          id,
+          runId,
+          status,
+          durationMs,
+          last?.error,
+        ),
+      ).catch((error) =>
+        console.warn("[scheduledTasks] Failed to finalize task run:", error),
+      );
+    }
+
+    this.notify();
+  };
+
+  /** 启动一次工作流运行。 */
+  private beginWorkflowRun = (
+    id: string,
+    workflow: ScheduledTaskWorkflow,
+    meta: {
+      startedAt: string;
+      runId?: string;
+      scriptOutput?: string;
+      scriptNote?: string;
+    },
+  ): void => {
+    const task = this.tasks.get(id);
+    if (!task) return;
+    const run = createWorkflowRun(workflow, meta);
+    const next: ScheduledTaskRecord = { ...task, workflowRun: run };
+    this.tasks.set(id, next);
+    this.persistUpsert(next);
+    this.pumpWorkflow(id);
+  };
+
+  /** 启动到期节点；shared 模式同一时刻只跑一个节点。 */
+  private pumpWorkflow = (id: string): void => {
+    const task = this.tasks.get(id);
+    const run = task?.workflowRun;
+    if (!task || !run || run.status !== "running" || task.paused) return;
+    const executor = this.currentNodeExecutor();
+    if (!executor) return;
+    const shared = run.definition.contextMode === "shared";
+    if (shared) {
+      const busy = run.definition.nodes.some((node) =>
+        this.activeWorkflowNodes.has(`${id}:${node.id}`),
+      );
+      if (busy) return;
+    }
+    const dueIds = collectDueNodeIds(run, Date.now()).filter(
+      (nodeId) => !this.activeWorkflowNodes.has(`${id}:${nodeId}`),
+    );
+    for (const nodeId of shared ? dueIds.slice(0, 1) : dueIds) {
+      void this.runWorkflowNode(id, nodeId, executor);
+    }
+    // 尽量准点触发延时节点（tick 兜底后台节流）
+    const nextDue = nextWorkflowDueMs(this.tasks.get(id)?.workflowRun ?? run);
+    if (nextDue !== null && nextDue > Date.now()) {
+      this.scheduleWorkflowTimer(id, nextDue);
+    }
+  };
+
+  private workflowTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private scheduleWorkflowTimer = (id: string, atMs: number): void => {
+    const existing = this.workflowTimers.get(id);
+    if (existing) clearTimeout(existing);
+    // setTimeout 上限约 24.8 天，超出由 tick 兜底
+    const delay = Math.min(Math.max(0, atMs - Date.now()), 2_000_000_000);
+    this.workflowTimers.set(
+      id,
+      setTimeout(() => {
+        this.workflowTimers.delete(id);
+        this.pumpWorkflow(id);
+      }, delay + 50),
+    );
+  };
+
+  /** 执行单个节点并推进运行状态。 */
+  private runWorkflowNode = async (
+    id: string,
+    nodeId: string,
+    executor: NodeExecutor,
+  ): Promise<void> => {
+    const key = `${id}:${nodeId}`;
+    const task = this.tasks.get(id);
+    const run = task?.workflowRun;
+    const node = run?.definition.nodes.find((item) => item.id === nodeId);
+    if (!task || !run || !node) return;
+    this.activeWorkflowNodes.add(key);
+
+    const startedAt = new Date().toISOString();
+    this.updateWorkflowRun(id, (current) => ({
+      ...current,
+      nodes: {
+        ...current.nodes,
+        [nodeId]: { ...current.nodes[nodeId], status: "running", startedAt },
+      },
+    }));
+
+    let result: BackgroundRunResult;
+    try {
+      result = await executor(
+        buildWorkflowNodePrompt(run, node),
+        `${task.name} / ${node.label}`,
+        task.directoryId,
+        {
+          // 节点未配置时继承任务级运行配置
+          apiProfile: node.apiProfile || task.apiProfile,
+          basicModel: node.basicModel || task.basicModel,
+          model: node.apiProfile ? node.model : node.model || task.model,
+          thinkingStrength: node.thinkingStrength || task.thinkingStrength,
+        },
+        run.definition.contextMode === "shared"
+          ? this.tasks.get(id)?.workflowRun?.sharedConversationId
+          : undefined,
+      );
+    } catch (error) {
+      result = {
+        conversationId: "",
+        output: "",
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      this.activeWorkflowNodes.delete(key);
+    }
+
+    const before = this.tasks.get(id)?.workflowRun;
+    if (!before) return;
+    const wasRunning = before.status === "running";
+    const after = this.updateWorkflowRun(id, (current) =>
+      applyNodeResult(current, nodeId, result, Date.now()),
+    );
+    if (!after) return;
+    if (wasRunning && after.status !== "running") {
+      this.finishWorkflowRun(id);
+      return;
+    }
+    this.pumpWorkflow(id);
+  };
+
+  /** 修改运行状态并落盘，返回新状态。 */
+  private updateWorkflowRun = (
+    id: string,
+    mutate: (run: ScheduledTaskWorkflowRun) => ScheduledTaskWorkflowRun,
+  ): ScheduledTaskWorkflowRun | null => {
+    const task = this.tasks.get(id);
+    if (!task?.workflowRun) return null;
+    const run = mutate(task.workflowRun);
+    const next: ScheduledTaskRecord = {
+      ...task,
+      workflowRun: run,
+      updatedAt: new Date().toISOString(),
+    };
+    this.tasks.set(id, next);
+    this.persistUpsert(next);
+    this.notify();
+    return run;
+  };
+
+  /** 工作流运行结束：推进调度并收尾 run 行。 */
+  private finishWorkflowRun = (id: string): void => {
+    const task = this.tasks.get(id);
+    const run = task?.workflowRun;
+    if (!task || !run) return;
+    const timer = this.workflowTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.workflowTimers.delete(id);
+    }
+    const next = this.advanceSchedule(
+      task,
+      run.status === "error"
+        ? new Error(run.error || "Workflow failed")
+        : undefined,
+    );
+    this.tasks.set(id, next);
+    this.persistUpsert(next);
+    this.finalizeExecution(id, run.runId, run.startedAt);
+  };
+
+  /** 用户停止进行中的工作流（已在执行的节点会话不受影响）。 */
+  cancelWorkflowRun = (id: string): void => {
+    const task = this.tasks.get(id);
+    if (!task || !hasActiveWorkflowRun(task)) return;
+    const run = this.updateWorkflowRun(id, (current) =>
+      cancelWorkflowRunState(current, "Cancelled by user"),
+    );
+    if (run) this.finishWorkflowRun(id);
   };
 
   /** Runs the task's pre-script and parses its decision. */
@@ -1464,6 +1772,18 @@ export const reconcileAfterRestart = (
 ): { task: ScheduledTaskRecord; changed: boolean } => {
   let task = record;
   let changed = false;
+
+  // 进行中的工作流：保留运行状态，中断的节点重新排队，重启后继续推进
+  if (hasActiveWorkflowRun(task) && task.workflowRun) {
+    const resumed = resumeWorkflowRunAfterRestart(
+      task.workflowRun,
+      new Date(now).toISOString(),
+    );
+    return {
+      task: { ...task, status: "running", workflowRun: resumed },
+      changed: true,
+    };
+  }
 
   // A run interrupted by the previous shutdown: reset the task itself and
   // mark the dangling in-flight history entry as errored.

@@ -986,6 +986,10 @@ pub struct ScheduledTaskRecord {
     pub last_skipped_at: Option<String>,
     /// Reason from the last skip.
     pub last_skip_reason: Option<String>,
+    /// 工作流定义 JSON（空 = 单提示词任务）。
+    pub workflow_json: Option<String>,
+    /// 工作流运行状态 JSON（跨重启恢复）。
+    pub workflow_run_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     /// Latest run history entries (newest last, max 20), populated when read
@@ -1024,6 +1028,10 @@ pub struct ScheduledTaskRecordInput {
     pub last_skipped_at: Option<String>,
     /// Reason from the last skip.
     pub last_skip_reason: Option<String>,
+    /// 工作流定义 JSON（空 = 单提示词任务）。
+    pub workflow_json: Option<String>,
+    /// 工作流运行状态 JSON（跨重启恢复）。
+    pub workflow_run_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

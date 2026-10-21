@@ -259,8 +259,6 @@ pub fn update_sub_agent_session_status(
         "completed" => "completed",
         "failed" => "failed",
         "cancelled" => "cancelled",
-        // 运行时预算用尽：停止派发新工具并交回主控，不是「完成」也不是失败。
-        "budget_exceeded" => "budget_exceeded",
         _ => "running",
     };
 

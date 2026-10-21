@@ -1169,6 +1169,50 @@ pub async fn browser_import_bookmarks(
     })?
 }
 
+// ---------------------------------------------------------------------------
+// Local browser version (built-in browser User-Agent alignment)
+// ---------------------------------------------------------------------------
+
+#[napi(object)]
+#[allow(non_snake_case)]
+pub struct LocalBrowserVersion {
+    /// Stable id: "chrome" | "edge" | "chromium"
+    pub id: String,
+    /// Display name, e.g. "Google Chrome"
+    pub name: String,
+    /// Full version, e.g. "141.0.7390.108"
+    pub version: String,
+}
+
+/// 读取 `<User Data>/Last Version`：Chromium 系浏览器每次启动都会写入当前版本号。
+fn chromium_last_version(root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join("Last Version")).ok()?;
+    let version = text.trim();
+    let valid = !version.is_empty()
+        && version
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+    valid.then(|| version.to_string())
+}
+
+/// 探测本机 Chromium 系浏览器版本，按 Chrome > Edge > Chromium 优先级返回首个可用项
+/// （Edge 在 Windows 上为系统预装，用户主动安装的 Chrome 优先）。Firefox 内核不同，不参与。
+#[napi]
+pub async fn detect_local_browser_version() -> Result<Option<LocalBrowserVersion>> {
+    tokio::task::spawn_blocking(|| {
+        chromium_roots().into_iter().find_map(|(id, name, root)| {
+            chromium_last_version(&root).map(|version| LocalBrowserVersion { id, name, version })
+        })
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("本机浏览器版本探测失败: {error}"),
+        )
+    })
+}
+
 fn chromium_root_by_id(source_id: &str) -> Option<(PathBuf, String)> {
     chromium_roots()
         .into_iter()

@@ -1,0 +1,259 @@
+/* ============================================================
+   Tool card style: chips
+
+   Opt-in alternate skin for the tool-call group (tcg) and tool
+   call rows (tcn). The default classic skin lives in styles.css;
+   this file only applies when the root carries
+   data-tool-card-style="chips".
+
+   Theme presets also paint .tcg-toggle, so tcg selectors add an
+   extra .tcg ancestor to win specificity regardless of load order.
+   ============================================================ */
+
+:root[data-tool-card-style="chips"] .tcg {
+  margin-bottom: 8px;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-toggle {
+  gap: 6px;
+  height: 26px;
+  margin-left: -6px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  transform: none;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-toggle:hover,
+:root[data-tool-card-style="chips"] .tcg .tcg-toggle:active {
+  border-color: transparent;
+  background: var(--bg-hover);
+  box-shadow: none;
+  color: var(--text-secondary);
+  transform: none;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-label {
+  order: 1;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-time {
+  order: 3;
+  margin-left: 2px;
+  opacity: 0.85;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-status-icon {
+  display: inline-flex;
+  order: 2;
+  flex-shrink: 0;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-chevron {
+  order: 0;
+  color: currentColor;
+  opacity: 0.7;
+  transition:
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.12s ease;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-toggle:hover .tcg-chevron {
+  opacity: 1;
+}
+
+:root[data-tool-card-style="chips"] .tcg-alert {
+  color: var(--accent-red);
+}
+
+/* 去掉时间线，行与行之间只靠 1px 间距和 hover 胶囊分隔 */
+:root[data-tool-card-style="chips"] .tcg .tcg-list {
+  gap: 1px;
+  padding-left: 0;
+  margin-top: 2px;
+}
+
+:root[data-tool-card-style="chips"] .tcg .tcg-list::before {
+  content: none;
+}
+
+/* ---------- tool row ---------- */
+
+:root[data-tool-card-style="chips"] .tcn-header {
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.12s ease;
+}
+
+:root[data-tool-card-style="chips"] .tcn-header:hover {
+  background: var(--bg-hover);
+}
+
+/* 状态改由工具图标的颜色表达 */
+:root[data-tool-card-style="chips"] .tcn-dot {
+  display: none;
+}
+
+/* 工具名与参数之间不再需要 "/" 分隔符 */
+:root[data-tool-card-style="chips"] .tcn-sep {
+  display: none;
+}
+
+:root[data-tool-card-style="chips"] .tcn-header .tool-call-tool-name {
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+:root[data-tool-card-style="chips"] .tcn-header .tool-call-tool-name-icon {
+  width: 13px;
+  height: 13px;
+  opacity: 1;
+  color: var(--text-tertiary);
+}
+
+:root[data-tool-card-style="chips"] .tcn--running .tool-call-tool-name-icon {
+  color: var(--accent-blue);
+}
+
+:root[data-tool-card-style="chips"] .tcn--error .tool-call-tool-name-icon {
+  color: var(--accent-red);
+}
+
+:root[data-tool-card-style="chips"] .tcn--pending .tool-call-tool-name-icon {
+  color: var(--text-muted);
+}
+
+:root[data-tool-card-style="chips"]
+  .tool-call-lsp.lsp-result-partial
+  .tool-call-tool-name-icon {
+  color: var(--accent-yellow, #d97706);
+}
+
+:root[data-tool-card-style="chips"]
+  .tool-call-browser.browser-result-partial
+  .tool-call-tool-name-icon {
+  color: var(--accent-amber-text);
+}
+
+:root[data-tool-card-style="chips"]
+  .tool-call-browser.browser-result-neutral
+  .tool-call-tool-name-icon {
+  color: var(--text-muted);
+}
+
+/* 参数/目标摘要作为等宽 chip 呈现，弱化于工具名 */
+:root[data-tool-card-style="chips"] .tcn-name {
+  display: inline-block;
+  max-width: min(62%, 460px);
+  height: 20px;
+  min-width: 0;
+  padding: 0 7px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--bg-active);
+  box-shadow: inset 0 0 0 1px var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+:root[data-tool-card-style="chips"] .tcn-name > svg {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
+
+/* 无参数摘要时的占位文案：纯文本，不抢 chip 的视觉重量 */
+:root[data-tool-card-style="chips"] .tcn-name--running {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+:root[data-tool-card-style="chips"] .tcn-meta {
+  margin-left: auto;
+}
+
+:root[data-tool-card-style="chips"] .tcn-chevron {
+  opacity: 0.45;
+  transition:
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.12s ease,
+    color 0.12s ease;
+}
+
+:root[data-tool-card-style="chips"] .tcn-header:hover .tcn-chevron {
+  opacity: 1;
+}
+
+:root[data-tool-card-style="chips"] .tcn[open] > .tcn-header .tcn-chevron {
+  opacity: 1;
+}
+
+/* 展开区缩进并挂一条细竖线，对齐到工具名下方 */
+:root[data-tool-card-style="chips"] .tcn-body {
+  margin-left: 8px;
+  padding: 6px 0 8px 14px;
+  border-left: 1px solid var(--border-light);
+}
+
+:root[data-tool-card-style="chips"] .tcn[open] > .tcn-collapse {
+  animation: tcn-collapse-in 0.24s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+:root[data-tool-card-style="chips"] .tcn.tcn--closing > .tcn-collapse {
+  animation: tcn-collapse-out 0.2s cubic-bezier(0.55, 0, 0.85, 0.4) both;
+}
+
+:root[data-tool-card-style="chips"] .tcn[open] > .tcn-collapse > .tcn-body {
+  animation: tcn-body-in 0.24s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+:root[data-tool-card-style="chips"]
+  .tcn.tcn--closing
+  > .tcn-collapse
+  > .tcn-body {
+  animation: tcn-body-out 0.2s cubic-bezier(0.55, 0, 0.85, 0.4) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-tool-card-style="chips"] .tcg .tcg-toggle,
+  :root[data-tool-card-style="chips"] .tcg .tcg-chevron,
+  :root[data-tool-card-style="chips"] .tcn-header,
+  :root[data-tool-card-style="chips"] .tcn-chevron {
+    transition: none;
+  }
+}

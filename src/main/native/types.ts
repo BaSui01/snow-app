@@ -3347,6 +3347,12 @@ export type NativeBridge = ImageGenerationNativeApi & {
     sourceId: string,
     profile: string,
   ) => Promise<ImportedBrowserBookmark[]>;
+  /** 探测本机 Chromium 系浏览器版本（Chrome > Edge > Chromium），用于内置浏览器 UA 对齐 */
+  detectLocalBrowserVersion: () => Promise<{
+    id: "chrome" | "edge" | "chromium";
+    name: string;
+    version: string;
+  } | null>;
   // ── 内置浏览器访问历史（地址栏补全 / 设置页管理）────────────────────
   /** 记录一次访问（同 URL 累加次数并刷新标题），非 http(s) 返回 false */
   browserHistoryRecord: (url: string, title: string) => Promise<boolean>;

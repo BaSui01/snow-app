@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Copy, Loader2, Pencil, Undo2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { writeBackToChatInput } from "../../chatInput/chatInputDraftBridge";
+import { copyEncodedContentToClipboard } from "../../chatInput/fileTagUtils";
 import { Tooltip } from "../../../common/Tooltip";
 import { MessageTimestamp } from "./MessageTimestamp";
 type UserMessageActionsProps = {
@@ -27,10 +28,16 @@ export const UserMessageActions = ({
   const [editWritten, setEditWritten] = useState(false);
 
   const handleCopy = (): void => {
-    navigator.clipboard.writeText(content).then(() => {
+    const markCopied = (): void => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    });
+    };
+    // 用户消息含 chip 编码，带上 chips MIME 才能粘贴回输入框时还原 chips
+    if (copyEncodedContentToClipboard(content)) {
+      markCopied();
+      return;
+    }
+    navigator.clipboard.writeText(content).then(markCopied);
   };
 
   const handleEdit = (): void => {

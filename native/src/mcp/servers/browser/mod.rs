@@ -231,13 +231,7 @@ impl McpService for BrowserService {
                             "description": "Whether text matching must be exact (default false).",
                             "default": false
                         }
-                    },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] },
-                        { "required": ["ref"] },
-                        { "required": ["x", "y"] }
-                    ]
+                    }
                 }),
             },
             McpTool {
@@ -384,7 +378,7 @@ impl McpService for BrowserService {
                         },
                         "msgid": {
                             "type": "integer",
-                            "description": "Numeric id of the console message to retrieve (console_message action only; use action=console to obtain ids)."
+                            "description": "Numeric id of the console message to retrieve (console_message action only; required for that action; use action=console to obtain ids)."
                         },
                         "requestId": {
                             "type": ["integer", "string"],
@@ -408,11 +402,11 @@ impl McpService for BrowserService {
                         "state": {
                             "type": "string",
                             "enum": ["online", "offline"],
-                            "description": "Network state to simulate (networkState action only): offline makes all network requests fail, online restores connectivity."
+                            "description": "Network state to simulate (networkState action only; required for that action): offline makes all network requests fail, online restores connectivity."
                         },
                         "pattern": {
                             "type": "string",
-                            "description": "URL pattern to mock (route action only). Plain text = substring match; /regex/ = regular expression match. Example: \"/api/users\" or \"/.*\\.png\""
+                            "description": "URL pattern to mock (route action only; required for that action). Plain text = substring match; /regex/ = regular expression match. Example: \"/api/users\" or \"/.*\\.png\""
                         },
                         "status": {
                             "type": "integer",
@@ -457,11 +451,11 @@ impl McpService for BrowserService {
                         },
                         "fileName": {
                             "type": "string",
-                            "description": "State file name for storageSave/storageRestore (letters, digits, dot, dash, underscore; max 100 chars). storageSave generates one when omitted."
+                            "description": "State file name for storageSave/storageRestore (letters, digits, dot, dash, underscore; max 100 chars). Required for storageRestore; storageSave generates one when omitted."
                         },
                         "domain": {
                             "type": "string",
-                            "description": "Cookie domain filter (cookies action only), e.g. \".github.com\"."
+                            "description": "Cookie domain filter (cookies action only; required for cookieDelete together with name), e.g. \".github.com\"."
                         },
                         "showValues": {
                             "type": "boolean",
@@ -470,7 +464,7 @@ impl McpService for BrowserService {
                         },
                         "name": {
                             "type": "string",
-                            "description": "Cookie name to delete (cookieDelete action only, combined with domain)."
+                            "description": "Cookie name to delete (cookieDelete action only; required for that action, combined with domain)."
                         }
                     }
                 }),
@@ -561,11 +555,7 @@ impl McpService for BrowserService {
                             "description": "Whether text matching must be exact (default false).",
                             "default": false
                         }
-                    },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] }
-                    ]
+                    }
                 }),
             },
             McpTool {
@@ -598,10 +588,6 @@ impl McpService for BrowserService {
                             "description": "Array of option values to select. Can be a single value or multiple values for multi-select."
                         }
                     },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] }
-                    ],
                     "required": ["values"]
                 }),
             },
@@ -729,11 +715,6 @@ impl McpService for BrowserService {
                             "maximum": 1000
                         }
                     },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] },
-                        { "required": ["ref"] }
-                    ],
                     "required": ["value"]
                 }),
             },
@@ -766,11 +747,6 @@ impl McpService for BrowserService {
                             "description": "Absolute paths to the files to upload."
                         }
                     },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["text"] },
-                        { "required": ["ref"] }
-                    ],
                     "required": ["files"]
                 }),
             },
@@ -827,23 +803,7 @@ impl McpService for BrowserService {
                             "type": "string",
                             "description": "Optional frameId (from browser-frames) containing the drop target element."
                         }
-                    },
-                    "allOf": [
-                        {
-                            "anyOf": [
-                                { "required": ["fromSelector"] },
-                                { "required": ["fromText"] },
-                                { "required": ["fromRef"] }
-                            ]
-                        },
-                        {
-                            "anyOf": [
-                                { "required": ["toSelector"] },
-                                { "required": ["toText"] },
-                                { "required": ["toRef"] }
-                            ]
-                        }
-                    ]
+                    }
                 }),
             },
             McpTool {
@@ -885,12 +845,7 @@ impl McpService for BrowserService {
                                         "default": false
                                     }
                                 },
-                                "required": ["value"],
-                                "anyOf": [
-                                    { "required": ["selector"] },
-                                    { "required": ["text"] },
-                                    { "required": ["ref"] }
-                                ]
+                                "required": ["value"]
                             },
                             "description": "Form elements to fill, applied in order."
                         }
@@ -1093,11 +1048,7 @@ impl McpService for BrowserService {
                             "minimum": 1,
                             "maximum": 100
                         }
-                    },
-                    "anyOf": [
-                        { "required": ["selector"] },
-                        { "required": ["ref"] }
-                    ]
+                    }
                 }),
             },
             McpTool {
@@ -1520,7 +1471,6 @@ impl McpService for BrowserService {
                 });
                 if matches!(tool.name.as_str(), "hover" | "select_option") {
                     tool.input_schema["properties"]["ref"] = json!({"type": "string", "description": "Optional frame AX ref; requires frameId from the same snapshot."});
-                    tool.input_schema["anyOf"] = json!([{ "required": ["selector"] }, { "required": ["text"] }, { "required": ["frameId", "ref"] }]);
                 }
                 tool.description.push_str(" Optional frameId selects a document-scoped frame from browser-frames; stale IDs fail without fallback. Frame results and URLs are redacted.");
             }
@@ -1542,28 +1492,6 @@ impl McpService for BrowserService {
                     // Empty/null URL remains a compatibility placeholder on reload.
                     schema["properties"]["url"]["type"] = json!(["string", "null"]);
                     schema["properties"]["initScript"]["type"] = json!(["string", "null"]);
-                    schema["anyOf"] = json!([
-                        {"required": ["reload"], "properties": {"reload": {"const": true}, "url": {"pattern": "^\\s*$"}}},
-                        {"required": ["url"], "properties": {"reload": {"const": false}, "url": {"type": "string", "minLength": 1, "pattern": "^(https?://|file://)"}}}
-                    ]);
-                }
-                "click" => {
-                    schema["oneOf"] = json!([
-                        {"required": ["x", "y"], "not": {"anyOf": [{"required": ["selector"]}, {"required": ["text"]}, {"required": ["ref"]}, {"required": ["frameId"]}]}},
-                        {"anyOf": [{"required": ["selector"]}, {"required": ["text"]}, {"required": ["ref"]}], "not": {"anyOf": [{"required": ["x"]}, {"required": ["y"]}]}}
-                    ]);
-                }
-                "screenshot" => {
-                    schema["not"] = json!({"required": ["fullPage"], "properties": {"fullPage": {"const": true}}, "anyOf": [{"required": ["selector"]}, {"required": ["ref"]}]});
-                }
-                "wait" => {
-                    schema["oneOf"] = json!([
-                        {"required": ["time"], "not": {"anyOf": [{"required": ["text"]}, {"required": ["textGone"]}, {"required": ["selector"]}, {"required": ["selectorGone"]}]}},
-                        {"not": {"required": ["time"]}, "anyOf": [{"required": ["text"]}, {"required": ["textGone"]}, {"required": ["selector"]}, {"required": ["selectorGone"]}]}
-                    ]);
-                }
-                "evaluate" => {
-                    schema["oneOf"] = json!([{"required": ["expression"]}, {"required": ["function"]}, {"required": ["sourcePath"]}]);
                 }
                 "devtools" => {
                     schema["properties"]["msgid"]["minimum"] = json!(1);
@@ -1572,22 +1500,6 @@ impl McpService for BrowserService {
                     for field in ["types", "resourceTypes"] {
                         schema["properties"][field]["maxItems"] = json!(30);
                     }
-                    let mut conditions = Vec::new();
-                    for (action, required) in [
-                        ("console_message", vec!["msgid"]),
-                        ("network_detail", vec!["requestId"]),
-                        ("networkDetails", vec!["requestId"]),
-                        ("networkState", vec!["state"]),
-                        ("route", vec!["pattern"]),
-                        ("storageRestore", vec!["fileName"]),
-                        ("cookieDelete", vec!["name", "domain"]),
-                    ] {
-                        conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": action}}}, "then": {"required": required}}));
-                    }
-                    conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": "networkDetails"}}}, "then": {"properties": {"requestId": {"type": "string", "minLength": 1}}}}));
-                    conditions.push(json!({"if": {"required": ["action"], "properties": {"action": {"const": "network_detail"}}}, "then": {"properties": {"requestId": {"anyOf": [{"type": "integer", "minimum": 1, "maximum": MAX_SAFE_RECORD_ID}, {"type": "string", "pattern": "^\\s*0*[1-9][0-9]*\\s*$"}]}}}}));
-                    conditions.push(json!({"if": {"required": ["frameId"]}, "then": {"properties": {"action": {"enum": ["snapshot", "ax"]}}}}));
-                    schema["allOf"] = json!(conditions);
                 }
                 "fill_form" => schema["properties"]["elements"]["maxItems"] = json!(50),
                 "select_option" => schema["properties"]["values"]["minItems"] = json!(1),

@@ -120,7 +120,9 @@ export const ToolCallNode = ({
 
   return (
     <details
-      className={`tcn${isClosing ? " tcn--closing" : ""}${className ? ` ${className}` : ""}`}
+      className={`tcn tcn--${status}${isClosing ? " tcn--closing" : ""}${
+        className ? ` ${className}` : ""
+      }`}
       open={isOpen}
       onToggle={(e) => setIsOpen(e.currentTarget.open)}
     >

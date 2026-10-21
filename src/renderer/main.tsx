@@ -24,12 +24,16 @@ import "./themes/preset-compact.css";
 import "./themes/preset-rococo.css";
 import "./themes/layout-layered.css";
 import "./themes/layout-flush.css";
+import "./themes/tool-card-chips.css";
+import { initToolCardStyle } from "./utils/toolCardStyle";
 
 // 在 React 渲染之前同步应用 localStorage 中缓存的主题快照。
 // 主题持久化在 Rust 后端，渲染进程启动时需通过 IPC 异步读取，
 // 期间 CSS 变量保持默认浅色，会导致深色用户看到短暂白闪。
 // 这里同步应用缓存，使首屏即呈现用户上次选择的主题。
 applyThemeCacheToDocument();
+// 工具卡风格（经典 / chips）同样在首屏同步应用，避免切换闪烁。
+initToolCardStyle();
 
 const describeRejection = (reason: unknown): string => {
   if (reason instanceof Error) {

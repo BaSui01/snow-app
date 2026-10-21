@@ -963,7 +963,7 @@
 :root[data-theme-preset="win95"] .tcg-list::before {
   width: 1px;
   background: none;
-  border-left: 1px dotted var(--w95-shadow);
+  border-left: 1px dotted var(--win95-dark);
 }
 
 :root[data-theme-preset="win95"] .send-key-group {

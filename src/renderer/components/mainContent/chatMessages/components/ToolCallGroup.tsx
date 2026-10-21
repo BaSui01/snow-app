@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CircleAlert } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useI18n } from "../../../../i18n";
 import { MessageTimestamp } from "./MessageTimestamp";
@@ -36,7 +36,7 @@ export const ToolCallGroup = ({
       });
 
   return (
-    <div className={`tcg ${hasError ? "tcg--has-error" : ""}`}>
+    <div className={`tcg${hasError ? " tcg--has-error" : ""}`}>
       <button
         type="button"
         className="tcg-toggle"
@@ -45,8 +45,15 @@ export const ToolCallGroup = ({
       >
         <span className="tcg-label">{label}</span>
         <MessageTimestamp timestamp={timestamp} className="tcg-time" />
+        {hasError ? (
+          <CircleAlert
+            size={12}
+            className="tcg-status-icon tcg-alert"
+            aria-hidden="true"
+          />
+        ) : null}
         <ChevronRight
-          className={`tcg-chevron ${isOpen ? "tcg-chevron--open" : ""}`}
+          className={`tcg-chevron${isOpen ? " tcg-chevron--open" : ""}`}
           size={12}
           aria-hidden="true"
         />

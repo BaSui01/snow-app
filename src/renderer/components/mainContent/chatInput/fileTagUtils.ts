@@ -177,10 +177,33 @@ export const INSERT_FILE_TAGS_EVENT = "snow:insert-file-tags";
 
 /**
  * 自定义剪贴板 MIME 类型：应用内复制/剪切选区时携带编辑区的完整
- * 编码内容（含 @@file:...@@ 等 chip 标签），粘贴时优先解析该格式，
- * 可将选区内容（含各类 chip）完整还原。
+ * 编码内容（含 @@file:...@@ 等 chip 标签），粘贴时只解析该格式，
+ * 可将选区内容（含各类 chip）完整还原；外部纯文本一律按原文粘贴。
  */
 export const CHIPS_CLIPBOARD_TYPE = "application/x-snow-chat-chips";
+
+/**
+ * 将编码内容（含 chip 标签）写入剪贴板：同时写入 CHIPS_CLIPBOARD_TYPE
+ * 与 text/plain，使粘贴回输入框时能还原 chips。自定义 MIME 只能经
+ * copy 事件的 clipboardData 写入，因此借助 execCommand("copy") 触发；
+ * 返回 false 表示当前环境无法触发复制，调用方需自行降级。
+ */
+export const copyEncodedContentToClipboard = (encoded: string): boolean => {
+  const handleCopy = (event: ClipboardEvent): void => {
+    if (!event.clipboardData) {
+      return;
+    }
+    event.preventDefault();
+    event.clipboardData.setData(CHIPS_CLIPBOARD_TYPE, encoded);
+    event.clipboardData.setData("text/plain", encoded);
+  };
+  document.addEventListener("copy", handleCopy);
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.removeEventListener("copy", handleCopy);
+  }
+};
 
 export type ContentSegment =
   | { type: "text"; content: string }

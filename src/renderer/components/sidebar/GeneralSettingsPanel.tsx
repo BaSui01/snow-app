@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
@@ -1188,6 +1189,55 @@ export function GeneralSettingsPanel(): React.JSX.Element {
     );
   };
 
+  /** 迁移进行中的统一展示数据（迁移进度以不可关闭的模态框呈现） */
+  const activeMigration = migration
+    ? {
+        title: t("settings.storageMigrateModalTitle", {
+          defaultValue: "正在迁移数据",
+        }),
+        destination: pendingMigrationRef.current?.dirLabel ?? "",
+        copied: migration.copied,
+        total: migration.total,
+        rollingBack,
+        rollingBackLabel: t("settings.storageMigrateRollingBack", {
+          defaultValue: "Rolling back...",
+        }),
+        progressLabel: t("settings.storageMigrateProgress", {
+          values: { current: migration.copied, total: migration.total },
+          defaultValue: `Migrating ${migration.copied}/${migration.total}`,
+        }),
+        onCancel: cancelMigration,
+      }
+    : imageLibraryMigration
+      ? {
+          title: t("settings.imageLibraryMigrateModalTitle", {
+            defaultValue: "正在迁移图片",
+          }),
+          destination: imageLibraryPendingMigrationRef.current?.dirLabel ?? "",
+          copied: imageLibraryMigration.copied,
+          total: imageLibraryMigration.total,
+          rollingBack: imageLibraryRollingBack,
+          rollingBackLabel: t("settings.imageLibraryMigrateRollingBack", {
+            defaultValue: "Rolling back...",
+          }),
+          progressLabel: t("settings.imageLibraryMigrateProgress", {
+            values: {
+              current: imageLibraryMigration.copied,
+              total: imageLibraryMigration.total,
+            },
+            defaultValue: `Migrating ${imageLibraryMigration.copied}/${imageLibraryMigration.total}`,
+          }),
+          onCancel: cancelImageLibraryMigration,
+        }
+      : null;
+  const activeMigrationPercent =
+    activeMigration && activeMigration.total > 0
+      ? Math.min(
+          100,
+          Math.round((activeMigration.copied / activeMigration.total) * 100),
+        )
+      : 0;
+
   return (
     <div className="api-settings-page" role="region">
       <div className="import-settings-tabs" role="tablist">
@@ -2110,59 +2160,6 @@ export function GeneralSettingsPanel(): React.JSX.Element {
               );
             })}
 
-            {/* 迁移进度 */}
-            {migration && (
-              <div className="general-storage-migrate-bar" role="status">
-                <div className="general-storage-migrate-info">
-                  <LoaderCircle
-                    size={12}
-                    strokeWidth={1.8}
-                    className="tool-call-icon-spinning"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {rollingBack
-                      ? t("settings.storageMigrateRollingBack", {
-                          defaultValue: "Rolling back...",
-                        })
-                      : t("settings.storageMigrateProgress", {
-                          values: {
-                            current: migration.copied,
-                            total: migration.total,
-                          },
-                          defaultValue: `Migrating ${migration.copied}/${migration.total}`,
-                        })}
-                  </span>
-                  {!rollingBack && (
-                    <button
-                      type="button"
-                      className="general-storage-migrate-cancel"
-                      onClick={cancelMigration}
-                    >
-                      {t("settings.cancel", { defaultValue: "Cancel" })}
-                    </button>
-                  )}
-                </div>
-                <div className="general-storage-migrate-progress-bar">
-                  <div
-                    className="general-storage-migrate-progress-fill"
-                    style={{
-                      width: `${
-                        migration.total > 0
-                          ? Math.min(
-                              100,
-                              Math.round(
-                                (migration.copied / migration.total) * 100,
-                              ),
-                            )
-                          : 0
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
             {/* 图片库存储位置 */}
             <div className="general-storage-row">
               <div className="general-storage-info">
@@ -2242,58 +2239,6 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                 )}
               </div>
             </div>
-
-            {/* 图库迁移进度 */}
-            {imageLibraryMigration && (
-              <div className="general-storage-migrate-bar" role="status">
-                <div className="general-storage-migrate-info">
-                  <LoaderCircle
-                    size={12}
-                    strokeWidth={1.8}
-                    className="tool-call-icon-spinning"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {imageLibraryRollingBack
-                      ? t("settings.imageLibraryMigrateRollingBack")
-                      : t("settings.imageLibraryMigrateProgress", {
-                          values: {
-                            current: imageLibraryMigration.copied,
-                            total: imageLibraryMigration.total,
-                          },
-                        })}
-                  </span>
-                  {!imageLibraryRollingBack && (
-                    <button
-                      type="button"
-                      className="general-storage-migrate-cancel"
-                      onClick={cancelImageLibraryMigration}
-                    >
-                      {t("settings.cancel", { defaultValue: "Cancel" })}
-                    </button>
-                  )}
-                </div>
-                <div className="general-storage-migrate-progress-bar">
-                  <div
-                    className="general-storage-migrate-progress-fill"
-                    style={{
-                      width: `${
-                        imageLibraryMigration.total > 0
-                          ? Math.min(
-                              100,
-                              Math.round(
-                                (imageLibraryMigration.copied /
-                                  imageLibraryMigration.total) *
-                                  100,
-                              ),
-                            )
-                          : 0
-                      }%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -2715,6 +2660,102 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           </div>
         </div>
       )}
+
+      {/* 迁移进度：不可关闭的模态框（仅可通过取消迁移中断并回滚） */}
+      {activeMigration &&
+        createPortal(
+          <div className="storage-migration-overlay">
+            <div
+              className="storage-migration-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="storage-migration-title"
+            >
+              <div className="storage-migration-head">
+                <span className="storage-migration-spinner" aria-hidden="true">
+                  <LoaderCircle
+                    size={18}
+                    strokeWidth={1.8}
+                    className="tool-call-icon-spinning"
+                  />
+                </span>
+                <div className="storage-migration-heading">
+                  <span
+                    className="storage-migration-title"
+                    id="storage-migration-title"
+                  >
+                    {activeMigration.rollingBack
+                      ? activeMigration.rollingBackLabel
+                      : activeMigration.title}
+                  </span>
+                  {activeMigration.destination ? (
+                    <span
+                      className="storage-migration-destination"
+                      title={activeMigration.destination}
+                    >
+                      {t("settings.storageMigrateModalDestination", {
+                        values: { dir: activeMigration.destination },
+                        defaultValue: `Destination: ${activeMigration.destination}`,
+                      })}
+                    </span>
+                  ) : null}
+                </div>
+                {!activeMigration.rollingBack && (
+                  <span className="storage-migration-percent">
+                    {activeMigrationPercent}%
+                  </span>
+                )}
+              </div>
+              <div
+                className="storage-migration-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={
+                  activeMigration.rollingBack
+                    ? undefined
+                    : activeMigrationPercent
+                }
+              >
+                <div
+                  className={`storage-migration-progress-fill${
+                    activeMigration.rollingBack ? " indeterminate" : ""
+                  }`}
+                  style={
+                    activeMigration.rollingBack
+                      ? undefined
+                      : { width: `${activeMigrationPercent}%` }
+                  }
+                />
+              </div>
+              <div className="storage-migration-footer">
+                {!activeMigration.rollingBack && (
+                  <span className="storage-migration-count">
+                    {activeMigration.progressLabel}
+                  </span>
+                )}
+                {!activeMigration.rollingBack && (
+                  <button
+                    type="button"
+                    className="storage-migration-cancel"
+                    onClick={activeMigration.onCancel}
+                  >
+                    {t("settings.storageMigrateCancel", {
+                      defaultValue: "Cancel migration",
+                    })}
+                  </button>
+                )}
+              </div>
+              <p className="storage-migration-note">
+                {t("settings.storageMigrateModalNote", {
+                  defaultValue:
+                    "Do not quit the app while migrating. Cancelling removes the files already copied and keeps the current folder.",
+                })}
+              </p>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       <ConfirmDialog
         open={pendingMigration !== null}

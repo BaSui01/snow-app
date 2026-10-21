@@ -14564,6 +14564,11 @@ body.is-panel-resizing * {
   margin-left: 6px;
 }
 
+/* 运行中/失败标记仅在 chips 风格下显示 */
+.tcg-status-icon {
+  display: none;
+}
+
 .tcg-chevron {
   flex-shrink: 0;
   transition: transform 0.15s ease;
@@ -52896,58 +52901,160 @@ pre.file-viewer-code {
   cursor: not-allowed;
 }
 
-/* ---- 通用设置：存储目录迁移进度条 ---- */
-.general-storage-migrate-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-}
-
-.general-storage-migrate-info {
+/* ---- 通用设置：存储目录迁移进度模态框（不可关闭） ---- */
+.storage-migration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 11px;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  animation: confirm-overlay-in 0.15s ease;
 }
 
-.general-storage-migrate-cancel {
-  margin-left: auto;
+.storage-migration-dialog {
+  display: flex;
+  width: 380px;
+  max-width: 88vw;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  box-shadow:
+    var(--island-shadow),
+    0 24px 60px rgba(0, 0, 0, 0.28);
+  animation: confirm-dialog-in 0.18s ease;
+}
+
+.storage-migration-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.storage-migration-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-  padding: 2px 8px;
-  border: none;
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-tertiary);
-  font-size: 10.5px;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.general-storage-migrate-cancel:hover {
-  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
   color: var(--accent-color);
 }
 
-.general-storage-migrate-progress-bar {
+.storage-migration-heading {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.storage-migration-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.storage-migration-destination {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.storage-migration-percent {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-color);
+}
+
+.storage-migration-progress {
   width: 100%;
-  height: 5px;
+  height: 6px;
   border-radius: 999px;
   background: var(--bg-active);
   overflow: hidden;
 }
 
-.general-storage-migrate-progress-fill {
+.storage-migration-progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: var(--accent-color);
-  transition: width 0.3s ease;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-color) 55%, transparent),
+    var(--accent-color)
+  );
+  transition: width 0.25s ease;
+}
+
+/* 回滚阶段没有确定进度：滑块循环移动 */
+.storage-migration-progress-fill.indeterminate {
+  width: 35%;
+  animation: storage-migration-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes storage-migration-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+.storage-migration-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 26px;
+}
+
+.storage-migration-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.storage-migration-cancel {
+  height: 26px;
+  margin-left: auto;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.storage-migration-cancel:hover {
+  border-color: color-mix(in srgb, var(--accent-red-text) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-red-text) 10%, transparent);
+  color: var(--accent-red-text);
+}
+
+.storage-migration-note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 
 /* ---- 通用设置：数据清理（分类勾选 + 破坏性操作按钮） ---- */

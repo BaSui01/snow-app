@@ -51,6 +51,7 @@ import {
 import { ThemeBackgroundPetLayer } from "./components/pet/ThemeBackgroundPetLayer";
 import { ThemeBackgroundImageLayer } from "./components/sidebar/themeSettings/ThemeBackgroundImageLayer";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
+import { installToolCardStyleShortcut } from "./utils/toolCardStyle";
 import { hasCustomWindowFrame } from "./utils/platform";
 import {
   CLOSE_BEHAVIOR_SETTING_CODE,
@@ -178,6 +179,10 @@ const ShortcutHandlerBridge = (): null => {
   useEffect(() => {
     void window.snow.setTrayActiveSessions(streamingConversationIds.size);
   }, [streamingConversationIds]);
+
+  // 工具卡风格切换：固定快捷键 mod+shift+u（不进可配置快捷键面板，
+  // 界面上也不提供开关；帮助浮层里单独列出）。
+  useEffect(() => installToolCardStyleShortcut(), []);
 
   useEffect(() => {
     const unsubCancel = registerHandler("cancelSession", () => {

@@ -42,6 +42,10 @@ import { initCookieAutoBackup } from "./cookieAutoBackup";
 import { initUserscriptSyncStore } from "./userscriptSyncStore";
 import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 import { initBrowserDeviceEmulation } from "../browser/browserDeviceEmulation";
+import {
+  initBrowserUserAgent,
+  syncLocalBrowserUserAgent,
+} from "../browser/browserUserAgent";
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { ensureBuiltinPets } from "../pets/ensureBuiltinPet";
 import { registerRequestProxy } from "../requestProxy/requestProxy";
@@ -166,6 +170,10 @@ export const bootstrapApplication = (): void => {
       app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));
     }
 
+    // 内置浏览器 UA：去掉 Electron/应用名 token，先用内核版本的标准 Chrome UA，
+    // 原生模块加载后再对齐本机真实浏览器版本（见 did-finish-load）。
+    initBrowserUserAgent();
+
     // ─── Cookie 自动备份与丢失自愈 ──────────────────────────────────────
     // Keychain "Chromium Safe Storage" 密钥漂移会让 Chromium 启动时静默清空
     // 整库 Cookie，此处启动检测骤减并自动恢复，周期加密快照兜底。
@@ -281,6 +289,16 @@ export const bootstrapApplication = (): void => {
 
       // 启动时应用会话代理，使 net.fetch / electron-updater 走内置代理配置。
       void applySessionProxy(native);
+
+      // 内置浏览器 UA 对齐本机真实浏览器（Chrome/Edge 版本由 Rust 探测）。
+      syncLocalBrowserUserAgent(native).catch((error) => {
+        snowLog.warn({
+          module: "app/bootstrap",
+          func: "syncLocalBrowserUserAgent",
+          message: "Failed to detect local browser version",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
 
       // Apply persisted theme mode to nativeTheme as soon as storage is ready.
       getRawNative()

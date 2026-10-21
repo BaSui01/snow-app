@@ -2304,6 +2304,7 @@ export const en = {
   "settings.imageLibraryMigrateProgress":
     "Migrating images {{current}}/{{total}}",
   "settings.imageLibraryMigrateRollingBack": "Rolling back…",
+  "settings.imageLibraryMigrateModalTitle": "Migrating images",
   "settings.imageLibrarySearchPlaceholder": "Search filename, prompt, model…",
   "settings.imageLibrarySearchClear": "Clear search",
   "settings.imageLibrarySort": "Sort",
@@ -3477,6 +3478,11 @@ export const en = {
   "settings.storageMigrateConfirmBtn": "Migrate",
   "settings.storageMigrateProgress": "Migrating {{current}}/{{total}}",
   "settings.storageMigrateRollingBack": "Rolling back...",
+  "settings.storageMigrateModalTitle": "Migrating data",
+  "settings.storageMigrateModalDestination": "Destination: {{dir}}",
+  "settings.storageMigrateModalNote":
+    "Do not quit the app while migrating. Cancelling removes the files already copied and keeps the current folder.",
+  "settings.storageMigrateCancel": "Cancel migration",
   "settings.storageSize": "Used: {{size}}",
   "settings.storageRepairDb": "Repair database",
   "settings.storageRepairing": "Repairing...",
@@ -3999,6 +4005,8 @@ export const en = {
     "Toggle right panel fullscreen",
   "settings.shortcutShowShortcutHelp": "Show shortcut cheat sheet",
   "settings.shortcutToggleMessageTime": "Show/hide message timestamps",
+  "settings.shortcutToggleToolCardStyle":
+    "Switch tool card style (classic / chips)",
   "settings.shortcutUiZoomIn": "Increase UI font size",
   "settings.shortcutUiZoomOut": "Decrease UI font size",
   "settings.shortcutUiZoomReset": "Reset UI font size",

@@ -141,6 +141,8 @@ const requiredExports = [
   // 应用任务管理器（进程树快照采集与结束进程）
   "listProcessTree",
   "killProcessTree",
+  // 内置浏览器 UA 对齐本机真实浏览器（读取 Chrome/Edge 版本号）
+  "detectLocalBrowserVersion",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

@@ -11,6 +11,7 @@ import {
   keyToDisplay,
   type ShortcutGroup,
 } from "../utils/shortcutUtils";
+import { TOOL_CARD_STYLE_SHORTCUT_KEY } from "../utils/toolCardStyle";
 
 const GROUP_TITLE_KEYS: Record<
   ShortcutGroup,
@@ -29,6 +30,26 @@ const GROUP_TITLE_KEYS: Record<
     fallback: "Window & global",
   },
 };
+
+/**
+ * 固定快捷键：没有对应的可配置设置项，只在帮助浮层中展示。
+ * 目前用于在「经典 / chips」两套工具卡视觉之间切换。
+ */
+const FIXED_SHORTCUTS: {
+  id: string;
+  key: string;
+  descKey: string;
+  descDefault: string;
+  group: ShortcutGroup;
+}[] = [
+  {
+    id: "toggleToolCardStyle",
+    key: TOOL_CARD_STYLE_SHORTCUT_KEY,
+    descKey: "settings.shortcutToggleToolCardStyle",
+    descDefault: "Switch tool card style (classic / chips)",
+    group: "window",
+  },
+];
 
 /**
  * 快捷键帮助浮层：show-shortcut-help 事件（默认 mod+/）唤起，
@@ -84,28 +105,44 @@ export function ShortcutHelpOverlay(): React.JSX.Element {
       // 命中分组名时整组保留
       const groupMatched =
         keyword.length > 0 && title.toLowerCase().includes(keyword);
-      const items = SHORTCUT_ACTIONS.filter(
+      const matchesKeyword = (
+        desc: string,
+        keyText: string,
+        key: string,
+      ): boolean => {
+        if (!keyword || groupMatched) return true;
+        return (
+          desc.toLowerCase().includes(keyword) ||
+          keyText.toLowerCase().includes(keyword) ||
+          key.toLowerCase().includes(keyword)
+        );
+      };
+
+      const configurable = SHORTCUT_ACTIONS.filter(
         (action) => SHORTCUT_META[action].group === group,
       )
         .map((action) => {
           const meta = SHORTCUT_META[action];
           const key = settings[action]?.key ?? "";
           return {
-            action,
+            action: action as string,
             key,
             keyText: key ? keyToDisplay(key) : "",
             desc: t(meta.descKey, { defaultValue: meta.descDefault }),
           };
         })
-        .filter((item) => {
-          if (!keyword || groupMatched) return true;
-          return (
-            item.desc.toLowerCase().includes(keyword) ||
-            item.keyText.toLowerCase().includes(keyword) ||
-            item.key.toLowerCase().includes(keyword)
-          );
-        });
-      return { group, title, items };
+        .filter((item) => matchesKeyword(item.desc, item.keyText, item.key));
+
+      const fixed = FIXED_SHORTCUTS.filter((entry) => entry.group === group)
+        .map((entry) => ({
+          action: `fixed:${entry.id}`,
+          key: entry.key,
+          keyText: keyToDisplay(entry.key),
+          desc: t(entry.descKey, { defaultValue: entry.descDefault }),
+        }))
+        .filter((item) => matchesKeyword(item.desc, item.keyText, item.key));
+
+      return { group, title, items: [...configurable, ...fixed] };
     }).filter((entry) => entry.items.length > 0);
   }, [query, settings, t]);
 

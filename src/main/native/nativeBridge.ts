@@ -65,6 +65,8 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "writeInteractiveStdin",
   "listProcessTree",
   "killProcessTree",
+  // 本机浏览器版本探测（内置浏览器 UA 对齐，只读浏览器目录文件）
+  "detectLocalBrowserVersion",
   // 团队协作（仓库内 git 身份与文件，不落数据库）
   "teamGetIdentity",
   "teamResolveRepo",

@@ -717,20 +717,20 @@ export const useContentEditableInteractions = ({
         checkInputTriggers();
       };
 
-      // 从输入框自身复制的内容带有 chips 编码；只含文字时与外部纯文本一样
-      // 走原生 insertText，否则 insertHtmlAtSelection 会生成独立文本节点且
-      // 不触发 input，@ 后粘贴的查询词无法被引用面板识别。
+      // 仅应用内复制（带 chips MIME）的内容才解析 @@kind:...@@ 编码；外部
+      // 纯文本（日志、请求体、文档等）可能含有标签字样，必须按原文处理，
+      // 否则会被误拆成多段文本与图片/文件 chips。只含文字时与外部纯文本
+      // 一样走原生 insertText，否则 insertHtmlAtSelection 会生成独立文本
+      // 节点且不触发 input，@ 后粘贴的查询词无法被引用面板识别。
       const chipsData = event.clipboardData.getData(CHIPS_CLIPBOARD_TYPE);
-      const segments = parseContentSegments(
-        chipsData || event.clipboardData.getData("text/plain"),
-      );
-      if (segments.some((segment) => segment.type !== "text")) {
-        insertSegmentedContent(segments);
-        return;
+      if (chipsData) {
+        const segments = parseContentSegments(chipsData);
+        if (segments.some((segment) => segment.type !== "text")) {
+          insertSegmentedContent(segments);
+          return;
+        }
       }
-      const rawText = segments
-        .map((segment) => (segment.type === "text" ? segment.content : ""))
-        .join("");
+      const rawText = chipsData || event.clipboardData.getData("text/plain");
       // @ 引用面板打开时粘贴的是查询词：去掉首尾空白/换行，否则复制整行
       // 带出的换行会把光标移出 @ 所在文本节点，导致不触发搜索。
       const text = isMentionOpen ? rawText.trim() : rawText;

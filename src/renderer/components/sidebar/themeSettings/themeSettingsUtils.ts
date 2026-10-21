@@ -564,8 +564,8 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
   const presetId = resolvePresetId(rawPresetId);
   const rawLayoutStyle = toText(source.layoutStyle);
   const layoutStyle: ThemeLayoutStyle =
-    rawLayoutStyle === "layered"
-      ? "layered"
+    rawLayoutStyle === "layered" || rawLayoutStyle === "flush"
+      ? rawLayoutStyle
       : rawLayoutStyle === "island"
         ? "island"
         : // 兼容临时单主题时期（presetId 为 minimal/layered）留下的旧数据/旧缓存。

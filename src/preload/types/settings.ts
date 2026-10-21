@@ -208,7 +208,7 @@ export type ThemeTypography = {
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
-  layoutStyle: "island" | "layered";
+  layoutStyle: "island" | "layered" | "flush";
   custom: CustomTheme;
   background: ThemeBackground;
   fontFamily: string;

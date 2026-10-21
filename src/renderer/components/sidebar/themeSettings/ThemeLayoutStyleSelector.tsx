@@ -22,6 +22,11 @@ const STYLE_OPTIONS: {
     labelKey: "settings.themeLayoutStyleLayered",
     defaultLabel: "Layered",
   },
+  {
+    value: "flush",
+    labelKey: "settings.themeLayoutStyleFlush",
+    defaultLabel: "Flush",
+  },
 ];
 
 /** 孤岛：三段独立卡片，之间留出背景间隙。 */
@@ -122,6 +127,41 @@ function LayeredThumbnail(): React.JSX.Element {
   );
 }
 
+/** 平铺：贴边铺满，仅用细线分隔。 */
+function FlushThumbnail(): React.JSX.Element {
+  return (
+    <svg
+      width="48"
+      height="32"
+      viewBox="0 0 48 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <rect
+        x="0.5"
+        y="0.5"
+        width="47"
+        height="31"
+        rx="3.5"
+        fill="var(--bg-primary)"
+        stroke="var(--border-color)"
+      />
+      <path d="M1 6.5H47" stroke="var(--border-color)" strokeWidth="0.5" />
+      <path d="M1 7H12V31H4A3 3 0 0 1 1 28Z" fill="var(--bg-secondary)" />
+      <path d="M36 7H47V28A3 3 0 0 1 44 31H36Z" fill="var(--bg-secondary)" />
+      <path d="M12 6.5V31" stroke="var(--border-color)" strokeWidth="0.5" />
+      <path d="M36 6.5V31" stroke="var(--border-color)" strokeWidth="0.5" />
+    </svg>
+  );
+}
+
+const THUMBNAILS: Record<ThemeLayoutStyle, () => React.JSX.Element> = {
+  island: IslandThumbnail,
+  layered: LayeredThumbnail,
+  flush: FlushThumbnail,
+};
+
 export function ThemeLayoutStyleSelector({
   layoutStyle,
   disabled,
@@ -133,6 +173,7 @@ export function ThemeLayoutStyleSelector({
     <div className="theme-mode-selector" role="radiogroup">
       {STYLE_OPTIONS.map((option) => {
         const isActive = layoutStyle === option.value;
+        const Thumbnail = THUMBNAILS[option.value];
         return (
           <button
             key={option.value}
@@ -143,11 +184,7 @@ export function ThemeLayoutStyleSelector({
             onClick={() => onChange(option.value)}
             disabled={disabled}
           >
-            {option.value === "island" ? (
-              <IslandThumbnail />
-            ) : (
-              <LayeredThumbnail />
-            )}
+            <Thumbnail />
             <span>
               {t(option.labelKey, { defaultValue: option.defaultLabel })}
             </span>

@@ -3493,9 +3493,10 @@ export const zhCN = {
   "settings.themePresetRococo": "洛可可玫瑰",
   "settings.themeLayoutStyle": "风格",
   "settings.themeLayoutStyleInfo":
-    "孤岛为三段独立卡片（默认）；层叠让侧栏融入背景，主区与右侧面板逐层覆盖。",
+    "孤岛为三段独立卡片（默认）；层叠让侧栏融入背景，主区与右侧面板逐层覆盖；平铺为贴边铺满、细线分隔的 IDE 式布局。",
   "settings.themeLayoutStyleIsland": "孤岛",
   "settings.themeLayoutStyleLayered": "层叠",
+  "settings.themeLayoutStyleFlush": "平铺",
   "settings.themeCustomTitle": "自定义主题",
   "settings.themeCustomInfo":
     "启用后可调整每一个颜色，浅色和深色调色板分别编辑。",

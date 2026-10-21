@@ -382,7 +382,7 @@ impl ThemeSettings {
             } else {
                 "island".to_string()
             };
-        } else if !matches!(self.layout_style.as_str(), "island" | "layered") {
+        } else if !matches!(self.layout_style.as_str(), "island" | "layered" | "flush") {
             self.layout_style = "island".to_string();
         }
         self.custom.normalize();

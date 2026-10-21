@@ -1,0 +1,176 @@
+/* ===== Flush (平铺) Layout Style =====
+   IDE 式布局，通过 html[data-layout-style="flush"] 开启：
+   - 窗口贴边铺满，面板无圆角、无投影；
+   - 面板之间只留 1px 分隔线（即拖拽条本身）；
+   - 面板底色沿用孤岛表面色，但叠在 --app-bg 上做成不透明。
+   必须在预设主题之后引入，用 !important 统一覆盖布局。 */
+
+:root[data-layout-style="flush"] {
+  --island-shadow: none;
+  --backdrop-blur-lg: none;
+  --flush-divider: var(--border-color);
+  --flush-surface-side:
+    linear-gradient(var(--surface-island-muted), var(--surface-island-muted)),
+    var(--app-bg);
+  --flush-surface-main:
+    linear-gradient(var(--surface-island-strong), var(--surface-island-strong)),
+    var(--app-bg);
+  --flush-surface-right:
+    linear-gradient(var(--surface-island), var(--surface-island)), var(--app-bg);
+}
+
+/* ==========================================================================
+   1. 外框：去掉四周留白
+   ========================================================================== */
+
+:root[data-layout-style="flush"] .app-layout {
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+/* ==========================================================================
+   2. 顶栏：底色即分隔线色，列间 1px 缝隙与底部 1px 内边距露出分隔线
+   ========================================================================== */
+
+:root[data-layout-style="flush"] .top-bar {
+  padding: 0 0 1px !important;
+  column-gap: 1px !important;
+  border: none !important;
+  background: var(--flush-divider) !important;
+}
+
+/* 全屏：中段收成 1px 列充当分隔线 */
+:root[data-layout-style="flush"]
+  .app-shell.right-panel-fullscreen:not(.sidebar-collapsed)
+  .top-bar {
+  column-gap: 0 !important;
+  grid-template-columns: var(--sidebar-width) 1px minmax(0, 1fr) !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell.right-panel-fullscreen.sidebar-collapsed
+  .top-bar {
+  column-gap: 0 !important;
+}
+
+:root[data-layout-style="flush"]
+  :is(.top-bar-left, .top-bar-main, .top-bar-right) {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-layout-style="flush"] .top-bar-left {
+  background: var(--flush-surface-side) !important;
+}
+
+:root[data-layout-style="flush"] .top-bar-main {
+  background: var(--flush-surface-main) !important;
+}
+
+:root[data-layout-style="flush"] .top-bar-right {
+  background: var(--flush-surface-right) !important;
+}
+
+/* ==========================================================================
+   3. 三块面板：直角、无投影、不透明
+   ========================================================================== */
+
+:root[data-layout-style="flush"] .sidebar {
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--flush-surface-side) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 悬浮聊天卡片需保留自身圆角与投影，故全屏态不覆盖 */
+:root[data-layout-style="flush"]
+  .app-shell:not(.right-panel-fullscreen)
+  .main-content {
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--flush-surface-main) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-layout-style="flush"] .right-panel:not(.right-panel-detached) {
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--flush-surface-right) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-layout-style="flush"]
+  .app-shell:not(.sidebar-collapsed)
+  .right-panel.fullscreen {
+  width: calc(100% - var(--sidebar-width) - 1px) !important;
+}
+
+/* 侧栏树吸顶铺底与侧栏同色 */
+:root[data-layout-style="flush"]
+  .sidebar-tree-list
+  :is(.project-collection-row, .tree-project-row-wrap)::before {
+  background: var(--flush-surface-side);
+}
+
+:root[data-layout-style="flush"] .sidebar .explorer-tree-row--sticky::before {
+  background: var(--flush-surface-side);
+}
+
+:root[data-layout-style="flush"]
+  .right-panel
+  .explorer-tree-row--sticky::before {
+  background: var(--flush-surface-right);
+}
+
+/* 悬浮聊天区域左缘：侧栏 + 1px 分隔线，两侧各留 10px */
+:root[data-layout-style="flush"]
+  .app-shell.right-panel-fullscreen.chat-float-enabled:not(.sidebar-collapsed) {
+  --chat-float-region-left: calc(var(--sidebar-width) + 11px);
+}
+
+/* ==========================================================================
+   4. 分隔线：拖拽条收成 1px，悬停/拖拽时整条高亮
+   ========================================================================== */
+
+:root[data-layout-style="flush"] .app-layout > .sidebar-resizer,
+:root[data-layout-style="flush"]
+  .app-shell:not(.right-panel-fullscreen)
+  .app-layout
+  > .right-panel-resizer {
+  width: 1px !important;
+  min-width: 1px !important;
+  margin: 0 !important;
+  background: var(--flush-divider) !important;
+}
+
+:root[data-layout-style="flush"] .app-layout > .panel-resizer::before {
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 2px !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+:root[data-layout-style="flush"] .app-layout > .panel-resizer:hover::before,
+:root[data-layout-style="flush"]
+  .app-layout
+  > .panel-resizer.is-active::before {
+  background: var(--accent-color) !important;
+}
+
+/* 1px 拖拽条的透明命中区 */
+:root[data-layout-style="flush"] .app-layout > .panel-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 7px;
+  background: transparent;
+  content: "";
+  transform: translateX(-50%);
+}

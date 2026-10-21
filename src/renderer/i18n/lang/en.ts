@@ -3692,9 +3692,10 @@ export const en = {
   "settings.themePresetRococo": "Rose Rococo",
   "settings.themeLayoutStyle": "Layout style",
   "settings.themeLayoutStyleInfo":
-    "Island keeps three separate cards (default); Layered blends the sidebar into the background and stacks the main area and right panel over each other.",
+    "Island keeps three separate cards (default); Layered blends the sidebar into the background and stacks the main area and right panel over each other; Flush fills the window edge to edge with hairline dividers, IDE style.",
   "settings.themeLayoutStyleIsland": "Island",
   "settings.themeLayoutStyleLayered": "Layered",
+  "settings.themeLayoutStyleFlush": "Flush",
   "settings.themeCustomTitle": "Custom theme",
   "settings.themeCustomInfo":
     "Enable to fine-tune every color. Light and dark palettes are edited separately.",

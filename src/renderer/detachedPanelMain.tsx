@@ -22,6 +22,7 @@ import "./themes/preset-compact.css";
 import "./themes/preset-tesseract.css";
 import "./themes/preset-rococo.css";
 import "./themes/layout-layered.css";
+import "./themes/layout-flush.css";
 import type { WorkspaceDirectoryRecord } from "../preload";
 import type { DetachedPanelPayload } from "../shared/detachedPanel";
 import { I18nProvider, useI18n } from "./i18n";

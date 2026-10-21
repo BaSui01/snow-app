@@ -1,7 +1,7 @@
 export type ThemeMode = "system" | "light" | "dark";
 
-/** 全局布局风格：孤岛（默认，三段独立卡片）或层叠（侧栏融入背景、主区/右侧逐层覆盖）。 */
-export type ThemeLayoutStyle = "island" | "layered";
+/** 全局布局风格：孤岛（默认）、层叠（逐层覆盖）、平铺（贴边铺满、细线分隔）。 */
+export type ThemeLayoutStyle = "island" | "layered" | "flush";
 
 export type ThemePalette = {
   bgPrimary: string;

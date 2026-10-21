@@ -21,22 +21,26 @@
   --radius-xl: 16px;
   --radius-pill: 999px;
 
-  /* Horizon Brand Accent: Arctic Sky & Ocean */
-  --compact-accent: #0284c7;
-  --compact-accent-hover: #0369a1;
-  --compact-accent-bg: rgba(2, 132, 199, 0.12);
-  --compact-accent-text: #0369a1;
-  --compact-button-bg: #0369a1;
-  --compact-button-hover: #075985;
-  --accent: #0284c7;
-  --accent-primary: #0284c7;
-  --accent-color: #0284c7;
-  --accent-blue: #0284c7;
-  --accent-blue-hover: #0369a1;
-  --accent-blue-bg: rgba(2, 132, 199, 0.12);
-  --accent-blue-text: #0369a1;
-  --accent-primary-bg: rgba(2, 132, 199, 0.12);
-  --accent-primary-text: #0369a1;
+  /* Horizon Brand Accent: Pure Tech Emerald & Clean Studio Minimal */
+  --compact-accent: #16a34a;
+  --compact-accent-hover: #15803d;
+  --compact-accent-bg: rgba(22, 163, 74, 0.09);
+  --compact-accent-text: #15803d;
+  --compact-button-bg: #16a34a;
+  --compact-button-hover: #15803d;
+  --accent: #16a34a;
+  --accent-primary: #16a34a;
+  --accent-color: #16a34a;
+  --accent-green: #16a34a;
+  --accent-green-hover: #15803d;
+  --accent-green-bg: rgba(22, 163, 74, 0.09);
+  --accent-green-text: #15803d;
+  --accent-blue: #16a34a;
+  --accent-blue-hover: #15803d;
+  --accent-blue-bg: rgba(22, 163, 74, 0.09);
+  --accent-blue-text: #15803d;
+  --accent-primary-bg: rgba(22, 163, 74, 0.09);
+  --accent-primary-text: #15803d;
 
   /* Flat controls and cards; only detached menus/tooltips need a soft shadow. */
   --island-shadow: none;
@@ -54,79 +58,83 @@
     box-shadow 0.14s ease;
 }
 
-/* Light Mode: Studio Pure Porcelain & Gentle Mist */
+/* Light Mode: Clean Porcelain & Gentle Warm Ivory (素雅微温瓷白，柔和清亮不偏黄) */
 :root[data-theme-preset="compact"][data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8fafc;
-  --bg-tertiary: #f1f5f9;
-  --bg-hover: #e8eef5;
-  --bg-active: #dbe5f0;
+  --bg-primary: #faf9f7;
+  --bg-secondary: #f4f3ef;
+  --bg-tertiary: #edebe4;
+  --bg-hover: #e6e4dc;
+  --bg-active: #dcd9d0;
   --surface-hover: var(--bg-hover);
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-tertiary: #526277;
-  --text-muted: #64748b;
-  --border-light: #dce3ec;
-  --border-color: #cbd5e1;
-  --border-subtle: #b8c5d6;
-  --compact-control-border: #7b8ba1;
-  --compact-focus-color: #0369a1;
-  --compact-selected-bg: #dceefa;
+  --text-primary: #1c1b1a;
+  --text-secondary: #4e4b46;
+  --text-tertiary: #78746c;
+  --text-muted: #9a968d;
+  --border-light: #e8e6df;
+  --border-color: #dad7cd;
+  --border-subtle: #c8c4b8;
+  --compact-control-border: #78746a;
+  --compact-focus-color: #16a34a;
+  --compact-selected-bg: #eaf8ef;
   --compact-danger-text: #b91c1c;
   --compact-danger-solid: #b91c1c;
   --compact-danger-hover: #991b1b;
-  --surface-island: #ffffff;
+  --surface-island: #fdfcfb;
   --surface-island-strong: #ffffff;
-  --surface-island-muted: #f8fafc;
-  --island-shadow: none;
-  --app-bg: #f1f5f9;
-  --chrome-bg: #f8fafc;
-  --scrollbar-thumb: rgba(148, 163, 184, 0.4);
-  --scrollbar-thumb-hover: rgba(100, 116, 139, 0.6);
-  --scrollbar-thumb-active: rgba(71, 85, 105, 0.8);
+  --surface-island-muted: #f4f3ef;
+  --island-shadow: 0 1px 3px rgba(28, 27, 26, 0.04);
+  --app-bg: #f1efe8;
+  --chrome-bg: #f4f3ef;
+  --scrollbar-thumb: rgba(120, 116, 108, 0.28);
+  --scrollbar-thumb-hover: rgba(120, 116, 108, 0.48);
+  --scrollbar-thumb-active: rgba(120, 116, 108, 0.68);
 }
 
-/* Dark Mode: Arctic Midnight Charcoal & Polar Sky */
+/* Dark Mode: Deep Obsidian Charcoal & Radiant Mint Green */
 :root[data-theme-preset="compact"][data-theme="dark"] {
-  --bg-primary: #0a0e17;
-  --bg-secondary: #0d121c;
-  --bg-tertiary: #141d2b;
-  --bg-hover: #1c293b;
-  --bg-active: #26364b;
+  --bg-primary: #121417;
+  --bg-secondary: #16191d;
+  --bg-tertiary: #1e2227;
+  --bg-hover: #262b32;
+  --bg-active: #313740;
   --surface-hover: var(--bg-hover);
-  --border-light: #263244;
-  --border-color: #35465e;
-  --border-subtle: #475b76;
-  --compact-control-border: #62748c;
-  --compact-focus-color: #38bdf8;
-  --compact-selected-bg: #12364d;
+  --border-light: #23272e;
+  --border-color: #2d323b;
+  --border-subtle: #3b424e;
+  --compact-control-border: #525c6c;
+  --compact-focus-color: #4ade80;
+  --compact-selected-bg: rgba(34, 197, 94, 0.18);
   --compact-danger-text: #fca5a5;
   --compact-danger-solid: #b91c1c;
   --compact-danger-hover: #991b1b;
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.22);
-  --accent: #0ea5e9;
-  --accent-primary: #0ea5e9;
-  --accent-color: #0ea5e9;
-  --accent-primary-bg: rgba(14, 165, 233, 0.14);
-  --compact-accent: #0ea5e9;
-  --compact-accent-hover: #38bdf8;
-  --compact-accent-bg: rgba(14, 165, 233, 0.14);
-  --compact-accent-text: #38bdf8;
-  --text-primary: #f1f5f9;
-  --text-secondary: #cbd5e1;
-  --text-tertiary: #94a3b8;
-  --text-muted: #94a3b8;
-  --accent-primary-text: #38bdf8;
-  --accent-blue: #0ea5e9;
-  --accent-blue-hover: #38bdf8;
-  --accent-blue-bg: rgba(14, 165, 233, 0.14);
-  --accent-blue-text: #38bdf8;
-  --surface-island: #0f1523;
-  --surface-island-strong: #0f1523;
-  --surface-island-muted: #0a0e17;
+  --accent: #22c55e;
+  --accent-primary: #22c55e;
+  --accent-color: #22c55e;
+  --accent-primary-bg: rgba(34, 197, 94, 0.16);
+  --compact-accent: #22c55e;
+  --compact-accent-hover: #4ade80;
+  --compact-accent-bg: rgba(34, 197, 94, 0.16);
+  --compact-accent-text: #4ade80;
+  --text-primary: #f2f3f5;
+  --text-secondary: #c9cdd4;
+  --text-tertiary: #86909c;
+  --text-muted: #646f7f;
+  --accent-primary-text: #4ade80;
+  --accent-green: #22c55e;
+  --accent-green-hover: #4ade80;
+  --accent-green-bg: rgba(34, 197, 94, 0.16);
+  --accent-green-text: #4ade80;
+  --accent-blue: #22c55e;
+  --accent-blue-hover: #4ade80;
+  --accent-blue-bg: rgba(34, 197, 94, 0.16);
+  --accent-blue-text: #4ade80;
+  --surface-island: #16191d;
+  --surface-island-strong: #1e2227;
+  --surface-island-muted: #121417;
   --island-shadow: none;
-  --app-bg: #090d15;
-  --chrome-bg: #0d121c;
+  --app-bg: #0d0f12;
+  --chrome-bg: #14171a;
   --scrollbar-thumb: rgba(100, 116, 139, 0.35);
   --scrollbar-thumb-hover: rgba(148, 163, 184, 0.55);
   --scrollbar-thumb-active: rgba(203, 213, 225, 0.75);
@@ -171,7 +179,10 @@
   background: var(--app-bg);
 }
 
-:root[data-theme-preset="compact"] .app-layout {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .app-layout {
   padding: 0 !important;
   gap: 0 !important;
   background: var(--app-bg);
@@ -193,7 +204,10 @@
   }
 }
 
-:root[data-theme-preset="compact"] .top-bar {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .top-bar {
   position: relative;
   gap: 0 !important;
   padding: 0 8px !important;
@@ -215,11 +229,11 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(2, 132, 199, 0.4) 15%,
-    #0284c7 35%,
-    #38bdf8 50%,
-    #818cf8 65%,
-    rgba(129, 140, 248, 0.4) 85%,
+    rgba(22, 163, 74, 0.35) 15%,
+    #16a34a 35%,
+    #22c55e 50%,
+    #34d399 65%,
+    rgba(52, 211, 153, 0.35) 85%,
     transparent 100%
   );
   background-size: 200% 100%;
@@ -228,7 +242,9 @@
   pointer-events: none;
 }
 
-:root[data-theme-preset="compact"]
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
   :is(.top-bar-left, .top-bar-main, .top-bar-right) {
   border-radius: 0 !important;
   background: transparent !important;
@@ -274,7 +290,7 @@
   width: 3px;
   height: 24px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, #38bdf8, #818cf8);
+  background: linear-gradient(180deg, #34d399, #16a34a);
   box-shadow: none;
   content: "";
   transform: translateY(-50%);
@@ -386,16 +402,22 @@
 }
 
 /* ==========================================================================
-   3. Fluid Flush Panels (无感极淡分隔与空气感层次)
+   3. Fluid Flush Panels (平铺风格下的无感极淡分隔)
    ========================================================================== */
 
-:root[data-theme-preset="compact"] :is(.sidebar, .main-content, .right-panel) {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  :is(.sidebar, .main-content, .right-panel) {
   border-radius: 0 !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
 }
 
-:root[data-theme-preset="compact"] .sidebar {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .sidebar {
   background: var(--bg-secondary) !important;
   border-right: 1px solid var(--border-light) !important;
   border-top: none !important;
@@ -403,13 +425,19 @@
   border-left: none !important;
 }
 
-:root[data-theme-preset="compact"] .main-content {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .main-content {
   background: var(--bg-primary) !important;
   padding: 0 !important;
   border: none !important;
 }
 
-:root[data-theme-preset="compact"] .right-panel {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .right-panel {
   background: var(--bg-secondary) !important;
   border-left: 1px solid var(--border-light) !important;
   border-top: none !important;
@@ -417,8 +445,52 @@
   border-right: none !important;
 }
 
-:root[data-theme-preset="compact"] .right-panel.fullscreen {
+:root[data-theme-preset="compact"]:not([data-layout-style="island"]):not(
+    [data-layout-style="layered"]
+  )
+  .right-panel.fullscreen {
   width: calc(100% - var(--sidebar-width)) !important;
+}
+
+/* ==========================================================================
+   3b. Horizon in Island Layout (无界主题在「孤岛」风格下的优雅微质感卡片)
+   ========================================================================== */
+
+:root[data-theme-preset="compact"][data-layout-style="island"] .app-layout {
+  padding: 0 10px 10px;
+  gap: 8px;
+}
+
+:root[data-theme-preset="compact"][data-layout-style="island"] .top-bar {
+  gap: 8px;
+  padding: 8px 10px;
+  height: calc(var(--compact-header-height) + 16px);
+  min-height: calc(var(--compact-header-height) + 16px);
+}
+
+:root[data-theme-preset="compact"][data-layout-style="island"]
+  :is(.top-bar-left, .top-bar-main, .top-bar-right) {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+  background: var(--surface-island-strong);
+  box-shadow: 0 1px 3px rgba(34, 32, 29, 0.04);
+}
+
+:root[data-theme-preset="compact"][data-layout-style="island"]
+  :is(.sidebar, .main-content, .right-panel) {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 1px 3px rgba(34, 32, 29, 0.04);
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="compact"][data-layout-style="island"] .sidebar,
+:root[data-theme-preset="compact"][data-layout-style="island"] .right-panel {
+  background: var(--bg-secondary);
+}
+
+:root[data-theme-preset="compact"][data-layout-style="island"] .main-content {
+  background: var(--bg-primary);
 }
 
 :root[data-theme-preset="compact"] .panel-resizer {
@@ -499,9 +571,23 @@
   box-shadow: inset 3px 0 0 var(--compact-focus-color);
 }
 
+:root[data-theme-preset="compact"][data-theme="light"] .settings-item.active {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.05) !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    inset 3px 0 0 var(--compact-focus-color) !important;
+}
+
 :root[data-theme-preset="compact"] .settings-item.active .settings-item-title {
   color: var(--compact-accent-text) !important;
   font-weight: 600;
+}
+
+:root[data-theme-preset="compact"][data-theme="light"]
+  .settings-item.active
+  .settings-item-title {
+  color: var(--text-primary) !important;
 }
 
 :root[data-theme-preset="compact"] .settings-item.active .settings-item-icon {
@@ -698,6 +784,17 @@
   box-shadow: inset 3px 0 0 var(--compact-focus-color) !important;
 }
 
+:root[data-theme-preset="compact"][data-theme="light"]
+  :is(.nav-item, .list-item, .chat-item).active {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.05) !important;
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    inset 3px 0 0 var(--compact-focus-color) !important;
+}
+
 /* 谷歌级语义设计：多态确认弹窗与操作 */
 :root[data-theme-preset="compact"]
   .confirm-dialog:not(.confirm-dialog-danger):not(.confirm-dialog-warning)
@@ -869,7 +966,9 @@
   box-shadow: none;
   border: 1px solid var(--border-light);
   background: var(--surface-island-strong);
-  transition: border-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 /* The base composer adds an animated rainbow ring; Horizon uses one quiet edge. */
@@ -879,8 +978,12 @@
 }
 
 :root[data-theme-preset="compact"] .input-box:focus-within {
-  border-color: var(--compact-focus-color);
-  box-shadow: none;
+  border-color: var(--compact-focus-color) !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12) !important;
+}
+
+:root[data-theme-preset="compact"][data-theme="dark"] .input-box:focus-within {
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.16) !important;
 }
 
 :root[data-theme-preset="compact"] .input-field {
@@ -1066,9 +1169,8 @@
 :root[data-theme-preset="compact"]
   .form-dialog-input:focus-visible:not([readonly]) {
   border-color: var(--compact-focus-color) !important;
-  outline: 2px solid var(--compact-focus-color) !important;
-  outline-offset: -2px;
-  box-shadow: none !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16) !important;
 }
 
 :root[data-theme-preset="compact"] .form-dialog-input[readonly] {
@@ -1419,7 +1521,7 @@
   border-color: var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--surface-island-strong);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 3px rgba(34, 32, 29, 0.04);
   transition:
     transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
@@ -1427,17 +1529,21 @@
 }
 
 :root[data-theme-preset="compact"] .chat-empty-quick-card.is-api {
-  border-color: rgba(2, 132, 199, 0.25);
-  background: color-mix(
+  border-color: color-mix(
     in srgb,
-    var(--compact-accent) 6%,
-    var(--surface-island-strong)
+    var(--compact-accent) 25%,
+    var(--border-light)
   );
+  background: var(--surface-island-strong);
 }
 
 :root[data-theme-preset="compact"] .chat-empty-quick-card.is-theme {
-  border-color: rgba(129, 140, 248, 0.25);
-  background: color-mix(in srgb, #818cf8 6%, var(--surface-island-strong));
+  border-color: color-mix(
+    in srgb,
+    var(--compact-accent) 25%,
+    var(--border-light)
+  );
+  background: var(--surface-island-strong);
 }
 
 :root[data-theme-preset="compact"]
@@ -1551,7 +1657,7 @@
     90deg,
     transparent 0%,
     var(--compact-accent) 20%,
-    #38bdf8 50%,
+    #4ade80 50%,
     var(--compact-accent) 80%,
     transparent 100%
   );
@@ -1624,7 +1730,7 @@
 
 :root[data-theme-preset="compact"][data-theme="dark"]
   .token-usage-ring-wrapper {
-  --compact-token-input: #38bdf8;
+  --compact-token-input: #4ade80;
   --compact-token-output: #34d399;
   --compact-token-cache-read: #a78bfa;
   --compact-token-cache-write: #fbbf24;
@@ -1765,7 +1871,7 @@
 
 :root[data-theme-preset="compact"] .theme-preset-card-compact {
   position: relative;
-  border-color: rgba(2, 132, 199, 0.4) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
   background: var(--surface-island-muted) !important;
   border-radius: var(--radius-lg) !important;
   overflow: hidden;
@@ -1780,7 +1886,7 @@
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #818cf8 100%);
+  background: linear-gradient(90deg, #16a34a 0%, #22c55e 50%, #4ade80 100%);
   content: "";
   pointer-events: none;
 }
@@ -1839,12 +1945,21 @@
   :is(
     .scheduled-tasks-filter-tabs,
     .scheduled-tasks-segmented,
+    .memo-schedule-panel
+  ) {
+  border-color: var(--border-light);
+  background: var(--bg-tertiary) !important;
+  border-radius: var(--radius-md);
+  padding: 2px !important;
+}
+
+:root[data-theme-preset="compact"]
+  :is(
     .scheduled-tasks-pre-script-body,
     .scheduled-task-prompt-content,
     .scheduled-task-history-item,
     .scheduled-task-details-grid > div,
-    .scheduled-task-config-grid > div,
-    .memo-schedule-panel
+    .scheduled-task-config-grid > div
   ) {
   border-color: var(--border-light);
   background: var(--surface-island-strong);
@@ -1862,12 +1977,39 @@
     .scheduled-task-item.selected,
     .memo-gantt-row.selected
   ) {
-  border-color: transparent;
-  background: var(--compact-selected-bg);
-  color: var(--compact-accent-text);
+  border-color: transparent !important;
+  background: var(--compact-selected-bg) !important;
+  color: var(--compact-accent-text) !important;
   box-shadow: inset 3px 0 0 var(--compact-focus-color);
   font-weight: 600;
   border-radius: var(--radius-md);
+}
+
+/* Qoder 风格分段切换器：浅色下凸起纯白浮雕滑块 */
+:root[data-theme-preset="compact"][data-theme="light"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active
+  ) {
+  background: #ffffff !important;
+  color: var(--text-primary) !important;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+:root[data-theme-preset="compact"][data-theme="dark"]
+  :is(
+    .memo-filter-tab.active,
+    .memo-view-tab.active,
+    .scheduled-tasks-filter-tab.active,
+    .scheduled-tasks-segmented-btn.active
+  ) {
+  background: #262b32 !important;
+  color: #f2f3f5 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -2294,4 +2436,51 @@
   :root[data-theme-preset="compact"] :is(.chat-messages-container, .chat-area) {
     scroll-behavior: auto !important;
   }
+}
+
+/* ==========================================================================
+   21. Usage Dashboard & Activity Heatmap (Qoder Style 用量统计与热力图)
+   ========================================================================== */
+
+:root[data-theme-preset="compact"] .usage-heatmap-section,
+:root[data-theme-preset="compact"] .usage-table-section {
+  border: 1px solid var(--border-light) !important;
+  background: var(--surface-island-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 18px 20px !important;
+  box-shadow: none !important;
+}
+
+:root[data-theme-preset="compact"] .usage-heatmap-header strong {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em;
+}
+
+:root[data-theme-preset="compact"] .usage-heatmap-cell {
+  border-radius: 2.5px !important;
+  border: 1px solid transparent !important;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+:root[data-theme-preset="compact"] .usage-heatmap-cell:hover {
+  transform: scale(1.22);
+  border-color: var(--compact-accent) !important;
+  z-index: 2;
+}
+
+:root[data-theme-preset="compact"] .usage-date-input {
+  border-radius: var(--radius-md) !important;
+  border-color: var(--border-color) !important;
+  background: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+  transition: var(--compact-control-transition);
+}
+
+:root[data-theme-preset="compact"] .usage-date-input:focus {
+  border-color: var(--compact-focus-color) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14) !important;
 }

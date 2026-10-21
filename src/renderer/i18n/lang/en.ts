@@ -3754,7 +3754,6 @@ export const en = {
   "settings.themePresetCyberpunk": "Cyberpunk",
   "settings.themePresetNotion": "Notion",
   "settings.themePresetCompact": "Horizon",
-  "settings.themePresetTesseract": "Tesseract",
   "settings.themePresetRococo": "Rose Rococo",
   "settings.themeLayoutStyle": "Layout style",
   "settings.themeLayoutStyleInfo":

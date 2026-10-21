@@ -3548,7 +3548,6 @@ export const zhCN = {
   "settings.themePresetCyberpunk": "赛博朋克",
   "settings.themePresetNotion": "Notion",
   "settings.themePresetCompact": "无界",
-  "settings.themePresetTesseract": "超立方",
   "settings.themePresetRococo": "洛可可玫瑰",
   "settings.themeLayoutStyle": "风格",
   "settings.themeLayoutStyleInfo":

@@ -2133,14 +2133,6 @@ const RAW_GROUPS: RawGroup[] = [
         ["preset", "预设"],
       ],
       [
-        "theme.preset.tesseract",
-        "field",
-        "settings.themePresetTesseract",
-        "Tesseract",
-        [],
-        ["preset", "预设"],
-      ],
-      [
         "theme.preset.rococo",
         "field",
         "settings.themePresetRococo",

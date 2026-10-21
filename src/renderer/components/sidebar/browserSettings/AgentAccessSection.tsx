@@ -76,12 +76,13 @@ export function AgentAccessSection(): React.JSX.Element {
       </div>
 
       <div className="browser-settings-agent-row">
-        <label className="browser-settings-agent-toggle">
+        <label className="browser-settings-agent-toggle toggle-switch">
           <input
             type="checkbox"
             checked={settings.enabled}
             onChange={(e) => void persist({ enabled: e.target.checked })}
           />
+          <span className="toggle-slider" aria-hidden="true" />
           <span>
             {t("settings.browserAgentEnabled", {
               defaultValue: "Allow the agent to use the embedded browser",
@@ -97,12 +98,13 @@ export function AgentAccessSection(): React.JSX.Element {
       </div>
 
       <div className="browser-settings-agent-row">
-        <label className="browser-settings-agent-toggle">
+        <label className="browser-settings-agent-toggle toggle-switch">
           <input
             type="checkbox"
             checked={settings.isolation}
             onChange={(e) => void persist({ isolation: e.target.checked })}
           />
+          <span className="toggle-slider" aria-hidden="true" />
           <span>
             {t("settings.browserAgentIsolation", {
               defaultValue: "Give agent-opened tabs an isolated session",

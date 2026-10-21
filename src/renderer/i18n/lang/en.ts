@@ -7003,4 +7003,40 @@ export const en = {
   "chat.fileArtifact.tooLarge": "HTML preview exceeds the 2 MiB limit",
   "chat.fileArtifact.remote": "Remote file is unavailable",
   "chat.fileArtifact.pending": "Preview paused until the file write succeeds",
+  "modelHealth.column": "Connection",
+  "modelHealth.test": "Test connection",
+  "modelHealth.testing": "Testing...",
+  "modelHealth.ok": "Connected",
+  "modelHealth.failed": "Connection failed",
+  "modelHealth.untested": "Not tested",
+  "modelHealth.testedAt": "Tested at {{time}}",
+  "modelHealth.httpStatus": "HTTP status",
+  "modelHealth.latency": "Latency",
+  "modelHealth.latencyValue": "{{value}} ms",
+  "modelHealth.endpoint": "Endpoint",
+  "modelHealth.model": "Model",
+  "modelHealth.dimension": "Vector dimension",
+  "modelHealth.dimensionValue": "Returned {{actual}} · configured {{expected}}",
+  "modelHealth.dimensionActual":
+    "Returned {{actual}} (no dimension configured)",
+  "modelHealth.compactOk": "OK · {{latency}}",
+  "modelHealth.compactFailedStatus": "Failed · HTTP {{status}}",
+  "modelHealth.testError": "Connection test failed: {{message}}",
+  "modelHealth.decisionApiKeyEmpty":
+    "The API key is empty: this decision model cannot send requests, so its users fall back (codebase review uses the LLM, sensitive commands ask for manual confirmation).",
+  "modelHealth.embeddingApiKeyEmpty":
+    "The embedding API key is empty: endpoints that require authentication return 401. Ignore this for keyless services such as a local Ollama.",
+  "modelHealth.rerankingIncomplete":
+    "The reranking model name or base URL is empty: projects that turn on reranking fall back to vector similarity order.",
+  "sensitiveCommand.decisionUnavailable":
+    "Decision model unavailable, falling back to manual confirmation",
+  "toolCall.codebase.pipeline.providerDecision": "Decision model",
+  "toolCall.codebase.pipeline.providerLlm": "LLM",
+  "toolCall.codebase.pipeline.reviewFallback":
+    "Decision model unavailable, reviewed by the LLM",
+  "toolCall.codebase.pipeline.rerankingFallback":
+    "Reranking failed, kept vector order",
+  "projectCodebase.embedding.errorAt": "Failed at {{time}}",
+  "settings.systemLogsModuleFilter": "Filter by module",
+  "settings.systemLogsModuleAll": "All modules",
 } satisfies Record<string, string>;

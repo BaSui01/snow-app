@@ -28,8 +28,10 @@ use napi::bindgen_prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{json, Map, Value};
 
-use crate::api::common::truncate_chars;
 use crate::api::config::normalize_base_url;
+use crate::api::model_health::{
+    observe_call, post_json, ModelCallReport, ModelKind, ModelRequestError, CONNECTION_TEST_FUNC,
+};
 use crate::storage::services::codebase_index::SearchResult;
 use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::SensitiveCommandMatchResult;
@@ -163,48 +165,101 @@ pub fn load_decision_models(database_path: &Path) -> Vec<DecisionModel> {
 }
 
 impl JevConfig {
-    /// Build a config from the decision model selected in the codebase settings.
+    /// Build a request config from raw decision model fields.
     ///
-    /// Returns `None` when nothing is selected, when the selected entry is
-    /// missing or disabled, or when its request information (API key / model) is
-    /// incomplete — the caller then keeps using the LLM review path.
-    pub fn from_decision_model(models: &[DecisionModel], model_id: &str) -> Option<Self> {
-        let selected = find_enabled_decision_model(models, model_id)?;
-        let api_key = selected.api_key.trim();
-        let model = selected.model.trim();
+    /// Returns the reason when the request information is incomplete (empty API
+    /// key / model name, or an empty request URL in custom mode) so callers can
+    /// show why the decision model is unusable instead of silently skipping it.
+    pub fn new(
+        base_url: &str,
+        base_url_mode: &str,
+        api_key: &str,
+        model: &str,
+    ) -> std::result::Result<Self, String> {
+        let api_key = api_key.trim();
+        let model = model.trim();
 
-        if api_key.is_empty() || model.is_empty() {
-            return None;
+        if api_key.is_empty() {
+            return Err("The decision model API key is empty".to_string());
+        }
+        if model.is_empty() {
+            return Err("The decision model name is empty".to_string());
         }
 
-        let base_url_mode = normalize_base_url_mode(&selected.base_url_mode);
-        let base_url = resolve_base_url(&selected.base_url, &base_url_mode);
+        let base_url_mode = normalize_base_url_mode(base_url_mode);
+        let base_url = resolve_base_url(base_url, &base_url_mode);
 
         if base_url.is_empty() {
-            return None;
+            return Err("The decision model request URL is empty".to_string());
         }
 
-        Some(Self {
+        Ok(Self {
             base_url,
             base_url_mode,
             api_key: api_key.to_string(),
             model: model.to_string(),
         })
     }
+
+    /// Full `/systemone` endpoint this config sends requests to.
+    pub fn endpoint(&self) -> String {
+        resolve_systemone_endpoint(&self.base_url, &self.base_url_mode)
+    }
 }
 
-/// 按 id 查找可用的决策模型（存在且已启用）。调用方据此读取展示名称，或
-/// 交给 [`JevConfig::from_decision_model`] 解析请求配置。
-pub fn find_enabled_decision_model<'a>(
-    models: &'a [DecisionModel],
-    model_id: &str,
-) -> Option<&'a DecisionModel> {
+/// 选中的决策模型能否使用。
+pub enum DecisionModelResolution {
+    /// 没有选择决策模型（使用方按「未启用」处理）。
+    NotSelected,
+    /// 选择了决策模型，但它已被删除、停用或请求信息不完整。
+    Unavailable { name: String, reason: String },
+    /// 可以发起请求。
+    Ready { name: String, config: JevConfig },
+}
+
+/// 按 id 解析选中的决策模型，并说明不可用的原因（供使用方展示回退原因）。
+pub fn resolve_decision_model(models: &[DecisionModel], model_id: &str) -> DecisionModelResolution {
     let model_id = model_id.trim();
     if model_id.is_empty() {
-        return None;
+        return DecisionModelResolution::NotSelected;
     }
 
-    models.iter().find(|item| item.id == model_id && item.enabled)
+    let Some(selected) = models.iter().find(|item| item.id == model_id) else {
+        return DecisionModelResolution::Unavailable {
+            name: model_id.to_string(),
+            reason: "The selected decision model no longer exists".to_string(),
+        };
+    };
+
+    let name = if selected.name.trim().is_empty() {
+        selected.model.trim().to_string()
+    } else {
+        selected.name.trim().to_string()
+    };
+
+    if !selected.enabled {
+        return DecisionModelResolution::Unavailable {
+            name,
+            reason: "The selected decision model is disabled".to_string(),
+        };
+    }
+
+    match JevConfig::new(
+        &selected.base_url,
+        &selected.base_url_mode,
+        &selected.api_key,
+        &selected.model,
+    ) {
+        Ok(config) => DecisionModelResolution::Ready { name, config },
+        Err(reason) => DecisionModelResolution::Unavailable { name, reason },
+    }
+}
+
+/// Endpoint resolved from raw base URL fields (used by the connection test
+/// even when the rest of the config is incomplete).
+pub fn resolve_endpoint(base_url: &str, base_url_mode: &str) -> String {
+    let base_url_mode = normalize_base_url_mode(base_url_mode);
+    resolve_systemone_endpoint(&resolve_base_url(base_url, &base_url_mode), &base_url_mode)
 }
 
 fn normalize_base_url_mode(base_url_mode: &str) -> String {
@@ -273,13 +328,16 @@ pub async fn evaluate_relevance(
 
     let parsed = evaluate_state(
         config,
+        "evaluate_relevance",
         &json!({
             "state": state,
             "model": config.model,
             "questions": questions,
         }),
+        |parsed| Ok(parsed),
     )
-    .await?;
+    .await
+    .into_result()?;
 
     let answers = parsed.get("answers").and_then(Value::as_object);
 
@@ -402,99 +460,122 @@ pub async fn evaluate_command(
         },
     });
 
-    let parsed = evaluate_state(
+    evaluate_state(
         config,
+        "evaluate_command",
         &json!({
             "state": state,
             "model": config.model,
             "questions": questions,
         }),
+        |parsed| {
+            let answers = parsed.get("answers").and_then(Value::as_object);
+            let verdict_answer = answers.and_then(|map| map.get(VERDICT_QUESTION_ID));
+            let verdict = verdict_answer
+                .and_then(|answer| answer.get("choice"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Jev did not answer the sensitive command verdict".to_string())?;
+
+            // An unknown or missing reason category degrades to `unclear`: the
+            // verdict still stands, only its explanation is less specific.
+            let reason = answers
+                .and_then(|map| map.get(REASON_QUESTION_ID))
+                .and_then(|answer| answer.get("choice"))
+                .and_then(Value::as_str)
+                .filter(|choice| REASON_CATEGORIES.iter().any(|(key, _)| key == choice))
+                .unwrap_or(REASON_UNKNOWN)
+                .to_string();
+
+            Ok(CommandDecision {
+                // Anything but an explicit `allow` keeps the confirmation prompt.
+                allow: verdict == ALLOW_OPTION,
+                reason,
+                confidence: verdict_answer
+                    .and_then(|answer| answer.get("confidence"))
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.0)
+                    .clamp(0.0, 1.0),
+            })
+        },
     )
-    .await?;
-
-    let answers = parsed.get("answers").and_then(Value::as_object);
-    let verdict_answer = answers.and_then(|map| map.get(VERDICT_QUESTION_ID));
-    let verdict = verdict_answer
-        .and_then(|answer| answer.get("choice"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            Error::from_reason("Jev did not answer the sensitive command verdict".to_string())
-        })?;
-
-    // An unknown or missing reason category degrades to `unclear`: the verdict
-    // still stands, only its explanation is less specific.
-    let reason = answers
-        .and_then(|map| map.get(REASON_QUESTION_ID))
-        .and_then(|answer| answer.get("choice"))
-        .and_then(Value::as_str)
-        .filter(|choice| REASON_CATEGORIES.iter().any(|(key, _)| key == choice))
-        .unwrap_or(REASON_UNKNOWN)
-        .to_string();
-
-    Ok(CommandDecision {
-        // Anything but an explicit `allow` keeps the confirmation prompt.
-        allow: verdict == ALLOW_OPTION,
-        reason,
-        confidence: verdict_answer
-            .and_then(|answer| answer.get("confidence"))
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0)
-            .clamp(0.0, 1.0),
-    })
+    .await
+    .into_result()
 }
 
-/// Send one evaluation request to Jev and return the parsed response body.
+/// Send one evaluation request to Jev and interpret the parsed response body.
 ///
-/// Every failure (transport, HTTP status, malformed body) is reported as an
-/// error so the caller can decide what to fall back to.
-async fn evaluate_state(config: &JevConfig, body: &Value) -> Result<Value> {
-    let endpoint = resolve_systemone_endpoint(&config.base_url, &config.base_url_mode);
+/// Every failure (transport, HTTP status, malformed body, or an answer that
+/// `interpret` rejects) is reported in the returned report and written to the
+/// system log (module `decision_model`), so the caller can decide what to fall
+/// back to and the user can find out why.
+async fn evaluate_state<T, I>(
+    config: &JevConfig,
+    func: &str,
+    body: &Value,
+    interpret: I,
+) -> ModelCallReport<T>
+where
+    I: FnOnce(Value) -> std::result::Result<T, String>,
+{
+    let endpoint = config.endpoint();
+    let endpoint_ref = endpoint.as_str();
 
-    // Request logging needs the database path; resolving it touches the
-    // filesystem on first use, so it runs on a blocking worker instead of
-    // stalling this async path.
-    if let Ok(Ok(database_path)) =
-        tokio::task::spawn_blocking(crate::storage::ensure_database_file).await
-    {
-        let request_json = serde_json::to_string(body).unwrap_or_default();
-        crate::storage::services::app_logs::maybe_log_api_request(
-            database_path,
-            "jev".to_string(),
-            endpoint.clone(),
-            request_json,
-        )
-        .await;
-    }
+    observe_call(
+        ModelKind::Decision,
+        func,
+        endpoint_ref,
+        &config.model,
+        async move {
+            let (status, text) = post_json(
+                ModelKind::Decision,
+                endpoint_ref,
+                build_headers(&config.api_key),
+                body,
+                Duration::from_secs(REQUEST_TIMEOUT_SECS),
+            )
+            .await?;
 
-    let client = crate::api::http_client::build_proxied_client_with_timeout(Duration::from_secs(
-        REQUEST_TIMEOUT_SECS,
-    ))
-    .await?;
+            let parsed: Value = serde_json::from_str(&text).map_err(|error| {
+                ModelRequestError::new(
+                    Some(status),
+                    format!("Failed to parse Jev response: {error}"),
+                )
+            })?;
 
-    let response = client
-        .post(&endpoint)
-        .headers(build_headers(&config.api_key))
-        .json(body)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Jev request failed: {error}")))?;
+            let value =
+                interpret(parsed).map_err(|message| ModelRequestError::new(Some(status), message))?;
+            Ok((value, status))
+        },
+    )
+    .await
+}
 
-    let status = response.status();
-    let response_text = response
-        .text()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to read Jev response: {error}")))?;
+/// Connection self-test: one minimal `/systemone` request whose response must
+/// carry the `answers` object.
+pub async fn test_connection(config: &JevConfig) -> ModelCallReport<()> {
+    let body = json!({
+        "state": { "purpose": "Snow App connection test" },
+        "model": config.model,
+        "questions": {
+            "probe": {
+                "type": "choice",
+                "instructions": "Is this request a connection test?",
+                "criteria": {
+                    "yes": "The state says it is a connection test",
+                    "no": "The state describes something else"
+                }
+            }
+        },
+    });
 
-    if !status.is_success() {
-        return Err(Error::from_reason(format!(
-            "Jev API returned status {}: {}",
-            status,
-            truncate_chars(&response_text, 500)
-        )));
-    }
-
-    serde_json::from_str(&response_text)
-        .map_err(|error| Error::from_reason(format!("Failed to parse Jev response: {error}")))
+    evaluate_state(config, CONNECTION_TEST_FUNC, &body, |parsed| {
+        if parsed.get("answers").and_then(Value::as_object).is_some() {
+            Ok(())
+        } else {
+            Err("Jev response is missing the 'answers' object".to_string())
+        }
+    })
+    .await
 }
 
 /// Build the evaluation state and the list of `(result index, question id)`

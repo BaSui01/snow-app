@@ -5,9 +5,15 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{json, Value};
 
 use crate::api::config::{normalize_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL};
+use crate::api::model_health::{
+    observe_call, post_json, ModelCallReport, ModelKind, ModelRequestError, CONNECTION_TEST_FUNC,
+};
 
 const DEFAULT_JINA_BASE_URL: &str = "https://api.jina.ai/v1";
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
+
+/// Timeout of one embedding request.
+const REQUEST_TIMEOUT_SECS: u64 = 120;
 
 /// Configuration for the embedding API, derived from the codebase settings.
 #[derive(Debug, Clone)]
@@ -56,47 +62,61 @@ pub async fn embed_batch(config: &EmbeddingConfig, inputs: &[String]) -> Result<
         return Ok(Vec::new());
     }
 
-    let client =
-        crate::api::http_client::build_proxied_client_with_timeout(Duration::from_secs(120))
-            .await?;
-
     let endpoint = resolve_embedding_endpoint(config);
-    let headers = build_headers(config);
+    let model = resolve_default_model(config);
+
+    observe_call(
+        ModelKind::Embedding,
+        "embed_batch",
+        &endpoint,
+        &model,
+        request_embeddings(config, &endpoint, inputs),
+    )
+    .await
+    .into_result()
+}
+
+/// Connection self-test: embed one input and return the vector dimension.
+pub async fn test_connection(
+    config: &EmbeddingConfig,
+    endpoint: &str,
+    model: &str,
+) -> ModelCallReport<usize> {
+    let inputs = vec!["Snow App connection test".to_string()];
+
+    observe_call(ModelKind::Embedding, CONNECTION_TEST_FUNC, endpoint, model, async {
+        let (vectors, status) = request_embeddings(config, endpoint, &inputs).await?;
+        let dimension = vectors.first().map(Vec::len).unwrap_or(0);
+        if dimension == 0 {
+            return Err(ModelRequestError::new(
+                Some(status),
+                "Embedding API returned an empty vector",
+            ));
+        }
+        Ok((dimension, status))
+    })
+    .await
+}
+
+/// Send one embedding request and parse the vectors (plus the HTTP status).
+async fn request_embeddings(
+    config: &EmbeddingConfig,
+    endpoint: &str,
+    inputs: &[String],
+) -> std::result::Result<(Vec<Vec<f64>>, u16), ModelRequestError> {
     let body = build_request_body(config, inputs);
+    let (status, response_text) = post_json(
+        ModelKind::Embedding,
+        endpoint,
+        build_headers(config),
+        &body,
+        Duration::from_secs(REQUEST_TIMEOUT_SECS),
+    )
+    .await?;
 
-    if let Ok(database_path) = crate::storage::ensure_database_file() {
-        let request_json = serde_json::to_string(&body).unwrap_or_default();
-        crate::storage::services::app_logs::maybe_log_api_request(
-            database_path,
-            "embedding".to_string(),
-            endpoint.clone(),
-            request_json,
-        )
-        .await;
-    }
-
-    let response = client
-        .post(&endpoint)
-        .headers(headers)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Embedding API request failed: {error}")))?;
-
-    let status = response.status();
-    let response_text = response.text().await.map_err(|error| {
-        Error::from_reason(format!("Failed to read embedding response: {error}"))
-    })?;
-
-    if !status.is_success() {
-        return Err(Error::from_reason(format!(
-            "Embedding API returned status {}: {}",
-            status,
-            truncate_error(&response_text, 500)
-        )));
-    }
-
-    parse_embedding_response(&response_text, inputs.len(), &config.embedding_type)
+    let vectors = parse_embedding_response(&response_text, inputs.len(), &config.embedding_type)
+        .map_err(|error| ModelRequestError::new(Some(status), error.reason.clone()))?;
+    Ok((vectors, status))
 }
 
 /// Resolve the default model name for the given embedding type when the user
@@ -115,7 +135,7 @@ pub(crate) fn resolve_default_model(config: &EmbeddingConfig) -> String {
 }
 
 /// Resolve the full embedding API endpoint URL based on embedding type.
-fn resolve_embedding_endpoint(config: &EmbeddingConfig) -> String {
+pub(crate) fn resolve_embedding_endpoint(config: &EmbeddingConfig) -> String {
     let normalized = normalize_base_url(&config.base_url);
 
     match config.embedding_type.as_str() {
@@ -468,14 +488,6 @@ fn parse_gemini_response(parsed: &Value, expected_count: usize) -> Result<Vec<Ve
                 .collect::<Result<Vec<f64>>>()
         })
         .collect()
-}
-
-fn truncate_error(text: &str, max_len: usize) -> String {
-    if text.len() <= max_len {
-        text.to_string()
-    } else {
-        format!("{}...", &text[..max_len])
-    }
 }
 
 /// Serialize a vector to JSON string for storage.

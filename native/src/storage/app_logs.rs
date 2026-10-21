@@ -33,6 +33,11 @@ pub fn clear_app_logs() -> Result<u32> {
     services::app_logs::clear_app_logs(&database_path)
 }
 
+pub fn list_app_log_modules() -> Result<Vec<String>> {
+    let database_path = ensure_database_file()?;
+    services::app_logs::list_app_log_modules(&database_path)
+}
+
 pub fn get_app_logs_retention_days() -> Result<i32> {
     let database_path = ensure_database_file()?;
     services::system_settings::get_app_logs_retention_days(&database_path)

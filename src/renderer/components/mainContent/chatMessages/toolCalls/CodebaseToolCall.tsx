@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   BrainCircuit,
   CheckCircle,
   ChevronRight,
@@ -37,14 +38,24 @@ type CodebaseResult = {
 };
 
 type PipelineInfo = {
-  type: "cosine" | "reranking" | "agent_review";
+  type: "cosine" | "reranking" | "reranking_fallback" | "agent_review";
   agentReview: boolean;
+  /** 代理审查实际使用的提供方：decision / llm / llm_fallback（决策模型不可用）。 */
+  agentReviewProvider: "decision" | "llm" | "llm_fallback" | null;
   reranking: boolean;
+  /** 配置的决策 / 重排模型没有生效的原因。 */
+  fallbackReason: string | null;
   attempts: number;
   refinedQuery: string | null;
   initialCount: number;
   finalCount: number;
 };
+
+const REVIEW_PROVIDERS: ReadonlyArray<PipelineInfo["agentReviewProvider"]> = [
+  "decision",
+  "llm",
+  "llm_fallback",
+];
 
 type ReviewPhase = "reviewing" | "re_searching" | "completed";
 
@@ -143,7 +154,17 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
         ? {
             type: (pipelineRaw.type as PipelineInfo["type"]) ?? "cosine",
             agentReview: pipelineRaw.agentReview === true,
+            agentReviewProvider: REVIEW_PROVIDERS.includes(
+              pipelineRaw.agentReviewProvider as PipelineInfo["agentReviewProvider"],
+            )
+              ? (pipelineRaw.agentReviewProvider as PipelineInfo["agentReviewProvider"])
+              : null,
             reranking: pipelineRaw.reranking === true,
+            fallbackReason:
+              typeof pipelineRaw.fallbackReason === "string" &&
+              pipelineRaw.fallbackReason.length > 0
+                ? pipelineRaw.fallbackReason
+                : null,
             attempts:
               typeof pipelineRaw.attempts === "number"
                 ? (pipelineRaw.attempts as number)
@@ -165,7 +186,9 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
         : {
             type: "cosine",
             agentReview: false,
+            agentReviewProvider: null,
             reranking: false,
+            fallbackReason: null,
             attempts: 1,
             refinedQuery: null,
             initialCount: results.length,
@@ -336,15 +359,26 @@ export const CodebaseToolCall = ({
     const p = parsedResult.pipeline;
 
     if (p.type === "agent_review") {
+      const attempts =
+        p.attempts > 1
+          ? t("toolCall.codebase.pipeline.attempts", {
+              values: { count: p.attempts },
+            })
+          : "";
+      const provider =
+        p.agentReviewProvider === "decision"
+          ? t("toolCall.codebase.pipeline.providerDecision")
+          : p.agentReviewProvider === "llm"
+            ? t("toolCall.codebase.pipeline.providerLlm")
+            : "";
       return {
         icon: BrainCircuit,
         label: t("toolCall.codebase.pipeline.agentReview"),
         className: "tool-call-codebase-pipeline-agent",
-        detail:
-          p.attempts > 1
-            ? t("toolCall.codebase.pipeline.attempts", {
-                values: { count: p.attempts },
-              })
+        detail: [provider, attempts].filter(Boolean).join(" · ") || null,
+        fallback:
+          p.agentReviewProvider === "llm_fallback"
+            ? t("toolCall.codebase.pipeline.reviewFallback")
             : null,
       };
     }
@@ -354,6 +388,16 @@ export const CodebaseToolCall = ({
         label: t("toolCall.codebase.pipeline.reranking"),
         className: "tool-call-codebase-pipeline-rerank",
         detail: null,
+        fallback: null,
+      };
+    }
+    if (p.type === "reranking_fallback") {
+      return {
+        icon: Search,
+        label: t("toolCall.codebase.pipeline.cosine"),
+        className: "tool-call-codebase-pipeline-cosine",
+        detail: null,
+        fallback: t("toolCall.codebase.pipeline.rerankingFallback"),
       };
     }
     return {
@@ -361,6 +405,7 @@ export const CodebaseToolCall = ({
       label: t("toolCall.codebase.pipeline.cosine"),
       className: "tool-call-codebase-pipeline-cosine",
       detail: null,
+      fallback: null,
     };
   }, [parsedResult, t]);
 
@@ -423,6 +468,19 @@ export const CodebaseToolCall = ({
             {pipelineBadge.detail ? (
               <span className="tool-call-codebase-pipeline-detail">
                 {pipelineBadge.detail}
+              </span>
+            ) : null}
+            {pipelineBadge.fallback ? (
+              <span
+                className="tool-call-codebase-pipeline-fallback"
+                title={
+                  parsedResult.type === "success"
+                    ? (parsedResult.pipeline.fallbackReason ?? undefined)
+                    : undefined
+                }
+              >
+                <AlertTriangle size={10} aria-hidden="true" />
+                <span>{pipelineBadge.fallback}</span>
               </span>
             ) : null}
             {parsedResult.type === "success" &&

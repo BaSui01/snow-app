@@ -13,6 +13,12 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{json, Value};
 
 use crate::api::config::normalize_base_url;
+use crate::api::model_health::{
+    observe_call, post_json, ModelCallReport, ModelKind, ModelRequestError, CONNECTION_TEST_FUNC,
+};
+
+/// Timeout of one rerank request.
+const REQUEST_TIMEOUT_SECS: u64 = 60;
 
 /// Configuration for the reranking API, derived from codebase settings.
 #[derive(Debug, Clone)]
@@ -88,52 +94,74 @@ pub async fn rerank(
         return Ok(Vec::new());
     }
 
+    let endpoint = resolve_rerank_endpoint(&config.base_url);
+
+    observe_call(
+        ModelKind::Reranking,
+        "rerank",
+        &endpoint,
+        &config.model_name,
+        request_rerank(config, &endpoint, query, documents),
+    )
+    .await
+    .into_result()
+}
+
+/// Connection self-test: one query + one document; the response must carry
+/// at least one result.
+pub async fn test_connection(config: &RerankingConfig, endpoint: &str) -> ModelCallReport<usize> {
+    let documents = vec![RerankDocument {
+        index: 0,
+        text: "fn connection_test() {}".to_string(),
+    }];
+
+    observe_call(
+        ModelKind::Reranking,
+        CONNECTION_TEST_FUNC,
+        endpoint,
+        &config.model_name,
+        async {
+            let (results, status) =
+                request_rerank(config, endpoint, "connection test", &documents).await?;
+            if results.is_empty() {
+                return Err(ModelRequestError::new(
+                    Some(status),
+                    "Reranking API returned no results",
+                ));
+            }
+            Ok((results.len(), status))
+        },
+    )
+    .await
+}
+
+/// Send one rerank request and parse the scored results (plus the HTTP status).
+async fn request_rerank(
+    config: &RerankingConfig,
+    endpoint: &str,
+    query: &str,
+    documents: &[RerankDocument],
+) -> std::result::Result<(Vec<RerankResult>, u16), ModelRequestError> {
     if !config.is_configured() {
-        return Err(Error::from_reason(
+        return Err(ModelRequestError::new(
+            None,
             "Reranking model name and base URL are required",
         ));
     }
 
-    let client =
-        crate::api::http_client::build_proxied_client_with_timeout(Duration::from_secs(60)).await?;
-
-    let endpoint = resolve_rerank_endpoint(&config.base_url);
-    let headers = build_headers(config);
     let body = build_request_body(config, query, documents);
+    let (status, response_text) = post_json(
+        ModelKind::Reranking,
+        endpoint,
+        build_headers(config),
+        &body,
+        Duration::from_secs(REQUEST_TIMEOUT_SECS),
+    )
+    .await?;
 
-    if let Ok(database_path) = crate::storage::ensure_database_file() {
-        let request_json = serde_json::to_string(&body).unwrap_or_default();
-        crate::storage::services::app_logs::maybe_log_api_request(
-            database_path,
-            "reranking".to_string(),
-            endpoint.clone(),
-            request_json,
-        )
-        .await;
-    }
-
-    let response = client
-        .post(&endpoint)
-        .headers(headers)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Reranking API request failed: {error}")))?;
-
-    let status = response.status();
-    let response_text = response.text().await.map_err(|error| {
-        Error::from_reason(format!("Failed to read reranking response: {error}"))
-    })?;
-
-    if !status.is_success() {
-        return Err(Error::from_reason(format!(
-            "Reranking API returned status {}: {}",
-            status,
-            truncate_error(&response_text, 500)
-        )));
-    }
-
-    parse_rerank_response(&response_text, documents.len())
+    let results = parse_rerank_response(&response_text, documents.len())
+        .map_err(|error| ModelRequestError::new(Some(status), error.reason.clone()))?;
+    Ok((results, status))
 }
 
 /// Resolve the full reranking API endpoint URL.
@@ -141,7 +169,7 @@ pub async fn rerank(
 /// - If the base URL already ends with `/rerank`, use it as-is.
 /// - If it ends with `/v1`, append `/rerank`.
 /// - Otherwise, append `/v1/rerank`.
-fn resolve_rerank_endpoint(base_url: &str) -> String {
+pub(crate) fn resolve_rerank_endpoint(base_url: &str) -> String {
     let normalized = normalize_base_url(base_url);
 
     if normalized.is_empty() {
@@ -247,12 +275,4 @@ fn parse_rerank_response(response_text: &str, expected_count: usize) -> Result<V
     });
 
     Ok(collected)
-}
-
-fn truncate_error(text: &str, max_len: usize) -> String {
-    if text.len() <= max_len {
-        text.to_string()
-    } else {
-        format!("{}...", &text[..max_len])
-    }
 }

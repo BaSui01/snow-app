@@ -168,3 +168,38 @@ pub async fn discard_resumable_codebase_session(session_id: String) -> Result<()
     .map_err(|e| Error::from_reason(format!("Failed to discard session: {e}")))??;
     Ok(())
 }
+
+/// The last failed embedding run of a project, kept until the next run starts
+/// (or the index is cleared) so the codebase panel can show it again.
+#[napi(object)]
+pub struct CodebaseEmbedFailure {
+    pub session_id: String,
+    pub error: String,
+    pub processed_files: i32,
+    pub total_files: i32,
+    /// When the run failed (SQLite datetime format).
+    pub updated_at: String,
+}
+
+/// Read the project's last failed embedding run, if one is kept.
+#[napi]
+pub async fn get_last_codebase_embed_failure(
+    project_id: String,
+) -> Result<Option<CodebaseEmbedFailure>> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = PathBuf::from(&storage_info.database_path);
+
+    let record = tokio::task::spawn_blocking(move || {
+        codebase_embed_sessions::get_latest_error_session(&database_path, &project_id)
+    })
+    .await
+    .map_err(|e| Error::from_reason(format!("Failed to read failed session: {e}")))??;
+
+    Ok(record.map(|r| CodebaseEmbedFailure {
+        session_id: r.session_id,
+        error: r.error,
+        processed_files: r.processed_files,
+        total_files: r.total_files,
+        updated_at: r.updated_at,
+    }))
+}

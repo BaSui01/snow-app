@@ -92,6 +92,13 @@ const requiredExports = [
   "listMcpGlobalServers",
   // 敏感命令决策模型辅助（拦截提示展示判定 / 托管执行）
   "evaluateSensitiveCommandDecision",
+  // 决策 / 嵌入 / 重排模型连接自检与失败可见性（配置页测试连接、索引失败回看、日志模块筛选）
+  "testDecisionModelConnection",
+  "testEmbeddingConnection",
+  "testRerankingConnection",
+  "getModelHealthSnapshot",
+  "getLastCodebaseEmbedFailure",
+  "listAppLogModules",
   // 手机远控（原生 HTTP 服务 / 鉴权 / 附件）
   "setRemoteControlRendererBridge",
   "startRemoteControlServer",

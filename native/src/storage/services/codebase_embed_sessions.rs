@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use super::super::database;
 
@@ -173,6 +173,50 @@ pub fn delete_session(database_path: &Path, session_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Delete a project's `error` sessions except `keep_session_id`. Only the most
+/// recent failure is kept, so the codebase panel can show it again after the
+/// panel is reopened or the app restarts; starting a new run clears it.
+pub fn delete_error_sessions_except(
+    database_path: &Path,
+    project_id: &str,
+    keep_session_id: &str,
+) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "DELETE FROM codebase_embed_sessions
+                 WHERE project_id = ?1 AND status = ?2 AND session_id <> ?3",
+                params![project_id, STATUS_ERROR, keep_session_id],
+            )
+        })
+        .map_err(|error| database_error(database_path, "delete failed codebase sessions", error))?;
+    Ok(())
+}
+
+/// The project's most recent failed embedding session, if one is kept.
+pub fn get_latest_error_session(
+    database_path: &Path,
+    project_id: &str,
+) -> Result<Option<EmbedSessionRecord>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT session_id, project_id, status, total_files, processed_files,
+                            total_chunks, processed_chunks, current_file, error,
+                            created_at, updated_at
+                     FROM codebase_embed_sessions
+                     WHERE project_id = ?1 AND status = ?2
+                     ORDER BY updated_at DESC
+                     LIMIT 1",
+                    params![project_id, STATUS_ERROR],
+                    map_session_row,
+                )
+                .optional()
+        })
+        .map_err(|error| database_error(database_path, "read failed codebase session", error))
+}
+
 /// List all sessions for a project that are in a resumable state
 /// (`paused` or `interrupted`). Ordered by most recently updated first.
 pub fn list_resumable_sessions(
@@ -189,21 +233,7 @@ pub fn list_resumable_sessions(
                  WHERE project_id = ?1 AND status IN ('paused', 'interrupted')
                  ORDER BY updated_at DESC",
             )?;
-            let rows = statement.query_map(params![project_id], |row| {
-                Ok(EmbedSessionRecord {
-                    session_id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    status: row.get(2)?,
-                    total_files: row.get(3)?,
-                    processed_files: row.get(4)?,
-                    total_chunks: row.get(5)?,
-                    processed_chunks: row.get(6)?,
-                    current_file: row.get(7)?,
-                    error: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
-                })
-            })?;
+            let rows = statement.query_map(params![project_id], map_session_row)?;
             let mut collected = Vec::new();
             for row in rows {
                 collected.push(row?);
@@ -214,6 +244,22 @@ pub fn list_resumable_sessions(
             database_error(database_path, "list resumable codebase sessions", error)
         })?;
     Ok(records)
+}
+
+fn map_session_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EmbedSessionRecord> {
+    Ok(EmbedSessionRecord {
+        session_id: row.get(0)?,
+        project_id: row.get(1)?,
+        status: row.get(2)?,
+        total_files: row.get(3)?,
+        processed_files: row.get(4)?,
+        total_chunks: row.get(5)?,
+        processed_chunks: row.get(6)?,
+        current_file: row.get(7)?,
+        error: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
 }
 
 /// Mark all sessions that are still `running` or `paused` as `interrupted`.

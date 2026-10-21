@@ -1,4 +1,4 @@
-import { RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import {
@@ -6,16 +6,30 @@ import {
   findDecisionModel,
   type DecisionModelConfig,
 } from "../../../constants/decisionModels";
+import type { ModelConnectionTestResult } from "../../../../preload";
 import { CustomSelect } from "../../common/CustomSelect";
+import {
+  ModelConnectionStatus,
+  ModelTestButton,
+} from "../modelHealth/ModelConnectionStatus";
 import { EMBEDDING_TYPE_OPTIONS } from "./codebaseSettingsConstants";
 import { maskSecret } from "./codebaseSettingsUtils";
-import type { CodebaseSettingsForm as CodebaseSettingsFormValue } from "./types";
+import type {
+  CodebaseSettingsForm as CodebaseSettingsFormValue,
+  ModelTestKind,
+} from "./types";
 
 type CodebaseSettingsFormProps = {
   form: CodebaseSettingsFormValue;
   /** 全局决策模型配置：这里只做选择，配置本身在「API 配置 → 决策模型」中维护。 */
   decisionModels: DecisionModelConfig[];
   isBusy: boolean;
+  /** 嵌入 / 重排模型最近一次连接自检结果。 */
+  embeddingHealth: ModelConnectionTestResult | null;
+  rerankingHealth: ModelConnectionTestResult | null;
+  /** 正在检测的模型类别（null = 无）。 */
+  testingKind: ModelTestKind | null;
+  onTest: (kind: ModelTestKind) => void;
   onUpdateField: (
     field: keyof CodebaseSettingsFormValue,
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
@@ -28,12 +42,50 @@ export function CodebaseSettingsForm({
   form,
   decisionModels,
   isBusy,
+  embeddingHealth,
+  rerankingHealth,
+  testingKind,
+  onTest,
   onUpdateField,
   onSetValue,
   onBlurSave,
   onReset,
 }: CodebaseSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
+
+  // 保存前就能发现的明显不可用配置：只提示、不阻止保存（本地 Ollama 等无需密钥）。
+  const embeddingWarning =
+    form.embeddingType !== "ollama" && !form.embeddingApiKey.trim()
+      ? t("modelHealth.embeddingApiKeyEmpty")
+      : "";
+  const rerankingWarning =
+    !form.rerankingModelName.trim() || !form.rerankingBaseUrl.trim()
+      ? t("modelHealth.rerankingIncomplete")
+      : "";
+
+  const renderHealth = (
+    kind: ModelTestKind,
+    result: ModelConnectionTestResult | null,
+    warning: string,
+  ) => (
+    <div className="model-health-section">
+      <div className="model-health-section-actions">
+        <ModelTestButton
+          testing={testingKind === kind}
+          disabled={isBusy || testingKind !== null}
+          onClick={() => onTest(kind)}
+        />
+        {result ? null : <ModelConnectionStatus result={null} compact />}
+      </div>
+      {warning ? (
+        <span className="model-health-warning">
+          <AlertTriangle size={12} aria-hidden="true" />
+          <span>{warning}</span>
+        </span>
+      ) : null}
+      {result ? <ModelConnectionStatus result={result} /> : null}
+    </div>
+  );
 
   // 只能选用已启用的决策模型；已选模型被停用/删除时保留一个提示项，避免选择被静默改掉。
   const enabledModels = enabledDecisionModels(decisionModels);
@@ -174,6 +226,7 @@ export function CodebaseSettingsForm({
               1,
             )}
           </div>
+          {renderHealth("embedding", embeddingHealth, embeddingWarning)}
         </div>
 
         <div className="api-settings-form-section">
@@ -224,6 +277,7 @@ export function CodebaseSettingsForm({
               "password",
             )}
           </div>
+          {renderHealth("reranking", rerankingHealth, rerankingWarning)}
         </div>
 
         <div className="api-settings-form-section">

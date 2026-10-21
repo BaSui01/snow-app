@@ -29,13 +29,19 @@ import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { CustomSelect } from "../../common/CustomSelect";
 import { Modal } from "../../common/Modal";
+import {
+  ModelConnectionStatus,
+  ModelTestButton,
+} from "../modelHealth/ModelConnectionStatus";
+import type { ModelConnectionTestResult } from "../../../../preload";
 
 /**
  * 决策模型管理面板（API 配置页的「决策模型」标签页）。
  *
  * 支持配置多个决策模型并单独启停：只有已启用的模型会出现在代码库代理审查等
  * 使用方的选择列表里。整份配置以 JSON 写入 system_settings 的 `decision_models`，
- * Rust 侧按同一份数据解析（native/src/api/jev.rs）。
+ * Rust 侧按同一份数据解析（native/src/api/jev.rs）。每个模型可「测试连接」，
+ * 最近一次检测结果由 Rust 持久化，重启后仍显示在列表里。
  */
 export function DecisionModelsPanel(): React.JSX.Element {
   const { t } = useI18n();
@@ -52,16 +58,28 @@ export function DecisionModelsPanel(): React.JSX.Element {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  /** 各决策模型最近一次连接自检结果（按模型 id）。 */
+  const [health, setHealth] = useState<
+    Record<string, ModelConnectionTestResult>
+  >({});
+  /** 正在检测的模型 id（null = 无）。 */
+  const [testingId, setTestingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     try {
-      const raw = await window.snow.getSystemSettingValue(
-        DECISION_MODELS_SETTING_CODE,
-      );
+      const [raw, snapshot] = await Promise.all([
+        window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
+        window.snow.getModelHealthSnapshot(),
+      ]);
       setModels(readDecisionModelsJson(raw));
+      setHealth(
+        Object.fromEntries(
+          snapshot.decision.map((result) => [result.targetId, result]),
+        ),
+      );
     } catch (e) {
       setError(
         e instanceof Error
@@ -109,6 +127,35 @@ export function DecisionModelsPanel(): React.JSX.Element {
         return false;
       } finally {
         setIsSaving(false);
+      }
+    },
+    [t],
+  );
+
+  /** 测试连接：用传入的配置（可以是未保存的草稿）发一条最小请求，结果持久化。 */
+  const runTest = useCallback(
+    async (model: DecisionModelConfig): Promise<void> => {
+      setTestingId(model.id);
+      setError("");
+      setStatus("");
+
+      try {
+        const result = await window.snow.testDecisionModelConnection({
+          id: model.id,
+          baseUrl: model.baseUrl,
+          baseUrlMode: model.baseUrlMode,
+          apiKey: model.apiKey,
+          model: model.model,
+        });
+        setHealth((previous) => ({ ...previous, [model.id]: result }));
+      } catch (e) {
+        setError(
+          t("modelHealth.testError", {
+            values: { message: e instanceof Error ? e.message : String(e) },
+          }),
+        );
+      } finally {
+        setTestingId(null);
       }
     },
     [t],
@@ -297,6 +344,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
                   <th>
                     {t("settings.tableStatus", { defaultValue: "Status" })}
                   </th>
+                  <th>{t("modelHealth.column")}</th>
                   <th className="api-settings-table-actions-col">
                     {t("settings.tableActions", {
                       defaultValue: "Actions",
@@ -342,8 +390,20 @@ export function DecisionModelsPanel(): React.JSX.Element {
                         </span>
                       </label>
                     </td>
+                    <td>
+                      <ModelConnectionStatus
+                        result={health[model.id]}
+                        compact
+                      />
+                    </td>
                     <td className="api-settings-table-actions-col">
                       <div className="api-settings-table-actions">
+                        <ModelTestButton
+                          iconOnly
+                          testing={testingId === model.id}
+                          disabled={isSaving || testingId !== null}
+                          onClick={() => void runTest(model)}
+                        />
                         <button
                           className="icon-btn ghost"
                           onClick={() => openEditDraft(model)}
@@ -410,6 +470,13 @@ export function DecisionModelsPanel(): React.JSX.Element {
         className="api-settings-editor-modal"
         footer={
           <>
+            {draft ? (
+              <ModelTestButton
+                testing={testingId === draft.id}
+                disabled={isSaving || testingId !== null}
+                onClick={() => void runTest(draft)}
+              />
+            ) : null}
             <button
               type="button"
               className="api-settings-form-btn secondary"
@@ -538,7 +605,17 @@ export function DecisionModelsPanel(): React.JSX.Element {
                   {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
+              {draft.apiKey.trim() ? null : (
+                <small className="model-health-warning">
+                  {t("modelHealth.decisionApiKeyEmpty")}
+                </small>
+              )}
             </label>
+            {health[draft.id] ? (
+              <div className="api-settings-field wide">
+                <ModelConnectionStatus result={health[draft.id]} />
+              </div>
+            ) : null}
           </div>
         )}
       </Modal>

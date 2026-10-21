@@ -70,6 +70,11 @@ export const searchEn: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.agentReview": "Agent reviewed",
   "remote.toolCall.search.codebase.pipeline.attempts": "{{count}} attempts",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "Refined query",
+  "remote.toolCall.search.codebase.pipeline.rerankingFallback":
+    "Reranking failed, kept vector order",
+  "remote.toolCall.search.codebase.pipeline.reviewFallback":
+    "Decision model unavailable, reviewed by the LLM",
+  "remote.toolCall.search.codebase.pipeline.fallbackReason": "Fallback reason",
   "remote.toolCall.search.codebase.progress.embedding": "Embedding query",
   "remote.toolCall.search.codebase.progress.searching": "Searching vectors",
   "remote.toolCall.search.codebase.progress.processing": "Processing results",
@@ -206,6 +211,11 @@ export const searchZhCN: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.agentReview": "已审查",
   "remote.toolCall.search.codebase.pipeline.attempts": "尝试 {{count}} 次",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "优化查询",
+  "remote.toolCall.search.codebase.pipeline.rerankingFallback":
+    "重排失败，已回退向量排序",
+  "remote.toolCall.search.codebase.pipeline.reviewFallback":
+    "决策模型不可用，已回退 LLM 审查",
+  "remote.toolCall.search.codebase.pipeline.fallbackReason": "回退原因",
   "remote.toolCall.search.codebase.progress.embedding": "嵌入查询向量",
   "remote.toolCall.search.codebase.progress.searching": "检索向量库",
   "remote.toolCall.search.codebase.progress.processing": "正在处理结果",
@@ -340,6 +350,11 @@ export const searchZhTW: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.agentReview": "已審查",
   "remote.toolCall.search.codebase.pipeline.attempts": "嘗試 {{count}} 次",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "優化查詢",
+  "remote.toolCall.search.codebase.pipeline.rerankingFallback":
+    "重排失敗，已回退向量排序",
+  "remote.toolCall.search.codebase.pipeline.reviewFallback":
+    "決策模型不可用，已回退 LLM 審查",
+  "remote.toolCall.search.codebase.pipeline.fallbackReason": "回退原因",
   "remote.toolCall.search.codebase.progress.embedding": "嵌入查詢向量",
   "remote.toolCall.search.codebase.progress.searching": "檢索向量庫",
   "remote.toolCall.search.codebase.progress.processing": "正在處理結果",

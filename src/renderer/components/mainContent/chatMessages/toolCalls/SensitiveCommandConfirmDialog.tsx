@@ -1,4 +1,4 @@
-import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { keyToDisplay } from "../../../../utils/shortcutUtils";
@@ -15,6 +15,8 @@ type SensitiveCommandDecision = {
   reason: string;
   confidence: number;
   modelName: string;
+  /** 决策模型不可用 / 请求失败的原因（此时判定无效，已回退人工确认）。 */
+  error?: string;
 };
 
 type SensitiveCommandConfirmDialogProps = {
@@ -162,7 +164,29 @@ const SensitiveCommandItem = ({
         </ul>
       </div>
 
-      {decision ? (
+      {decision?.error ? (
+        <div className="sensitive-command-decision is-unavailable">
+          <span className="tool-authorization-tool-label">
+            {t("sensitiveCommand.decisionLabel")}
+          </span>
+          <div className="sensitive-command-decision-body">
+            <span className="sensitive-command-decision-verdict">
+              <AlertTriangle size={13} strokeWidth={2} aria-hidden="true" />
+              <strong>{t("sensitiveCommand.decisionUnavailable")}</strong>
+            </span>
+            <span className="sensitive-command-decision-reason">
+              {decision.error}
+            </span>
+            {decision.modelName ? (
+              <span className="sensitive-command-decision-model">
+                {t("sensitiveCommand.decisionModel", {
+                  values: { name: decision.modelName },
+                })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : decision ? (
         <div
           className={`sensitive-command-decision ${
             decision.allow ? "is-allow" : "is-confirm"

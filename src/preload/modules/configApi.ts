@@ -4,6 +4,8 @@ import type {
   CustomCommandRecord,
   CustomHeaderSchemeInput,
   CustomHeaderSchemeRecord,
+  DecisionModelTestInput,
+  EmbeddingTestInput,
   HookConfigInput,
   HookConfigRecord,
   HookExecuteInput,
@@ -17,10 +19,13 @@ import type {
   LspSessionTarget,
   McpServerConfigInput,
   McpServerConfigRecord,
+  ModelConnectionTestResult,
+  ModelHealthSnapshot,
   ProjectMcpServerConfigRecord,
   ProjectSensitiveCommandConfigInput,
   ProjectSensitiveCommandConfigRecord,
   ProjectStackDetection,
+  RerankingTestInput,
   SensitiveCommandConfigInput,
   SensitiveCommandConfigRecord,
   SensitiveCommandDecisionRecord,
@@ -248,7 +253,8 @@ export const configApi = {
       command,
       projectId,
     ),
-  /** 决策模型辅助：判定命中敏感规则的命令是否可直接放行（null = 未启用）。
+  /** 决策模型辅助：判定命中敏感规则的命令是否可直接放行（null = 未启用；
+   *  带 error 的记录 = 决策模型不可用，回退人工确认）。
    *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）。 */
   evaluateSensitiveCommandDecision: (
     command: string,
@@ -263,6 +269,22 @@ export const configApi = {
       workingDirectory,
       description,
     ),
+  /** 决策 / 嵌入 / 重排模型连接自检（传入当前表单值），结果会持久化。 */
+  testDecisionModelConnection: (
+    input: DecisionModelTestInput,
+  ): Promise<ModelConnectionTestResult> =>
+    ipcRenderer.invoke("model-health:test-decision", input),
+  testEmbeddingConnection: (
+    input: EmbeddingTestInput,
+  ): Promise<ModelConnectionTestResult> =>
+    ipcRenderer.invoke("model-health:test-embedding", input),
+  testRerankingConnection: (
+    input: RerankingTestInput,
+  ): Promise<ModelConnectionTestResult> =>
+    ipcRenderer.invoke("model-health:test-reranking", input),
+  /** 三类模型最近一次连接自检的结果（重启后仍可查看）。 */
+  getModelHealthSnapshot: (): Promise<ModelHealthSnapshot> =>
+    ipcRenderer.invoke("model-health:get-snapshot"),
   listHookConfigs: (
     scope: HookScope,
     projectId?: string,

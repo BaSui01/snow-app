@@ -157,6 +157,19 @@ pub fn clear_app_logs(database_path: &Path) -> Result<u32> {
         .map(|count| count as u32)
 }
 
+/// 系统日志里出现过的模块名（去重、按名称排序），供系统日志页按模块筛选。
+pub fn list_app_log_modules(database_path: &Path) -> Result<Vec<String>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT DISTINCT module FROM app_logs WHERE module <> '' ORDER BY module",
+            )?;
+            let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|error| database::database_error(database_path, "list app log modules", error))
+}
+
 /// 按保留天数删除过期系统日志（0 或负数表示不清理），返回删除行数。
 /// `created_at` 由写入路径以本地时间写入，比较同样使用本地时间。
 pub fn prune_app_logs(database_path: &Path, retention_days: i32) -> Result<u32> {
@@ -412,7 +425,7 @@ fn redact_payload_json(body: &str, api_key: &str) -> String {
 const REDACTED_QUERY_VALUE: &str = "[REDACTED]";
 const ENCODED_REDACTED_QUERY_VALUE: &str = "%5BREDACTED%5D";
 
-fn redact_request_endpoint(endpoint: &str) -> String {
+pub(crate) fn redact_request_endpoint(endpoint: &str) -> String {
     let Ok(mut url) = reqwest::Url::parse(endpoint) else {
         return redact_malformed_request_endpoint(endpoint);
     };

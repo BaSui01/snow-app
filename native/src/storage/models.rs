@@ -667,6 +667,9 @@ pub struct SensitiveCommandDecisionRecord {
     pub delegate: bool,
     /// 参与判定的决策模型名称（用于展示）。
     pub model_name: String,
+    /// 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）时的原因：
+    /// 此时判定无效，调用方回退人工确认并展示该原因。
+    pub error: Option<String>,
 }
 
 #[napi(object)]

@@ -34,7 +34,9 @@ import {
 import type {
   CodebaseSettings,
   CodebaseSettingsForm as CodebaseSettingsFormValue,
+  ModelTestKind,
 } from "./codebaseSettings/types";
+import type { ModelConnectionTestResult } from "../../../preload";
 
 export function CodebaseSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
@@ -52,6 +54,12 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  /** 嵌入 / 重排模型最近一次连接自检结果（Rust 持久化，重启后仍可见）。 */
+  const [embeddingHealth, setEmbeddingHealth] =
+    useState<ModelConnectionTestResult | null>(null);
+  const [rerankingHealth, setRerankingHealth] =
+    useState<ModelConnectionTestResult | null>(null);
+  const [testingKind, setTestingKind] = useState<ModelTestKind | null>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -66,10 +74,14 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
     setError("");
 
     try {
-      const [rawSettings, rawDecisionModels] = await Promise.all([
-        window.snow.getSystemSettingValue(CODEBASE_SETTING_CODE),
-        window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
-      ]);
+      const [rawSettings, rawDecisionModels, healthSnapshot] =
+        await Promise.all([
+          window.snow.getSystemSettingValue(CODEBASE_SETTING_CODE),
+          window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
+          window.snow.getModelHealthSnapshot(),
+        ]);
+      setEmbeddingHealth(healthSnapshot.embedding ?? null);
+      setRerankingHealth(healthSnapshot.reranking ?? null);
       const storedModels = readDecisionModelsJson(rawDecisionModels);
       let normalized = normalizeCodebaseSettings(
         readCodebaseSettingsJson(rawSettings),
@@ -117,6 +129,53 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
 
   const isBusy = isLoading || isSaving;
   const preview = toCodebaseSettings(form);
+
+  /** 测试连接：用当前表单值（可未保存）发一条最小请求，结果由 Rust 持久化。 */
+  const runTest = useCallback(
+    async (kind: ModelTestKind): Promise<void> => {
+      const settings = toCodebaseSettings(form);
+      setTestingKind(kind);
+      setError("");
+      setStatus("");
+
+      try {
+        if (kind === "embedding") {
+          const result = await window.snow.testEmbeddingConnection({
+            embeddingType: settings.embeddingType,
+            modelName: settings.embeddingModelName,
+            baseUrl: settings.embeddingBaseUrl,
+            apiKey: settings.embeddingApiKey,
+            dimensions: settings.embeddingDimensions,
+          });
+          if (isMountedRef.current) {
+            setEmbeddingHealth(result);
+          }
+        } else {
+          const result = await window.snow.testRerankingConnection({
+            modelName: settings.rerankingModelName,
+            baseUrl: settings.rerankingBaseUrl,
+            apiKey: settings.rerankingApiKey,
+          });
+          if (isMountedRef.current) {
+            setRerankingHealth(result);
+          }
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            t("modelHealth.testError", {
+              values: { message: e instanceof Error ? e.message : String(e) },
+            }),
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setTestingKind(null);
+        }
+      }
+    },
+    [form, t],
+  );
 
   const updateField =
     (field: keyof CodebaseSettingsFormValue) =>
@@ -397,6 +456,10 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
         form={form}
         decisionModels={decisionModels}
         isBusy={isBusy}
+        embeddingHealth={embeddingHealth}
+        rerankingHealth={rerankingHealth}
+        testingKind={testingKind}
+        onTest={(kind) => void runTest(kind)}
         onUpdateField={updateField}
         onSetValue={setValue}
         onBlurSave={commitSave}

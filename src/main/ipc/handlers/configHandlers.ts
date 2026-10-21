@@ -74,6 +74,24 @@ const normalizeHookConfig = (item: unknown): HookConfigInput => {
   };
 };
 
+/** 模型连接自检的入参：渲染层传入表单对象，这里只取需要的字段。 */
+const readTestInput = (item: unknown): Record<string, unknown> => {
+  if (!item || typeof item !== "object") {
+    throw new Error("Model test input must be an object");
+  }
+  return item as Record<string, unknown>;
+};
+
+const readTestText = (raw: Record<string, unknown>, key: string): string =>
+  typeof raw[key] === "string" ? (raw[key] as string).trim() : "";
+
+const readTestCount = (raw: Record<string, unknown>, key: string): number => {
+  const value = raw[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.trunc(value))
+    : 0;
+};
+
 const validateSubAgentTools = async (
   native: NativeBridge,
   projectId: string | undefined,
@@ -713,8 +731,9 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
 
   // 决策模型辅助：命中敏感规则时判定是否可直接放行（返回 null = 未启用 /
-  // 无可用模型 / 未命中规则，渲染层保持原有确认流程）。workingDirectory 与
-  // description 是风险判定的上下文：命令在哪个目录执行、模型自己的意图说明。
+  // 未命中规则；决策模型不可用或请求失败时返回带 error 的记录，渲染层回退
+  // 原有确认流程并提示原因）。workingDirectory 与 description 是风险判定的
+  // 上下文：命令在哪个目录执行、模型自己的意图说明。
   ipcMain.handle(
     "sensitive-command-configs:evaluate-decision",
     (
@@ -734,6 +753,40 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         normalizeOptionalText(description),
       );
     },
+  );
+
+  // 决策 / 嵌入 / 重排模型连接自检：配置页传入当前表单值（可未保存），
+  // Rust 发送最小请求、持久化结果并把失败写入系统日志。
+  ipcMain.handle("model-health:test-decision", (_event, input: unknown) => {
+    const raw = readTestInput(input);
+    return native.testDecisionModelConnection({
+      id: readTestText(raw, "id"),
+      baseUrl: readTestText(raw, "baseUrl"),
+      baseUrlMode: readTestText(raw, "baseUrlMode"),
+      apiKey: readTestText(raw, "apiKey"),
+      model: readTestText(raw, "model"),
+    });
+  });
+  ipcMain.handle("model-health:test-embedding", (_event, input: unknown) => {
+    const raw = readTestInput(input);
+    return native.testEmbeddingConnection({
+      embeddingType: readTestText(raw, "embeddingType"),
+      modelName: readTestText(raw, "modelName"),
+      baseUrl: readTestText(raw, "baseUrl"),
+      apiKey: readTestText(raw, "apiKey"),
+      dimensions: readTestCount(raw, "dimensions"),
+    });
+  });
+  ipcMain.handle("model-health:test-reranking", (_event, input: unknown) => {
+    const raw = readTestInput(input);
+    return native.testRerankingConnection({
+      modelName: readTestText(raw, "modelName"),
+      baseUrl: readTestText(raw, "baseUrl"),
+      apiKey: readTestText(raw, "apiKey"),
+    });
+  });
+  ipcMain.handle("model-health:get-snapshot", () =>
+    native.getModelHealthSnapshot(),
   );
 
   // ===== Hook Configs =====

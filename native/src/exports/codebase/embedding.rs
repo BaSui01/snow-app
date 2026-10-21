@@ -267,6 +267,12 @@ pub async fn start_codebase_embedding(
             updated_at: now,
         };
         tokio::task::spawn_blocking(move || {
+            // A new run supersedes the failure kept from an earlier run.
+            codebase_embed_sessions::delete_error_sessions_except(
+                &db_path,
+                &record.project_id,
+                &record.session_id,
+            )?;
             codebase_embed_sessions::upsert_session(&db_path, &record)
         })
         .await
@@ -277,10 +283,14 @@ pub async fn start_codebase_embedding(
     // the database. The persistence is fire-and-forget (spawn_blocking without
     // await) so it never blocks the embedding loop. Terminal phases
     // (done/error/cancelled) also update the session status or delete the
-    // record so that `list_resumable_sessions` returns accurate results.
+    // record so that `list_resumable_sessions` returns accurate results. A
+    // failed run is kept (latest one per project) so the error can be reviewed
+    // after the panel is closed or the app restarts, and is written to the
+    // system log.
     let send_progress = {
         let db_path = database_path.clone();
         let sid = session_id.clone();
+        let pid = project_id.clone();
         move |phase: &str,
               total_files: i32,
               processed_files: i32,
@@ -303,6 +313,7 @@ pub async fn start_codebase_embedding(
             // Persist progress / status. Fire-and-forget.
             let db_path = db_path.clone();
             let sid = sid.clone();
+            let pid = pid.clone();
             let phase_owned = phase.to_string();
             let current_file_owned = current_file.to_string();
             let error_owned = error.to_string();
@@ -322,13 +333,44 @@ pub async fn start_codebase_embedding(
                         let _ = codebase_embed_sessions::delete_session(&db_path, &sid);
                     }
                     "error" => {
+                        // Keep the failed run (only the latest per project) so
+                        // the panel can show it again later.
                         let _ = codebase_embed_sessions::update_session_status(
                             &db_path,
                             &sid,
                             codebase_embed_sessions::STATUS_ERROR,
                             Some(&error_owned),
                         );
-                        let _ = codebase_embed_sessions::delete_session(&db_path, &sid);
+                        let _ = codebase_embed_sessions::delete_error_sessions_except(
+                            &db_path, &pid, &sid,
+                        );
+                        let _ = crate::storage::services::app_logs::insert_app_log(
+                            &db_path,
+                            &crate::storage::services::app_logs::AppLogInput {
+                                level: "ERROR".to_string(),
+                                module: "embedding".to_string(),
+                                func: "codebase_index".to_string(),
+                                line: None,
+                                message: "Codebase indexing failed".to_string(),
+                                input: None,
+                                output: None,
+                                duration: None,
+                                context: Some(
+                                    serde_json::json!({
+                                        "projectId": pid,
+                                        "sessionId": sid,
+                                        "processedFiles": processed_files,
+                                        "totalFiles": total_files,
+                                        "processedChunks": processed_chunks,
+                                        "totalChunks": total_chunks,
+                                        "currentFile": current_file_owned,
+                                    })
+                                    .to_string(),
+                                ),
+                                error: Some(error_owned.clone()),
+                                source: "main".to_string(),
+                            },
+                        );
                     }
                     "cancelled" => {
                         let _ = codebase_embed_sessions::delete_session(&db_path, &sid);

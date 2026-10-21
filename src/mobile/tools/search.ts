@@ -735,6 +735,10 @@ type CodebasePipeline = {
   type: string;
   attempts: number;
   refinedQuery?: string;
+  /** 代理审查实际使用的提供方（decision / llm / llm_fallback）。 */
+  reviewProvider?: string;
+  /** 配置的决策 / 重排模型没有生效的原因。 */
+  fallbackReason?: string;
 };
 
 type CodebaseProgress = {
@@ -745,10 +749,12 @@ type CodebaseProgress = {
   refinedQuery?: string;
 };
 
-/** pipeline.type → 词条键 / 图标（与桌面 pipelineBadge 一一对应）。 */
+/** pipeline.type → 词条键 / 图标（与桌面 pipelineBadge 一一对应）。
+ *  reranking_fallback：重排失败回退为向量排序，主徽章按向量搜索展示，另加回退徽章。 */
 const PIPELINE_META: Record<string, { key: string; icon: MobileIconName }> = {
   cosine: { key: "codebase.pipeline.cosine", icon: "search" },
   reranking: { key: "codebase.pipeline.reranking", icon: "sparkles" },
+  reranking_fallback: { key: "codebase.pipeline.cosine", icon: "search" },
   agent_review: { key: "codebase.pipeline.agentReview", icon: "brain-circuit" },
 };
 
@@ -787,6 +793,8 @@ const parseCodebasePipeline = (value: unknown): CodebasePipeline | null => {
     type,
     attempts: readNumber(value, "attempts") ?? 1,
     refinedQuery: optional(readString(value, "refinedQuery")),
+    reviewProvider: optional(readString(value, "agentReviewProvider")),
+    fallbackReason: optional(readString(value, "fallbackReason")),
   };
 };
 
@@ -909,8 +917,27 @@ const renderCodebase = (tool: SnowRemoteToolCall): HTMLElement | null => {
         }),
       );
     }
+    if (pipeline.type === "reranking_fallback") {
+      flags.push(
+        badge(tr("codebase.pipeline.rerankingFallback"), { variant: "warn" }),
+      );
+    } else if (pipeline.reviewProvider === "llm_fallback") {
+      flags.push(
+        badge(tr("codebase.pipeline.reviewFallback"), { variant: "warn" }),
+      );
+    }
   }
   if (flags.length) body.append(flagsHost(...flags));
+  if (pipeline?.fallbackReason) {
+    body.append(
+      paramsHost(
+        kv(
+          tr("codebase.pipeline.fallbackReason"),
+          clip(pipeline.fallbackReason, DISPLAY_MAX_CHARS),
+        ),
+      ),
+    );
+  }
   if (pipeline?.refinedQuery) {
     body.append(
       paramsHost(

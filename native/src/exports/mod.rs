@@ -9,6 +9,7 @@ mod ide;
 mod image_generation;
 mod images;
 mod market;
+mod model_health;
 mod oauth;
 mod pets;
 mod prompt_optimization;

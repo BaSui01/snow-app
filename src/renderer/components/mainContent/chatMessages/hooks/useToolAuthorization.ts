@@ -689,8 +689,10 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   /**
    * 命中敏感规则后请决策模型判定该命令是否可直接放行（辅助 / 托管）。
    *
-   * 未启用辅助、未选择可用的决策模型、未命中规则或请求失败都返回 null，
-   * 调用方保持原有的拦截提示流程 —— 辅助功能不改变安全闸门的默认行为。
+   * 未启用辅助、未命中规则时返回 null，调用方保持原有的拦截提示流程。
+   * 决策模型不可用或请求失败时返回带 error 的判定：同样回退人工确认，但拦截
+   * 提示会明确告诉用户「决策模型不可用，已回退人工确认」——辅助功能不改变
+   * 安全闸门的默认行为，也不再静默吞掉失败。
    */
   const requestSensitiveCommandDecision = useCallback(
     (
@@ -706,7 +708,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           workingDirectory || undefined,
           description || undefined,
         )
-        .catch(() => null),
+        .catch((error: unknown) => ({
+          allow: false,
+          reason: "unclear",
+          confidence: 0,
+          delegate: false,
+          modelName: "",
+          error: error instanceof Error ? error.message : String(error),
+        })),
     [],
   );
 
@@ -787,7 +796,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             // 托管模式：判定直接生效，不再弹拦截提示 —— 允许则放行（等价于
             // 用户点了「确认执行」）；拒绝则只拒绝这条命令并把模型的理由交回
             // AI，AI 流程继续（模型可换一种做法），任何情况下都不中断会话。
-            if (decision?.delegate) {
+            // 决策模型不可用（error）时判定无效，必须回退人工确认。
+            if (decision?.delegate && !decision.error) {
               // 判定不经过拦截提示，直接回写到工具卡片上，让用户能看到
               // 这条命令是被决策模型放行/拒绝的、置信度与理由。
               const delegatedDecision = {
@@ -854,7 +864,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
               authorizationId,
               authorizationConversationId: conversationId,
               sensitiveCommandMatches: matches,
-              // 非托管时判定只作为建议，连同拦截提示一起展示给用户。
+              // 非托管时判定只作为建议，连同拦截提示一起展示给用户；决策模型
+              // 不可用时展示回退原因。
               ...(decision
                 ? {
                     sensitiveCommandDecision: {
@@ -862,6 +873,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                       reason: decision.reason,
                       confidence: decision.confidence,
                       modelName: decision.modelName,
+                      ...(decision.error ? { error: decision.error } : {}),
                     },
                   }
                 : {}),

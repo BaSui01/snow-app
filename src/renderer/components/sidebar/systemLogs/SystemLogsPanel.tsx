@@ -175,6 +175,9 @@ export function SystemLogsPanel(): React.JSX.Element {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [levelFilter, setLevelFilter] = useState<LogLevelFilter>("");
+  /** 模块筛选（空 = 全部模块），可选项来自日志里实际出现过的模块。 */
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [modules, setModules] = useState<string[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [confirmingClear, setConfirmingClear] = useState(false);
   const clearTimerRef = useRef<number | null>(null);
@@ -234,17 +237,21 @@ export function SystemLogsPanel(): React.JSX.Element {
       setIsLoading(true);
       setError("");
       try {
-        const page: AppLogPage = await window.snow.listAppLogs(
-          level,
-          "",
-          sinceDateTime,
-          untilDateTime,
-          PAGE_SIZE,
-          pageOffset,
-        );
+        const [page, moduleNames]: [AppLogPage, string[]] = await Promise.all([
+          window.snow.listAppLogs(
+            level,
+            moduleFilter,
+            sinceDateTime,
+            untilDateTime,
+            PAGE_SIZE,
+            pageOffset,
+          ),
+          window.snow.listAppLogModules(),
+        ]);
         setRecords(page.items ?? []);
         setTotal(page.total ?? 0);
         setOffset(pageOffset);
+        setModules(moduleNames);
         setExpandedIds(new Set());
       } catch (e) {
         setError(
@@ -258,7 +265,7 @@ export function SystemLogsPanel(): React.JSX.Element {
         setIsLoading(false);
       }
     },
-    [sinceDateTime, untilDateTime, t],
+    [moduleFilter, sinceDateTime, untilDateTime, t],
   );
 
   useEffect(() => {
@@ -454,6 +461,18 @@ export function SystemLogsPanel(): React.JSX.Element {
     setLevelFilter(level);
   }, []);
 
+  // 当前选中的模块在清空日志后可能不再出现，仍保留为可选项，避免选择被静默改掉。
+  const moduleOptions = useMemo(() => {
+    const names =
+      moduleFilter && !modules.includes(moduleFilter)
+        ? [moduleFilter, ...modules]
+        : modules;
+    return [
+      { value: "", label: t("settings.systemLogsModuleAll") },
+      ...names.map((name) => ({ value: name, label: name })),
+    ];
+  }, [moduleFilter, modules, t]);
+
   const handleRefresh = useCallback(() => {
     void loadLogs(offset, levelFilter);
   }, [loadLogs, offset, levelFilter]);
@@ -620,6 +639,14 @@ export function SystemLogsPanel(): React.JSX.Element {
                 t("settings.systemLogsLevelAll", { defaultValue: "All" })}
             </button>
           ))}
+        </div>
+        <div className="system-logs-module-filter">
+          <CustomSelect
+            value={moduleFilter}
+            ariaLabel={t("settings.systemLogsModuleFilter")}
+            options={moduleOptions}
+            onChange={setModuleFilter}
+          />
         </div>
       </div>
 

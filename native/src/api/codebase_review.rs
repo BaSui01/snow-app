@@ -54,6 +54,9 @@ struct ReviewOutcome {
     relevant_indices: Vec<usize>,
     /// A refined query if the model suggested one, empty otherwise.
     refined_query: String,
+    /// Why the configured decision model was skipped for this pass (the LLM
+    /// reviewed instead), `None` when the configured backend did the review.
+    fallback_reason: Option<String>,
 }
 
 /// Final outcome of the agent review process.
@@ -65,6 +68,9 @@ pub struct AgentReviewResult {
     pub effective_query: String,
     /// How many review attempts were made (1..=3).
     pub attempts: u32,
+    /// Set when a decision model request failed and the LLM reviewed instead
+    /// (the reason of the first failure).
+    pub fallback_reason: Option<String>,
 }
 
 /// A progress event emitted during the agent review loop.
@@ -142,6 +148,7 @@ where
     let mut current_query = initial_query.clone();
     let mut current_results = initial_results;
     let mut attempts = 0u32;
+    let mut fallback_reason: Option<String> = None;
 
     loop {
         attempts += 1;
@@ -159,6 +166,7 @@ where
                 results: current_results,
                 effective_query: current_query,
                 attempts,
+                fallback_reason,
             });
         }
 
@@ -177,6 +185,7 @@ where
                 results: current_results,
                 effective_query: current_query,
                 attempts,
+                fallback_reason,
             });
         }
 
@@ -190,7 +199,11 @@ where
             refined_query: None,
 });
 
-        let outcome = review_results(&current_query, &current_results, jev_config.as_ref()).await?;
+        let mut outcome =
+            review_results(&current_query, &current_results, jev_config.as_ref()).await?;
+        if fallback_reason.is_none() {
+            fallback_reason = outcome.fallback_reason.take();
+        }
 
         let total = current_results.len();
         let relevant_count = outcome.relevant_indices.len();
@@ -218,6 +231,7 @@ where
                 results: filtered,
                 effective_query: current_query,
                 attempts,
+                fallback_reason,
             });
         }
 
@@ -237,6 +251,7 @@ where
                 results: filtered,
                 effective_query: current_query,
                 attempts,
+                fallback_reason,
             });
         }
 
@@ -281,7 +296,9 @@ async fn review_results(
                 &error.reason,
             )
             .await;
-            return review_via_llm(query, results).await;
+            let mut outcome = review_via_llm(query, results).await?;
+            outcome.fallback_reason = Some(error.reason.clone());
+            return Ok(outcome);
         }
     };
 
@@ -301,6 +318,7 @@ async fn review_results(
         Ok(refined_query) => Ok(ReviewOutcome {
             relevant_indices: outcome.relevant_indices,
             refined_query,
+            fallback_reason: None,
         }),
         Err(error) => {
             log_review_fallback(
@@ -328,6 +346,7 @@ async fn review_via_jev(
         // review loop always starts with an empty one. The caller asks the LLM
         // for a refined query when the verdict requires a re-search.
         refined_query: String::new(),
+        fallback_reason: None,
     })
 }
 
@@ -630,6 +649,7 @@ fn parse_review_response(text: &str, total_results: usize) -> Result<ReviewOutco
     Ok(ReviewOutcome {
         relevant_indices,
         refined_query,
+        fallback_reason: None,
     })
 }
 

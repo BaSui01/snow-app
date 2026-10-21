@@ -157,6 +157,8 @@ export type ToolCallInfo = {
     confidence: number;
     /** 参与判定的决策模型名称。 */
     modelName: string;
+    /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
+    error?: string;
   };
   /** 判定由决策模型托管生效（未弹拦截提示，直接放行或拒绝）。 */
   sensitiveCommandDelegated?: boolean;
@@ -566,6 +568,8 @@ export type SensitiveCommandDecisionInfo = {
   confidence: number;
   /** 参与判定的决策模型名称。 */
   modelName: string;
+  /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
+  error?: string;
 };
 
 export type ToolAuthorizationDecision =

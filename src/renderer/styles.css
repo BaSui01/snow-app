@@ -7247,6 +7247,117 @@ body.is-panel-resizing * {
   line-height: 1.4;
 }
 
+/* ===== 模型连接自检（决策模型 / 嵌入 / 重排） ===== */
+.model-health-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.model-health-status.is-untested {
+  color: var(--text-muted);
+}
+
+.model-health-status.is-ok {
+  color: var(--accent-green-text);
+}
+
+.model-health-status.is-failed {
+  color: var(--accent-red-text);
+  cursor: help;
+}
+
+.model-health-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.model-health-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-health-warning {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--accent-amber-text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.model-health-warning > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.model-health-result {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.model-health-result-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.model-health-result.is-ok .model-health-result-head {
+  color: var(--accent-green-text);
+}
+
+.model-health-result.is-failed .model-health-result-head {
+  color: var(--accent-red-text);
+}
+
+.model-health-result-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.model-health-result-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.model-health-result-grid dt {
+  color: var(--text-muted);
+}
+
+.model-health-result-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-health-result-error {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .api-model-combobox-field {
   position: relative;
 }
@@ -38055,6 +38166,15 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   flex-shrink: 0;
 }
 
+/* 重新打开面板 / 重启后恢复的上次失败：附带失败时间 */
+.project-codebase-embed-error-time {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .project-codebase-embed-error-message {
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -39563,6 +39683,16 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .sensitive-command-decision.is-confirm .sensitive-command-decision-verdict {
   color: var(--accent-red-text);
+}
+
+/* 决策模型不可用 / 请求失败：判定无效，已回退人工确认 */
+.sensitive-command-decision.is-unavailable {
+  border-color: color-mix(in srgb, var(--accent-amber-text) 35%, transparent);
+  background: var(--accent-amber-bg);
+}
+
+.sensitive-command-decision.is-unavailable .sensitive-command-decision-verdict {
+  color: var(--accent-amber-text);
 }
 
 .sensitive-command-decision-verdict small {
@@ -45731,18 +45861,8 @@ body.ctrl-held [data-path] {
 }
 
 .browser-settings-agent-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   color: var(--text-primary);
   font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-
-.browser-settings-agent-toggle input {
-  accent-color: var(--text-primary);
-  margin: 0;
 }
 
 .browser-settings-agent-domain-modes {
@@ -48316,6 +48436,19 @@ pre.file-viewer-code {
   background: var(--bg-active);
   font-size: 10.5px;
   color: var(--text-tertiary);
+}
+
+/* 配置的决策 / 重排模型没有生效（回退 LLM / 回退向量排序），悬停看原因 */
+.tool-call-codebase-pipeline-fallback {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10.5px;
+  cursor: help;
 }
 
 .tool-call-codebase-pipeline-refined {
@@ -51637,6 +51770,12 @@ pre.file-viewer-code {
 .system-logs-level-chip.active.error {
   background: var(--accent-red-bg);
   color: var(--accent-red-text);
+}
+
+/* 按模块筛选（模块名来自日志里实际出现过的 module） */
+.system-logs-module-filter {
+  width: 180px;
+  min-width: 0;
 }
 
 .system-logs-page {

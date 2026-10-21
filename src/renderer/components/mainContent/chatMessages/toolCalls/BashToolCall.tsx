@@ -534,8 +534,11 @@ export const BashToolCall = ({
   );
 
   // 决策模型判定（托管自动放行/拒绝的命令）：卡片头部给结论与置信度，
-  // 卡片内部给完整判定（理由与判定模型）。
-  const decision = toolCall.sensitiveCommandDecision;
+  // 卡片内部给完整判定（理由与判定模型）。决策模型不可用（error）时没有
+  // 有效判定——回退原因已在拦截提示里展示，卡片不显示放行/拒绝结论。
+  const decision = toolCall.sensitiveCommandDecision?.error
+    ? undefined
+    : toolCall.sensitiveCommandDecision;
   const decisionConfidencePercent = decision
     ? Math.round(decision.confidence * 100)
     : 0;

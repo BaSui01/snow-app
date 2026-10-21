@@ -17,6 +17,7 @@ pub mod gemini;
 pub mod http_client;
 pub mod interactions;
 pub mod jev;
+pub mod model_health;
 pub mod models;
 pub mod oauth;
 pub mod reranking;

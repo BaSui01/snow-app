@@ -606,6 +606,15 @@ export type ResumableCodebaseSession = {
   updatedAt: string;
 };
 
+/** 项目最近一次失败的索引运行（保留到下次索引开始，供代码库面板回看）。 */
+export type CodebaseEmbedFailure = {
+  sessionId: string;
+  error: string;
+  processedFiles: number;
+  totalFiles: number;
+  updatedAt: string;
+};
+
 export type SystemPromptItemInput = {
   promptId: string;
   name: string;
@@ -1013,6 +1022,58 @@ export type SensitiveCommandDecisionRecord = {
   delegate: boolean;
   /** 参与判定的决策模型名称。 */
   modelName: string;
+  /** 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）的原因；此时回退人工确认。 */
+  error?: string | null;
+};
+
+/** 待检测的决策模型（字段与 system_settings `decision_models` 条目一致）。 */
+export type DecisionModelTestInput = {
+  id: string;
+  baseUrl: string;
+  baseUrlMode: string;
+  apiKey: string;
+  model: string;
+};
+
+/** 待检测的嵌入模型配置（dimensions 为 0 表示不指定维度）。 */
+export type EmbeddingTestInput = {
+  embeddingType: string;
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+  dimensions: number;
+};
+
+/** 待检测的重排模型配置。 */
+export type RerankingTestInput = {
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+};
+
+/** 一次模型连接自检的结果（持久化，重启后仍可查看）。 */
+export type ModelConnectionTestResult = {
+  /** 决策模型为其 id，嵌入 / 重排为空。 */
+  targetId: string;
+  ok: boolean;
+  httpStatus?: number | null;
+  latencyMs: number;
+  endpoint: string;
+  model: string;
+  /** 嵌入：实际返回的向量维度。 */
+  dimension?: number | null;
+  /** 嵌入：配置的向量维度。 */
+  expectedDimension?: number | null;
+  error?: string | null;
+  /** 检测时间（Unix 毫秒）。 */
+  testedAt: number;
+};
+
+/** 三类模型最近一次连接自检的结果。 */
+export type ModelHealthSnapshot = {
+  decision: ModelConnectionTestResult[];
+  embedding?: ModelConnectionTestResult | null;
+  reranking?: ModelConnectionTestResult | null;
 };
 
 export type Model = {
@@ -2228,6 +2289,9 @@ export type NativeBridge = ImageGenerationNativeApi & {
     projectId: string,
   ) => Promise<ResumableCodebaseSession[]>;
   discardResumableCodebaseSession: (sessionId: string) => Promise<void>;
+  getLastCodebaseEmbedFailure: (
+    projectId: string,
+  ) => Promise<CodebaseEmbedFailure | null>;
   listToolApprovalProjectApprovedTools: (
     projectId: string,
   ) => Promise<string[]>;
@@ -2519,6 +2583,17 @@ export type NativeBridge = ImageGenerationNativeApi & {
     workingDirectory?: string,
     description?: string,
   ) => Promise<SensitiveCommandDecisionRecord | null>;
+  /** 决策 / 嵌入 / 重排模型连接自检：结果持久化并返回，失败写入系统日志。 */
+  testDecisionModelConnection: (
+    input: DecisionModelTestInput,
+  ) => Promise<ModelConnectionTestResult>;
+  testEmbeddingConnection: (
+    input: EmbeddingTestInput,
+  ) => Promise<ModelConnectionTestResult>;
+  testRerankingConnection: (
+    input: RerankingTestInput,
+  ) => Promise<ModelConnectionTestResult>;
+  getModelHealthSnapshot: () => Promise<ModelHealthSnapshot>;
   listChatConversations: (
     directoryId: string,
   ) => Promise<ChatConversationRecord[]>;
@@ -3081,6 +3156,8 @@ export type NativeBridge = ImageGenerationNativeApi & {
     offset: number,
   ) => Promise<AppLogPage>;
   clearAppLogs: () => Promise<number>;
+  /** 系统日志里出现过的模块名（去重排序），供按模块筛选。 */
+  listAppLogModules: () => Promise<string[]>;
   /** 系统日志保留天数：0 = 不清理，未配置时默认 7 天。 */
   getAppLogsRetentionDays: () => Promise<number>;
   setAppLogsRetentionDays: (days: number) => Promise<void>;

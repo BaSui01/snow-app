@@ -416,11 +416,12 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 ///
 /// The verdict is a risk judgement of the command's real effect in
 /// `workingDirectory` (with the model's own `description` as context) — a rule
-/// match alone never decides it. Returns `None` when the assist is disabled,
-/// the command matches no rule, or no usable decision model is selected — the
-/// caller then keeps the plain confirmation prompt. Transport / protocol
-/// failures are reported as errors so the caller can fall back the same way
-/// instead of acting on a guess.
+/// match alone never decides it. Returns `None` when the assist is disabled or
+/// the command matches no rule. When the assist is on but the decision model
+/// cannot judge (none selected, disabled, incomplete, or the request failed) a
+/// record with `error` set is returned: the caller falls back to the plain
+/// confirmation prompt and tells the user why. Request failures are also in the
+/// system log (module `decision_model`).
 #[napi]
 pub async fn evaluate_sensitive_command_decision(
     command: String,
@@ -459,27 +460,33 @@ pub async fn evaluate_sensitive_command_decision(
         })?
     }?;
 
-    // 未开启辅助、未命中规则、或选中的决策模型不可用时，保持原有确认流程。
+    // 未开启辅助或未命中规则时，保持原有确认流程。
     if !assist.enabled || matched_rules.is_empty() {
         return Ok(None);
     }
 
-    let Some(selected) =
-        crate::api::jev::find_enabled_decision_model(&decision_models, &assist.model_id)
-    else {
-        return Ok(None);
-    };
-    let model_name = if selected.name.trim().is_empty() {
-        selected.model.clone()
-    } else {
-        selected.name.trim().to_string()
+    let unavailable = |model_name: String, error: String| SensitiveCommandDecisionRecord {
+        allow: false,
+        reason: "unclear".to_string(),
+        confidence: 0.0,
+        delegate: assist.delegate,
+        model_name,
+        error: Some(error),
     };
 
-    let Some(config) =
-        crate::api::jev::JevConfig::from_decision_model(&decision_models, &assist.model_id)
-    else {
-        return Ok(None);
-    };
+    let (model_name, config) =
+        match crate::api::jev::resolve_decision_model(&decision_models, &assist.model_id) {
+            crate::api::jev::DecisionModelResolution::Ready { name, config } => (name, config),
+            crate::api::jev::DecisionModelResolution::Unavailable { name, reason } => {
+                return Ok(Some(unavailable(name, reason)));
+            }
+            crate::api::jev::DecisionModelResolution::NotSelected => {
+                return Ok(Some(unavailable(
+                    String::new(),
+                    "No decision model is selected for the sensitive command assist".to_string(),
+                )));
+            }
+        };
 
     let verdict = crate::api::jev::evaluate_command(
         &config,
@@ -490,14 +497,18 @@ pub async fn evaluate_sensitive_command_decision(
             matched_rules: &matched_rules,
         },
     )
-    .await?;
+    .await;
 
-    Ok(Some(SensitiveCommandDecisionRecord {
-        allow: verdict.allow,
-        reason: verdict.reason,
-        confidence: verdict.confidence,
-        delegate: assist.delegate,
-        model_name,
+    Ok(Some(match verdict {
+        Ok(verdict) => SensitiveCommandDecisionRecord {
+            allow: verdict.allow,
+            reason: verdict.reason,
+            confidence: verdict.confidence,
+            delegate: assist.delegate,
+            model_name,
+            error: None,
+        },
+        Err(error) => unavailable(model_name, error.reason.clone()),
     }))
 }
 

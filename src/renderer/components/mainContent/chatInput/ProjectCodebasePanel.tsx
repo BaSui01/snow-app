@@ -752,6 +752,13 @@ export const ProjectCodebasePanel = ({
                     <div className="project-codebase-embed-error-header">
                       <AlertCircle size={14} />
                       <span>{t("projectCodebase.embedding.errorTitle")}</span>
+                      {embedding.embedErrorAt ? (
+                        <span className="project-codebase-embed-error-time">
+                          {t("projectCodebase.embedding.errorAt", {
+                            values: { time: embedding.embedErrorAt },
+                          })}
+                        </span>
+                      ) : null}
                     </div>
                     {embedErrorMessage ? (
                       <div className="project-codebase-embed-error-message">

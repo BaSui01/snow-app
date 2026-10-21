@@ -240,18 +240,21 @@ impl CodebaseService {
         let enable_agent_review = scope.enable_agent_review.unwrap_or(false);
 
         // Review backend for this search: the decision model selected in the
-        // codebase settings when it is still enabled and its request information
-        // is complete, the basic LLM model otherwise (`None` keeps the LLM path).
+        // codebase settings when it is still usable, the basic LLM model
+        // otherwise. A selected but unusable decision model (deleted, disabled,
+        // incomplete) is a fallback the result reports, not a silent switch.
         // The decision models themselves are configured in the API settings page.
-        let jev_config = crate::api::jev::JevConfig::from_decision_model(
+        let (jev_config, unavailable_reason) = match crate::api::jev::resolve_decision_model(
             &decision_models,
             &settings.agent_review_model_id,
-        );
-        let agent_review_provider = if jev_config.is_some() {
-            "decision"
-        } else {
-            "llm"
+        ) {
+            crate::api::jev::DecisionModelResolution::Ready { config, .. } => (Some(config), None),
+            crate::api::jev::DecisionModelResolution::Unavailable { name, reason } => {
+                (None, Some(format!("{name}: {reason}")))
+            }
+            crate::api::jev::DecisionModelResolution::NotSelected => (None, None),
         };
+        let uses_decision_model = jev_config.is_some();
 
         // Determine the processing pipeline.
         //
@@ -317,6 +320,18 @@ impl CodebaseService {
             // Truncate to top_n after review.
             let mut results = review_result.results;
             results.truncate(top_n);
+
+            // The provider that actually reviewed: an unusable selection or a
+            // failed decision model request means the LLM took over.
+            let fallback_reason = unavailable_reason.or(review_result.fallback_reason);
+            let provider = if fallback_reason.is_some() {
+                "llm_fallback"
+            } else if uses_decision_model {
+                "decision"
+            } else {
+                "llm"
+            };
+
             PipelineOutcome {
                 results,
                 pipeline_type: PipelineType::AgentReview,
@@ -327,6 +342,8 @@ impl CodebaseService {
                     None
                 },
                 initial_count,
+                agent_review_provider: Some(provider),
+                fallback_reason,
             }
         } else if enable_reranking {
             // Reranking-only path.
@@ -340,7 +357,10 @@ impl CodebaseService {
                 })
                 .collect();
 
-            let reranked =
+            // A failed or empty rerank keeps the cosine order and is reported
+            // as `reranking_fallback` with its reason, never as a successful
+            // rerank. The failure itself is already in the system log.
+            let (results, fallback_reason) =
                 match crate::api::reranking::rerank(&reranking_config, query, &rerank_docs).await {
                     Ok(rerank_results) => {
                         let reranked: Vec<crate::storage::services::codebase_index::SearchResult> =
@@ -350,22 +370,31 @@ impl CodebaseService {
                                 .take(top_n)
                                 .collect();
                         if reranked.is_empty() {
-                            initial_results.into_iter().take(top_n).collect()
+                            (
+                                initial_results.into_iter().take(top_n).collect(),
+                                Some("Reranking API returned no usable results".to_string()),
+                            )
                         } else {
-                            reranked
+                            (reranked, None)
                         }
                     }
-                    Err(_e) => {
-                        // Reranking failed — fall back to original cosine ordering.
-                        initial_results.into_iter().take(top_n).collect()
-                    }
+                    Err(error) => (
+                        initial_results.into_iter().take(top_n).collect(),
+                        Some(error.reason.clone()),
+                    ),
                 };
             PipelineOutcome {
-                results: reranked,
-                pipeline_type: PipelineType::Reranking,
+                results,
+                pipeline_type: if fallback_reason.is_some() {
+                    PipelineType::RerankingFallback
+                } else {
+                    PipelineType::Reranking
+                },
                 attempts: 1,
                 refined_query: None,
                 initial_count,
+                agent_review_provider: None,
+                fallback_reason,
             }
         } else {
             // No post-processing — return top_n by cosine similarity.
@@ -375,6 +404,8 @@ impl CodebaseService {
                 attempts: 1,
                 refined_query: None,
                 initial_count,
+                agent_review_provider: None,
+                fallback_reason: None,
             }
         };
 
@@ -407,8 +438,10 @@ impl CodebaseService {
             "pipeline": {
                 "type": pipeline.pipeline_type.as_str(),
                 "agentReview": enable_agent_review,
-                "agentReviewProvider": agent_review_provider,
+                "agentReviewProvider": pipeline.agent_review_provider,
                 "reranking": enable_reranking,
+                "rerankApplied": matches!(pipeline.pipeline_type, PipelineType::Reranking),
+                "fallbackReason": pipeline.fallback_reason,
                 "attempts": pipeline.attempts,
                 "refinedQuery": pipeline.refined_query,
                 "initialCount": pipeline.initial_count,
@@ -497,6 +530,9 @@ enum PipelineType {
     Cosine,
     /// Reranking model applied to reorder results.
     Reranking,
+    /// Reranking was requested but failed (or returned nothing usable); the
+    /// results keep their cosine similarity order.
+    RerankingFallback,
     /// Agent review applied — the configured review backend (Jev or the basic
     /// model) judged relevance, and the LLM potentially refined the query and
     /// re-searched.
@@ -508,6 +544,7 @@ impl PipelineType {
         match self {
             PipelineType::Cosine => "cosine",
             PipelineType::Reranking => "reranking",
+            PipelineType::RerankingFallback => "reranking_fallback",
             PipelineType::AgentReview => "agent_review",
         }
     }
@@ -526,4 +563,10 @@ struct PipelineOutcome {
     /// Number of results from the initial vector search (before
     /// post-processing).
     initial_count: usize,
+    /// Agent review only: the backend that actually reviewed —
+    /// `decision`, `llm`, or `llm_fallback` (decision model unusable/failed).
+    agent_review_provider: Option<&'static str>,
+    /// Why the configured backend (decision model / reranking model) was not
+    /// used for this search.
+    fallback_reason: Option<String>,
 }

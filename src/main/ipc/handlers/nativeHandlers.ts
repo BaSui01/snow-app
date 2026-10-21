@@ -619,6 +619,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "codebase:get-last-embed-failure",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.getLastCodebaseEmbedFailure(projectId.trim());
+    },
+  );
+  ipcMain.handle(
     "permissions:list-tool-approvals",
     (_event, projectId: unknown) => {
       if (typeof projectId !== "string" || !projectId.trim()) {
@@ -1613,6 +1622,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("logs:clear", () => native.clearAppLogs());
+
+  ipcMain.handle("logs:list-modules", () => native.listAppLogModules());
 
   ipcMain.handle("settings:get-app-logs-retention-days", () =>
     native.getAppLogsRetentionDays(),

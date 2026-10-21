@@ -24,6 +24,7 @@ import type {
   BrowserFrameOperationArgs,
   CheckpointFileChange,
   CheckpointFileDiff,
+  CodebaseEmbedFailure,
   CodebaseEmbedProgress,
   CodebaseIndexedFilePage,
   CodebaseIndexStats,
@@ -763,6 +764,11 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:get-resumable-sessions", projectId),
   discardResumableCodebaseSession: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("codebase:discard-resumable-session", sessionId),
+  /** 项目最近一次失败的索引运行（下次索引开始前保留，重启后仍可回看）。 */
+  getLastCodebaseEmbedFailure: (
+    projectId: string,
+  ): Promise<CodebaseEmbedFailure | null> =>
+    ipcRenderer.invoke("codebase:get-last-embed-failure", projectId),
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
   correctToolCall: (

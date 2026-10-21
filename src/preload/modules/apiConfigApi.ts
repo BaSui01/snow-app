@@ -491,6 +491,9 @@ export const apiConfigApi = {
   ): Promise<AppLogPage> =>
     ipcRenderer.invoke("logs:list", level, module, since, until, limit, offset),
   clearAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:clear"),
+  /** 系统日志里出现过的模块名（去重排序），供按模块筛选。 */
+  listAppLogModules: (): Promise<string[]> =>
+    ipcRenderer.invoke("logs:list-modules"),
   getAppLogsRetentionDays: (): Promise<number> =>
     ipcRenderer.invoke("settings:get-app-logs-retention-days"),
   setAppLogsRetentionDays: (days: number): Promise<void> =>

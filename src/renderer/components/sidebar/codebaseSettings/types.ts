@@ -24,3 +24,6 @@ export type CodebaseSettingsForm = {
 };
 
 export type CodebaseSettings = CodebaseSettingsInput;
+
+/** 代码库设置页可「测试连接」的模型类别。 */
+export type ModelTestKind = "embedding" | "reranking";

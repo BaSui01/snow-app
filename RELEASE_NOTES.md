@@ -1,5 +1,31 @@
 # Release Notes
 
+## v0.5.0
+
+## New Features
+
+- **Workflow Scheduled Tasks**: scheduled tasks can run as a workflow, a DAG of AI nodes with per-edge delays edited on a canvas, with run-state tracking that survives restarts.
+- **Custom API MCP Transport**: map Web API endpoints to MCP tools (one tool per endpoint), with placeholders in path, query, headers and body, shared cookies and headers, and test requests sent straight from the unsaved draft.
+- **Layout Styles**: a new global layout style with Island, Layered and Flush modes.
+- **Sub-Agent Acceptance Checklists**: sub-agent activations can carry an acceptance checklist, and each item is validated against real tool-call evidence.
+- **Browser Action Receipts**: click, type, form-fill, select and key actions return a receipt that separates dispatch from the observed result; the network list gains method and header filters plus per-request details.
+- **Mobile Tool Correction**: the mobile remote control gains the tool-call auto-correction switch and correction panel.
+
+## Improvements
+
+- Every field of a scheduled task is editable, and the agent can create, update, run, cancel, pause and delete tasks.
+- Memos, blocked site patterns and scheduled task creation move into the config service.
+- The MCP list gains search, HTML preview gains a toggle, and `config-logs-read` is disabled by default per project.
+- Plus menu plugin tabs are grouped with labeled dividers; privacy switches are grouped and collapsible.
+- Plugin scripts with updates can be updated in batch with one click.
+- Faster rollback and parallel data loading; context handoff prompts for Goal and Plan modes are more precise.
+
+## Bug Fixes
+
+- Fixed `{{session_id}}` not being expanded in custom headers of tool-correction requests.
+- Fixed the image-description cache ignoring the prompt.
+- Fixed sidebar padding and the user-message rail layering in the Layered layout.
+
 ## v0.4.29
 
 ## New Features

@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.5.1
+
+## New Features
+
+- **Model Connection Tests**: the decision, embedding and reranking model pages gain a "Test connection" button with a persisted status column (latency, HTTP status, embedding dimension).
+- **Tool Card Chips Style**: tool calls can render in a compact chips style via `Ctrl/Cmd+Shift+U`, remembered across restarts and listed in the shortcut help.
+- **Native Browser UA**: the built-in browser sends a standard Chrome/Edge UA matching the detected local browser version instead of an Electron token.
+
+## Improvements
+
+- Model failures are no longer silent: reranking falls back to vector ranking, and an unusable decision model reports why LLM review or manual confirmation took over.
+- The last failed codebase indexing run is kept per project, and the system log panel gains a module filter.
+- Storage and image-library migrations show a non-closable progress dialog with the target path and a cancel-and-rollback action.
+- Copying a user message keeps in-app chips, while pasted external plain text stays unchanged.
+- Removed the Tesseract preset (existing selections fall back to Horizon); Horizon now uses emerald green with neutral grays and warm porcelain-white light surfaces.
+
+## Bug Fixes
+
+- Fixed the Flush layout top bar column layout and separators.
+- Dropped `anyOf`/`oneOf` from browser MCP tool schemas for stricter providers.
+
 ## v0.5.0
 
 ## New Features

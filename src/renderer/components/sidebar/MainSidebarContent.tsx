@@ -195,6 +195,11 @@ export function MainSidebarContent({
     activeDirectoryId,
     activeDirectory?.path ?? "",
   );
+  // 徽标只统计仍会执行的任务，已完成的单次任务不计入
+  const activeScheduledTaskCount = useMemo(
+    () => scheduledTasks.filter((task) => task.status !== "completed").length,
+    [scheduledTasks],
+  );
 
   // Load the pending memo count for the sidebar badge. Sidebar badges come with
   // the first screen; the memo page itself loads its own list only when opened.
@@ -557,9 +562,9 @@ export function MainSidebarContent({
                   defaultValue: "Scheduled Tasks",
                 })}
               </span>
-              {scheduledTasks.length > 0 && (
+              {activeScheduledTaskCount > 0 && (
                 <span className="sidebar-memo-badge">
-                  {scheduledTasks.length}
+                  {activeScheduledTaskCount}
                 </span>
               )}
             </button>

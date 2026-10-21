@@ -52,9 +52,11 @@ export const useScheduledTasks = (
   togglePauseTask: (id: string) => void;
   setTaskWakeWhenClosed: (id: string, enabled: boolean) => void;
   runTaskNow: (id: string) => Promise<void>;
+  cancelWorkflowRun: (id: string) => void;
   isExecutorReady: boolean;
 } => {
-  const { startBackgroundConversation } = useChatConversationContext();
+  const { startBackgroundConversation, runBackgroundConversation } =
+    useChatConversationContext();
   const [tasks, setTasks] = useState<ScheduledTaskRecord[]>(() =>
     scheduledTasksStore.list(directoryId),
   );
@@ -110,6 +112,22 @@ export const useScheduledTasks = (
       setIsExecutorReady(false);
     };
   }, [startBackgroundConversation]);
+
+  // 工作流节点执行器：等待节点 run 结束后再推进下游
+  useEffect(
+    () =>
+      scheduledTasksStore.setNodeExecutor(
+        (prompt, taskName, directoryId, options, conversationId) =>
+          runBackgroundConversation(
+            prompt,
+            directoryId || undefined,
+            options,
+            taskName,
+            conversationId,
+          ),
+      ),
+    [runBackgroundConversation],
+  );
 
   // Register the pre-script runner: binds the project directory as cwd and
   // delegates to the Rust backend via the preload bridge (fully async, the
@@ -180,6 +198,10 @@ export const useScheduledTasks = (
     return scheduledTasksStore.runNow(id);
   }, []);
 
+  const cancelWorkflowRun = useCallback((id: string): void => {
+    scheduledTasksStore.cancelWorkflowRun(id);
+  }, []);
+
   return {
     tasks,
     createTask,
@@ -190,6 +212,7 @@ export const useScheduledTasks = (
     togglePauseTask,
     setTaskWakeWhenClosed,
     runTaskNow,
+    cancelWorkflowRun,
     isExecutorReady,
   };
 };

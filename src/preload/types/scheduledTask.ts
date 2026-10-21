@@ -108,6 +108,76 @@ export type ScheduledTaskRecord = {
   /** Advanced model id used for the task's conversation. */
   model?: string;
   thinkingStrength?: string;
+  /** 工作流运行模式：存在时由画布节点取代单提示词执行。 */
+  workflow?: ScheduledTaskWorkflow;
+  /** 当前/最近一次工作流运行状态（持久化，重启后恢复）。 */
+  workflowRun?: ScheduledTaskWorkflowRun;
+};
+
+/** 节点间上下文衔接方式。 */
+export type ScheduledTaskWorkflowContextMode =
+  /** 每个节点新会话，上游最终回复注入下游提示词 */
+  | "handoff"
+  /** 每个节点新会话，不传递内容 */
+  | "none"
+  /** 所有节点在同一会话依次发送 */
+  | "shared";
+
+export type ScheduledTaskWorkflowNode = {
+  id: string;
+  label: string;
+  prompt: string;
+  apiProfile?: string;
+  basicModel?: string;
+  model?: string;
+  thinkingStrength?: string;
+  position: { x: number; y: number };
+};
+
+export type ScheduledTaskWorkflowEdge = {
+  source: string;
+  target: string;
+  /** 上游完成后等待多久再触发下游（毫秒）。 */
+  delayMs: number;
+};
+
+export type ScheduledTaskWorkflow = {
+  contextMode: ScheduledTaskWorkflowContextMode;
+  nodes: ScheduledTaskWorkflowNode[];
+  edges: ScheduledTaskWorkflowEdge[];
+};
+
+export type ScheduledTaskWorkflowNodeStatus =
+  "waiting" | "scheduled" | "running" | "completed" | "failed" | "cancelled";
+
+export type ScheduledTaskWorkflowNodeState = {
+  status: ScheduledTaskWorkflowNodeStatus;
+  /** status === "scheduled" 时的触发时间（ISO）。 */
+  dueAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  conversationId?: string;
+  /** 节点最终回复（截断后保存，用于交接）。 */
+  output?: string;
+  error?: string;
+};
+
+export type ScheduledTaskWorkflowRun = {
+  status: "running" | "completed" | "error";
+  startedAt: string;
+  finishedAt?: string;
+  /** scheduled_task_runs 行 id，结束时据此收尾。 */
+  runId?: string;
+  /** 预脚本 output，注入节点提示词的 {{SCRIPT_OUTPUT}}。 */
+  scriptOutput?: string;
+  /** 预脚本失败但仍执行时附加到节点提示词的说明。 */
+  scriptNote?: string;
+  /** shared 模式共用的会话 id。 */
+  sharedConversationId?: string;
+  /** 启动时的工作流快照，运行中编辑任务不影响本次运行。 */
+  definition: ScheduledTaskWorkflow;
+  nodes: Record<string, ScheduledTaskWorkflowNodeState>;
+  error?: string;
 };
 
 /**
@@ -151,6 +221,8 @@ export type CreateScheduledTaskInput = {
   preScript?: string;
   preScriptTimeoutMs?: number;
   runOnScriptError?: boolean;
+  /** 工作流模式定义；缺省 = 单提示词任务。 */
+  workflow?: ScheduledTaskWorkflow;
 };
 
 /** Result of running a scheduled-task pre-script in the Rust backend. */
@@ -177,4 +249,6 @@ export type UpdateScheduledTaskInput = {
   preScript?: string;
   preScriptTimeoutMs?: number;
   runOnScriptError?: boolean;
+  /** 工作流定义；undefined = 保持不变，null = 切回单提示词模式。 */
+  workflow?: ScheduledTaskWorkflow | null;
 };

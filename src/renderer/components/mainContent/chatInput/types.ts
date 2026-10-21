@@ -47,6 +47,18 @@ export type ChatInputSendOptions = {
   /** 内部字段：触发本次后台会话的定时任务名，用于消息列表的
    *  "由定时任务触发"横幅；仅对新会话首条消息生效。 */
   triggeredByTaskName?: string;
+  /** 内部字段：本次 run 结束（含失败/中止/未能发送）时回调一次。 */
+  onRunSettled?: (result: BackgroundRunResult) => void;
+};
+
+/** 后台 run 的结束结果（定时任务工作流节点用）。 */
+export type BackgroundRunResult = {
+  /** 真实会话 id；未能落库时为空。 */
+  conversationId: string;
+  /** 最后一条助手回复。 */
+  output: string;
+  success: boolean;
+  error?: string;
 };
 
 /** buildFromContent 排队的一次前台自动发送请求，消费后整体出队。 */

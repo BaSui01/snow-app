@@ -48,9 +48,7 @@ export const ToolCorrectionTree = ({
   correction,
 }: ToolCorrectionTreeProps): React.JSX.Element => {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(
-    correction.status === "running" || correction.status === "failed",
-  );
+  const [isOpen, setIsOpen] = useState(false);
   const succeededAttempt = correction.attempts.find(
     (attempt) => attempt.status === "succeeded",
   );

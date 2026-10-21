@@ -17,7 +17,9 @@ import {
   Repeat,
   RotateCw,
   SkipForward,
+  Square,
   Trash2,
+  Workflow,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +29,7 @@ import { useI18n } from "../../i18n";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { useSplitResize } from "../../hooks/useSplitResize";
 import {
+  hasActiveWorkflowRun,
   isWakeWhenClosed,
   validateSchedule,
 } from "../../hooks/scheduledTasksStore";
@@ -37,7 +40,15 @@ import type {
   ScheduledTaskRunRecord,
   ScheduledTaskSchedule,
   ScheduledTaskType,
+  ScheduledTaskWorkflow,
+  ScheduledTaskWorkflowContextMode,
 } from "../../../preload";
+import { useChatConversationContext } from "../mainContent/chatMessages";
+import {
+  ScheduledTaskWorkflowCanvas,
+  type ScheduledTaskWorkflowCanvasHandle,
+} from "./scheduledTasks/ScheduledTaskWorkflowCanvas";
+import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
@@ -70,6 +81,19 @@ type RecurringMode = "interval" | "daily";
 type TaskFilter = "all" | "project" | "global";
 type TaskPanelMode = "details" | "create" | "edit";
 type TaskStatusKey = "pending" | "running" | "completed" | "error" | "paused";
+type RunMode = "prompt" | "workflow";
+
+const createEmptyWorkflow = (): ScheduledTaskWorkflow => ({
+  contextMode: "handoff",
+  nodes: [],
+  edges: [],
+});
+
+const CONTEXT_MODE_OPTIONS: ScheduledTaskWorkflowContextMode[] = [
+  "handoff",
+  "shared",
+  "none",
+];
 
 type Translate = (
   key: string,
@@ -278,8 +302,10 @@ export function ScheduledTasksPanel({
     togglePauseTask,
     setTaskWakeWhenClosed,
     runTaskNow,
+    cancelWorkflowRun,
     isExecutorReady,
   } = useScheduledTasks(directoryId, directoryPath);
+  const { handleSelectConversation } = useChatConversationContext();
 
   const [filter, setFilter] = useState<TaskFilter>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -287,6 +313,11 @@ export function ScheduledTasksPanel({
 
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
+  // 运行方式：单提示词 / 工作流画布
+  const [runMode, setRunMode] = useState<RunMode>("prompt");
+  const [workflowDraft, setWorkflowDraft] =
+    useState<ScheduledTaskWorkflow>(createEmptyWorkflow);
+  const workflowCanvasRef = useRef<ScheduledTaskWorkflowCanvasHandle>(null);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionPopupStyle, setMentionPopupStyle] =
@@ -360,6 +391,27 @@ export function ScheduledTasksPanel({
     () => tasks.find((task) => task.id === selectedTaskId) ?? null,
     [selectedTaskId, tasks],
   );
+  // 节点会话已被删除时的提示
+  const [nodeConversationMissing, setNodeConversationMissing] = useState(false);
+  const dismissNodeConversationMissing = useCallback(
+    () => setNodeConversationMissing(false),
+    [],
+  );
+  const openWorkflowNodeConversation = useCallback(
+    async (conversationId: string): Promise<void> => {
+      const record = await window.snow
+        .getChatConversation(conversationId)
+        .catch(() => null);
+      if (!record) {
+        setNodeConversationMissing(true);
+        return;
+      }
+      setNodeConversationMissing(false);
+      void handleSelectConversation(conversationId);
+      onClose();
+    },
+    [handleSelectConversation, onClose],
+  );
   const deleteTarget = useMemo(
     () => tasks.find((task) => task.id === deleteTargetId) ?? null,
     [deleteTargetId, tasks],
@@ -412,6 +464,8 @@ export function ScheduledTasksPanel({
   const resetFormDraft = useCallback((): void => {
     setName("");
     setPrompt("");
+    setRunMode("prompt");
+    setWorkflowDraft(createEmptyWorkflow());
     const promptEditor = promptInputRef.current;
     if (promptEditor) {
       promptEditor.innerHTML = "";
@@ -445,7 +499,10 @@ export function ScheduledTasksPanel({
   const startEditTask = useCallback(
     (task: ScheduledTaskRecord): void => {
       setName(task.name);
-      setPrompt(task.prompt);
+      // 工作流任务的 prompt 是节点摘要，不回填到提示词编辑器
+      setPrompt(task.workflow ? "" : task.prompt);
+      setRunMode(task.workflow ? "workflow" : "prompt");
+      setWorkflowDraft(task.workflow ?? createEmptyWorkflow());
       setIsMentionOpen(false);
       setMentionQuery("");
       mentionStartOffsetRef.current = -1;
@@ -1133,6 +1190,52 @@ export function ScheduledTasksPanel({
     wakeWhenClosed,
   ]);
 
+  /** 工作流草稿校验：空节点/空提示词/成环交给 Rust 拓扑校验，返回错误文案。 */
+  const validateWorkflowDraft = useCallback(
+    async (workflow: ScheduledTaskWorkflow): Promise<string | null> => {
+      if (workflow.nodes.length === 0) {
+        return t("scheduledTask.workflow.errorNoNodes", {
+          defaultValue: "Add at least one node to the workflow",
+        });
+      }
+      const emptyNode = workflow.nodes.find((node) => !node.prompt.trim());
+      if (emptyNode) {
+        return t("scheduledTask.workflow.errorEmptyPrompt", {
+          values: { name: emptyNode.label },
+          defaultValue: `Node "${emptyNode.label}" has an empty prompt`,
+        });
+      }
+      try {
+        const result = await window.snow.validateWorkflowGraph(
+          JSON.stringify(
+            workflow.nodes.map((node) => ({
+              id: node.id,
+              name: node.label,
+              label: node.label,
+              prompt: node.prompt,
+            })),
+          ),
+          JSON.stringify(
+            workflow.edges.map((edge) => ({
+              source: edge.source,
+              target: edge.target,
+            })),
+          ),
+        );
+        if (result.errors.length > 0) {
+          return t("scheduledTask.workflow.errorInvalid", {
+            values: { reason: result.errors[0] },
+            defaultValue: `Invalid workflow: ${result.errors[0]}`,
+          });
+        }
+      } catch {
+        // 校验桥不可用时交给 store 的基础校验
+      }
+      return null;
+    },
+    [t],
+  );
+
   const handleSubmit = useCallback(async (): Promise<void> => {
     setFormError(null);
     if (taskScope === "project" && !directoryId) {
@@ -1146,6 +1249,7 @@ export function ScheduledTasksPanel({
 
     const trimmedName = name.trim();
     const trimmedPrompt = prompt.trim();
+    const isWorkflow = runMode === "workflow";
     if (!trimmedName) {
       setFormError(
         t("scheduledTask.errorNameRequired", {
@@ -1154,13 +1258,20 @@ export function ScheduledTasksPanel({
       );
       return;
     }
-    if (!trimmedPrompt) {
+    if (!isWorkflow && !trimmedPrompt) {
       setFormError(
         t("scheduledTask.errorPromptRequired", {
           defaultValue: "Prompt is required",
         }),
       );
       return;
+    }
+    if (isWorkflow) {
+      const workflowError = await validateWorkflowDraft(workflowDraft);
+      if (workflowError) {
+        setFormError(workflowError);
+        return;
+      }
     }
 
     const schedule = buildSchedule();
@@ -1203,7 +1314,8 @@ export function ScheduledTasksPanel({
         const editingTask = tasks.find((task) => task.id === editingTaskId);
         const updated = updateTask(editingTaskId, {
           name: trimmedName,
-          prompt: trimmedPrompt,
+          prompt: isWorkflow ? undefined : trimmedPrompt,
+          workflow: isWorkflow ? workflowDraft : null,
           schedule,
           directoryId:
             taskScope === "global"
@@ -1219,7 +1331,8 @@ export function ScheduledTasksPanel({
       } else {
         const created = createTask({
           name: trimmedName,
-          prompt: trimmedPrompt,
+          prompt: isWorkflow ? "" : trimmedPrompt,
+          workflow: isWorkflow ? workflowDraft : undefined,
           schedule,
           ...(taskScope === "global" ? { directoryId: "" } : {}),
           ...runConfig,
@@ -1255,6 +1368,7 @@ export function ScheduledTasksPanel({
     preScriptTimeout,
     prompt,
     resetFormDraft,
+    runMode,
     runOnScriptError,
     selectedApiProfile,
     taskScope,
@@ -1262,6 +1376,8 @@ export function ScheduledTasksPanel({
     thinkingStrength,
     t,
     updateTask,
+    validateWorkflowDraft,
+    workflowDraft,
   ]);
 
   const openCreatePanel = useCallback((): void => {
@@ -1282,6 +1398,9 @@ export function ScheduledTasksPanel({
   }, [selectedTaskId, visibleTasks]);
 
   useEscapeClose(() => {
+    if (workflowCanvasRef.current?.closeOverlay()) {
+      return;
+    }
     if (deleteTargetId !== null) {
       setDeleteTargetId(null);
       return;
@@ -1818,11 +1937,88 @@ export function ScheduledTasksPanel({
             </dl>
           </section>
 
+          {selectedTask.workflow && (
+            <section
+              aria-labelledby="scheduled-task-workflow-title"
+              className="scheduled-task-details-section"
+            >
+              <div className="scheduled-task-section-heading">
+                <h3 id="scheduled-task-workflow-title">
+                  {t("scheduledTask.workflow.title", {
+                    defaultValue: "Workflow",
+                  })}
+                  <span className="st-workflow-context-badge">
+                    {t(
+                      `scheduledTask.workflow.context.${selectedTask.workflow.contextMode}`,
+                      { defaultValue: selectedTask.workflow.contextMode },
+                    )}
+                  </span>
+                </h3>
+                {hasActiveWorkflowRun(selectedTask) && (
+                  <button
+                    className="scheduled-task-edit-btn"
+                    onClick={() => cancelWorkflowRun(selectedTask.id)}
+                    type="button"
+                  >
+                    <Square size={12} strokeWidth={1.8} />
+                    {t("scheduledTask.workflow.stopRun", {
+                      defaultValue: "Stop workflow",
+                    })}
+                  </button>
+                )}
+              </div>
+              {selectedTask.workflowRun?.error &&
+                !hasActiveWorkflowRun(selectedTask) && (
+                  <div className="scheduled-tasks-warning">
+                    <AlertCircle size={13} strokeWidth={1.8} />
+                    <span>{selectedTask.workflowRun.error}</span>
+                  </div>
+                )}
+              <ScheduledTaskWorkflowCanvas
+                apiConfigs={apiConfigs}
+                key={selectedTask.id}
+                onOpenConversation={(conversationId) => {
+                  void openWorkflowNodeConversation(conversationId);
+                }}
+                readOnly
+                run={selectedTask.workflowRun}
+                value={selectedTask.workflow}
+              />
+              <AutoDismissNotice
+                durationMs={3000}
+                message={
+                  nodeConversationMissing
+                    ? t("scheduledTask.workflow.conversationDeleted", {
+                        defaultValue:
+                          "This node's conversation has been deleted or archived.",
+                      })
+                    : ""
+                }
+                onDismiss={dismissNodeConversationMissing}
+                tone="warning"
+              />
+              <div className="scheduled-tasks-pre-script-hint">
+                {t("scheduledTask.workflow.detailsHint", {
+                  defaultValue:
+                    "Click a node that has run to open its conversation.",
+                })}
+              </div>
+            </section>
+          )}
+
           <section
             aria-labelledby="scheduled-task-prompt-title"
             className="scheduled-task-details-section"
+            style={
+              selectedTask.workflow && !selectedTask.preScript
+                ? { display: "none" }
+                : undefined
+            }
           >
-            <div className="scheduled-task-section-heading">
+            <div
+              className="scheduled-task-section-heading"
+              style={selectedTask.workflow ? { display: "none" } : undefined}
+            >
               <h3 id="scheduled-task-prompt-title">
                 {t("scheduledTask.promptTitle", { defaultValue: "Prompt" })}
               </h3>
@@ -1851,6 +2047,7 @@ export function ScheduledTasksPanel({
                 defaultValue: "Prompt",
               })}
               className="scheduled-task-prompt-content"
+              style={selectedTask.workflow ? { display: "none" } : undefined}
               tabIndex={0}
             >
               {selectedTask.prompt}
@@ -1932,6 +2129,92 @@ export function ScheduledTasksPanel({
     : t("scheduledTask.inheritApiProfile", {
         defaultValue: "Follow the API config",
       });
+
+  /** 运行方式切换（表单最前，先选再填）。 */
+  const renderRunModeSwitch = (): React.JSX.Element => (
+    <div className="scheduled-tasks-field">
+      <span>
+        {t("scheduledTask.workflow.runMode", { defaultValue: "Run mode" })}
+      </span>
+      <div className="scheduled-tasks-segmented" role="group">
+        <button
+          aria-pressed={runMode === "prompt"}
+          className={`scheduled-tasks-segmented-btn${
+            runMode === "prompt" ? " active" : ""
+          }`}
+          onClick={() => setRunMode("prompt")}
+          type="button"
+        >
+          <Zap size={13} strokeWidth={1.9} />
+          {t("scheduledTask.workflow.modePrompt", {
+            defaultValue: "Single prompt",
+          })}
+        </button>
+        <button
+          aria-pressed={runMode === "workflow"}
+          className={`scheduled-tasks-segmented-btn${
+            runMode === "workflow" ? " active" : ""
+          }`}
+          onClick={() => setRunMode("workflow")}
+          type="button"
+        >
+          <Workflow size={13} strokeWidth={1.9} />
+          {t("scheduledTask.workflow.modeWorkflow", {
+            defaultValue: "Workflow",
+          })}
+        </button>
+      </div>
+    </div>
+  );
+
+  /** 工作流上下文模式 + 画布（取代提示词）。 */
+  const renderWorkflowFields = (): React.JSX.Element => (
+    <>
+      <div className="scheduled-tasks-field">
+        <span>
+          {t("scheduledTask.workflow.contextMode", {
+            defaultValue: "Context between nodes",
+          })}
+        </span>
+        <div className="scheduled-tasks-segmented" role="group">
+          {CONTEXT_MODE_OPTIONS.map((mode) => (
+            <button
+              aria-pressed={workflowDraft.contextMode === mode}
+              className={`scheduled-tasks-segmented-btn${
+                workflowDraft.contextMode === mode ? " active" : ""
+              }`}
+              key={mode}
+              onClick={() =>
+                setWorkflowDraft((draft) => ({
+                  ...draft,
+                  contextMode: mode,
+                }))
+              }
+              type="button"
+            >
+              {t(`scheduledTask.workflow.context.${mode}`, {
+                defaultValue: mode,
+              })}
+            </button>
+          ))}
+        </div>
+        <div className="scheduled-tasks-pre-script-hint">
+          {t(
+            `scheduledTask.workflow.contextHint.${workflowDraft.contextMode}`,
+            {
+              defaultValue: "",
+            },
+          )}
+        </div>
+      </div>
+      <ScheduledTaskWorkflowCanvas
+        apiConfigs={apiConfigs}
+        onChange={setWorkflowDraft}
+        ref={workflowCanvasRef}
+        value={workflowDraft}
+      />
+    </>
+  );
 
   /** 运行配置表单控件（API 配置下拉 + 基础/高级模型 + 思考强度菜单）。
    *  创建表单与详情视图编辑模式共用；草稿状态与创建表单共享。 */
@@ -2181,6 +2464,7 @@ export function ScheduledTasksPanel({
                 defaultValue: "Basic information",
               })}
             </h3>
+            {renderRunModeSwitch()}
             <label className="scheduled-tasks-field">
               <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
               <input
@@ -2194,7 +2478,11 @@ export function ScheduledTasksPanel({
               />
             </label>
 
-            <div className="scheduled-tasks-field">
+            <div
+              className="scheduled-tasks-field"
+              // 工作流模式隐藏但保持挂载，编辑器内容不丢
+              style={runMode === "workflow" ? { display: "none" } : undefined}
+            >
               <span>
                 {t("scheduledTask.prompt", { defaultValue: "Prompt" })}
               </span>
@@ -2236,6 +2524,7 @@ export function ScheduledTasksPanel({
                 />
               </div>
             </div>
+            {runMode === "workflow" && renderWorkflowFields()}
 
             <div className="scheduled-tasks-field">
               <span>{t("scheduledTask.scope", { defaultValue: "Scope" })}</span>
@@ -2484,6 +2773,14 @@ export function ScheduledTasksPanel({
                 defaultValue: "Run configuration",
               })}
             </h3>
+            {runMode === "workflow" && (
+              <div className="scheduled-tasks-pre-script-hint">
+                {t("scheduledTask.workflow.defaultConfigHint", {
+                  defaultValue:
+                    "The settings below are the defaults for nodes without their own API config. {{SCRIPT_OUTPUT}} works in every node prompt.",
+                })}
+              </div>
+            )}
             {renderRunConfigFields()}
           </section>
         </div>
@@ -2680,12 +2977,6 @@ export function ScheduledTasksPanel({
                 )}
               </div>
             ) : null}
-            <div className="scheduled-tasks-lifetime-hint">
-              {t("scheduledTask.lifetimeHint", {
-                defaultValue:
-                  'Tasks are saved locally and kept after restarting the app. Executions missed while the app is closed are skipped, unless "Run even when the app is closed" is enabled.',
-              })}
-            </div>
           </div>
         </aside>
 

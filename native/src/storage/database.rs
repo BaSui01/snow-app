@@ -1143,6 +1143,8 @@ CREATE TABLE IF NOT EXISTS app_plugins (
            skip_count INTEGER NOT NULL DEFAULT 0,
            last_skipped_at TEXT,
            last_skip_reason TEXT,
+           workflow_json TEXT NOT NULL DEFAULT '',
+           workflow_run_json TEXT NOT NULL DEFAULT '',
            created_at TEXT NOT NULL,
            updated_at TEXT NOT NULL
          );

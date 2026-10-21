@@ -43,6 +43,10 @@ export type ScheduledTaskWireRecord = {
   lastSkippedAt?: string;
   /** Reason from the last skip. */
   lastSkipReason?: string;
+  /** 工作流定义 JSON（缺省 = 单提示词任务）。 */
+  workflowJson?: string;
+  /** 工作流运行状态 JSON。 */
+  workflowRunJson?: string;
   createdAt: string;
   updatedAt: string;
   history: ScheduledTaskWireRun[];

@@ -4,19 +4,12 @@ import { ModelBrandIcon } from "../../../common/ModelBrandIcon";
 import { Tooltip } from "../../../common/Tooltip";
 import { useI18n } from "../../../../i18n";
 import { formatTokens } from "../../../../utils/formatTokens";
+import { formatDuration } from "../../../../utils/formatDuration";
 import { formatTtft } from "../../../../utils/formatTtft";
 import type {
   ChatConversationMessage,
   TokenUsage,
 } from "../utils/conversationTypes";
-
-const formatDuration = (ms: number): string => {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}m${remainingSeconds}s`;
-};
 
 type ChatRunSummaryProps = {
   messages: ChatConversationMessage[];

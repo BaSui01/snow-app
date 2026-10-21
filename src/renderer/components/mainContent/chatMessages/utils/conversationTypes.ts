@@ -1,5 +1,6 @@
 import type {
   AutoSendRequest,
+  BackgroundRunResult,
   ChatInputSendOptions,
   ConversationInputRuntimeState,
 } from "../../chatInput/types";
@@ -1122,6 +1123,14 @@ export type UseChatConversationResult = {
     options?: ScheduledTaskRunOptions,
     taskName?: string,
   ) => Promise<void>;
+  /** 后台 run 并等待其结束；conversationId 给定时续写该会话。 */
+  runBackgroundConversation: (
+    content: string,
+    directoryId?: string,
+    options?: ScheduledTaskRunOptions,
+    taskName?: string,
+    conversationId?: string,
+  ) => Promise<BackgroundRunResult>;
   /** Head of the auto-send queue awaiting delivery by the ChatInput. */
   autoSendRequest: AutoSendRequest | null;
   /** Claims the head request for sending; false when it was already claimed

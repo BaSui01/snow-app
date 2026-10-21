@@ -97,6 +97,8 @@ const requireTaskInput = (value: unknown): ScheduledTaskRecordInput => {
         : 0,
     lastSkippedAt: requireOptionalString(record.lastSkippedAt),
     lastSkipReason: requireOptionalString(record.lastSkipReason),
+    workflowJson: requireOptionalString(record.workflowJson),
+    workflowRunJson: requireOptionalString(record.workflowRunJson),
     createdAt: (record.createdAt as string).trim(),
     updatedAt: (record.updatedAt as string).trim(),
   };

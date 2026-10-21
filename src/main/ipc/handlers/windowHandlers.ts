@@ -744,6 +744,11 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
               (item): item is string => typeof item === "string",
             )
           : undefined,
+        methods: Array.isArray(raw.methods)
+          ? raw.methods.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : undefined,
         includeStatic: raw.includeStatic === true,
         pageIdx: typeof raw.pageIdx === "number" ? raw.pageIdx : undefined,
         pageSize: typeof raw.pageSize === "number" ? raw.pageSize : undefined,

@@ -789,6 +789,8 @@ export const en = {
     "This sub-agent failed. The conversation is read-only.",
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
+  "chat.subAgentFinished.budgetExceeded":
+    "This sub-agent exhausted its runtime budget and stopped dispatching new tools. It is waiting for the main agent to extend the budget or end the task.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
   "chat.workflowNodeFinished.completed":
     "This workflow node has finished. The conversation is read-only.",
@@ -1095,6 +1097,28 @@ export const en = {
   "toolCall.subAgent.resuming": "Resuming sub-agent...",
   "toolCall.subAgent.queued":
     "Message queued; it will be delivered when the sub-agent finishes its current round",
+  "toolCall.subAgent.acceptance.title": "Acceptance checklist",
+  "toolCall.subAgent.acceptance.verdictPassed": "All passed",
+  "toolCall.subAgent.acceptance.verdictUnmet": "Some items unmet",
+  "toolCall.subAgent.acceptance.count": "{{completed}}/{{total}} passed",
+  "toolCall.subAgent.acceptance.unmetCount": "{{count}} unmet",
+  "toolCall.subAgent.acceptance.required": "Required",
+  "toolCall.subAgent.acceptance.evidence": "Evidence",
+  "toolCall.subAgent.acceptance.noEvidence": "No verifiable tool evidence",
+  "toolCall.subAgent.acceptance.reportMissing":
+    "The sub-agent did not submit an acceptance report; every item stays unverified",
+  "toolCall.subAgent.acceptance.reportInvalid":
+    "The acceptance report was malformed and was ignored",
+  "toolCall.subAgent.acceptance.status.completed": "Completed",
+  "toolCall.subAgent.acceptance.status.incomplete": "Incomplete",
+  "toolCall.subAgent.acceptance.status.blocked": "Blocked",
+  "toolCall.subAgent.acceptance.status.unverified": "Unverified",
+  "toolCall.subAgent.acceptance.reason.notReported":
+    "This item was never confirmed by a report and stays unverified",
+  "toolCall.subAgent.acceptance.reason.noEvidence":
+    "Claimed completed without verifiable tool evidence; kept unverified",
+  "toolCall.subAgent.acceptance.previous":
+    "Not re-confirmed by this report; showing the previously recorded status",
   "toolCall.subAgentContinue.name": "Continue sub-agent",
   "toolCall.subAgentContinue.message": "Message",
   "toolCall.subAgentList.name": "Sub-agents",

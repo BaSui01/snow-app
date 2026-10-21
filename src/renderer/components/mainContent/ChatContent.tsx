@@ -293,7 +293,9 @@ const ChatContentBody = ({
 
   const isSubAgentFinished =
     isSubAgentConversation &&
-    ["completed", "failed", "cancelled"].includes(subAgentRunStatus);
+    ["completed", "failed", "cancelled", "budget_exceeded"].includes(
+      subAgentRunStatus,
+    );
   const subAgentParentConversationId =
     activeConversationMeta?.parentConversationId ||
     liveSubAgentEvent?.parentConversationId ||
@@ -908,8 +910,9 @@ const SubAgentFinishedNotice = ({
     kind === "workflow_node"
       ? "chat.workflowNodeFinished"
       : "chat.subAgentFinished";
+  const isBudgetExceeded = status === "budget_exceeded";
   const icon =
-    status === "failed" ? (
+    status === "failed" || isBudgetExceeded ? (
       <AlertCircle size={15} aria-hidden="true" />
     ) : status === "cancelled" ? (
       <XCircle size={15} aria-hidden="true" />
@@ -929,17 +932,24 @@ const SubAgentFinishedNotice = ({
             "chat.subAgentFinished.cancelled",
             "This sub-agent was cancelled. The conversation is read-only.",
           ]
-        : [
-            `${keyPrefix}.completed`,
-            kind === "workflow_node"
-              ? "This workflow node has finished. The conversation is read-only."
-              : "This sub-agent has finished. The conversation is read-only.",
-          ];
+        : isBudgetExceeded
+          ? [
+              "chat.subAgentFinished.budgetExceeded",
+              "This sub-agent stopped because its runtime budget was exhausted. It is waiting for the main agent to extend the budget or end the task.",
+            ]
+          : [
+              `${keyPrefix}.completed`,
+              kind === "workflow_node"
+                ? "This workflow node has finished. The conversation is read-only."
+                : "This sub-agent has finished. The conversation is read-only.",
+            ];
 
   return (
     <div
       className={`sub-agent-finished-bar${
-        status === "failed" || status === "cancelled" ? " is-error" : ""
+        status === "failed" || status === "cancelled" || isBudgetExceeded
+          ? " is-error"
+          : ""
       }`}
     >
       <span className="sub-agent-finished-bar-status">

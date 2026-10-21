@@ -778,7 +778,8 @@ export const BrowserPanelContent = ({
           instanceId,
           operation,
           args,
-          consoleMessagesRef.current,
+          // 观察窗口内的事件增量需要读取最新数组（console-message 会替换该 ref）。
+          () => consoleMessagesRef.current,
         ).then((result) => {
           if (
             operation === "devtools" &&

@@ -3,6 +3,14 @@ import {
   DESCRIBE_ELEMENT_SCRIPT,
 } from "../../../../shared/browserElementLocator";
 import {
+  describeBrowserUrlRedaction,
+  type BrowserUrlRedactionInfo,
+} from "../../../../shared/browserRedaction";
+import {
+  parseObservationRequest,
+  startActionObservation,
+} from "./browserObservation";
+import {
   resolveAxRef,
   serializeAxTree,
   type AxNode,
@@ -257,15 +265,114 @@ const requiredPayloadString = (
   return args[field] as string;
 };
 
+type PageMetadata = {
+  instanceId: string;
+  url: string;
+  title: string;
+  /** 仅当该 URL 的 query/fragment 会被工具脱敏策略移除时出现。 */
+  urlRedaction?: BrowserUrlRedactionInfo;
+};
+
 const currentPageMetadata = async (
   webview: Electron.WebviewTag,
   instanceId: string,
-): Promise<{ instanceId: string; url: string; title: string }> => ({
-  instanceId,
-  url: webview.getURL(),
-  // JS dialog 会暂停页面脚本；metadata 必须使用原生 getter，避免阻塞响应入口。
-  title: webview.getTitle(),
-});
+): Promise<PageMetadata> => {
+  const url = webview.getURL();
+  const redaction = describeBrowserUrlRedaction(url);
+  return {
+    instanceId,
+    url,
+    // JS dialog 会暂停页面脚本；metadata 必须使用原生 getter，避免阻塞响应入口。
+    title: webview.getTitle(),
+    ...(redaction ? { urlRedaction: redaction } : {}),
+  };
+};
+
+/**
+ * network 列表默认精简（issue #237）：只回传「定位哪条请求值得看」所需的
+ * 决策字段；请求/响应头与请求体不再随列表展开，改按 id 查询详情。
+ * requestId 仅 CDP 记录存在，webrequest 回退记录不会带该字段。
+ */
+const NETWORK_LIST_FIELDS = [
+  "id",
+  "requestId",
+  "method",
+  "url",
+  "status",
+  "resourceType",
+  "durationMs",
+  "source",
+  "mimeType",
+  "fromCache",
+  "error",
+] as const;
+
+const toCompactNetworkRecord = (
+  record: unknown,
+): Record<string, unknown> | null => {
+  if (record === null || typeof record !== "object") {
+    return null;
+  }
+  const source = record as Record<string, unknown>;
+  const compact: Record<string, unknown> = {};
+  for (const field of NETWORK_LIST_FIELDS) {
+    if (source[field] !== undefined) {
+      compact[field] = source[field];
+    }
+  }
+  return compact;
+};
+
+/**
+ * 统一动作回执（issue #236）：
+ * - success 仅代表输入事件已派发，不再暗示站点已处理；
+ * - before 保存动作前页面元信息，顶层 url/title 表示动作后的当前状态；
+ * - observation 为有界观察结果；observe=none 时明确标注未观察。
+ */
+const actionReceipt = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+  getConsoleMessages: () => readonly unknown[],
+  run: () => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> => {
+  const request = parseObservationRequest(args);
+  const before = await currentPageMetadata(webview, instanceId);
+  const startedAt = Date.now();
+  let handle: Awaited<ReturnType<typeof startActionObservation>> | null = null;
+  if (request) {
+    try {
+      handle = await startActionObservation(
+        webview,
+        request,
+        getConsoleMessages,
+        startedAt,
+      );
+    } catch {
+      // 探针不可用时退化为「派发回执」，不影响动作本身。
+      handle = null;
+    }
+  }
+  try {
+    const payload = await run();
+    const observation = handle ? await handle.stop() : null;
+    const current = await currentPageMetadata(webview, instanceId);
+    return {
+      ...payload,
+      ...current,
+      success: true,
+      dispatched: true,
+      before: { url: before.url, title: before.title },
+      observation: observation ?? { mode: "none" },
+    };
+  } catch (error) {
+    // 动作失败也要结束观察，避免页面残留观察器。
+    if (handle) {
+      await handle.cancel().catch(() => undefined);
+    }
+    throw error;
+  }
+};
 
 /** 等待一次加载完成（did-stop-loading）；trigger 触发导航/重载。 */
 const waitForLoad = (
@@ -481,17 +588,19 @@ const click = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const x = typeof args.x === "number" ? args.x : null;
-  const y = typeof args.y === "number" ? args.y : null;
-  let target: { x: number; y: number; element: unknown };
-  if (x !== null && y !== null) {
-    target = { x: Math.round(x), y: Math.round(y), element: null };
-  } else {
-    target = await locateElementTarget(
-      webview,
-      args,
-      `const rect = element.getBoundingClientRect();
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, async () => {
+    const x = typeof args.x === "number" ? args.x : null;
+    const y = typeof args.y === "number" ? args.y : null;
+    let target: { x: number; y: number; element: unknown };
+    if (x !== null && y !== null) {
+      target = { x: Math.round(x), y: Math.round(y), element: null };
+    } else {
+      target = await locateElementTarget(
+        webview,
+        args,
+        `const rect = element.getBoundingClientRect();
     const x = Math.round(rect.left + rect.width / 2);
     const y = Math.round(rect.top + rect.height / 2);
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) {
@@ -507,52 +616,51 @@ const click = async (
         href: element.href || null,
       },
     };`,
-      args.exact === true,
-    );
-  }
-  const metadata = await currentPageMetadata(webview, instanceId);
-  webview.focus();
-  await webview.sendInputEvent({ type: "mouseMove", x: target.x, y: target.y });
-  await webview.sendInputEvent({
-    type: "mouseDown",
-    x: target.x,
-    y: target.y,
-    button: "left",
-    clickCount: 1,
-  });
-  // 按下与抬起之间留出真实点击间隔：部分站点（如必应搜索结果）在
-  // mouseup 前有 JS 拦截逻辑，瞬时点击会被忽略。
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  await webview.sendInputEvent({
-    type: "mouseUp",
-    x: target.x,
-    y: target.y,
-    button: "left",
-    clickCount: 1,
-  });
-  if (args.dblClick === true) {
-    await new Promise((resolve) => setTimeout(resolve, 60));
+        args.exact === true,
+      );
+    }
+    webview.focus();
+    await webview.sendInputEvent({
+      type: "mouseMove",
+      x: target.x,
+      y: target.y,
+    });
     await webview.sendInputEvent({
       type: "mouseDown",
       x: target.x,
       y: target.y,
       button: "left",
-      clickCount: 2,
+      clickCount: 1,
     });
+    // 按下与抬起之间留出真实点击间隔：部分站点（如必应搜索结果）在
+    // mouseup 前有 JS 拦截逻辑，瞬时点击会被忽略。
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await webview.sendInputEvent({
       type: "mouseUp",
       x: target.x,
       y: target.y,
       button: "left",
-      clickCount: 2,
+      clickCount: 1,
     });
-  }
-  return {
-    ...metadata,
-    success: true,
-    element: target.element,
-  };
-};
+    if (args.dblClick === true) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await webview.sendInputEvent({
+        type: "mouseDown",
+        x: target.x,
+        y: target.y,
+        button: "left",
+        clickCount: 2,
+      });
+      await webview.sendInputEvent({
+        type: "mouseUp",
+        x: target.x,
+        y: target.y,
+        button: "left",
+        clickCount: 2,
+      });
+    }
+    return { element: target.element };
+  });
 
 const evaluate = async (
   webview: Electron.WebviewTag,
@@ -640,11 +748,11 @@ const buildFillBody = (
     },
   };`;
 
-const type = async (
+/** 输入/设值的实际派发逻辑（不含观察与回执）；fill_form 复用。 */
+const typeInto = async (
   webview: Electron.WebviewTag,
-  instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
+): Promise<Record<string, unknown>> => {
   const selector = optionalPayloadString(args, "selector");
   const text = optionalPayloadString(args, "text");
   const ref = optionalString(args, "ref");
@@ -708,8 +816,6 @@ const type = async (
       await webview.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
     }
     return {
-      ...(await currentPageMetadata(webview, instanceId)),
-      success: true,
       mode: "keys",
       element: target.element,
     };
@@ -733,8 +839,6 @@ const type = async (
     )) as { result?: { value?: { element?: unknown } } };
     const result = filled?.result?.value;
     return {
-      ...(await currentPageMetadata(webview, instanceId)),
-      success: true,
       mode: "fill",
       value,
       element: result?.element,
@@ -750,50 +854,59 @@ const type = async (
     element: unknown;
   };
   return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    success: true,
     mode: "fill",
     value,
     element: result.element,
   };
 };
 
-/** 批量填充表单：逐个元素调用 type 的填充逻辑，单项失败不中断，汇总结果。 */
+const type = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, () =>
+    typeInto(webview, args),
+  );
+
+/** 批量填充表单：逐个元素复用 type 的填充逻辑，单项失败不中断，汇总结果。 */
 const fillForm = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const elements = Array.isArray(args.elements) ? args.elements : [];
-  if (elements.length === 0) {
-    throw new Error("elements must be a non-empty array");
-  }
-  const results: { index: number; ok: boolean; error?: string }[] = [];
-  let successCount = 0;
-  for (const [index, item] of elements.entries()) {
-    const itemArgs =
-      item !== null && typeof item === "object" && !Array.isArray(item)
-        ? (item as BrowserMcpCommandArgs)
-        : {};
-    try {
-      await type(webview, instanceId, { ...itemArgs, instanceId });
-      results.push({ index, ok: true });
-      successCount += 1;
-    } catch (error) {
-      results.push({
-        index,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, async () => {
+    const elements = Array.isArray(args.elements) ? args.elements : [];
+    if (elements.length === 0) {
+      throw new Error("elements must be a non-empty array");
     }
-  }
-  return {
-    ...(await currentPageMetadata(webview, instanceId)),
-    results,
-    successCount,
-    failureCount: results.length - successCount,
-  };
-};
+    const results: { index: number; ok: boolean; error?: string }[] = [];
+    let successCount = 0;
+    for (const [index, item] of elements.entries()) {
+      const itemArgs =
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? (item as BrowserMcpCommandArgs)
+          : {};
+      try {
+        await typeInto(webview, itemArgs);
+        results.push({ index, ok: true });
+        successCount += 1;
+      } catch (error) {
+        results.push({
+          index,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return {
+      results,
+      successCount,
+      failureCount: results.length - successCount,
+    };
+  });
 
 /** 主进程直通操作：页面元数据 + 操作结果合并返回。 */
 const passthrough = async (
@@ -1500,31 +1613,32 @@ const pressKey = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const key = requiredString(args, "key");
-  const metadata = await currentPageMetadata(webview, instanceId);
-  webview.focus();
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, async () => {
+    const key = requiredString(args, "key");
+    webview.focus();
 
-  // 支持 "Control+a" / "Shift+ArrowDown" 形式的组合键
-  const parts = key.split("+");
-  const mainKey = parts.pop();
-  if (!mainKey) {
-    throw new Error("key must not be empty for browser-press_key");
-  }
-  // 按下修饰键
-  for (const modifier of parts) {
-    await webview.sendInputEvent({ type: "keyDown", keyCode: modifier });
-  }
-  await webview.sendInputEvent({ type: "keyDown", keyCode: mainKey });
-  await webview.sendInputEvent({ type: "char", keyCode: mainKey });
-  await webview.sendInputEvent({ type: "keyUp", keyCode: mainKey });
-  // 释放修饰键
-  for (const modifier of [...parts].reverse()) {
-    await webview.sendInputEvent({ type: "keyUp", keyCode: modifier });
-  }
+    // 支持 "Control+a" / "Shift+ArrowDown" 形式的组合键
+    const parts = key.split("+");
+    const mainKey = parts.pop();
+    if (!mainKey) {
+      throw new Error("key must not be empty for browser-press_key");
+    }
+    // 按下修饰键
+    for (const modifier of parts) {
+      await webview.sendInputEvent({ type: "keyDown", keyCode: modifier });
+    }
+    await webview.sendInputEvent({ type: "keyDown", keyCode: mainKey });
+    await webview.sendInputEvent({ type: "char", keyCode: mainKey });
+    await webview.sendInputEvent({ type: "keyUp", keyCode: mainKey });
+    // 释放修饰键
+    for (const modifier of [...parts].reverse()) {
+      await webview.sendInputEvent({ type: "keyUp", keyCode: modifier });
+    }
 
-  return { ...metadata, success: true, key };
-};
+    return { key };
+  });
 
 const hover = async (
   webview: Electron.WebviewTag,
@@ -1575,21 +1689,23 @@ const selectOption = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-): Promise<unknown> => {
-  const selector = optionalPayloadString(args, "selector");
-  const text = optionalPayloadString(args, "text");
-  const exact = args.exact === true;
-  const values = args.values;
-  if (!Array.isArray(values) || values.length === 0) {
-    throw new Error("values is required and must be a non-empty array");
-  }
-  const stringValues = values.map(String);
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, async () => {
+    const selector = optionalPayloadString(args, "selector");
+    const text = optionalPayloadString(args, "text");
+    const exact = args.exact === true;
+    const values = args.values;
+    if (!Array.isArray(values) || values.length === 0) {
+      throw new Error("values is required and must be a non-empty array");
+    }
+    const stringValues = values.map(String);
 
-  const selectScript = buildElementLocatorScript(
-    selector ?? null,
-    text ?? null,
-    exact,
-    `if (element.tagName !== 'SELECT') {
+    const selectScript = buildElementLocatorScript(
+      selector ?? null,
+      text ?? null,
+      exact,
+      `if (element.tagName !== 'SELECT') {
       throw new Error('Target element is not a <select> element');
     }
     const values = ${JSON.stringify(stringValues)};
@@ -1628,27 +1744,25 @@ const selectOption = async (
       },
       selectedOptions,
     };`,
-  );
-  const result = (await webview.executeJavaScript(selectScript)) as {
-    element: unknown;
-    selectedOptions: unknown;
-  };
-  const metadata = await currentPageMetadata(webview, instanceId);
-  return {
-    ...metadata,
-    success: true,
-    values: stringValues,
-    element: result.element,
-    selectedOptions: result.selectedOptions,
-  };
-};
+    );
+    const result = (await webview.executeJavaScript(selectScript)) as {
+      element: unknown;
+      selectedOptions: unknown;
+    };
+    return {
+      values: stringValues,
+      element: result.element,
+      selectedOptions: result.selectedOptions,
+    };
+  });
 
 const devtools = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
-  consoleMessages: readonly unknown[],
+  getConsoleMessages: () => readonly unknown[],
 ): Promise<unknown> => {
+  const consoleMessages = getConsoleMessages();
   const action = typeof args.action === "string" ? args.action : "snapshot";
   if (action === "ax") {
     const verbose = args.verbose === true;
@@ -1673,7 +1787,7 @@ const devtools = async (
         emitted: result.emitted,
         truncated: result.truncated,
       },
-      note: "Elements are addressable via [uid=...] with browser-click ref=<uid> or browser-type ref=<uid>. Take a new snapshot after the page changes.",
+      note: "Elements are addressable via [uid=...] with browser-click ref=<uid> or browser-type ref=<uid>. Compact output keeps control values (value/min/max) and states (checked/selected/expanded/disabled); password-like values are masked. Take a new snapshot after the page changes.",
     };
   }
   if (action === "trace") {
@@ -1827,6 +1941,9 @@ const devtools = async (
           (item): item is string => typeof item === "string",
         )
       : undefined;
+    const methods = Array.isArray(args.methods)
+      ? args.methods.filter((item): item is string => typeof item === "string")
+      : undefined;
     const pageIdx =
       typeof args.pageIdx === "number" && Number.isFinite(args.pageIdx)
         ? Math.max(0, Math.min(1000, Math.floor(args.pageIdx)))
@@ -1844,20 +1961,30 @@ const devtools = async (
       Math.min(explicitPageSize ? 1000 : 200, Math.floor(requestedSize)),
     );
     const includePreserved = args.includePreserved === true;
+    // 默认精简列表；includeHeaders=true 兼容需要请求/响应头的调用方。
+    const includeHeaders = args.includeHeaders === true;
     const result = await window.snow.browserNetworkRequests(
       webview.getWebContentsId(),
       {
         filter,
         resourceTypes,
+        methods,
         includeStatic,
         pageIdx,
         pageSize,
         includePreserved,
       },
     );
+    const pageRecords = result.records.slice(0, pageSize);
     return {
       ...(await currentPageMetadata(webview, instanceId)),
-      requests: result.records.slice(0, pageSize),
+      requests: includeHeaders
+        ? pageRecords
+        : pageRecords
+            .map(toCompactNetworkRecord)
+            .filter(
+              (record): record is Record<string, unknown> => record !== null,
+            ),
       total: result.total,
       pageIdx,
       pageSize,
@@ -1865,7 +1992,11 @@ const devtools = async (
       archivedGenerations: result.archivedGenerations,
       source: result.source,
       static: includeStatic,
-      note: "Each request carries a numeric id (for action=network_detail) and a requestId string (for action=networkDetails, which returns full headers and bodies).",
+      headersIncluded: includeHeaders,
+      preflightTotal: result.preflightTotal,
+      note: includeHeaders
+        ? "Full records include requestHeaders and responseHeaders; bodies are still omitted. Use action=networkDetails requestId=<requestId> for bodies (only cdp records have a requestId)."
+        : 'Compact list: id, method, url, status, resourceType, durationMs, source, error. Headers and bodies are omitted: call action=network_detail requestId=<id> for the full record, or action=networkDetails requestId=<CDP requestId> for headers plus bodies (only cdp records have a requestId). Pass includeHeaders=true to include headers in the list, and methods=["OPTIONS"] to inspect CORS preflight requests.',
     };
   }
   if (action === "network_detail") {
@@ -2108,35 +2239,59 @@ const devtools = async (
   };
 };
 
+/** 会产生页面副作用、支持动作后观察（observe/expect）的工具。 */
+const OBSERVABLE_OPERATIONS = new Set([
+  "click",
+  "type",
+  "fill_form",
+  "select_option",
+  "press_key",
+]);
+
 export const executeBrowserMcpOperation = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   operation: string,
   args: BrowserMcpCommandArgs,
-  consoleMessages: readonly unknown[],
+  getConsoleMessages: () => readonly unknown[],
 ): Promise<unknown> => {
-  if (
-    operation === "frames" ||
-    operation === "drag" ||
-    (args.frameId !== undefined && args.frameId !== null)
-  ) {
+  const frameRouted = args.frameId !== undefined && args.frameId !== null;
+  if (operation === "frames" || operation === "drag") {
     return window.snow.browserFrameOperation(
       webview.getWebContentsId(),
       operation,
       args,
     );
   }
+  // 子 frame 动作在主进程执行；观察仍作用于顶层页面（URL/标题/弹窗/事件）。
+  if (frameRouted) {
+    const runFrame = async (): Promise<Record<string, unknown>> => {
+      const result = await window.snow.browserFrameOperation(
+        webview.getWebContentsId(),
+        operation,
+        args,
+      );
+      return result !== null &&
+        typeof result === "object" &&
+        !Array.isArray(result)
+        ? { ...(result as object) }
+        : { result };
+    };
+    return OBSERVABLE_OPERATIONS.has(operation)
+      ? actionReceipt(webview, instanceId, args, getConsoleMessages, runFrame)
+      : runFrame();
+  }
   switch (operation) {
     case "navigate":
       return navigate(webview, instanceId, args);
     case "click":
-      return click(webview, instanceId, args);
+      return click(webview, instanceId, args, getConsoleMessages);
     case "evaluate":
       return evaluate(webview, instanceId, args);
     case "type":
-      return type(webview, instanceId, args);
+      return type(webview, instanceId, args, getConsoleMessages);
     case "fill_form":
-      return fillForm(webview, instanceId, args);
+      return fillForm(webview, instanceId, args, getConsoleMessages);
     case "emulate":
       return emulatePage(webview, instanceId, args);
     case "resize_page":
@@ -2166,13 +2321,13 @@ export const executeBrowserMcpOperation = async (
     case "wait":
       return wait(webview, instanceId, args);
     case "press_key":
-      return pressKey(webview, instanceId, args);
+      return pressKey(webview, instanceId, args, getConsoleMessages);
     case "hover":
       return hover(webview, instanceId, args);
     case "select_option":
-      return selectOption(webview, instanceId, args);
+      return selectOption(webview, instanceId, args, getConsoleMessages);
     case "devtools":
-      return devtools(webview, instanceId, args, consoleMessages);
+      return devtools(webview, instanceId, args, getConsoleMessages);
     case "upload-file":
       return uploadFile(webview, instanceId, args);
     case "back":

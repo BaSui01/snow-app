@@ -746,6 +746,8 @@ export const zhCN = {
   "chat.subAgentFinished.completed": "该子代理已完成，会话仅供查看。",
   "chat.subAgentFinished.failed": "该子代理执行失败，会话仅供查看。",
   "chat.subAgentFinished.cancelled": "该子代理已取消，会话仅供查看。",
+  "chat.subAgentFinished.budgetExceeded":
+    "该子代理的运行时预算已用尽，已停止派发新工具，等待主控决定追加预算或结束任务。",
   "chat.subAgentFinished.backToParent": "返回主会话",
   "chat.workflowNodeFinished.completed": "该工作流节点已完成，会话仅供查看。",
   "chat.workflowNodeFinished.failed": "该工作流节点执行失败，会话仅供查看。",
@@ -1033,6 +1035,27 @@ export const zhCN = {
   "toolCall.subAgent.status.error": "执行失败",
   "toolCall.subAgent.resuming": "正在继续子代理...",
   "toolCall.subAgent.queued": "消息已排队，将在子代理当前回合结束后送达",
+  "toolCall.subAgent.acceptance.title": "验收清单",
+  "toolCall.subAgent.acceptance.verdictPassed": "全部通过",
+  "toolCall.subAgent.acceptance.verdictUnmet": "存在未通过项",
+  "toolCall.subAgent.acceptance.count": "{{completed}}/{{total}} 项通过",
+  "toolCall.subAgent.acceptance.unmetCount": "{{count}} 项未通过",
+  "toolCall.subAgent.acceptance.required": "必需",
+  "toolCall.subAgent.acceptance.evidence": "证据",
+  "toolCall.subAgent.acceptance.noEvidence": "没有可验证的工具证据",
+  "toolCall.subAgent.acceptance.reportMissing":
+    "子代理未提交验收回执，所有项目保持未验证",
+  "toolCall.subAgent.acceptance.reportInvalid": "验收回执格式无效，已忽略",
+  "toolCall.subAgent.acceptance.status.completed": "已完成",
+  "toolCall.subAgent.acceptance.status.incomplete": "未完成",
+  "toolCall.subAgent.acceptance.status.blocked": "受阻",
+  "toolCall.subAgent.acceptance.status.unverified": "未验证",
+  "toolCall.subAgent.acceptance.reason.notReported":
+    "该验收项从未被回执确认，保持未验证",
+  "toolCall.subAgent.acceptance.reason.noEvidence":
+    "声称完成但没有引用可验证的工具证据，保留未验证",
+  "toolCall.subAgent.acceptance.previous":
+    "本次回执未重新确认，沿用之前记录的状态",
   "toolCall.subAgentContinue.name": "继续子代理",
   "toolCall.subAgentContinue.message": "消息",
   "toolCall.subAgentList.name": "子代理列表",

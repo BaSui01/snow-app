@@ -21,6 +21,35 @@ export const redactBrowserUrl = (value: string): string => {
     return "[redacted-url]";
   }
 };
+/**
+ * 工具回执里的 URL 会被 redactBrowserUrl 去掉 query/hash 与凭据。
+ * 回执必须显式标注这件事，否则调用方会把「脱敏后的 URL 没变」误判为
+ * 地址栏未更新。只暴露「被隐藏的部分」，绝不还原真实 query。
+ */
+export type BrowserUrlRedactionInfo = {
+  query: boolean;
+  hash: boolean;
+  note: string;
+};
+
+export const describeBrowserUrlRedaction = (
+  value: string,
+): BrowserUrlRedactionInfo | undefined => {
+  try {
+    const url = new URL(value);
+    const query = url.search.length > 1;
+    const hash = url.hash.length > 1;
+    if (!query && !hash) return undefined;
+    return {
+      query,
+      hash,
+      note: "URL query/fragment are removed from tool output by the redaction policy (the browser address bar may still show them); read page state such as search fields instead.",
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 export const redactBrowserText = (text: string): string =>
   text
     .replace(/(?:https?|file):\/\/[^\s<>"']+/gi, (value) =>
@@ -40,6 +69,27 @@ export const redactBrowserText = (text: string): string =>
       "$1=[redacted]",
     )
     .replace(/\b[A-Za-z0-9_-]{64,}\b/g, "[redacted]");
+/** browser-screenshot 支持的内联图片编码：只有这些 MIME 的原始数据可以跳过文本脱敏。 */
+const SCREENSHOT_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+const asScreenshotImage = (
+  record: Record<string, unknown>,
+): { type: "image"; mimeType: string; data: string } | null => {
+  const { type, mimeType, data } = record;
+  if (
+    type !== "image" ||
+    typeof mimeType !== "string" ||
+    !SCREENSHOT_MIME_TYPES.has(mimeType) ||
+    typeof data !== "string" ||
+    data.length === 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(data)
+  )
+    return null;
+  return { type: "image", mimeType, data };
+};
 export const redactBrowserResult = (
   value: unknown,
   allowScreenshot = false,
@@ -54,14 +104,9 @@ export const redactBrowserResult = (
       return typeof item === "function" ? null : item;
     if (seen.has(item)) return "[circular]";
     const record = item as Record<string, unknown>;
-    if (
-      allowScreenshot &&
-      record.type === "image" &&
-      record.mimeType === "image/png" &&
-      typeof record.data === "string" &&
-      /^[A-Za-z0-9+/=]+$/.test(record.data)
-    ) {
-      return { type: "image", mimeType: "image/png", data: record.data };
+    if (allowScreenshot) {
+      const image = asScreenshotImage(record);
+      if (image) return image;
     }
     seen.add(item);
     if (Array.isArray(item))

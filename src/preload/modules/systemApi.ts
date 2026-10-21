@@ -1556,6 +1556,8 @@ export const windowApi = {
     options?: {
       filter?: string;
       resourceTypes?: string[];
+      /** 只返回这些 HTTP 方法（大小写不敏感），例如 ["OPTIONS"] 查看 CORS 预检。 */
+      methods?: string[];
       includeStatic?: boolean;
       pageIdx?: number;
       pageSize?: number;
@@ -1569,6 +1571,7 @@ export const windowApi = {
     hasMore: boolean;
     archivedGenerations: number;
     source: "cdp" | "webrequest";
+    preflightTotal: number;
   }> => ipcRenderer.invoke("browser:network-requests", webContentsId, options),
   /** 查询单条网络请求的完整详情（请求/响应头 + 请求/响应体；可配置 body 落盘）。 */
   browserNetworkDetails: (

@@ -31,7 +31,7 @@ function renderStatusIcon(
       ? "sub-agent-status-completed"
       : status === "failed"
         ? "sub-agent-status-failed"
-        : status === "pending"
+        : status === "pending" || status === "budget_exceeded"
           ? "sub-agent-status-pending"
           : "";
   return <Bot size={11} className={statusClass} />;

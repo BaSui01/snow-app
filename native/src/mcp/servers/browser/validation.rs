@@ -201,6 +201,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             }
             optional_boolean(args, "exact")?;
             optional_boolean(args, "dblClick")?;
+            validate_observation_args(args, tool_name, &mut normalized)?;
         }
         "screenshot" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -300,6 +301,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             }
             optional_boolean(args, "static")?;
             optional_boolean(args, "includePreserved")?;
+            optional_boolean(args, "includeHeaders")?;
             if let Some(value) = optional_bounded_u64(args, "pageIdx", 0, 1000)? {
                 normalized.insert("pageIdx".to_string(), json!(value));
             }
@@ -311,6 +313,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             }
             validate_string_array(args, "types", 30)?;
             validate_string_array(args, "resourceTypes", 30)?;
+            validate_string_array(args, "methods", 30)?;
             if let Some(response) = args.get("dialogResponse") {
                 if !response.is_object() {
                     return Err(Error::new(
@@ -549,6 +552,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             optional_boolean(args, "submit")?;
             let delay_ms = bounded_u64(args, "delayMs", 0, 0, 1000)?;
             normalized.insert("delayMs".to_string(), json!(delay_ms));
+            validate_observation_args(args, tool_name, &mut normalized)?;
         }
         "wait" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -724,6 +728,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                     ));
                 }
             }
+            validate_observation_args(args, tool_name, &mut normalized)?;
         }
         "back" | "forward" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -731,6 +736,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         "press_key" => {
             optional_non_empty_string(args, "instanceId")?;
             required_non_empty_string(args, "key", tool_name)?;
+            validate_observation_args(args, tool_name, &mut normalized)?;
         }
         "select_option" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -773,6 +779,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
                     ));
                 }
             }
+            validate_observation_args(args, tool_name, &mut normalized)?;
         }
         "close" => {
             optional_non_empty_string(args, "instanceId")?;
@@ -1108,6 +1115,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         "list" => {}
         "get_tab_content" => {
             optional_non_empty_string(args, "instanceId")?;
+            optional_boolean(args, "includeTimes")?;
             let max_length = bounded_u64(
                 args,
                 "maxLength",
@@ -1178,6 +1186,85 @@ fn optional_boolean(args: &Value, field: &str) -> napi::Result<()> {
             Status::InvalidArg,
             format!("{field} must be a boolean when provided"),
         ));
+    }
+    Ok(())
+}
+
+/// 动作后观察参数（observe / observeTimeoutMs / expect，issue #236）的校验与归一。
+/// 空字符串、null 与空对象一律视为未提供，避免结构化输出里的占位字段变成伪条件。
+fn validate_observation_args(
+    args: &Value,
+    tool_name: &str,
+    normalized: &mut serde_json::Map<String, Value>,
+) -> napi::Result<()> {
+    match args.get("observe") {
+        None | Some(Value::Null) => {
+            normalized.remove("observe");
+        }
+        Some(Value::String(raw)) => {
+            let mode = raw.trim();
+            if !matches!(mode, "none" | "brief" | "snapshot") {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "observe must be one of none, brief, or snapshot for browser-{tool_name}"
+                    ),
+                ));
+            }
+            normalized.insert("observe".to_string(), json!(mode));
+        }
+        Some(_) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("observe must be a string for browser-{tool_name}"),
+            ));
+        }
+    }
+    match args.get("observeTimeoutMs") {
+        None | Some(Value::Null) => {
+            normalized.remove("observeTimeoutMs");
+        }
+        Some(_) => {
+            let timeout = bounded_u64(args, "observeTimeoutMs", 1_500, 100, 10_000)?;
+            normalized.insert("observeTimeoutMs".to_string(), json!(timeout));
+        }
+    }
+    let expect = match args.get("expect") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(expect)) => Some(expect),
+        Some(_) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("expect must be an object for browser-{tool_name}"),
+            ));
+        }
+    };
+    let Some(expect) = expect else {
+        normalized.remove("expect");
+        return Ok(());
+    };
+    let mut cleaned = serde_json::Map::new();
+    for field in ["urlIncludes", "selector", "text"] {
+        match expect.get(field) {
+            None | Some(Value::Null) => {}
+            Some(Value::String(value)) => {
+                let value = value.trim();
+                if !value.is_empty() {
+                    cleaned.insert(field.to_string(), json!(value));
+                }
+            }
+            Some(_) => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("expect.{field} must be a string for browser-{tool_name}"),
+                ));
+            }
+        }
+    }
+    if cleaned.is_empty() {
+        normalized.remove("expect");
+    } else {
+        normalized.insert("expect".to_string(), Value::Object(cleaned));
     }
     Ok(())
 }

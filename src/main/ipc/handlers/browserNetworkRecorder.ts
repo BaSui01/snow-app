@@ -235,6 +235,8 @@ const STATIC_RESOURCE_TYPES = new Set([
 export type NetworkQueryOptions = {
   filter?: string;
   resourceTypes?: string[];
+  /** 只返回这些 HTTP 方法（大小写不敏感）；用于单独查看 OPTIONS 预检等。 */
+  methods?: string[];
   includeStatic?: boolean;
   pageIdx?: number;
   pageSize?: number;
@@ -249,6 +251,8 @@ export type NetworkQueryResult = {
   hasMore: boolean;
   archivedGenerations: number;
   source: "cdp" | "webrequest";
+  /** 当前过滤结果中的 OPTIONS 预检请求数（在 methods 过滤之前统计）。 */
+  preflightTotal: number;
 };
 
 export const queryNetworkRecords = (
@@ -306,6 +310,25 @@ export const queryNetworkRecords = (
       filtered = [];
     }
   }
+  // 预检请求在 methods 过滤前计数：即使只看 XHR/Fetch，调用方仍能发现
+  // 存在 OPTIONS 预检，需要时用 methods=["OPTIONS"] 单独查看。
+  const preflightTotal = filtered.reduce(
+    (count, record) =>
+      record.method.toUpperCase() === "OPTIONS" ? count + 1 : count,
+    0,
+  );
+  if (options.methods && options.methods.length > 0) {
+    const wanted = new Set(
+      options.methods
+        .map((method) => method.trim().toUpperCase())
+        .filter((method) => method !== ""),
+    );
+    if (wanted.size > 0) {
+      filtered = filtered.filter((record) =>
+        wanted.has(record.method.toUpperCase()),
+      );
+    }
+  }
   const pageIdx = Math.max(0, options.pageIdx ?? 0);
   const pageSize = Math.max(
     1,
@@ -321,6 +344,7 @@ export const queryNetworkRecords = (
     hasMore: start + records.length < filtered.length,
     archivedGenerations,
     source,
+    preflightTotal,
   };
 };
 

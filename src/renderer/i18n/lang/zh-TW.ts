@@ -747,6 +747,8 @@ export const zhTW = {
   "chat.subAgentFinished.completed": "該子代理已完成，會話僅供檢視。",
   "chat.subAgentFinished.failed": "該子代理執行失敗，會話僅供檢視。",
   "chat.subAgentFinished.cancelled": "該子代理已取消，會話僅供檢視。",
+  "chat.subAgentFinished.budgetExceeded":
+    "該子代理的執行時預算已用盡，已停止派發新工具，等待主控決定追加預算或結束任務。",
   "chat.subAgentFinished.backToParent": "返回主會話",
   "chat.workflowNodeFinished.completed": "該工作流節點已完成，會話僅供檢視。",
   "chat.workflowNodeFinished.failed": "該工作流節點執行失敗，會話僅供檢視。",
@@ -1033,6 +1035,27 @@ export const zhTW = {
   "toolCall.subAgent.status.error": "執行失敗",
   "toolCall.subAgent.resuming": "正在繼續子代理...",
   "toolCall.subAgent.queued": "訊息已排隊，將在子代理目前回合結束後送達",
+  "toolCall.subAgent.acceptance.title": "驗收清單",
+  "toolCall.subAgent.acceptance.verdictPassed": "全部通過",
+  "toolCall.subAgent.acceptance.verdictUnmet": "存在未通過項目",
+  "toolCall.subAgent.acceptance.count": "{{completed}}/{{total}} 項通過",
+  "toolCall.subAgent.acceptance.unmetCount": "{{count}} 項未通過",
+  "toolCall.subAgent.acceptance.required": "必需",
+  "toolCall.subAgent.acceptance.evidence": "證據",
+  "toolCall.subAgent.acceptance.noEvidence": "沒有可驗證的工具證據",
+  "toolCall.subAgent.acceptance.reportMissing":
+    "子代理未提交驗收回執，所有項目保持未驗證",
+  "toolCall.subAgent.acceptance.reportInvalid": "驗收回執格式無效，已忽略",
+  "toolCall.subAgent.acceptance.status.completed": "已完成",
+  "toolCall.subAgent.acceptance.status.incomplete": "未完成",
+  "toolCall.subAgent.acceptance.status.blocked": "受阻",
+  "toolCall.subAgent.acceptance.status.unverified": "未驗證",
+  "toolCall.subAgent.acceptance.reason.notReported":
+    "該驗收項從未被回執確認，保持未驗證",
+  "toolCall.subAgent.acceptance.reason.noEvidence":
+    "聲稱完成但沒有引用可驗證的工具證據，保留未驗證",
+  "toolCall.subAgent.acceptance.previous":
+    "本次回執未重新確認，沿用之前記錄的狀態",
   "toolCall.subAgentContinue.name": "繼續子代理",
   "toolCall.subAgentContinue.message": "訊息",
   "toolCall.subAgentList.name": "子代理列表",

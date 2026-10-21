@@ -10,10 +10,12 @@ import {
 import { buildElementLocatorScript } from "../../shared/browserElementLocator";
 import { serializeAxTree, type AxNode } from "../../shared/browserAxSnapshot";
 import {
+  describeBrowserUrlRedaction,
   redactBrowserResult,
   redactBrowserText,
   redactBrowserUrl,
 } from "../../shared/browserRedaction";
+import { buildTabContentScript } from "./browserTabContent";
 
 type Args = Record<string, unknown>;
 type FrameEntry = {
@@ -634,10 +636,13 @@ const perform = async (
   operation: string,
   args: Args,
 ): Promise<unknown> => {
+  const urlRedaction = describeBrowserUrlRedaction(entry.frame.url);
   const metadata = {
     frameId: entry.id,
     url: redactBrowserUrl(entry.frame.url),
     title: await execute(contents, entry, "String(document.title || '')"),
+    // URL 脱敏隐藏了 query/hash，必须标注，避免被误判为地址栏未更新。
+    ...(urlRedaction ? { urlRedaction } : {}),
   };
   if (operation === "evaluate") {
     const format =
@@ -701,18 +706,24 @@ const perform = async (
       result: resultValue,
     };
   }
-  if (
-    operation === "get_tab_content" ||
-    (operation === "devtools" &&
-      (args.action === undefined || args.action === "snapshot"))
-  ) {
-    const maxLength = bounded(
-      args,
-      operation === "get_tab_content" ? "maxLength" : "maxContentLength",
-      20000,
-      1000,
-      100000,
+  if (operation === "get_tab_content") {
+    const maxLength = bounded(args, "maxLength", 20000, 1000, 100000);
+    const result = await execute(
+      contents,
+      entry,
+      buildTabContentScript(
+        maxLength,
+        args.includeTimes !== false,
+        Math.min(4000, maxLength),
+      ),
     );
+    return { ...metadata, ...(result as object) };
+  }
+  if (
+    operation === "devtools" &&
+    (args.action === undefined || args.action === "snapshot")
+  ) {
+    const maxLength = bounded(args, "maxContentLength", 20000, 1000, 100000);
     const result = await execute(
       contents,
       entry,
@@ -743,13 +754,20 @@ const perform = async (
       })()`,
       );
       if ((!fixed && satisfied) || (fixed && Date.now() - start >= timeout))
-        return { ...metadata, success: true, waitedMs: Date.now() - start };
+        return {
+          ...metadata,
+          success: true,
+          status: fixed ? "elapsed" : "satisfied",
+          waitedMs: Date.now() - start,
+        };
       if (Date.now() - start >= timeout)
         return {
           ...metadata,
           success: false,
+          status: "timed-out",
           error: "Frame wait timed out",
           waitedMs: Date.now() - start,
+          note: "The condition was not met within the timeout. This is not proof that the preceding action failed; verify the page state (browser-devtools snapshot or browser-get_tab_content) before repeating a side-effecting action.",
         };
       await new Promise((resolve) =>
         setTimeout(resolve, Math.min(100, timeout - (Date.now() - start))),
@@ -767,13 +785,10 @@ const perform = async (
         target.sessionId,
       )) as { nodes?: AxNode[] };
       entry.refs.clear();
-      const nodes = (result.nodes ?? []).map((node) => ({
-        ...node,
-        value: undefined,
-      }));
-      const snapshot = serializeAxTree(nodes, {
+      const snapshot = serializeAxTree(result.nodes ?? [], {
         verbose: args.verbose === true,
         maxNodes: bounded(args, "maxNodes", 200, 1, 1000),
+        redactValues: true,
         refForNode: (node) => {
           if (
             !node.backendDOMNodeId ||

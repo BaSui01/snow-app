@@ -2,9 +2,11 @@ import { useMemo } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Ban,
   Bot,
   CheckCircle2,
   CircleDot,
+  CircleQuestionMark,
   Loader2,
   Wrench,
 } from "lucide-react";
@@ -13,6 +15,8 @@ import { useChatConversationContext } from "../components/ChatConversationContex
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
+import type { SubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
+import { parseSubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { HookExecutionUI } from "./HookExecutionUI";
@@ -40,9 +44,14 @@ type ParsedSubAgentResult =
       conversationId: string;
       agentName: string;
       summary: string;
+      acceptance: SubAgentAcceptanceSnapshot | null;
     }
   | { type: "queued"; note: string }
-  | { type: "error"; message: string }
+  | {
+      type: "error";
+      message: string;
+      acceptance: SubAgentAcceptanceSnapshot | null;
+    }
   | { type: "raw"; text: string }
   | { type: "empty" };
 
@@ -93,8 +102,10 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
       return { type: "raw", text: result };
     }
 
+    const acceptance = parseSubAgentAcceptanceSnapshot(parsed.acceptance);
+
     if (typeof parsed.error === "string") {
-      return { type: "error", message: parsed.error };
+      return { type: "error", message: parsed.error, acceptance };
     }
 
     // continue 的目标子代理仍在运行：消息已进入 Pending 队列，
@@ -116,6 +127,7 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
         conversationId: parsed.conversationId,
         agentName: parsed.agentName,
         summary: typeof parsed.summary === "string" ? parsed.summary : "",
+        acceptance,
       };
     }
 
@@ -229,6 +241,23 @@ export const SubAgentToolCall = ({
   const parsedResult = useMemo(
     () => parseResult(toolCall.result),
     [toolCall.result],
+  );
+
+  // 验收回执：成功回执、失败回执与预算超限回执都可能携带。
+  const acceptance =
+    parsedResult.type === "success" || parsedResult.type === "error"
+      ? parsedResult.acceptance
+      : null;
+  const unmetAcceptanceCount = useMemo(
+    () =>
+      acceptance
+        ? acceptance.items.filter(
+            (item) =>
+              item.required &&
+              (item.status !== "completed" || item.evidence.length === 0),
+          ).length
+        : 0,
+    [acceptance],
   );
 
   // Match the sub-agent session event to this tool call so the sub-agent
@@ -416,6 +445,21 @@ export const SubAgentToolCall = ({
     return <CircleDot size={11} aria-hidden="true" />;
   };
 
+  const renderAcceptanceIcon = (
+    status: SubAgentAcceptanceSnapshot["items"][number]["status"],
+  ): React.ReactNode => {
+    if (status === "completed") {
+      return <CheckCircle2 size={12} aria-hidden="true" />;
+    }
+    if (status === "incomplete") {
+      return <AlertCircle size={12} aria-hidden="true" />;
+    }
+    if (status === "blocked") {
+      return <Ban size={12} aria-hidden="true" />;
+    }
+    return <CircleQuestionMark size={12} aria-hidden="true" />;
+  };
+
   return (
     <ToolCallNode
       toolName={toolCall.name}
@@ -442,15 +486,26 @@ export const SubAgentToolCall = ({
       displayNameTitle={headSummary || undefined}
       status={effectiveStatus}
       meta={
-        totalCount > 0 ? (
-          <span className="tool-call-sub-agent-count">
-            {t("toolCall.subAgent.toolProgress", {
-              values: {
-                completed: completedCount,
-                total: totalCount,
-              },
-            })}
-          </span>
+        totalCount > 0 || unmetAcceptanceCount > 0 ? (
+          <>
+            {totalCount > 0 ? (
+              <span className="tool-call-sub-agent-count">
+                {t("toolCall.subAgent.toolProgress", {
+                  values: {
+                    completed: completedCount,
+                    total: totalCount,
+                  },
+                })}
+              </span>
+            ) : null}
+            {unmetAcceptanceCount > 0 ? (
+              <span className="tool-call-sub-agent-acceptance-meta">
+                {t("toolCall.subAgent.acceptance.unmetCount", {
+                  values: { count: unmetAcceptanceCount },
+                })}
+              </span>
+            ) : null}
+          </>
         ) : null
       }
       className="tool-call-sub-agent"
@@ -575,6 +630,130 @@ export const SubAgentToolCall = ({
             <pre className="tool-call-sub-agent-summary-value">
               {parsedResult.summary}
             </pre>
+          </div>
+        ) : null}
+
+        {/* Acceptance receipt: per-item status verified against the real tool
+            execution log. Missing evidence is never treated as passed. */}
+        {acceptance ? (
+          <div className="tool-call-sub-agent-acceptance">
+            <div className="tool-call-sub-agent-acceptance-head">
+              <span className="tool-call-sub-agent-acceptance-label">
+                {t("toolCall.subAgent.acceptance.title")}
+              </span>
+              <span
+                className={`tool-call-sub-agent-acceptance-verdict${
+                  acceptance.satisfied ? " is-passed" : " is-unmet"
+                }`}
+              >
+                {acceptance.satisfied
+                  ? t("toolCall.subAgent.acceptance.verdictPassed")
+                  : t("toolCall.subAgent.acceptance.verdictUnmet")}
+              </span>
+              <span className="tool-call-sub-agent-acceptance-count">
+                {t("toolCall.subAgent.acceptance.count", {
+                  values: {
+                    completed: acceptance.counts.completed,
+                    total: acceptance.counts.total,
+                  },
+                })}
+              </span>
+            </div>
+            {acceptance.reportState === "invalid" ? (
+              <div className="tool-call-sub-agent-acceptance-notice">
+                {t("toolCall.subAgent.acceptance.reportInvalid")}
+              </div>
+            ) : acceptance.reportState === "none" ? (
+              <div className="tool-call-sub-agent-acceptance-notice">
+                {t("toolCall.subAgent.acceptance.reportMissing")}
+              </div>
+            ) : null}
+            <ul className="tool-call-sub-agent-acceptance-list">
+              {acceptance.items.map((item) => {
+                const reason =
+                  item.reasonCode === "not_reported"
+                    ? t("toolCall.subAgent.acceptance.reason.notReported")
+                    : item.reasonCode === "no_valid_evidence"
+                      ? t("toolCall.subAgent.acceptance.reason.noEvidence")
+                      : item.reason;
+                return (
+                  <li
+                    key={item.id}
+                    className={`tool-call-sub-agent-acceptance-item tool-call-sub-agent-acceptance-item--${item.status}`}
+                  >
+                    <span
+                      className={`tool-call-sub-agent-acceptance-item-icon tool-call-sub-agent-acceptance-item-icon--${item.status}`}
+                    >
+                      {renderAcceptanceIcon(item.status)}
+                    </span>
+                    <div className="tool-call-sub-agent-acceptance-main">
+                      <div className="tool-call-sub-agent-acceptance-row">
+                        <span className="tool-call-sub-agent-acceptance-description">
+                          {item.description}
+                        </span>
+                        {item.required ? (
+                          <span className="tool-call-sub-agent-acceptance-required">
+                            {t("toolCall.subAgent.acceptance.required")}
+                          </span>
+                        ) : null}
+                        <span
+                          className={`tool-call-sub-agent-acceptance-status tool-call-sub-agent-acceptance-status--${item.status}`}
+                        >
+                          {t(
+                            `toolCall.subAgent.acceptance.status.${item.status}`,
+                          )}
+                        </span>
+                      </div>
+                      <span className="tool-call-sub-agent-acceptance-id">
+                        {item.id}
+                      </span>
+                      {item.observation ? (
+                        <div className="tool-call-sub-agent-acceptance-observation">
+                          {item.observation}
+                        </div>
+                      ) : null}
+                      {reason ? (
+                        <div className="tool-call-sub-agent-acceptance-reason">
+                          {reason}
+                        </div>
+                      ) : null}
+                      {acceptance.reportState === "received" &&
+                      !item.confirmedInLatestReport &&
+                      item.updatedAt > 0 ? (
+                        <div className="tool-call-sub-agent-acceptance-reason">
+                          {t("toolCall.subAgent.acceptance.previous")}
+                        </div>
+                      ) : null}
+                      {item.evidence.length > 0 ? (
+                        <div className="tool-call-sub-agent-acceptance-evidence">
+                          <span className="tool-call-sub-agent-acceptance-evidence-label">
+                            {t("toolCall.subAgent.acceptance.evidence")}
+                          </span>
+                          {item.evidence.map((ref) => (
+                            <span
+                              key={ref.id}
+                              className="tool-call-sub-agent-acceptance-evidence-chip"
+                              title={ref.preview || undefined}
+                            >
+                              <span className="tool-call-sub-agent-acceptance-evidence-id">
+                                {ref.id}
+                              </span>
+                              <span className="tool-call-sub-agent-acceptance-evidence-tool">
+                                {ref.toolName}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : item.status === "completed" ? (
+                        <div className="tool-call-sub-agent-acceptance-no-evidence">
+                          {t("toolCall.subAgent.acceptance.noEvidence")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         ) : null}
 

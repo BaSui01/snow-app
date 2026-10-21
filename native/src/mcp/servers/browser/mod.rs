@@ -19,6 +19,9 @@ const MAX_WAIT_TIME_MS: u64 = 30_000;
 // Record ids cross the JSON bridge into JavaScript numbers.
 const MAX_SAFE_RECORD_ID: u64 = 9_007_199_254_740_991;
 
+/** 动作类工具描述共用的回执语义说明（issue #236）。 */
+const ACTION_RECEIPT_NOTE: &str = " success=true means only that the input event was dispatched, not that the site handled it. The top-level url/title are read after the action, before holds the pre-action page, and observation reports the post-action state (changed/unchanged/navigating/blocked/expect-timeout) from a bounded wait that never waits for network-idle. An observation or wait timeout never means the action failed; verify the page state instead of repeating a side-effecting action. URL query/fragment are redacted by policy: urlRedaction marks that they were hidden.";
+
 #[napi(object)]
 pub struct BrowserCommand {
     pub operation: String,
@@ -27,6 +30,56 @@ pub struct BrowserCommand {
 
 pub type BrowserCommandCallback =
     ThreadsafeFunction<BrowserCommand, Promise<String>, BrowserCommand, Status, false>;
+
+/// 会产生页面副作用的动作共用的「动作后观察」参数：
+/// observe / observeTimeoutMs / expect（issue #236）。
+fn observation_schema_properties() -> Value {
+    json!({
+        "observe": {
+            "type": "string",
+            "enum": ["none", "brief", "snapshot"],
+            "description": "Post-action observation after the input event is dispatched (default brief). none keeps the original low-latency receipt (observation.mode=none); brief waits up to observeTimeoutMs for a URL/title/DOM change and reports status changed/unchanged/navigating/blocked; snapshot also returns condensed page text. Observation never waits for network-idle and never retries the action.",
+            "default": "brief"
+        },
+        "observeTimeoutMs": {
+            "type": "integer",
+            "description": "Bounded observation window in milliseconds (default 1500; default 5000 when expect is set; range 100-10000).",
+            "minimum": 100,
+            "maximum": 10000
+        },
+        "expect": {
+            "type": "object",
+            "description": "Optional explicit completion condition evaluated during the observation window (all provided fields must hold). Use it instead of sleeping or repeating the action; a miss is reported as observation.status=expect-timeout and does not mean the action failed.",
+            "properties": {
+                "urlIncludes": {
+                    "type": "string",
+                    "description": "Substring that the current URL must contain."
+                },
+                "selector": {
+                    "type": "string",
+                    "description": "CSS selector that must exist in the page."
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Visible page text that must appear."
+                }
+            }
+        }
+    })
+}
+
+fn with_observation_schema(mut schema: Value) -> Value {
+    let extra = observation_schema_properties();
+    if let (Some(properties), Value::Object(extra)) = (
+        schema.get_mut("properties").and_then(Value::as_object_mut),
+        extra,
+    ) {
+        for (key, value) in extra {
+            properties.insert(key, value);
+        }
+    }
+    schema
+}
 
 pub struct BrowserService;
 
@@ -233,7 +286,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "devtools".to_string(),
-                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages (filterable by level/types, paginated with pageIdx/pageSize, includePreserved covers the last 3 navigations, clearConsole clears after returning), action=console_message for one message by msgid, action=network for recorded network requests (filterable by regexp/resourceTypes, paginated, includePreserved covers the last 3 navigations; CDP records include a numeric id and a requestId string), action=network_detail for full details of a single request by numeric id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request (requestFilePath/responseFilePath save bodies to files), action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
+                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=ax for a compact, ref-addressable accessibility tree that keeps control values and states (verbose=true returns every node and AX property), action=console for captured console messages (filterable by level/types, paginated with pageIdx/pageSize, includePreserved covers the last 3 navigations, clearConsole clears after returning), action=console_message for one message by msgid, action=network for a compact request list (id/method/url/status/duration/resourceType/source; filterable by regexp/resourceTypes/methods, paginated, includePreserved covers the last 3 navigations; request/response headers are omitted by default, pass includeHeaders=true to include them; CDP records include a numeric id and a requestId string), action=network_detail for full details of a single request by numeric id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request (requestFilePath/responseFilePath save bodies to files), action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -256,7 +309,7 @@ impl McpService for BrowserService {
                         },
                         "verbose": {
                             "type": "boolean",
-                            "description": "Include all accessibility nodes and input values (ax action only, default false = interactive/structural roles only).",
+                            "description": "Include every accessibility node and all AX properties (ax action only). Default false keeps interactive/structural roles with control values and states (checked/selected/expanded/disabled) plus table row cell text.",
                             "default": false
                         },
                         "maxNodes": {
@@ -318,6 +371,16 @@ impl McpService for BrowserService {
                             "type": "array",
                             "items": { "type": "string" },
                             "description": "Only return network requests of these resource types (network action only), e.g. [\"XHR\", \"Fetch\", \"Document\"]."
+                        },
+                        "methods": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Only return network requests sent with these HTTP methods (network action only), case-insensitive, e.g. [\"OPTIONS\"] to inspect CORS preflight requests."
+                        },
+                        "includeHeaders": {
+                            "type": "boolean",
+                            "description": "Include full requestHeaders and responseHeaders in the network list (network action only, default false keeps the compact list). Bodies are always read via networkDetails.",
+                            "default": false
                         },
                         "msgid": {
                             "type": "integer",
@@ -415,7 +478,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "wait".to_string(),
-                description: "Wait for a condition on the page: fixed time, text to appear/disappear, or element (CSS selector) to appear/disappear. Inspired by Playwright's browser_wait_for. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Wait for a condition on the page: fixed time, text to appear/disappear, or element (CSS selector) to appear/disappear. Inspired by Playwright's browser_wait_for. Returns status=satisfied/elapsed/timed-out: a timed-out wait means the condition was not met, not that the preceding action failed, so verify the page state before repeating a side-effecting action. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -1392,7 +1455,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "get_tab_content".to_string(),
-                description: "Extract the visible text content (document.body.innerText) of a browser tab, together with its URL and title. Useful for reading article text or page content without a screenshot. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Extract the visible text content (document.body.innerText) of a browser tab, together with its URL and title. Also returns a compact `times` array (DOM metadata, kept separate from the body text) collected from <time>, relative-time and [datetime] elements: visible text, verbatim datetime attribute, timezone marker and nearby context, including dates that never reach the visible text. Useful for reading article text or page content without a screenshot. Omit instanceId to use the most recently focused browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -1406,6 +1469,11 @@ impl McpService for BrowserService {
                             "default": DEFAULT_MAX_CONTENT_LENGTH,
                             "minimum": MIN_MAX_CONTENT_LENGTH,
                             "maximum": MAX_MAX_CONTENT_LENGTH
+                        },
+                        "includeTimes": {
+                            "type": "boolean",
+                            "description": "Include the `times` array derived from DOM time elements (default true); set false for body text only. Each entry keeps the visible text (empty when the element is not rendered, then marked `hidden`), the raw datetime attribute and nearby context; a missing datetime is null and an unparseable one is marked `datetimeInvalid`, never guessed. timezone is the raw Z/offset, or `unstated` when the attribute carries none. Entries whose visible text already contains a complete date present in the body are skipped; timesTotal/timesTruncated report the cap.",
+                            "default": true
                         }
                     }
                 }),
@@ -1458,6 +1526,16 @@ impl McpService for BrowserService {
             }
         }
         for tool in &mut tools {
+            // 动作类工具附带 observe/observeTimeoutMs/expect（issue #236），
+            // 并在描述里明确 success 只代表派发成功。
+            if matches!(
+                tool.name.as_str(),
+                "click" | "type" | "fill_form" | "select_option" | "press_key"
+            ) {
+                let schema = std::mem::take(&mut tool.input_schema);
+                tool.input_schema = with_observation_schema(schema);
+                tool.description.push_str(ACTION_RECEIPT_NOTE);
+            }
             let schema = &mut tool.input_schema;
             match tool.name.as_str() {
                 "navigate" => {

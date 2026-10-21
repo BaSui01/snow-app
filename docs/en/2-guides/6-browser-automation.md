@@ -57,16 +57,31 @@ browser-devtools action=snapshot instanceId=<id>
 
 browser-devtools action=ax instanceId=<id>
 → accessibility-tree snapshot (structured interactive elements with [uid=eN];
-  engine-level AX tree, pierces closed shadow DOM, elements are ref-addressable)
+  engine-level AX tree, pierces closed shadow DOM, elements are ref-addressable).
+  Compact output includes control values (value/min/max) and states
+  (checked/selected/expanded/disabled), aggregates table row cells into text,
+  and masks password-like values
 
 browser-devtools action=ax verbose=true maxNodes=500 instanceId=<id>
-→ all nodes + input values (higher token cost, use on demand)
+→ every node plus all AX properties (higher token cost, use on demand)
 
 browser-devtools action=console level=error instanceId=<id>
 → console errors (troubleshoot page JS failures)
 
 browser-devtools action=network filter=api instanceId=<id>
-→ network request log (observe API calls; CDP records include requestId for details)
+→ network request list (compact by default: id, method, url, status, resourceType,
+  duration, source, failure reason; request/response headers and bodies are not
+  expanded. CDP records include a requestId; webRequest fallback records do not)
+
+browser-devtools action=network methods=["OPTIONS"] instanceId=<id>
+→ only CORS preflight requests (the response's preflightTotal reports how many
+  preflight requests exist in the current filter)
+
+browser-devtools action=network_detail requestId=<numeric id> instanceId=<id>
+→ full record of one request by the numeric id from the list (incl. headers)
+
+browser-devtools action=network includeHeaders=true instanceId=<id>
+→ compatibility mode: the list carries request/response headers (higher token cost)
 
 browser-devtools action=networkDetails requestId=<requestId> instanceId=<id>
 → full details of one request: request/response headers + request body + response body
@@ -130,7 +145,49 @@ browser-navigate_forward instanceId=<id>
 browser-evaluate expression="document.title" instanceId=<id>
 ```
 
-### 2.5 Performance analysis (trace)
+### 2.5 Action receipts and bounded observation (observe / expect)
+
+`browser-click`, `browser-type`, `browser-fill_form`, `browser-select_option` and
+`browser-press_key` split their receipt so "the event was dispatched" is never
+mistaken for "the site succeeded":
+
+- `success` / `dispatched`: the real input event was delivered (nothing more);
+- `before`: URL and title before the action; the top-level `url` / `title` are the
+  current page state after it;
+- `observation`: the bounded post-action result (`status` = `changed` / `unchanged` /
+  `navigating` / `blocked` / `expect-timeout`) with the changed signals, visible
+  search/filter fields, and any new console errors, dialogs or downloads produced
+  inside this action's window. Observation never waits for network-idle and never
+  retries the action.
+
+```text
+# Default brief: wait up to 1500ms and return early as soon as a change is seen
+browser-click text="Add to cart" instanceId=<id>
+
+# Dispatch only, keep the lowest latency
+browser-click selector="#more" observe=none instanceId=<id>
+
+# Also return condensed page text
+browser-click text="Details" observe=snapshot instanceId=<id>
+
+# Combine the action with an explicit completion condition (no sleeping, no re-click)
+browser-click text="Search" expect={urlIncludes:"/products"} observeTimeoutMs=5000 instanceId=<id>
+browser-type selector="#q" value="hammer" submit=true expect={text:"Thor Hammer"} instanceId=<id>
+```
+
+Notes:
+
+- `unchanged` means no page change was observed in the window, **not that the action
+  failed**; verify with `browser-devtools action=snapshot` or `browser-wait` instead of
+  repeating a side-effecting action;
+- `navigating` means the page was still loading; `blocked` means a JS dialog is blocking
+  page scripts (use `browser-devtools action=dialog`); `expect-timeout` is only an
+  observation timeout, not a failed action;
+- URL query/fragment are removed by the redaction policy and the receipt marks that with
+  `urlRedaction`; read search conditions from `observation.state.searchFields` instead of
+  relying on the address bar.
+
+### 2.6 Performance analysis (trace)
 
 ```text
 # Record 3s of performance data; returns long-task/event stats (main-thread jank)
@@ -143,7 +200,7 @@ Long tasks (runnable events >50ms) are the core jank indicator; `topEventTypes`
 shows the main event mix — combine with `action=network` and `action=console`
 for deeper diagnosis.
 
-### 2.6 Screenshot and close
+### 2.7 Screenshot and close
 
 ```text
 browser-screenshot instanceId=<id> fullPage=true

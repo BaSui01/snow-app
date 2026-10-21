@@ -852,8 +852,6 @@ export const en = {
     "This sub-agent failed. The conversation is read-only.",
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
-  "chat.subAgentFinished.budgetExceeded":
-    "This sub-agent exhausted its runtime budget and stopped dispatching new tools. It is waiting for the main agent to extend the budget or end the task.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
   "chat.workflowNodeFinished.completed":
     "This workflow node has finished. The conversation is read-only.",

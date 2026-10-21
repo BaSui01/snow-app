@@ -265,8 +265,6 @@ const terminalStatus = (
 ): FinishedSession["status"] | null => {
   if (status === "completed" || status === "failed") return status;
   if (kind === "subAgent" && status === "cancelled") return "cancelled";
-  // 运行时预算用尽同样是终态（子代理已停止派发工具，等待主控继续）。
-  if (kind === "subAgent" && status === "budget_exceeded") return "completed";
   return null;
 };
 

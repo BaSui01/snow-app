@@ -804,8 +804,6 @@ export const zhTW = {
   "chat.subAgentFinished.completed": "該子代理已完成，會話僅供檢視。",
   "chat.subAgentFinished.failed": "該子代理執行失敗，會話僅供檢視。",
   "chat.subAgentFinished.cancelled": "該子代理已取消，會話僅供檢視。",
-  "chat.subAgentFinished.budgetExceeded":
-    "該子代理的執行時預算已用盡，已停止派發新工具，等待主控決定追加預算或結束任務。",
   "chat.subAgentFinished.backToParent": "返回主會話",
   "chat.workflowNodeFinished.completed": "該工作流節點已完成，會話僅供檢視。",
   "chat.workflowNodeFinished.failed": "該工作流節點執行失敗，會話僅供檢視。",

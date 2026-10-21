@@ -86,7 +86,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_NAME.to_string(),
-                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. SUMMARY: the required summary field is a short label for THIS activation - it becomes the sub-agent conversation's title and summary (shown in the sidebar sub-agent list), so make it specific enough to tell parallel siblings apart. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one. OPTIONAL RUNTIME BUDGET: pass budget { maxToolCalls, maxRunMs } to let the host enforce a deterministic ceiling at dispatch time. When the budget is exhausted the sub-agent stops dispatching new tool calls (already issued requests are NOT cancelled), returns status \\\"budget_exceeded\\\" together with its completed content, actual counts, last completed action and task context, and waits for YOU to decide whether to extend the budget with sub-agents-continue or end the task. Omit budget for unlimited behavior (the previous behavior). OPTIONAL ACCEPTANCE CHECKLIST: pass acceptance [{ id, description, required? }] when the task has must-happen steps that a summary alone could hide (a submitted form, a verified total, a written file). The sub-agent must then end with a fenced acceptance JSON block reporting every item with a status and evidence ids from its real tool results; the host validates those ids against the execution log, downgrades completed without valid evidence to unverified, and returns an acceptance receipt with per-item status. Omit it for tasks that only need the natural-language summary."
+                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. SUMMARY: the required summary field is a short label for THIS activation - it becomes the sub-agent conversation's title and summary (shown in the sidebar sub-agent list), so make it specific enough to tell parallel siblings apart. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one. OPTIONAL ACCEPTANCE CHECKLIST: pass acceptance [{ id, description, required? }] when the task has must-happen steps that a natural-language summary could hide (a submitted form, a verified total, a written file). The sub-agent must then end with a fenced acceptance JSON block reporting every item with a status and evidence ids from its real tool results; the host validates those ids against the execution log, downgrades completed without valid evidence to unverified, and returns an acceptance receipt with per-item status. Omit it for tasks that only need the natural-language summary."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -102,23 +102,6 @@ impl McpService for SubAgentsService {
                         "summary": {
                             "type": "string",
                             "description": "Short one-line summary of this activation (a few words to one sentence), written in the same language as the user's request. It becomes the sub-agent conversation's title and summary, and is what the user sees in the sidebar sub-agent list - keep several parallel sub-agents clearly distinguishable (e.g. 'Fix sidebar layout', 'Research Electron IPC')."
-                        },
-                        "budget": {
-                            "type": "object",
-                            "description": "Optional runtime execution budget enforced by the host before every tool dispatch (never by the model's own counting). Tool calls count when actually dispatched - failures and retries count too, user-rejected calls do not; parallel calls in one batch are reserved one by one, so calls beyond the remaining budget are never dispatched. maxRunMs is wall-clock and includes model streaming, tool execution and waiting for user authorization/questions. Omit to keep the previous unlimited behavior.",
-                            "properties": {
-                                "maxToolCalls": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "description": "Maximum number of tool calls the sub-agent may dispatch during this run."
-                                },
-                                "maxRunMs": {
-                                    "type": "integer",
-                                    "minimum": 1000,
-                                    "description": "Maximum wall-clock runtime in milliseconds. Only checked before dispatching new tools, so it never interrupts a tool that is already running."
-                                }
-                            },
-                            "additionalProperties": false
                         },
                         "acceptance": {
                             "type": "array",
@@ -151,7 +134,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST_SUB_AGENTS.to_string(),
-                description: "List the sub-agents of the CURRENT conversation session, including finished ones (only those activated during this app run are listed). Returns conversationId, agentId, agentName, status (running/completed/failed/cancelled/budget_exceeded), resumable, the runtime budget snapshot (usedToolCalls/maxToolCalls/elapsedMs/maxRunMs/blocked) and the acceptance snapshot (per-item status, evidence, satisfied) for each. Only sub-agents belonging to the current conversation are returned (session isolation). Use sub-agents-continue with a returned conversationId to resume a finished sub-agent - to reactivate several sub-agents at once, call sub-agents-continue MULTIPLE TIMES in the same batch (those calls run in parallel). A budget_exceeded sub-agent must be resumed with an explicit budget (mode add or reset) to dispatch tools again. An acceptance checklist and its evidence log are runtime state of this app run; after a restart pass the checklist again on continue."
+                description: "List the sub-agents of the CURRENT conversation session, including finished ones (only those activated during this app run are listed). Returns conversationId, agentId, agentName, status (running/completed/failed/cancelled), resumable, and the acceptance snapshot (per-item status, evidence, satisfied) for each. Only sub-agents belonging to the current conversation are returned (session isolation). Use sub-agents-continue with a returned conversationId to resume a finished sub-agent - to reactivate several sub-agents at once, call sub-agents-continue MULTIPLE TIMES in the same batch (those calls run in parallel). An acceptance checklist and its evidence log are runtime state of this app run; after a restart pass the checklist again on continue."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -162,7 +145,7 @@ impl McpService for SubAgentsService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_CONTINUE.to_string(),
-                description: "Send a message to a sub-agent of the CURRENT conversation session and resume it: if the target has finished it is reactivated and keeps its original configuration (model, tools, system prompt) and full conversation history; if it is still running the message is queued as a Pending message delivered at the end of its current round. The queued message is prefixed with the sender's identity. Only sub-agents belonging to the current conversation can be resumed - sub-agents of other conversations are rejected (session isolation). PARALLEL RESUME: ONE call resumes ONE sub-agent; to reactivate several sub-agents, call this tool MULTIPLE TIMES in the SAME batch - one call per conversationId. A batch of continue calls runs concurrently (exactly like a batch of sub-agents-activate calls), so do NOT resume them one by one. BUDGET: omitting budget keeps the existing counters and limits unchanged, so a sub-agent whose status is budget_exceeded immediately hands control back again. Pass budget { maxToolCalls, maxRunMs, mode } to make an EXPLICIT change: mode=\"add\" (default) extends the remaining allowance from the current usage; mode=\"reset\" clears the used counters and restarts the runtime clock (limits not provided are kept). Only add the allowance you actually need - a sub-agent can never extend its own budget. ACCEPTANCE: pass acceptance [{ id, description, required? }] to add checklist items or refine their wording for this sub-agent; already recorded per-item status is preserved, and the resumed run updates the same acceptance receipt. Omitting acceptance keeps the current checklist; tasks without a checklist behave exactly as before."
+                description: "Send a message to a sub-agent of the CURRENT conversation session and resume it: if the target has finished it is reactivated and keeps its original configuration (model, tools, system prompt) and full conversation history; if it is still running the message is queued as a Pending message delivered at the end of its current round. The queued message is prefixed with the sender's identity. Only sub-agents belonging to the current conversation can be resumed - sub-agents of other conversations are rejected (session isolation). PARALLEL RESUME: ONE call resumes ONE sub-agent; to reactivate several sub-agents, call this tool MULTIPLE TIMES in the SAME batch - one call per conversationId. A batch of continue calls runs concurrently (exactly like a batch of sub-agents-activate calls), so do NOT resume them one by one. ACCEPTANCE: pass acceptance [{ id, description, required? }] to add checklist items or refine their wording for this sub-agent; already recorded per-item status is preserved, and the resumed run updates the same acceptance receipt. Omitting acceptance keeps the current checklist; tasks without a checklist behave exactly as before."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -174,28 +157,6 @@ impl McpService for SubAgentsService {
                         "message": {
                             "type": "string",
                             "description": "The message content to send. It resumes the sub-agent, or is queued for delivery at the end of its current round when the target is still running."
-                        },
-                        "budget": {
-                            "type": "object",
-                            "description": "Optional EXPLICIT budget change. Omitting it keeps the current counters and limits. mode=add extends the allowance from the current usage (default); mode=reset clears the used counters and restarts the runtime clock, keeping limits that are not provided.",
-                            "properties": {
-                                "maxToolCalls": {
-                                    "type": "integer",
-                                    "minimum": 1,
-                                    "description": "Additional tool calls (mode=add) or the new total ceiling (mode=reset)."
-                                },
-                                "maxRunMs": {
-                                    "type": "integer",
-                                    "minimum": 1000,
-                                    "description": "Additional wall-clock milliseconds (mode=add, measured from the current elapsed time) or the new total limit (mode=reset)."
-                                },
-                                "mode": {
-                                    "type": "string",
-                                    "enum": ["add", "reset"],
-                                    "description": "add = extend the allowance (default); reset = clear the used counters and restart the runtime clock."
-                                }
-                            },
-                            "additionalProperties": false
                         },
                         "acceptance": {
                             "type": "array",

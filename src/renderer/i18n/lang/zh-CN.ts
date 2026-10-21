@@ -803,8 +803,6 @@ export const zhCN = {
   "chat.subAgentFinished.completed": "该子代理已完成，会话仅供查看。",
   "chat.subAgentFinished.failed": "该子代理执行失败，会话仅供查看。",
   "chat.subAgentFinished.cancelled": "该子代理已取消，会话仅供查看。",
-  "chat.subAgentFinished.budgetExceeded":
-    "该子代理的运行时预算已用尽，已停止派发新工具，等待主控决定追加预算或结束任务。",
   "chat.subAgentFinished.backToParent": "返回主会话",
   "chat.workflowNodeFinished.completed": "该工作流节点已完成，会话仅供查看。",
   "chat.workflowNodeFinished.failed": "该工作流节点执行失败，会话仅供查看。",

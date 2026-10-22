@@ -7,6 +7,10 @@ import {
 } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import { useChatConversationContext } from "../components/ChatConversationContext";
+import {
+  createStreamGrowthSmoother,
+  type StreamGrowthSmoother,
+} from "../components/streamGrowthSmoother";
 
 type PendingScrollRestore = {
   conversationId: string;
@@ -86,6 +90,8 @@ export type ChatScrollFollowOptions = {
 
 export type ChatScrollFollowResult = {
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  /** 消息区平滑增长视口的回调 ref（交给 ChatMessageList 挂到视口元素上）。 */
+  streamViewportRef: (node: HTMLDivElement | null) => void;
   showScrollToBottom: boolean;
   markUserScrollIntent: (direction: number) => void;
   handleChatWheel: (event: React.WheelEvent<HTMLDivElement>) => void;
@@ -107,10 +113,12 @@ export type ChatScrollFollowResult = {
 
 /**
  * 聊天区滚动跟随控制器：滚动状态机（钉底资格推导、几何位移辨识）、即时钉底
- * （内容增长同帧内贴底，不留滞后）、翻页滚动恢复（多轮收敛）、ResizeObserver
- * 钉底、事件 handlers 与滚动到底部按钮补间。从 ChatContent 抽出，依赖的会话
- * 状态直接取自 ChatConversationContext；外部仅传入视图层状态（渲染 key、
- * 挂载态、压缩态、自动滚动偏好）。
+ * （内容增长同帧内贴底，不留滞后）、消息区平滑增长（streamGrowthSmoother：
+ * 内容增长先在裁剪视口内平滑过渡，再由同帧钉底带动视口平滑上移）、翻页
+ * 滚动恢复（多轮收敛）、ResizeObserver 钉底、事件 handlers 与滚动到底部
+ * 按钮补间。从 ChatContent 抽出，依赖的会话状态直接取自
+ * ChatConversationContext；外部仅传入视图层状态（渲染 key、挂载态、
+ * 压缩态、自动滚动偏好）。
  */
 export const useChatScrollFollow = ({
   chatRenderKey,
@@ -214,6 +222,49 @@ export const useChatScrollFollow = ({
     lastScrollHeightRef.current = container.scrollHeight;
     lastClientHeightRef.current = container.clientHeight;
   }, []);
+
+  // 消息区平滑增长的放行条件：只在「正在跟随最新输出」时平滑——用户已
+  // 离开底部、自动滚动关闭、翻页恢复 / 底部补间 / 首屏定位进行中，都要求
+  // 内容高度即时生效（这些路径按真实几何计算 scrollTop）。
+  const canSmoothGrowth = useCallback(
+    (): boolean =>
+      autoScrollEnabledRef.current &&
+      shouldStickToBottomRef.current &&
+      !isSmoothScrollingToBottomRef.current &&
+      !isInitialBottomPositioningRef.current &&
+      !isLoadingOlderWithScrollRef.current &&
+      pendingScrollRestoreRef.current === null &&
+      (isStreamingRef.current ||
+        performance.now() < followGraceUntilRef.current),
+    [],
+  );
+
+  const [streamViewport, setStreamViewport] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const streamViewportRef = useCallback((node: HTMLDivElement | null): void => {
+    setStreamViewport(node);
+  }, []);
+  const growthSmootherRef = useRef<StreamGrowthSmoother | null>(null);
+
+  useLayoutEffect(() => {
+    const track = streamViewport?.firstElementChild;
+    if (!streamViewport || !(track instanceof HTMLElement)) {
+      return;
+    }
+    const smoother = createStreamGrowthSmoother(
+      streamViewport,
+      track,
+      canSmoothGrowth,
+    );
+    growthSmootherRef.current = smoother;
+    return (): void => {
+      smoother.dispose();
+      if (growthSmootherRef.current === smoother) {
+        growthSmootherRef.current = null;
+      }
+    };
+  }, [streamViewport, canSmoothGrowth]);
 
   // 结束一轮翻页滚动恢复：释放在途标记并唤醒等待该轮收敛的调用方（用户消息
   // 定位需要按页推进），避免等待一个永不抵达的信号。
@@ -455,6 +506,7 @@ export const useChatScrollFollow = ({
       scrollToBottomAnimRef.current = 0;
     }
     isSmoothScrollingToBottomRef.current = false;
+    growthSmootherRef.current?.release();
     setShowScrollToBottom(false);
     if (activeConversationId) {
       positionedConversationIdsRef.current.delete(activeConversationId);
@@ -858,6 +910,9 @@ export const useChatScrollFollow = ({
 
     const requestId = ++scrollRestoreRequestIdRef.current;
     isLoadingOlderWithScrollRef.current = true;
+    // 翻页恢复按真实几何校正 scrollTop：平滑视口的显式高度会让新页插入
+    // 后的 scrollHeight 偏小、校正被钳制，必须先即时释放。
+    growthSmootherRef.current?.release();
 
     let anchorElement: Element | null = null;
     let anchorContentOffset = 0;
@@ -1037,6 +1092,8 @@ export const useChatScrollFollow = ({
     // follow immediately instead of letting the next streamed resize reclaim it.
     if (direction <= 0 && (scrollRef.current?.scrollTop ?? 0) > 0) {
       shouldStickToBottomRef.current = false;
+      // 脱离跟随：平滑视口立即交还自然高度，滞后段在视口下方展开。
+      growthSmootherRef.current?.release();
     }
 
     // 用户真实输入立即接管视口：停止在途的底部补间，
@@ -1255,15 +1312,17 @@ export const useChatScrollFollow = ({
           performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
       }
 
+      // 补间按真实几何追赶底部：先交还平滑视口的自然高度。
+      growthSmootherRef.current?.release();
+
       const initialMaxScrollTop =
         container.scrollHeight - container.clientHeight;
       const initialDistance = initialMaxScrollTop - container.scrollTop;
       const tweenMaxDistance = Math.min(container.clientHeight * 0.75, 480);
-      // Streaming and reduced motion always jump. Non-click callers keep the
-      // rule that only a short, settled distance tweens, so long/virtualized
-      // timelines never animate through placeholder expansion.
+      // Reduced motion always jumps. Non-click callers keep the rule that only
+      // a short, settled distance tweens, so long/virtualized timelines never
+      // animate through placeholder expansion.
       if (
-        isStreamingRef.current ||
         window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
         (!options?.animate && initialDistance > tweenMaxDistance)
       ) {
@@ -1279,19 +1338,25 @@ export const useChatScrollFollow = ({
         container.scrollTop = initialMaxScrollTop - tweenMaxDistance;
       }
       const startTop = container.scrollTop;
-      const tweenDistance = initialMaxScrollTop - startTop;
       const startTimeMs = performance.now();
-      const durationMs = 220;
+      const durationMs = 200;
       let lastTop = startTop;
 
+      const finishTween = (): void => {
+        scrollToBottomAnimRef.current = 0;
+        isSmoothScrollingToBottomRef.current = false;
+        pinToBottom();
+        deriveFollowStateFromScroll(container);
+      };
+
+      // 目标是「实时底部」：流式输出期间内容仍在增长，每帧按最新的
+      // maxScrollTop 计算插值终点，补间结束时恰好贴底，随后交给常规跟随。
       const tick = (nowMs: number): void => {
         if (scrollRef.current !== container) {
           scrollToBottomAnimRef.current = 0;
           isSmoothScrollingToBottomRef.current = false;
           return;
         }
-
-        const maxScrollTop = container.scrollHeight - container.clientHeight;
 
         if (
           isUserScrollIntentRef.current &&
@@ -1303,31 +1368,18 @@ export const useChatScrollFollow = ({
           return;
         }
 
-        // Content expanding while the tween runs makes a moving target; stop
-        // chasing it frame by frame and let normal bottom-follow take over.
-        if (Math.abs(maxScrollTop - initialMaxScrollTop) > 1) {
-          scrollToBottomAnimRef.current = 0;
-          isSmoothScrollingToBottomRef.current = false;
-          pinToBottom();
-          deriveFollowStateFromScroll(container);
-          return;
-        }
-
-        const elapsed = nowMs - startTimeMs;
-        const progress = Math.min(1, elapsed / durationMs);
+        const maxScrollTop = container.scrollHeight - container.clientHeight;
+        const progress = Math.min(1, (nowMs - startTimeMs) / durationMs);
         const eased = 1 - Math.pow(1 - progress, 3);
         const nextTop = Math.min(
-          Math.max(lastTop, startTop + tweenDistance * eased),
+          Math.max(lastTop, startTop + (maxScrollTop - startTop) * eased),
           maxScrollTop,
         );
         container.scrollTop = nextTop;
-        lastTop = nextTop;
+        lastTop = container.scrollTop;
 
-        if (progress >= 1 || nextTop >= maxScrollTop - 1) {
-          container.scrollTop = maxScrollTop;
-          scrollToBottomAnimRef.current = 0;
-          isSmoothScrollingToBottomRef.current = false;
-          deriveFollowStateFromScroll(container);
+        if (progress >= 1) {
+          finishTween();
           return;
         }
 
@@ -1336,7 +1388,7 @@ export const useChatScrollFollow = ({
 
       scrollToBottomAnimRef.current = requestAnimationFrame(tick);
     },
-    [deriveFollowStateFromScroll],
+    [deriveFollowStateFromScroll, pinToBottom],
   );
 
   const handleSendWithScroll = useCallback(
@@ -1348,6 +1400,13 @@ export const useChatScrollFollow = ({
       lastUserScrollInputAtRef.current = -Infinity;
       lastUserScrollInputDirectionRef.current = 0;
       setShowScrollToBottom(false);
+      // 发送即进入跟随：提前开启跟随窗口并武装平滑视口，新消息的出现
+      // 本身就走平滑增长，而不是先瞬移一截再开始平滑。
+      if (autoScrollEnabledRef.current) {
+        followGraceUntilRef.current =
+          performance.now() + RUN_FINISH_FOLLOW_GRACE_MS;
+        growthSmootherRef.current?.arm();
+      }
       requestAnimationFrame(() => {
         pinToBottom();
       });
@@ -1377,6 +1436,7 @@ export const useChatScrollFollow = ({
 
   return {
     scrollRef,
+    streamViewportRef,
     showScrollToBottom,
     markUserScrollIntent,
     handleChatWheel,

@@ -1854,6 +1854,7 @@ export const en = {
   "toolNames.lsp-format": "Format",
   "toolNames.lsp-completion": "Complete",
   "toolNames.browser-create": "Create browser",
+  "toolNames.browser-request_share": "Request tab share",
   "toolNames.browser-navigate": "Navigate",
   "toolNames.browser-click": "Click",
   "toolNames.browser-screenshot": "Screenshot",
@@ -5002,6 +5003,8 @@ export const en = {
   "browser.sharedBadge": "Shared with agent",
   "browser.isolatedBadge": "Isolated session",
   "browser.agentShareRequest": "The agent is asking to share this tab",
+  "browser.agentShareRequestDesc":
+    "Allowing lets the agent read and operate this tab (including your signed-in session); denying returns an unauthorized result for this call.",
   "browser.agentShareApprove": "Allow",
   "browser.agentShareDeny": "Deny",
   "browser.agentAccessDisabled":

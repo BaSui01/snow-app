@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot } from "lucide-react";
 import {
   attachGuestPointerDismiss,
   BrowserElementPicker,
@@ -25,15 +24,12 @@ import {
 } from "./browser/browserMcpController";
 import {
   getBrowserAgentAccess,
-  getPendingBrowserAgentShareRequest,
   registerBrowserAgentAccess,
-  resolveBrowserAgentShareRequest,
   setBrowserTabShared,
   subscribeBrowserAgentAccess,
   unregisterBrowserAgentAccess,
   updateBrowserAgentAccessUrl,
   type BrowserAgentAccess,
-  type BrowserAgentShareRequest,
 } from "./browser/browserAgentAccess";
 import {
   BROWSER_AGENT_ISOLATED_PARTITION,
@@ -349,8 +345,6 @@ export const BrowserPanelContent = ({
   const [agentIsolated, setAgentIsolated] = useState<boolean>(
     initialAgentAccessRef.current.isolated,
   );
-  const [agentShareRequest, setAgentShareRequest] =
-    useState<BrowserAgentShareRequest | null>(null);
   const [agentNotice, setAgentNotice] = useState("");
   const [zoomFactor, setZoomFactor] = useState(1);
   const [findVisible, setFindVisible] = useState(false);
@@ -733,7 +727,6 @@ export const BrowserPanelContent = ({
       const access = getBrowserAgentAccess(instanceId);
       setAgentShared(access?.shared ?? false);
       setAgentIsolated(access?.isolated ?? false);
-      setAgentShareRequest(getPendingBrowserAgentShareRequest(instanceId));
     };
     sync();
     return subscribeBrowserAgentAccess(sync);
@@ -746,13 +739,6 @@ export const BrowserPanelContent = ({
     }
     setBrowserTabShared(instanceId, !access.shared);
   }, [instanceId]);
-
-  const handleShareRequestDecision = useCallback(
-    (granted: boolean): void => {
-      resolveBrowserAgentShareRequest(instanceId, granted);
-    },
-    [instanceId],
-  );
 
   // MCP 命令桥：所有页面级操作（navigate/click/devtools 等）作用于本实例
   // 唯一的 webview；get_tab_content 提取页面正文。标签页的增删切换由上层
@@ -1288,33 +1274,6 @@ export const BrowserPanelContent = ({
         projectId={projectId}
         serverId={BROWSER_MCP_SERVER_ID}
       />
-      {agentShareRequest && (
-        <div className="browser-agent-share-request" role="alert">
-          <Bot size={14} strokeWidth={1.8} />
-          <span className="browser-agent-share-request-text">
-            {t("browser.agentShareRequest", {
-              defaultValue: "The agent is asking to share this tab",
-            })}
-          </span>
-          <span className="browser-agent-share-request-host">
-            {agentShareRequest.url || addressInput || src}
-          </span>
-          <button
-            type="button"
-            className="browser-agent-share-request-btn primary"
-            onClick={() => handleShareRequestDecision(true)}
-          >
-            {t("browser.agentShareApprove", { defaultValue: "Allow" })}
-          </button>
-          <button
-            type="button"
-            className="browser-agent-share-request-btn"
-            onClick={() => handleShareRequestDecision(false)}
-          >
-            {t("browser.agentShareDeny", { defaultValue: "Deny" })}
-          </button>
-        </div>
-      )}
       {agentNotice && (
         <div className="browser-agent-notice" role="status">
           {agentNotice}

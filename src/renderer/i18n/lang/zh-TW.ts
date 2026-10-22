@@ -1757,6 +1757,7 @@ export const zhTW = {
   "toolNames.lsp-format": "格式化",
   "toolNames.lsp-completion": "補全",
   "toolNames.browser-create": "建立瀏覽器",
+  "toolNames.browser-request_share": "請求分享標籤頁",
   "toolNames.browser-navigate": "導覽",
   "toolNames.browser-click": "點擊",
   "toolNames.browser-screenshot": "截圖",
@@ -4639,6 +4640,8 @@ export const zhTW = {
   "browser.sharedBadge": "已分享給 Agent",
   "browser.isolatedBadge": "隔離工作階段",
   "browser.agentShareRequest": "Agent 請求分享此標籤頁",
+  "browser.agentShareRequestDesc":
+    "允許後 Agent 可讀取並操作此標籤頁（含登入狀態）；拒絕則本次呼叫回傳未授權。",
   "browser.agentShareApprove": "允許",
   "browser.agentShareDeny": "拒絕",
   "browser.agentAccessDisabled":

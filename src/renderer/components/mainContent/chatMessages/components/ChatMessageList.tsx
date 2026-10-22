@@ -9,6 +9,7 @@ import {
 import { GitFork, Zap } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { ChatRunSummary } from "./ChatRunSummary";
+import { ChatStreamIndicator } from "./ChatStreamIndicator";
 import { VirtualizedMessage } from "./VirtualizedMessage";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
@@ -29,6 +30,8 @@ type ChatMessageListProps = {
   isRunActive: boolean;
   canRollback: boolean;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  /** 平滑增长视口的回调 ref（由滚动跟随控制器持有平滑器）。 */
+  streamViewportRef: (node: HTMLDivElement | null) => void;
 };
 
 // 初始可见窗口大小:挂载时(切换会话)只渲染「顶部几条 + 底部窗口」的
@@ -44,6 +47,7 @@ export const ChatMessageList = ({
   isRunActive,
   canRollback,
   scrollContainerRef,
+  streamViewportRef,
 }: ChatMessageListProps): React.JSX.Element => {
   const { locale, t } = useI18n();
   const {
@@ -203,14 +207,16 @@ export const ChatMessageList = ({
     return stable;
   }, [collectedArtifacts, revealedArtifacts]);
 
-  const lastAssistantMessageId = useMemo(() => {
+  const lastAssistantMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === "assistant") {
-        return messages[i].id;
+        return messages[i];
       }
     }
     return undefined;
   }, [messages]);
+  const lastAssistantMessageId = lastAssistantMessage?.id;
+  const isLastAssistantRetrying = Boolean(lastAssistantMessage?.isRetrying);
 
   // The fork divider should appear after the fork point (the messages
   // copied from the source conversation), not after all messages.
@@ -492,7 +498,6 @@ export const ChatMessageList = ({
         artifactWorkspace={artifactWorkspace}
         onToggleFileArtifact={toggleFileArtifact}
         isStreaming={isStreaming}
-        isAborting={isAborting}
         lastAssistantMessageId={lastAssistantMessageId}
         activeConversationId={activeConversationId}
         updateSessionMessages={updateSessionMessages}
@@ -508,52 +513,51 @@ export const ChatMessageList = ({
     );
   };
 
-  // If no fork divider needed, render messages directly
-  if (!showForkDivider) {
-    return (
-      <div className="chat-message-list">
-        {renderTriggeredByTaskBanner()}
-        {messages.map((message, index) => renderItem(message, index))}
-        {forkDividerIndex === messages.length && forkedFromConversationId
-          ? renderForkDivider()
-          : null}
-        {renderVisionStatusCard()}
-        <ChatRunSummary
-          messages={messages}
-          isStreaming={isStreaming}
-          isAborting={isAborting}
-          isRunActive={isRunActive}
-          tokenUsage={conversationTokenUsage}
-          durationMs={lastRunDurationMs}
-          ttftSumMs={conversationTtftSumMs}
-          requestCount={conversationRequestCount}
-        />
-      </div>
-    );
-  }
-
-  // Split messages at the fork divider index
-  const beforeFork = messages.slice(0, forkDividerIndex);
-  const afterFork = messages.slice(forkDividerIndex);
-
+  // 消息区分两层：平滑视口（轨道内是全部消息流内容，高度由
+  // streamGrowthSmoother 平滑过渡）+ 视口之外的会话级流式指示槽。
+  // 指示槽不随内容增长移动，始终停在可视底部。
   return (
     <div className="chat-message-list">
-      {renderTriggeredByTaskBanner()}
-      {beforeFork.map((message, index) => renderItem(message, index))}
-      {renderForkDivider()}
-      {afterFork.map((message, index) =>
-        renderItem(message, forkDividerIndex + index),
-      )}
-      {renderVisionStatusCard()}
-      <ChatRunSummary
-        messages={messages}
-        isStreaming={isStreaming}
+      <div className="chat-message-viewport" ref={streamViewportRef}>
+        <div className="chat-message-track">
+          {renderTriggeredByTaskBanner()}
+          {showForkDivider ? (
+            <>
+              {messages
+                .slice(0, forkDividerIndex)
+                .map((message, index) => renderItem(message, index))}
+              {renderForkDivider()}
+              {messages
+                .slice(forkDividerIndex)
+                .map((message, index) =>
+                  renderItem(message, forkDividerIndex + index),
+                )}
+            </>
+          ) : (
+            <>
+              {messages.map((message, index) => renderItem(message, index))}
+              {forkDividerIndex === messages.length && forkedFromConversationId
+                ? renderForkDivider()
+                : null}
+            </>
+          )}
+          {renderVisionStatusCard()}
+          <ChatRunSummary
+            messages={messages}
+            isStreaming={isStreaming}
+            isAborting={isAborting}
+            isRunActive={isRunActive}
+            tokenUsage={conversationTokenUsage}
+            durationMs={lastRunDurationMs}
+            ttftSumMs={conversationTtftSumMs}
+            requestCount={conversationRequestCount}
+          />
+        </div>
+      </div>
+      <ChatStreamIndicator
+        active={isStreaming}
         isAborting={isAborting}
-        isRunActive={isRunActive}
-        tokenUsage={conversationTokenUsage}
-        durationMs={lastRunDurationMs}
-        ttftSumMs={conversationTtftSumMs}
-        requestCount={conversationRequestCount}
+        isRetrying={isLastAssistantRetrying}
       />
     </div>
   );

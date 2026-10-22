@@ -1,9 +1,8 @@
-import { Loader2, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { memo, useMemo, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { AiErrorNotice } from "./AiErrorNotice";
 import { AiResponseActions } from "./AiResponseActions";
-import { StreamCursor } from "./StreamCursor";
 import { StreamRetryNotice } from "./StreamRetryNotice";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
@@ -94,7 +93,6 @@ export const AiResponse = memo(
     isThinkingActive,
     sections = [],
     isStreaming = false,
-    isAborting = false,
     isRetrying = false,
     retryAttempt,
     retryError,
@@ -367,21 +365,15 @@ export const AiResponse = memo(
             </>
           ) : null}
 
-          {/* 5. Loading indicator — persists throughout the entire AI loop */}
-          {isAborting ? (
-            <span className="stream-stopping">
-              <Loader2 size={12} className="spin" />
-              <span>{t("chat.stopping", { defaultValue: "Stopping..." })}</span>
-            </span>
-          ) : isRetrying ? (
+          {/* 5. 流式重试提示（流式指示器与「停止中」由会话级指示槽统一
+              承载，见 ChatStreamIndicator，不再挂在单条消息内部）。 */}
+          {isRetrying ? (
             <StreamRetryNotice
               attempt={retryAttempt}
               error={retryError}
               backoffMs={retryBackoffMs}
               backoffStartedAt={retryBackoffStartedAt}
             />
-          ) : isStreaming ? (
-            <StreamCursor />
           ) : null}
 
           {/* 5b. 重试预算耗尽的终态：复用同一条重试提示（静态告警图标 +

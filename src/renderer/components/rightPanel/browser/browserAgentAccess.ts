@@ -94,6 +94,11 @@ export const setBrowserTabShared = (
     return;
   }
   accessRegistry.set(instanceId, { ...access, shared });
+  // 用户直接点工具栏「共享给 AI」等价于同意挂起的共享申请：否则申请会一直
+  // 挂到超时，browser-request_share 返回 false 与真实共享状态相互矛盾。
+  if (shared) {
+    resolveBrowserAgentShareRequest(instanceId, true);
+  }
   notifyAccessSubscribers();
 };
 
@@ -109,16 +114,17 @@ export const updateBrowserAgentAccessUrl = (
   notifyAccessSubscribers();
 };
 
-export const getPendingBrowserAgentShareRequest = (
-  instanceId: string,
-): BrowserAgentShareRequest | null => {
-  const pending = pendingShareRequests.get(instanceId);
-  const access = accessRegistry.get(instanceId);
-  if (!pending || !access) {
-    return null;
-  }
-  return { instanceId, url: access.url };
-};
+export const listPendingBrowserAgentShareRequests =
+  (): BrowserAgentShareRequest[] => {
+    const requests: BrowserAgentShareRequest[] = [];
+    for (const instanceId of pendingShareRequests.keys()) {
+      const access = accessRegistry.get(instanceId);
+      if (access) {
+        requests.push({ instanceId, url: access.url });
+      }
+    }
+    return requests;
+  };
 
 export const hasPendingBrowserAgentShareRequest = (): boolean =>
   pendingShareRequests.size > 0;

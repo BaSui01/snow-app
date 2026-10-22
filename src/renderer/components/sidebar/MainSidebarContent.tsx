@@ -497,14 +497,36 @@ export function MainSidebarContent({
               strokeWidth={1.8}
             />
           </button>
-          {/* 收起时悬停整行才淡入徽章：悬停说明含义，点击直达对应面板 */}
+          {/* 插件更新提示常亮：不参与悬停淡入，有更新即常显，点击直达插件页 */}
+          {!isMoreExpanded && pluginUpdateCount > 0 && (
+            <span className="sidebar-more-update">
+              <Tooltip
+                content={t("plugins.updateAvailable", {
+                  values: { count: pluginUpdateCount },
+                  defaultValue: "{{count}} plugin updates available",
+                })}
+              >
+                <button
+                  className="sidebar-more-update-btn"
+                  onClick={() => onSelectMainView("plugins")}
+                  type="button"
+                >
+                  <CircleArrowUp size={14} strokeWidth={2} />
+                </button>
+              </Tooltip>
+            </span>
+          )}
+          {/* 收起时悬停整行才淡入数值徽章：悬停说明含义，点击直达对应面板 */}
           {!isMoreExpanded &&
             (pendingMemoCount > 0 ||
               memoryCount > 0 ||
               activeScheduledTaskCount > 0 ||
-              enabledPluginCount > 0 ||
-              pluginUpdateCount > 0) && (
-              <span className="sidebar-more-summary">
+              enabledPluginCount > 0) && (
+              <span
+                className={`sidebar-more-summary${
+                  pluginUpdateCount > 0 ? " is-shifted" : ""
+                }`}
+              >
                 {pendingMemoCount > 0 && (
                   <Tooltip
                     content={t("sidebar.morePendingMemos", {
@@ -566,22 +588,6 @@ export function MainSidebarContent({
                       type="button"
                     >
                       {enabledPluginCount}
-                    </button>
-                  </Tooltip>
-                )}
-                {pluginUpdateCount > 0 && (
-                  <Tooltip
-                    content={t("plugins.updateAvailable", {
-                      values: { count: pluginUpdateCount },
-                      defaultValue: "{{count}} plugin updates available",
-                    })}
-                  >
-                    <button
-                      className="sidebar-more-icon-btn"
-                      onClick={() => onSelectMainView("plugins")}
-                      type="button"
-                    >
-                      <CircleArrowUp size={14} strokeWidth={2} />
                     </button>
                   </Tooltip>
                 )}

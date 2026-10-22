@@ -21,6 +21,7 @@ export { ImageGenToolCall } from "./ImageGenToolCall";
 export { ImageDescribeToolCall } from "./ImageDescribeToolCall";
 export { ImageGenGallery } from "./ImageGenGallery";
 export { BrowserToolCall } from "./BrowserToolCall";
+export { BrowserShareRequestCard } from "./BrowserShareRequestCard";
 export { TerminalToolCall } from "./TerminalToolCall";
 export { ComputerUseToolCall } from "./ComputerUseToolCall";
 export { HtmlRenderToolCall } from "./HtmlRenderToolCall";

@@ -25,6 +25,7 @@ import {
   ImageGenToolCall,
   ImageDescribeToolCall,
   BrowserToolCall,
+  BrowserShareRequestCard,
   TerminalToolCall,
   ComputerUseToolCall,
   HtmlRenderToolCall,
@@ -182,6 +183,11 @@ const renderToolCall = ({
 
   if (toolCall.name === "imagegen-image-describe") {
     return <ImageDescribeToolCall toolCall={toolCall} />;
+  }
+
+  // 共享申请期间由会话区卡片承载允许 / 拒绝交互（申请结算后交回常规卡片）。
+  if (toolCall.name === "browser-request_share") {
+    return <BrowserShareRequestCard toolCall={toolCall} />;
   }
 
   if (toolCall.name.startsWith("browser-")) {

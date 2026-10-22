@@ -40,9 +40,9 @@ export type AiResponseProps = {
   isThinkingActive?: boolean;
   sections?: AiResponseSection[];
   isStreaming?: boolean;
-  isAborting?: boolean;
   /** True while the backend is re-issuing a failed stream request; the retry
-   *  status line replaces the streaming cursor. */
+   *  status card is rendered inside the message (the session-level stream
+   *  indicator stays empty meanwhile). */
   isRetrying?: boolean;
   /** 1-based ordinal of the in-flight retry attempt. */
   retryAttempt?: number;

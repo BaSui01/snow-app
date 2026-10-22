@@ -306,11 +306,20 @@ const parseChunkNodes = (html: string): Node[] => {
   return Array.from(template.content.childNodes);
 };
 
+/** 减弱动态效果偏好：不播放淡入（animationend 不会触发，span 无法还原）。 */
+const reducedMotionQuery = window.matchMedia(
+  "(prefers-reduced-motion: reduce)",
+);
+
 /**
- * 新增文本的淡入 span。动画结束后还原为普通文本节点，避免长时间流式
- * 在 DOM 中累积大量带残留动画的 span。
+ * 流式新增文本节点：默认包进淡入 span，动画结束后还原为普通文本节点，
+ * 避免长时间流式在 DOM 中累积大量带残留动画的 span；减弱动态时直接
+ * 返回文本节点。
  */
-const createFadeSpan = (text: string): HTMLSpanElement => {
+const createStreamTextNode = (text: string): Node => {
+  if (reducedMotionQuery.matches) {
+    return document.createTextNode(text);
+  }
   const span = document.createElement("span");
   span.className = MD_STREAM_FADE_CLASS;
   span.textContent = text;
@@ -327,22 +336,66 @@ const createFadeSpan = (text: string): HTMLSpanElement => {
 /**
  * 流式渲染最小间隔（ms）。
  *
- * 流式期间 content 每 chunk 都在变，长文本的 markdown 全量解析 + DOM 整块
- * 替换是流式高 CPU 的主因：若每帧（60fps）渲染一次，几万字内容每秒解析
- * 60 次，worker 与合成器双双打满。降到 10fps 后视觉无感（流式文本本身
- * 就在滚动），解析/布局/合成开销降低约 6 倍。
- *
- * 内容按安全边界分块后，每次只需重算变化的尾块，间隔维持不变即可。
+ * 流式文本经平滑揭示（见下方 REVEAL_*）后每次只前进少量字符，配合块级
+ * 增量提交（只重算尾块），以约 25fps 的节奏提交即可让新文字连续浮现；
+ * 每次提交的淡入时长覆盖多个提交周期，相邻批次的渐显首尾相接，不再有
+ * 「一顿一顿」的整块跳变。
  */
-const MIN_RENDER_INTERVAL_MS = 100;
+const MIN_RENDER_INTERVAL_MS = 40;
 /** 超长文本（>= 100KB）的流式渲染间隔：块级增量后单次成本已与增量成
  *  正比，但固化块较多时切分扫描本身仍是 O(全文)，保留降频兜底。 */
 const LONG_TEXT_THRESHOLD = 100_000;
 const LONG_TEXT_INTERVAL_MS = 300;
 
+/**
+ * 流式平滑揭示：网络分包到达的文本不立即整包上屏，而是按自适应速率逐步
+ * 揭示——速率与积压量成正比（约 REVEAL_DRAIN_MS 内消化完积压），模型
+ * 吐字快时揭示也快，停顿时把余量匀速放完，视觉上是连续的书写节奏。
+ * 积压超过上限（离屏恢复、切回正在流式的会话等）直接整段上屏，不补放。
+ */
+const REVEAL_DRAIN_MS = 150;
+const REVEAL_MIN_CHARS_PER_SEC = 80;
+const REVEAL_MAX_BACKLOG = 1600;
+
+/** 推进揭示位置：elapsedMs 为距上次推进的时间。不拆开 UTF-16 代理对。 */
+const advanceRevealIndex = (
+  content: string,
+  revealed: number,
+  elapsedMs: number,
+): number => {
+  const backlog = content.length - revealed;
+  if (backlog <= 0 || backlog > REVEAL_MAX_BACKLOG) {
+    return content.length;
+  }
+  const charsPerSec = Math.max(
+    REVEAL_MIN_CHARS_PER_SEC,
+    (backlog * 1000) / REVEAL_DRAIN_MS,
+  );
+  let next =
+    revealed + Math.max(1, Math.round((charsPerSec * elapsedMs) / 1000));
+  if (next >= content.length) {
+    return content.length;
+  }
+  const code = content.charCodeAt(next - 1);
+  if (code >= 0xd800 && code <= 0xdbff) {
+    next += 1;
+  }
+  return Math.min(next, content.length);
+};
+
+const commonPrefixLength = (a: string, b: string): number => {
+  const limit = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < limit && a.charCodeAt(index) === b.charCodeAt(index)) {
+    index += 1;
+  }
+  return index;
+};
+
 /** 一批待提交的渲染结果：changedFrom 起（含）的块需要重建。 */
 type PendingRender = {
-  /** The source snapshot whose chunks are safe to commit and execute. */
+  /** The source snapshot whose chunks are safe to commit and execute.
+   *  流式结果可能只是当前内容的前缀（平滑揭示中）。 */
   content: string;
   changedFrom: number;
   chunks: MarkdownChunk[];
@@ -350,22 +403,29 @@ type PendingRender = {
   streaming: boolean;
 };
 
+/** 渲染结果能否提交到当前内容：流式结果只需是当前内容的前缀。 */
+const isPendingApplicable = (
+  pending: PendingRender,
+  content: string,
+): boolean =>
+  pending.streaming
+    ? content.startsWith(pending.content)
+    : pending.content === content;
+
 /**
  * Render streaming markdown with frame-aligned throttling.
  *
  * During the AI loop, `content` mutates on every streamed chunk (potentially
  * dozens of times per second). Re-rendering on every chunk janks the main
  * thread. Instead we coalesce updates to at most one render per animation
- * frame: the latest content is always used, and intermediate chunks are
- * dropped. This keeps the visible output responsive without queueing a
- * backlog of stale renders.
+ * frame and keep at most one worker request in flight: the latest content is
+ * always used, and intermediate chunks are dropped.
  *
  * 在帧合并 + 最小间隔节流之上：
+ *   - 流式期间按平滑揭示的进度派发内容前缀，流结束后先把积压揭示完，
+ *     再派发一次终态渲染（写入终态缓存、驱动 mermaid / HTML 预览）；
  *   - 请求携带已提交块的指纹，worker 只回传从第一处不同开始的块；
  *   - paused（内容离屏/折叠）期间不派发，重新可见时立即渲染最新一版。
- *
- * The hook also tracks the latest in-flight request id so that out-of-order
- * worker responses never overwrite newer results.
  */
 const useMarkdownRender = (
   content: string,
@@ -414,9 +474,19 @@ const useMarkdownRender = (
       ? LONG_TEXT_INTERVAL_MS
       : MIN_RENDER_INTERVAL_MS);
 
+  // 平滑揭示状态：挂载时内容视为已全部揭示（历史消息、切回会话不补放）。
+  const revealedRef = useRef(content.length);
+  const revealedTextRef = useRef(content);
+  const lastRevealAtRef = useRef(0);
+  // 揭示进行中：流式期间置位，流结束且积压放完后复位。
+  const pacingRef = useRef(false);
+
   // Tracks the request id of the most recent dispatch so that a late worker
   // response for a previous chunk cannot clobber a fresher one.
   const latestRequestIdRef = useRef(0);
+  // 同一时刻最多一个在途请求：worker 慢于提交节奏时不会让后续请求不断
+  // 顶替前一个而饿死提交。
+  const inFlightRef = useRef(false);
   // Non-null while a frame is scheduled; used to dedupe rAF requests.
   const scheduledFrameRef = useRef<number | null>(null);
   // Timestamp of the last time a render result was committed to state.
@@ -431,47 +501,90 @@ const useMarkdownRender = (
       scheduledFrameRef.current = null;
       // 内容不可见时（离屏/折叠）不派发：内容仍在变，等重新可见时渲染
       // 最新一版即可，期间省下 worker 与主线程的全部开销。
-      if (pausedRef.current) {
+      if (pausedRef.current || inFlightRef.current) {
         return;
       }
+      const now = performance.now();
       // Throttle: if the minimum interval has not elapsed since the last
-      // commit, defer to the next frame and re-check. While content keeps
-      // changing (streaming), this naturally coalesces to ~10fps; once it
-      // stabilizes, the final render fires within one interval.
-      if (performance.now() - lastRenderAtRef.current < intervalMsRef.current) {
+      // commit, defer to the next frame and re-check.
+      if (now - lastRenderAtRef.current < intervalMsRef.current) {
         scheduledFrameRef.current = requestAnimationFrame(runRender);
         return;
       }
-      const currentContent = contentRef.current;
+
+      const fullContent = contentRef.current;
       const isStreaming = streamingRef.current;
+      if (isStreaming) {
+        pacingRef.current = true;
+      }
+      // 内容被改写（重试清空、回退等）时，揭示位置退回到仍然一致的前缀。
+      let revealed = revealedRef.current;
+      if (!fullContent.startsWith(revealedTextRef.current)) {
+        revealed = commonPrefixLength(fullContent, revealedTextRef.current);
+      }
+      // 推进时长按提交节奏封顶：流式停顿后新到的一包仍按速率揭示，
+      // 不会因为「距上次推进很久」而整包跳出。
+      revealed = pacingRef.current
+        ? advanceRevealIndex(
+            fullContent,
+            revealed,
+            Math.min(now - lastRevealAtRef.current, intervalMsRef.current * 2),
+          )
+        : fullContent.length;
+      lastRevealAtRef.current = now;
+      const isLive =
+        pacingRef.current && (isStreaming || revealed < fullContent.length);
+      if (!isLive) {
+        pacingRef.current = false;
+      }
+      const dispatchContent = isLive
+        ? fullContent.slice(0, revealed)
+        : fullContent;
+      revealedRef.current = revealed;
+      revealedTextRef.current = dispatchContent;
+
       const requestId = nextRequestId();
       latestRequestIdRef.current = requestId;
+      inFlightRef.current = true;
       const knownKeys = committedRef.current.map((chunk) => chunk.key);
-      void dispatchRender(currentContent, knownKeys, isStreaming).then(
+      void dispatchRender(dispatchContent, knownKeys, isLive).then(
         ({ changedFrom, chunks }) => {
+          inFlightRef.current = false;
+          const latestContent = contentRef.current;
+          // 派发期间内容又有推进、或揭示尚未完成、或流刚结束需要终态
+          // 渲染：继续排下一轮（在途期间到达的变更都靠这里接力）。
+          const needsNextRender =
+            latestContent !== dispatchContent ||
+            (isLive &&
+              (revealedRef.current < latestContent.length ||
+                !streamingRef.current));
           // A newer prop may arrive before its throttled request is dispatched.
-          // Neither superseded requests nor old content may become executable.
+          // Neither superseded requests nor stale content may become executable.
           if (
-            latestRequestIdRef.current !== requestId ||
-            currentContent !== contentRef.current
+            latestRequestIdRef.current === requestId &&
+            (isLive
+              ? latestContent.startsWith(dispatchContent)
+              : latestContent === dispatchContent)
           ) {
-            return;
+            lastRenderAtRef.current = performance.now();
+            if (!isLive && changedFrom === 0) {
+              // 终态且拿到完整块列表：缓存下来，供重挂载/翻页首帧同步还原。
+              contentCacheSet(dispatchContent, chunks);
+            }
+            // Even an unchanged chunk list confirms the current content snapshot.
+            setState((prev) => ({
+              pending: {
+                content: dispatchContent,
+                changedFrom,
+                chunks,
+                streaming: isLive,
+              },
+              version: prev.version + 1,
+            }));
           }
-          lastRenderAtRef.current = performance.now();
-          if (!isStreaming && changedFrom === 0) {
-            // 终态且拿到完整块列表：缓存下来，供重挂载/翻页首帧同步还原。
-            contentCacheSet(currentContent, chunks);
+          if (needsNextRender) {
+            scheduleRender();
           }
-          // Even an unchanged chunk list confirms the current content snapshot.
-          setState((prev) => ({
-            pending: {
-              content: currentContent,
-              changedFrom,
-              chunks,
-              streaming: isStreaming,
-            },
-            version: prev.version + 1,
-          }));
         },
       );
     };
@@ -487,6 +600,9 @@ const useMarkdownRender = (
     const cached = contentCacheGet(content);
     if (cached) {
       latestRequestIdRef.current = 0;
+      pacingRef.current = false;
+      revealedRef.current = content.length;
+      revealedTextRef.current = content;
       setState((prev) => ({
         pending: { content, changedFrom: 0, chunks: cached, streaming: false },
         version: prev.version + 1,
@@ -494,7 +610,7 @@ const useMarkdownRender = (
       return;
     }
     scheduleRender();
-  }, [content, paused, scheduleRender]);
+  }, [content, paused, streaming, scheduleRender]);
 
   // Cancel any pending rAF on unmount. The shared worker itself is left
   // alive (singleton) so other MarkdownBlock instances keep their warm cache;
@@ -721,14 +837,20 @@ const commitMarkdownChunks = (
   }
 
   if (reuseTail) {
-    if (appendText.trim().length > 0) {
+    if (appendText.length > 0) {
       const domLastText = findLastNonEmptyTextNodeIn(tailNodes);
-      if (domLastText?.parentNode) {
-        domLastText.parentNode.insertBefore(
-          createFadeSpan(appendText),
-          domLastText.nextSibling,
-        );
-      }
+      // 上一批文字仍在淡入时，最后一个文本节点位于它的 span 内：新 span
+      // 必须插在该 span 之后而非之内——嵌套会让外层动画结束时把整段
+      // 还原成纯文本，内层尚未播完的淡入随之被打断、新字瞬间跳满。
+      const fadeHost = domLastText?.parentElement?.classList.contains(
+        MD_STREAM_FADE_CLASS,
+      )
+        ? domLastText.parentElement
+        : domLastText;
+      fadeHost?.parentNode?.insertBefore(
+        createStreamTextNode(appendText),
+        fadeHost.nextSibling,
+      );
     }
   } else {
     for (let i = cursor; i < chunks.length; i += 1) {
@@ -751,13 +873,25 @@ const commitMarkdownChunks = (
       committed.push({ key: chunks[i].key, nodes });
     }
 
-    // 新插入内容里最后一段文本整体淡入（与整块重建时的观感一致）。
+    // 新插入内容里最后一段文本淡入：若它是上一版尾部文本的延长（结构
+    // 变化导致整块重建），只淡入新增的后缀，已经可见的部分保持不动；
+    // 若只是同一段文本被重新包装（如粗体闭合），不重复淡入。
     if (streaming && chunks.length > cursor) {
       const lastNodes = committed[committed.length - 1]?.nodes ?? [];
       const lastText = findLastNonEmptyTextNodeIn(lastNodes);
       if (lastText) {
         const text = lastText.nodeValue ?? "";
-        lastText.parentNode?.replaceChild(createFadeSpan(text), lastText);
+        const previous = lastTailTextRef.current;
+        if (
+          previous !== "" &&
+          text.length > previous.length &&
+          text.startsWith(previous)
+        ) {
+          const suffix = lastText.splitText(previous.length);
+          suffix.replaceWith(createStreamTextNode(suffix.nodeValue ?? ""));
+        } else if (previous === "" || !previous.endsWith(text)) {
+          lastText.replaceWith(createStreamTextNode(text));
+        }
         lastTailTextRef.current = text;
       }
     }
@@ -819,6 +953,9 @@ export const MarkdownBlock = memo(
       paused,
       minIntervalMs: minRenderIntervalMs,
     });
+    // 「仍在输出」：流式中，或流已结束但平滑揭示还在放积压（已提交的仍是
+    // 流式前缀结果）。终态渲染提交后才执行 mermaid / HTML 预览等终态处理。
+    const isLive = streaming || Boolean(pending?.streaming);
 
     // 表格下载按钮的 tooltip：worker 生成的 HTML 不含文案，这里按当前语言补写；
     // t 随语言变化而变，因此语言切换时也会对已提交的块重新应用一次。
@@ -902,7 +1039,7 @@ export const MarkdownBlock = memo(
     // 同一结果重复提交是幂等的（见 commitMarkdownChunks）。
     useLayoutEffect(() => {
       const node = containerRef.current;
-      if (!node || !pending || pending.content !== content) {
+      if (!node || !pending || !isPendingApplicable(pending, content)) {
         return;
       }
       commitMarkdownChunks(
@@ -919,7 +1056,7 @@ export const MarkdownBlock = memo(
       if (node) {
         syncHtmlArtifacts(
           node,
-          streaming || paused,
+          isLive || paused,
           htmlArtifactLabels(),
           autoPreviewHtml,
           pending?.content === content,
@@ -927,7 +1064,7 @@ export const MarkdownBlock = memo(
       }
     }, [
       version,
-      streaming,
+      isLive,
       paused,
       pending,
       content,
@@ -942,24 +1079,25 @@ export const MarkdownBlock = memo(
       };
     }, []);
 
-    // During streaming, skip all mermaid operations entirely — only the code
-    // view is shown. Once streaming ends (`streaming` flips to false), both
-    // phases fire in a single pass to render every diagram at once. This
-    // avoids any flicker from repeatedly attempting to parse incomplete code.
+    // While output is live, skip all mermaid operations entirely — only the
+    // code view is shown. Once the final render lands (`isLive` flips to
+    // false), both phases fire in a single pass to render every diagram at
+    // once. This avoids any flicker from repeatedly attempting to parse
+    // incomplete code.
     //
     // Phase 1 — synchronous cache injection (before browser paint) so that
     // already-rendered diagrams appear right after a chunk commit.
     useLayoutEffect(() => {
-      if (streaming) return;
+      if (isLive) return;
       const node = containerRef.current;
       if (node && version > 0) {
         injectCachedDiagrams(node);
       }
-    }, [version, streaming]);
+    }, [version, isLive]);
 
     // Phase 2 — async rendering of uncached diagrams, debounced via rAF.
     useEffect(() => {
-      if (streaming) return;
+      if (isLive) return;
       const node = containerRef.current;
       if (!node || version === 0) return;
 
@@ -967,7 +1105,7 @@ export const MarkdownBlock = memo(
         void renderMermaidBlocks(node);
       });
       return () => cancelAnimationFrame(frame);
-    }, [version, streaming]);
+    }, [version, isLive]);
 
     // Attach the global theme-change observer once for the whole app so that
     // diagrams re-render when the user switches between light/dark.

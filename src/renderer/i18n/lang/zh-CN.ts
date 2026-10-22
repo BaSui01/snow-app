@@ -1756,6 +1756,7 @@ export const zhCN = {
   "toolNames.lsp-format": "格式化",
   "toolNames.lsp-completion": "补全",
   "toolNames.browser-create": "创建浏览器",
+  "toolNames.browser-request_share": "请求共享标签页",
   "toolNames.browser-navigate": "导航",
   "toolNames.browser-click": "点击",
   "toolNames.browser-screenshot": "截图",
@@ -4691,6 +4692,8 @@ export const zhCN = {
   "browser.sharedBadge": "已共享给 Agent",
   "browser.isolatedBadge": "隔离会话",
   "browser.agentShareRequest": "Agent 请求共享此标签页",
+  "browser.agentShareRequestDesc":
+    "允许后 Agent 可读取并操作该标签页（含登录态）；拒绝则本次调用返回未授权。",
   "browser.agentShareApprove": "允许",
   "browser.agentShareDeny": "拒绝",
   "browser.agentAccessDisabled":

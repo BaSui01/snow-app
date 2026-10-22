@@ -459,6 +459,7 @@ const ChatContentBody = ({
   // 滚动跟随控制器（钉底资格推导、即时钉底、翻页恢复、滚动事件 handlers）。
   const {
     scrollRef,
+    streamViewportRef,
     showScrollToBottom,
     markUserScrollIntent,
     handleChatWheel,
@@ -661,6 +662,7 @@ const ChatContentBody = ({
                   isRunActive={isRunActive}
                   canRollback={!isSubAgentConversation}
                   scrollContainerRef={scrollRef}
+                  streamViewportRef={streamViewportRef}
                 />
                 <CompactionStream
                   isCompacting={isCompactingActive}

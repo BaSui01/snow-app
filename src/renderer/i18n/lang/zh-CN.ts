@@ -1675,6 +1675,7 @@ export const zhCN = {
   "toolCall.lsp.typeDefinitionsCount": "{{count}} 处类型定义",
   "toolCall.lsp.copySignature": "复制代码签名",
   "toolCall.lsp.copyDoc": "复制文档",
+  "toolCall.lsp.copyList": "复制清单",
   "toolCall.lsp.copied": "已复制",
   "toolCall.lsp.vulnCount": "{{count}} 个漏洞",
   "toolCall.lsp.noVulns": "未发现已知依赖漏洞",

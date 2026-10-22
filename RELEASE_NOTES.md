@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.5.3
+
+## New Features
+
+- **System Log Export**: export system logs as plain text or JSON - the current filter, split by day into a chosen folder, or individually selected entries. Rust queries and formats, the main process owns save dialogs and file writes.
+- **Built-in MCP Master Switch**: the MCP settings panel gains a Built-in category with a global master switch; a globally disabled built-in server can no longer be enabled per project.
+- **Sub-Agent Retry & Concurrency**: a failed sub-agent request suspends the main session until the user retries or abandons it, truncating the failed exchange and revoking its message id remapping before the retry; a new global sub-agent concurrency limit (1-16, default 3) queues excess requests, and throttling is classified apart from transport failures.
+- **Sub-Agent Message Delivery**: pending messages carry a source chip (user / teammate / main agent) with session-isolated jump, the new `sub-agents-sendMessage` card shows sender to recipient, queue time and pending / delivered / withdrawn status, teammate prefixes in user bubbles become a source badge, and prompts share a preview component with expand/collapse, word and line counts plus copy.
+- **Browser Scroll Tool**: a new `browser-scroll` tool scrolls the document or an inner scroll container and reports whether it moved plus before/after position; accessibility refs are scoped per tab and document generation so stale refs are rejected after navigation, and commands without `instanceId` target an agent working tab instead of the user's active tab.
+- **Classified Computer-Use Errors**: computer-use failures are classified with actionable guidance and an environment snapshot, and action results report `landedOnTarget` / `focusedWindow`.
+- **Plugin OAuth Header Schemes**: OAuth plugin hooks gain `ctx.headerSchemes` to create, update, bind and delete custom header schemes (the ones the app actually sends); account hooks bind the current profile by default and can only bind the plugin's own OAuth profiles.
+
+## Improvements
+
+- **Smoother Streaming**: a session-level streaming indicator slot stays pinned to the end of the message for the whole run, content growth is smoothed inside the clipped viewport, and markdown reveals adaptively at about 25fps.
+- Oversized tool results keep their head (about 2/3 of the budget) and tail (about 1/3) with an omitted-character marker, so trailing errors and conclusions are no longer cut off.
+- WebSocket connection expiry (including `websocket_connection_limit_reached`) now shares the failure classifier, retry policy and replay-safety gate of SSE, with per-connection ids for log correlation and a forced fresh connection after a pooled socket fails or the server declares expiry.
+- Sub-agent tool whitelists override project-level tool toggles (the global blacklist and Lite mode still apply), `*` is restricted to the built-in `agent_general`, and unavailable whitelist tools are reported with reasons.
+- Tool input schemas inline pure `$ref` nodes so stricter gateways (xAI) no longer reject combinator branches.
+- Sharing a browser tab manually now auto-approves pending share requests.
+
+## Bug Fixes
+
+- Fixed the Git branch dropdown not closing on the first click outside.
+
 ## v0.5.2
 
 ## New Features

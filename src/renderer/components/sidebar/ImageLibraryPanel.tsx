@@ -33,6 +33,7 @@ import {
   type SettingsPageAction,
 } from "../TopBar/settingsPageActionsStore";
 import type { ImageAlbumRecord, ImageLibraryRecord } from "../../../preload";
+import { copyImageToClipboard } from "../../utils/imageClipboard";
 
 type RatioFilter = "all" | "landscape" | "square" | "portrait";
 type TimeFilter = "all" | "today" | "7d" | "30d";
@@ -1006,6 +1007,20 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
     );
   };
 
+  /** 复制图片到系统剪贴板（可直接粘贴到 QQ / 微信分享）。 */
+  const handleCopyImage = async (record: ImageLibraryRecord): Promise<void> => {
+    try {
+      const ok = await copyImageToClipboard({
+        libraryPath: record.relativePath,
+      });
+      if (ok) {
+        showActionToast(t("toolCall.imagegen.imageCopied"));
+      }
+    } catch (error) {
+      console.warn("[image-library] copy image failed", error);
+    }
+  };
+
   const lightboxDataUrl = lightbox
     ? (dataUrls[lightbox.relativePath] ?? "")
     : "";
@@ -1629,6 +1644,15 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
                       <button
                         type="button"
                         className="image-library-card-btn"
+                        onClick={() => void handleCopyImage(record)}
+                        title={t("toolCall.imagegen.copyImageHint")}
+                        aria-label={t("toolCall.imagegen.copyImage")}
+                      >
+                        <Copy size={12} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="image-library-card-btn"
                         onClick={() => void handleDownload(record)}
                         title={t("toolCall.imagegen.download")}
                         aria-label={t("toolCall.imagegen.download")}
@@ -1731,6 +1755,15 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
                   {lightbox.provider ? `${lightbox.provider} · ` : ""}
                   {lightbox.createdAt}
                 </span>
+                <button
+                  type="button"
+                  className="tool-call-imagegen-download"
+                  onClick={() => void handleCopyImage(lightbox)}
+                  title={t("toolCall.imagegen.copyImageHint")}
+                >
+                  <Copy size={13} aria-hidden="true" />
+                  {t("toolCall.imagegen.copyImage")}
+                </button>
                 <button
                   type="button"
                   className="tool-call-imagegen-download"
@@ -1886,6 +1919,15 @@ export const ImageLibraryPanel = (): React.JSX.Element => {
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
           items={[
+            {
+              id: "copy-image",
+              label: t("toolCall.imagegen.copyImage"),
+              icon: <Copy size={12} aria-hidden="true" />,
+              onClick: () => {
+                setContextMenu(null);
+                void handleCopyImage(contextMenu.record);
+              },
+            },
             {
               id: "download",
               label: t("toolCall.imagegen.download"),

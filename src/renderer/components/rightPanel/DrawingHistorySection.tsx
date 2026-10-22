@@ -1,6 +1,8 @@
-import { memo, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Check,
   ChevronDown,
+  Copy,
   Image as ImageIcon,
   Images,
   RefreshCw,
@@ -32,6 +34,10 @@ export type DrawingHistorySectionProps = {
   handleDelete: (
     record: Pick<DrawingLibraryRecord, "id" | "relativePath">,
   ) => void;
+  /** 复制该图到系统剪贴板；返回是否成功（用于按钮「已复制」反馈）。 */
+  onCopyImage: (
+    record: Pick<DrawingLibraryRecord, "relativePath">,
+  ) => Promise<boolean>;
   deleteTarget: Pick<DrawingLibraryRecord, "id" | "relativePath"> | null;
   setDeleteTarget: (
     target: Pick<DrawingLibraryRecord, "id" | "relativePath"> | null,
@@ -66,6 +72,7 @@ export const DrawingHistorySection = memo(function DrawingHistorySection({
   handleLoadMore,
   handleUseAsReference,
   handleDelete,
+  onCopyImage,
   deleteTarget,
   setDeleteTarget,
   confirmDelete,
@@ -75,6 +82,32 @@ export const DrawingHistorySection = memo(function DrawingHistorySection({
   renderLibraryImage,
 }: DrawingHistorySectionProps): React.JSX.Element {
   const { t } = useI18n();
+
+  /** 最近一次复制成功的图片 id（1.5s 后还原图标）。 */
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyImage = (record: DrawingHistoryRecord): void => {
+    void (async () => {
+      const ok = await onCopyImage(record);
+      if (!ok) {
+        return;
+      }
+      setCopiedId(record.id);
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = setTimeout(() => setCopiedId(null), 1500);
+    })();
+  };
 
   return (
     <>
@@ -210,6 +243,19 @@ export const DrawingHistorySection = memo(function DrawingHistorySection({
                       }
                     >
                       <ImageIcon size={13} strokeWidth={1.8} />
+                    </button>
+                    <button
+                      type="button"
+                      className="ai-drawing-img-action"
+                      title={t("toolCall.imagegen.copyImageHint")}
+                      aria-label={t("toolCall.imagegen.copyImage")}
+                      onClick={() => handleCopyImage(record)}
+                    >
+                      {copiedId === record.id ? (
+                        <Check size={13} strokeWidth={1.8} />
+                      ) : (
+                        <Copy size={13} strokeWidth={1.8} />
+                      )}
                     </button>
                     <button
                       type="button"

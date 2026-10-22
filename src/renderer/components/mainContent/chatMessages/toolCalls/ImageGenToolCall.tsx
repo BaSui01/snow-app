@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Image as ImageIcon,
   Link2,
@@ -20,6 +21,7 @@ import {
   srcToBlob,
 } from "../../../../utils/imageDownload";
 import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
+import { copyImageToClipboard } from "../../../../utils/imageClipboard";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getErrorMessage } from "../utils/conversationHelpers";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -432,6 +434,32 @@ export const ImageGenToolCall = ({
   }, [parsedResult, resolvedLibrary]);
 
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [copyingImage, setCopyingImage] = useState(false);
+  const [copiedImage, setCopiedImage] = useState(false);
+
+  /** 复制首张图片到系统剪贴板（可直接粘贴到 QQ / 微信分享）。 */
+  const handleCopyImage = useCallback(async (): Promise<void> => {
+    const first = galleryItems[0];
+    if (!first || copyingImage) {
+      return;
+    }
+    setCopyingImage(true);
+    try {
+      const ok = await copyImageToClipboard({
+        src: first.src,
+        libraryPath: first.image?.path,
+      });
+      if (!ok) {
+        return;
+      }
+      setCopiedImage(true);
+      window.setTimeout(() => setCopiedImage(false), 1500);
+    } catch (error) {
+      console.warn("[imagegen] copy image failed", error);
+    } finally {
+      setCopyingImage(false);
+    }
+  }, [galleryItems, copyingImage]);
 
   const handleDownloadAll = useCallback(async (): Promise<void> => {
     if (downloadingAll || galleryItems.length === 0) {
@@ -913,6 +941,40 @@ export const ImageGenToolCall = ({
             </button>
             <button
               type="button"
+              className="tool-call-imagegen-download"
+              title={t("toolCall.imagegen.copyImageHint")}
+              onClick={() => {
+                void (async () => {
+                  let src = lightboxSrc;
+                  if (
+                    !src &&
+                    lightbox.kind === "image" &&
+                    lightbox.image.path
+                  ) {
+                    src =
+                      (await window.snow.resolveLibraryImage(
+                        lightbox.image.path,
+                      )) ?? "";
+                  }
+                  if (!src) {
+                    return;
+                  }
+                  try {
+                    await copyImageToClipboard({ src });
+                  } catch (error) {
+                    console.warn(
+                      "[imagegen] copy lightbox image failed:",
+                      error,
+                    );
+                  }
+                })();
+              }}
+            >
+              <Copy size={13} aria-hidden="true" />
+              {t("toolCall.imagegen.copyImage")}
+            </button>
+            <button
+              type="button"
               className="tool-call-imagegen-lightbox-close"
               onClick={closeLightbox}
               aria-label={t("toolCall.imagegen.close")}
@@ -980,6 +1042,18 @@ export const ImageGenToolCall = ({
               {copiedArgs
                 ? t("toolCall.imagegen.argsCopied")
                 : t("toolCall.imagegen.copyArgs")}
+            </button>
+            <button
+              type="button"
+              className="tool-call-imagegen-download-all"
+              onClick={() => void handleCopyImage()}
+              disabled={copyingImage}
+              title={t("toolCall.imagegen.copyImageHint")}
+            >
+              <Copy size={12} aria-hidden="true" />
+              {copiedImage
+                ? t("toolCall.imagegen.imageCopied")
+                : t("toolCall.imagegen.copyImage")}
             </button>
             <button
               type="button"

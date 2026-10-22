@@ -1,6 +1,7 @@
 import type {
   ApiConfigRecord,
   SubAgentConfigRecord,
+  SubAgentUnavailableTool,
 } from "../../../../../preload";
 import {
   getResponsesFastModeFromConfig,
@@ -25,7 +26,19 @@ export type SubAgentRuntimeConfig = {
   effectiveResponsesFastMode: string;
   systemPrompt: string;
   toolsJson: string;
+  /** 激活时诊断出的不可用白名单工具（回传主控并写入子代理提示词）。 */
+  unavailableTools?: SubAgentUnavailableTool[];
 };
+
+/** 子代理提示词中的不可用工具说明；无不可用工具时返回空串。 */
+export const buildUnavailableToolsPrompt = (
+  tools: readonly SubAgentUnavailableTool[] | undefined,
+): string =>
+  tools?.length
+    ? `## Unavailable Configured Tools\nThe following tools from your configuration are unavailable in this run and are NOT in your tool list. Do not try to call them; work with the tools you actually have, and mention the gap in your final summary if it blocks the task:\n${tools
+        .map((tool) => `- ${tool.name} (${tool.reason})`)
+        .join("\n")}`
+    : "";
 
 export type ResolveSubAgentRuntimeConfigInput = {
   config: SubAgentConfigRecord;
@@ -41,6 +54,8 @@ export type ResolveSubAgentRuntimeConfigInput = {
 
 const normalizeNonEmpty = (value: string | undefined): string =>
   value?.trim() ?? "";
+
+const BUILTIN_GENERAL_AGENT_ID = "agent_general";
 
 export const parseSubAgentTools = (toolsJson: string): string[] => {
   let parsed: unknown;
@@ -76,8 +91,13 @@ export const resolveSubAgentRuntimeConfig = ({
     throw new Error("Sub-agent configuration requires a valid id and name");
   }
 
-  parseSubAgentTools(config.toolsJson);
-
+  const configuredTools = parseSubAgentTools(config.toolsJson);
+  // 通配符仅限内置 agent_general（与 Rust 存储层保存校验一致）。
+  if (agentId !== BUILTIN_GENERAL_AGENT_ID && configuredTools.includes("*")) {
+    throw new Error(
+      "Only the built-in agent_general may use the wildcard tool configuration",
+    );
+  }
   const configuredProfile = normalizeNonEmpty(config.configProfile);
   const inheritedProfile = normalizeNonEmpty(parentApiProfile);
   const apiSource = configuredProfile ? "agent" : "parent";

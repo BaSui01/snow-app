@@ -3216,9 +3216,13 @@ export const zhTW = {
   "settings.subAgentSystemPrompt": "子代理系統提示詞",
   "settings.subAgentSystemPromptPlaceholder": "定義此子代理的角色和執行規則。",
   "settings.subAgentTools": "MCP 工具",
-  "settings.subAgentToolsHint": "僅顯示目前專案已啟用的 MCP 工具，可多選。",
+  "settings.subAgentToolsHint":
+    "專案內已關閉的工具也會列出：子代理明確勾選的工具不受專案啟停影響，主會話看不到時子代理仍可使用；全域工具黑名單與精簡模式仍然生效。",
   "settings.subAgentToolsGlobalHint":
-    "僅列出系統服務與全域 MCP 服務的工具，與專案無關。在關閉了某服務的專案中執行時，該服務的工具會被略過。",
+    "僅列出系統服務與全域 MCP 服務的工具，與專案無關。子代理明確勾選的工具不受專案啟停影響；全域工具黑名單與精簡模式仍然生效。",
+  "settings.subAgentToolProjectDisabledBadge": "僅子代理可用",
+  "settings.subAgentToolProjectDisabledTitle":
+    "目前專案已為主會話關閉此工具；勾選後子代理仍可使用。",
   "settings.subAgentToolsLoading": "正在載入 MCP 工具...",
   "settings.subAgentToolsEmpty": "沒有可用的已啟用 MCP 工具。",
   "settings.subAgentToolSearchPlaceholder": "依名稱、伺服器或描述搜尋工具",

@@ -28,6 +28,14 @@ import type {
   SubAgentToolOption,
 } from "./subAgent/types";
 
+/** 精简模式整体禁用的内置服务器（对子代理同样生效，与 Rust LITE_MODE_DISABLED_SERVER_IDS 一致）。 */
+const LITE_MODE_SERVER_IDS = new Set([
+  "builtin:browser",
+  "builtin:app-control",
+  "builtin:terminal",
+  "builtin:computer-use",
+]);
+
 export function SubAgentSettingsPanel({
   activeDirectory,
 }: SubAgentSettingsPanelProps): React.JSX.Element {
@@ -93,19 +101,45 @@ export function SubAgentSettingsPanel({
     setIsToolCatalogLoading(true);
     try {
       // 全局 Tab 使用不依赖项目的全局目录；项目 Tab 使用当前项目目录。
-      const servers = scopeProjectId
-        ? await window.snow.listMcpProjectServers(scopeProjectId)
-        : await window.snow.listMcpGlobalServers();
+      const [servers, liteMode] = await Promise.all([
+        scopeProjectId
+          ? window.snow.listMcpProjectServers(scopeProjectId)
+          : window.snow.listMcpGlobalServers(),
+        window.snow.getLiteMode().catch(() => false),
+      ]);
+      // 项目 Tab 也列出项目内已关闭的服务器/工具：子代理显式勾选可豁免项目启停；
+      // 全局层（全局禁用、全局黑名单、精简模式）与发现失败仍排除。
       const availableServers = servers.filter(
-        (server) => server.globalEnabled && server.enabled && !server.error,
+        (server) =>
+          server.globalEnabled &&
+          !server.error &&
+          (Boolean(scopeProjectId) || server.enabled) &&
+          !(
+            liteMode &&
+            server.source === "system" &&
+            LITE_MODE_SERVER_IDS.has(server.id)
+          ),
+      );
+      // 项目内关闭的外部服务器不随列表返回工具，按需单独发现。
+      const serverTools = await Promise.all(
+        availableServers.map(async (server) =>
+          scopeProjectId &&
+          !server.enabled &&
+          server.source !== "system" &&
+          server.tools.length === 0
+            ? window.snow
+                .listMcpProjectServerTools(scopeProjectId, server.id)
+                .catch(() => [])
+            : server.tools,
+        ),
       );
       // Rust 侧已并发发现各启用服务器的工具并随列表返回（进程内 TTL 缓存），
       // 单个服务器发现失败仅被过滤，不再拖垮整个列表。
       const uniqueTools = new Map<string, SubAgentToolOption>();
-      for (const server of availableServers) {
-        for (const tool of server.tools) {
+      availableServers.forEach((server, index) => {
+        for (const tool of serverTools[index]) {
           if (
-            !tool.enabled ||
+            !tool.globalEnabled ||
             uniqueTools.has(tool.name) ||
             SUB_AGENT_RESERVED_TOOL_NAMES.has(tool.name)
           ) {
@@ -116,9 +150,11 @@ export function SubAgentSettingsPanel({
             description: tool.description,
             serverId: server.id,
             serverName: server.name,
+            projectDisabled:
+              Boolean(scopeProjectId) && (!server.enabled || !tool.enabled),
           });
         }
-      }
+      });
       if (toolCatalogGenerationRef.current === generation) {
         setToolOptions(Array.from(uniqueTools.values()));
       }

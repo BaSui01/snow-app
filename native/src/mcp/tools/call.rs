@@ -21,6 +21,7 @@ use super::super::servers::lsp::LspService;
 use super::super::servers::memory::MemoryService;
 use super::super::servers::remote_workspace::{is_ssh_path, RemoteWorkspaceCallback};
 use super::super::servers::skills::SkillsService;
+use super::super::servers::sub_agents::is_sub_agent_reserved_tool;
 use super::super::servers::terminal::{TerminalCommandCallback, TerminalService};
 use super::super::servers::todo::TodoService;
 use super::super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
@@ -232,7 +233,18 @@ pub async fn call_mcp_tool(
         return Err(Error::new(Status::GenericFailure, message));
     }
 
-    ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name).await?;
+    // 子代理白名单中显式列出的工具豁免项目级启停（通配符不豁免）；
+    // 保留工具任何情况下都不对子代理开放。
+    if is_sub_agent_call && is_sub_agent_reserved_tool(&tool_full_name) {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("Tool is reserved for the main conversation and unavailable to sub-agents: {tool_full_name}"),
+        ));
+    }
+    let project_override = sub_agent_allowed_tools
+        .as_ref()
+        .is_some_and(|tools| tools.iter().any(|name| name == &tool_full_name));
+    ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name, project_override).await?;
 
     if let Some(ref allowed_tools) = sub_agent_allowed_tools {
         let wildcard_enabled = allowed_tools.iter().any(|name| name == "*");

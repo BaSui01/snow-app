@@ -148,12 +148,17 @@ pub fn project_scope_server_id(config_server_id: &str) -> String {
     format!("external:{config_server_id}")
 }
 
+/// `allowed_names` 为请求白名单时只发现白名单涉及的服务器；`project_override`
+/// （子代理显式白名单）跳过项目级服务器/工具开关。
 pub async fn discover_tools(
     project_id: Option<&str>,
     scope: Option<&McpProjectScopeSettings>,
+    allowed_names: Option<&HashSet<String>>,
+    project_override: bool,
 ) -> Result<Vec<McpTool>> {
     let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
+    let scope = if project_override { None } else { scope };
     let disabled_server_ids = scope
         .map(|settings| settings.disabled_server_ids.clone())
         .unwrap_or_default();
@@ -165,21 +170,21 @@ pub async fn discover_tools(
     let discoveries = stream::iter(
         configs
             .into_iter()
-            .filter(|config| {
-                config.enabled
+            .filter_map(|config| {
+                let server_name = server_names
+                    .get(&config.server_id)
+                    .cloned()
+                    .unwrap_or_else(|| sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external"));
+                let enabled = config.enabled
                     && (config.source == "project"
-                        || !disabled_server_ids
-                            .contains(&project_scope_server_id(&config.server_id)))
+                        || !disabled_server_ids.contains(&project_scope_server_id(&config.server_id)));
+                let prefix = format!("{server_name}-");
+                let requested = allowed_names
+                    .is_none_or(|names| names.iter().any(|name| name.starts_with(&prefix)));
+                (enabled && requested).then_some((config, server_name))
             })
-            .map(|config| {
+            .map(|(config, server_name)| {
                 let project_id = project_id.clone();
-                let server_name =
-                    server_names
-                        .get(&config.server_id)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external")
-                        });
                 async move {
                     discover_config_tools(project_id.as_deref(), config, server_name, false).await
                 }

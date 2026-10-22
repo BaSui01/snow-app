@@ -220,6 +220,9 @@ You are a versatile task execution agent with full tool access, capable of handl
 
 pub(crate) const DEFAULT_GENERAL_AGENT_TOOLS_JSON: &str = r#"["*"]"#;
 
+/// 唯一允许使用通配符工具配置的内置子代理。
+pub(crate) const BUILTIN_GENERAL_AGENT_ID: &str = "agent_general";
+
 pub fn list_sub_agent_configs(
     database_path: &Path,
     project_id: Option<&str>,
@@ -251,9 +254,12 @@ pub fn get_sub_agent_config(
         .map_err(|error| database::database_error(database_path, "get sub-agent config", error))
 }
 
-/// 子代理的工具列表必须满足的最低能力约束：不能为空，且必须至少包含
-/// 一个读取类工具（或通配符 `*`）。
-fn validate_sub_agent_tools(tools_json: &str) -> Result<()> {
+/// 子代理 toolsJson 的唯一保存校验（UI 与 config-set 共用）：
+/// 非空字符串数组、格式合法、不含保留工具、至少一个读取工具；
+/// 通配符 `*` 只能单独出现且仅限内置 agent_general。
+fn validate_sub_agent_tools(agent_id: &str, tools_json: &str) -> Result<()> {
+    use crate::mcp::servers::sub_agents::is_sub_agent_reserved_tool;
+
     let tools: Vec<String> =
         serde_json::from_str(tools_json).map_err(|error| {
             Error::from_reason(format!(
@@ -271,7 +277,36 @@ fn validate_sub_agent_tools(tools_json: &str) -> Result<()> {
         ));
     }
     if tools.contains("*") {
+        if tools.len() != 1 {
+            return Err(Error::from_reason(
+                "Sub-agent wildcard \"*\" must be the only entry in toolsJson",
+            ));
+        }
+        if agent_id.trim() != BUILTIN_GENERAL_AGENT_ID {
+            return Err(Error::from_reason(
+                "Only the built-in agent_general may use the wildcard tool configuration; list the tools explicitly",
+            ));
+        }
         return Ok(());
+    }
+    let is_valid_name = |name: &str| {
+        name.split_once('-').is_some_and(|(server, tool)| !server.is_empty() && !tool.is_empty())
+            && name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    };
+    if let Some(invalid) = tools.iter().find(|name| !is_valid_name(name.as_str())) {
+        return Err(Error::from_reason(format!(
+            "Sub-agent tool name is not a valid MCP tool full name: {invalid}"
+        )));
+    }
+    if let Some(reserved) = tools
+        .iter()
+        .find(|name| is_sub_agent_reserved_tool(name.as_str()))
+    {
+        return Err(Error::from_reason(format!(
+            "Tool is reserved for the main conversation and cannot be assigned to sub-agents: {reserved}"
+        )));
     }
     const READ_TOOLS: &[&str] = &[
         "filesystem-read",
@@ -286,8 +321,60 @@ fn validate_sub_agent_tools(tools_json: &str) -> Result<()> {
     Ok(())
 }
 
+/// 项目级子代理：工具须在该项目**存在**（不要求启用，子代理显式勾选豁免项目
+/// 启停）；不连接外部服务器，只校验服务器公开名。全局子代理运行时按对话项目解析。
+fn validate_sub_agent_tools_exist(
+    database_path: &Path,
+    project_id: Option<&str>,
+    tools_json: &str,
+) -> Result<()> {
+    use crate::mcp::builtin::get_builtin_tools;
+    use crate::mcp::external::public_server_name_map;
+    use crate::mcp::tools::split_tool_full_name;
+
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let tools: Vec<String> = serde_json::from_str(tools_json).unwrap_or_default();
+    let tools = tools
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty() && *name != "*")
+        .collect::<Vec<_>>();
+    if tools.is_empty() {
+        return Ok(());
+    }
+    let builtin_tool_names = get_builtin_tools()
+        .iter()
+        .map(|tool| tool.full_name())
+        .collect::<std::collections::HashSet<_>>();
+    let configs = super::project_mcp_server_configs::list_effective_mcp_server_configs(
+        database_path,
+        Some(project_id),
+    )?;
+    let public_names = public_server_name_map(&configs);
+    let known_server_names = configs
+        .iter()
+        .filter_map(|config| public_names.get(&config.server_id).cloned())
+        .collect::<std::collections::HashSet<_>>();
+    for name in tools {
+        if builtin_tool_names.contains(name) || name.starts_with("skills-") {
+            continue;
+        }
+        let exists = split_tool_full_name(name)
+            .is_some_and(|(server_name, _)| known_server_names.contains(server_name));
+        if !exists {
+            return Err(Error::from_reason(format!(
+                "Selected sub-agent MCP tool does not exist in the current project: {name}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn upsert_sub_agent_config(database_path: &Path, item: &SubAgentConfigInput) -> Result<()> {
-    validate_sub_agent_tools(&item.tools_json)?;
+    validate_sub_agent_tools(&item.agent_id, &item.tools_json)?;
+    validate_sub_agent_tools_exist(database_path, item.project_id.as_deref(), &item.tools_json)?;
     database::open_connection(database_path)
         .and_then(|connection| upsert_sub_agent_config_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert sub-agent config", error))

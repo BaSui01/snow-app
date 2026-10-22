@@ -3399,9 +3399,12 @@ export const en = {
     "Define this sub-agent's role and execution rules.",
   "settings.subAgentTools": "MCP tools",
   "settings.subAgentToolsHint":
-    "Only tools enabled for the current project are available. You may select multiple tools.",
+    "Tools disabled for this project are listed too: explicitly selected tools stay available to the sub-agent even when the main conversation cannot see them. The global tool blacklist and Lite mode still apply.",
   "settings.subAgentToolsGlobalHint":
-    "Lists only system and global MCP server tools, independent of projects. When run in a project that disables a server, its tools are skipped.",
+    "Lists only system and global MCP server tools, independent of projects. Tools explicitly selected here stay available to the sub-agent even in projects that disable them; the global tool blacklist and Lite mode still apply.",
+  "settings.subAgentToolProjectDisabledBadge": "Sub-agent only",
+  "settings.subAgentToolProjectDisabledTitle":
+    "Disabled for the main conversation in this project; still available to this sub-agent when selected.",
   "settings.subAgentToolsLoading": "Loading MCP tools...",
   "settings.subAgentToolsEmpty": "No enabled MCP tools are available.",
   "settings.subAgentToolSearchPlaceholder":

@@ -92,56 +92,6 @@ const readTestCount = (raw: Record<string, unknown>, key: string): number => {
     : 0;
 };
 
-const validateSubAgentTools = async (
-  native: NativeBridge,
-  projectId: string | undefined,
-  toolsJson: string,
-): Promise<void> => {
-  const parsed: unknown = JSON.parse(toolsJson);
-  const toolNames = Array.isArray(parsed)
-    ? parsed.filter((tool): tool is string => typeof tool === "string")
-    : [];
-
-  if (
-    toolNames.length === 0 ||
-    (toolNames.length === 1 && toolNames[0] === "*")
-  ) {
-    return;
-  }
-
-  // 全局子代理没有项目上下文：跳过项目工具可用性校验，
-  // 运行时按当前对话项目解析（Rust collect_allowed_mcp_tools 兜底）。
-  if (!projectId) {
-    return;
-  }
-
-  const servers = await native.listMcpProjectServers(projectId);
-  const availableServers = servers.filter(
-    (server) => server.globalEnabled && server.enabled && !server.error,
-  );
-  const toolsByServer = await Promise.all(
-    availableServers.map(async (server) =>
-      server.source === "system"
-        ? server.tools
-        : native.listMcpProjectServerTools(projectId, server.id),
-    ),
-  );
-  const availableToolNames = new Set(
-    toolsByServer.flatMap((tools) =>
-      tools.filter((tool) => tool.enabled).map((tool) => tool.name),
-    ),
-  );
-  const unavailableTool = toolNames.find(
-    (toolName) => !availableToolNames.has(toolName),
-  );
-
-  if (unavailableTool) {
-    throw new Error(
-      `Selected sub-agent MCP tool is not enabled for the current project: ${unavailableTool}`,
-    );
-  }
-};
-
 export const registerConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("lsp-resource-policy:get", async () =>
     JSON.parse(await native.getLspResourcePolicy()),
@@ -599,11 +549,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       ) {
         throw new Error("Selected sub-agent API profile does not exist");
       }
-      await validateSubAgentTools(
-        native,
-        normalizedProjectId,
-        normalized.toolsJson,
-      );
+      // toolsJson 的格式/通配符/保留名/项目内存在性由 Rust upsert 统一校验。
       await native.upsertSubAgentConfig(normalized);
       return native.listSubAgentConfigs(normalizedProjectId);
     },

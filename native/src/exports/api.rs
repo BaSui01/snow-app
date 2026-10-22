@@ -34,7 +34,8 @@ use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::servers::websearch::WebSearchCommandCallback;
 use crate::mcp::servers::workflow::validate_graph as validate_workflow_graph_impl;
 use crate::mcp::tools::{
-    call_mcp_tool as call_tool, list_mcp_global_servers as list_global_servers,
+    call_mcp_tool as call_tool, diagnose_sub_agent_tools as diagnose_sub_agent_tools_impl,
+    list_mcp_global_servers as list_global_servers,
     list_mcp_project_server_tools as list_project_server_tools,
     list_mcp_project_servers as list_project_servers,
     list_mcp_project_servers_cached as list_cached_project_servers,
@@ -44,7 +45,7 @@ use crate::mcp::tools::{
     set_mcp_project_tools_enabled as set_project_tools_enabled,
     set_mcp_tool_enabled as set_tool_enabled,
     set_mcp_tools_enabled as set_tools_enabled, McpProjectServerStatus, McpProjectToolStatus,
-    McpToolDefinition, McpToolStatus,
+    McpToolDefinition, McpToolStatus, SubAgentUnavailableTool,
 };
 use crate::storage::initialize_app_storage;
 use crate::storage::services::fs_explorer::FileSearchResult;
@@ -347,6 +348,15 @@ pub async fn list_mcp_project_servers(
 #[napi]
 pub async fn list_mcp_global_servers() -> napi::Result<Vec<McpProjectServerStatus>> {
     list_global_servers().await
+}
+
+/// 诊断子代理白名单中当前不可用的工具及原因（子代理激活时调用）。
+#[napi]
+pub async fn diagnose_sub_agent_tools(
+    project_id: Option<String>,
+    tools_json: String,
+) -> napi::Result<Vec<SubAgentUnavailableTool>> {
+    diagnose_sub_agent_tools_impl(project_id, tools_json).await
 }
 
 /// 项目 MCP 服务器快速列表：外部服务器工具只读进程内缓存（不连接服务器），

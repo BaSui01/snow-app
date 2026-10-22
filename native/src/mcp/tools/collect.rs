@@ -7,7 +7,8 @@ use napi::bindgen_prelude::*;
 use super::super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::super::servers::skills::SkillsService;
 use super::super::servers::sub_agents::{
-    sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES, SUB_AGENT_MAIN_TOOL_FULL_NAMES,
+    is_sub_agent_reserved_tool, sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES,
+    SUB_AGENT_MAIN_TOOL_FULL_NAMES,
 };
 use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProjectScopeSettings};
 
@@ -37,6 +38,7 @@ pub async fn collect_all_mcp_tools_for_workspace(
         include_workflow_tool,
         None,
         analysis_root,
+        false,
     )
     .await?;
     apply_semantic_routing(&mut tools);
@@ -49,13 +51,16 @@ fn apply_semantic_routing(tools: &mut [McpTool]) {
 }
 
 /// Apply request restrictions before fallback suppression and routing text.
+/// `project_override`：子代理显式白名单，豁免项目级启停（仅保留全局黑名单）。
 async fn collect_mcp_tools(
     project_id: Option<&str>,
     include_plan_mode_tool: bool,
     include_workflow_tool: bool,
     allowed_names: Option<&std::collections::HashSet<String>>,
     analysis_root: Option<&Path>,
+    project_override: bool,
 ) -> Result<Vec<McpTool>> {
+    let project_override = project_override && allowed_names.is_some();
     let scope = load_project_scope(project_id).await?;
     let global_scope = load_global_scope().await?;
 
@@ -119,7 +124,12 @@ async fn collect_mcp_tools(
                         && tool.full_name() == *name
                         && lsp_available_tools.contains(&tool.full_name())
                         && allowed_names.is_none_or(|names| names.contains(*name))
-                        && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+                        && tool_visible(
+                            tool,
+                            global_scope.as_ref(),
+                            scope.as_ref(),
+                            project_override,
+                        )
                 })
             });
     let codelens_hidden = lsp_replacements_available && lsp_exposure.codelens_covered;
@@ -175,7 +185,7 @@ async fn collect_mcp_tools(
             if tool.server_id == "codelens" && codelens_hidden {
                 return false;
             }
-            tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+            tool_visible(tool, global_scope.as_ref(), scope.as_ref(), project_override)
         })
         .collect::<Vec<_>>();
 
@@ -203,14 +213,29 @@ async fn collect_mcp_tools(
     }
 
     if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
-        if tool_is_enabled(&skill_tool, global_scope.as_ref(), scope.as_ref()) {
+        if allowed_names.is_none_or(|names| names.contains(&skill_tool.full_name()))
+            && tool_visible(
+                &skill_tool,
+                global_scope.as_ref(),
+                scope.as_ref(),
+                project_override,
+            )
+        {
             tools.push(skill_tool);
         }
     }
 
-    match super::super::external::discover_tools(project_id, scope.as_ref()).await {
+    match super::super::external::discover_tools(
+        project_id,
+        scope.as_ref(),
+        allowed_names,
+        project_override,
+    )
+    .await
+    {
         // External tools are already filtered by the project scope inside
-        // discover_tools; apply the global blacklist on top.
+        // discover_tools (skipped under project_override); apply the global
+        // blacklist on top.
         Ok(external_tools) => tools.extend(
             external_tools
                 .into_iter()
@@ -261,6 +286,30 @@ pub async fn collect_allowed_mcp_tools_for_workspace(
     tools_json: &str,
     allow_wildcard: bool,
 ) -> Result<Vec<McpTool>> {
+    let (tools, unavailable) =
+        collect_allowed_mcp_tools_with_report(project_id, analysis_root, tools_json, allow_wildcard)
+            .await?;
+    if !unavailable.is_empty() {
+        eprintln!(
+            "Sub-agent configured tools are unavailable (skipped): {}",
+            unavailable
+                .iter()
+                .map(|item| format!("{} ({})", item.name, item.reason))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    Ok(tools)
+}
+
+/// 子代理工具集解析，同时返回白名单中不可用的工具及原因。
+/// 显式白名单豁免项目级启停（L3）；`["*"]` 仍按项目开关过滤。
+pub(crate) async fn collect_allowed_mcp_tools_with_report(
+    project_id: Option<&str>,
+    analysis_root: Option<&Path>,
+    tools_json: &str,
+    allow_wildcard: bool,
+) -> Result<(Vec<McpTool>, Vec<SubAgentUnavailableTool>)> {
     let configured_names = parse_configured_tool_names(tools_json)?;
     let wildcard_enabled = configured_names.contains("*");
     if wildcard_enabled && !allow_wildcard {
@@ -280,56 +329,134 @@ pub async fn collect_allowed_mcp_tools_for_workspace(
             Some(&configured_names)
         },
         analysis_root,
+        !wildcard_enabled,
     )
     .await?;
     if wildcard_enabled {
         // Every sub-agent carries the teammate communication tools by default,
-        // even with the wildcard configuration. The main-session management
-        // tools (listSubAgents/continue) stay hidden from sub-agents: resuming
-        // a finished sub-agent is the parent conversation's privilege.
+        // even with the wildcard configuration. Reserved tools (main-session
+        // management, Plan/WorkFlow, conversation orchestration) stay hidden.
         let mut result = all_tools;
-        result.retain(|tool| !SUB_AGENT_MAIN_TOOL_FULL_NAMES.contains(&tool.full_name().as_str()));
+        result.retain(|tool| !is_sub_agent_reserved_tool(&tool.full_name()));
         result.extend(sub_agent_comms_tools());
         apply_semantic_routing(&mut result);
-        return Ok(result);
+        return Ok((result, Vec::new()));
     }
 
-    // 部分工具不可用（被项目 scope 禁用、默认禁用未启用、条件工具如
-    // codebase/imagegen 未就绪、外部 MCP 服务器禁用或连接失败）时，跳过
-    // 不可用工具、保留可用工具，而不是整体失败。整体失败会让 provider
-    // 层把子代理请求静默降级为无工具（tools=None），模型只能把工具调用
-    // 输出为纯文本（表现为"输出奇怪的 tool_call 文本后立即结束"）。
-    let available_names = all_tools
-        .iter()
-        .map(McpTool::full_name)
-        .collect::<std::collections::HashSet<_>>();
-    let unavailable_names = configured_names
-        .difference(&available_names)
-        .filter(|name| !SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&name.as_str()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if !unavailable_names.is_empty() {
-        eprintln!(
-            "Sub-agent configured tools are unavailable or disabled for the current project (skipped): {}",
-            unavailable_names.join(", ")
-        );
-    }
-
+    // 不可用工具跳过并结构化报因，保留可用工具，而不是整体失败（整体失败会让
+    // provider 层把子代理请求静默降级为无工具）。
     let mut result = all_tools
         .into_iter()
         .filter(|tool| {
-            configured_names.contains(&tool.full_name())
-                // 主会话专用的子代理管理工具（listSubAgents/continue）不进入
-                // 子代理工具集：重新激活已结束的子代理是父会话的职权，
-                // 子代理配置中显式写入也会被忽略，避免其误用。
-                && !SUB_AGENT_MAIN_TOOL_FULL_NAMES.contains(&tool.full_name().as_str())
+            let full_name = tool.full_name();
+            configured_names.contains(&full_name) && !is_sub_agent_reserved_tool(&full_name)
         })
         .collect::<Vec<_>>();
+    let available_names = result
+        .iter()
+        .map(McpTool::full_name)
+        .collect::<std::collections::HashSet<_>>();
+    let mut unavailable_names = configured_names
+        .iter()
+        .filter(|name| {
+            !available_names.contains(*name)
+                && !SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&name.as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    unavailable_names.sort();
+    let unavailable = if unavailable_names.is_empty() {
+        Vec::new()
+    } else {
+        diagnose_unavailable_tools(project_id, unavailable_names).await
+    };
+
     // Teammate communication tools are always available to every sub-agent,
     // regardless of its configured tool whitelist.
     result.extend(sub_agent_comms_tools());
     apply_semantic_routing(&mut result);
-    Ok(result)
+    Ok((result, unavailable))
+}
+
+/// 为不可用工具归因。只读诊断：任一查询失败按保守原因返回，不影响请求。
+async fn diagnose_unavailable_tools(
+    project_id: Option<&str>,
+    names: Vec<String>,
+) -> Vec<SubAgentUnavailableTool> {
+    let global_scope = load_global_scope().await.ok().flatten();
+    let lite_mode = with_database_path(|database_path| {
+        crate::storage::services::system_settings::get_lite_mode(&database_path)
+    })
+    .await
+    .unwrap_or(false);
+    let builtin_names = get_builtin_tools()
+        .iter()
+        .map(McpTool::full_name)
+        .collect::<std::collections::HashSet<_>>();
+    let needs_external = names.iter().any(|name| {
+        !builtin_names.contains(name)
+            && !name.starts_with("skills-")
+            && !is_sub_agent_reserved_tool(name)
+    });
+    let external_servers = if needs_external {
+        super::super::external::discover_project_servers(project_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    names
+        .into_iter()
+        .map(|name| {
+            let reason = if is_sub_agent_reserved_tool(&name) {
+                "reserved"
+            } else if is_globally_disabled(&name, global_scope.as_ref()) {
+                "global_disabled"
+            } else if builtin_names.contains(&name) {
+                let server_id = split_tool_full_name(&name)
+                    .map(|(server_id, _)| server_id)
+                    .unwrap_or_default();
+                if lite_mode && LITE_MODE_DISABLED_SERVER_IDS.contains(&server_id) {
+                    "lite_mode"
+                } else if server_id == "codelens" {
+                    "superseded"
+                } else {
+                    "not_ready"
+                }
+            } else if name.starts_with("skills-") {
+                "not_ready"
+            } else {
+                match external_servers
+                    .iter()
+                    .find(|server| name.starts_with(&format!("{}-", server.public_name)))
+                {
+                    None => "not_found",
+                    Some(server) if !server.global_enabled => "global_disabled",
+                    Some(server) if !server.enabled => "server_disabled",
+                    Some(_) => "server_unavailable",
+                }
+            };
+            SubAgentUnavailableTool {
+                name,
+                reason: reason.to_string(),
+            }
+        })
+        .collect()
+}
+
+/// 诊断子代理白名单（不发起模型请求），供渲染端激活时回传主控。
+pub async fn diagnose_sub_agent_tools(
+    project_id: Option<String>,
+    tools_json: String,
+) -> Result<Vec<SubAgentUnavailableTool>> {
+    let project_id = project_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let (_, unavailable) =
+        collect_allowed_mcp_tools_with_report(project_id.as_deref(), None, &tools_json, true)
+            .await?;
+    Ok(unavailable)
 }
 
 /// Parse a JSON array of tool full names into a trimmed, non-empty set.
@@ -366,8 +493,15 @@ pub async fn collect_restricted_mcp_tools_for_workspace(
     if configured_names.is_empty() {
         return Ok(Vec::new());
     }
-    let all_tools =
-        collect_mcp_tools(project_id, false, false, Some(&configured_names), analysis_root).await?;
+    let all_tools = collect_mcp_tools(
+        project_id,
+        false,
+        false,
+        Some(&configured_names),
+        analysis_root,
+        false,
+    )
+    .await?;
     let mut result = all_tools
         .into_iter()
         .filter(|tool| {
@@ -427,6 +561,27 @@ fn tool_is_enabled(
     tool_name_is_enabled(&tool.full_name(), &tool.server_id, global_scope, scope)
 }
 
+fn is_globally_disabled(full_name: &str, global_scope: Option<&McpGlobalScopeSettings>) -> bool {
+    global_scope.is_some_and(|global| global.disabled_tool_names.contains(full_name))
+}
+
+/// 子代理显式白名单（project_override）只受全局黑名单约束，跳过项目级与默认关闭开关。
+fn tool_visible(
+    tool: &McpTool,
+    global_scope: Option<&McpGlobalScopeSettings>,
+    scope: Option<&McpProjectScopeSettings>,
+    project_override: bool,
+) -> bool {
+    if project_override {
+        return !is_globally_disabled(&tool.full_name(), global_scope);
+    }
+    tool_is_enabled(tool, global_scope, scope)
+}
+
+fn explicitly_allows_tool(allowed_tools: Option<&[String]>, name: &str) -> bool {
+    allowed_tools.is_some_and(|tools| tools.iter().any(|tool| tool == name))
+}
+
 /// Call-time LSP visibility. Use the caller's existing allowed-tools snapshot
 /// and intersect it with current exposure/scope (configuration can change after
 /// the model request). Failure omits advisory text without blocking grep.
@@ -452,10 +607,16 @@ pub(crate) async fn visible_lsp_tool_names(
     get_builtin_tools()
         .iter()
         .filter(|tool| {
+            let full_name = tool.full_name();
             tool.server_id == "lsp"
-                && exposure.tools.contains(&tool.full_name())
-                && request_allows_tool(allowed_tools, &tool.full_name())
-                && tool_is_enabled(tool, global_scope.as_ref(), scope.as_ref())
+                && exposure.tools.contains(&full_name)
+                && request_allows_tool(allowed_tools, &full_name)
+                && tool_visible(
+                    tool,
+                    global_scope.as_ref(),
+                    scope.as_ref(),
+                    explicitly_allows_tool(allowed_tools, &full_name),
+                )
         })
         .map(McpTool::full_name)
         .collect()
@@ -533,9 +694,12 @@ pub(crate) fn builtin_server_name(server_id: &str) -> &str {
     }
 }
 
+/// `project_override`：子代理显式白名单中的工具，跳过项目级与默认关闭开关，
+/// 精简模式与全局黑名单仍然生效。
 pub(crate) async fn ensure_project_tool_enabled(
     project_id: Option<&str>,
     tool_name: &str,
+    project_override: bool,
 ) -> Result<()> {
     // 精简模式执行层（与 collect 阶段排除保持一致）：Lite Mode 禁用的
     // browser / app-control / terminal 工具即使出现在陈旧工具列表中也
@@ -574,6 +738,9 @@ pub(crate) async fn ensure_project_tool_enabled(
             format!("Invalid MCP tool name: {tool_name}"),
         ));
     };
+    if project_override {
+        return Ok(());
+    }
     let scope = load_project_scope(project_id).await?;
     // 默认关闭的内置服务器（terminal/lsp/computer-use/browser/html）：必须在项目 scope
     // 中显式启用才可调用。无项目 scope（无项目上下文）= 用户从未启用，直接

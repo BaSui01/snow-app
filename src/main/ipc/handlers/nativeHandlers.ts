@@ -939,6 +939,19 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("mcp:list-global-servers", () =>
     native.listMcpGlobalServers(),
   );
+  ipcMain.handle(
+    "mcp:diagnose-sub-agent-tools",
+    (_event, projectId: unknown, toolsJson: unknown) => {
+      if (typeof toolsJson !== "string") {
+        throw new Error("Sub-agent toolsJson is required");
+      }
+      const scopedProjectId =
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined;
+      return native.diagnoseSubAgentTools(scopedProjectId, toolsJson);
+    },
+  );
   // 快速列表：只读 Rust 端进程内工具发现缓存，未命中的服务器由渲染层
   // 后台逐台补发现（保存 / 启停 / 删除配置后的刷新走这里，不阻塞 UI）。
   ipcMain.handle(

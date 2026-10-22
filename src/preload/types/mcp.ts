@@ -80,6 +80,14 @@ export type McpProjectServerStatus = {
   toolsPending: boolean;
   error?: string;
 };
+/**
+ * 子代理白名单中当前不可用的工具。reason：reserved | global_disabled |
+ * lite_mode | not_ready | superseded | server_disabled | server_unavailable | not_found
+ */
+export type SubAgentUnavailableTool = {
+  name: string;
+  reason: string;
+};
 export type BashStreamChunk = {
   stream:
     "stdout" | "stderr" | "interactive_session" | "tool_execution" | "imagegen";

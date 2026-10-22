@@ -16,7 +16,7 @@ type SubAgentEditorProps = {
   isModelCatalogLoading: boolean;
   modelCatalogError: string;
   modelOptions: Model[];
-  /** 全局 Tab 的工具候选与项目无关；项目 Tab 仅列出当前项目已启用的工具。 */
+  /** 全局 Tab 的工具候选与项目无关；项目 Tab 含项目内已关闭的工具（带标记）。 */
   isGlobalScope: boolean;
   toolCatalogError: string;
   toolOptions: SubAgentToolOption[];
@@ -297,7 +297,25 @@ export function SubAgentEditor({
                       <span className="toggle-slider" />
                       <Wrench size={14} />
                       <span className="sub-agent-tool-option-content">
-                        <strong>{tool.name}</strong>
+                        <span className="sub-agent-tool-option-title">
+                          <strong>{tool.name}</strong>
+                          {tool.projectDisabled ? (
+                            <span
+                              className="sub-agent-tool-badge"
+                              title={t(
+                                "settings.subAgentToolProjectDisabledTitle",
+                                {
+                                  defaultValue:
+                                    "Disabled for the main conversation in this project; still available to this sub-agent when selected.",
+                                },
+                              )}
+                            >
+                              {t("settings.subAgentToolProjectDisabledBadge", {
+                                defaultValue: "Sub-agent only",
+                              })}
+                            </span>
+                          ) : null}
+                        </span>
                         <small>
                           {tool.serverName}
                           {tool.description ? ` · ${tool.description}` : ""}
@@ -324,11 +342,11 @@ export function SubAgentEditor({
             {isGlobalScope
               ? t("settings.subAgentToolsGlobalHint", {
                   defaultValue:
-                    "Lists only system and global MCP server tools, independent of projects. When run in a project that disables a server, its tools are skipped.",
+                    "Lists only system and global MCP server tools, independent of projects. Tools explicitly selected here stay available to the sub-agent even in projects that disable them; the global tool blacklist and Lite mode still apply.",
                 })
               : t("settings.subAgentToolsHint", {
                   defaultValue:
-                    "Only tools enabled for the current project are available. You may select multiple tools.",
+                    "Tools disabled for this project are listed too: explicitly selected tools stay available to the sub-agent even when the main conversation cannot see them. The global tool blacklist and Lite mode still apply.",
                 })}
           </small>
         </div>

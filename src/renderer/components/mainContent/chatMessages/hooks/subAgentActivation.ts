@@ -19,7 +19,10 @@ import {
   takePendingSteering,
 } from "../utils/pendingInputs";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
-import type { ChatConversationRecord } from "../../../../../preload";
+import type {
+  ChatConversationRecord,
+  SubAgentUnavailableTool,
+} from "../../../../../preload";
 import {
   createMessageId,
   deleteCheckpoints,
@@ -43,6 +46,7 @@ import {
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import type { SubAgentRuntimeConfig } from "./subAgentRuntimeConfig";
 import {
+  buildUnavailableToolsPrompt,
   parseSubAgentTools,
   resolveSubAgentRuntimeConfig,
 } from "./subAgentRuntimeConfig";
@@ -441,7 +445,11 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     );
     // 验收协议随清单动态生成（continue 可能追加验收项），每次请求前重新拼接。
     const acceptancePrompt = buildSubAgentAcceptancePrompt(subConvId);
-    const subAgentSystemPrompt = [runtimeConfig.systemPrompt, acceptancePrompt]
+    const subAgentSystemPrompt = [
+      runtimeConfig.systemPrompt,
+      buildUnavailableToolsPrompt(runtimeConfig.unavailableTools),
+      acceptancePrompt,
+    ]
       .map((part) => (part ?? "").trim())
       .filter(Boolean)
       .join("\n\n");
@@ -1400,6 +1408,8 @@ type SubAgentFinalizerDeps = {
   toolCallInteractionId?: string;
   runForceSendLoop: () => Promise<string>;
   forwardSubPendingQueue: (convId: string) => void;
+  /** 白名单中不可用的工具，回传主控便于判断子代理能力边界。 */
+  unavailableTools?: SubAgentUnavailableTool[];
 };
 
 type SubAgentFinalizeFn = (
@@ -1425,7 +1435,11 @@ const createSubAgentFinalizer = (
     toolCallInteractionId,
     runForceSendLoop,
     forwardSubPendingQueue,
+    unavailableTools,
   } = deps;
+  const unavailablePayload = unavailableTools?.length
+    ? { unavailableTools }
+    : {};
 
   return async (convId, summary, status): Promise<string> => {
     const finalRef = ctx.sessionsRefData.current.get(convId);
@@ -1550,6 +1564,7 @@ const createSubAgentFinalizer = (
       return JSON.stringify({
         success: false,
         error: reportedSummary,
+        ...unavailablePayload,
         ...(acceptance
           ? {
               acceptanceSatisfied: acceptance.satisfied,
@@ -1619,6 +1634,7 @@ const createSubAgentFinalizer = (
       conversationId: convId,
       agentName: getAgentName(),
       summary: effectiveSummary,
+      ...unavailablePayload,
       ...acceptancePayload,
       ...(acceptanceInstruction ? { instruction: acceptanceInstruction } : {}),
     });
@@ -1843,7 +1859,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         });
       }
 
-      const runtimeConfig = resolveSubAgentRuntimeConfig({
+      const resolvedRuntimeConfig = resolveSubAgentRuntimeConfig({
         config,
         apiConfigs: await window.snow.listApiConfigs(),
         parentApiProfile,
@@ -1851,7 +1867,20 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         parentThinkingStrength,
         parentResponsesFastMode,
       });
-      const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
+      const allowedTools = parseSubAgentTools(resolvedRuntimeConfig.toolsJson);
+      // 显式白名单诊断不可用工具（通配符跳过）；诊断失败不阻塞激活。
+      const unavailableTools = allowedTools.includes("*")
+        ? []
+        : await window.snow
+            .diagnoseSubAgentTools(
+              dirId || undefined,
+              resolvedRuntimeConfig.toolsJson,
+            )
+            .catch((): SubAgentUnavailableTool[] => []);
+      const runtimeConfig = {
+        ...resolvedRuntimeConfig,
+        unavailableTools,
+      };
 
       subConversationId = `sub-${Date.now()}-${Math.random()
         .toString(36)
@@ -1971,6 +2000,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         toolCallInteractionId,
         runForceSendLoop,
         forwardSubPendingQueue,
+        unavailableTools,
       });
       finalizeSubAgentSession = subAgentFinalizer;
       subAgentResumers.set(subConversationId, {

@@ -894,7 +894,7 @@ pub async fn prepare(
             return Ok(empty(&e.reason));
         }
     };
-    crate::mcp::tools::ensure_project_tool_enabled(Some(&b.project_id), "codebase-search")
+    crate::mcp::tools::ensure_project_tool_enabled(Some(&b.project_id), "codebase-search", false)
         .await
         .map_err(|_| failure("context_tool_disabled"))?;
     let s = services(
@@ -1413,7 +1413,7 @@ async fn ensure_current(
     if snapshot(db, &b.project_id)?.0 != index {
         return Err(failure("context_source_policy_changed"));
     }
-    crate::mcp::tools::ensure_project_tool_enabled(Some(&b.project_id), "codebase-search")
+    crate::mcp::tools::ensure_project_tool_enabled(Some(&b.project_id), "codebase-search", false)
         .await
         .map_err(|_| failure("context_tool_disabled"))
 }

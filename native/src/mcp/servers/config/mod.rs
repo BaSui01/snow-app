@@ -17,7 +17,7 @@
 //!   `~/.snow/.config-backups/` (latest 10 kept per file) and the target file
 //!   is replaced atomically (tmp file + rename) so a crash cannot corrupt it.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -2551,7 +2551,7 @@ impl ConfigService {
             "count": items.len(),
             "guidance": "CREATING A SUB-AGENT - config-set scope=subAgents key=<agentId> value={name, description?, systemPrompt?, toolsJson?, configProfile?, model?}.
         \
-KEY RULES: (1) toolsJson is REQUIRED and must list at least one read tool (e.g. filesystem-read); an explicit toolsJson tool-name list additionally REQUIRES projectId (the agent becomes project-scoped); (2) toolsJson accepts a JSON string or an array of tool names that must be enabled for the project; (3) empty configProfile inherits the parent conversation's effective API profile and model at activation; a fixed configProfile uses model when provided, otherwise that profile's advancedModel; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
+KEY RULES: (1) toolsJson is REQUIRED and must list at least one read tool (e.g. filesystem-read); an explicit toolsJson tool-name list additionally REQUIRES projectId (the agent becomes project-scoped); (2) toolsJson accepts a JSON string or an array of tool names that must exist in the project; explicitly listed tools stay available to the sub-agent even when the project disables them for the main conversation (the global tool blacklist and Lite mode still apply); the wildcard [\"*\"] is reserved for the built-in agent_general and reserved main-conversation tools (sub-agents-listSubAgents, sub-agents-continue, app-control-requestApproval, app-control-conversation, workflow-*) are rejected; (3) empty configProfile inherits the parent conversation's effective API profile and model at activation; a fixed configProfile uses model when provided, otherwise that profile's advancedModel; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
 \
 Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
@@ -2677,10 +2677,7 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (e
             }
         };
 
-        // 校验工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
-        // 空/["*"] 通过；选择 MCP 工具必须项目级；内置工具严格校验，
-        // 外部工具校验服务器公开名前缀须属于当前项目 enabled 的 MCP 服务器。
-        validate_sub_agent_tools(db_path, project_id.as_deref(), &tools_json)?;
+        // 工具校验（格式/通配符/保留名/项目内存在性）统一在存储层 upsert 中完成。
 
         // 写前备份现有记录（如有），作为写入期间的临时安全网；
         // 写入成功并验证后清理。
@@ -3994,75 +3991,6 @@ fn unwrap_stringified_value(scope: &str, key: &str, raw: &str) -> Option<Value> 
         }
     }
     None
-}
-
-/// 校验子代理 toolsJson 中的工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
-/// - 空数组或 ["*"] 直接通过；
-/// - 全局子代理（无 projectId）跳过项目工具可用性校验，运行时按当前对话项目解析
-///   （collect_allowed_mcp_tools 兜底）；
-/// - 工具全名 `{server_id}-{tool_name}`：内置服务器须命中内置工具集；
-///   外部服务器须命中当前项目 enabled 的 MCP 服务器公开名（不实际连接服务器，
-///   因此只校验服务器归属，具体工具名留给运行时发现）。
-fn validate_sub_agent_tools(
-    db_path: &Path,
-    project_id: Option<&str>,
-    tools_json: &str,
-) -> napi::Result<()> {
-    use crate::mcp::builtin::get_builtin_tools;
-    use crate::mcp::external::public_server_name_map;
-    use crate::mcp::tools::split_tool_full_name;
-
-    let parsed: Value = serde_json::from_str(tools_json).map_err(|error| {
-        Error::new(
-            Status::InvalidArg,
-            format!("value.toolsJson must be valid JSON: {error}"),
-        )
-    })?;
-    let tool_names: Vec<&str> = parsed
-        .as_array()
-        .map(|items| items.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    if tool_names.is_empty() || (tool_names.len() == 1 && tool_names[0] == "*") {
-        return Ok(());
-    }
-    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
-        // 全局子代理没有项目上下文：跳过项目工具可用性校验，
-        // 运行时按当前对话项目解析（collect_allowed_mcp_tools 兜底）。
-        return Ok(());
-    };
-
-    let builtin_tool_names: HashSet<String> = get_builtin_tools()
-        .iter()
-        .map(|tool| tool.full_name())
-        .collect();
-    let configs =
-        crate::storage::services::project_mcp_server_configs::list_effective_mcp_server_configs(
-            db_path,
-            Some(project_id),
-        )?;
-    let public_names = public_server_name_map(&configs);
-    let enabled_server_names: HashSet<String> = configs
-        .iter()
-        .filter(|config| config.enabled)
-        .filter_map(|config| public_names.get(&config.server_id).cloned())
-        .collect();
-
-    for tool_name in tool_names {
-        if builtin_tool_names.contains(tool_name) {
-            continue;
-        }
-        let is_external = split_tool_full_name(tool_name)
-            .is_some_and(|(server_name, _)| enabled_server_names.contains(server_name));
-        if !is_external {
-            return Err(Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Selected sub-agent MCP tool is not enabled for the current project: {tool_name}"
-                ),
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// toolApproval 域的唯一定义键。

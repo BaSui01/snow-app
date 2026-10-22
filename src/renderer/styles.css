@@ -33871,6 +33871,25 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
+.sub-agent-tool-option-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 项目已关闭、仅子代理可用的工具标记 */
+.sub-agent-tool-badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .sub-agent-tool-state {
   display: flex;
   min-height: 58px;

@@ -46,6 +46,7 @@ import type {
   SkillBatchInstallResult,
   SkillDefinition,
   SkillUninstallResult,
+  SubAgentUnavailableTool,
   TerminalCommandRequest,
   TerminalCommandResponse,
   ToolCorrectionRequest,
@@ -821,6 +822,12 @@ export const systemApi = {
   /** 全局 MCP 服务器目录：不依赖项目，供全局子代理选择工具。 */
   listMcpGlobalServers: (): Promise<McpProjectServerStatus[]> =>
     ipcRenderer.invoke("mcp:list-global-servers"),
+  /** 诊断子代理白名单中当前不可用的工具（激活时回传主控并写入子代理提示词）。 */
+  diagnoseSubAgentTools: (
+    projectId: string | undefined,
+    toolsJson: string,
+  ): Promise<SubAgentUnavailableTool[]> =>
+    ipcRenderer.invoke("mcp:diagnose-sub-agent-tools", projectId, toolsJson),
   /**
    * 项目 MCP 服务器快速列表：外部服务器工具只读 Rust 端进程内缓存，
    * 不连接服务器；`toolsPending` 为 true 的服务器需要后台补发现

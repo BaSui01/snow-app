@@ -21,6 +21,8 @@ export type SubAgentToolOption = {
   description: string;
   serverId: string;
   serverName: string;
+  /** 项目内已关闭（主会话不可见），子代理显式勾选后仍可使用。 */
+  projectDisabled?: boolean;
 };
 
 export type SubAgentItem = SubAgentConfigRecord;

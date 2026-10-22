@@ -90,6 +90,8 @@ const requiredExports = [
   "listMcpProjectServersCached",
   // 全局子代理工具目录（不依赖项目）
   "listMcpGlobalServers",
+  // 子代理白名单不可用工具诊断
+  "diagnoseSubAgentTools",
   // 敏感命令决策模型辅助（拦截提示展示判定 / 托管执行）
   "evaluateSensitiveCommandDecision",
   // 决策 / 嵌入 / 重排模型连接自检与失败可见性（配置页测试连接、索引失败回看、日志模块筛选）

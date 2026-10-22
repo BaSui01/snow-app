@@ -905,9 +905,13 @@ export function syncMacTrafficLightPosition(): void {
   if (typeof window === "undefined" || !window.snow) {
     return;
   }
-  const barRect = document
-    .querySelector<HTMLElement>(".top-bar")
-    ?.getBoundingClientRect();
+  // 取顶栏卡片中心而非 .top-bar 整体中心：层叠风格顶栏上留白 10px、下留白 0，
+  // 两者中心相差 5px，用整条顶栏居中会让红绿灯比图标偏上。
+  const anchor =
+    document.querySelector<HTMLElement>(
+      ".top-bar-main, .top-bar-left, .top-bar-right",
+    ) ?? document.querySelector<HTMLElement>(".top-bar");
+  const barRect = anchor?.getBoundingClientRect();
   const centerY =
     barRect && barRect.height > 0
       ? barRect.top + barRect.height / 2

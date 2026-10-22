@@ -1771,6 +1771,12 @@ export type McpProjectServerStatus = {
   error?: string;
 };
 
+/** 子代理白名单中当前不可用的工具及原因（Rust diagnoseSubAgentTools）。 */
+export type SubAgentUnavailableTool = {
+  name: string;
+  reason: string;
+};
+
 export type BashStreamChunk = {
   stream:
     "stdout" | "stderr" | "interactive_session" | "tool_execution" | "imagegen";
@@ -2847,6 +2853,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<McpProjectServerStatus[]>;
   /** 全局 MCP 服务器目录（不依赖项目，供全局子代理选择工具）。 */
   listMcpGlobalServers: () => Promise<McpProjectServerStatus[]>;
+  diagnoseSubAgentTools: (
+    projectId: string | undefined | null,
+    toolsJson: string,
+  ) => Promise<SubAgentUnavailableTool[]>;
   /**
    * 项目 MCP 服务器快速列表：外部服务器工具只读 Rust 进程内缓存，不连接
    * 服务器；未命中的服务器以 `toolsPending` 标记，需调用方后台补发现。

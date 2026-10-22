@@ -9,8 +9,9 @@ use crate::mcp::tools::{
 /// Resolve the MCP tool set for a request.
 ///
 /// Resolution order:
-/// 1. `sub_agent_tools_json` (sub-agent request): whitelist filtering, wildcard
-///    allowed for built-in sub-agents.
+/// 1. `sub_agent_tools_json` (sub-agent request): whitelist filtering. Wildcard
+///    legality (agent_general only) is enforced on save and when the renderer
+///    resolves the runtime config by agentId.
 /// 2. `allowed_tools_json` (request-scoped whitelist without sub-agent
 ///    semantics, e.g. the desktop pet chat): restricted set that survives
 ///    `skip_context` and never carries teammate/sub-agent management tools.

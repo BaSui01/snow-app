@@ -70,6 +70,7 @@ pub(crate) use collect::{
 pub use collect::{
     collect_all_mcp_tools, collect_all_mcp_tools_for_workspace,
     collect_allowed_mcp_tools_for_workspace, collect_restricted_mcp_tools_for_workspace,
+    diagnose_sub_agent_tools,
 };
 pub use serialize::{
     tools_as_anthropic_json, tools_as_gemini_json, tools_as_interactions_json,
@@ -103,6 +104,15 @@ pub struct McpToolStatus {
     pub description: String,
     pub input_schema_json: String,
     pub enabled: bool,
+}
+
+/// 子代理白名单中当前不可用的工具。
+#[napi(object)]
+pub struct SubAgentUnavailableTool {
+    pub name: String,
+    /// reserved | global_disabled | lite_mode | not_ready | superseded |
+    /// server_disabled | server_unavailable | not_found
+    pub reason: String,
 }
 
 #[napi(object)]

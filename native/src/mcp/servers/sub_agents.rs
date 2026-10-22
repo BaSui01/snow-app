@@ -29,6 +29,21 @@ pub const SUB_AGENT_MAIN_TOOL_FULL_NAMES: &[&str] = &[
     "sub-agents-continue",
 ];
 
+/// 子代理永远不会获得的工具（唯一来源）：主会话管理工具 + Plan Mode /
+/// WorkFlow 专属工具 + 会话编排。保存校验、收集与执行三处共用。
+pub const SUB_AGENT_RESERVED_TOOL_FULL_NAMES: &[&str] = &[
+    "sub-agents-listSubAgents",
+    "sub-agents-continue",
+    "app-control-requestApproval",
+    "app-control-conversation",
+    "workflow-workflow-generate",
+    "workflow-workflow-resume",
+];
+
+pub fn is_sub_agent_reserved_tool(full_name: &str) -> bool {
+    SUB_AGENT_RESERVED_TOOL_FULL_NAMES.contains(&full_name)
+}
+
 /// 子代理默认携带的两个通信工具定义。执行由渲染进程完成（子代理运行时状态
 /// 与 Pending 队列都在渲染进程），Rust 侧 execute 返回桥接错误。
 pub fn sub_agent_comms_tools() -> Vec<McpTool> {

@@ -5,10 +5,9 @@ import { isRecord, toInteger, toText } from "../utils/value";
 const BUILTIN_GENERAL_AGENT_ID = "agent_general";
 const SUB_AGENT_SOURCE_BUILTIN = "builtin";
 const SUB_AGENT_SOURCE_MANUAL = "manual";
-const SUB_AGENT_ALL_TOOLS_MARKER = "*";
-const MCP_TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+-[A-Za-z0-9_-]+$/;
 
-const normalizeToolsJson = (value: unknown, allowAllTools: boolean): string => {
+/** 只做形态规范化（去空白、去重、排序）；通配符/保留名/格式由 Rust 存储层统一校验。 */
+const normalizeToolsJson = (value: unknown): string => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(toText(value, "[]"));
@@ -20,28 +19,14 @@ const normalizeToolsJson = (value: unknown, allowAllTools: boolean): string => {
     throw new Error("Sub-agent tools must be a JSON string array");
   }
 
-  const tools = parsed.map((item) =>
-    typeof item === "string" ? item.trim() : ""
-  );
-  if (
-    allowAllTools &&
-    tools.length === 1 &&
-    tools[0] === SUB_AGENT_ALL_TOOLS_MARKER
-  ) {
-    return JSON.stringify(tools);
-  }
-  if (
-    tools.some((tool) => !tool || !MCP_TOOL_NAME_PATTERN.test(tool)) ||
-    new Set(tools).size !== tools.length
-  ) {
-    throw new Error("Sub-agent tools must be unique MCP tool names");
-  }
-
-  return JSON.stringify(tools.sort());
+  const tools = parsed
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+  return JSON.stringify(Array.from(new Set(tools)).sort());
 };
 
 export const normalizeSubAgentConfig = (
-  value: unknown
+  value: unknown,
 ): SubAgentConfigInput => {
   const source = isRecord(value) ? value : {};
   const agentId =
@@ -62,7 +47,7 @@ export const normalizeSubAgentConfig = (
   }
   if (description.length > 500) {
     throw new Error(
-      "Sub-agent description must be no longer than 500 characters"
+      "Sub-agent description must be no longer than 500 characters",
     );
   }
   return {
@@ -70,7 +55,7 @@ export const normalizeSubAgentConfig = (
     name,
     description,
     systemPrompt: toText(source.systemPrompt),
-    toolsJson: normalizeToolsJson(source.toolsJson, builtin),
+    toolsJson: normalizeToolsJson(source.toolsJson),
     configProfile,
     model,
     builtin,

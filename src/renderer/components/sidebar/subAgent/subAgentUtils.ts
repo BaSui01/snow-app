@@ -4,7 +4,7 @@ import type { SubAgentDraft, SubAgentItem } from "./types";
 
 export const SUB_AGENT_ALL_TOOLS_MARKER = "*";
 
-/** 子代理运行时永远不会获得的工具：主会话管理工具 + Plan Mode / WorkFlow 模式专属工具。 */
+/** 子代理运行时永远不会获得的工具（UI 过滤用镜像；权威来源为 Rust SUB_AGENT_RESERVED_TOOL_FULL_NAMES）。 */
 export const SUB_AGENT_RESERVED_TOOL_NAMES = new Set<string>([
   ...SUB_AGENT_MAIN_TOOL_NAMES,
   "app-control-requestApproval",

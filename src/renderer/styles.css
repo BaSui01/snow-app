@@ -27371,7 +27371,7 @@ body.is-panel-resizing * {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px 0;
+  padding: 6px 8px 9px;
 }
 
 .scheduled-tasks-clear-btn {
@@ -27389,13 +27389,10 @@ body.is-panel-resizing * {
   font-size: 11px;
   text-align: left;
   cursor: pointer;
-  transition:
-    background 0.12s,
-    color 0.12s;
+  transition: color 0.12s;
 }
 
 .scheduled-tasks-clear-btn:hover {
-  background: var(--accent-red-bg);
   color: var(--accent-red);
 }
 

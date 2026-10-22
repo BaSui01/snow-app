@@ -105,6 +105,16 @@ pub(super) fn request_allows_failure_retry(payload: &Value) -> bool {
         })
 }
 
+/// 已识别的失败先按归一化的策略关键词、再按原始（脱敏）原因匹配用户重试策略，
+/// 任一命中即放行；自定义关键词因此仍可作用于上游原文。
+fn retry_policy_allows(policy_reason: &str, original_reason: &str, options: &RetryOptions) -> bool {
+    crate::api::retry::is_retriable_error(&Error::from_reason(policy_reason.to_string()), options)
+        || crate::api::retry::is_retriable_error(
+            &Error::from_reason(original_reason.to_string()),
+            options,
+        )
+}
+
 pub(super) fn failure_log_endpoint(endpoint: &str) -> String {
     let Ok(mut url) = url::Url::parse(endpoint) else {
         return "[redacted endpoint]".to_string();
@@ -230,17 +240,36 @@ impl ResponsesAttemptState {
         }
         // Normalize known transport/throttle failures for existing policy keywords;
         // preserve the provider's redacted reason for diagnostics/custom keywords.
-        let normalized = Error::from_reason(policy_reason.to_string());
-        let original = Error::from_reason(self.failure_reason());
-        if !crate::api::retry::is_retriable_error(&normalized, options)
-            && !crate::api::retry::is_retriable_error(&original, options)
-        {
+        if !retry_policy_allows(policy_reason, &self.failure_reason(), options) {
             return stop("retry_policy_disabled", StreamRecoveryOutcome::NonRetriable);
         }
         if attempt >= options.max_retries {
             return stop("retry_exhausted", StreamRecoveryOutcome::RetryExhausted);
         }
         Some(ProviderFailureRecovery::Retry)
+    }
+
+    /// 传输读错误（WebSocket 非正常 Close / 读取失败）重放前的门槛，与
+    /// [`Self::failure_recovery`] 同口径：请求本身可重放、本次尝试尚无不可安全
+    /// 重放的输出或工具活动，且用户重试策略放行。返回阻止重放的原因，`None`
+    /// 表示可交由剩余预算决定是否重试。
+    pub(super) fn transport_replay_block(
+        &self,
+        request_replay_safe: bool,
+        transport_error: &str,
+        options: &RetryOptions,
+    ) -> Option<&'static str> {
+        if !self.failure_replay_safe(request_replay_safe) {
+            return Some("unsafe_to_replay");
+        }
+        if !retry_policy_allows(
+            super::event::TRANSPORT_FAILURE_POLICY_REASON,
+            transport_error,
+            options,
+        ) {
+            return Some("retry_policy_disabled");
+        }
+        None
     }
 
     pub(super) fn failure_reason(&self) -> String {
@@ -254,6 +283,12 @@ impl ResponsesAttemptState {
         self.failure_reason
             .as_ref()
             .is_some_and(super::event::ResponsesFailure::is_transport)
+    }
+
+    pub(super) fn failure_is_connection_expired(&self) -> bool {
+        self.failure_reason
+            .as_ref()
+            .is_some_and(super::event::ResponsesFailure::is_connection_expired)
     }
 
     pub(super) fn finish_failure(

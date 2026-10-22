@@ -17,10 +17,20 @@ pub(super) struct ResponsesFailure {
     error_type: Option<String>,
     message: String,
     transport_failure: bool,
+    /// 服务端声明当前 WebSocket 连接已到期（60 分钟寿命上限），需换新连接继续。
+    connection_expired: bool,
     /// 网关限流/并发/过载类失败对应的重试策略关键词（"rate limit" / "overloaded"）。
     throttle_reason: Option<&'static str>,
     retry_veto: bool,
 }
+
+/// 已识别传输层失败归一化后的重试策略关键词（命中 network / stream error 类别）。
+pub(super) const TRANSPORT_FAILURE_POLICY_REASON: &str = "network stream error";
+
+/// 服务端 WebSocket 连接寿命到期的错误码。
+const CONNECTION_EXPIRED_CODE: &str = "websocket_connection_limit_reached";
+/// 连接到期错误允许携带的错误类型（官方信封为 `invalid_request_error`）。
+const CONNECTION_EXPIRED_TYPES: &[&str] = &["invalid_request_error"];
 
 /// 识别限流、并发上限、过载类错误标识。
 fn throttle_identifier(text: &str) -> Option<&'static str> {
@@ -81,31 +91,43 @@ impl ResponsesFailure {
                     })
             })
         };
+        let identifier_is = |detail: &Value, expected: &str| {
+            detail
+                .get("code")
+                .and_then(Value::as_str)
+                .is_some_and(|code| code.trim().eq_ignore_ascii_case(expected))
+        };
+        // 连接到期的官方信封是 invalid_request_error：只在同一层错误对象自身的
+        // code 就是到期码时放行这一 type，其余 invalid_request_error（参数、鉴权、
+        // 审核等业务拒绝）仍会否决重试。
+        let type_safe = |detail: &Value, error_object: bool| {
+            !error_object
+                || allowed_identifier(detail.get("type"), ALLOWED_TYPES)
+                || (identifier_is(detail, CONNECTION_EXPIRED_CODE)
+                    && allowed_identifier(detail.get("type"), CONNECTION_EXPIRED_TYPES))
+        };
         let identifiers_safe = details.iter().all(|(detail, error_object)| {
             allowed_identifier(detail.get("code"), ALLOWED_CODES)
-                && (!error_object || allowed_identifier(detail.get("type"), ALLOWED_TYPES))
+                && type_safe(detail, *error_object)
         });
-        let transport_failure = identifiers_safe
-            && details.iter().any(|(detail, _)| {
-                let code = detail
-                    .get("code")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_ascii_lowercase();
-                matches!(
-                    code.as_str(),
-                    "upstream_http2_stream_error" | "websocket_connection_limit_reached"
-                ) || detail
-                    .as_str()
-                    .or_else(|| detail.get("message").and_then(Value::as_str))
-                    .is_some_and(|message| {
-                        message
-                            .trim()
-                            .trim_end_matches('.')
-                            .eq_ignore_ascii_case("Upstream HTTP/2 stream failed")
-                    })
-            });
+        let connection_expired = identifiers_safe
+            && details
+                .iter()
+                .any(|(detail, _)| identifier_is(detail, CONNECTION_EXPIRED_CODE));
+        let transport_failure = connection_expired
+            || (identifiers_safe
+                && details.iter().any(|(detail, _)| {
+                    identifier_is(detail, "upstream_http2_stream_error")
+                        || detail
+                            .as_str()
+                            .or_else(|| detail.get("message").and_then(Value::as_str))
+                            .is_some_and(|message| {
+                                message
+                                    .trim()
+                                    .trim_end_matches('.')
+                                    .eq_ignore_ascii_case("Upstream HTTP/2 stream failed")
+                            })
+                }));
         // 限流类：所有标识须为白名单或限流标识，避免掩盖其他业务拒绝。
         let throttle_or_allowed = |value: Option<&Value>, allowed: &[&str]| {
             allowed_identifier(value, allowed)
@@ -183,13 +205,10 @@ impl ResponsesFailure {
             error_type: field("type", true).map(|text| bounded_provider_detail(&text, 128)),
             message,
             transport_failure,
+            connection_expired,
             throttle_reason,
             retry_veto,
         }
-    }
-
-    pub(super) fn code(&self) -> Option<&str> {
-        self.code.as_deref()
     }
 
     pub(super) fn reason(&self) -> String {
@@ -213,7 +232,7 @@ impl ResponsesFailure {
     /// Recovery must also check `retry_vetoed` before positive policy matching.
     pub(super) fn retry_policy_reason(&self) -> Option<&'static str> {
         if self.transport_failure {
-            Some("network stream error")
+            Some(TRANSPORT_FAILURE_POLICY_REASON)
         } else {
             self.throttle_reason
         }
@@ -222,6 +241,11 @@ impl ResponsesFailure {
     /// 仅传输层故障意味着连接不可复用；限流类连接仍健康。
     pub(super) fn is_transport(&self) -> bool {
         self.transport_failure
+    }
+
+    /// 服务端声明连接寿命到期：重试时必须换一条新连接。
+    pub(super) fn is_connection_expired(&self) -> bool {
+        self.connection_expired
     }
 }
 

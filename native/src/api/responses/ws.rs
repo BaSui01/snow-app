@@ -40,13 +40,13 @@ use crate::api::http_client::{app_user_agent, load_proxy_config, resolve_transpo
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     decide_stream_recovery, is_retriable_error, log_retry_attempt, next_stream_item_with_idle,
-    retry_backoff_ms, should_retry_empty_response, wait_before_retry,
-    RetryOptions, StreamEndCause, StreamReadOutcome, StreamRecoveryDecision, StreamTimeouts,
-    EMPTY_RESPONSE_RETRY_ERROR,
+    retry_backoff_ms, send_failure_cause, should_retry_empty_response, wait_before_retry,
+    RetryOptions, StreamEndCause, StreamReadOutcome, StreamRecoveryDecision, StreamRecoveryOutcome,
+    StreamTimeouts, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::SseStreamEnd;
+use crate::storage::services::app_logs::log_api_warning;
 
-use super::event::ResponsesFailure;
 use super::stream::{
     cancelled_stream_result, failure_log_endpoint, finalize_attempt_result,
     finalize_transport_interruption, request_allows_failure_retry, ProviderFailureRecovery,
@@ -128,6 +128,8 @@ impl WsResponseState {
 struct PooledSocket {
     socket: WsSocket,
     response_state: WsResponseState,
+    /// 进程内连接序号：日志据此关联同一条连接上的多次尝试（不含任何凭证信息）。
+    connection_id: u64,
     /// 归还时的代次，用于让到期回收任务只回收自己那一份。
     generation: u64,
     /// 连接最初建立的时间：复用不会刷新它，避免连接无限续命。
@@ -137,6 +139,7 @@ struct PooledSocket {
 
 static POOL: OnceLock<Mutex<HashMap<String, PooledSocket>>> = OnceLock::new();
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 fn pool() -> &'static Mutex<HashMap<String, PooledSocket>> {
     POOL.get_or_init(|| Mutex::new(HashMap::new()))
@@ -144,6 +147,10 @@ fn pool() -> &'static Mutex<HashMap<String, PooledSocket>> {
 
 fn next_generation() -> u64 {
     NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
+}
+
+fn next_connection_id() -> u64 {
+    NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 /// 连接池键：endpoint + API Key + 自定义请求头的摘要。
@@ -182,6 +189,7 @@ async fn take_pooled_socket(pool_key: &str) -> Option<PooledSocket> {
 async fn return_socket(
     pool_key: String,
     socket: WsSocket,
+    connection_id: u64,
     created_at: Instant,
     response_state: WsResponseState,
 ) {
@@ -194,6 +202,7 @@ async fn return_socket(
             PooledSocket {
                 socket,
                 response_state,
+                connection_id,
                 generation,
                 created_at,
                 idle_since: Instant::now(),
@@ -221,6 +230,8 @@ async fn return_socket(
 struct StartedAttempt {
     socket: WsSocket,
     response_state: WsResponseState,
+    /// 进程内连接序号（复用连接沿用首次建立时分配的序号）。
+    connection_id: u64,
     /// 连接最初建立的时间（复用连接沿用首次建立时间，用于寿命上限判断）。
     created_at: Instant,
 }
@@ -230,8 +241,8 @@ struct StartFailure {
     error: Error,
     /// 是否值得重试：传输层故障恒为 true，握手 HTTP 状态按 `is_retriable_error` 判定。
     retriable: bool,
-    /// 失败是否发生在一条复用的空闲连接上。
-    reused: bool,
+    /// 失败发生在一条复用的空闲连接上时为该连接的序号，新建连接为 `None`。
+    reused: Option<u64>,
 }
 
 impl StartFailure {
@@ -241,12 +252,13 @@ impl StartFailure {
         Self {
             error: Error::from_reason(message),
             retriable: true,
-            reused: false,
+            reused: None,
         }
     }
 }
 
-/// 复用池中的空闲连接，没有可用连接时新建，随后发送本次 `response.create` 帧。
+/// 复用池中的空闲连接（`allow_reuse` 为 false 时跳过连接池强制新建），没有可用
+/// 连接时新建，随后发送本次 `response.create` 帧。
 async fn start_attempt(
     pool_key: &str,
     endpoint: &str,
@@ -254,19 +266,31 @@ async fn start_attempt(
     custom_headers: &HashMap<String, String>,
     frame_json: &str,
     retry_options: &RetryOptions,
+    allow_reuse: bool,
 ) -> std::result::Result<StartedAttempt, StartFailure> {
-    let (mut socket, reused, created_at, response_state) = match take_pooled_socket(pool_key).await
-    {
-        Some(entry) => (entry.socket, true, entry.created_at, entry.response_state),
-        None => match connect_socket(endpoint, api_key, custom_headers, retry_options).await {
-            Ok(socket) => (socket, false, Instant::now(), WsResponseState::default()),
-            Err(failure) => {
-                return Err(StartFailure {
-                    reused: false,
-                    ..failure
-                })
-            }
-        },
+    let pooled = if allow_reuse {
+        take_pooled_socket(pool_key).await
+    } else {
+        None
+    };
+    let (mut socket, reused, connection_id, created_at, response_state) = match pooled {
+        Some(entry) => (
+            entry.socket,
+            true,
+            entry.connection_id,
+            entry.created_at,
+            entry.response_state,
+        ),
+        None => {
+            let socket = connect_socket(endpoint, api_key, custom_headers, retry_options).await?;
+            (
+                socket,
+                false,
+                next_connection_id(),
+                Instant::now(),
+                WsResponseState::default(),
+            )
+        }
     };
 
     if let Err(error) = socket.send(Message::Text(frame_json.to_string())).await {
@@ -275,13 +299,14 @@ async fn start_attempt(
                 "Failed to create response stream: sending response.create over WebSocket failed: {error}"
             )),
             retriable: true,
-            reused,
+            reused: reused.then_some(connection_id),
         });
     }
 
     Ok(StartedAttempt {
         socket,
         response_state,
+        connection_id,
         created_at,
     })
 }
@@ -296,7 +321,7 @@ async fn connect_socket(
     let url = websocket_url(endpoint).map_err(|error| StartFailure {
         error,
         retriable: false,
-        reused: false,
+        reused: None,
     })?;
     let host = url.host_str().unwrap_or_default().to_string();
     let port = url
@@ -327,7 +352,7 @@ async fn connect_socket(
             Err(StartFailure {
                 error,
                 retriable,
-                reused: false,
+                reused: None,
             })
         }
         Err(error) => Err(StartFailure::transport(format!(
@@ -440,7 +465,7 @@ async fn connect_through_proxy(
             error: Error::from_reason(format!("Proxy CONNECT failed: {status_line}")),
             // 407 等代理侧的客户端错误重试没有意义，5xx / 429 仍按瞬时故障处理。
             retriable: status >= 500 || status == 429,
-            reused: false,
+            reused: None,
         });
     }
 
@@ -480,7 +505,7 @@ fn build_handshake_request(
         .map_err(|error| StartFailure {
             error: Error::from_reason(format!("Invalid WebSocket endpoint URL: {error}")),
             retriable: false,
-            reused: false,
+            reused: None,
         })?;
 
     let headers = request.headers_mut();
@@ -493,7 +518,7 @@ fn build_handshake_request(
         StartFailure {
             error,
             retriable: false,
-            reused: false,
+            reused: None,
         }
     })?;
     for (name, value) in custom.iter() {
@@ -654,44 +679,24 @@ enum FrameOutcome {
     Continue,
     /// 已收到 Provider 终态事件。
     Terminal { reusable: bool },
-    /// 连接级协议错误：当前连接已不可用。
-    ConnectionError { error: Error, retriable: bool },
-}
-
-/// 一次 WebSocket 尝试的读取结束方式。
-enum WsReadEnd {
-    /// 传输层的结束方式（终态 / EOF / 读错误 / 空闲超时 / 取消）。
-    Stream(SseStreamEnd<String>),
-    /// 连接级协议错误（例如服务端 60 分钟连接上限）。
-    ConnectionError { error: Error, retriable: bool },
 }
 
 /// 处理一帧文本：解析事件、喂给共享解析器并推送增量。
+///
+/// 顶层 `error` 事件（含服务端连接寿命到期）与 SSE 一样交给共享解析器，统一由
+/// `failure_recovery` 按重放安全、重试策略与剩余预算决定是否换新连接重试。
 fn process_frame(
     frame: &str,
     attempt_state: &mut ResponsesAttemptState,
     response_state: &mut WsResponseState,
     progress: &mut StreamProgress,
     on_chunk: StreamSink<'_>,
-    request_replay_safe: bool,
 ) -> FrameOutcome {
     let Some(event) = parse_frame_event(frame) else {
         return FrameOutcome::Continue;
     };
     if !response_state.accept_event(&event) {
         return FrameOutcome::Continue;
-    }
-
-    if event.get("type").and_then(Value::as_str) == Some("error")
-        && !attempt_state.has_payload()
-        && attempt_state.failure_replay_safe(request_replay_safe)
-    {
-        // Keep the existing connection-lifetime recovery; other errors use the
-        // shared failure classifier, including errors received before output.
-        let (error, retriable) = websocket_error_event(&event);
-        if retriable {
-            return FrameOutcome::ConnectionError { error, retriable };
-        }
     }
 
     // 共享解析器按 SSE 事件块解析，这里把帧包装成一个 data 行，
@@ -726,21 +731,6 @@ fn parse_frame_event(frame: &str) -> Option<Value> {
         }
     }
     Some(value)
-}
-
-/// 顶层 `error` 事件 → 错误 + 是否可重试。
-///
-/// 连接级错误（服务端 60 分钟连接上限）意味着当前连接已不可用，换一条新连接
-/// 即可继续；其余错误（鉴权、参数、模型不支持等）立即上抛。
-fn websocket_error_event(event: &Value) -> (Error, bool) {
-    let failure = ResponsesFailure::from_event(event);
-    let retriable = failure.code() == Some("websocket_connection_limit_reached")
-        && failure.retry_policy_reason().is_some()
-        && !failure.retry_vetoed();
-    (
-        Error::from_reason(format!("Responses WebSocket error: {}", failure.reason())),
-        retriable,
-    )
 }
 
 /// 把 HTTP 版 payload 转成 WebSocket 的 `response.create` 帧。
@@ -784,10 +774,12 @@ pub(super) async fn collect_streaming_response_ws(
     let pool_key = build_pool_key(endpoint, api_key, custom_headers);
     let frame_json = build_create_frame(&payload)?.to_string();
     let failure_retry_safe = request_allows_failure_retry(&payload);
-    let retry_endpoint = failure_log_endpoint(endpoint);
     let mut attempt: u32 = 0;
     let mut progress = StreamProgress::new();
     let timeouts = StreamTimeouts::new(stream_idle_timeout_sec, frame_json.len());
+    // 复用连接一旦失败（或服务端宣告连接到期），本次请求后续尝试一律跳过连接池
+    // 强制新建，避免在并发下反复取到已被服务端回收的连接。
+    let mut allow_reuse = true;
 
     let (mut attempt_state, interruption_reason, recovery_outcome) = 'attempt_loop: loop {
         if cancel_token.is_cancelled() {
@@ -798,27 +790,45 @@ pub(super) async fn collect_streaming_response_ws(
         }
 
         // ---- 阶段 1：复用/建立连接并发送 response.create 帧 ----
+        // 建连、代理 CONNECT、TLS 与 WS 握手都可能在半开链路上无限期挂住，
+        // 因此整个阶段与取消一样受首字节窗口约束。
+        let start_timeout = timeouts.first_byte();
         let started = tokio::select! {
             biased;
             _ = cancel_token.cancelled() => {
                 return Ok(cancelled_stream_result(&progress.thinking, progress.started_at));
             }
-            result = start_attempt(&pool_key, endpoint, api_key, custom_headers, &frame_json, retry_options) => result,
+            _ = tokio::time::sleep(start_timeout) => Err(StartFailure {
+                error: timeouts.send_timeout_error(),
+                retriable: true,
+                reused: None,
+            }),
+            result = start_attempt(
+                &pool_key,
+                endpoint,
+                api_key,
+                custom_headers,
+                &frame_json,
+                retry_options,
+                allow_reuse,
+            ) => result,
         };
 
         let started = match started {
             Ok(started) => started,
             Err(failure) => {
-                // 复用的连接在发送阶段就失效（服务端已回收）：立即换新连接重发，
-                // 不等待退避——复用的收益不该被一条过期连接吃掉。这条无退避重发
-                // 同样留痕（cause=reused_connection），否则「池化连接被回收过」
-                // 在日志里完全不可见。
-                if failure.reused {
+                // 复用的连接在发送阶段就失效（服务端已回收）：允许一次不计预算的
+                // 快速换新重发（复用收益不该被一条过期连接吃掉），随后一律走统一的
+                // 有限预算与退避，避免并发下反复复用失效连接。这条重发同样留痕
+                // （cause=reused_connection），否则「池化连接被回收过」在日志里不可见。
+                if let Some(connection_id) = failure.reused.filter(|_| allow_reuse) {
+                    allow_reuse = false;
                     log_retry(
                         &database_path,
                         "reused_connection",
                         attempt,
                         endpoint,
+                        Some(connection_id),
                         &failure.error.reason,
                         0,
                     )
@@ -831,9 +841,10 @@ pub(super) async fn collect_streaming_response_ws(
                 progress.emit_retry(on_chunk, attempt, &failure.error.reason, retry_options);
                 log_retry(
                     &database_path,
-                    "connect",
+                    send_failure_cause(&failure.error),
                     attempt,
                     endpoint,
+                    failure.reused,
                     &failure.error.reason,
                     retry_backoff_ms(retry_options, attempt),
                 )
@@ -846,6 +857,7 @@ pub(super) async fn collect_streaming_response_ws(
         let StartedAttempt {
             mut socket,
             mut response_state,
+            connection_id,
             created_at,
         } = started;
 
@@ -868,18 +880,16 @@ pub(super) async fn collect_streaming_response_ws(
                     message
                 }
                 StreamReadOutcome::ReadError(error) => {
-                    break WsReadEnd::Stream(SseStreamEnd::ReadError(error.to_string()))
+                    break SseStreamEnd::ReadError(error.to_string())
                 }
-                StreamReadOutcome::Eof => break WsReadEnd::Stream(SseStreamEnd::UnexpectedEof),
-                StreamReadOutcome::IdleTimeout => {
-                    break WsReadEnd::Stream(SseStreamEnd::IdleTimeout)
-                }
-                StreamReadOutcome::Cancelled => break WsReadEnd::Stream(SseStreamEnd::Cancelled),
+                StreamReadOutcome::Eof => break SseStreamEnd::UnexpectedEof,
+                StreamReadOutcome::IdleTimeout => break SseStreamEnd::IdleTimeout,
+                StreamReadOutcome::Cancelled => break SseStreamEnd::Cancelled,
             };
 
             match message {
                 Message::Close(frame) => {
-                    break WsReadEnd::Stream(match frame.as_ref() {
+                    break match frame.as_ref() {
                         // 1000/1001 之外的服务端关闭视为读取失败（可重试）。
                         Some(frame) if !matches!(u16::from(frame.code), 1000 | 1001) => {
                             SseStreamEnd::ReadError(format!(
@@ -890,15 +900,32 @@ pub(super) async fn collect_streaming_response_ws(
                         }
                         // 对端正常关闭时缓冲区里不会再有事件：等价于流提前结束。
                         _ => SseStreamEnd::UnexpectedEof,
-                    });
+                    };
                 }
                 Message::Ping(payload) => {
                     // 服务端心跳：tungstenite 只会在下一次写入时补发 pong，
-                    // 长时间只读的连接需要主动回应，避免被判为死连接。
-                    if let Err(error) = socket.send(Message::Pong(payload)).await {
-                        break WsReadEnd::Stream(SseStreamEnd::ReadError(format!(
-                            "WebSocket pong reply failed: {error}"
-                        )));
+                    // 长时间只读的连接需要主动回应，避免被判为死连接。写入同样
+                    // 可能阻塞在半开链路上，因此与读取一样受取消与空闲超时约束。
+                    let reply = tokio::select! {
+                        biased;
+                        _ = cancel_token.cancelled() => None,
+                        result = socket.send(Message::Pong(payload)) => Some(result),
+                        _ = tokio::time::sleep(timeouts.idle()) => None,
+                    };
+                    match reply {
+                        Some(Ok(())) => {}
+                        Some(Err(error)) => {
+                            break SseStreamEnd::ReadError(format!(
+                                "WebSocket pong reply failed: {error}"
+                            ))
+                        }
+                        None if cancel_token.is_cancelled() => break SseStreamEnd::Cancelled,
+                        None => {
+                            break SseStreamEnd::ReadError(
+                                "WebSocket pong reply timed out on a stalled connection"
+                                    .to_string(),
+                            )
+                        }
                     }
                 }
                 Message::Pong(_) | Message::Frame(_) => {}
@@ -911,63 +938,19 @@ pub(super) async fn collect_streaming_response_ws(
                         &mut response_state,
                         &mut progress,
                         on_chunk,
-                        failure_retry_safe,
                     ) {
                         FrameOutcome::Continue => {}
                         FrameOutcome::Terminal { reusable } => {
                             reusable_socket = reusable;
-                            break WsReadEnd::Stream(SseStreamEnd::ProviderTerminal);
-                        }
-                        FrameOutcome::ConnectionError { error, retriable } => {
-                            break WsReadEnd::ConnectionError { error, retriable };
+                            break SseStreamEnd::ProviderTerminal;
                         }
                     }
                 }
             }
         };
 
-        // Cancellation also wins over a connection-level error observed together.
-        if cancel_token.is_cancelled()
-            || matches!(&read_end, WsReadEnd::Stream(SseStreamEnd::Cancelled))
-        {
-            attempt_state.finish_cancelled();
-            break 'attempt_loop (attempt_state, None, None);
-        }
-
-        let stream_end = match read_end {
-            WsReadEnd::ConnectionError { error, retriable } => {
-                if !retriable || attempt >= retry_options.max_retries {
-                    return Err(error);
-                }
-                progress.emit_retry(on_chunk, attempt, &error.reason, retry_options);
-                log_retry(
-                    &database_path,
-                    "connection_error",
-                    attempt,
-                    &retry_endpoint,
-                    &error.reason,
-                    retry_backoff_ms(retry_options, attempt),
-                )
-                .await;
-                match wait_before_retry(retry_options, cancel_token, attempt).await {
-                    Ok(()) => {}
-                    Err(_) if cancel_token.is_cancelled() => {
-                        attempt_state.finish_cancelled();
-                        break 'attempt_loop (attempt_state, None, None);
-                    }
-                    Err(error) => return Err(error),
-                }
-                if cancel_token.is_cancelled() {
-                    attempt_state.finish_cancelled();
-                    break 'attempt_loop (attempt_state, None, None);
-                }
-                attempt += 1;
-                continue 'attempt_loop;
-            }
-            WsReadEnd::Stream(stream_end) => stream_end,
-        };
-
-        if cancel_token.is_cancelled() {
+        // Cancellation wins over a terminal or transport end observed together.
+        if cancel_token.is_cancelled() || matches!(read_end, SseStreamEnd::Cancelled) {
             attempt_state.finish_cancelled();
             break 'attempt_loop (attempt_state, None, None);
         }
@@ -979,16 +962,26 @@ pub(super) async fn collect_streaming_response_ws(
             match recovery {
                 ProviderFailureRecovery::Retry => {
                     let failure_reason = attempt_state.failure_reason();
+                    // 连接到期意味着这条连接不可再用，重连必须拿一条全新连接。
+                    let connection_expired = attempt_state.failure_is_connection_expired();
                     progress.emit_retry(on_chunk, attempt, &failure_reason, retry_options);
                     log_retry(
                         &database_path,
-                        "provider_error",
+                        if connection_expired {
+                            "connection_expired"
+                        } else {
+                            "provider_error"
+                        },
                         attempt,
-                        &retry_endpoint,
+                        endpoint,
+                        Some(connection_id),
                         &failure_reason,
                         retry_backoff_ms(retry_options, attempt),
                     )
                     .await;
+                    if connection_expired {
+                        allow_reuse = false;
+                    }
                     // Recovery discards this failed attempt. Cancellation during
                     // backoff must not persist its reasoning/usage (same as SSE).
                     match wait_before_retry(retry_options, cancel_token, attempt).await {
@@ -1017,7 +1010,14 @@ pub(super) async fn collect_streaming_response_ws(
                         && !cancel_token.is_cancelled()
                     {
                         response_state.finish_response();
-                        return_socket(pool_key.clone(), socket, created_at, response_state).await;
+                        return_socket(
+                            pool_key.clone(),
+                            socket,
+                            connection_id,
+                            created_at,
+                            response_state,
+                        )
+                        .await;
                     }
                     if cancel_token.is_cancelled() {
                         attempt_state.finish_cancelled();
@@ -1033,17 +1033,18 @@ pub(super) async fn collect_streaming_response_ws(
         // Only healthy, non-replayed terminals return their connection to the pool.
         if reusable_socket && !cancel_token.is_cancelled() {
             response_state.finish_response();
-            return_socket(pool_key.clone(), socket, created_at, response_state).await;
-        }
-
-        // Cancellation may arrive while the healthy socket is being returned.
-        if cancel_token.is_cancelled() {
-            attempt_state.finish_cancelled();
-            break 'attempt_loop (attempt_state, None, None);
+            return_socket(
+                pool_key.clone(),
+                socket,
+                connection_id,
+                created_at,
+                response_state,
+            )
+            .await;
         }
 
         // Provider 终态优先于传输恢复。
-        if let SseStreamEnd::ProviderTerminal = &stream_end {
+        if let SseStreamEnd::ProviderTerminal = &read_end {
             let (terminal_interruption_reason, terminal_recovery_outcome) =
                 attempt_state.finalize_provider_terminal();
             if terminal_interruption_reason.is_none()
@@ -1068,7 +1069,7 @@ pub(super) async fn collect_streaming_response_ws(
             );
         }
 
-        let (cause, retry_error) = match stream_end {
+        let (cause, retry_error) = match read_end {
             SseStreamEnd::ReadError(error) => (StreamEndCause::ReadError, error),
             SseStreamEnd::UnexpectedEof => (
                 StreamEndCause::UnexpectedEof,
@@ -1083,6 +1084,42 @@ pub(super) async fn collect_streaming_response_ws(
         };
         let progress_snapshot = attempt_state.progress(cancel_token.is_cancelled());
         let decision = decide_stream_recovery(cause, attempt, retry_options, progress_snapshot);
+
+        // 非正常 Close / 读取失败与失败事件走同一套门槛：请求本身可重放、本次尝试
+        // 尚无不可安全重放的输出或工具活动、用户重试策略放行，才允许重放。
+        if matches!(decision, StreamRecoveryDecision::Retry)
+            && matches!(cause, StreamEndCause::ReadError)
+        {
+            if let Some(blocked) = attempt_state.transport_replay_block(
+                failure_retry_safe,
+                &retry_error,
+                retry_options,
+            ) {
+                log_api_warning(
+                    &database_path,
+                    "create_response_stream_with_context",
+                    "AI response stream interrupted",
+                    &format!(
+                        "provider=openai+websocket, request_method=responses, cause={}, blocked={blocked}, attempt={}, endpoint={}, error={}",
+                        cause.interruption_reason().as_code(),
+                        attempt + 1,
+                        connection_endpoint(endpoint, connection_id),
+                        retry_error,
+                    ),
+                )
+                .await;
+                let (transport_reason, _) = finalize_transport_interruption(
+                    &mut attempt_state,
+                    StreamRecoveryDecision::SurfaceInterrupted,
+                    cause,
+                );
+                break 'attempt_loop (
+                    attempt_state,
+                    transport_reason,
+                    Some(StreamRecoveryOutcome::NonRetriable),
+                );
+            }
+        }
 
         match decision {
             StreamRecoveryDecision::Cancelled => {
@@ -1125,10 +1162,13 @@ pub(super) async fn collect_streaming_response_ws(
                     cause.interruption_reason().as_code(),
                     attempt,
                     endpoint,
+                    Some(connection_id),
                     &retry_error,
                     retry_backoff_ms(retry_options, attempt),
                 )
                 .await;
+                // 这条连接的读取已经失败：后续尝试一律换新连接。
+                allow_reuse = false;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
                 continue 'attempt_loop;
@@ -1151,6 +1191,12 @@ pub(super) async fn collect_streaming_response_ws(
     ))
 }
 
+/// 日志用的端点标识：脱敏后的端点 + 连接序号（连接序号只在本进程内唯一，
+/// 不含任何凭证信息，仅用于关联同一条连接上的多次尝试）。
+fn connection_endpoint(endpoint: &str, connection_id: u64) -> String {
+    format!("{}#conn={connection_id}", failure_log_endpoint(endpoint))
+}
+
 /// 记录一次重试（委托 [`log_retry_attempt`] 统一入口：即使后续成功也留痕，
 /// 便于对账）。`transport=websocket` 通过 provider 标签承载，与 HTTP 版
 /// responses 路径（`provider=openai`）在检索上可区分。
@@ -1159,9 +1205,14 @@ async fn log_retry(
     cause: &str,
     attempt: u32,
     endpoint: &str,
+    connection_id: Option<u64>,
     error: &str,
     backoff_ms: i64,
 ) {
+    let endpoint = match connection_id {
+        Some(connection_id) => connection_endpoint(endpoint, connection_id),
+        None => failure_log_endpoint(endpoint),
+    };
     log_retry_attempt(
         database_path,
         "create_response_stream_with_context",
@@ -1169,7 +1220,7 @@ async fn log_retry(
         "responses",
         cause,
         attempt,
-        endpoint,
+        &endpoint,
         error,
         backoff_ms,
     )
@@ -1186,7 +1237,7 @@ async fn log_empty_retry(database_path: &Path, attempt: u32, endpoint: &str, bac
         "responses",
         "empty_response",
         attempt,
-        endpoint,
+        &failure_log_endpoint(endpoint),
         EMPTY_RESPONSE_RETRY_ERROR,
         backoff_ms,
     )

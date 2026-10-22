@@ -21,6 +21,10 @@ export function oauthProviderDescription(
   t: OAuthTranslator,
   provider: OAuthProviderInfo,
 ): string {
+  // 插件自带说明（主进程已按当前语言选择）
+  if (provider.pluginId && provider.description) {
+    return provider.description;
+  }
   return t(`settings.oauthProviderDesc.${provider.id}`, {
     defaultValue: t("settings.oauthProviderDescFallback", {
       defaultValue:

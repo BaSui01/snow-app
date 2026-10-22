@@ -403,7 +403,9 @@ pub async fn resolve_saved_oauth_profile(
     let Some(saved) = saved else {
         return Ok(config);
     };
-    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none() {
+    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none()
+        && !crate::api::oauth::plugin::is_plugin_profile(&saved.config_json)
+    {
         return Ok(config);
     }
     let refreshed = oauth_provider::refresh_if_needed(saved).await?;
@@ -412,10 +414,45 @@ pub async fn resolve_saved_oauth_profile(
     Ok(config)
 }
 
+/// 插件档案由插件 models 钩子提供列表；未提供钩子时返回 None，走通用拉取。
+pub async fn fetch_plugin_models(config: &ApiConfigForModels) -> Result<Option<Vec<Model>>> {
+    let Some(config_json) = config.config_json.as_deref() else {
+        return Ok(None);
+    };
+    let Some((provider, ids)) = crate::api::oauth::plugin::fetch_models(
+        config_json,
+        &config.api_key,
+        "",
+        &config.base_url,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let mut models = ids
+        .into_iter()
+        .map(|id| Model {
+            id,
+            object: "model".to_string(),
+            created: 0,
+            owned_by: provider.clone(),
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(Some(models))
+}
+
 fn resolve_oauth_metadata(
     config: &ApiConfigForModels,
     base_url: &str,
 ) -> Option<OAuthProfileMetadata> {
+    if config
+        .config_json
+        .as_deref()
+        .is_some_and(crate::api::oauth::plugin::is_plugin_profile)
+    {
+        return None;
+    }
     if let Some(metadata) = config
         .config_json
         .as_deref()

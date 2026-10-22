@@ -49,6 +49,7 @@ import {
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
 import { ensureBuiltinPets } from "../pets/ensureBuiltinPet";
 import { registerRequestProxy } from "../requestProxy/requestProxy";
+import { registerOAuthPlugins } from "../oauthPlugins/oauthPluginHost";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
 import { isScheduledWakeLaunch } from "./scheduledWakeLaunch";
 import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
@@ -163,6 +164,8 @@ export const bootstrapApplication = (): void => {
     registerHtmlPreviewProtocol(native);
     // 对话请求代理层：注册 Rust 回调并确保用户脚本模板存在（模板默认不改变任何请求）。
     registerRequestProxy(native);
+    // OAuth 登录插件：注册 Rust 回调并同步已启用插件声明的 provider。
+    registerOAuthPlugins(native);
     // 预加载独立窗口记忆的尺寸（异步读取，创建窗口时无需同步读盘）。
     void initDetachedPanelWindowState();
 

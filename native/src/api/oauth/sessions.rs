@@ -3,31 +3,78 @@ use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use napi::bindgen_prelude::*;
+use serde_json::Value;
+use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
-use super::{anthropic, antigravity, chatgpt, codex, xai};
+use super::plugin::{self, login as plugin_login, login::PollOutcome, PluginTokens};
 use super::provider::{self, OAuthProfileMetadata, OAuthProviderId};
+use super::{anthropic, antigravity, chatgpt, codex, xai};
 use crate::storage::ensure_database_file;
 
 const LOGIN_SESSION_TIMEOUT_SECS: u64 = 15 * 60;
+const DEVICE_POLL_DEFAULT_SECS: u64 = 5;
+const DEVICE_POLL_MIN_SECS: u64 = 2;
+const DEVICE_SLOW_DOWN_SECS: u64 = 5;
+
+/// 登录对象：内置 provider 或插件注册的 provider。
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum LoginProvider {
+    Builtin(OAuthProviderId),
+    Plugin(String),
+}
+
+impl LoginProvider {
+    pub fn id(&self) -> String {
+        match self {
+            LoginProvider::Builtin(provider) => provider.as_str().to_string(),
+            LoginProvider::Plugin(id) => id.clone(),
+        }
+    }
+
+    pub async fn resolve(value: &str) -> Result<LoginProvider> {
+        if let Some(provider) = OAuthProviderId::parse(value) {
+            return Ok(LoginProvider::Builtin(provider));
+        }
+        let id = value.trim().to_ascii_lowercase();
+        plugin::registry::ensure(&id)
+            .await
+            .map(|spec| LoginProvider::Plugin(spec.id.clone()))
+            .map_err(|error| {
+                Error::from_reason(format!(
+                    "Unsupported OAuth provider: {} ({})",
+                    value.trim(),
+                    error.reason
+                ))
+            })
+    }
+}
 
 #[derive(Clone)]
 pub struct OAuthLoginSession {
     pub session_id: String,
-    pub provider: OAuthProviderId,
+    pub provider: LoginProvider,
+    /// redirect | manual | device
+    pub flow: String,
     pub state: String,
     pub nonce: String,
     pub code_verifier: String,
     pub redirect_uri: String,
+    pub callback_path: String,
     pub auth_url: String,
     pub local_port: u16,
+    pub manual_mode: bool,
+    pub user_code: String,
+    pub instructions: String,
+    /// 插件 authorize() 返回的会话数据，原样回传给 exchange()/poll()。
+    pub plugin_session: Value,
     pub advanced_model: String,
     pub basic_model: String,
 }
 
 #[derive(Clone)]
 pub struct OAuthLoginOutcome {
-    pub provider: OAuthProviderId,
+    pub provider: String,
     pub profile_name: String,
     pub display_name: String,
     pub email: String,
@@ -64,6 +111,15 @@ pub struct OAuthLoginEntry {
     pub completing: bool,
 }
 
+/// 登录完成的输入：浏览器回调（code + 全部参数）或设备码轮询得到的令牌。
+pub enum CompletionInput {
+    Callback {
+        code: String,
+        params: HashMap<String, String>,
+    },
+    Tokens(PluginTokens),
+}
+
 static SESSIONS: LazyLock<Mutex<HashMap<String, OAuthLoginEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -75,54 +131,110 @@ fn lock_sessions() -> std::sync::MutexGuard<'static, HashMap<String, OAuthLoginE
 
 pub struct StartLoginResult {
     pub session_id: String,
-    pub provider: OAuthProviderId,
+    pub provider: String,
     pub auth_url: String,
     pub port: u16,
     pub manual_mode: bool,
     pub default_model: String,
+    pub flow: String,
+    pub user_code: String,
+    pub instructions: String,
+}
+
+async fn bind_first(ports: &[u16]) -> (Option<TcpListener>, u16) {
+    for candidate in ports {
+        if let Ok(bound) = TcpListener::bind(("127.0.0.1", *candidate)).await {
+            return (Some(bound), *candidate);
+        }
+    }
+    (None, ports.first().copied().unwrap_or(0))
+}
+
+/// 插件未声明端口时使用系统分配的空闲端口。
+async fn bind_plugin_listener(ports: &[u16]) -> (Option<TcpListener>, u16) {
+    if !ports.is_empty() {
+        return bind_first(ports).await;
+    }
+    match TcpListener::bind(("127.0.0.1", 0)).await {
+        Ok(bound) => {
+            let port = bound.local_addr().map(|addr| addr.port()).unwrap_or(0);
+            (Some(bound), port)
+        }
+        Err(_) => (None, 0),
+    }
+}
+
+fn build_redirect_uri(host: &str, port: u16, path: &str) -> String {
+    if port > 0 {
+        format!("http://{host}:{port}{path}")
+    } else {
+        format!("http://{host}{path}")
+    }
+}
+
+/// 登记会话、按需启动回调监听，并在超时后自动取消。
+fn register_session(session: OAuthLoginSession, listener: Option<TcpListener>, timeout_secs: u64) {
+    let session_id = session.session_id.clone();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    if let Some(listener) = listener {
+        tokio::spawn(super::server::serve_callback(
+            listener,
+            session.clone(),
+            shutdown_rx,
+        ));
+    } else {
+        drop(shutdown_rx);
+    }
+
+    lock_sessions().insert(
+        session_id.clone(),
+        OAuthLoginEntry {
+            session,
+            status: OAuthLoginStatus::Pending,
+            error: None,
+            outcome: None,
+            shutdown: Some(shutdown_tx),
+            completing: false,
+        },
+    );
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
+        if is_pending(&session_id) {
+            cancel_login(&session_id);
+        }
+    });
 }
 
 pub async fn start_login(
-    provider: OAuthProviderId,
+    provider: LoginProvider,
     advanced_model: Option<String>,
     basic_model: Option<String>,
+) -> Result<StartLoginResult> {
+    let advanced_model = advanced_model.unwrap_or_default().trim().to_string();
+    let basic_model = basic_model.unwrap_or_default().trim().to_string();
+    match provider {
+        LoginProvider::Builtin(provider) => {
+            start_builtin_login(provider, advanced_model, basic_model).await
+        }
+        LoginProvider::Plugin(id) => start_plugin_login(id, advanced_model, basic_model).await,
+    }
+}
+
+async fn start_builtin_login(
+    provider: OAuthProviderId,
+    advanced_model: String,
+    basic_model: String,
 ) -> Result<StartLoginResult> {
     let pkce = provider::generate_pkce()?;
     let state = provider::generate_state()?;
     let nonce = provider::generate_state()?;
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let preferred_ports = provider.callback_ports();
-    let mut listener = None;
-    let mut port = 0u16;
-    for candidate in preferred_ports {
-        if let Ok(bound) = tokio::net::TcpListener::bind(("127.0.0.1", *candidate)).await {
-            listener = Some(bound);
-            port = *candidate;
-            break;
-        }
-    }
+    let (listener, port) = bind_first(provider.callback_ports()).await;
     let manual_mode = listener.is_none();
-    if port == 0 {
-        if let Some(first) = preferred_ports.first() {
-            port = *first;
-        }
-    }
-
-    let redirect_uri = if port > 0 {
-        format!(
-            "http://{}:{}{}",
-            provider.redirect_host(),
-            port,
-            provider.callback_path()
-        )
-    } else {
-        format!(
-            "http://{}{}",
-            provider.redirect_host(),
-            provider.callback_path()
-        )
-    };
+    let callback_path = provider.callback_path().to_string();
+    let redirect_uri = build_redirect_uri(provider.redirect_host(), port, &callback_path);
     let host_id = if provider == OAuthProviderId::ChatGpt {
         chatgpt::ensure_host_id().await?
     } else {
@@ -133,94 +245,181 @@ pub async fn start_login(
 
     let session = OAuthLoginSession {
         session_id: session_id.clone(),
-        provider,
+        provider: LoginProvider::Builtin(provider),
+        flow: "redirect".to_string(),
         state,
         nonce,
         code_verifier: pkce.verifier,
         redirect_uri,
+        callback_path,
         auth_url: auth_url.clone(),
         local_port: if manual_mode { 0 } else { port },
-        advanced_model: advanced_model.unwrap_or_default().trim().to_string(),
-        basic_model: basic_model.unwrap_or_default().trim().to_string(),
+        manual_mode,
+        user_code: String::new(),
+        instructions: String::new(),
+        plugin_session: Value::Null,
+        advanced_model,
+        basic_model,
     };
-
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    if let Some(listener) = listener {
-        let server_session = session.clone();
-        tokio::spawn(super::server::serve_callback(
-            listener,
-            server_session,
-            shutdown_rx,
-        ));
-    } else {
-        drop(shutdown_rx);
-    }
-
-    {
-        let mut sessions = lock_sessions();
-        sessions.insert(
-            session_id.clone(),
-            OAuthLoginEntry {
-                session,
-                status: OAuthLoginStatus::Pending,
-                error: None,
-                outcome: None,
-                shutdown: Some(shutdown_tx),
-                completing: false,
-            },
-        );
-    }
-
-    let timeout_session_id = session_id.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(LOGIN_SESSION_TIMEOUT_SECS)).await;
-        let still_pending = {
-            let sessions = lock_sessions();
-            sessions
-                .get(&timeout_session_id)
-                .map(|entry| entry.status == OAuthLoginStatus::Pending)
-                .unwrap_or(false)
-        };
-        if still_pending {
-            cancel_login(&timeout_session_id);
-        }
-    });
+    register_session(session, listener, LOGIN_SESSION_TIMEOUT_SECS);
 
     Ok(StartLoginResult {
         session_id,
-        provider,
+        provider: provider.as_str().to_string(),
         auth_url,
         port,
         manual_mode,
         default_model: provider.default_model().to_string(),
+        flow: "redirect".to_string(),
+        user_code: String::new(),
+        instructions: String::new(),
     })
 }
 
+async fn start_plugin_login(
+    provider_id: String,
+    advanced_model: String,
+    basic_model: String,
+) -> Result<StartLoginResult> {
+    let spec = plugin::registry::ensure(&provider_id).await?;
+    let pkce = provider::generate_pkce()?;
+    let state = provider::generate_state()?;
+    let nonce = provider::generate_state()?;
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let flow = spec.flow().to_string();
+    let callback_path = spec.callback_path();
+
+    let (listener, port) = if flow == "redirect" {
+        bind_plugin_listener(&spec.callback_ports).await
+    } else {
+        (None, spec.callback_ports.first().copied().unwrap_or(0))
+    };
+    let manual_mode = flow == "manual" || (flow == "redirect" && listener.is_none());
+    let default_redirect = if flow == "device" {
+        String::new()
+    } else {
+        build_redirect_uri(spec.redirect_host(), port, &callback_path)
+    };
+
+    let authorized = plugin_login::authorize(
+        &spec,
+        &default_redirect,
+        &state,
+        &nonce,
+        &pkce.verifier,
+        &pkce.challenge,
+    )
+    .await?;
+    let timeout_secs = match authorized.expires_in_secs {
+        0 => LOGIN_SESSION_TIMEOUT_SECS,
+        expires => expires.min(LOGIN_SESSION_TIMEOUT_SECS * 2),
+    };
+    let session = OAuthLoginSession {
+        session_id: session_id.clone(),
+        provider: LoginProvider::Plugin(spec.id.clone()),
+        flow: flow.clone(),
+        state,
+        nonce,
+        code_verifier: pkce.verifier,
+        redirect_uri: authorized.redirect_uri.unwrap_or(default_redirect),
+        callback_path,
+        auth_url: authorized.url.clone(),
+        local_port: if listener.is_some() { port } else { 0 },
+        manual_mode,
+        user_code: authorized.user_code.clone(),
+        instructions: authorized.instructions.clone(),
+        plugin_session: authorized.session,
+        advanced_model,
+        basic_model,
+    };
+    register_session(session.clone(), listener, timeout_secs);
+    if flow == "device" {
+        tokio::spawn(run_device_poll(session, authorized.interval_secs));
+    }
+
+    Ok(StartLoginResult {
+        session_id,
+        provider: spec.id.clone(),
+        auth_url: authorized.url,
+        port,
+        manual_mode,
+        default_model: spec.default_model.clone(),
+        flow,
+        user_code: authorized.user_code,
+        instructions: authorized.instructions,
+    })
+}
+
+/// 设备码流程：按插件给出的间隔轮询，直到成功、出错、取消或超时。
+async fn run_device_poll(session: OAuthLoginSession, interval_secs: u64) {
+    let LoginProvider::Plugin(provider_id) = session.provider.clone() else {
+        return;
+    };
+    let mut interval = match interval_secs {
+        0 => DEVICE_POLL_DEFAULT_SECS,
+        value => value.max(DEVICE_POLL_MIN_SECS),
+    };
+    loop {
+        tokio::time::sleep(Duration::from_secs(interval)).await;
+        if !is_pending(&session.session_id) {
+            return;
+        }
+        match plugin_login::poll(&session, &provider_id).await {
+            Ok(PollOutcome::Pending { slow_down }) => {
+                if slow_down {
+                    interval += DEVICE_SLOW_DOWN_SECS;
+                }
+            }
+            Ok(PollOutcome::Tokens(tokens)) => {
+                let _ = complete_login(&session, CompletionInput::Tokens(tokens)).await;
+                return;
+            }
+            Err(error) => {
+                set_session_error(&session.session_id, error.reason.clone());
+                return;
+            }
+        }
+    }
+}
+
 pub struct OAuthStatusView {
-    pub provider: OAuthProviderId,
+    pub provider: String,
     pub status: &'static str,
     pub error: Option<String>,
     pub outcome: Option<OAuthLoginOutcome>,
     pub auth_url: String,
     pub manual_mode: bool,
+    pub flow: String,
+    pub user_code: String,
+    pub instructions: String,
 }
 
 pub fn get_status(session_id: &str) -> Option<OAuthStatusView> {
     let sessions = lock_sessions();
     let entry = sessions.get(session_id)?;
     Some(OAuthStatusView {
-        provider: entry.session.provider,
+        provider: entry.session.provider.id(),
         status: entry.status.as_str(),
         error: entry.error.clone(),
         outcome: entry.outcome.clone(),
         auth_url: entry.session.auth_url.clone(),
-        manual_mode: entry.session.local_port == 0,
+        manual_mode: entry.session.manual_mode,
+        flow: entry.session.flow.clone(),
+        user_code: entry.session.user_code.clone(),
+        instructions: entry.session.instructions.clone(),
     })
 }
 
 pub fn get_session(session_id: &str) -> Option<OAuthLoginSession> {
     let sessions = lock_sessions();
     sessions.get(session_id).map(|entry| entry.session.clone())
+}
+
+fn is_pending(session_id: &str) -> bool {
+    lock_sessions()
+        .get(session_id)
+        .map(|entry| entry.status == OAuthLoginStatus::Pending)
+        .unwrap_or(false)
 }
 
 pub fn cancel_login(session_id: &str) -> bool {
@@ -310,17 +509,16 @@ pub async fn handle_callback_request(
         .ok_or_else(|| "Missing authorization code".to_string())?
         .to_string();
 
-    let issued_client_id = params
-        .get("client_id")
-        .map(String::as_str)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-
-    complete_login(session, &code, &issued_client_id)
-        .await
-        .map(|_| ())
-        .map_err(|error| error.reason.clone())
+    complete_login(
+        session,
+        CompletionInput::Callback {
+            code,
+            params: params.clone(),
+        },
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| error.reason.clone())
 }
 
 fn set_session_error(session_id: &str, message: String) {
@@ -329,6 +527,9 @@ fn set_session_error(session_id: &str, message: String) {
         if entry.status == OAuthLoginStatus::Pending {
             entry.status = OAuthLoginStatus::Error;
             entry.error = Some(message);
+            if let Some(sender) = entry.shutdown.take() {
+                let _ = sender.send(());
+            }
         }
     }
 }
@@ -359,8 +560,7 @@ fn finish_session(session_id: &str, result: &Result<OAuthLoginOutcome>) {
 
 async fn complete_login(
     session: &OAuthLoginSession,
-    code: &str,
-    issued_client_id: &str,
+    input: CompletionInput,
 ) -> Result<OAuthLoginOutcome> {
     {
         let mut sessions = lock_sessions();
@@ -378,24 +578,51 @@ async fn complete_login(
         entry.completing = true;
     }
 
-    let result = perform_login(session, code, issued_client_id).await;
+    let result = perform_login(session, input).await;
     finish_session(&session.session_id, &result);
     result
 }
 
 async fn perform_login(
     session: &OAuthLoginSession,
-    code: &str,
-    issued_client_id: &str,
+    input: CompletionInput,
 ) -> Result<OAuthLoginOutcome> {
-    let provider = session.provider;
+    match (&session.provider, input) {
+        (LoginProvider::Builtin(provider), CompletionInput::Callback { code, params }) => {
+            perform_builtin_login(session, *provider, &code, &params).await
+        }
+        (LoginProvider::Plugin(id), CompletionInput::Callback { code, params }) => {
+            let tokens = plugin_login::exchange(session, id, &code, &params).await?;
+            plugin_login::finish(session, id, tokens).await
+        }
+        (LoginProvider::Plugin(id), CompletionInput::Tokens(tokens)) => {
+            plugin_login::finish(session, id, tokens).await
+        }
+        (LoginProvider::Builtin(_), CompletionInput::Tokens(_)) => Err(Error::from_reason(
+            "Built-in OAuth providers do not support token completion",
+        )),
+    }
+}
+
+async fn perform_builtin_login(
+    session: &OAuthLoginSession,
+    provider: OAuthProviderId,
+    code: &str,
+    params: &HashMap<String, String>,
+) -> Result<OAuthLoginOutcome> {
+    let issued_client_id = params
+        .get("client_id")
+        .map(String::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let tokens = provider::exchange_code(
         provider,
         code,
         &session.redirect_uri,
         &session.code_verifier,
         &session.state,
-        issued_client_id,
+        &issued_client_id,
     )
     .await?;
     if provider == OAuthProviderId::ChatGpt {
@@ -409,7 +636,7 @@ async fn perform_login(
     };
     let metadata = OAuthProfileMetadata {
         provider,
-        client_id: issued_client_id.trim().to_string(),
+        client_id: issued_client_id,
         refresh_token: tokens.refresh_token.clone(),
         account_id: claims.account_id.clone(),
         email: claims.email.clone(),
@@ -438,7 +665,7 @@ async fn perform_login(
     provider::persist_profile(database_path, provider, prepared.input).await?;
 
     Ok(OAuthLoginOutcome {
-        provider,
+        provider: provider.as_str().to_string(),
         profile_name: prepared.profile_name,
         display_name: prepared.display_name,
         email: claims.email,

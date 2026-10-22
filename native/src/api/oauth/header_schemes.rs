@@ -33,6 +33,20 @@ pub fn ensure_provider_scheme(
     let Some(scheme_name) = provider.header_scheme_name() else {
         return Ok(None);
     };
+    let required = provider
+        .required_headers()
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value))
+        .collect();
+    ensure_named_scheme(database_path, scheme_name, required).map(Some)
+}
+
+/// 按方案名补建 / 补齐请求头方案（内置 provider 与插件共用），返回方案 id。
+pub fn ensure_named_scheme(
+    database_path: &Path,
+    scheme_name: &str,
+    required: Vec<(String, String)>,
+) -> Result<String> {
     let schemes = schemes_service::list_custom_header_schemes(database_path)?;
     let existing = schemes
         .iter()
@@ -43,9 +57,9 @@ pub fn ensure_provider_scheme(
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
     let mut changed = existing.is_none();
-    for (name, value) in provider.required_headers() {
-        if !has_header(headers.keys(), name) {
-            headers.insert(name.to_string(), Value::String(value));
+    for (name, value) in required {
+        if !has_header(headers.keys(), &name) {
+            headers.insert(name, Value::String(value));
             changed = true;
         }
     }
@@ -72,7 +86,7 @@ pub fn ensure_provider_scheme(
         };
         schemes_service::upsert_custom_header_scheme(database_path, &item)?;
     }
-    Ok(Some(scheme_id))
+    Ok(scheme_id)
 }
 
 /// 旧版本的订阅档案未绑定请求头方案（身份请求头曾写死在请求代码中）。

@@ -12,6 +12,7 @@ import {
 import { readSnowCliCodebaseSettings } from "../../settings/codebaseSettings";
 import { readSnowCliProxyConfig } from "../../settings/proxyBrowserSettings";
 import { readSnowCliProfiles } from "../../snowCli/profiles";
+import { syncOAuthPlugins } from "../../oauthPlugins/oauthPluginHost";
 import { safeSend } from "../../utils/safeSend";
 
 /** 同名冲突处理策略：覆盖既有配置 / 另存为新副本。 */
@@ -77,9 +78,11 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("api-configs:list", () => native.listApiConfigs());
   ipcMain.handle("api-configs:retry-defaults", () => native.getRetryDefaults());
   // OAuth 登录：Rust 侧负责 PKCE、本机回调监听与 token 交换，主进程只做参数校验。
-  ipcMain.handle("api-configs:oauth-providers", () =>
-    native.listOAuthProviders(),
-  );
+  // 列表前先同步插件 provider，保证启停 / 安装插件后立即可见。
+  ipcMain.handle("api-configs:oauth-providers", async () => {
+    await syncOAuthPlugins();
+    return native.listOAuthProviders();
+  });
   ipcMain.handle(
     "api-configs:oauth-start",
     async (

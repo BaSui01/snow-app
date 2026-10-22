@@ -1,9 +1,14 @@
 import type { PluginLocalizedMap } from "./types";
 
-/** 市场条目的结构化字段（与 snow-plugin-store 的 registry.json 对应）。 */
+/** 市场分类：面板插件 / 脚本插件 / OAuth 登录插件。 */
+export type MarketCategory = "panel" | "script" | "oauth";
+
+/** 市场条目的结构化字段（与市场索引仓库 registry.json 对应）。 */
 export type MarketPluginEntry = {
   id: string;
+  /** 安装通道：OAuth 插件仍按 plugin 安装。 */
   kind: "plugin" | "script";
+  category: MarketCategory;
   name: PluginLocalizedMap;
   description: PluginLocalizedMap;
   author: string;
@@ -75,6 +80,23 @@ const normalizeRepoUrl = (value: string): string =>
     .replace(/\.git$/i, "")
     .replace(/\/+$/, "");
 
+/** 分类：kind=script 为脚本；kind=oauth 或带 oauth 标签为 OAuth 插件。 */
+const resolveMarketCategory = (
+  rawKind: unknown,
+  tags: string[],
+): MarketCategory => {
+  if (rawKind === "script") {
+    return "script";
+  }
+  if (
+    rawKind === "oauth" ||
+    tags.some((tag) => tag.toLowerCase() === "oauth")
+  ) {
+    return "oauth";
+  }
+  return "panel";
+};
+
 /** 解析市场索引文本；单个无效条目会被丢弃，不会让整份索引失败。 */
 export const parseMarketRegistry = (text: string): MarketRegistry => {
   const parsed: unknown = JSON.parse(text);
@@ -99,9 +121,11 @@ export const parseMarketRegistry = (text: string): MarketRegistry => {
     ) {
       continue;
     }
+    const tags = toStringList(raw.tags);
     plugins.push({
       id,
       kind: raw.kind === "script" ? "script" : "plugin",
+      category: resolveMarketCategory(raw.kind, tags),
       name: toLocalized(raw.name),
       description: toLocalized(raw.description),
       author: asTrimmedString(raw.author),
@@ -114,7 +138,7 @@ export const parseMarketRegistry = (text: string): MarketRegistry => {
       sha256: sha256.toLowerCase(),
       minAppVersion: asTrimmedString(raw.minAppVersion),
       privacy: toStringList(raw.privacy),
-      tags: toStringList(raw.tags),
+      tags,
       icon: asTrimmedString(raw.icon),
     });
   }

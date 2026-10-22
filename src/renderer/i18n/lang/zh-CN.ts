@@ -2269,6 +2269,12 @@ export const zhCN = {
     "通过 OAuth 流程登录 {{name}} 服务，自动获取并保存认证文件。",
   "settings.oauthProviderMissing": "当前没有可用的 OAuth 服务商。",
   "settings.oauthLoadingProviders": "正在获取可用的服务…",
+  "settings.oauthSourceBuiltin": "内置",
+  "settings.oauthSourcePlugin": "插件",
+  "settings.oauthBuiltinEmpty": "当前没有内置的 OAuth 服务商。",
+  "settings.oauthPluginEmpty": "当前没有插件提供 OAuth 服务商。",
+  "settings.oauthPluginMarketHint": "安装 OAuth 插件即可增加更多登录服务商。",
+  "settings.oauthOpenPluginMarket": "前往插件市场",
   "settings.oauthStarting": "正在创建登录会话…",
   "settings.oauthWaiting": "等待浏览器完成登录…",
   "settings.oauthWaitingHint": "浏览器完成登录后会自动返回，无需手动操作。",
@@ -2277,6 +2283,10 @@ export const zhCN = {
   "settings.oauthOpenBrowser": "在浏览器中打开",
   "settings.oauthCopyLink": "复制链接",
   "settings.oauthCopied": "已复制",
+  "settings.oauthUserCodeLabel": "验证码",
+  "settings.oauthCopyCode": "复制验证码",
+  "settings.oauthDeviceHint":
+    "请在打开的页面中确认登录，授权完成后会自动完成。",
   "settings.oauthCallbackLabel": "回调地址",
   "settings.oauthCallbackPlaceholder":
     "粘贴浏览器地址栏中的回调 URL（或授权码）",
@@ -6192,6 +6202,15 @@ export const zhCN = {
   "plugins.market.networkUndeclared":
     "该插件未声明网络访问权限。应用不会阻止它对外联网，安装前请确认来源可信。",
   "plugins.tabScripts": "脚本插件",
+  "plugins.tabOAuth": "OAuth 插件",
+  "plugins.oauthEmpty": "还没有安装 OAuth 插件",
+  "plugins.panelEmpty": "还没有安装面板插件",
+  "plugins.tabPluginsHint":
+    "面板插件即在右侧面板以标签页打开的插件：入口是顶栏加号菜单的「插件」分组与右侧面板标签栏。部分还提供输入工具栏按钮、消息页脚或工具调用卡片。",
+  "plugins.tabOAuthHint":
+    "声明了 oauth.entry 的插件：登录第三方账号后注册为一个 API 档案。入口在 API 设置 → OAuth 登录。",
+  "plugins.tabScriptsHint":
+    "注入网页的用户脚本：输入框按钮、右键菜单以及页面级辅助功能。",
   "plugins.tabPlugins": "面板插件",
   "plugins.scripts.create": "新建脚本",
   "plugins.scripts.createPlaceholder":

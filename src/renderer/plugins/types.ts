@@ -96,6 +96,8 @@ export type PluginView = {
   icon: string;
   renderMode: PluginRenderMode;
   entry: string;
+  /** plugin.json 的 oauth.entry；非空即 OAuth 登录插件。 */
+  oauthEntry: string;
   panels: PluginPanelDefinition[];
   messageFooters: PluginMessageFooterDefinition[];
   toolCallRenderers: PluginToolCallRendererDefinition[];

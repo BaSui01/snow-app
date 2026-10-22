@@ -355,6 +355,19 @@ const panelsWithSettings = (record: PluginRecord): PluginPanelDefinition[] => {
   });
 };
 
+const readOAuthEntry = (record: PluginRecord): string => {
+  const manifest = parseJson<Record<string, unknown> | null>(
+    record.manifestJson,
+    null,
+  );
+  const oauth = manifest?.oauth;
+  if (!oauth || typeof oauth !== "object") {
+    return "";
+  }
+  const entry = (oauth as Record<string, unknown>).entry;
+  return typeof entry === "string" ? entry.trim() : "";
+};
+
 export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   pluginId: record.pluginId,
   name: normalizeLocalizedMap(parseJson(record.name, {})),
@@ -368,6 +381,7 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
     ? "iframe"
     : "esm") as PluginRenderMode,
   entry: record.entry,
+  oauthEntry: readOAuthEntry(record),
   panels: panelsWithSettings(record),
   messageFooters: normalizeMessageFooters(record),
   toolCallRenderers: normalizeToolCallRenderers(record),

@@ -58,12 +58,19 @@ export type ApiConfigInput = {
   source: string;
 };
 
-/** OAuth 登录服务商（后端 listOAuthProviders 返回；新增服务商只改后端 provider 注册）。 */
+/** OAuth 登录服务商（内置 provider + 插件 provider，后端 listOAuthProviders 返回）。 */
 export type OAuthProviderInfo = {
   id: string;
   displayName: string;
   defaultModel: string;
   defaultMaxContextTokens: number;
+  /** redirect | manual | device */
+  flow: string;
+  /** 插件提供的说明与图标（data: / https: URL）。 */
+  description?: string;
+  icon?: string;
+  /** 来源插件 id；内置 provider 为空。 */
+  pluginId?: string;
 };
 
 /** OAuth 登录会话（回调端口仅登录期间监听本机）。 */
@@ -75,6 +82,10 @@ export type OAuthLoginStart = {
   /** 本机回调端口不可用时为 true，需要用户手动粘贴回调 URL。 */
   manualMode: boolean;
   defaultModel: string;
+  flow: string;
+  /** 设备码流程的用户码与插件说明。 */
+  userCode?: string;
+  instructions?: string;
 };
 
 export type OAuthLoginStatus = {
@@ -89,6 +100,9 @@ export type OAuthLoginStatus = {
   availableModels: string[];
   authUrl: string;
   manualMode: boolean;
+  flow: string;
+  userCode?: string;
+  instructions?: string;
 };
 
 /** 订阅配额单项；remainingPercent 为 0-100 的剩余百分比。 */
@@ -2320,6 +2334,12 @@ export type NativeBridge = ImageGenerationNativeApi & {
     callbackUrl: string,
   ) => Promise<OAuthLoginStatus>;
   cancelOAuthLogin: (sessionId: string) => Promise<boolean>;
+  /** 注册 OAuth 插件宿主回调：Rust 以 JSON 消息调用插件钩子。 */
+  setOAuthPluginHandler: (
+    handler: ((message: string) => Promise<string>) | null,
+  ) => void;
+  /** 推送当前启用的插件 provider 声明（JSON 数组），返回生效数量。 */
+  setOAuthPluginProviders: (specsJson: string) => number;
   getOAuthQuota: (profileName: string) => Promise<OAuthQuotaSnapshot>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   /** 重试错误分类默认关键词（JSON 字符串，单一来源在 Rust api::retry）。 */

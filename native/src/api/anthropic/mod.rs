@@ -171,6 +171,15 @@ async fn create_anthropic_response_async(
         tools,
         &prepared_request.user_system_prompts,
     )?;
+    let (endpoint, payload) = crate::api::oauth::plugin::transform_request(
+        &api_config,
+        "anthropic",
+        &model,
+        endpoint,
+        payload,
+        &mut custom_headers,
+    )
+    .await?;
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
         api_config.retry_base_delay_ms,

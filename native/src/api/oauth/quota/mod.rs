@@ -44,6 +44,9 @@ pub struct QuotaSnapshot {
 pub type QuotaParts = (Option<String>, Vec<QuotaGroup>);
 
 pub async fn fetch_snapshot(config: &ApiConfigRecord) -> Result<QuotaSnapshot> {
+    if let Some(snapshot) = super::plugin::fetch_quota(config).await? {
+        return Ok(snapshot);
+    }
     let metadata = OAuthProfileMetadata::from_config_json(&config.config_json)
         .ok_or_else(|| Error::from_reason("API profile is not an OAuth subscription login"))?;
     let token = config.api_key.trim();

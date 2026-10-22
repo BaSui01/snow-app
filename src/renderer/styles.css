@@ -60053,12 +60053,56 @@ img.plugin-icon {
 }
 /* OAuth 登录类型选择（首层弹窗） */
 .oauth-provider-picker {
-  width: min(560px, calc(100vw - 48px));
+  width: min(880px, calc(100vw - 48px));
+}
+
+.oauth-provider-tab-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 
 .oauth-provider-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.oauth-provider-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.oauth-provider-empty-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.oauth-provider-empty-hint {
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.oauth-provider-empty .api-settings-form-btn {
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .oauth-provider-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .oauth-provider-card {

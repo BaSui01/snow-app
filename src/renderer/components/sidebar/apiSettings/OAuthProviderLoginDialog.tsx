@@ -43,6 +43,7 @@ export function OAuthProviderLoginDialog({
   const [callbackInput, setCallbackInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
   const sessionRef = useRef<OAuthLoginStart | null>(null);
 
   const reset = useCallback(() => {
@@ -54,6 +55,7 @@ export function OAuthProviderLoginDialog({
     setCallbackInput("");
     setIsSubmitting(false);
     setCopied(false);
+    setCodeCopied(false);
   }, []);
 
   useEffect(() => {
@@ -149,6 +151,19 @@ export function OAuthProviderLoginDialog({
     }
   }, [session]);
 
+  const handleCopyCode = useCallback(async () => {
+    if (!session?.userCode) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(session.userCode);
+      setCodeCopied(true);
+      window.setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      setCodeCopied(false);
+    }
+  }, [session]);
+
   const handleOpenBrowser = useCallback(() => {
     if (session) {
       window.open(session.authUrl, "_blank", "noopener,noreferrer");
@@ -216,6 +231,7 @@ export function OAuthProviderLoginDialog({
   const handleBack = useCallback(() => exitTo(onBack), [exitTo, onBack]);
 
   const isBusy = phase === "starting" || isSubmitting;
+  const isDeviceFlow = session?.flow === "device";
 
   const renderBody = (): React.JSX.Element => {
     if (phase === "idle" || phase === "starting") {
@@ -290,54 +306,96 @@ export function OAuthProviderLoginDialog({
               </span>
             </button>
           </div>
-          <p className="oauth-login-hint">
-            {session.manualMode
-              ? t("settings.oauthManualNotice", {
-                  defaultValue:
-                    "The local callback port is unavailable. After signing in, copy the address bar URL from the browser and paste it below.",
-                })
-              : t("settings.oauthWaitingHint", {
-                  defaultValue:
-                    "The sign-in completes automatically once the browser flow finishes.",
+          {session.userCode ? (
+            <div className="oauth-login-field">
+              <label htmlFor="oauth-login-user-code">
+                {t("settings.oauthUserCodeLabel", {
+                  defaultValue: "Verification code",
                 })}
-          </p>
-          <div className="oauth-login-field">
-            <label htmlFor="oauth-login-callback">
-              {t("settings.oauthCallbackLabel", {
-                defaultValue: "Callback URL",
-              })}
-            </label>
-            <div className="oauth-login-link">
-              <input
-                id="oauth-login-callback"
-                type="text"
-                value={callbackInput}
-                placeholder={t("settings.oauthCallbackPlaceholder", {
-                  defaultValue:
-                    "Paste the callback URL (or authorization code) from the browser",
-                })}
-                onChange={(event) => setCallbackInput(event.target.value)}
-                disabled={isSubmitting}
-              />
-              <button
-                className="api-settings-action-btn secondary"
-                type="button"
-                onClick={() => void handleSubmitCallback()}
-                disabled={isSubmitting || !callbackInput.trim()}
-              >
-                {isSubmitting ? (
-                  <Loader2 size={14} className="spin" />
-                ) : (
-                  <CheckCircle2 size={14} />
-                )}
-                <span>
-                  {t("settings.oauthCallbackSubmit", {
-                    defaultValue: "Submit",
-                  })}
-                </span>
-              </button>
+              </label>
+              <div className="oauth-login-link">
+                <input
+                  id="oauth-login-user-code"
+                  type="text"
+                  value={session.userCode}
+                  readOnly
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <button
+                  className="api-settings-action-btn secondary"
+                  type="button"
+                  onClick={() => void handleCopyCode()}
+                >
+                  <Copy size={14} />
+                  <span>
+                    {codeCopied
+                      ? t("settings.oauthCopied", { defaultValue: "Copied" })
+                      : t("settings.oauthCopyCode", {
+                          defaultValue: "Copy code",
+                        })}
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
+          {session.instructions ? (
+            <p className="oauth-login-hint">{session.instructions}</p>
+          ) : null}
+          <p className="oauth-login-hint">
+            {isDeviceFlow
+              ? t("settings.oauthDeviceHint", {
+                  defaultValue:
+                    "Confirm the sign-in on the opened page. It completes automatically once authorized.",
+                })
+              : session.manualMode
+                ? t("settings.oauthManualNotice", {
+                    defaultValue:
+                      "The local callback port is unavailable. After signing in, copy the address bar URL from the browser and paste it below.",
+                  })
+                : t("settings.oauthWaitingHint", {
+                    defaultValue:
+                      "The sign-in completes automatically once the browser flow finishes.",
+                  })}
+          </p>
+          {isDeviceFlow ? null : (
+            <div className="oauth-login-field">
+              <label htmlFor="oauth-login-callback">
+                {t("settings.oauthCallbackLabel", {
+                  defaultValue: "Callback URL",
+                })}
+              </label>
+              <div className="oauth-login-link">
+                <input
+                  id="oauth-login-callback"
+                  type="text"
+                  value={callbackInput}
+                  placeholder={t("settings.oauthCallbackPlaceholder", {
+                    defaultValue:
+                      "Paste the callback URL (or authorization code) from the browser",
+                  })}
+                  onChange={(event) => setCallbackInput(event.target.value)}
+                  disabled={isSubmitting}
+                />
+                <button
+                  className="api-settings-action-btn secondary"
+                  type="button"
+                  onClick={() => void handleSubmitCallback()}
+                  disabled={isSubmitting || !callbackInput.trim()}
+                >
+                  {isSubmitting ? (
+                    <Loader2 size={14} className="spin" />
+                  ) : (
+                    <CheckCircle2 size={14} />
+                  )}
+                  <span>
+                    {t("settings.oauthCallbackSubmit", {
+                      defaultValue: "Submit",
+                    })}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
           {error ? <p className="oauth-login-error">{error}</p> : null}
         </div>
       );

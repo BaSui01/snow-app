@@ -2384,6 +2384,13 @@ export const en = {
     "Sign in to {{name}} through the OAuth flow. The credential file is fetched and saved automatically.",
   "settings.oauthProviderMissing": "No OAuth provider is available.",
   "settings.oauthLoadingProviders": "Loading available providers...",
+  "settings.oauthSourceBuiltin": "Built-in",
+  "settings.oauthSourcePlugin": "Plugins",
+  "settings.oauthBuiltinEmpty": "No built-in OAuth provider is available.",
+  "settings.oauthPluginEmpty": "No plugin provides an OAuth provider.",
+  "settings.oauthPluginMarketHint":
+    "Install an OAuth plugin to add more sign-in providers.",
+  "settings.oauthOpenPluginMarket": "Open plugin market",
   "settings.oauthStarting": "Preparing the sign-in session...",
   "settings.oauthWaiting": "Waiting for the browser sign-in to complete...",
   "settings.oauthWaitingHint":
@@ -2393,6 +2400,10 @@ export const en = {
   "settings.oauthOpenBrowser": "Open in browser",
   "settings.oauthCopyLink": "Copy link",
   "settings.oauthCopied": "Copied",
+  "settings.oauthUserCodeLabel": "Verification code",
+  "settings.oauthCopyCode": "Copy code",
+  "settings.oauthDeviceHint":
+    "Confirm the sign-in on the opened page. It completes automatically once authorized.",
   "settings.oauthCallbackLabel": "Callback URL",
   "settings.oauthCallbackPlaceholder":
     "Paste the callback URL (or authorization code) from the browser",
@@ -6586,6 +6597,15 @@ export const en = {
   "plugins.market.networkUndeclared":
     "This plugin does not declare network access. The app will not block its outbound connections; make sure the source is trusted before installing.",
   "plugins.tabScripts": "Script plugins",
+  "plugins.tabOAuth": "OAuth plugins",
+  "plugins.oauthEmpty": "No OAuth plugins installed yet",
+  "plugins.panelEmpty": "No panel plugins installed yet",
+  "plugins.tabPluginsHint":
+    "Panel plugins open as tabs in the right panel: enter from the plus menu in the top bar (Plugins group) or the right panel tab bar. Some also add an input toolbar button, message footers or tool call cards.",
+  "plugins.tabOAuthHint":
+    "Plugins that declare oauth.entry: they sign in to a third-party account and register it as an API profile. Enter from API settings > OAuth sign-in.",
+  "plugins.tabScriptsHint":
+    "Userscripts injected into web pages: chat input buttons, context menus and page-level helpers.",
   "plugins.tabPlugins": "Panel plugins",
   "plugins.scripts.create": "New script",
   "plugins.scripts.createPlaceholder":

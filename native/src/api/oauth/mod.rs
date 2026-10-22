@@ -3,6 +3,7 @@ pub mod antigravity;
 pub mod chatgpt;
 pub mod codex;
 pub mod header_schemes;
+pub mod plugin;
 pub mod provider;
 pub mod quota;
 pub mod server;

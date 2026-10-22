@@ -260,6 +260,15 @@ async fn create_gemini_response_async(
     {
         payload = payload::wrap_antigravity_payload(payload, &model, metadata.account_id.trim());
     }
+    let (endpoint, payload) = crate::api::oauth::plugin::transform_request(
+        &api_config,
+        "gemini",
+        &model,
+        endpoint,
+        payload,
+        &mut custom_headers,
+    )
+    .await?;
     let is_duplicate_recovery = request.disable_tools.unwrap_or(false);
     if is_duplicate_recovery {
         log_api_warning(

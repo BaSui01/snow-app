@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, net } from "electron";
 import { extname } from "node:path";
 import { refreshUserscriptSyncStore } from "../../app/userscriptSyncStore";
+import { syncOAuthPlugins } from "../../oauthPlugins/oauthPluginHost";
 import type {
   NativeBridge,
   PluginRecord,
@@ -81,11 +82,13 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "plugins:install",
-    (_event, sourceDir: unknown): Promise<PluginRecord> => {
+    async (_event, sourceDir: unknown): Promise<PluginRecord> => {
       if (!isNonEmptyString(sourceDir)) {
         throw new Error("Plugin directory is required");
       }
-      return native.installPlugin(sourceDir.trim());
+      const record = await native.installPlugin(sourceDir.trim());
+      await syncOAuthPlugins();
+      return record;
     },
   );
 
@@ -144,6 +147,7 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
         sha256.trim().toLowerCase(),
         sourceUrl.trim(),
       );
+      await syncOAuthPlugins();
       safeSend(event.sender, "plugins:changed");
       return record;
     },
@@ -185,31 +189,35 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "plugins:rescan",
-    (_event, pluginId: unknown): Promise<PluginRecord> => {
+    async (_event, pluginId: unknown): Promise<PluginRecord> => {
       if (!isNonEmptyString(pluginId)) {
         throw new Error("Plugin id is required");
       }
-      return native.rescanPlugin(pluginId.trim());
+      const record = await native.rescanPlugin(pluginId.trim());
+      await syncOAuthPlugins();
+      return record;
     },
   );
 
   ipcMain.handle(
     "plugins:set-enabled",
-    (_event, pluginId: unknown, enabled: unknown): Promise<void> => {
+    async (_event, pluginId: unknown, enabled: unknown): Promise<void> => {
       if (!isNonEmptyString(pluginId)) {
         throw new Error("Plugin id is required");
       }
-      return native.setPluginEnabled(pluginId.trim(), Boolean(enabled));
+      await native.setPluginEnabled(pluginId.trim(), Boolean(enabled));
+      await syncOAuthPlugins();
     },
   );
 
   ipcMain.handle(
     "plugins:delete",
-    (_event, pluginId: unknown, deleteFiles: unknown): Promise<void> => {
+    async (_event, pluginId: unknown, deleteFiles: unknown): Promise<void> => {
       if (!isNonEmptyString(pluginId)) {
         throw new Error("Plugin id is required");
       }
-      return native.deletePlugin(pluginId.trim(), Boolean(deleteFiles));
+      await native.deletePlugin(pluginId.trim(), Boolean(deleteFiles));
+      await syncOAuthPlugins();
     },
   );
 

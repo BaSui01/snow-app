@@ -20,8 +20,9 @@ pub async fn serve_callback(
     session: OAuthLoginSession,
     shutdown: oneshot::Receiver<()>,
 ) {
+    let callback_path = session.callback_path.clone();
     let app = Router::new()
-        .route(session.provider.callback_path(), get(handle_callback))
+        .route(&callback_path, get(handle_callback))
         .with_state(CallbackState { session });
 
     let _ = axum::serve(listener, app)

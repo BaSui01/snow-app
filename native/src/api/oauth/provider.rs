@@ -413,6 +413,7 @@ pub fn apply_request_headers(
     config: &ApiConfigRecord,
     headers: &mut HashMap<String, String>,
 ) {
+    super::plugin::apply_request_headers(config, headers);
     let Some(metadata) = OAuthProfileMetadata::from_config_json(&config.config_json) else {
         return;
     };
@@ -480,20 +481,25 @@ pub fn prepare_profile(
 }
 
 fn build_profile_name(provider: OAuthProviderId, claims: &OAuthClaims) -> String {
+    profile_name_for(provider.as_str(), claims)
+}
+
+/// 档案名：`<prefix>-<邮箱前缀>`，无邮箱时退化为账号 id 前 8 位。
+pub fn profile_name_for(prefix: &str, claims: &OAuthClaims) -> String {
     let email = claims.email.trim();
     if !email.is_empty() {
         let local = email.split('@').next().unwrap_or(email);
         let sanitized = sanitize_profile_segment(local);
         if !sanitized.is_empty() {
-            return format!("{}-{sanitized}", provider.as_str());
+            return format!("{prefix}-{sanitized}");
         }
     }
     let account = claims.account_id.trim();
     if !account.is_empty() {
         let short: String = account.chars().take(8).collect();
-        return format!("{}-{}", provider.as_str(), sanitize_profile_segment(&short));
+        return format!("{prefix}-{}", sanitize_profile_segment(&short));
     }
-    provider.as_str().to_string()
+    prefix.to_string()
 }
 
 fn sanitize_profile_segment(value: &str) -> String {
@@ -505,16 +511,20 @@ fn sanitize_profile_segment(value: &str) -> String {
 }
 
 fn build_display_name(provider: OAuthProviderId, claims: &OAuthClaims) -> String {
+    display_name_for(provider.display_name(), claims)
+}
+
+pub fn display_name_for(label: &str, claims: &OAuthClaims) -> String {
     let email = claims.email.trim();
     if !email.is_empty() {
-        return format!("{} ({email})", provider.display_name());
+        return format!("{label} ({email})");
     }
     let account = claims.account_id.trim();
     if !account.is_empty() {
         let short: String = account.chars().take(8).collect();
-        return format!("{} ({short})", provider.display_name());
+        return format!("{label} ({short})");
     }
-    provider.display_name().to_string()
+    label.to_string()
 }
 
 fn build_config_json(
@@ -549,6 +559,9 @@ fn build_config_json(
 }
 
 pub async fn refresh_if_needed(api_config: ApiConfigRecord) -> Result<ApiConfigRecord> {
+    if super::plugin::is_plugin_profile(&api_config.config_json) {
+        return super::plugin::refresh_if_needed(api_config).await;
+    }
     let Some(metadata) = OAuthProfileMetadata::from_config_json(&api_config.config_json) else {
         return Ok(api_config);
     };
@@ -689,7 +702,9 @@ pub fn merge_metadata_into_config(
 /// 可能已被后台刷新过期或轮换。已有 OAuth 档案的这两部分只能由登录与刷新流程写入，
 /// 保存时以库内记录为准，避免把旧令牌回写覆盖新令牌。
 pub fn keep_saved_oauth_secrets(config: &mut ApiConfigInput, saved: &ApiConfigRecord) {
-    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none() {
+    if OAuthProfileMetadata::from_config_json(&saved.config_json).is_none()
+        && !super::plugin::is_plugin_profile(&saved.config_json)
+    {
         return;
     }
     config.api_key = saved.api_key.clone();
@@ -699,7 +714,7 @@ pub fn keep_saved_oauth_secrets(config: &mut ApiConfigInput, saved: &ApiConfigRe
     if let (Some(incoming_object), Some(saved_object)) =
         (incoming.as_object_mut(), saved_root.as_object())
     {
-        for key in [METADATA_KEY, LEGACY_METADATA_KEY] {
+        for key in [METADATA_KEY, LEGACY_METADATA_KEY, super::plugin::METADATA_KEY] {
             match saved_object.get(key) {
                 Some(value) => {
                     incoming_object.insert(key.to_string(), value.clone());

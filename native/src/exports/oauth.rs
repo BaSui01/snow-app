@@ -1,9 +1,10 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
+use crate::api::oauth::plugin::{self, host::OAuthPluginCallback};
 use crate::api::oauth::provider::{refresh_if_needed, OAuthProviderId};
 use crate::api::oauth::quota::{self, QuotaSnapshot};
-use crate::api::oauth::sessions;
+use crate::api::oauth::sessions::{self, LoginProvider};
 use crate::storage::services::api_configs as api_configs_service;
 use crate::storage::{ensure_database_file, ApiConfigRecord};
 
@@ -13,6 +14,13 @@ pub struct OAuthProviderInfo {
     pub display_name: String,
     pub default_model: String,
     pub default_max_context_tokens: i32,
+    /// redirect | manual | device
+    pub flow: String,
+    /// 插件提供的说明与图标（data: / https: URL），内置 provider 为空。
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    /// 来源插件 id；内置 provider 为空。
+    pub plugin_id: Option<String>,
 }
 
 #[napi(object)]
@@ -23,6 +31,9 @@ pub struct OAuthLoginStart {
     pub port: u32,
     pub manual_mode: bool,
     pub default_model: String,
+    pub flow: String,
+    pub user_code: Option<String>,
+    pub instructions: Option<String>,
 }
 
 #[napi(object)]
@@ -37,12 +48,23 @@ pub struct OAuthLoginStatus {
     pub available_models: Vec<String>,
     pub auth_url: String,
     pub manual_mode: bool,
+    pub flow: String,
+    pub user_code: Option<String>,
+    pub instructions: Option<String>,
+}
+
+fn non_empty(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 fn to_status(view: sessions::OAuthStatusView) -> OAuthLoginStatus {
     let outcome = view.outcome;
     OAuthLoginStatus {
-        provider: view.provider.as_str().to_string(),
+        provider: view.provider,
         status: view.status.to_string(),
         error: view.error,
         profile_name: outcome.as_ref().map(|outcome| outcome.profile_name.clone()),
@@ -55,26 +77,49 @@ fn to_status(view: sessions::OAuthStatusView) -> OAuthLoginStatus {
             .unwrap_or_default(),
         auth_url: view.auth_url,
         manual_mode: view.manual_mode,
+        flow: view.flow,
+        user_code: non_empty(view.user_code),
+        instructions: non_empty(view.instructions),
     }
 }
 
-fn parse_provider(value: &str) -> Result<OAuthProviderId> {
-    OAuthProviderId::parse(value).ok_or_else(|| {
-        Error::from_reason(format!("Unsupported OAuth provider: {}", value.trim()))
-    })
-}
-
+/// 内置 provider 在前，插件 provider 按主进程推送顺序追加。
 #[napi(js_name = "listOAuthProviders")]
 pub fn list_oauth_providers() -> Vec<OAuthProviderInfo> {
-    OAuthProviderId::all()
-        .iter()
-        .map(|provider| OAuthProviderInfo {
-            id: provider.as_str().to_string(),
-            display_name: provider.display_name().to_string(),
-            default_model: provider.default_model().to_string(),
-            default_max_context_tokens: provider.default_max_context_tokens(),
-        })
-        .collect()
+    let builtin = OAuthProviderId::all().iter().map(|provider| OAuthProviderInfo {
+        id: provider.as_str().to_string(),
+        display_name: provider.display_name().to_string(),
+        default_model: provider.default_model().to_string(),
+        default_max_context_tokens: provider.default_max_context_tokens(),
+        flow: "redirect".to_string(),
+        description: None,
+        icon: None,
+        plugin_id: None,
+    });
+    let plugins = plugin::registry::list().into_iter().map(|spec| OAuthProviderInfo {
+        id: spec.id.clone(),
+        display_name: spec.label().to_string(),
+        default_model: spec.default_model.clone(),
+        default_max_context_tokens: spec.max_context_tokens(),
+        flow: spec.flow().to_string(),
+        description: non_empty(spec.description.clone()),
+        icon: non_empty(spec.icon.clone()),
+        plugin_id: non_empty(spec.plugin_id.clone()),
+    });
+    builtin.chain(plugins).collect()
+}
+
+/// 注册（或清除）OAuth 插件宿主回调，主进程启动时调用一次。
+#[napi(js_name = "setOAuthPluginHandler")]
+pub fn set_oauth_plugin_handler(handler: Option<OAuthPluginCallback>) {
+    plugin::host::set_handler(handler);
+}
+
+/// 主进程推送当前启用的插件 provider 声明（JSON 数组），整体替换，返回生效数量。
+#[napi(js_name = "setOAuthPluginProviders")]
+pub fn set_oauth_plugin_providers(specs_json: String) -> Result<u32> {
+    let specs = plugin::registry::parse_specs(&specs_json)?;
+    Ok(plugin::registry::replace_all(specs) as u32)
 }
 
 #[napi(js_name = "startOAuthLogin")]
@@ -83,15 +128,18 @@ pub async fn start_oauth_login(
     advanced_model: Option<String>,
     basic_model: Option<String>,
 ) -> Result<OAuthLoginStart> {
-    let provider = parse_provider(&provider)?;
+    let provider = LoginProvider::resolve(&provider).await?;
     let result = sessions::start_login(provider, advanced_model, basic_model).await?;
     Ok(OAuthLoginStart {
         session_id: result.session_id,
-        provider: result.provider.as_str().to_string(),
+        provider: result.provider,
         auth_url: result.auth_url,
         port: result.port as u32,
         manual_mode: result.manual_mode,
         default_model: result.default_model,
+        flow: result.flow,
+        user_code: non_empty(result.user_code),
+        instructions: non_empty(result.instructions),
     })
 }
 

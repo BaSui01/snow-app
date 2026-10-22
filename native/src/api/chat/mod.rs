@@ -69,6 +69,8 @@ async fn create_chat_completion_response_async(
     // 重试探针：记录本轮出现过的最大重试序号与最后一次上游错误，随消息落库。
     let retry_probe = crate::api::common::RetryProbe::default();
     let on_chunk = on_chunk.with_retry_probe(&retry_probe);
+    // 插件订阅档案走 chat 协议时同样需要刷新令牌（非 OAuth 档案原样返回）
+    let api_config = crate::api::oauth::provider::refresh_if_needed(api_config).await?;
     if request.messages.is_empty() {
         return Err(Error::from_reason("At least one chat message is required"));
     }
@@ -140,6 +142,7 @@ async fn create_chat_completion_response_async(
         &mut custom_headers,
         &prepared_request.conversation_id,
     );
+    crate::api::oauth::provider::apply_request_headers(&api_config, &mut custom_headers);
 
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;
@@ -186,6 +189,15 @@ async fn create_chat_completion_response_async(
         )
         .await;
     }
+    let (endpoint, payload) = crate::api::oauth::plugin::transform_request(
+        &api_config,
+        "chat",
+        &model,
+        endpoint,
+        payload,
+        &mut custom_headers,
+    )
+    .await?;
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
         api_config.retry_base_delay_ms,

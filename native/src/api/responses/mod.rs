@@ -397,6 +397,15 @@ async fn create_response_async(
         &prepared_request.user_system_prompts,
         cache_key,
     )?;
+    let (endpoint, payload) = crate::api::oauth::plugin::transform_request(
+        &api_config,
+        "responses",
+        &model,
+        endpoint,
+        payload,
+        &mut effective_headers,
+    )
+    .await?;
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
         api_config.retry_base_delay_ms,

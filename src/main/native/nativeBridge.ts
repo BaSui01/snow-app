@@ -19,6 +19,9 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "abortPromptOptimization",
   // 对话请求代理回调是进程级注册状态，不依赖 SQLite。
   "setRequestProxyHandler",
+  // OAuth 插件宿主回调与 provider 声明是进程内状态，不依赖 SQLite。
+  "setOAuthPluginHandler",
+  "setOAuthPluginProviders",
   // Git（本地仓库子进程操作）
   "getGitStatus",
   "getGitBranches",
@@ -159,6 +162,8 @@ const createUnavailableBridge = (): NativeBridge => {
     setRemoteControlRendererBridge: () => {},
     setCheckpointRemoteCallback: () => {},
     setRequestProxyHandler: () => {},
+    setOAuthPluginHandler: () => {},
+    setOAuthPluginProviders: () => 0,
   };
   return new Proxy(overrides as NativeBridge, {
     get(target, prop) {

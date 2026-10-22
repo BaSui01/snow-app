@@ -36,6 +36,8 @@ struct PluginManifest {
     privacy: Vec<String>,
     privacy_note: String,
     min_app_version: String,
+    /// plugin.json 的 oauth.entry：主进程加载的 OAuth 登录模块。
+    oauth_entry: String,
 }
 
 pub fn plugins_dir() -> Result<PathBuf> {
@@ -324,6 +326,13 @@ fn parse_manifest(raw: &str) -> Result<PluginManifest> {
             .map(str::trim)
             .unwrap_or_default()
             .to_string(),
+        oauth_entry: object
+            .get("oauth")
+            .and_then(|oauth| oauth.get("entry"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string(),
     })
 }
 
@@ -565,11 +574,22 @@ fn install_plugin_internal(
     }
 
     let entry_path = resolve_plugin_path(&target, &manifest.entry)?;
-    if !entry_path.is_file() {
-        return Err(Error::from_reason(format!(
-            "Plugin entry file '{}' is missing",
-            manifest.entry
-        )));
+    if manifest.oauth_entry.is_empty() {
+        if !entry_path.is_file() {
+            return Err(Error::from_reason(format!(
+                "Plugin entry file '{}' is missing",
+                manifest.entry
+            )));
+        }
+    } else {
+        // 纯 OAuth 插件可以没有渲染层入口，但 OAuth 模块必须存在
+        let oauth_path = resolve_plugin_path(&target, &manifest.oauth_entry)?;
+        if !oauth_path.is_file() {
+            return Err(Error::from_reason(format!(
+                "Plugin OAuth entry file '{}' is missing",
+                manifest.oauth_entry
+            )));
+        }
     }
 
     let install_path = target.to_string_lossy().to_string();

@@ -135,6 +135,9 @@ const requiredExports = [
   "getOAuthLoginStatus",
   "submitOAuthCallback",
   "cancelOAuthLogin",
+  // OAuth 登录插件（主进程宿主回调与 provider 声明推送）
+  "setOAuthPluginHandler",
+  "setOAuthPluginProviders",
   // OAuth 订阅配额（模型列表配额面板）
   "getOAuthQuota",
   // 异步生图任务生命周期与持久批次通知（拒绝缺少新接口的旧绑定）

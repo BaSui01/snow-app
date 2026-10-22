@@ -4,6 +4,7 @@ import {
   Download,
   FileCode2,
   FolderOpen,
+  KeyRound,
   Loader2,
   RefreshCw,
   ShieldAlert,
@@ -21,6 +22,7 @@ import { resolveLocalized } from "../../plugins/manifest";
 import {
   hasMarketUpdate,
   isMarketEntryTooNew,
+  type MarketCategory,
   type MarketPluginEntry,
 } from "../../plugins/market";
 import {
@@ -28,6 +30,10 @@ import {
   marketStore,
   useMarketStore,
 } from "../../plugins/marketStore";
+import {
+  clearPluginsPanelNavigation,
+  peekPluginsPanelNavigation,
+} from "../../plugins/panelNavigation";
 import {
   METADATA_DOMAINS,
   describeMetadataDomains,
@@ -37,6 +43,7 @@ import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
 import { describeWriteDomains } from "../../plugins/writes";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PluginIcon } from "../common/PluginIcon";
+import { Tooltip } from "../common/Tooltip";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginMarketPanel } from "./PluginMarketPanel";
@@ -76,10 +83,17 @@ export const PluginsPanel = ({
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [createRequest, setCreateRequest] = useState("");
   const [createOpen, setCreateOpen] = useState<boolean | null>(null);
+  // 外部（如 OAuth 登录选择）请求直达市场页的某个分类，只在挂载时消费一次
+  const [initialNavigation] = useState(peekPluginsPanelNavigation);
   const [activeTab, setActiveTab] = useState<"list" | "market" | "metadata">(
-    "list",
+    initialNavigation?.tab ?? "list",
   );
-  const [listTab, setListTab] = useState<"plugins" | "scripts">("plugins");
+  const [listTab, setListTab] = useState<"plugins" | "oauth" | "scripts">(
+    "plugins",
+  );
+  const [marketCategory, setMarketCategory] = useState<MarketCategory>(
+    initialNavigation?.category ?? "panel",
+  );
   const [privacyTarget, setPrivacyTarget] =
     useState<PluginPrivacyTarget | null>(null);
   const clientScripts = useClientScriptStore();
@@ -91,6 +105,24 @@ export const PluginsPanel = ({
   );
   const isEmpty = state.status === "ready" && state.plugins.length === 0;
   const createBoxOpen = createOpen ?? isEmpty;
+
+  // 导航意图已在初始化时读取，挂载后清空避免影响下次打开
+  useEffect(() => {
+    clearPluginsPanelNavigation();
+  }, []);
+
+  // OAuth 插件单独成组（声明了 oauth.entry）。
+  const panelPlugins = useMemo(
+    () => state.plugins.filter((plugin) => !plugin.oauthEntry),
+    [state.plugins],
+  );
+  const oauthPlugins = useMemo(
+    () => state.plugins.filter((plugin) => Boolean(plugin.oauthEntry)),
+    [state.plugins],
+  );
+  const visiblePlugins = listTab === "oauth" ? oauthPlugins : panelPlugins;
+  const isGroupEmpty =
+    state.status === "ready" && !isEmpty && visiblePlugins.length === 0;
 
   // 可批量更新的插件（市场有更高版本且满足最低应用版本要求）。
   const updatablePlugins = useMemo(() => {
@@ -126,6 +158,10 @@ export const PluginsPanel = ({
     [clientScripts.scripts, market.appVersion, market.entries],
   );
   const totalUpdateCount = updatablePlugins.length + updatableScriptCount;
+  const oauthUpdateCount = updatablePlugins.filter(
+    (target) => target.plugin.oauthEntry,
+  ).length;
+  const panelUpdateCount = updatablePlugins.length - oauthUpdateCount;
 
   const renderUpdateIcon = (count: number, size: number) =>
     count > 0 ? (
@@ -398,38 +434,76 @@ export const PluginsPanel = ({
               className="import-settings-tabs plugin-list-tabs"
               role="tablist"
             >
-              <button
-                aria-selected={listTab === "plugins"}
-                className={`import-settings-tab ${
-                  listTab === "plugins" ? "active" : ""
-                }`}
-                onClick={() => setListTab("plugins")}
-                role="tab"
-                type="button"
+              <Tooltip
+                content={t("plugins.tabPluginsHint", {
+                  defaultValue:
+                    "Panel plugins open as tabs in the right panel: enter from the plus menu in the top bar (Plugins group) or the right panel tab bar. Some also add an input toolbar button, message footers or tool call cards.",
+                })}
+                placement="bottom"
               >
-                <Puzzle size={13} strokeWidth={1.8} />
-                {t("plugins.tabPlugins", { defaultValue: "Panel plugins" })}
-                <small>{state.plugins.length}</small>
-                {renderUpdateIcon(updatablePlugins.length, 12)}
-              </button>
-              <button
-                aria-selected={listTab === "scripts"}
-                className={`import-settings-tab ${
-                  listTab === "scripts" ? "active" : ""
-                }`}
-                onClick={() => setListTab("scripts")}
-                role="tab"
-                type="button"
+                <button
+                  aria-selected={listTab === "plugins"}
+                  className={`import-settings-tab ${
+                    listTab === "plugins" ? "active" : ""
+                  }`}
+                  onClick={() => setListTab("plugins")}
+                  role="tab"
+                  type="button"
+                >
+                  <Puzzle size={13} strokeWidth={1.8} />
+                  {t("plugins.tabPlugins", { defaultValue: "Panel plugins" })}
+                  <small>{panelPlugins.length}</small>
+                  {renderUpdateIcon(panelUpdateCount, 12)}
+                </button>
+              </Tooltip>
+              <Tooltip
+                content={t("plugins.tabOAuthHint", {
+                  defaultValue:
+                    "Plugins that declare oauth.entry: they sign in to a third-party account and register it as an API profile. Enter from API settings > OAuth sign-in.",
+                })}
+                placement="bottom"
               >
-                <FileCode2 size={13} strokeWidth={1.8} />
-                {t("plugins.tabScripts", { defaultValue: "Script plugins" })}
-                <small>{clientScripts.scripts.length}</small>
-                {renderUpdateIcon(updatableScriptCount, 12)}
-              </button>
+                <button
+                  aria-selected={listTab === "oauth"}
+                  className={`import-settings-tab ${
+                    listTab === "oauth" ? "active" : ""
+                  }`}
+                  onClick={() => setListTab("oauth")}
+                  role="tab"
+                  type="button"
+                >
+                  <KeyRound size={13} strokeWidth={1.8} />
+                  {t("plugins.tabOAuth", { defaultValue: "OAuth plugins" })}
+                  <small>{oauthPlugins.length}</small>
+                  {renderUpdateIcon(oauthUpdateCount, 12)}
+                </button>
+              </Tooltip>
+              <Tooltip
+                content={t("plugins.tabScriptsHint", {
+                  defaultValue:
+                    "Userscripts injected into web pages: chat input buttons, context menus and page-level helpers.",
+                })}
+                placement="bottom"
+              >
+                <button
+                  aria-selected={listTab === "scripts"}
+                  className={`import-settings-tab ${
+                    listTab === "scripts" ? "active" : ""
+                  }`}
+                  onClick={() => setListTab("scripts")}
+                  role="tab"
+                  type="button"
+                >
+                  <FileCode2 size={13} strokeWidth={1.8} />
+                  {t("plugins.tabScripts", { defaultValue: "Script plugins" })}
+                  <small>{clientScripts.scripts.length}</small>
+                  {renderUpdateIcon(updatableScriptCount, 12)}
+                </button>
+              </Tooltip>
             </div>
 
             <div className="plugins-tab-content">
-              {listTab === "plugins" ? (
+              {listTab !== "scripts" ? (
                 <>
                   <div className="plugins-toolbar">
                     <button
@@ -564,8 +638,27 @@ export const PluginsPanel = ({
                     </div>
                   )}
 
+                  {isGroupEmpty && (
+                    <div className="plugins-empty">
+                      {listTab === "oauth" ? (
+                        <KeyRound size={22} strokeWidth={1.6} />
+                      ) : (
+                        <Puzzle size={22} strokeWidth={1.6} />
+                      )}
+                      <span>
+                        {listTab === "oauth"
+                          ? t("plugins.oauthEmpty", {
+                              defaultValue: "No OAuth plugins installed yet",
+                            })
+                          : t("plugins.panelEmpty", {
+                              defaultValue: "No panel plugins installed yet",
+                            })}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="plugins-list">
-                    {state.plugins.map((plugin) => {
+                    {visiblePlugins.map((plugin) => {
                       const isBusy = busyPluginId === plugin.pluginId;
                       const marketEntry = findMarketEntry(
                         market.entries,
@@ -793,7 +886,10 @@ export const PluginsPanel = ({
             </div>
           </>
         ) : activeTab === "market" ? (
-          <PluginMarketPanel />
+          <PluginMarketPanel
+            initialCategory={marketCategory}
+            onCategoryChange={setMarketCategory}
+          />
         ) : (
           <PluginMetadataCatalog
             onClearPlugin={clearMetadataPlugin}

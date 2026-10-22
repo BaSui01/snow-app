@@ -2270,6 +2270,12 @@ export const zhTW = {
     "透過 OAuth 流程登入 {{name}} 服務，自動取得並儲存認證檔案。",
   "settings.oauthProviderMissing": "目前沒有可用的 OAuth 服務商。",
   "settings.oauthLoadingProviders": "正在取得可用的服務…",
+  "settings.oauthSourceBuiltin": "內建",
+  "settings.oauthSourcePlugin": "外掛",
+  "settings.oauthBuiltinEmpty": "目前沒有內建的 OAuth 服務商。",
+  "settings.oauthPluginEmpty": "目前沒有外掛提供 OAuth 服務商。",
+  "settings.oauthPluginMarketHint": "安裝 OAuth 外掛即可增加更多登入服務商。",
+  "settings.oauthOpenPluginMarket": "前往外掛市集",
   "settings.oauthStarting": "正在建立登入工作階段…",
   "settings.oauthWaiting": "等待瀏覽器完成登入…",
   "settings.oauthWaitingHint": "瀏覽器完成登入後會自動返回，無需手動操作。",
@@ -2278,6 +2284,10 @@ export const zhTW = {
   "settings.oauthOpenBrowser": "在瀏覽器開啟",
   "settings.oauthCopyLink": "複製連結",
   "settings.oauthCopied": "已複製",
+  "settings.oauthUserCodeLabel": "驗證碼",
+  "settings.oauthCopyCode": "複製驗證碼",
+  "settings.oauthDeviceHint":
+    "請在開啟的頁面中確認登入，授權完成後會自動完成。",
   "settings.oauthCallbackLabel": "回呼網址",
   "settings.oauthCallbackPlaceholder":
     "貼上瀏覽器網址列中的回呼 URL（或授權碼）",
@@ -6201,6 +6211,15 @@ export const zhTW = {
   "plugins.market.networkUndeclared":
     "此外掛未宣告網路存取權限。應用程式不會阻止它對外連線，安裝前請確認來源可信。",
   "plugins.tabScripts": "腳本外掛",
+  "plugins.tabOAuth": "OAuth 外掛",
+  "plugins.oauthEmpty": "尚未安裝任何 OAuth 外掛",
+  "plugins.panelEmpty": "尚未安裝任何面板外掛",
+  "plugins.tabPluginsHint":
+    "面板外掛即在右側面板以標籤頁開啟的外掛：入口是頂欄加號選單的「外掛」分組與右側面板標籤列。部分還提供輸入工具列按鈕、訊息頁尾或工具呼叫卡片。",
+  "plugins.tabOAuthHint":
+    "宣告了 oauth.entry 的外掛：登入第三方帳號後註冊為一個 API 設定檔。入口在 API 設定 → OAuth 登入。",
+  "plugins.tabScriptsHint":
+    "注入網頁的使用者腳本：輸入框按鈕、右鍵選單以及頁面層級輔助功能。",
   "plugins.tabPlugins": "面板外掛",
   "plugins.scripts.create": "新增腳本",
   "plugins.scripts.createPlaceholder":

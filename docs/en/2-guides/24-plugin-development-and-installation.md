@@ -745,7 +745,8 @@ The **Plugin market** tab reads `app/registry.json` from the [snow-plugin-store]
 
 #### 11.1 Installing and updating in the client
 
-- Each entry shows its name, version, author, tags, and type (script entries carry a Script label), and supports keyword search over name, description, author, and tags; a `lucide:Name` icon is resolved to the matching icon, and anything else falls back to a placeholder.
+- The market is split into three tabs — **Panel plugins**, **OAuth plugins**, and **Script plugins** — each with its entry count: `kind: "script"` goes to Script plugins, `kind: "oauth"` or an `oauth` tag goes to OAuth plugins (installed through the same zip flow as panel plugins), and everything else goes to Panel plugins. **Plugin list** uses the same split, where a plugin whose `plugin.json` declares `oauth.entry` is listed under OAuth plugins.
+- Each entry shows its name, version, author, tags, and type (script entries carry a Script label), and supports keyword search over name, description, author, and tags within the current tab; a `lucide:Name` icon is resolved to the matching icon, and anything else falls back to a placeholder.
 - A not-installed entry offers **Install**; an entry already on the indexed version shows **Installed**; a higher indexed version offers **Update** with an `Installed v<from> → v<to>` hint — updates replace in place: a panel plugin keeps its enabled state, and a script is re-matched and keeps its enabled state.
 - When the entry declares `privacy` scopes they show as amber badges that open the shared "Privacy scopes" dialog; when the entry's `minAppVersion` is newer than the running app, installation is disabled with a "Requires app v<version> or newer" hint.
 - Install/update first shows a confirmation dialog: version, author, description, source repository link, the first 16 characters of the SHA-256, and the privacy badges. After confirmation Rust downloads, verifies the SHA-256, and installs.
@@ -793,6 +794,100 @@ Entry fields (the authoritative JSON Schema is `app/entry.schema.json` in the re
 | `icon`                 | no          | Market list icon such as `lucide:Puzzle`; a placeholder is shown when absent                                                                                                             |
 
 > A merged entry only means the index format and hash checks passed; it is not a security endorsement of the plugin. Plugin code still ships from the author's repository, so verify the source and privacy declarations before installing.
+
+### 12. OAuth sign-in plugins (add AI platform subscription logins)
+
+Declare `oauth.entry` in `plugin.json` to add a platform to "API settings > OAuth sign-in" without shipping a new app release. Enabling, disabling or uninstalling the plugin hot-plugs the provider; the next time the OAuth sign-in dialog opens it is up to date. An OAuth-only plugin may omit the renderer `entry` and `panels`.
+
+```json
+{
+  "id": "acme-oauth",
+  "name": "Acme sign-in",
+  "version": "1.0.0",
+  "oauth": { "entry": "oauth.mjs" }
+}
+```
+
+`oauth.mjs` runs in the **Electron main process** (full Node privileges, so only install trusted plugins) and is called asynchronously by Rust. Rust owns the session, PKCE, the local callback listener, persistence, token refresh scheduling and its per-profile lock; the plugin only implements platform-specific logic:
+
+```js
+export default {
+  providers: [
+    {
+      id: "acme", // lowercase letters, digits, . _ -; must not reuse codex/chatgpt/anthropic/antigravity/xai
+      name: { default: "Acme", "zh-CN": "Acme" },
+      description: "Sign in to an Acme subscription through OAuth",
+      icon: "icon.svg", // plugin-relative path, https or data:image URL
+      flow: "redirect", // redirect | manual | device
+      callback: { ports: [1455], path: "/auth/callback", host: "127.0.0.1" },
+      api: {
+        baseUrl: "https://api.acme.example/v1",
+        requestMethod: "chat", // chat | responses | anthropic | gemini
+        defaultModel: "acme-coder",
+        maxContextTokens: 200000,
+        supportsVision: true,
+      },
+      headers: { "X-Client": "snow-app" }, // fixed headers: written into a custom header scheme bound to the profile
+      requestHeaders: { "X-Account": "{{accountId}}" }, // template rendered on every request
+      refreshLeadSeconds: 300,
+
+      authorize(ctx) {
+        const url = new URL("https://auth.acme.example/authorize");
+        url.searchParams.set("redirect_uri", ctx.redirectUri);
+        url.searchParams.set("state", ctx.state);
+        url.searchParams.set("code_challenge", ctx.codeChallenge);
+        url.searchParams.set("code_challenge_method", "S256");
+        return { url: url.toString() };
+      },
+      async exchange(ctx) {
+        const res = await ctx.fetch("https://auth.acme.example/token", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code: ctx.code,
+            redirect_uri: ctx.redirectUri,
+            code_verifier: ctx.codeVerifier,
+          }),
+        });
+        if (!res.ok) throw new Error(`Token exchange failed: ${res.status}`);
+        const token = await res.json();
+        return { ...token, email: ctx.decodeJwt(token.id_token)?.email };
+      },
+      async refresh({ account, fetch }) {
+        const res = await fetch("https://auth.acme.example/token", {
+          method: "POST",
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: account.refreshToken,
+          }),
+        });
+        if (!res.ok) throw new Error(`Refresh failed: ${res.status}`);
+        return res.json();
+      },
+    },
+  ],
+};
+```
+
+Hooks (`authorize` is required; export the others as needed, missing hooks fall back to the generic behavior):
+
+| Hook                    | When it runs                                  | Returns                                                                                                      |
+| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `authorize(ctx)`        | "Start sign-in" is clicked                    | `{ url, redirectUri?, userCode?, instructions?, interval?, expiresIn?, session? }`; `session` is passed back |
+| `exchange(ctx)`         | Browser callback, or the user pastes the URL  | A token object (see below)                                                                                   |
+| `poll(ctx)`             | At each interval when `flow: "device"`        | `null` / `{ pending: true }` while pending (`slowDown: true` backs off), a token object once done            |
+| `refresh(ctx)`          | The token expires within `refreshLeadSeconds` | A token object; empty fields keep their old values and `data` is shallow-merged                              |
+| `models(ctx)`           | After sign-in and when listing models         | String array or `[{ id }]`; without it the standard models endpoint of `requestMethod` is used               |
+| `quota(ctx)`            | Refresh in the quota panel                    | `{ plan?, groups: [{ id, label, buckets: [{ key, label, remainingPercent or usedPercent, resetAt }] }] }`    |
+| `transformRequest(ctx)` | Before every chat request is sent             | `{ url?, body?, headers? }`; a `null` header value removes it. Use it to wrap bodies for custom protocols    |
+
+- **Token object**: `accessToken` (required), `refreshToken`, `expiresIn` or `expiresAt` (seconds, milliseconds or ISO), plus `email`, `accountId`, `planType` and `data` (any object, persisted with the profile and read back as `ctx.account.data`). Raw `access_token` / `refresh_token` / `expires_in` names are accepted too.
+- **Common ctx fields**: `fetch` (Electron `net.fetch`, honoring the app proxy), `decodeJwt(token)`, `log(message, detail?)`, `providerId`, `pluginId`, `pluginDir`. Sign-in hooks also get `redirectUri`, `state`, `nonce`, `codeVerifier`, `codeChallenge`, `code`, `params` (all callback parameters) and `session`; account hooks get `account` (`accessToken`, `refreshToken`, `expiresAt`, `accountId`, `email`, `planType`, `data`, `profileName`, `baseUrl`); `transformRequest` also gets `protocol`, `model`, `url`, `body` and `headers`.
+- **Header templates**: `requestHeaders` supports `{{accessToken}}`, `{{accountId}}`, `{{email}}`, `{{planType}}` and `{{data.<key>}}`; other placeholders such as `{{session_id}}` are left untouched.
+- **Flows**: `redirect` listens for the local callback (the OS picks a port when none is declared; a busy port falls back to manual paste); `manual` only lets the user paste the callback URL or code; `device` shows `userCode` while Rust polls `poll()`.
+- **Profiles**: a successful sign-in creates an activated profile with `source = oauth-<id>` at the top of the list, storing metadata in `configJson.oauthPlugin`; saving the profile always keeps the stored tokens and metadata.
+- **Hot reload**: `oauth.mjs` is reloaded when its modification time changes; after editing `plugin.json`, use "Rescan" in the plugins dialog. Errors thrown by hooks surface in the sign-in dialog and in the system logs (module `oauthPlugins`).
 
 ## Verification
 

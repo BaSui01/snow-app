@@ -158,6 +158,89 @@ pub fn truncate_to_token_prefix(text: &str, max_tokens: usize) -> (String, usize
     (text[..end].to_string(), tokens)
 }
 
+/// 与 [`safe_prefix_end`] 对称：返回保留末尾约 `max_bytes` 字节的起点，
+/// 落在字符边界上，且在不丢掉过半内容时对齐到下一行行首。
+fn safe_suffix_start(text: &str, max_bytes: usize) -> usize {
+    if max_bytes >= text.len() {
+        return 0;
+    }
+    let mut start = text.len() - max_bytes;
+    while start < text.len() && !text.is_char_boundary(start) {
+        start += 1;
+    }
+    if let Some(newline) = text[start..].find('\n') {
+        let snapped = start + newline + 1;
+        if (text.len() - snapped) * 2 > text.len() - start {
+            start = snapped;
+        }
+    }
+    start
+}
+
+/// Keep the last `max_tokens` tokens of `text` (suffix counterpart of
+/// [`truncate_to_token_prefix`]).
+fn truncate_to_token_suffix(text: &str, max_tokens: usize) -> (String, usize) {
+    if text.is_empty() || max_tokens == 0 {
+        return (String::new(), 0);
+    }
+
+    let bpe = o200k_base_singleton();
+    let bpe_guard = bpe.lock();
+    let mut start = safe_suffix_start(
+        text,
+        max_tokens.saturating_mul(PREFIX_BYTES_PER_TOKEN).max(1),
+    );
+    let mut tokens = bpe_guard.encode_ordinary(&text[start..]).len();
+
+    for _ in 0..PREFIX_GUESS_ROUNDS {
+        if tokens <= max_tokens {
+            break;
+        }
+        let kept = text.len() - start;
+        let scaled = kept.saturating_mul(max_tokens) / tokens.max(1);
+        let next = safe_suffix_start(text, scaled.min(kept.saturating_sub(1)));
+        if next <= start {
+            break;
+        }
+        start = next;
+        tokens = bpe_guard.encode_ordinary(&text[start..]).len();
+    }
+
+    while tokens > max_tokens && start < text.len() {
+        let next = safe_suffix_start(text, (text.len() - start) / 2);
+        if next <= start || next >= text.len() {
+            break;
+        }
+        start = next;
+        tokens = bpe_guard.encode_ordinary(&text[start..]).len();
+    }
+
+    if tokens > max_tokens {
+        return (String::new(), 0);
+    }
+
+    (text[start..].to_string(), tokens)
+}
+
+/// 省略说明自身的 token 预留（`[... N characters omitted ...]` 加换行）。
+const MIDDLE_MARKER_TOKENS: usize = 24;
+
+/// 头尾保留、中段省略：超出 `max_tokens` 时保留开头约 2/3、结尾约 1/3 的预算，
+/// 中间插入省略说明（报错与结论通常在输出末尾，只保留开头会把它们截掉）。
+/// 未超出时原样返回。
+pub fn truncate_middle_by_tokens(text: &str, max_tokens: usize) -> String {
+    if !count_tokens_bounded(text, max_tokens).exceeded {
+        return text.to_string();
+    }
+    let content_budget = max_tokens.saturating_sub(MIDDLE_MARKER_TOKENS);
+    let head_budget = content_budget * 2 / 3;
+    let (head, _) = truncate_to_token_prefix(text, head_budget);
+    let rest = &text[head.len()..];
+    let (tail, _) = truncate_to_token_suffix(rest, content_budget - head_budget);
+    let omitted_chars = rest[..rest.len() - tail.len()].chars().count();
+    format!("{head}\n\n[... {omitted_chars} characters omitted ...]\n\n{tail}")
+}
+
 /// Keep the first `max_tokens` tokens and decode them back to UTF-8 text.
 pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
     truncate_to_token_prefix(text, max_tokens).0

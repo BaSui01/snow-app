@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::api::token_counter::{count_tokens, count_tokens_bounded, truncate_to_token_prefix};
+use crate::api::token_counter::{count_tokens, count_tokens_bounded, truncate_middle_by_tokens};
 
 const DEFAULT_TOOL_RESULT_LIMIT_PERCENT: usize = 30;
 const DEFAULT_MAX_CONTEXT_TOKENS: usize = 256_000;
@@ -45,7 +45,7 @@ fn apply_result_limit(
 
     let estimated_tokens = measured.estimated_total();
     let message = format!(
-        "Tool result truncated: about {estimated_tokens} tokens exceeded the {max_result_tokens}-token limit ({limit_percent}% of the model context). Please narrow the scope, reduce the requested range, or paginate the request and try again."
+        "Tool result truncated: about {estimated_tokens} tokens exceeded the {max_result_tokens}-token limit ({limit_percent}% of the model context); the middle of the output was omitted. Please narrow the scope, reduce the requested range, or paginate the request and try again."
     );
 
     truncate_result(&serialized, &message, estimated_tokens, max_result_tokens)
@@ -185,7 +185,7 @@ fn truncate_result(
     let mut content_budget = max_result_tokens.saturating_sub(base_tokens);
 
     for _ in 0..TRUNCATION_MAX_ROUNDS {
-        let (piece, _) = truncate_to_token_prefix(&content, content_budget);
+        let piece = truncate_middle_by_tokens(&content, content_budget);
         object.insert("content".to_string(), Value::String(piece));
 
         let Ok(candidate) = serde_json::to_string(&Value::Object(object.clone())) else {
@@ -265,7 +265,6 @@ fn fallback_result(
     }
     let base_tokens = crate::api::token_counter::count_tokens(&result.to_string());
     let content_budget = max_result_tokens.saturating_sub(base_tokens);
-    let (piece, _) = truncate_to_token_prefix(serialized, content_budget);
-    result["content"] = Value::String(piece);
+    result["content"] = Value::String(truncate_middle_by_tokens(serialized, content_budget));
     serde_json::to_string(&result).unwrap_or_else(|_| message.to_string())
 }

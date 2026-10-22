@@ -122,6 +122,24 @@ pub fn set_oauth_plugin_providers(specs_json: String) -> Result<u32> {
     Ok(plugin::registry::replace_all(specs) as u32)
 }
 
+/// OAuth 插件钩子：创建 / 更新自定义请求头方案，可同时绑定到插件档案（JSON 入参，返回 JSON）。
+#[napi(js_name = "upsertOAuthPluginHeaderScheme")]
+pub async fn upsert_oauth_plugin_header_scheme(payload_json: String) -> Result<String> {
+    Ok(plugin::schemes::upsert(payload_json).await?.to_string())
+}
+
+/// OAuth 插件钩子：把请求头方案绑定到插件自己的 OAuth 档案（JSON 入参）。
+#[napi(js_name = "bindOAuthPluginHeaderScheme")]
+pub async fn bind_oauth_plugin_header_scheme(payload_json: String) -> Result<()> {
+    plugin::schemes::bind(payload_json).await
+}
+
+/// OAuth 插件钩子：删除自定义请求头方案并清空相关档案绑定。
+#[napi(js_name = "deleteOAuthPluginHeaderScheme")]
+pub async fn delete_oauth_plugin_header_scheme(scheme_id: String) -> Result<bool> {
+    plugin::schemes::remove(scheme_id).await
+}
+
 #[napi(js_name = "startOAuthLogin")]
 pub async fn start_oauth_login(
     provider: String,

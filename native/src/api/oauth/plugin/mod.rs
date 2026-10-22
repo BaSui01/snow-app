@@ -7,6 +7,7 @@ pub mod host;
 pub mod login;
 pub mod profile;
 pub mod registry;
+pub mod schemes;
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};

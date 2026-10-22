@@ -34649,12 +34649,18 @@ body.is-panel-resizing * {
 .mcp-tool-details-search input {
   flex: 1;
   min-width: 0;
+  /* 重置外部表单样式（如 .api-settings-field input）带来的高度 */
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
   border: none !important;
   outline: none !important;
   background: transparent !important;
   box-shadow: none !important;
   color: var(--text-primary);
   font-size: 11px;
+  line-height: 1.3;
 }
 
 .mcp-tool-details-search input::placeholder {

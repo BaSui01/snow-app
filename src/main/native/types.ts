@@ -2353,6 +2353,12 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => void;
   /** 推送当前启用的插件 provider 声明（JSON 数组），返回生效数量。 */
   setOAuthPluginProviders: (specsJson: string) => number;
+  /** OAuth 插件钩子：创建 / 更新自定义请求头方案（JSON 入参，返回 JSON）。 */
+  upsertOAuthPluginHeaderScheme: (payloadJson: string) => Promise<string>;
+  /** OAuth 插件钩子：把请求头方案绑定到插件档案（JSON 入参）。 */
+  bindOAuthPluginHeaderScheme: (payloadJson: string) => Promise<void>;
+  /** OAuth 插件钩子：删除自定义请求头方案。 */
+  deleteOAuthPluginHeaderScheme: (schemeId: string) => Promise<boolean>;
   getOAuthQuota: (profileName: string) => Promise<OAuthQuotaSnapshot>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   /** 重试错误分类默认关键词（JSON 字符串，单一来源在 Rust api::retry）。 */

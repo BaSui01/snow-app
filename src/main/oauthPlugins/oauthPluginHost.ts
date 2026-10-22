@@ -16,7 +16,12 @@ import type { NativeBridge, PluginRecord } from "../native/types";
 
 type NativeOAuthPluginBridge = Pick<
   NativeBridge,
-  "listPlugins" | "setOAuthPluginHandler" | "setOAuthPluginProviders"
+  | "listPlugins"
+  | "setOAuthPluginHandler"
+  | "setOAuthPluginProviders"
+  | "upsertOAuthPluginHeaderScheme"
+  | "bindOAuthPluginHeaderScheme"
+  | "deleteOAuthPluginHeaderScheme"
 >;
 
 type HookName =
@@ -401,6 +406,49 @@ const decodeJwt = (token: unknown): Record<string, unknown> | null => {
   }
 };
 
+/** 钩子内的自定义请求头方案管理：写入 Snow App 实际发送的请求头。 */
+const headerSchemeHelpers = (
+  provider: LoadedProvider,
+  ctx: Record<string, unknown>,
+) => {
+  const account = isPlainObject(ctx.account) ? ctx.account : {};
+  const defaultProfile = text(account.profileName);
+  const bridge = (): NativeOAuthPluginBridge => {
+    if (!nativeRef) throw new Error("OAuth plugin host is not ready");
+    return nativeRef;
+  };
+  return {
+    /** 创建或更新方案；账号钩子中默认绑定当前档案。 */
+    upsert: async (item: unknown): Promise<Record<string, unknown>> => {
+      const payload = isPlainObject(item) ? { ...item } : {};
+      if (!text(payload.profileName) && defaultProfile) {
+        payload.profileName = defaultProfile;
+      }
+      payload.providerId = provider.spec.id;
+      const raw = await bridge().upsertOAuthPluginHeaderScheme(
+        JSON.stringify(payload),
+      );
+      return JSON.parse(raw) as Record<string, unknown>;
+    },
+    /** 绑定方案到档案（默认当前账号档案；schemeId 为空表示解绑）。 */
+    bind: async (schemeId: unknown, profileName?: unknown) => {
+      const payload = {
+        schemeId: text(schemeId),
+        profileName: text(profileName) || defaultProfile,
+        providerId: provider.spec.id,
+      };
+      await bridge().bindOAuthPluginHeaderScheme(JSON.stringify(payload));
+      return payload;
+    },
+    /** 删除方案并清空仍指向它的档案绑定。 */
+    remove: async (schemeId: unknown) => {
+      const id = text(schemeId);
+      const removed = await bridge().deleteOAuthPluginHeaderScheme(id);
+      return { schemeId: id, removed };
+    },
+  };
+};
+
 /** 注入给钩子的工具：fetch 走 Electron net（遵循应用代理）。 */
 const withHelpers = (
   provider: LoadedProvider,
@@ -413,6 +461,7 @@ const withHelpers = (
   fetch: (input: string | Request, init?: RequestInit) =>
     net.fetch(input, init),
   decodeJwt,
+  headerSchemes: headerSchemeHelpers(provider, isPlainObject(ctx) ? ctx : {}),
   log: (message: unknown, detail?: unknown) =>
     snowLog.info({
       module: MODULE_NAME,

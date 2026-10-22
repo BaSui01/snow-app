@@ -1,5 +1,24 @@
 # Release Notes
 
+## v0.5.2
+
+## New Features
+
+- **Plugin OAuth Providers**: a plugin declaring `oauth.entry` in `plugin.json` registers extra OAuth sign-in providers without an app release. Sessions, PKCE, callback listening, persistence, refresh scheduling and locking stay in the Rust core; the plugin (main process) only supplies `authorize`, `exchange`, `poll`, `refresh`, `models`, `quota` and `transformRequest` hooks.
+- **Provider Picker Split**: the OAuth provider picker groups built-in providers and plugin providers separately, and device-code flow is supported.
+- **Collection Reordering**: sidebar collections can be dragged to reorder in both list and tree views, with insertion lines while dragging.
+- **Collapsible Panels & Changes Tab**: the panel divider can be dragged past its limit to collapse the panel and pulled back to expand it; with the right panel collapsed, the top bar gains a Changes tab (branch dropdown plus Git changes) that opens file diffs in the panel.
+
+## Improvements
+
+- Installing, enabling, rescanning or deleting a plugin re-syncs the provider registry immediately; the plugin list and market are grouped into Panel, OAuth and Script.
+- Hovering the sidebar's More entry shows per-panel count badges that open the panel on click.
+- Streamlined scheduled-task footer spacing and the load-more button style.
+
+## Bug Fixes
+
+- Fixed the tool-call timestamp layout broken by its tooltip wrapper.
+
 ## v0.5.1
 
 ## New Features

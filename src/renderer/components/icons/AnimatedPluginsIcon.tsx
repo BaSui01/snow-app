@@ -1,34 +1,21 @@
-import { useMemo } from "react";
 import type { JSX, ReactNode } from "react";
 
-import { IconFramePlayer } from "../common/IconFramePlayer";
-import {
-  buildCompleteFrame,
-  buildStrokeDrawFrames,
-  type StrokeDrawSegment,
-} from "../common/StrokeDrawIcon";
+import { dampedWave, fmt, MotionIcon } from "../common/MotionIcon";
 
-const PLUGINS_SEGMENTS: StrokeDrawSegment[] = [
-  {
-    d: "M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z",
-    length: 100,
-  },
-];
+const PUZZLE_D =
+  "M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z";
 
-const DRAW_FRAMES = 37;
-const BOUNCE_SCALES = [1.07, 1.03, 1];
-const TOTAL_FRAMES = DRAW_FRAMES + BOUNCE_SCALES.length;
-const DURATION_MS = 520;
-
-const buildFrames = (): ReactNode[] => {
-  const drawFrames = buildStrokeDrawFrames(PLUGINS_SEGMENTS, DRAW_FRAMES);
-  const completeFrame = buildCompleteFrame(PLUGINS_SEGMENTS);
-  const bounceFrames = BOUNCE_SCALES.map((scale) => (
-    <g transform={`translate(12 12) scale(${scale}) translate(-12 -12)`}>
-      {completeFrame}
+// 拼图块轻轻扭一下
+const render = (t: number): ReactNode => {
+  const angle = dampedWave(t, 12, 1.5);
+  const scale = 1 + 0.05 * Math.sin(Math.PI * t);
+  return (
+    <g
+      transform={`rotate(${fmt(angle)} 12 12) translate(12 12) scale(${fmt(scale)}) translate(-12 -12)`}
+    >
+      <path d={PUZZLE_D} />
     </g>
-  ));
-  return [...drawFrames, ...bounceFrames];
+  );
 };
 
 export type AnimatedPluginsIconProps = {
@@ -42,18 +29,14 @@ export function AnimatedPluginsIcon({
   strokeWidth = 1.8,
   hoverScope = ".sidebar-plugins-btn",
 }: AnimatedPluginsIconProps): JSX.Element {
-  const frames = useMemo(buildFrames, []);
-
   return (
-    <IconFramePlayer
-      frames={frames}
+    <MotionIcon
+      render={render}
+      frameCount={36}
+      durationMs={600}
       size={size}
       strokeWidth={strokeWidth}
-      fps={(TOTAL_FRAMES * 1000) / DURATION_MS}
-      loop={false}
-      hoverPlay
       hoverScope={hoverScope}
-      restFrame="last"
     />
   );
 }

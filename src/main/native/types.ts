@@ -2859,6 +2859,7 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<McpProjectServerStatus[]>;
   /** 全局 MCP 服务器目录（不依赖项目，供全局子代理选择工具）。 */
   listMcpGlobalServers: () => Promise<McpProjectServerStatus[]>;
+  listMcpGlobalBuiltinServers: () => Promise<McpProjectServerStatus[]>;
   diagnoseSubAgentTools: (
     projectId: string | undefined | null,
     toolsJson: string,
@@ -2886,6 +2887,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
     enabled: boolean,
   ) => Promise<void>;
   setMcpToolEnabled: (toolName: string, enabled: boolean) => Promise<void>;
+  setMcpGlobalServerEnabled: (
+    serverId: string,
+    enabled: boolean,
+  ) => Promise<void>;
   setMcpToolsEnabled: (toolNames: string[], enabled: boolean) => Promise<void>;
   setMcpProjectToolsEnabled: (
     projectId: string,

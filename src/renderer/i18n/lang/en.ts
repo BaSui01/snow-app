@@ -2991,6 +2991,19 @@ export const en = {
   "settings.mcpScopeTabs": "MCP scope",
   "settings.mcpTabGlobal": "Global",
   "settings.mcpTabProject": "Project",
+  "settings.mcpCategoryTabs": "MCP category",
+  "settings.mcpCategoryExternal": "External",
+  "settings.mcpCategoryBuiltin": "Built-in",
+  "settings.mcpGlobalBuiltinListTitle": "Global built-in MCP servers",
+  "settings.mcpProjectBuiltinListTitle": "Project built-in MCP servers",
+  "settings.mcpGlobalBuiltinTabInfo":
+    "Master switch for built-in servers. Servers turned off here are unavailable in every project and cannot be enabled per project.",
+  "settings.mcpProjectBuiltinTabInfo":
+    "Control built-in servers for {{name}}. Servers turned off globally cannot be enabled here.",
+  "settings.mcpBuiltinNoServers": "No built-in MCP servers.",
+  "settings.mcpBuiltinRefresh": "Refresh built-in MCP",
+  "settings.mcpBuiltinProjectOptIn": "Must also be enabled per project",
+  "settings.mcpImagegenNotConfigured": "No image generation channel configured",
   "settings.mcpGlobalListTitle": "Global MCP servers",
   "settings.mcpProjectListTitle": "Project MCP servers",
   "settings.mcpGlobalTabInfo":

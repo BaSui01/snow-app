@@ -991,7 +991,7 @@ async fn lsp_tool_scope_allowed(lsp_tool: &str, project_id: Option<&str>) -> nap
     use crate::mcp::tools::{builtin_scope_server_id, load_global_scope, load_project_scope};
     let lsp_full_name = format!("lsp-{lsp_tool}");
     if let Some(global) = load_global_scope().await? {
-        if global.disabled_tool_names.contains(&lsp_full_name) {
+        if global.is_tool_disabled(&lsp_full_name) {
             return Ok(false);
         }
     }

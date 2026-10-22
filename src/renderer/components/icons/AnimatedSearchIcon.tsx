@@ -1,16 +1,14 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 
-import {
-  StrokeDrawIcon,
-  type StrokeDrawSegment,
-} from "../common/StrokeDrawIcon";
+import { dampedWave, fmt, MotionIcon } from "../common/MotionIcon";
 
-const SEARCH_SEGMENTS: StrokeDrawSegment[] = [
-  {
-    d: "M16.66 16.66A8 8 0 1 1 5.34 5.34A8 8 0 1 1 16.66 16.66L21 21",
-    length: 51,
-  },
-];
+// 以手柄末端为圆心轻摆
+const render = (t: number): ReactNode => (
+  <g transform={`rotate(${fmt(dampedWave(t, 10, 1.5))} 21 21)`}>
+    <circle cx="11" cy="11" r="8" />
+    <path d="m21 21-4.34-4.34" />
+  </g>
+);
 
 export type AnimatedSearchIconProps = {
   size?: number;
@@ -24,10 +22,10 @@ export function AnimatedSearchIcon({
   hoverScope = ".sidebar-search-btn",
 }: AnimatedSearchIconProps): JSX.Element {
   return (
-    <StrokeDrawIcon
-      segments={SEARCH_SEGMENTS}
-      frameCount={32}
-      durationMs={500}
+    <MotionIcon
+      render={render}
+      frameCount={34}
+      durationMs={560}
       size={size}
       strokeWidth={strokeWidth}
       hoverScope={hoverScope}

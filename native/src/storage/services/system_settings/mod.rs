@@ -149,6 +149,25 @@ pub struct McpProjectScopeSettings {
 #[serde(default, rename_all = "camelCase")]
 pub struct McpGlobalScopeSettings {
     pub disabled_tool_names: BTreeSet<String>,
+    /// 全局禁用的内置服务器（scope id，如 `builtin:browser`），总闸：项目层无法覆盖。
+    pub disabled_server_ids: BTreeSet<String>,
+}
+
+impl McpGlobalScopeSettings {
+    pub fn is_server_disabled(&self, scope_server_id: &str) -> bool {
+        self.disabled_server_ids.contains(scope_server_id)
+    }
+
+    /// 工具黑名单或其所属内置服务器被全局禁用。
+    pub fn is_tool_disabled(&self, full_name: &str) -> bool {
+        self.disabled_tool_names.contains(full_name)
+            || self.disabled_server_ids.iter().any(|scope_id| {
+                scope_id
+                    .strip_prefix("builtin:")
+                    .and_then(|server_id| full_name.strip_prefix(server_id))
+                    .is_some_and(|rest| rest.starts_with('-'))
+            })
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

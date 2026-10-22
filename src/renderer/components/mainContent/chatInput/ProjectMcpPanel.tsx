@@ -450,6 +450,8 @@ export const ProjectMcpPanel = ({
             ? t(descriptionKey)
             : undefined;
           const serverDisabled = !server.globalEnabled;
+          // 全局停用时按关闭展示，避免误以为已启用
+          const effectiveEnabled = server.enabled && !serverDisabled;
           const toolsReadOnly = !serverDisabled && !server.enabled;
           // 「特殊模式」标注：这些服务器/工具即使开关处于启用状态，也只有在
           // 对应模式生效时才会真正加入请求体。模式未生效时给出醒目提示，
@@ -490,7 +492,7 @@ export const ProjectMcpPanel = ({
                   <span
                     aria-hidden="true"
                     className={`project-mcp-status-dot${
-                      server.enabled ? " is-enabled" : ""
+                      effectiveEnabled ? " is-enabled" : ""
                     }`}
                   />
                   <span className="project-mcp-server-info">
@@ -518,7 +520,7 @@ export const ProjectMcpPanel = ({
                 </button>
                 <label className="toggle-switch">
                   <input
-                    checked={server.enabled}
+                    checked={effectiveEnabled}
                     disabled={serverDisabled}
                     hidden
                     onChange={(event) =>

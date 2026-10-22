@@ -497,7 +497,7 @@ async fn memory_domain_scope_allowed(project_id: Option<&str>) -> napi::Result<b
     if let Some(global) = load_global_scope().await? {
         if CORE_MEMORY_TOOL_NAMES
             .iter()
-            .all(|tool| global.disabled_tool_names.contains(*tool))
+            .all(|tool| global.is_tool_disabled(tool))
         {
             return Ok(false);
         }

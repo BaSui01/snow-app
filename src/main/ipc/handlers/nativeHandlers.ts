@@ -939,6 +939,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("mcp:list-global-servers", () =>
     native.listMcpGlobalServers(),
   );
+  ipcMain.handle("mcp:list-global-builtin-servers", () =>
+    native.listMcpGlobalBuiltinServers(),
+  );
   ipcMain.handle(
     "mcp:diagnose-sub-agent-tools",
     (_event, projectId: unknown, toolsJson: unknown) => {
@@ -998,6 +1001,19 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         serverId.trim(),
         enabled,
       );
+    },
+  );
+  ipcMain.handle(
+    "mcp:set-global-server-enabled",
+    (_event, serverId: unknown, enabled: unknown) => {
+      if (typeof serverId !== "string" || !serverId.trim()) {
+        throw new Error("MCP server id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP server enabled state must be a boolean");
+      }
+
+      return native.setMcpGlobalServerEnabled(serverId.trim(), enabled);
     },
   );
   ipcMain.handle(

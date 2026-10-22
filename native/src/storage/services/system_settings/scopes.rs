@@ -154,6 +154,22 @@ pub fn set_mcp_global_tools_enabled(
     write_mcp_global_scope_settings(database_path, &settings)
 }
 
+/// 全局启停内置服务器（scope id 形如 `builtin:browser`）。
+pub fn set_mcp_global_server_enabled(
+    database_path: &Path,
+    server_id: &str,
+    enabled: bool,
+) -> Result<()> {
+    let normalized_server_id = normalize_required_value(server_id, "MCP server id")?;
+    let mut settings = get_mcp_global_scope_settings(database_path)?;
+    update_disabled_set(
+        &mut settings.disabled_server_ids,
+        &normalized_server_id,
+        enabled,
+    );
+    write_mcp_global_scope_settings(database_path, &settings)
+}
+
 fn write_mcp_global_scope_settings(
     database_path: &Path,
     settings: &McpGlobalScopeSettings,

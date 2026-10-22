@@ -170,6 +170,7 @@ fn scope_state(db_path: &Path, project_id: Option<&str>) -> Result<Value> {
                 "scoped": "global",
                 "projectId": Value::Null,
                 "disabledTools": settings.disabled_tool_names,
+                "disabledServerIds": settings.disabled_server_ids,
             }))
         }
     }

@@ -1731,7 +1731,7 @@ async fn imagegen_domain_scope_allowed(project_id: Option<&str>) -> napi::Result
     if let Some(global) = load_global_scope().await? {
         if CORE_IMAGEGEN_TOOLS
             .iter()
-            .all(|tool| global.disabled_tool_names.contains(*tool))
+            .all(|tool| global.is_tool_disabled(tool))
         {
             return Ok(false);
         }

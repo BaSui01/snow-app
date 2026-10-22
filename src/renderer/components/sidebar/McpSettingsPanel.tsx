@@ -1,8 +1,10 @@
 import {
+  Boxes,
   Download,
   Folder,
   Globe2,
   Loader2,
+  Plug,
   Plus,
   RefreshCw,
 } from "lucide-react";
@@ -15,6 +17,7 @@ import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
+import { notifyMcpServerStateChanged } from "../mainContent/chatInput/mcpServerEvents";
 import { LITE_MODE_CHANGED_EVENT } from "../mainContent/chatMessages/hooks/useToolAuthorization";
 import {
   McpSettingsEditor,
@@ -55,6 +58,38 @@ type McpSettingsPanelProps = {
 };
 
 type McpScope = "global" | "project";
+type McpCategory = "external" | "builtin";
+
+/** 全局内置列表项 id 前缀，避免与项目内置项（builtin:x）共用工具缓存键。 */
+const GLOBAL_BUILTIN_KEY_PREFIX = "global:";
+
+/** 精简模式禁用的内置服务器（与 Rust LITE_MODE_DISABLED_SERVER_IDS 一致）。 */
+const LITE_MODE_SERVER_IDS = new Set([
+  "builtin:browser",
+  "builtin:app-control",
+  "builtin:terminal",
+  "builtin:computer-use",
+]);
+
+/** 默认关闭、需按项目启用的内置服务器（与 Rust DEFAULT_DISABLED_SERVER_IDS 一致）。 */
+const PROJECT_OPT_IN_SERVER_IDS = new Set([
+  "builtin:terminal",
+  "builtin:lsp",
+  "builtin:computer-use",
+  "builtin:browser",
+  "builtin:html",
+]);
+
+/** 全局内置服务器工具：全局视图下工具开关即全局黑名单，不应只读。 */
+const toGlobalBuiltinTools = (
+  servers: McpProjectServerStatus[],
+): Record<string, McpServerTool[]> =>
+  Object.fromEntries(
+    servers.map((server) => [
+      `${GLOBAL_BUILTIN_KEY_PREFIX}${server.id}`,
+      server.tools.map((tool) => ({ ...tool, globalEnabled: true })),
+    ]),
+  );
 
 /**
  * 后台补发现项目服务器工具时的并发上限。与 Rust 端全量发现的并发度分开：
@@ -85,7 +120,11 @@ export function McpSettingsPanel({
 }: McpSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [activeScope, setActiveScope] = useState<McpScope>("global");
+  const [activeCategory, setActiveCategory] = useState<McpCategory>("external");
   const [servers, setServers] = useState<McpServerConfig[]>([]);
+  const [globalBuiltinServers, setGlobalBuiltinServers] = useState<
+    McpProjectServerStatus[]
+  >([]);
   const [projectServers, setProjectServers] = useState<
     McpProjectServerStatus[]
   >([]);
@@ -219,6 +258,16 @@ export function McpSettingsPanel({
     [discoverPendingProjectServers],
   );
 
+  /** 刷新全局内置服务器列表（只读进程内注册表，不连接外部服务器）。 */
+  const refreshGlobalBuiltinServers = useCallback(async (): Promise<void> => {
+    const items = await window.snow.listMcpGlobalBuiltinServers();
+    setGlobalBuiltinServers(items);
+    setToolsByServerId((previous) => ({
+      ...previous,
+      ...toGlobalBuiltinTools(items),
+    }));
+  }, []);
+
   const load = useCallback(async (): Promise<void> => {
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
@@ -226,31 +275,33 @@ export function McpSettingsPanel({
     setError("");
 
     try {
-      const [globalItems, projectItems, projectConfigItems] = await Promise.all(
-        [
-          window.snow.listMcpServerConfigs(),
-          activeDirectory
-            ? window.snow.listMcpProjectServersCached(
-                activeDirectory.directoryId,
-              )
-            : Promise.resolve([]),
-          activeDirectory
-            ? window.snow.listProjectMcpServerConfigs(
-                activeDirectory.directoryId,
-              )
-            : Promise.resolve([]),
-        ],
-      );
+      const [
+        globalItems,
+        globalBuiltinItems,
+        projectItems,
+        projectConfigItems,
+      ] = await Promise.all([
+        window.snow.listMcpServerConfigs(),
+        window.snow.listMcpGlobalBuiltinServers(),
+        activeDirectory
+          ? window.snow.listMcpProjectServersCached(activeDirectory.directoryId)
+          : Promise.resolve([]),
+        activeDirectory
+          ? window.snow.listProjectMcpServerConfigs(activeDirectory.directoryId)
+          : Promise.resolve([]),
+      ]);
       if (loadGenerationRef.current !== generation) {
         return;
       }
 
       setServers(globalItems);
+      setGlobalBuiltinServers(globalBuiltinItems);
       setProjectServers(projectItems);
       setProjectServerConfigs(projectConfigItems);
-      setToolsByServerId((previous) =>
-        mergeServerTools(previous, projectItems),
-      );
+      setToolsByServerId((previous) => ({
+        ...mergeServerTools(previous, projectItems),
+        ...toGlobalBuiltinTools(globalBuiltinItems),
+      }));
       // 列表先渲染，工具在后台逐台发现（列表项显示「发现中」）。
       if (activeDirectory) {
         void discoverPendingProjectServers(
@@ -850,8 +901,57 @@ export function McpSettingsPanel({
       };
     },
   );
+  const globalBuiltinListItems: McpSettingsListItem[] =
+    globalBuiltinServers.map((server) => {
+      const descriptionKey = builtinServerDescriptionKey(server.id);
+      const details = [
+        t("settings.mcpProjectSystemServer", {
+          defaultValue: "Built-in system MCP server",
+        }),
+      ];
+      if (server.error === "imagegen:not_configured") {
+        details.push(
+          t("settings.mcpImagegenNotConfigured", {
+            defaultValue: "No image generation channel configured",
+          }),
+        );
+      } else if (PROJECT_OPT_IN_SERVER_IDS.has(server.id)) {
+        details.push(
+          t("settings.mcpBuiltinProjectOptIn", {
+            defaultValue: "Must also be enabled per project",
+          }),
+        );
+      }
+      if (descriptionKey) {
+        details.push(t(descriptionKey));
+      }
+      return {
+        serverId: `${GLOBAL_BUILTIN_KEY_PREFIX}${server.id}`,
+        name: server.name,
+        enabled: server.enabled,
+        globalEnabled: server.globalEnabled,
+        detail: details.join(" · "),
+        canManage: false,
+      };
+    });
+  const projectBuiltinListItems = projectListItems.filter((server) =>
+    server.serverId.startsWith("builtin:"),
+  );
+  const projectExternalListItems = projectListItems.filter(
+    (server) => !server.serverId.startsWith("builtin:"),
+  );
   const isGlobalScope = activeScope === "global";
-  const activeServers = isGlobalScope ? globalListItems : projectListItems;
+  const isBuiltinCategory = activeCategory === "builtin";
+  const isGlobalBuiltinView = isGlobalScope && isBuiltinCategory;
+  const scopeExternalItems = isGlobalScope
+    ? globalListItems
+    : projectExternalListItems;
+  const scopeBuiltinItems = isGlobalScope
+    ? globalBuiltinListItems
+    : projectBuiltinListItems;
+  const activeServers = isBuiltinCategory
+    ? scopeBuiltinItems
+    : scopeExternalItems;
   // 按服务器名称、详情及已获取的工具名/描述过滤
   const filteredServers = activeServers.filter(
     (server) =>
@@ -863,24 +963,109 @@ export function McpSettingsPanel({
   const enabledCount = activeServers.filter(
     (server) => server.enabled && server.globalEnabled,
   ).length;
-  const listTitle = isGlobalScope
-    ? t("settings.mcpGlobalListTitle", { defaultValue: "Global MCP servers" })
-    : t("settings.mcpProjectListTitle", {
-        defaultValue: "Project MCP servers",
-      });
+  const listTitle = isBuiltinCategory
+    ? isGlobalScope
+      ? t("settings.mcpGlobalBuiltinListTitle", {
+          defaultValue: "Global built-in MCP servers",
+        })
+      : t("settings.mcpProjectBuiltinListTitle", {
+          defaultValue: "Project built-in MCP servers",
+        })
+    : isGlobalScope
+      ? t("settings.mcpGlobalListTitle", {
+          defaultValue: "Global MCP servers",
+        })
+      : t("settings.mcpProjectListTitle", {
+          defaultValue: "Project MCP servers",
+        });
+  const listInfo = isBuiltinCategory
+    ? isGlobalScope
+      ? t("settings.mcpGlobalBuiltinTabInfo", {
+          defaultValue:
+            "Master switch for built-in servers. Servers turned off here are unavailable in every project and cannot be enabled per project.",
+        })
+      : t("settings.mcpProjectBuiltinTabInfo", {
+          defaultValue:
+            "Control built-in servers for {{name}}. Servers turned off globally cannot be enabled here.",
+          values: { name: activeDirectory?.name ?? "" },
+        })
+    : isGlobalScope
+      ? t("settings.mcpGlobalTabInfo", {
+          defaultValue: "Manage external MCP servers shared by all projects.",
+        })
+      : t("settings.mcpProjectTabInfo", {
+          defaultValue:
+            "Manage project MCP servers for {{name}} and control inherited system or global servers.",
+          values: { name: activeDirectory?.name ?? "" },
+        });
   const emptyMessage =
     serverQuery.trim() && activeServers.length > 0
       ? t("settings.mcpServerSearchEmpty", {
           defaultValue: "No MCP servers match the search.",
         })
-      : isGlobalScope
-        ? t("settings.mcpNoServers", {
-            defaultValue:
-              "No MCP servers yet. Sync from Snow CLI settings.json or add one manually.",
+      : isBuiltinCategory
+        ? t("settings.mcpBuiltinNoServers", {
+            defaultValue: "No built-in MCP servers.",
           })
-        : t("settings.mcpProjectNoServers", {
-            defaultValue: "No MCP servers are available for this project.",
-          });
+        : isGlobalScope
+          ? t("settings.mcpNoServers", {
+              defaultValue:
+                "No MCP servers yet. Sync from Snow CLI settings.json or add one manually.",
+            })
+          : t("settings.mcpProjectNoServers", {
+              defaultValue: "No MCP servers are available for this project.",
+            });
+
+  /** 全局总闸启停内置服务器，并刷新依赖它的项目列表。 */
+  const toggleGlobalBuiltin = async (
+    server: McpSettingsListItem,
+  ): Promise<void> => {
+    if (isBusy || !server.globalEnabled) {
+      return;
+    }
+    const serverId = server.serverId.slice(GLOBAL_BUILTIN_KEY_PREFIX.length);
+    const nextEnabled = !server.enabled;
+    const generation = loadGenerationRef.current;
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+    try {
+      await window.snow.setMcpGlobalServerEnabled(serverId, nextEnabled);
+      // 启用精简模式服务器时 Rust 侧会关闭精简模式
+      if (nextEnabled && LITE_MODE_SERVER_IDS.has(serverId)) {
+        window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
+      }
+      notifyMcpServerStateChanged();
+      await refreshGlobalBuiltinServers();
+      if (activeDirectory) {
+        await refreshProjectServers(activeDirectory.directoryId, generation);
+      }
+    } catch (updateError) {
+      setError(formatMcpSaveError(updateError, t));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleGlobalBuiltinFetchTools = async (
+    server: McpSettingsListItem,
+  ): Promise<void> => {
+    setFetchingToolServerIds((previous) =>
+      new Set(previous).add(server.serverId),
+    );
+    setError("");
+    try {
+      await refreshGlobalBuiltinServers();
+    } catch (fetchError) {
+      setError(formatMcpError(fetchError, t));
+    } finally {
+      setFetchingToolServerIds((previous) => {
+        const next = new Set(previous);
+        next.delete(server.serverId);
+        return next;
+      });
+    }
+  };
 
   const handleProjectToggle = async (
     server: McpSettingsListItem,
@@ -925,14 +1110,9 @@ export function McpSettingsPanel({
         // 手动启用被精简模式禁用的内置服务器（browser / app-control /
         // terminal / computer-use）时，Rust 侧会自动关闭精简模式；派发事件
         // 让会话层重新读取状态。
-        if (
-          !server.enabled &&
-          (server.serverId === "builtin:browser" ||
-            server.serverId === "builtin:app-control" ||
-            server.serverId === "builtin:terminal" ||
-            server.serverId === "builtin:computer-use")
-        ) {
+        if (!server.enabled && LITE_MODE_SERVER_IDS.has(server.serverId)) {
           window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
+          void refreshGlobalBuiltinServers().catch(() => undefined);
         }
       }
       if (loadGenerationRef.current !== generation) {
@@ -1060,6 +1240,10 @@ export function McpSettingsPanel({
   };
 
   const handleListToggle = (server: McpSettingsListItem): void => {
+    if (isGlobalBuiltinView) {
+      void toggleGlobalBuiltin(server);
+      return;
+    }
     if (isGlobalScope) {
       const globalServer = findGlobalServer(server.serverId);
       if (globalServer) {
@@ -1071,6 +1255,10 @@ export function McpSettingsPanel({
   };
 
   const handleListFetchTools = (server: McpSettingsListItem): void => {
+    if (isGlobalBuiltinView) {
+      void handleGlobalBuiltinFetchTools(server);
+      return;
+    }
     if (isGlobalScope) {
       const globalServer = findGlobalServer(server.serverId);
       if (globalServer) {
@@ -1149,7 +1337,7 @@ export function McpSettingsPanel({
       />
 
       <div className="api-settings-actions">
-        {isGlobalScope ? (
+        {isGlobalScope && !isBuiltinCategory ? (
           <>
             <button
               className="api-settings-action-btn primary"
@@ -1190,24 +1378,30 @@ export function McpSettingsPanel({
             >
               <RefreshCw size={15} className={isLoading ? "spin" : ""} />
               <span>
-                {t("settings.mcpProjectRefresh", {
-                  defaultValue: "Refresh project MCP",
-                })}
+                {isGlobalScope
+                  ? t("settings.mcpBuiltinRefresh", {
+                      defaultValue: "Refresh built-in MCP",
+                    })
+                  : t("settings.mcpProjectRefresh", {
+                      defaultValue: "Refresh project MCP",
+                    })}
               </span>
             </button>
-            <button
-              className="api-settings-action-btn secondary"
-              onClick={startAdd}
-              type="button"
-              disabled={isBusy || !activeDirectory}
-            >
-              <Plus size={15} />
-              <span>
-                {t("settings.mcpAddProjectServer", {
-                  defaultValue: "Add project server",
-                })}
-              </span>
-            </button>
+            {!isBuiltinCategory && (
+              <button
+                className="api-settings-action-btn secondary"
+                onClick={startAdd}
+                type="button"
+                disabled={isBusy || !activeDirectory}
+              >
+                <Plus size={15} />
+                <span>
+                  {t("settings.mcpAddProjectServer", {
+                    defaultValue: "Add project server",
+                  })}
+                </span>
+              </button>
+            )}
           </>
         )}
       </div>
@@ -1237,7 +1431,9 @@ export function McpSettingsPanel({
         >
           <Globe2 size={14} strokeWidth={1.8} />
           <span>{t("settings.mcpTabGlobal", { defaultValue: "Global" })}</span>
-          <small>{globalListItems.length}</small>
+          <small>
+            {globalListItems.length + globalBuiltinListItems.length}
+          </small>
         </button>
         <button
           className={`skills-settings-tab ${!isGlobalScope ? "active" : ""}`}
@@ -1255,21 +1451,45 @@ export function McpSettingsPanel({
         </button>
       </div>
 
+      <div
+        className="import-settings-tabs mcp-category-tabs"
+        role="tablist"
+        aria-label={t("settings.mcpCategoryTabs", {
+          defaultValue: "MCP category",
+        })}
+      >
+        <button
+          className={`import-settings-tab ${!isBuiltinCategory ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={!isBuiltinCategory}
+          onClick={() => setActiveCategory("external")}
+        >
+          <Plug size={13} strokeWidth={1.8} />
+          <span>
+            {t("settings.mcpCategoryExternal", { defaultValue: "External" })}
+          </span>
+          <small>{scopeExternalItems.length}</small>
+        </button>
+        <button
+          className={`import-settings-tab ${isBuiltinCategory ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={isBuiltinCategory}
+          onClick={() => setActiveCategory("builtin")}
+        >
+          <Boxes size={13} strokeWidth={1.8} />
+          <span>
+            {t("settings.mcpCategoryBuiltin", { defaultValue: "Built-in" })}
+          </span>
+          <small>{scopeBuiltinItems.length}</small>
+        </button>
+      </div>
+
       <div className="api-settings-manual-form">
         <div className="api-settings-manual-header">
           <strong>{listTitle}</strong>
-          <span>
-            {isGlobalScope
-              ? t("settings.mcpGlobalTabInfo", {
-                  defaultValue:
-                    "Manage external MCP servers shared by all projects.",
-                })
-              : t("settings.mcpProjectTabInfo", {
-                  defaultValue:
-                    "Manage project MCP servers for {{name}} and control inherited system or global servers.",
-                  values: { name: activeDirectory?.name ?? "" },
-                })}
-          </span>
+          <span>{listInfo}</span>
         </div>
 
         <div className="api-settings-form-body">

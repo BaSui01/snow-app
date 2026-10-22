@@ -532,7 +532,7 @@ pub(crate) fn tool_name_is_enabled(
 ) -> bool {
     // The global blacklist has the highest priority: a tool disabled
     // globally stays disabled regardless of project scope.
-    if global_scope.is_some_and(|global| global.disabled_tool_names.contains(full_name)) {
+    if global_scope.is_some_and(|global| global.is_tool_disabled(full_name)) {
         return false;
     }
     // Default-disabled servers are excluded when there is no project
@@ -562,7 +562,7 @@ fn tool_is_enabled(
 }
 
 fn is_globally_disabled(full_name: &str, global_scope: Option<&McpGlobalScopeSettings>) -> bool {
-    global_scope.is_some_and(|global| global.disabled_tool_names.contains(full_name))
+    global_scope.is_some_and(|global| global.is_tool_disabled(full_name))
 }
 
 /// 子代理显式白名单（project_override）只受全局黑名单约束，跳过项目级与默认关闭开关。
@@ -726,7 +726,10 @@ pub(crate) async fn ensure_project_tool_enabled(
         }
     }
     let global_scope = load_global_scope().await?;
-    if global_scope.is_some_and(|scope| scope.disabled_tool_names.contains(tool_name)) {
+    if global_scope
+        .as_ref()
+        .is_some_and(|scope| scope.disabled_tool_names.contains(tool_name))
+    {
         return Err(Error::new(
             Status::GenericFailure,
             format!("MCP tool is disabled globally: {tool_name}"),
@@ -738,6 +741,17 @@ pub(crate) async fn ensure_project_tool_enabled(
             format!("Invalid MCP tool name: {tool_name}"),
         ));
     };
+    // 全局服务器总闸（requestApproval 与精简模式同样豁免）。
+    if tool_name != REQUEST_APPROVAL_FULL_NAME
+        && global_scope
+            .as_ref()
+            .is_some_and(|scope| scope.is_server_disabled(&builtin_scope_server_id(server_id)))
+    {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("MCP server is disabled globally: builtin:{server_id}"),
+        ));
+    }
     if project_override {
         return Ok(());
     }

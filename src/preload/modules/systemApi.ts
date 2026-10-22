@@ -822,6 +822,9 @@ export const systemApi = {
   /** 全局 MCP 服务器目录：不依赖项目，供全局子代理选择工具。 */
   listMcpGlobalServers: (): Promise<McpProjectServerStatus[]> =>
     ipcRenderer.invoke("mcp:list-global-servers"),
+  /** 全局内置 MCP 服务器目录（不连接外部服务器）。 */
+  listMcpGlobalBuiltinServers: (): Promise<McpProjectServerStatus[]> =>
+    ipcRenderer.invoke("mcp:list-global-builtin-servers"),
   /** 诊断子代理白名单中当前不可用的工具（激活时回传主控并写入子代理提示词）。 */
   diagnoseSubAgentTools: (
     projectId: string | undefined,
@@ -991,6 +994,12 @@ export const systemApi = {
   },
   setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("mcp:set-tool-enabled", toolName, enabled),
+  /** 全局启停内置 MCP 服务器（serverId 形如 builtin:browser）。 */
+  setMcpGlobalServerEnabled: (
+    serverId: string,
+    enabled: boolean,
+  ): Promise<void> =>
+    ipcRenderer.invoke("mcp:set-global-server-enabled", serverId, enabled),
   setMcpToolsEnabled: (toolNames: string[], enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("mcp:set-tools-enabled", toolNames, enabled),
   setMcpProjectToolsEnabled: (

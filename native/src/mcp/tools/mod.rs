@@ -238,6 +238,13 @@ pub async fn list_mcp_global_servers() -> napi::Result<Vec<McpProjectServerStatu
     collect_server_statuses(None, true).await
 }
 
+/// 全局内置服务器目录（MCP 设置全局「系统内置」页），不连接外部服务器。
+pub async fn list_mcp_global_builtin_servers() -> napi::Result<Vec<McpProjectServerStatus>> {
+    let mut servers = collect_server_statuses(None, false).await?;
+    servers.retain(|server| server.source == "system");
+    Ok(servers)
+}
+
 /// `project_id` 为 None 时输出全局目录：不读取项目 scope，也不含项目专属服务器。
 async fn collect_server_statuses(
     project_id: Option<String>,
@@ -272,6 +279,7 @@ async fn collect_server_statuses(
     })
     .await?;
 
+    let is_global_catalog = project_id.is_none();
     let mut servers = get_builtin_servers_with_tools()
         .into_iter()
         .map(|(server_id, tools)| {
@@ -285,15 +293,24 @@ async fn collect_server_statuses(
             if lite_mode && LITE_MODE_DISABLED_SERVER_IDS.contains(&server_id.as_str()) {
                 enabled = false;
             }
+            let server_globally_disabled = global_scope
+                .as_ref()
+                .is_some_and(|global| global.is_server_disabled(&scope_server_id));
             // Reflect imagegen configuration state in global_enabled / error
             // so the front-end toggle stays in sync with collect_all_mcp_tools.
             // The error field uses a stable code (not a localized string) that
             // the front-end maps to the user's language.
-            let (global_enabled, error) = if server_id == "imagegen" && !imagegen_configured {
+            let (mut global_enabled, error) = if server_id == "imagegen" && !imagegen_configured {
                 (false, Some("imagegen:not_configured".to_string()))
             } else {
                 (true, None)
             };
+            // 全局目录：全局开关即 enabled；项目列表：全局开关作为只读总闸。
+            if is_global_catalog {
+                enabled = enabled && !server_globally_disabled;
+            } else if server_globally_disabled {
+                global_enabled = false;
+            }
             McpProjectServerStatus {
                 id: scope_server_id,
                 name: builtin_server_name(&server_id).to_string(),
@@ -463,6 +480,19 @@ pub async fn set_mcp_project_server_enabled(
         ));
     }
 
+    // 全局总闸关闭的内置服务器不允许在项目内启用。
+    if enabled && server_id.starts_with("builtin:") {
+        let globally_disabled = load_global_scope()
+            .await?
+            .is_some_and(|global| global.is_server_disabled(&server_id));
+        if globally_disabled {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!("MCP server is disabled globally: {server_id}"),
+            ));
+        }
+    }
+
     // 精简模式自动关闭：用户在 MCP 面板手动重新启用被精简模式禁用的
     // 服务器（browser / app-control / terminal）时，立即关闭精简模式
     // ——用户显式选择优先于模式限制。
@@ -553,6 +583,47 @@ pub async fn set_mcp_project_tool_enabled(
             &database_path,
             &project_id,
             &tool_name,
+            enabled,
+        )
+    })
+    .await
+}
+
+/// 全局启停内置服务器（总闸）：关闭后所有项目不可用且项目层无法覆盖。
+/// 启用被精简模式禁用的服务器时自动关闭精简模式（与项目级一致）。
+pub async fn set_mcp_global_server_enabled(server_id: String, enabled: bool) -> napi::Result<()> {
+    let server_id = required_value(server_id, "MCP server id")?;
+    let builtin_server_id = server_id
+        .strip_prefix("builtin:")
+        .filter(|id| {
+            get_builtin_servers_with_tools()
+                .iter()
+                .any(|(known_server_id, _)| known_server_id == id)
+        })
+        .ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                format!("Unknown built-in MCP server: {server_id}"),
+            )
+        })?;
+
+    if enabled && LITE_MODE_DISABLED_SERVER_IDS.contains(&builtin_server_id) {
+        let lite_mode = with_database_path(|database_path| {
+            crate::storage::services::system_settings::get_lite_mode(&database_path)
+        })
+        .await?;
+        if lite_mode {
+            with_database_path(|database_path| {
+                crate::storage::services::system_settings::set_lite_mode(&database_path, false)
+            })
+            .await?;
+        }
+    }
+
+    with_database_path(move |database_path| {
+        crate::storage::services::system_settings::set_mcp_global_server_enabled(
+            &database_path,
+            &server_id,
             enabled,
         )
     })
@@ -686,8 +757,7 @@ fn to_project_tool_statuses(
         .iter()
         .map(|tool| {
             let full_name = tool.full_name();
-            let global_enabled = !global_scope
-                .is_some_and(|global| global.disabled_tool_names.contains(&full_name));
+            let global_enabled = !global_scope.is_some_and(|global| global.is_tool_disabled(&full_name));
             McpProjectToolStatus {
                 enabled: global_enabled && scope.is_tool_enabled(&full_name),
                 global_enabled,

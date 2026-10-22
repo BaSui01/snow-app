@@ -36,6 +36,7 @@ use crate::mcp::servers::workflow::validate_graph as validate_workflow_graph_imp
 use crate::mcp::tools::{
     call_mcp_tool as call_tool, diagnose_sub_agent_tools as diagnose_sub_agent_tools_impl,
     list_mcp_global_servers as list_global_servers,
+    list_mcp_global_builtin_servers as list_global_builtin_servers,
     list_mcp_project_server_tools as list_project_server_tools,
     list_mcp_project_servers as list_project_servers,
     list_mcp_project_servers_cached as list_cached_project_servers,
@@ -44,6 +45,7 @@ use crate::mcp::tools::{
     set_mcp_project_tool_enabled as set_project_tool_enabled,
     set_mcp_project_tools_enabled as set_project_tools_enabled,
     set_mcp_tool_enabled as set_tool_enabled,
+    set_mcp_global_server_enabled as set_global_server_enabled,
     set_mcp_tools_enabled as set_tools_enabled, McpProjectServerStatus, McpProjectToolStatus,
     McpToolDefinition, McpToolStatus, SubAgentUnavailableTool,
 };
@@ -350,6 +352,12 @@ pub async fn list_mcp_global_servers() -> napi::Result<Vec<McpProjectServerStatu
     list_global_servers().await
 }
 
+/// 全局内置 MCP 服务器目录（不连接外部服务器），供 MCP 设置全局内置页使用。
+#[napi]
+pub async fn list_mcp_global_builtin_servers() -> napi::Result<Vec<McpProjectServerStatus>> {
+    list_global_builtin_servers().await
+}
+
 /// 诊断子代理白名单中当前不可用的工具及原因（子代理激活时调用）。
 #[napi]
 pub async fn diagnose_sub_agent_tools(
@@ -404,6 +412,12 @@ pub async fn set_mcp_project_tool_enabled(
 #[napi]
 pub async fn set_mcp_tool_enabled(tool_name: String, enabled: bool) -> napi::Result<()> {
     set_tool_enabled(tool_name, enabled).await
+}
+
+/// 全局启停内置 MCP 服务器（总闸，项目层无法覆盖）。
+#[napi]
+pub async fn set_mcp_global_server_enabled(server_id: String, enabled: bool) -> napi::Result<()> {
+    set_global_server_enabled(server_id, enabled).await
 }
 
 #[napi]

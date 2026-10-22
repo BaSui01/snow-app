@@ -156,7 +156,7 @@ export function McpSettingsList({
                   >
                     <input
                       type="checkbox"
-                      checked={server.enabled}
+                      checked={server.enabled && !globallyUnavailable}
                       onChange={() => onToggleEnabled(server)}
                       disabled={isBusy || globallyUnavailable}
                       hidden

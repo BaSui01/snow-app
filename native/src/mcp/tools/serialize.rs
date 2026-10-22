@@ -33,8 +33,112 @@ pub fn tools_as_openai_chat_json(tools: &[McpTool]) -> Value {
 /// Keep public serializer signatures and optional-property required lists intact.
 fn sanitize_tool_input_schema(schema: &Value) -> Value {
     let mut root = schema.clone();
+    // Some gateways (xAI) validate combinator branches on their own `type` and
+    // reject `{"$ref": "#/$defs/X"}` branches, so pure `$ref` nodes at the root
+    // or in combinator branches are inlined first. Inlining is lossless.
+    let definitions = schema.clone();
+    let mut budget = MAX_REF_EXPANSIONS;
+    expand_ref_nodes(&mut root, &definitions, true, 0, &mut budget);
     sanitize_schema_node(&mut root, true);
     root
+}
+
+const MAX_REF_EXPANSION_DEPTH: usize = 6;
+const MAX_REF_EXPANSIONS: usize = 512;
+
+/// Inline `$ref` nodes that carry nothing but `$ref` (annotations would be lost).
+fn expand_ref_nodes(
+    node: &mut Value,
+    root: &Value,
+    allow_inline: bool,
+    depth: usize,
+    budget: &mut usize,
+) {
+    if depth > MAX_REF_EXPANSION_DEPTH {
+        return;
+    }
+    if allow_inline {
+        // Follow chained pure `$ref` nodes.
+        for _ in 0..MAX_REF_EXPANSION_DEPTH {
+            if *budget == 0 {
+                break;
+            }
+            let Some(target) = pure_ref_target(node, root) else {
+                break;
+            };
+            *node = target.clone();
+            *budget -= 1;
+        }
+    }
+    let Some(map) = node.as_object_mut() else {
+        return;
+    };
+    for keyword in [
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    ] {
+        if let Some(Value::Object(children)) = map.get_mut(keyword) {
+            for child in children.values_mut() {
+                expand_ref_nodes(child, root, false, depth + 1, budget);
+            }
+        }
+    }
+    for keyword in [
+        "items",
+        "additionalProperties",
+        "contains",
+        "not",
+        "if",
+        "then",
+        "else",
+        "propertyNames",
+    ] {
+        if let Some(child) = map.get_mut(keyword) {
+            if let Value::Array(children) = child {
+                for child in children {
+                    expand_ref_nodes(child, root, false, depth + 1, budget);
+                }
+            } else {
+                expand_ref_nodes(child, root, false, depth + 1, budget);
+            }
+        }
+    }
+    for keyword in ["anyOf", "oneOf", "allOf", "prefixItems"] {
+        if let Some(Value::Array(children)) = map.get_mut(keyword) {
+            for child in children {
+                expand_ref_nodes(child, root, true, depth + 1, budget);
+            }
+        }
+    }
+}
+
+fn pure_ref_target<'a>(node: &Value, root: &'a Value) -> Option<&'a Value> {
+    let map = node.as_object()?;
+    if map.len() != 1 {
+        return None;
+    }
+    resolve_json_pointer(root, map.get("$ref")?.as_str()?)
+}
+
+/// Local JSON pointer only (`#` / `#/a/b`); remote refs are left untouched.
+fn resolve_json_pointer<'a>(root: &'a Value, reference: &str) -> Option<&'a Value> {
+    let pointer = reference.strip_prefix('#')?;
+    if pointer.is_empty() {
+        return Some(root);
+    }
+    let mut current = root;
+    for raw in pointer.strip_prefix('/')?.split('/') {
+        let token = raw.replace("~1", "/").replace("~0", "~");
+        current = match current {
+            Value::Object(map) => map.get(&token)?,
+            Value::Array(items) => items.get(token.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(current)
 }
 
 fn sanitize_schema_node(node: &mut Value, is_root: bool) {

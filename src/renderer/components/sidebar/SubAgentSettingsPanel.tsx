@@ -10,6 +10,14 @@ import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { formatMcpError } from "./mcpSettings/mcpErrorMessages";
 import {
+  clampSubAgentMaxConcurrency,
+  loadSubAgentMaxConcurrency,
+  saveSubAgentMaxConcurrency,
+  SUB_AGENT_MAX_CONCURRENCY_DEFAULT,
+  SUB_AGENT_MAX_CONCURRENCY_MAX,
+  SUB_AGENT_MAX_CONCURRENCY_MIN,
+} from "../mainContent/chatMessages/hooks/subAgentRunControl";
+import {
   SubAgentEditor,
   SubAgentEditorActions,
 } from "./subAgent/SubAgentEditor";
@@ -63,6 +71,39 @@ export function SubAgentSettingsPanel({
   /** 当前作用域对应的 projectId：全局 Tab 为 undefined，项目 Tab 为当前项目。 */
   const scopeProjectId = isGlobalScope ? undefined : projectId;
   const isBusy = isLoading || isSaving;
+  // 并发上限为全局唯一设置，不随全局/项目 Tab 切换。
+  const [maxConcurrency, setMaxConcurrency] = useState(
+    String(SUB_AGENT_MAX_CONCURRENCY_DEFAULT),
+  );
+
+  useEffect(() => {
+    void loadSubAgentMaxConcurrency().then((value) =>
+      setMaxConcurrency(String(value)),
+    );
+  }, []);
+
+  const saveMaxConcurrency = async (): Promise<void> => {
+    const next = clampSubAgentMaxConcurrency(maxConcurrency);
+    setMaxConcurrency(String(next));
+    if (next === (await loadSubAgentMaxConcurrency())) return;
+    try {
+      await saveSubAgentMaxConcurrency(next);
+      setStatus(
+        t("settings.subAgentConcurrencySaved", {
+          defaultValue: "Saved sub-agent concurrency limit.",
+        }),
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : t("settings.subAgentConcurrencySaveError", {
+              defaultValue: "Failed to save sub-agent concurrency limit",
+            }),
+      );
+      setMaxConcurrency(String(await loadSubAgentMaxConcurrency()));
+    }
+  };
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -386,6 +427,44 @@ export function SubAgentSettingsPanel({
         agents={agents}
         availableToolCount={toolOptions.length}
       />
+
+      <div className="api-settings-manual-form">
+        <div className="api-settings-manual-header">
+          <strong>
+            {t("settings.subAgentConcurrencyTitle", {
+              defaultValue: "Run limits",
+            })}
+          </strong>
+          <span>
+            {t("settings.subAgentConcurrencyInfo", {
+              defaultValue:
+                "Applies to all projects. Sub-agents beyond the limit wait in a queue and start when a running one finishes.",
+            })}
+          </span>
+        </div>
+        <div className="api-settings-form-body">
+          <label className="sub-agent-concurrency-row">
+            <span>
+              {t("settings.subAgentConcurrencyLabel", {
+                defaultValue: "Max concurrent sub-agents",
+              })}
+            </span>
+            <input
+              className="settings-number-input"
+              type="number"
+              min={SUB_AGENT_MAX_CONCURRENCY_MIN}
+              max={SUB_AGENT_MAX_CONCURRENCY_MAX}
+              step={1}
+              value={maxConcurrency}
+              onChange={(event) => setMaxConcurrency(event.target.value)}
+              onBlur={() => void saveMaxConcurrency()}
+              title={t("settings.subAgentConcurrencyHint", {
+                defaultValue: "Range 1-16, default 3.",
+              })}
+            />
+          </label>
+        </div>
+      </div>
 
       <div
         className="skills-settings-tabs"

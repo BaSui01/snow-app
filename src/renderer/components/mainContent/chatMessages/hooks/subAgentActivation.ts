@@ -68,6 +68,11 @@ import type {
 } from "./subAgentAcceptance";
 import { getResponsesFastModeFromConfig } from "../../chatInput/configThinking";
 import {
+  acquireSubAgentSlot,
+  awaitSubAgentFailureDecision,
+  releaseSubAgentSlot,
+} from "./subAgentRunControl";
+import {
   PARENT_PLAN_APPROVAL_REQUIRED,
   accumulateConversationRunStats,
   accumulateRunTokenUsage,
@@ -521,6 +526,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     // in-memory sub-agent messages keep "user-{ts}-{rand}" ids while the DB
     // (queried by the user-message rail) stores snowflake ids, and the rail
     // cannot locate the DOM message by id.
+    // 失败重试时需撤销本次 id 替换（对应 DB 行会被截断）。
+    let appliedSubIdRemap: Map<string, string> | null = null;
     if (
       subResponse.persistedUserMessageIds &&
       subResponse.persistedUserMessageIds.length > 0
@@ -558,6 +565,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       }
 
       if (subIdRemap.size > 0) {
+        appliedSubIdRemap = subIdRemap;
         ctx.updateSessionMessages(subConvId, (msgs) =>
           msgs.map((m) => {
             const newId = subIdRemap.get(m.id);
@@ -640,9 +648,11 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         : [];
 
     if (subResponseFailed) {
-      stopped = true;
       const failureContent =
-        subResponse.content || "Sub-agent request failed. Please retry.";
+        subResponse.content ||
+        (subResponse.failureReason
+          ? `Sub-agent request failed: ${subResponse.failureReason}`
+          : "Sub-agent request failed. Please retry.");
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
         currentMessages.map((currentMessage) =>
           currentMessage.id === subAssistantMessageId
@@ -661,6 +671,46 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
             : currentMessage,
         ),
       );
+      // 挂起等待用户「重试 / 放弃」，主会话的工具调用保持等待；挂起期间让出并发名额。
+      if (!isSubCancelled()) {
+        releaseSubAgentSlot(subConvId);
+        ctx.updateSessionField(subConvId, "isStreaming", false);
+        ctx.removeStreamingId(subConvId);
+        const decision = await awaitSubAgentFailureDecision(subConvId);
+        if (decision === "retry" && !isSubCancelled()) {
+          ctx.updateSessionField(subConvId, "isStreaming", true);
+          ctx.addStreamingId(subConvId);
+        }
+        const retryReady =
+          decision === "retry" &&
+          !isSubCancelled() &&
+          (await acquireSubAgentSlot(subConvId, isSubCancelled)) &&
+          !isSubCancelled() &&
+          (await window.snow
+            .truncateTrailingFailedExchange(subConvId)
+            .then(() => true)
+            .catch(() => false));
+        if (retryReady) {
+          const revertIds = new Map(
+            Array.from(appliedSubIdRemap ?? []).map(
+              ([oldId, newId]): [string, string] => [newId, oldId],
+            ),
+          );
+          ctx.updateSessionMessages(subConvId, (currentMessages) =>
+            currentMessages
+              .filter((message) => message.id !== subAssistantMessageId)
+              .map((message) => {
+                const oldId = revertIds.get(message.id);
+                return oldId ? { ...message, id: oldId } : message;
+              }),
+          );
+          return subAgentRunLoop(subMessages, resumeAfterCompaction);
+        }
+      }
+      stopped = true;
+      if (isSubCancelled()) {
+        return "Sub-agent interrupted by user";
+      }
       throw new Error(failureContent);
     }
 
@@ -1755,15 +1805,25 @@ const createSubAgentResume = (
       resumeUserMsg,
     ]);
 
+    await acquireSubAgentSlot(
+      subConvId,
+      () => !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested,
+    );
     try {
       const resumeSummary = await subAgentRunLoop(messages);
-      return finalizeSubAgentSession(subConvId, resumeSummary, "completed");
+      return await finalizeSubAgentSession(
+        subConvId,
+        resumeSummary,
+        "completed",
+      );
     } catch (error) {
       return finalizeSubAgentSession(
         subConvId,
         getErrorMessage(error),
         "failed",
       );
+    } finally {
+      releaseSubAgentSlot(subConvId);
     }
   };
 };
@@ -2059,15 +2119,28 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         subUserMessage,
       ]);
 
-      const summary = await subAgentRunLoop([
-        { role: "user", content: prompt },
-      ]);
+      // 全局并发上限：名额不足时排队，取消时 run loop 会按中止返回。
+      await acquireSubAgentSlot(
+        subConvId,
+        () => !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested,
+      );
+      try {
+        const summary = await subAgentRunLoop([
+          { role: "user", content: prompt },
+        ]);
 
-      const activationFinalizer = finalizeSubAgentSession;
-      if (!activationFinalizer) {
-        throw new Error("Sub-agent finalizer was not initialized");
+        const activationFinalizer = finalizeSubAgentSession;
+        if (!activationFinalizer) {
+          throw new Error("Sub-agent finalizer was not initialized");
+        }
+        return await activationFinalizer(
+          subConversationId,
+          summary,
+          "completed",
+        );
+      } finally {
+        releaseSubAgentSlot(subConvId);
       }
-      return activationFinalizer(subConversationId, summary, "completed");
     } catch (err) {
       const errorMessage = getErrorMessage(err);
       if (subConversationId && subAgentSessionCreated) {

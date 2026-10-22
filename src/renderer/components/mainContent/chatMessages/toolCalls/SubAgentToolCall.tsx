@@ -7,11 +7,19 @@ import {
   CheckCircle2,
   CircleDot,
   CircleQuestionMark,
+  Hourglass,
   Loader2,
+  RotateCcw,
   Wrench,
+  XCircle,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../components/ChatConversationContext";
+import {
+  resolveSubAgentFailureDecision,
+  useSubAgentFailurePending,
+  useSubAgentQueued,
+} from "../hooks/subAgentRunControl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
@@ -348,6 +356,10 @@ export const SubAgentToolCall = ({
   }, [subSession]);
 
   const isActivationPending = isRunning && !hasSubAgentResponseStarted;
+  const isQueued = useSubAgentQueued(isRunning ? subConversationId : undefined);
+  const isFailurePending = useSubAgentFailurePending(
+    isRunning ? subConversationId : undefined,
+  );
 
   const toolCallEntries = useMemo(
     () => extractSubAgentToolCalls(subSession?.messages),
@@ -592,7 +604,9 @@ export const SubAgentToolCall = ({
               isActivationPending ? "tool-call-sub-agent-pending-running" : ""
             }`}
           >
-            {isActivationPending ? (
+            {isQueued ? (
+              <Hourglass size={14} aria-hidden="true" />
+            ) : isActivationPending ? (
               <Loader2
                 className="tool-call-icon-spinning"
                 size={14}
@@ -602,13 +616,55 @@ export const SubAgentToolCall = ({
               <Wrench size={14} aria-hidden="true" />
             )}
             <span>
-              {isActivationPending
-                ? parsedArgs?.mode === "continue"
-                  ? t("toolCall.subAgent.resuming")
-                  : t("toolCall.subAgent.activating")
-                : isRunning
-                  ? t("toolCall.subAgent.status.running")
-                  : t("toolCall.subAgent.waiting")}
+              {isQueued
+                ? t("toolCall.subAgent.waitingSlot")
+                : isActivationPending
+                  ? parsedArgs?.mode === "continue"
+                    ? t("toolCall.subAgent.resuming")
+                    : t("toolCall.subAgent.activating")
+                  : isRunning
+                    ? t("toolCall.subAgent.status.running")
+                    : t("toolCall.subAgent.waiting")}
+            </span>
+          </div>
+        ) : null}
+
+        {/* 重试时再次排队（已有活动记录时单独提示） */}
+        {isQueued && toolCallEntries.length > 0 ? (
+          <div className="tool-call-sub-agent-pending">
+            <Hourglass size={14} aria-hidden="true" />
+            <span>{t("toolCall.subAgent.waitingSlot")}</span>
+          </div>
+        ) : null}
+
+        {/* 请求失败挂起：等待用户重试或放弃 */}
+        {isFailurePending && subConversationId ? (
+          <div className="tool-call-sub-agent-retry">
+            <span className="tool-call-sub-agent-retry-text">
+              <AlertCircle size={12} aria-hidden="true" />
+              {t("toolCall.subAgent.failurePending")}
+            </span>
+            <span className="tool-call-sub-agent-retry-actions">
+              <button
+                type="button"
+                className="tool-call-sub-agent-jump"
+                onClick={() =>
+                  resolveSubAgentFailureDecision(subConversationId, "abandon")
+                }
+              >
+                <XCircle size={12} aria-hidden="true" />
+                {t("toolCall.subAgent.abandon")}
+              </button>
+              <button
+                type="button"
+                className="tool-call-sub-agent-jump active"
+                onClick={() =>
+                  resolveSubAgentFailureDecision(subConversationId, "retry")
+                }
+              >
+                <RotateCcw size={12} aria-hidden="true" />
+                {t("toolCall.subAgent.retry")}
+              </button>
             </span>
           </div>
         ) : null}

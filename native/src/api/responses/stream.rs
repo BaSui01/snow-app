@@ -228,7 +228,7 @@ impl ResponsesAttemptState {
         if !self.failure_replay_safe(request_replay_safe) {
             return stop("unsafe_to_replay", StreamRecoveryOutcome::NonRetriable);
         }
-        // Normalize only a known transport error for existing policy keywords;
+        // Normalize known transport/throttle failures for existing policy keywords;
         // preserve the provider's redacted reason for diagnostics/custom keywords.
         let normalized = Error::from_reason(policy_reason.to_string());
         let original = Error::from_reason(self.failure_reason());
@@ -253,8 +253,7 @@ impl ResponsesAttemptState {
     pub(super) fn failure_is_transport(&self) -> bool {
         self.failure_reason
             .as_ref()
-            .and_then(super::event::ResponsesFailure::retry_policy_reason)
-            .is_some()
+            .is_some_and(super::event::ResponsesFailure::is_transport)
     }
 
     pub(super) fn finish_failure(

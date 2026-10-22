@@ -17,7 +17,24 @@ pub(super) struct ResponsesFailure {
     error_type: Option<String>,
     message: String,
     transport_failure: bool,
+    /// 网关限流/并发/过载类失败对应的重试策略关键词（"rate limit" / "overloaded"）。
+    throttle_reason: Option<&'static str>,
     retry_veto: bool,
+}
+
+/// 识别限流、并发上限、过载类错误标识。
+fn throttle_identifier(text: &str) -> Option<&'static str> {
+    let lower = text.trim().to_ascii_lowercase();
+    if lower.contains("overload") {
+        Some("overloaded")
+    } else if lower.contains("concurrency_limit")
+        || lower.contains("rate_limit")
+        || lower == "too_many_requests"
+    {
+        Some("rate limit")
+    } else {
+        None
+    }
 }
 
 impl ResponsesFailure {
@@ -89,6 +106,34 @@ impl ResponsesFailure {
                             .eq_ignore_ascii_case("Upstream HTTP/2 stream failed")
                     })
             });
+        // 限流类：所有标识须为白名单或限流标识，避免掩盖其他业务拒绝。
+        let throttle_or_allowed = |value: Option<&Value>, allowed: &[&str]| {
+            allowed_identifier(value, allowed)
+                || value
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| throttle_identifier(text).is_some())
+        };
+        let throttle_safe = details.iter().all(|(detail, error_object)| {
+            throttle_or_allowed(detail.get("code"), ALLOWED_CODES)
+                && (!error_object || throttle_or_allowed(detail.get("type"), ALLOWED_TYPES))
+        });
+        let throttle_reason = if throttle_safe && !transport_failure {
+            details.iter().find_map(|(detail, error_object)| {
+                [
+                    detail.get("code").and_then(Value::as_str),
+                    if *error_object {
+                        detail.get("type").and_then(Value::as_str)
+                    } else {
+                        None
+                    },
+                ]
+                .into_iter()
+                .flatten()
+                .find_map(throttle_identifier)
+            })
+        } else {
+            None
+        };
         // Preserve the global policy's strong cancellation veto from raw
         // metadata: truncation/redaction must not erase it before normalization.
         let retry_veto = details.iter().any(|(detail, error_object)| {
@@ -138,6 +183,7 @@ impl ResponsesFailure {
             error_type: field("type", true).map(|text| bounded_provider_detail(&text, 128)),
             message,
             transport_failure,
+            throttle_reason,
             retry_veto,
         }
     }
@@ -166,7 +212,16 @@ impl ResponsesFailure {
     /// Classify raw error layers, never the independently selected diagnostics.
     /// Recovery must also check `retry_vetoed` before positive policy matching.
     pub(super) fn retry_policy_reason(&self) -> Option<&'static str> {
-        self.transport_failure.then_some("network stream error")
+        if self.transport_failure {
+            Some("network stream error")
+        } else {
+            self.throttle_reason
+        }
+    }
+
+    /// 仅传输层故障意味着连接不可复用；限流类连接仍健康。
+    pub(super) fn is_transport(&self) -> bool {
+        self.transport_failure
     }
 }
 

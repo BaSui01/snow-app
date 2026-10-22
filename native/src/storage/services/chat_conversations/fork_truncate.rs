@@ -353,6 +353,65 @@ pub fn truncate_conversation_from_message(
     Ok(())
 }
 
+/// 删除末尾的失败回合（本回合请求行 + 失败的 assistant 行），供子代理失败后
+/// 原样重试前清理，避免重放时请求消息重复入库。末行不是失败 assistant 行时
+/// 为 no-op，返回是否实际删除。
+pub fn truncate_trailing_failed_exchange(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<bool> {
+    let mut connection = database::open_connection(database_path)
+        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+
+    let last: Option<(String, String, String)> = transaction
+        .query_row(
+            "SELECT id, role, status FROM chat_messages
+              WHERE conversation_id = ?1
+              ORDER BY id DESC
+              LIMIT 1",
+            params![conversation_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+    let failed_id = match last {
+        Some((id, role, status)) if role == "assistant" && matches!(status.as_str(), "failed" | "error") => id,
+        _ => return Ok(false),
+    };
+
+    // 回合起点：上一条 assistant 行或压缩边界之后的第一行。
+    let delete_from: Option<String> = transaction
+        .query_row(
+            "SELECT MIN(id) FROM chat_messages
+              WHERE conversation_id = ?1
+                AND id <= ?2
+                AND id > COALESCE(
+                  (SELECT id FROM chat_messages
+                    WHERE conversation_id = ?1
+                      AND id < ?2
+                      AND (role = 'assistant' OR status = 'context_compaction')
+                    ORDER BY id DESC
+                    LIMIT 1),
+                  ''
+                )",
+            params![conversation_id, failed_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+    let delete_from = delete_from.unwrap_or(failed_id);
+
+    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+
+    Ok(true)
+}
+
 /// Collect workflow node conversation ids whose flow's workflow-generate tool
 /// call lives in the truncated message range. The flow id persisted in
 /// `workflow_node_sessions.flow_id` is `tool-{callId}` (renderer derives it

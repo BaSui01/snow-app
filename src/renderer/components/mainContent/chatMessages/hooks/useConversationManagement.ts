@@ -24,6 +24,7 @@ import {
 } from "./hookOutcome";
 import { prefetchMarkdown } from "../components/markdownRenderer";
 import { demotePendingSteering } from "../utils/pendingInputs";
+import { cancelSubAgentRunWaits } from "./subAgentRunControl";
 import { imageGenerationRuntime } from "./imageGenerationRuntime";
 import {
   abandonWorkflowsForConversation,
@@ -884,6 +885,7 @@ export const useConversationManagement = (
       subRef.isSending = false;
       subRef.activeSendOptions = undefined;
       subRef.activeTaskMessages = undefined;
+      cancelSubAgentRunWaits(subKey);
       demotePendingSteering(ctx, subKey);
       // Settle the sub-agent's own pending authorizations (scoped to its
       // session key) so its agent loop cannot stay blocked awaiting a
@@ -987,6 +989,7 @@ export const useConversationManagement = (
       ref.runId += 1;
       ref.activeSendOptions = undefined;
       ref.activeTaskMessages = undefined;
+      cancelSubAgentRunWaits(key);
       demotePendingSteering(ctx, key);
       ctx.updateSessionMessages(key, settleInterruptedMessages);
       // Kill every in-flight bash subprocess of this session so the OS

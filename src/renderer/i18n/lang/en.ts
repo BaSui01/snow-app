@@ -854,6 +854,10 @@ export const en = {
   "chat.subAgentFinished.cancelled":
     "This sub-agent was cancelled. The conversation is read-only.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
+  "chat.subAgentRetry.pending":
+    "The sub-agent request failed. The parent conversation is waiting for your decision.",
+  "chat.subAgentRetry.retry": "Retry",
+  "chat.subAgentRetry.abandon": "Give up",
   "chat.workflowNodeFinished.completed":
     "This workflow node has finished. The conversation is read-only.",
   "chat.workflowNodeFinished.failed":
@@ -1149,6 +1153,11 @@ export const en = {
   "toolCall.subAgent.result": "Result",
   "toolCall.subAgent.activating": "Activating sub-agent...",
   "toolCall.subAgent.waiting": "Waiting to activate sub-agent",
+  "toolCall.subAgent.waitingSlot": "Queued: waiting for a free sub-agent slot",
+  "toolCall.subAgent.failurePending":
+    "Request failed. Waiting for retry or give up",
+  "toolCall.subAgent.retry": "Retry",
+  "toolCall.subAgent.abandon": "Give up",
   "toolCall.subAgent.activationFailed":
     "Sub-agent activation failed without a result",
   "toolCall.subAgent.jumpToConversation": "Open sub-agent conversation",
@@ -3362,6 +3371,14 @@ export const en = {
   "settings.subAgentDeleteError": "Failed to delete sub-agent configuration",
   "settings.subAgentAddNew": "Add sub-agent",
   "settings.subAgentManageTitle": "Manage sub-agents",
+  "settings.subAgentConcurrencyTitle": "Run limits",
+  "settings.subAgentConcurrencyInfo":
+    "Applies to all projects. Sub-agents beyond the limit wait in a queue and start when a running one finishes.",
+  "settings.subAgentConcurrencyLabel": "Max concurrent sub-agents",
+  "settings.subAgentConcurrencyHint": "Range 1-16, default 3.",
+  "settings.subAgentConcurrencySaved": "Saved sub-agent concurrency limit.",
+  "settings.subAgentConcurrencySaveError":
+    "Failed to save sub-agent concurrency limit",
   "settings.subAgentManageInfo":
     "Sub-agent configurations are stored in the local database.",
   "settings.subAgentScopeTabs": "Sub-agent scope",

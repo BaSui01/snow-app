@@ -186,6 +186,8 @@ pub struct ResponsesApiResult {
     pub status: String,
     pub interruption_reason: Option<String>,
     pub recovery_outcome: Option<String>,
+    /// 失败终态时上游给出的（已脱敏）原因，供前端展示。
+    pub failure_reason: Option<String>,
     pub tool_calls_json: String,
     pub token_usage: TokenUsage,
     pub persisted_user_message_ids: Vec<String>,
@@ -661,6 +663,7 @@ async fn create_response_async(
         status: streamed_response.status,
         interruption_reason,
         recovery_outcome,
+        failure_reason: streamed_response.failure_reason,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {
             input_tokens: streamed_response.token_usage.input_tokens,

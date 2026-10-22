@@ -278,6 +278,8 @@ export type ResponsesApiResult = {
   persistedUserMessageIds: string[];
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
+  /** 失败终态时上游给出的（已脱敏）原因 */
+  failureReason?: string | null;
 };
 
 export type ResponsesApiStreamChunk = {

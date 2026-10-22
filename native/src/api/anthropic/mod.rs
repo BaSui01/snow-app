@@ -374,6 +374,7 @@ async fn create_anthropic_response_async(
         status: streamed_response.status,
         interruption_reason,
         recovery_outcome,
+        failure_reason: None,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {
             input_tokens: streamed_response.token_usage.input_tokens,

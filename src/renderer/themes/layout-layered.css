@@ -152,9 +152,9 @@
   border: none !important;
   border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
   background: var(--surface-island-strong) !important;
-  box-shadow:
+  /* box-shadow:
     var(--layered-sheet-shadow-left), var(--layered-sheet-shadow-right),
-    var(--layered-sheet-shadow-bottom) !important;
+    var(--layered-sheet-shadow-bottom) !important; */
   backdrop-filter: none !important;
   /* 只保留全屏淡入淡出；内边距随面板状态瞬时切换，避免覆盖量与面板不同步 */
   transition: opacity 0.2s ease !important;

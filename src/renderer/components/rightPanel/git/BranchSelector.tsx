@@ -16,6 +16,7 @@ import {
   Info,
   AlertCircle,
   Sparkles,
+  FileDiff,
 } from "lucide-react";
 import {
   useCallback,
@@ -27,12 +28,15 @@ import {
 } from "react";
 import type {
   GitBranch as GitBranchType,
+  GitFileStatus,
   GitWorktreeInfo,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
+import { rightPanelEvents } from "../rightPanelEvents";
+import { GitControl } from "./GitControl";
 import { WorktreeBaseRefSelect } from "./WorktreeBaseRefSelect";
 import { BRANCHES_CHANGED, useBranchManagement } from "./useBranchManagement";
 
@@ -42,6 +46,10 @@ type BranchSelectorProps = {
   directoryId?: string | null;
   onBranchChanged: () => void;
   onOpenTerminal?: (cwd: string) => void;
+  /** 为 true 时下拉层切为「分支 / 变更」双 Tab，变更 Tab 内嵌 GitControl */
+  showChangesTab?: boolean;
+  /** 变更 Tab 上的文件数徽标 */
+  changesCount?: number;
 };
 
 const INVALID_REF_CHAR = /[\x00-\x20\x7f~^:?*\[\\]/;
@@ -87,6 +95,8 @@ export const BranchSelector = ({
   directoryId,
   onBranchChanged,
   onOpenTerminal,
+  showChangesTab = false,
+  changesCount = 0,
 }: BranchSelectorProps): React.JSX.Element => {
   const { t } = useI18n();
   const management = useBranchManagement(repoPath, () => {
@@ -169,6 +179,13 @@ export const BranchSelector = ({
   const worktreeInputRef = useRef<HTMLInputElement>(null);
   const customRefInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 双 Tab 模式下的当前 Tab；未启用时恒为分支视图
+  const [activeTab, setActiveTab] = useState<"branches" | "changes">(
+    "branches",
+  );
+  const currentTab = showChangesTab ? activeTab : "branches";
+  // 合成事件沿组件树冒泡（含 Portal 弹层/对话框），据此把它们的点击视为内部
+  const insideMouseDownRef = useRef(false);
 
   const normalizedRepoPath = useMemo(() => normPath(repoPath), [repoPath]);
 
@@ -364,7 +381,10 @@ export const BranchSelector = ({
     }
 
     const handleClickOutside = (event: MouseEvent): void => {
+      const inside = insideMouseDownRef.current;
+      insideMouseDownRef.current = false;
       if (
+        !inside &&
         dropdownRef.current &&
         !dropdownRef.current.contains(event.target as Node)
       ) {
@@ -600,6 +620,40 @@ export const BranchSelector = ({
     }, 60);
   };
 
+  // 变更 Tab：差异/原文/终端交给右面板打开（会自动展开），随后收起下拉
+  const handleChangesFileSelect = useCallback(
+    (file: GitFileStatus | null, section?: "staged" | "unstaged"): void => {
+      if (!file) return;
+      rightPanelEvents.emit("open-git-diff", {
+        repoPath,
+        file,
+        staged: section === "staged",
+      });
+      setIsOpen(false);
+    },
+    [repoPath],
+  );
+
+  const handleChangesOpenFile = useCallback(
+    (filePath: string, fileName: string): void => {
+      rightPanelEvents.emit("open-git-file", { filePath, fileName });
+      setIsOpen(false);
+    },
+    [],
+  );
+
+  const handleChangesOpenTerminal = useCallback(
+    (cwd: string): void => {
+      if (onOpenTerminal) {
+        onOpenTerminal(cwd);
+      } else {
+        rightPanelEvents.emit("open-terminal-command", { cwd, command: "" });
+      }
+      setIsOpen(false);
+    },
+    [onOpenTerminal],
+  );
+
   /** 单个分支项右键菜单 */
   const buildBranchItemMenuItems = (
     branch: GitBranchType,
@@ -791,7 +845,13 @@ export const BranchSelector = ({
   }, [branches, normalizedSearch]);
 
   return (
-    <div className="branch-selector" ref={dropdownRef}>
+    <div
+      className="branch-selector"
+      ref={dropdownRef}
+      onMouseDown={() => {
+        insideMouseDownRef.current = true;
+      }}
+    >
       <button
         type="button"
         className="branch-selector-btn"
@@ -839,782 +899,868 @@ export const BranchSelector = ({
 
       {isOpen && (
         <div
-          className="branch-dropdown"
+          className={`branch-dropdown${
+            currentTab === "changes" ? " is-changes-tab" : ""
+          }`}
           style={
             dropdownWidthCap === null
               ? undefined
               : {
                   minWidth: `${Math.min(dropdownWidthCap, 330)}px`,
                   maxWidth: `${dropdownWidthCap}px`,
+                  ...(currentTab === "changes"
+                    ? { width: `${dropdownWidthCap}px` }
+                    : {}),
                   ...(dropdownAlignRight ? { left: "auto", right: 0 } : {}),
                 }
           }
         >
-          {/* 顶部搜索与快捷创建按钮组 */}
-          <div className="branch-dropdown-header-bar">
-            <div className="branch-dropdown-search">
-              <Search size={12} className="branch-search-icon" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="branch-search-input"
-                placeholder={t("git.searchBranchesOrWorktrees", {
-                  defaultValue: "搜索分支或工作树...",
-                })}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && searchQuery) {
-                    e.stopPropagation();
-                    setSearchQuery("");
-                  }
-                }}
-                spellCheck={false}
-                autoComplete="off"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="branch-search-clear-btn"
-                  onClick={() => setSearchQuery("")}
-                  title={t("common.clear", { defaultValue: "清空" })}
-                >
-                  <X size={11} />
-                </button>
-              )}
-            </div>
-
-            <div className="branch-dropdown-header-actions">
+          {showChangesTab && (
+            <div className="branch-dropdown-tabs" role="tablist">
               <button
                 type="button"
-                className={`branch-header-action-btn${createMode === "branch" ? " active" : ""}`}
-                onClick={() => {
-                  setCreateError(null);
-                  setCreateMode((prev) =>
-                    prev === "branch" ? null : "branch",
-                  );
-                }}
-                title={t("git.createBranch", { defaultValue: "新建分支" })}
+                role="tab"
+                aria-selected={currentTab === "branches"}
+                className={`branch-dropdown-tab${
+                  currentTab === "branches" ? " active" : ""
+                }`}
+                onClick={() => setActiveTab("branches")}
               >
-                <GitBranchPlus size={12} strokeWidth={1.8} />
+                <GitBranch size={12} strokeWidth={1.8} />
                 <span>{t("git.branchShort", { defaultValue: "分支" })}</span>
               </button>
-              {directoryId && (
-                <button
-                  type="button"
-                  className={`branch-header-action-btn${createMode === "worktree" ? " active" : ""}`}
-                  onClick={() => {
-                    setCreateError(null);
-                    setCreateMode((prev) =>
-                      prev === "worktree" ? null : "worktree",
-                    );
-                  }}
-                  title={t("git.createWorktree", {
-                    defaultValue: "新建工作树",
-                  })}
-                >
-                  <FolderGit2 size={12} strokeWidth={1.8} />
-                  <span>
-                    {t("git.worktreeShort", { defaultValue: "工作树" })}
-                  </span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* 错误提示条 */}
-          {createError && (
-            <div className="branch-create-error" role="alert">
-              <div className="branch-create-error-content">
-                <AlertCircle
-                  size={12}
-                  className="branch-create-error-icon shrink-0"
-                />
-                <span className="branch-create-error-text" title={createError}>
-                  {createError}
-                </span>
-              </div>
               <button
                 type="button"
-                className="branch-create-error-close"
-                onClick={() => setCreateError(null)}
-                title={t("common.close", { defaultValue: "关闭提示" })}
+                role="tab"
+                aria-selected={currentTab === "changes"}
+                className={`branch-dropdown-tab${
+                  currentTab === "changes" ? " active" : ""
+                }`}
+                onClick={() => setActiveTab("changes")}
               >
-                <X size={11} />
+                <FileDiff size={12} strokeWidth={1.8} />
+                <span>{t("git.changes", { defaultValue: "变更" })}</span>
+                {changesCount > 0 && (
+                  <span className="branch-group-badge">{changesCount}</span>
+                )}
               </button>
             </div>
           )}
 
-          {/* 新建分支表单面板 */}
-          {createMode === "branch" && (
-            <div className="branch-inline-create-box">
-              <div className="branch-inline-create-title">
-                <GitBranchPlus size={13} strokeWidth={1.8} />
-                <span>
-                  {t("git.createBranchTitle", { defaultValue: "新建本地分支" })}
-                </span>
-              </div>
-              <div className="branch-create-input-row">
-                <input
-                  ref={branchInputRef}
-                  type="text"
-                  className="branch-create-input"
-                  placeholder={t("git.createBranchPlaceholder", {
-                    defaultValue: "分支名称 (例如: feature/login)",
-                  })}
-                  value={newBranchName}
-                  onChange={(e) => {
-                    setNewBranchName(e.target.value);
-                    setCreateError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleCreateBranch();
-                    } else if (e.key === "Escape") {
-                      setCreateMode(null);
-                    }
-                  }}
-                  disabled={creating}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className="branch-create-submit-btn"
-                  onClick={handleCreateBranch}
-                  disabled={creating || !newBranchName.trim()}
-                >
-                  {creating ? (
-                    <Loader2 size={12} className="spin" />
-                  ) : (
-                    t("common.create", { defaultValue: "创建" })
-                  )}
-                </button>
-              </div>
+          {currentTab === "changes" ? (
+            <div className="branch-dropdown-git-pane">
+              <GitControl
+                repoPath={repoPath}
+                directoryId={directoryId ?? undefined}
+                onFileSelect={handleChangesFileSelect}
+                onOpenFile={handleChangesOpenFile}
+                onOpenTerminal={handleChangesOpenTerminal}
+              />
             </div>
-          )}
-
-          {/* 新建工作树表单面板 */}
-          {createMode === "worktree" && directoryId && (
-            <div className="branch-inline-create-box branch-inline-worktree-box">
-              <div className="branch-inline-create-title">
-                <FolderGit2 size={13} strokeWidth={1.8} />
-                <span>
-                  {t("git.createWorktreeTitle", {
-                    defaultValue: "新建独立工作树 (Worktree)",
-                  })}
-                </span>
-              </div>
-              <div className="branch-worktree-form-grid">
-                {/* 1. 分支名称：支持快捷前缀与一键智能生成 */}
-                <div className="branch-worktree-form-field">
-                  <div className="branch-form-label-row">
-                    <label className="branch-form-label">
-                      {t("git.worktreeBranchName", {
-                        defaultValue: "分支名称",
-                      })}
-                    </label>
-                    <button
-                      type="button"
-                      className="branch-name-action-btn"
-                      onClick={() => handleGenerateBranchName()}
-                      title={t("git.worktreeBranchGenerate", {
-                        defaultValue: "自动生成唯一分支名称",
-                      })}
-                    >
-                      <Sparkles size={10} />
-                      <span>
-                        {t("git.worktreeBranchGenerate", {
-                          defaultValue: "自动生成",
-                        })}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* 常用前缀快捷选择 Chips */}
-                  <div className="branch-prefix-chips">
-                    {["feature/", "fix/", "task/", "test/"].map((prefix) => (
-                      <button
-                        key={prefix}
-                        type="button"
-                        className="branch-prefix-chip"
-                        onClick={() => handleApplyPrefix(prefix)}
-                        title={t("git.worktreeBranchPrefixTooltip", {
-                          values: { prefix },
-                        })}
-                      >
-                        {prefix}
-                      </button>
-                    ))}
-                  </div>
-
+          ) : (
+            <>
+              {/* 顶部搜索与快捷创建按钮组 */}
+              <div className="branch-dropdown-header-bar">
+                <div className="branch-dropdown-search">
+                  <Search size={12} className="branch-search-icon" />
                   <input
-                    ref={worktreeInputRef}
+                    ref={searchInputRef}
                     type="text"
-                    className="branch-create-input"
-                    placeholder={t("git.worktreeBranchNamePlaceholder")}
-                    value={worktreeBranchName}
-                    onChange={(e) => {
-                      setWorktreeBranchName(e.target.value);
-                      setCreateError(null);
-                    }}
+                    className="branch-search-input"
+                    placeholder={t("git.searchBranchesOrWorktrees", {
+                      defaultValue: "搜索分支或工作树...",
+                    })}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleCreateWorktree();
-                      } else if (e.key === "Escape") {
-                        setCreateMode(null);
+                      if (e.key === "Escape" && searchQuery) {
+                        e.stopPropagation();
+                        setSearchQuery("");
                       }
                     }}
-                    disabled={creating}
                     spellCheck={false}
                     autoComplete="off"
                   />
-                  {branchNameValidationError && (
-                    <div className="branch-form-validation-tip">
-                      <AlertCircle size={10} />
-                      <span>{branchNameValidationError}</span>
-                    </div>
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      className="branch-search-clear-btn"
+                      onClick={() => setSearchQuery("")}
+                      title={t("common.clear", { defaultValue: "清空" })}
+                    >
+                      <X size={11} />
+                    </button>
                   )}
                 </div>
 
-                {/* 2. 起始基线：纯点选优先，支持快捷Chips与全量分支下拉 */}
-                <div className="branch-worktree-form-field">
-                  <div className="branch-form-label-row">
-                    <label className="branch-form-label">
-                      {t("git.worktreeBaseRefLabel", {
-                        defaultValue: "起始基线 (分叉起点)",
-                      })}
-                    </label>
-                  </div>
-
-                  {/* 快捷推荐 Chips */}
-                  <div className="branch-base-ref-chips">
+                <div className="branch-dropdown-header-actions">
+                  <button
+                    type="button"
+                    className={`branch-header-action-btn${createMode === "branch" ? " active" : ""}`}
+                    onClick={() => {
+                      setCreateError(null);
+                      setCreateMode((prev) =>
+                        prev === "branch" ? null : "branch",
+                      );
+                    }}
+                    title={t("git.createBranch", { defaultValue: "新建分支" })}
+                  >
+                    <GitBranchPlus size={12} strokeWidth={1.8} />
+                    <span>
+                      {t("git.branchShort", { defaultValue: "分支" })}
+                    </span>
+                  </button>
+                  {directoryId && (
                     <button
                       type="button"
-                      className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === "HEAD" ? " active" : ""}`}
+                      className={`branch-header-action-btn${createMode === "worktree" ? " active" : ""}`}
                       onClick={() => {
-                        setIsCustomBaseRef(false);
-                        setWorktreeBaseRef("HEAD");
-                      }}
-                      title={t("git.worktreeBaseHeadTooltip", {
-                        defaultValue: "基于当前分支状态创建，适合延续当前进度",
-                      })}
-                    >
-                      <span>HEAD</span>
-                      <span className="branch-base-ref-chip-sub">
-                        ({t("git.worktreeCurrentTag", { defaultValue: "当前" })}
-                        : {currentBranch || "HEAD"})
-                      </span>
-                    </button>
-                    {defaultMainBranch &&
-                      defaultMainBranch !== currentBranch && (
-                        <button
-                          type="button"
-                          className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === defaultMainBranch ? " active" : ""}`}
-                          onClick={() => {
-                            setIsCustomBaseRef(false);
-                            setWorktreeBaseRef(defaultMainBranch);
-                          }}
-                          title={t("git.worktreeBaseMainTooltip", {
-                            defaultValue: "基于主干分支创建，环境纯净独立",
-                          })}
-                        >
-                          <span>{defaultMainBranch}</span>
-                          <span className="branch-base-ref-chip-sub">
-                            (
-                            {t("git.worktreeMainTag", { defaultValue: "主干" })}
-                            )
-                          </span>
-                        </button>
-                      )}
-                  </div>
-
-                  {/* 核心基线选择器：美化自定义下拉，完全无 emoji */}
-                  <div className="branch-ref-input-wrapper">
-                    <WorktreeBaseRefSelect
-                      value={worktreeBaseRef}
-                      isCustom={isCustomBaseRef}
-                      currentBranch={currentBranch}
-                      mainBranch={defaultMainBranch}
-                      localBranches={allLocalBranchNames}
-                      disabled={creating}
-                      onSelect={(ref) => {
-                        setIsCustomBaseRef(false);
-                        setWorktreeBaseRef(ref);
-                      }}
-                      onSelectCustom={() => {
-                        setIsCustomBaseRef(true);
-                        setTimeout(
-                          () => customRefInputRef.current?.focus(),
-                          50,
+                        setCreateError(null);
+                        setCreateMode((prev) =>
+                          prev === "worktree" ? null : "worktree",
                         );
                       }}
-                    />
+                      title={t("git.createWorktree", {
+                        defaultValue: "新建工作树",
+                      })}
+                    >
+                      <FolderGit2 size={12} strokeWidth={1.8} />
+                      <span>
+                        {t("git.worktreeShort", { defaultValue: "工作树" })}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
 
-                    {/* 仅在用户选择自定义时才展开文本输入 */}
-                    {isCustomBaseRef && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "4px",
-                          marginTop: "2px",
-                        }}
-                      >
-                        <input
-                          ref={customRefInputRef}
-                          type="text"
-                          className="branch-create-input"
-                          placeholder={t("git.worktreeBaseCustomPlaceholder", {
-                            defaultValue: "输入 Commit Hash、Tag 或远程分支",
+              {/* 错误提示条 */}
+              {createError && (
+                <div className="branch-create-error" role="alert">
+                  <div className="branch-create-error-content">
+                    <AlertCircle
+                      size={12}
+                      className="branch-create-error-icon shrink-0"
+                    />
+                    <span
+                      className="branch-create-error-text"
+                      title={createError}
+                    >
+                      {createError}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="branch-create-error-close"
+                    onClick={() => setCreateError(null)}
+                    title={t("common.close", { defaultValue: "关闭提示" })}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
+
+              {/* 新建分支表单面板 */}
+              {createMode === "branch" && (
+                <div className="branch-inline-create-box">
+                  <div className="branch-inline-create-title">
+                    <GitBranchPlus size={13} strokeWidth={1.8} />
+                    <span>
+                      {t("git.createBranchTitle", {
+                        defaultValue: "新建本地分支",
+                      })}
+                    </span>
+                  </div>
+                  <div className="branch-create-input-row">
+                    <input
+                      ref={branchInputRef}
+                      type="text"
+                      className="branch-create-input"
+                      placeholder={t("git.createBranchPlaceholder", {
+                        defaultValue: "分支名称 (例如: feature/login)",
+                      })}
+                      value={newBranchName}
+                      onChange={(e) => {
+                        setNewBranchName(e.target.value);
+                        setCreateError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleCreateBranch();
+                        } else if (e.key === "Escape") {
+                          setCreateMode(null);
+                        }
+                      }}
+                      disabled={creating}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="branch-create-submit-btn"
+                      onClick={handleCreateBranch}
+                      disabled={creating || !newBranchName.trim()}
+                    >
+                      {creating ? (
+                        <Loader2 size={12} className="spin" />
+                      ) : (
+                        t("common.create", { defaultValue: "创建" })
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 新建工作树表单面板 */}
+              {createMode === "worktree" && directoryId && (
+                <div className="branch-inline-create-box branch-inline-worktree-box">
+                  <div className="branch-inline-create-title">
+                    <FolderGit2 size={13} strokeWidth={1.8} />
+                    <span>
+                      {t("git.createWorktreeTitle", {
+                        defaultValue: "新建独立工作树 (Worktree)",
+                      })}
+                    </span>
+                  </div>
+                  <div className="branch-worktree-form-grid">
+                    {/* 1. 分支名称：支持快捷前缀与一键智能生成 */}
+                    <div className="branch-worktree-form-field">
+                      <div className="branch-form-label-row">
+                        <label className="branch-form-label">
+                          {t("git.worktreeBranchName", {
+                            defaultValue: "分支名称",
                           })}
-                          value={
-                            worktreeBaseRef === "HEAD" ? "" : worktreeBaseRef
-                          }
-                          onChange={(e) => setWorktreeBaseRef(e.target.value)}
-                          disabled={creating}
-                          spellCheck={false}
-                          autoComplete="off"
-                        />
+                        </label>
                         <button
                           type="button"
-                          className="branch-create-cancel-btn"
+                          className="branch-name-action-btn"
+                          onClick={() => handleGenerateBranchName()}
+                          title={t("git.worktreeBranchGenerate", {
+                            defaultValue: "自动生成唯一分支名称",
+                          })}
+                        >
+                          <Sparkles size={10} />
+                          <span>
+                            {t("git.worktreeBranchGenerate", {
+                              defaultValue: "自动生成",
+                            })}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* 常用前缀快捷选择 Chips */}
+                      <div className="branch-prefix-chips">
+                        {["feature/", "fix/", "task/", "test/"].map(
+                          (prefix) => (
+                            <button
+                              key={prefix}
+                              type="button"
+                              className="branch-prefix-chip"
+                              onClick={() => handleApplyPrefix(prefix)}
+                              title={t("git.worktreeBranchPrefixTooltip", {
+                                values: { prefix },
+                              })}
+                            >
+                              {prefix}
+                            </button>
+                          ),
+                        )}
+                      </div>
+
+                      <input
+                        ref={worktreeInputRef}
+                        type="text"
+                        className="branch-create-input"
+                        placeholder={t("git.worktreeBranchNamePlaceholder")}
+                        value={worktreeBranchName}
+                        onChange={(e) => {
+                          setWorktreeBranchName(e.target.value);
+                          setCreateError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleCreateWorktree();
+                          } else if (e.key === "Escape") {
+                            setCreateMode(null);
+                          }
+                        }}
+                        disabled={creating}
+                        spellCheck={false}
+                        autoComplete="off"
+                      />
+                      {branchNameValidationError && (
+                        <div className="branch-form-validation-tip">
+                          <AlertCircle size={10} />
+                          <span>{branchNameValidationError}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 2. 起始基线：纯点选优先，支持快捷Chips与全量分支下拉 */}
+                    <div className="branch-worktree-form-field">
+                      <div className="branch-form-label-row">
+                        <label className="branch-form-label">
+                          {t("git.worktreeBaseRefLabel", {
+                            defaultValue: "起始基线 (分叉起点)",
+                          })}
+                        </label>
+                      </div>
+
+                      {/* 快捷推荐 Chips */}
+                      <div className="branch-base-ref-chips">
+                        <button
+                          type="button"
+                          className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === "HEAD" ? " active" : ""}`}
                           onClick={() => {
                             setIsCustomBaseRef(false);
                             setWorktreeBaseRef("HEAD");
                           }}
                           title={t("git.worktreeBaseHeadTooltip", {
-                            defaultValue: "恢复默认 HEAD",
+                            defaultValue:
+                              "基于当前分支状态创建，适合延续当前进度",
                           })}
                         >
-                          HEAD
+                          <span>HEAD</span>
+                          <span className="branch-base-ref-chip-sub">
+                            (
+                            {t("git.worktreeCurrentTag", {
+                              defaultValue: "当前",
+                            })}
+                            : {currentBranch || "HEAD"})
+                          </span>
                         </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 基线作用动态说明卡片 */}
-                  <div className="branch-worktree-helper-text">
-                    <Info
-                      size={11}
-                      className="branch-worktree-helper-icon text-blue-400"
-                    />
-                    <span>{baseRefDescription}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="branch-worktree-form-actions">
-                <button
-                  type="button"
-                  className="branch-create-cancel-btn"
-                  onClick={() => setCreateMode(null)}
-                  disabled={creating}
-                >
-                  {t("common.cancel", { defaultValue: "取消" })}
-                </button>
-                <button
-                  type="button"
-                  className="branch-create-submit-btn"
-                  onClick={handleCreateWorktree}
-                  disabled={
-                    creating ||
-                    !trimmedWorktreeBranchName ||
-                    Boolean(branchNameValidationError)
-                  }
-                >
-                  {creating ? (
-                    <>
-                      <Loader2 size={12} className="spin" />
-                      <span>
-                        {t("git.creatingWorktree", {
-                          defaultValue: "创建中...",
-                        })}
-                      </span>
-                    </>
-                  ) : (
-                    t("git.createWorktreeSubmit", {
-                      defaultValue: "创建并检出工作树",
-                    })
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 分支与工作树内容列表 */}
-          <div className="branch-dropdown-content-scroll">
-            {loading ? (
-              <div className="branch-dropdown-loading">
-                <Loader2 size={14} strokeWidth={1.8} className="spin" />
-                <span>{t("git.loading")}</span>
-              </div>
-            ) : (
-              <>
-                {/* 1. 活跃工作树分组 (置顶) */}
-                {filteredWorktrees.length > 0 && (
-                  <div className="branch-dropdown-group branch-dropdown-group-worktrees">
-                    <div className="branch-dropdown-label">
-                      <FolderGit2
-                        size={12}
-                        strokeWidth={1.8}
-                        className="branch-group-label-icon"
-                      />
-                      <span>
-                        {t("git.worktreesTitle", {
-                          defaultValue: "工作树",
-                        })}
-                      </span>
-                      <span className="branch-group-badge">
-                        {filteredWorktrees.length}
-                      </span>
-                    </div>
-
-                    {filteredWorktrees.map((wt) => {
-                      const folderName = getFolderName(wt.worktreePath);
-                      const isMain =
-                        normPath(wt.worktreePath) ===
-                        normPath(wt.repositoryPath);
-                      const isCurrent =
-                        normPath(wt.worktreePath) === normPath(repoPath) ||
-                        (!isMain && wt.branchName === currentBranch);
-                      const isCopied = copiedId === wt.worktreeId;
-
-                      return (
-                        <div
-                          key={wt.worktreeId}
-                          className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}${isSessionRunning ? " is-disabled" : ""}`}
-                          title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${isSessionRunning ? t("plusMenu.modeLockedRunning", { defaultValue: "会话进行中，暂不可切换模式" }) : t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
-                          onClick={() => handleSelectWorktreeForChat(wt)}
-                        >
-                          <div className="branch-dropdown-item-left">
-                            <span className="branch-wt-folder-badge">
-                              <Folder size={11} strokeWidth={1.8} />
-                              <span>{folderName}</span>
-                            </span>
-                            <span className="branch-wt-branch-badge">
-                              <GitBranch size={11} strokeWidth={1.8} />
-                              <span className="truncate max-w-[130px]">
-                                {wt.branchName ||
-                                  t("git.graphDetachedHead", {
-                                    defaultValue: "游离 HEAD",
-                                  })}
-                              </span>
-                            </span>
-                            {isMain && (
-                              <span
-                                className="branch-badge branch-badge-main"
-                                title={t("git.mainWorktreeTooltip", {
-                                  defaultValue: "主工作区目录",
-                                })}
-                              >
-                                {t("git.mainDirectory", {
-                                  defaultValue: "主目录",
-                                })}
-                              </span>
-                            )}
-                            {wt.isDirty && (
-                              <span
-                                className="branch-wt-dirty-dot"
-                                title={t("git.worktreeDirtyTooltip", {
-                                  defaultValue: "该工作树包含未提交的修改",
-                                })}
-                              />
-                            )}
-                          </div>
-
-                          <div
-                            className="branch-dropdown-item-right branch-wt-actions"
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                        {defaultMainBranch &&
+                          defaultMainBranch !== currentBranch && (
                             <button
                               type="button"
-                              className="branch-wt-action-btn"
-                              onClick={() =>
-                                handleCopyPath(wt.worktreeId, wt.worktreePath)
-                              }
-                              title={t("git.copyWorktreePath", {
-                                defaultValue: "复制完整路径",
+                              className={`branch-base-ref-chip${!isCustomBaseRef && worktreeBaseRef.trim() === defaultMainBranch ? " active" : ""}`}
+                              onClick={() => {
+                                setIsCustomBaseRef(false);
+                                setWorktreeBaseRef(defaultMainBranch);
+                              }}
+                              title={t("git.worktreeBaseMainTooltip", {
+                                defaultValue: "基于主干分支创建，环境纯净独立",
                               })}
                             >
-                              {isCopied ? (
-                                <Check size={11} className="text-green-500" />
-                              ) : (
-                                <Copy size={11} />
-                              )}
+                              <span>{defaultMainBranch}</span>
+                              <span className="branch-base-ref-chip-sub">
+                                (
+                                {t("git.worktreeMainTag", {
+                                  defaultValue: "主干",
+                                })}
+                                )
+                              </span>
                             </button>
-                            {onOpenTerminal && (
-                              <button
-                                type="button"
-                                className="branch-wt-action-btn"
-                                onClick={() => onOpenTerminal(wt.worktreePath)}
-                                title={t("git.openTerminal", {
-                                  defaultValue: "在此工作树打开终端",
-                                })}
-                              >
-                                <Terminal size={11} />
-                              </button>
-                            )}
-                            {chatContext && (
-                              <button
-                                type="button"
-                                className="branch-wt-action-btn"
-                                onClick={(e) =>
-                                  handleStartNewChatInWorktree(e, wt)
-                                }
-                                title={t("git.startNewChatInWorktree", {
-                                  defaultValue: "在此工作树开启新会话",
-                                })}
-                              >
-                                <MessageSquarePlus size={11} />
-                              </button>
-                            )}
-                            {!isMain && (
-                              <button
-                                type="button"
-                                className={`branch-wt-action-btn branch-wt-action-delete${isCurrent || (isSessionRunning && chatContext?.pendingWorktreeId === wt.worktreeId) ? " is-disabled" : ""}`}
-                                disabled={
-                                  removingWorktree ||
-                                  isCurrent ||
-                                  (isSessionRunning &&
-                                    chatContext?.pendingWorktreeId ===
-                                      wt.worktreeId)
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!isCurrent) {
-                                    setRemoveWorktreeTarget(wt);
-                                  }
-                                }}
-                                title={
-                                  isCurrent
-                                    ? t("git.cannotRemoveCurrentWorktree", {
-                                        defaultValue:
-                                          "当前所在工作树无法删除，请先切换到其他分支或工作树",
-                                      })
-                                    : isSessionRunning &&
-                                        chatContext?.pendingWorktreeId ===
-                                          wt.worktreeId
-                                      ? t("git.cannotRemoveRunningWorktree", {
-                                          defaultValue:
-                                            "当前会话正在运行中，暂不可移除该工作树",
-                                        })
-                                      : t("git.removeWorktree", {
-                                          defaultValue: "移除此工作树",
-                                        })
-                                }
-                                aria-label={t("git.removeWorktree", {
-                                  defaultValue: "移除此工作树",
-                                })}
-                              >
-                                {removingWorktree &&
-                                removeWorktreeTarget?.worktreeId ===
-                                  wt.worktreeId ? (
-                                  <Loader2
-                                    size={11}
-                                    className="spin text-red-400"
-                                  />
-                                ) : (
-                                  <Trash2 size={11} />
-                                )}
-                              </button>
-                            )}
-                            {isCurrent && (
-                              <span className="branch-dropdown-item-check" />
-                            )}
+                          )}
+                      </div>
+
+                      {/* 核心基线选择器：美化自定义下拉，完全无 emoji */}
+                      <div className="branch-ref-input-wrapper">
+                        <WorktreeBaseRefSelect
+                          value={worktreeBaseRef}
+                          isCustom={isCustomBaseRef}
+                          currentBranch={currentBranch}
+                          mainBranch={defaultMainBranch}
+                          localBranches={allLocalBranchNames}
+                          disabled={creating}
+                          onSelect={(ref) => {
+                            setIsCustomBaseRef(false);
+                            setWorktreeBaseRef(ref);
+                          }}
+                          onSelectCustom={() => {
+                            setIsCustomBaseRef(true);
+                            setTimeout(
+                              () => customRefInputRef.current?.focus(),
+                              50,
+                            );
+                          }}
+                        />
+
+                        {/* 仅在用户选择自定义时才展开文本输入 */}
+                        {isCustomBaseRef && (
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "4px",
+                              marginTop: "2px",
+                            }}
+                          >
+                            <input
+                              ref={customRefInputRef}
+                              type="text"
+                              className="branch-create-input"
+                              placeholder={t(
+                                "git.worktreeBaseCustomPlaceholder",
+                                {
+                                  defaultValue:
+                                    "输入 Commit Hash、Tag 或远程分支",
+                                },
+                              )}
+                              value={
+                                worktreeBaseRef === "HEAD"
+                                  ? ""
+                                  : worktreeBaseRef
+                              }
+                              onChange={(e) =>
+                                setWorktreeBaseRef(e.target.value)
+                              }
+                              disabled={creating}
+                              spellCheck={false}
+                              autoComplete="off"
+                            />
+                            <button
+                              type="button"
+                              className="branch-create-cancel-btn"
+                              onClick={() => {
+                                setIsCustomBaseRef(false);
+                                setWorktreeBaseRef("HEAD");
+                              }}
+                              title={t("git.worktreeBaseHeadTooltip", {
+                                defaultValue: "恢复默认 HEAD",
+                              })}
+                            >
+                              HEAD
+                            </button>
                           </div>
+                        )}
+                      </div>
+
+                      {/* 基线作用动态说明卡片 */}
+                      <div className="branch-worktree-helper-text">
+                        <Info
+                          size={11}
+                          className="branch-worktree-helper-icon text-blue-400"
+                        />
+                        <span>{baseRefDescription}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="branch-worktree-form-actions">
+                    <button
+                      type="button"
+                      className="branch-create-cancel-btn"
+                      onClick={() => setCreateMode(null)}
+                      disabled={creating}
+                    >
+                      {t("common.cancel", { defaultValue: "取消" })}
+                    </button>
+                    <button
+                      type="button"
+                      className="branch-create-submit-btn"
+                      onClick={handleCreateWorktree}
+                      disabled={
+                        creating ||
+                        !trimmedWorktreeBranchName ||
+                        Boolean(branchNameValidationError)
+                      }
+                    >
+                      {creating ? (
+                        <>
+                          <Loader2 size={12} className="spin" />
+                          <span>
+                            {t("git.creatingWorktree", {
+                              defaultValue: "创建中...",
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        t("git.createWorktreeSubmit", {
+                          defaultValue: "创建并检出工作树",
+                        })
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 分支与工作树内容列表 */}
+              <div className="branch-dropdown-content-scroll">
+                {loading ? (
+                  <div className="branch-dropdown-loading">
+                    <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                    <span>{t("git.loading")}</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* 1. 活跃工作树分组 (置顶) */}
+                    {filteredWorktrees.length > 0 && (
+                      <div className="branch-dropdown-group branch-dropdown-group-worktrees">
+                        <div className="branch-dropdown-label">
+                          <FolderGit2
+                            size={12}
+                            strokeWidth={1.8}
+                            className="branch-group-label-icon"
+                          />
+                          <span>
+                            {t("git.worktreesTitle", {
+                              defaultValue: "工作树",
+                            })}
+                          </span>
+                          <span className="branch-group-badge">
+                            {filteredWorktrees.length}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
 
-                {/* 2. 本地分支分组 */}
-                {localBranches.length > 0 && (
-                  <div className="branch-dropdown-group">
-                    <div className="branch-dropdown-label">
-                      <GitBranch
-                        size={12}
-                        strokeWidth={1.8}
-                        className="branch-group-label-icon"
-                      />
-                      <span>{t("git.localBranches")}</span>
-                      <span className="branch-group-badge">
-                        {localBranches.length}
-                      </span>
-                    </div>
+                        {filteredWorktrees.map((wt) => {
+                          const folderName = getFolderName(wt.worktreePath);
+                          const isMain =
+                            normPath(wt.worktreePath) ===
+                            normPath(wt.repositoryPath);
+                          const isCurrent =
+                            normPath(wt.worktreePath) === normPath(repoPath) ||
+                            (!isMain && wt.branchName === currentBranch);
+                          const isCopied = copiedId === wt.worktreeId;
 
-                    {localBranches.map((branch) => {
-                      const isOtherWorktree = isOtherWorktreePath(
-                        branch.worktreePath,
-                      );
-                      const worktreeFolder = branch.worktreePath
-                        ? getFolderName(branch.worktreePath)
-                        : null;
-                      const isUpstreamTracking =
-                        branch.upstream?.startsWith("upstream/");
+                          return (
+                            <div
+                              key={wt.worktreeId}
+                              className={`branch-dropdown-item branch-dropdown-wt-item${isCurrent ? " active" : ""}${isSessionRunning ? " is-disabled" : ""}`}
+                              title={`${wt.worktreePath}${wt.isDirty ? " · 包含未提交修改" : ""}\n${isSessionRunning ? t("plusMenu.modeLockedRunning", { defaultValue: "会话进行中，暂不可切换模式" }) : t("git.clickToBindWorktree", { defaultValue: "点击为此会话选择该工作树" })}`}
+                              onClick={() => handleSelectWorktreeForChat(wt)}
+                            >
+                              <div className="branch-dropdown-item-left">
+                                <span className="branch-wt-folder-badge">
+                                  <Folder size={11} strokeWidth={1.8} />
+                                  <span>{folderName}</span>
+                                </span>
+                                <span className="branch-wt-branch-badge">
+                                  <GitBranch size={11} strokeWidth={1.8} />
+                                  <span className="truncate max-w-[130px]">
+                                    {wt.branchName ||
+                                      t("git.graphDetachedHead", {
+                                        defaultValue: "游离 HEAD",
+                                      })}
+                                  </span>
+                                </span>
+                                {isMain && (
+                                  <span
+                                    className="branch-badge branch-badge-main"
+                                    title={t("git.mainWorktreeTooltip", {
+                                      defaultValue: "主工作区目录",
+                                    })}
+                                  >
+                                    {t("git.mainDirectory", {
+                                      defaultValue: "主目录",
+                                    })}
+                                  </span>
+                                )}
+                                {wt.isDirty && (
+                                  <span
+                                    className="branch-wt-dirty-dot"
+                                    title={t("git.worktreeDirtyTooltip", {
+                                      defaultValue: "该工作树包含未提交的修改",
+                                    })}
+                                  />
+                                )}
+                              </div>
 
-                      return (
-                        <button
-                          key={branch.name}
-                          type="button"
-                          className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
-                          onClick={() => handleCheckout(branch)}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setContextMenu(null);
-                            setBranchItemContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              branch,
-                            });
-                          }}
-                          title={
-                            isOtherWorktree
-                              ? `${branch.name}\n${t("git.worktreeCheckedOut")}: ${branch.worktreePath}`
-                              : branch.name
-                          }
-                        >
-                          <div className="branch-dropdown-item-left">
-                            <span className="branch-dropdown-item-name">
-                              {branch.name}
-                            </span>
-                            {isOtherWorktree && (
-                              <span
-                                className="branch-dropdown-item-worktree-badge"
-                                title={branch.worktreePath || ""}
+                              <div
+                                className="branch-dropdown-item-right branch-wt-actions"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                <FolderGit2 size={11} strokeWidth={1.8} />
-                                {worktreeFolder}
-                              </span>
-                            )}
-                            {branch.upstream ? (
-                              <span
-                                className={`branch-dropdown-item-tracking${
-                                  isUpstreamTracking ? " is-upstream" : ""
-                                }`}
-                                title={
-                                  isUpstreamTracking
-                                    ? `${t("git.upstreamRemoteTooltip")}: ${branch.upstream}`
-                                    : branch.upstream
-                                }
-                              >
-                                → {branch.upstream}
-                              </span>
-                            ) : (
-                              <span
-                                className="branch-badge branch-badge-local"
-                                title={t("git.localOnlyBadge")}
-                              >
-                                {t("git.localOnlyBadge")}
-                              </span>
-                            )}
-                          </div>
-                          <div className="branch-dropdown-item-right">
-                            {branch.isGone && (
-                              <span
-                                className="branch-badge branch-badge-gone"
-                                title={t("git.goneBadge")}
-                              >
-                                {t("git.goneBadge")}
-                              </span>
-                            )}
-                            {typeof branch.behind === "number" &&
-                              branch.behind > 0 && (
-                                <span
-                                  className="branch-badge branch-badge-behind"
-                                  title={t("git.behindTooltip", {
-                                    values: { count: branch.behind },
+                                <button
+                                  type="button"
+                                  className="branch-wt-action-btn"
+                                  onClick={() =>
+                                    handleCopyPath(
+                                      wt.worktreeId,
+                                      wt.worktreePath,
+                                    )
+                                  }
+                                  title={t("git.copyWorktreePath", {
+                                    defaultValue: "复制完整路径",
                                   })}
                                 >
-                                  ↓{branch.behind}
-                                </span>
-                              )}
-                            {typeof branch.ahead === "number" &&
-                              branch.ahead > 0 && (
-                                <span
-                                  className="branch-badge branch-badge-ahead"
-                                  title={t("git.aheadTooltip", {
-                                    values: { count: branch.ahead },
-                                  })}
-                                >
-                                  ↑{branch.ahead}
-                                </span>
-                              )}
-                            {branch.isCurrent && (
-                              <span className="branch-dropdown-item-check" />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                                  {isCopied ? (
+                                    <Check
+                                      size={11}
+                                      className="text-green-500"
+                                    />
+                                  ) : (
+                                    <Copy size={11} />
+                                  )}
+                                </button>
+                                {onOpenTerminal && (
+                                  <button
+                                    type="button"
+                                    className="branch-wt-action-btn"
+                                    onClick={() =>
+                                      onOpenTerminal(wt.worktreePath)
+                                    }
+                                    title={t("git.openTerminal", {
+                                      defaultValue: "在此工作树打开终端",
+                                    })}
+                                  >
+                                    <Terminal size={11} />
+                                  </button>
+                                )}
+                                {chatContext && (
+                                  <button
+                                    type="button"
+                                    className="branch-wt-action-btn"
+                                    onClick={(e) =>
+                                      handleStartNewChatInWorktree(e, wt)
+                                    }
+                                    title={t("git.startNewChatInWorktree", {
+                                      defaultValue: "在此工作树开启新会话",
+                                    })}
+                                  >
+                                    <MessageSquarePlus size={11} />
+                                  </button>
+                                )}
+                                {!isMain && (
+                                  <button
+                                    type="button"
+                                    className={`branch-wt-action-btn branch-wt-action-delete${isCurrent || (isSessionRunning && chatContext?.pendingWorktreeId === wt.worktreeId) ? " is-disabled" : ""}`}
+                                    disabled={
+                                      removingWorktree ||
+                                      isCurrent ||
+                                      (isSessionRunning &&
+                                        chatContext?.pendingWorktreeId ===
+                                          wt.worktreeId)
+                                    }
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!isCurrent) {
+                                        setRemoveWorktreeTarget(wt);
+                                      }
+                                    }}
+                                    title={
+                                      isCurrent
+                                        ? t("git.cannotRemoveCurrentWorktree", {
+                                            defaultValue:
+                                              "当前所在工作树无法删除，请先切换到其他分支或工作树",
+                                          })
+                                        : isSessionRunning &&
+                                            chatContext?.pendingWorktreeId ===
+                                              wt.worktreeId
+                                          ? t(
+                                              "git.cannotRemoveRunningWorktree",
+                                              {
+                                                defaultValue:
+                                                  "当前会话正在运行中，暂不可移除该工作树",
+                                              },
+                                            )
+                                          : t("git.removeWorktree", {
+                                              defaultValue: "移除此工作树",
+                                            })
+                                    }
+                                    aria-label={t("git.removeWorktree", {
+                                      defaultValue: "移除此工作树",
+                                    })}
+                                  >
+                                    {removingWorktree &&
+                                    removeWorktreeTarget?.worktreeId ===
+                                      wt.worktreeId ? (
+                                      <Loader2
+                                        size={11}
+                                        className="spin text-red-400"
+                                      />
+                                    ) : (
+                                      <Trash2 size={11} />
+                                    )}
+                                  </button>
+                                )}
+                                {isCurrent && (
+                                  <span className="branch-dropdown-item-check" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                {/* 3. 远程分支分组 */}
-                {remoteBranches.length > 0 && (
-                  <div className="branch-dropdown-group">
-                    <div className="branch-dropdown-label">
-                      <span>{t("git.remoteBranches")}</span>
-                      <span className="branch-group-badge">
-                        {remoteBranches.length}
-                      </span>
-                    </div>
-                    {remoteBranches.map((branch) => {
-                      const isUpstream = branch.remoteName === "upstream";
-                      return (
-                        <button
-                          key={branch.name}
-                          type="button"
-                          className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
-                          onClick={() => handleCheckout(branch)}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setBranchItemContextMenu({
-                              x: event.clientX,
-                              y: event.clientY,
-                              branch,
-                            });
-                          }}
-                        >
-                          <div className="branch-dropdown-item-left">
-                            <span className="branch-dropdown-item-name">
-                              {branch.name}
-                            </span>
-                          </div>
-                          <div className="branch-dropdown-item-right">
-                            {isUpstream ? (
-                              <span
-                                className="branch-badge branch-badge-upstream"
-                                title={t("git.upstreamRemoteTooltip")}
-                              >
-                                {t("git.upstreamBadge")}
-                              </span>
-                            ) : branch.remoteName ? (
-                              <span className="branch-badge branch-badge-remote">
-                                {branch.remoteName}
-                              </span>
-                            ) : null}
-                            {branch.isCurrent && (
-                              <span className="branch-dropdown-item-check" />
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                    {/* 2. 本地分支分组 */}
+                    {localBranches.length > 0 && (
+                      <div className="branch-dropdown-group">
+                        <div className="branch-dropdown-label">
+                          <GitBranch
+                            size={12}
+                            strokeWidth={1.8}
+                            className="branch-group-label-icon"
+                          />
+                          <span>{t("git.localBranches")}</span>
+                          <span className="branch-group-badge">
+                            {localBranches.length}
+                          </span>
+                        </div>
 
-                {branches.length === 0 && filteredWorktrees.length === 0 && (
-                  <div className="branch-dropdown-empty">
-                    {t("git.noBranches")}
-                  </div>
+                        {localBranches.map((branch) => {
+                          const isOtherWorktree = isOtherWorktreePath(
+                            branch.worktreePath,
+                          );
+                          const worktreeFolder = branch.worktreePath
+                            ? getFolderName(branch.worktreePath)
+                            : null;
+                          const isUpstreamTracking =
+                            branch.upstream?.startsWith("upstream/");
+
+                          return (
+                            <button
+                              key={branch.name}
+                              type="button"
+                              className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
+                              onClick={() => handleCheckout(branch)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setContextMenu(null);
+                                setBranchItemContextMenu({
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  branch,
+                                });
+                              }}
+                              title={
+                                isOtherWorktree
+                                  ? `${branch.name}\n${t("git.worktreeCheckedOut")}: ${branch.worktreePath}`
+                                  : branch.name
+                              }
+                            >
+                              <div className="branch-dropdown-item-left">
+                                <span className="branch-dropdown-item-name">
+                                  {branch.name}
+                                </span>
+                                {isOtherWorktree && (
+                                  <span
+                                    className="branch-dropdown-item-worktree-badge"
+                                    title={branch.worktreePath || ""}
+                                  >
+                                    <FolderGit2 size={11} strokeWidth={1.8} />
+                                    {worktreeFolder}
+                                  </span>
+                                )}
+                                {branch.upstream ? (
+                                  <span
+                                    className={`branch-dropdown-item-tracking${
+                                      isUpstreamTracking ? " is-upstream" : ""
+                                    }`}
+                                    title={
+                                      isUpstreamTracking
+                                        ? `${t("git.upstreamRemoteTooltip")}: ${branch.upstream}`
+                                        : branch.upstream
+                                    }
+                                  >
+                                    → {branch.upstream}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="branch-badge branch-badge-local"
+                                    title={t("git.localOnlyBadge")}
+                                  >
+                                    {t("git.localOnlyBadge")}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="branch-dropdown-item-right">
+                                {branch.isGone && (
+                                  <span
+                                    className="branch-badge branch-badge-gone"
+                                    title={t("git.goneBadge")}
+                                  >
+                                    {t("git.goneBadge")}
+                                  </span>
+                                )}
+                                {typeof branch.behind === "number" &&
+                                  branch.behind > 0 && (
+                                    <span
+                                      className="branch-badge branch-badge-behind"
+                                      title={t("git.behindTooltip", {
+                                        values: { count: branch.behind },
+                                      })}
+                                    >
+                                      ↓{branch.behind}
+                                    </span>
+                                  )}
+                                {typeof branch.ahead === "number" &&
+                                  branch.ahead > 0 && (
+                                    <span
+                                      className="branch-badge branch-badge-ahead"
+                                      title={t("git.aheadTooltip", {
+                                        values: { count: branch.ahead },
+                                      })}
+                                    >
+                                      ↑{branch.ahead}
+                                    </span>
+                                  )}
+                                {branch.isCurrent && (
+                                  <span className="branch-dropdown-item-check" />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* 3. 远程分支分组 */}
+                    {remoteBranches.length > 0 && (
+                      <div className="branch-dropdown-group">
+                        <div className="branch-dropdown-label">
+                          <span>{t("git.remoteBranches")}</span>
+                          <span className="branch-group-badge">
+                            {remoteBranches.length}
+                          </span>
+                        </div>
+                        {remoteBranches.map((branch) => {
+                          const isUpstream = branch.remoteName === "upstream";
+                          return (
+                            <button
+                              key={branch.name}
+                              type="button"
+                              className={`branch-dropdown-item${branch.isCurrent ? " active" : ""}`}
+                              onClick={() => handleCheckout(branch)}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setBranchItemContextMenu({
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                  branch,
+                                });
+                              }}
+                            >
+                              <div className="branch-dropdown-item-left">
+                                <span className="branch-dropdown-item-name">
+                                  {branch.name}
+                                </span>
+                              </div>
+                              <div className="branch-dropdown-item-right">
+                                {isUpstream ? (
+                                  <span
+                                    className="branch-badge branch-badge-upstream"
+                                    title={t("git.upstreamRemoteTooltip")}
+                                  >
+                                    {t("git.upstreamBadge")}
+                                  </span>
+                                ) : branch.remoteName ? (
+                                  <span className="branch-badge branch-badge-remote">
+                                    {branch.remoteName}
+                                  </span>
+                                ) : null}
+                                {branch.isCurrent && (
+                                  <span className="branch-dropdown-item-check" />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {branches.length === 0 &&
+                      filteredWorktrees.length === 0 && (
+                        <div className="branch-dropdown-empty">
+                          {t("git.noBranches")}
+                        </div>
+                      )}
+                  </>
                 )}
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -230,6 +230,7 @@ export function ProjectsSection({
             activeSessionDirectoryIds={activeSessionDirectoryIds}
             collections={collections}
             directoryListRef={directoryListRef}
+            draggedCollectionId={dragAndDrop.draggedCollectionId}
             draggedDirectoryId={dragAndDrop.draggedDirectoryId}
             dragOverCollectionId={dragAndDrop.dragOverCollectionId}
             dragOverDirectoryId={dragAndDrop.dragOverDirectoryId}
@@ -244,8 +245,10 @@ export function ProjectsSection({
             }
             onAddProjectToCollection={addFlow.handleCollectionAddProjectOpen}
             onCollectionDragOver={dragAndDrop.handleCollectionDragOver}
+            onCollectionDragStart={dragAndDrop.handleCollectionDragStart}
             onCollectionDrop={dragAndDrop.handleCollectionDrop}
             onCollectionMemberDrop={dragAndDrop.handleCollectionMemberDrop}
+            onCollectionReorderDrop={dragAndDrop.handleCollectionReorderDrop}
             onDelete={(directoryId) => void handleDeleteDirectory(directoryId)}
             onDeleteCollection={setDeleteCollectionTarget}
             onDragEnd={dragAndDrop.handleDirectoryDragEnd}

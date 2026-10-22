@@ -163,6 +163,10 @@ export const workspaceApi = {
       collectionId,
       orderedMemberIds,
     ),
+  reorderProjectCollections: (
+    orderedCollectionIds: string[],
+  ): Promise<ProjectCollectionRecord[]> =>
+    ipcRenderer.invoke("project-collections:reorder", orderedCollectionIds),
   moveProjectToCollection: (
     collectionId: string,
     directoryId: string,

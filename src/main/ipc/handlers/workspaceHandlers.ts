@@ -286,6 +286,17 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "project-collections:reorder",
+    async (_event, orderedCollectionIds: unknown) => {
+      await native.reorderProjectCollections(
+        requireDirectoryIdList(orderedCollectionIds),
+      );
+      const collections = await native.listProjectCollections();
+      broadcastDirectoryListChanged();
+      return collections;
+    },
+  );
+  ipcMain.handle(
     "project-collections:move-member",
     async (
       _event,

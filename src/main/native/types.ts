@@ -2412,6 +2412,7 @@ export type NativeBridge = ImageGenerationNativeApi & {
     collectionId: string,
     orderedMemberIds: string[],
   ) => Promise<void>;
+  reorderProjectCollections: (orderedCollectionIds: string[]) => Promise<void>;
   moveProjectToCollection: (
     targetCollectionId: string,
     directoryId: string,

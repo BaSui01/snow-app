@@ -27,6 +27,7 @@ import { useI18n } from "../i18n";
 import { useShortcutLabel } from "../hooks/useShortcutLabel";
 import { setWebTagDragData } from "./rightPanel/browserDrag";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
+import { openGitFileDiff } from "./rightPanel/git/openGitFileDiff";
 import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
 import { codebaseSyncStore } from "./TopBar/codebaseSyncStore";
@@ -898,6 +899,27 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenFileTab,
       ],
     );
+
+    // 顶栏 Git 变更视图（右面板收起时）请求打开差异/原文，打开后展开面板
+    useEffect(() => {
+      const offDiff = rightPanelEvents.on("open-git-diff", (payload) => {
+        openGitFileDiff(
+          payload.repoPath,
+          payload.file,
+          payload.staged,
+          handleOpenDiffTab,
+        );
+        rightPanelEvents.emit("request-expand");
+      });
+      const offFile = rightPanelEvents.on("open-git-file", (payload) => {
+        handleOpenFileFromGit(payload.filePath, payload.fileName);
+        rightPanelEvents.emit("request-expand");
+      });
+      return () => {
+        offDiff();
+        offFile();
+      };
+    }, [handleOpenDiffTab, handleOpenFileFromGit]);
 
     const handleOpenFileDiffPreviewTab = useCallback(
       (payload: OpenFileDiffPreviewPayload) => {

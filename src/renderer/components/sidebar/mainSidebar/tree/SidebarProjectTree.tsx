@@ -180,6 +180,30 @@ export function SidebarProjectTree({
     return sourceIndex < targetIndex ? "bottom" : "top";
   };
 
+  // 合集行排序插入指示线：按合集列表顺序计算（与列表模式一致）
+  const getCollectionDropSide = (
+    collectionId: string,
+  ): "top" | "bottom" | null => {
+    const draggedId = dragAndDrop.draggedCollectionId;
+    if (
+      !draggedId ||
+      draggedId === collectionId ||
+      dragAndDrop.dragOverCollectionId !== collectionId
+    ) {
+      return null;
+    }
+    const sourceIndex = collections.findIndex(
+      (collection) => collection.collectionId === draggedId,
+    );
+    const targetIndex = collections.findIndex(
+      (collection) => collection.collectionId === collectionId,
+    );
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return null;
+    }
+    return sourceIndex < targetIndex ? "bottom" : "top";
+  };
+
   // 树列表空白区域兜底：拖到非行、非合集区域 = 合集成员移出合集
   const handleTreeListDragOver = (
     event: React.DragEvent<HTMLDivElement>,
@@ -466,6 +490,9 @@ export function SidebarProjectTree({
                   collection={collection}
                   displayNames={displayNames}
                   dragAndDrop={dragAndDrop}
+                  dropIndicatorSide={getCollectionDropSide(
+                    collection.collectionId,
+                  )}
                   expandedDirectoryIds={expandedDirectoryIds}
                   isActionLocked={isActionLocked}
                   isExpanded={expandedCollectionIds.has(

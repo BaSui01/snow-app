@@ -180,6 +180,7 @@ export const en = {
   "sidebar.addToCollectionError": "Failed to add project to collection",
   "sidebar.reorderCollectionMembersError":
     "Failed to reorder projects in collection",
+  "sidebar.reorderCollectionsError": "Failed to reorder collections",
   "sidebar.removeFromCollection": "Remove from collection",
   "sidebar.removeFromCollectionError":
     "Failed to remove the project from the collection",
@@ -2057,6 +2058,10 @@ export const en = {
   "sidebar.search": "Search",
   "sidebar.newChat": "New Chat",
   "sidebar.more": "More",
+  "sidebar.morePendingMemos": "{{count}} pending memos",
+  "sidebar.moreMemories": "{{count}} project memory entries",
+  "sidebar.moreScheduledTasks": "{{count}} active scheduled tasks",
+  "sidebar.morePlugins": "{{count}} enabled plugins / scripts",
   "sidebar.settings": "Settings",
   "sidebar.userGuide": "User guide",
   "sidebar.untitledChat": "Untitled",

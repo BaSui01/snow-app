@@ -238,6 +238,17 @@ pub async fn reorder_project_collection_members(
 }
 
 #[napi]
+pub async fn reorder_project_collections(
+    ordered_collection_ids: Vec<String>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::reorder_project_collections(ordered_collection_ids)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn move_project_to_collection(
     target_collection_id: String,
     directory_id: String,

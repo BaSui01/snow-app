@@ -110,7 +110,11 @@ export function TreeProjectNode({
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>): void => {
-    if (isActionLocked || dragAndDrop.draggedDirectoryId === directoryId) {
+    if (
+      isActionLocked ||
+      !dragAndDrop.draggedDirectoryId ||
+      dragAndDrop.draggedDirectoryId === directoryId
+    ) {
       return;
     }
     event.preventDefault();

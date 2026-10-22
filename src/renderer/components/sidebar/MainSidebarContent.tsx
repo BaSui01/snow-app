@@ -479,34 +479,115 @@ export function MainSidebarContent({
             <AppWindow size={14} strokeWidth={1.8} />
           </button>
         </div>
-        <button
-          className={`nav-item sidebar-more-btn${
-            isMoreExpanded ? " expanded" : ""
-          }${isFeaturePageView(activeMainView) ? " active" : ""}`}
-          aria-expanded={isMoreExpanded}
-          onClick={() => setIsMoreExpanded((prev) => !prev)}
-          title={t("sidebar.more", { defaultValue: "More" })}
-          type="button"
-        >
-          <Ellipsis size={16} strokeWidth={1.8} />
-          <span>{t("sidebar.more", { defaultValue: "More" })}</span>
-          {!isMoreExpanded && pluginUpdateCount > 0 && (
-            <span
-              className="sidebar-update-icon"
-              title={t("plugins.updateAvailable", {
-                values: { count: pluginUpdateCount },
-                defaultValue: "{{count}} plugin updates available",
-              })}
-            >
-              <CircleArrowUp size={14} strokeWidth={2} />
-            </span>
-          )}
-          <ChevronDown
-            className="sidebar-more-chevron"
-            size={14}
-            strokeWidth={1.8}
-          />
-        </button>
+        <div className="sidebar-more-row">
+          <button
+            className={`nav-item sidebar-more-btn${
+              isMoreExpanded ? " expanded" : ""
+            }${isFeaturePageView(activeMainView) ? " active" : ""}`}
+            aria-expanded={isMoreExpanded}
+            onClick={() => setIsMoreExpanded((prev) => !prev)}
+            title={t("sidebar.more", { defaultValue: "More" })}
+            type="button"
+          >
+            <Ellipsis size={16} strokeWidth={1.8} />
+            <span>{t("sidebar.more", { defaultValue: "More" })}</span>
+            <ChevronDown
+              className="sidebar-more-chevron"
+              size={14}
+              strokeWidth={1.8}
+            />
+          </button>
+          {/* 收起时悬停整行才淡入徽章：悬停说明含义，点击直达对应面板 */}
+          {!isMoreExpanded &&
+            (pendingMemoCount > 0 ||
+              memoryCount > 0 ||
+              activeScheduledTaskCount > 0 ||
+              enabledPluginCount > 0 ||
+              pluginUpdateCount > 0) && (
+              <span className="sidebar-more-summary">
+                {pendingMemoCount > 0 && (
+                  <Tooltip
+                    content={t("sidebar.morePendingMemos", {
+                      values: { count: pendingMemoCount },
+                      defaultValue: "{{count}} pending memos",
+                    })}
+                  >
+                    <button
+                      className="sidebar-more-badge is-pending"
+                      onClick={() => onSelectMainView("memo")}
+                      type="button"
+                    >
+                      {pendingMemoCount}
+                    </button>
+                  </Tooltip>
+                )}
+                {memoryCount > 0 && (
+                  <Tooltip
+                    content={t("sidebar.moreMemories", {
+                      values: { count: memoryCount },
+                      defaultValue: "{{count}} project memory entries",
+                    })}
+                  >
+                    <button
+                      className="sidebar-more-badge"
+                      onClick={() => onSelectMainView("memory")}
+                      type="button"
+                    >
+                      {memoryCount}
+                    </button>
+                  </Tooltip>
+                )}
+                {activeScheduledTaskCount > 0 && (
+                  <Tooltip
+                    content={t("sidebar.moreScheduledTasks", {
+                      values: { count: activeScheduledTaskCount },
+                      defaultValue: "{{count}} active scheduled tasks",
+                    })}
+                  >
+                    <button
+                      className="sidebar-more-badge is-tasks"
+                      onClick={() => onSelectMainView("scheduled-tasks")}
+                      type="button"
+                    >
+                      {activeScheduledTaskCount}
+                    </button>
+                  </Tooltip>
+                )}
+                {enabledPluginCount > 0 && (
+                  <Tooltip
+                    content={t("sidebar.morePlugins", {
+                      values: { count: enabledPluginCount },
+                      defaultValue: "{{count}} enabled plugins / scripts",
+                    })}
+                  >
+                    <button
+                      className="sidebar-more-badge is-plugins"
+                      onClick={() => onSelectMainView("plugins")}
+                      type="button"
+                    >
+                      {enabledPluginCount}
+                    </button>
+                  </Tooltip>
+                )}
+                {pluginUpdateCount > 0 && (
+                  <Tooltip
+                    content={t("plugins.updateAvailable", {
+                      values: { count: pluginUpdateCount },
+                      defaultValue: "{{count}} plugin updates available",
+                    })}
+                  >
+                    <button
+                      className="sidebar-more-icon-btn"
+                      onClick={() => onSelectMainView("plugins")}
+                      type="button"
+                    >
+                      <CircleArrowUp size={14} strokeWidth={2} />
+                    </button>
+                  </Tooltip>
+                )}
+              </span>
+            )}
+        </div>
         <div
           aria-hidden={!isMoreExpanded}
           className={`sidebar-more-items${isMoreExpanded ? " expanded" : ""}`}

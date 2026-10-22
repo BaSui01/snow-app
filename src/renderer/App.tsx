@@ -69,6 +69,19 @@ const RIGHT_PANEL_DEFAULT_WIDTH = 320;
 // 遮罩提示；此后不回拉、松开鼠标即进入全屏。
 const RIGHT_PANEL_FULLSCREEN_OVERDRAG = 56;
 const RIGHT_PANEL_FULLSCREEN_DWELL_MS = 500;
+// 拖窄越过最小宽度此距离并停留后自动收起面板；未松手回拉到展开阈值内即重新展开。
+const PANEL_COLLAPSE_OVERDRAG = 40;
+const PANEL_EXPAND_OVERDRAG = 24;
+const PANEL_COLLAPSE_DWELL_MS = 220;
+// 拖拽中收起/展开时临时恢复 CSS 过渡的时长。
+const PANEL_TOGGLE_TRANSITION_MS = 200;
+// 拖拽中收起后分隔条需清零的占位属性。
+const RESIZER_HOLD_PROPERTIES = [
+  "width",
+  "min-width",
+  "margin-left",
+  "margin-right",
+] as const;
 const MAIN_CONTENT_MIN_WIDTH = 420;
 // 窗口内容宽度 ≤ 此值时视为手机尺寸：自动收起两侧面板，聊天区独占窗口。
 const MOBILE_BREAKPOINT = 720;
@@ -437,6 +450,9 @@ export const App = (): React.JSX.Element => {
   // 拖宽右面板进入越界区后的"待全屏"状态：主内容区据此显示遮罩提醒。
   const [isRightPanelFullscreenPending, setIsRightPanelFullscreenPending] =
     useState(false);
+  // 拖拽中被收起的面板：手势结束前保持分隔条挂载，避免丢失指针捕获。
+  const [collapseHoldTarget, setCollapseHoldTarget] =
+    useState<ResizeTarget | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [rightPanelWidth, setRightPanelWidth] = useState(
     RIGHT_PANEL_DEFAULT_WIDTH,
@@ -1070,6 +1086,10 @@ export const App = (): React.JSX.Element => {
     override(chatAreaElement, "width");
     override(linkedFullscreenPanel, "--sidebar-width");
     override(floatingCardElement, "--chat-float-region-left");
+    override(resizerElement, "width");
+    override(resizerElement, "min-width");
+    override(resizerElement, "margin-left");
+    override(resizerElement, "margin-right");
 
     const shieldedElements = [
       sidebarElement,
@@ -1109,6 +1129,79 @@ export const App = (): React.JSX.Element => {
       }
     };
 
+    // 拖窄收起流程：越过最小宽度停留后收起，未松手回拉即展开；
+    // 收起状态同样用手势内局部变量记录。
+    let collapseTimer: number | null = null;
+    let transitionTimer: number | null = null;
+    let panelCollapsed = false;
+    const cancelCollapseTimer = (): void => {
+      if (collapseTimer !== null) {
+        window.clearTimeout(collapseTimer);
+        collapseTimer = null;
+      }
+    };
+
+    const applyPanelWidth = (width: number): void => {
+      panelElement.style.width = `${width}px`;
+      panelElement.style.minWidth = `${width}px`;
+      topBarElement?.style.setProperty(panelVariable, `${width}px`);
+      if (linkedFullscreenPanel) {
+        linkedFullscreenPanel.style.setProperty(
+          "--sidebar-width",
+          `${width}px`,
+        );
+      }
+      if (floatingCardElement) {
+        floatingCardElement.style.setProperty(
+          "--chat-float-region-left",
+          `${width + 20}px`,
+        );
+      }
+    };
+
+    // 收起/展开瞬间临时恢复样式表过渡，动画结束后回到无过渡跟手拖拽。
+    const playToggleTransition = (): void => {
+      panelElement.style.removeProperty("transition");
+      topBarElement?.style.removeProperty("transition");
+      if (transitionTimer !== null) {
+        window.clearTimeout(transitionTimer);
+      }
+      transitionTimer = window.setTimeout(() => {
+        transitionTimer = null;
+        panelElement.style.setProperty("transition", "none");
+        topBarElement?.style.setProperty("transition", "none");
+      }, PANEL_TOGGLE_TRANSITION_MS);
+    };
+
+    const setPanelCollapsed = (collapsed: boolean): void => {
+      panelCollapsed = collapsed;
+      playToggleTransition();
+      if (collapsed) {
+        panelElement.style.width = "0px";
+        panelElement.style.minWidth = "0px";
+        // 保留挂载的分隔条不能再占位：布局风格可能用 !important 负外边距
+        // 让它压住相邻面板，收起后会把主区拉出缝隙，这里强制清零。
+        for (const property of RESIZER_HOLD_PROPERTIES) {
+          resizerElement.style.setProperty(property, "0px", "important");
+        }
+        // 收起态交给 CSS 的 sidebar-collapsed 规则计算全屏/悬浮布局。
+        linkedFullscreenPanel?.style.removeProperty("--sidebar-width");
+        floatingCardElement?.style.removeProperty("--chat-float-region-left");
+        setCollapseHoldTarget(target);
+      } else {
+        for (const property of RESIZER_HOLD_PROPERTIES) {
+          resizerElement.style.removeProperty(property);
+        }
+      }
+      if (target === "sidebar") {
+        clearAutoCollapsed("sidebar");
+        setIsSidebarCollapsed(collapsed);
+      } else {
+        clearAutoCollapsed("rightPanel");
+        setIsRightPanelCollapsed(collapsed);
+      }
+    };
+
     const stopResize = (): void => {
       // 遮罩提示已出现且未回拉：松手进入右面板全屏。
       if (fullscreenArmed) {
@@ -1119,14 +1212,22 @@ export const App = (): React.JSX.Element => {
         window.clearTimeout(fullscreenTimer);
         fullscreenTimer = null;
       }
+      cancelCollapseTimer();
+      if (transitionTimer !== null) {
+        window.clearTimeout(transitionTimer);
+        transitionTimer = null;
+      }
       setIsRightPanelFullscreenPending(false);
+      setCollapseHoldTarget(null);
       document.body.classList.remove("is-panel-resizing");
       resizerElement.classList.remove("is-active");
-      shellElement.style.setProperty(panelVariable, `${latestWidth}px`);
+      // 收起结束时保留拖拽前宽度，下次展开恢复原尺寸。
+      const committedWidth = panelCollapsed ? startWidth : latestWidth;
+      shellElement.style.setProperty(panelVariable, `${committedWidth}px`);
       if (target === "sidebar") {
-        setSidebarWidth(latestWidth);
+        setSidebarWidth(committedWidth);
       } else {
-        setRightPanelWidth(latestWidth);
+        setRightPanelWidth(committedWidth);
       }
       for (const entry of overrideStack) {
         if (entry.previous === "" && entry.priority === "") {
@@ -1166,24 +1267,25 @@ export const App = (): React.JSX.Element => {
       } else {
         cancelFullscreenArm();
       }
+      // 拖窄越界：停留后收起；已收起时回拉进入展开阈值即恢复。
+      if (panelCollapsed) {
+        if (nextWidth <= minWidth - PANEL_EXPAND_OVERDRAG) {
+          return;
+        }
+        setPanelCollapsed(false);
+      } else if (nextWidth <= minWidth - PANEL_COLLAPSE_OVERDRAG) {
+        if (collapseTimer === null) {
+          collapseTimer = window.setTimeout(() => {
+            collapseTimer = null;
+            setPanelCollapsed(true);
+          }, PANEL_COLLAPSE_DWELL_MS);
+        }
+      } else {
+        cancelCollapseTimer();
+      }
       const clampedWidth = Math.round(clamp(nextWidth, minWidth, maxWidth));
       latestWidth = clampedWidth;
-
-      panelElement.style.width = `${clampedWidth}px`;
-      panelElement.style.minWidth = `${clampedWidth}px`;
-      topBarElement?.style.setProperty(panelVariable, `${clampedWidth}px`);
-      if (linkedFullscreenPanel) {
-        linkedFullscreenPanel.style.setProperty(
-          "--sidebar-width",
-          `${clampedWidth}px`,
-        );
-      }
-      if (floatingCardElement) {
-        floatingCardElement.style.setProperty(
-          "--chat-float-region-left",
-          `${clampedWidth + 20}px`,
-        );
-      }
+      applyPanelWidth(clampedWidth);
     };
 
     document.addEventListener("pointermove", handlePointerMove);
@@ -1263,7 +1365,7 @@ export const App = (): React.JSX.Element => {
               onOpenTerminal={handleOpenTerminal}
               onOpenFile={handleOpenFile}
             />
-            {!isSidebarCollapsed && (
+            {(!isSidebarCollapsed || collapseHoldTarget === "sidebar") && (
               <div
                 className="panel-resizer sidebar-resizer layout-resizer"
                 role="separator"
@@ -1280,7 +1382,8 @@ export const App = (): React.JSX.Element => {
               onActiveDirectoryChange={handleActiveDirectoryChange}
               onSelectView={setActiveMainView}
             />
-            {!isRightPanelCollapsed && (
+            {(!isRightPanelCollapsed ||
+              collapseHoldTarget === "right-panel") && (
               <div
                 className="panel-resizer right-panel-resizer layout-resizer"
                 role="separator"

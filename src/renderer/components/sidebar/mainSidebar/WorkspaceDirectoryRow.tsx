@@ -183,7 +183,11 @@ export function WorkspaceDirectoryRow({
     event: DragEvent<HTMLDivElement>,
     directoryId: string,
   ): void => {
-    if (isActionLocked || draggedDirectoryId === directoryId) {
+    if (
+      isActionLocked ||
+      !draggedDirectoryId ||
+      draggedDirectoryId === directoryId
+    ) {
       return;
     }
     event.preventDefault();

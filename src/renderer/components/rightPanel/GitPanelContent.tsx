@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, MoveVertical } from "lucide-react";
 
 import { useI18n } from "../../i18n";
-import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
+import type { GitFileStatus, GitStatusResult } from "./git";
 import { GitControl, GitGraph, useGitRepos } from "./git";
+import { openGitFileDiff } from "./git/openGitFileDiff";
 import type { OpenDiffTabCallback } from "./types";
 import type { RightPanelContentProps } from "./types";
 
@@ -79,21 +80,7 @@ export function GitPanelContent({
       // 双击来源优先：变更区 -> 工作区 diff；暂存区 -> `--cached` diff。
       // 同一文件同时存在于两个区域时，indexStatus 无法区分双击位置，
       // 必须以 section 为准。
-      const isStaged = section === "staged";
-      onOpenInTab(file, null, true);
-      window.snow
-        .gitFileDiff(repoPath, file.path, isStaged)
-        .then((result) => onOpenInTab(file, result, false))
-        .catch((err: unknown) => {
-          // 请求失败（IPC/napi 抛错）时给出可见的错误提示，而不是静默
-          // 退化成「没有可显示的变更」。
-          const failure: GitDiffResult = {
-            content: "",
-            isBinary: false,
-            error: err instanceof Error ? err.message : String(err),
-          };
-          onOpenInTab(file, failure, false);
-        });
+      openGitFileDiff(repoPath, file, section === "staged", onOpenInTab);
     },
     [repoPath, onOpenInTab],
   );

@@ -17,6 +17,10 @@ import type {
 } from "../../../../preload";
 import { SidebarCollapse } from "./SidebarCollapse";
 import { buildDirectoryDisplayNames } from "./directoryDisplayName";
+import {
+  isProjectCollectionDrag,
+  PROJECT_COLLECTION_DRAG_TYPE,
+} from "./projects/projectCollectionDrag";
 import { WorkspaceDirectoryRow } from "./WorkspaceDirectoryRow";
 
 type WorkspaceDirectoryListProps = {
@@ -26,6 +30,8 @@ type WorkspaceDirectoryListProps = {
   collections: ProjectCollectionRecord[];
   directoryListRef: RefObject<HTMLDivElement | null>;
   draggedDirectoryId: string | null;
+  /** 正在拖拽的合集 id（合集行之间的排序） */
+  draggedCollectionId: string | null;
   /** 当前拖拽悬停的合集 id（显示 add 光标） */
   dragOverCollectionId: string | null;
   dragOverDirectoryId: string | null;
@@ -42,6 +48,13 @@ type WorkspaceDirectoryListProps = {
   onAddProjectToCollection: (collection: ProjectCollectionRecord) => void;
   onCollectionDragOver: (collectionId: string) => void;
   onCollectionDrop: (collectionId: string, directoryId: string) => void;
+  /** 合集行开始拖拽（合集排序） */
+  onCollectionDragStart: (collectionId: string) => void;
+  /** 合集行之间的 drop：重排合集本身 */
+  onCollectionReorderDrop: (
+    collectionId: string,
+    dataTransfer: DataTransfer,
+  ) => void;
   /** 合集成员行之间的 drop：同合集=成员重排；跨合集/顶层=移动进该合集的指定位置 */
   onCollectionMemberDrop: (
     collectionId: string,
@@ -83,6 +96,7 @@ export function WorkspaceDirectoryList({
   collections,
   directoryListRef,
   draggedDirectoryId,
+  draggedCollectionId,
   dragOverCollectionId,
   dragOverDirectoryId,
   expandedCollectionIds,
@@ -95,6 +109,8 @@ export function WorkspaceDirectoryList({
   onAddProjectToCollection,
   onCollectionDragOver,
   onCollectionDrop,
+  onCollectionDragStart,
+  onCollectionReorderDrop,
   onCollectionMemberDrop,
   onDelete,
   onDeleteCollection,
@@ -179,18 +195,54 @@ export function WorkspaceDirectoryList({
     setEditingValue("");
   };
 
-  // 拖拽到合集行 = 加入合集：显示 add（copy）光标，与项目行间的排序横线区分
+  // 拖拽到合集行：项目 = 加入合集（copy）；合集 = 合集之间的排序（move），
+  // 两者靠 DataTransfer 区分，避免把合集拖拽当成成员收纳。
+  const isCollectionDragActive = (dataTransfer: DataTransfer): boolean =>
+    Boolean(draggedCollectionId) || isProjectCollectionDrag(dataTransfer);
+
   const handleCollectionDragOver = (
     event: DragEvent<HTMLDivElement>,
     collectionId: string,
   ): void => {
-    if (isActionLocked || !draggedDirectoryId) {
+    if (isActionLocked) {
+      return;
+    }
+    if (isCollectionDragActive(event.dataTransfer)) {
+      if (draggedCollectionId === collectionId) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      onCollectionDragOver(collectionId);
+      return;
+    }
+    if (!draggedDirectoryId) {
       return;
     }
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     onCollectionDragOver(collectionId);
   };
+
+  // 合集排序插入指示线：向下拖（源在前）显示目标行底部横线，向上拖显示顶部
+  const collectionDropIndicatorSide = useMemo(() => {
+    if (!draggedCollectionId || !dragOverCollectionId) {
+      return null;
+    }
+    if (draggedCollectionId === dragOverCollectionId) {
+      return null;
+    }
+    const sourceIndex = collections.findIndex(
+      (collection) => collection.collectionId === draggedCollectionId,
+    );
+    const targetIndex = collections.findIndex(
+      (collection) => collection.collectionId === dragOverCollectionId,
+    );
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return null;
+    }
+    return sourceIndex < targetIndex ? "bottom" : "top";
+  }, [collections, draggedCollectionId, dragOverCollectionId]);
 
   // 拖拽排序插入位置：与 handleDirectoryDrop 的语义保持一致——向上拖
   // （源在目标下方）插到目标行之前 → 顶部横线；向下拖插到目标行之后 → 底部横线。
@@ -254,6 +306,10 @@ export function WorkspaceDirectoryList({
     collectionId: string,
   ): void => {
     event.preventDefault();
+    if (isCollectionDragActive(event.dataTransfer)) {
+      onCollectionReorderDrop(collectionId, event.dataTransfer);
+      return;
+    }
     // React 状态可能未及时同步：优先用 state，缺失时从 dataTransfer 兜底
     const draggedId =
       draggedDirectoryId || event.dataTransfer.getData("text/plain") || null;
@@ -413,6 +469,9 @@ export function WorkspaceDirectoryList({
               );
               const isDragOver =
                 dragOverCollectionId === collection.collectionId;
+              // 合集拖拽悬停：显示插入横线，不显示「加入合集」的整行高亮
+              const isCollectionDragHover =
+                Boolean(draggedCollectionId) && isDragOver;
               return (
                 <div
                   className={`project-collection-group${
@@ -422,8 +481,13 @@ export function WorkspaceDirectoryList({
                 >
                   <div
                     className={`project-collection-row${
-                      isDragOver ? " drag-over" : ""
+                      isDragOver && !isCollectionDragHover ? " drag-over" : ""
+                    }${
+                      draggedCollectionId === collection.collectionId
+                        ? " dragging"
+                        : ""
                     }`}
+                    draggable={!isActionLocked}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       setCollectionMenuAnchor({
@@ -432,9 +496,18 @@ export function WorkspaceDirectoryList({
                         y: event.clientY,
                       });
                     }}
+                    onDragEnd={onDragEnd}
                     onDragOver={(event) =>
                       handleCollectionDragOver(event, collection.collectionId)
                     }
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData(
+                        PROJECT_COLLECTION_DRAG_TYPE,
+                        collection.collectionId,
+                      );
+                      onCollectionDragStart(collection.collectionId);
+                    }}
                     onDrop={(event) =>
                       handleCollectionDrop(event, collection.collectionId)
                     }
@@ -507,6 +580,12 @@ export function WorkspaceDirectoryList({
                         <Trash2 size={12} />
                       </button>
                     </span>
+                    {isCollectionDragHover && collectionDropIndicatorSide ? (
+                      <span
+                        aria-hidden="true"
+                        className={`workspace-directory-drop-line ${collectionDropIndicatorSide}`}
+                      />
+                    ) : null}
                   </div>
                   <SidebarCollapse open={isExpanded}>
                     {renderCollectionMembers(collection)}

@@ -16,6 +16,10 @@ import { useI18n } from "../../../../i18n";
 import { ContextMenu } from "../../../common/ContextMenu";
 import { Tooltip } from "../../../common/Tooltip";
 import { SidebarCollapse } from "../SidebarCollapse";
+import {
+  isProjectCollectionDrag,
+  PROJECT_COLLECTION_DRAG_TYPE,
+} from "../projects/projectCollectionDrag";
 import type { DirectoryDragDropController } from "../projects/useDirectoryDragDrop";
 import { TreeProjectNode } from "./TreeProjectNode";
 
@@ -29,6 +33,8 @@ type TreeCollectionNodeProps = {
   notificationCountByDirectory: Record<string, number>;
   isExpanded: boolean;
   isActionLocked: boolean;
+  /** 合集行排序插入指示线（top=插到该合集之前） */
+  dropIndicatorSide: "top" | "bottom" | null;
   expandedDirectoryIds: Set<string>;
   dragAndDrop: DirectoryDragDropController;
   sectionListRef: RefObject<HTMLDivElement | null>;
@@ -60,6 +66,7 @@ export function TreeCollectionNode({
   notificationCountByDirectory,
   isExpanded,
   isActionLocked,
+  dropIndicatorSide,
   expandedDirectoryIds,
   dragAndDrop,
   sectionListRef,
@@ -91,11 +98,32 @@ export function TreeCollectionNode({
 
   const isDragOver =
     dragAndDrop.dragOverCollectionId === collection.collectionId;
+  const isDragging =
+    dragAndDrop.draggedCollectionId === collection.collectionId;
+  // 合集拖拽悬停：显示插入横线，不显示「加入合集」的整行高亮
+  const isCollectionDragHover =
+    Boolean(dragAndDrop.draggedCollectionId) && isDragOver;
+
+  const isCollectionDragActive = (dataTransfer: DataTransfer): boolean =>
+    Boolean(dragAndDrop.draggedCollectionId) ||
+    isProjectCollectionDrag(dataTransfer);
 
   const handleCollectionDragOver = (
     event: React.DragEvent<HTMLDivElement>,
   ): void => {
-    if (isActionLocked || !dragAndDrop.draggedDirectoryId) {
+    if (isActionLocked) {
+      return;
+    }
+    if (isCollectionDragActive(event.dataTransfer)) {
+      if (dragAndDrop.draggedCollectionId === collection.collectionId) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      dragAndDrop.handleCollectionDragOver(collection.collectionId);
+      return;
+    }
+    if (!dragAndDrop.draggedDirectoryId) {
       return;
     }
     event.preventDefault();
@@ -103,10 +131,28 @@ export function TreeCollectionNode({
     dragAndDrop.handleCollectionDragOver(collection.collectionId);
   };
 
+  const handleCollectionDragStart = (
+    event: React.DragEvent<HTMLDivElement>,
+  ): void => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(
+      PROJECT_COLLECTION_DRAG_TYPE,
+      collection.collectionId,
+    );
+    dragAndDrop.handleCollectionDragStart(collection.collectionId);
+  };
+
   const handleCollectionDrop = (
     event: React.DragEvent<HTMLDivElement>,
   ): void => {
     event.preventDefault();
+    if (isCollectionDragActive(event.dataTransfer)) {
+      dragAndDrop.handleCollectionReorderDrop(
+        collection.collectionId,
+        event.dataTransfer,
+      );
+      return;
+    }
     const draggedId =
       dragAndDrop.draggedDirectoryId ||
       event.dataTransfer.getData("text/plain") ||
@@ -141,7 +187,10 @@ export function TreeCollectionNode({
   return (
     <div className={`tree-collection-node${isExpanded ? " expanded" : ""}`}>
       <div
-        className={`project-collection-row${isDragOver ? " drag-over" : ""}`}
+        className={`project-collection-row${
+          isDragOver && !isCollectionDragHover ? " drag-over" : ""
+        }${isDragging ? " dragging" : ""}`}
+        draggable={!isActionLocked}
         onContextMenu={(event) => {
           event.preventDefault();
           setCollectionMenuAnchor({
@@ -149,7 +198,9 @@ export function TreeCollectionNode({
             y: event.clientY,
           });
         }}
+        onDragEnd={dragAndDrop.handleDirectoryDragEnd}
         onDragOver={handleCollectionDragOver}
+        onDragStart={handleCollectionDragStart}
         onDrop={handleCollectionDrop}
       >
         <button
@@ -221,6 +272,12 @@ export function TreeCollectionNode({
             </button>
           </Tooltip>
         </span>
+        {isCollectionDragHover && dropIndicatorSide ? (
+          <span
+            aria-hidden="true"
+            className={`workspace-directory-drop-line ${dropIndicatorSide}`}
+          />
+        ) : null}
       </div>
       <SidebarCollapse open={isExpanded}>
         {hasRenderedMembers ? (

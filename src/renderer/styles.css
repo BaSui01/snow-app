@@ -3158,6 +3158,11 @@ body.is-panel-resizing * {
   background: var(--bg-hover);
 }
 
+/* 拖拽中的合集行：半透明提示（与项目行排序一致） */
+.project-collection-row.dragging {
+  opacity: 0.55;
+}
+
 /* 拖拽悬停：整行 add 高亮 + add 光标（copy），区别于项目行间的排序横线 */
 .project-collection-row.drag-over {
   background: var(--bg-hover);
@@ -14672,6 +14677,8 @@ body.is-panel-resizing * {
 }
 
 .tcg-time {
+  display: inline-flex;
+  align-items: center;
   margin-left: 6px;
 }
 
@@ -26912,6 +26919,99 @@ body.is-panel-resizing * {
   margin-left: 0;
 }
 
+/* 「更多」行容器：按钮为主点击区，数值徽章绝对定位叠在右侧（避开箭头），
+   悬停整行才淡入，徽章各自可点击直达对应面板 */
+.sidebar-more-row {
+  position: relative;
+  width: 100%;
+}
+
+.sidebar-more-row:hover .sidebar-more-btn {
+  background: var(--bg-hover);
+}
+
+.sidebar-more-summary {
+  position: absolute;
+  top: 50%;
+  right: 30px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 56px);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.sidebar-more-row:hover .sidebar-more-summary,
+.sidebar-more-row:focus-within .sidebar-more-summary {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-more-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.sidebar-more-badge:hover {
+  filter: brightness(0.94);
+}
+
+.sidebar-more-badge:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.sidebar-more-badge.is-pending {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.sidebar-more-badge.is-tasks {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.sidebar-more-badge.is-plugins {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+/* 插件更新箭头：同为可点击入口，点击进入插件页 */
+.sidebar-more-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent-blue);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-more-icon-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
 .scheduled-tasks-panel-layout {
   display: grid;
   /* 列宽：左栏（可拖拽）/ 中轴拖拽条 / 内容区 */
@@ -36829,6 +36929,59 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .branch-dropdown-content-scroll {
   max-height: 340px;
   overflow-y: auto;
+}
+
+/* 右面板收起时的「分支 / 变更」双列 Tab */
+.branch-dropdown-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.branch-dropdown-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.branch-dropdown-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.branch-dropdown-tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+}
+
+/* 变更 Tab 内嵌 GitControl，需要确定高度供其内部滚动 */
+.branch-dropdown.is-changes-tab {
+  width: min(440px, calc(100vw - 24px));
+}
+
+.branch-dropdown-git-pane {
+  display: flex;
+  flex-direction: column;
+  height: min(520px, calc(100vh - 120px));
+  min-height: 0;
+  padding: 8px 4px;
 }
 
 .branch-dropdown-loading {

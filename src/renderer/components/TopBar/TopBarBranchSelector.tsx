@@ -11,6 +11,8 @@ type TopBarBranchSelectorProps = {
   fallbackName?: string;
   /** 在指定路径打开终端。 */
   onOpenTerminal?: (cwd: string) => void;
+  /** 右面板收起时为 true：下拉层附带「变更」Tab */
+  showChangesTab?: boolean;
 };
 
 export const TopBarBranchSelector = ({
@@ -18,6 +20,7 @@ export const TopBarBranchSelector = ({
   directoryId,
   fallbackName,
   onOpenTerminal,
+  showChangesTab,
 }: TopBarBranchSelectorProps): React.JSX.Element | null => {
   const { status, refresh } = useGitStatus(repoPath);
 
@@ -28,6 +31,8 @@ export const TopBarBranchSelector = ({
         currentBranch={status.currentBranch}
         directoryId={directoryId}
         onOpenTerminal={onOpenTerminal}
+        showChangesTab={showChangesTab}
+        changesCount={status.files.length}
         onBranchChanged={() => {
           void refresh();
         }}

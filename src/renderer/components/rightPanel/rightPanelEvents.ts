@@ -10,6 +10,8 @@
  * - 同一事件可有多个订阅者;事件触发时同步遍历调用。
  */
 
+import type { GitFileStatus } from "../../../preload";
+
 export type OpenFileDiffPreviewPayload = {
   /** 用于推断语法高亮语言的文件名,同时作为 tab 标题 */
   fileName: string;
@@ -89,6 +91,19 @@ export type OpenExplorerPayload = {
   directoryId: string;
 };
 
+/** 顶栏 Git 变更视图请求打开文件差异 */
+export type OpenGitDiffPayload = {
+  repoPath: string;
+  file: GitFileStatus;
+  staged: boolean;
+};
+
+/** 顶栏 Git 变更视图请求打开文件原文（路径可能是 ssh://） */
+export type OpenGitFilePayload = {
+  filePath: string;
+  fileName: string;
+};
+
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
@@ -99,6 +114,8 @@ type RightPanelEventMap = {
   "open-terminal-command": (payload: OpenTerminalCommandPayload) => void;
   "open-plugin-panel": (payload: OpenPluginPanelPayload) => void;
   "open-explorer": (payload: OpenExplorerPayload) => void;
+  "open-git-diff": (payload: OpenGitDiffPayload) => void;
+  "open-git-file": (payload: OpenGitFilePayload) => void;
   "request-expand": () => void;
 };
 
@@ -113,6 +130,8 @@ const listeners: {
   "open-terminal-command"?: Set<(payload: OpenTerminalCommandPayload) => void>;
   "open-plugin-panel"?: Set<(payload: OpenPluginPanelPayload) => void>;
   "open-explorer"?: Set<(payload: OpenExplorerPayload) => void>;
+  "open-git-diff"?: Set<(payload: OpenGitDiffPayload) => void>;
+  "open-git-file"?: Set<(payload: OpenGitFilePayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};
 

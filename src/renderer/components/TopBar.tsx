@@ -855,6 +855,7 @@ export const TopBar = ({
         repoPath={activeDirectory?.path ?? null}
         directoryId={activeDirectory?.directoryId}
         fallbackName={activeDirectory?.name}
+        showChangesTab={isRightPanelCollapsed && !isRightPanelFullscreen}
       />
     </div>
   );

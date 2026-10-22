@@ -72,7 +72,7 @@ pub fn create_project_collection(
                             collection_id,
                             trimmed,
                             color,
-                            0,
+                            existing_count as i32,
                         ],
                     )?;
 
@@ -381,26 +381,69 @@ fn ensure_workspace_directory_exists(
     Ok(())
 }
 
-/// 校验 ordered_member_ids：无重复，且集合恰好等于 expected（该合集应有的
-/// 完整成员集合）。要求调用方传入完整成员列表，避免部分更新造成成员丢失。
-fn ensure_ordered_members_match(
-    ordered_member_ids: &[String],
+/// 校验有序 id 列表：无重复，且集合恰好等于 expected（期望的完整 id 集合）。
+/// 要求调用方传入完整列表，避免部分更新造成条目丢失。
+fn ensure_ordered_ids_match(
+    ordered_ids: &[String],
     expected: &HashSet<&str>,
 ) -> rusqlite::Result<()> {
-    let mut seen: HashSet<&str> = HashSet::with_capacity(ordered_member_ids.len());
-    for member_id in ordered_member_ids {
-        if !seen.insert(member_id.as_str()) {
-            return Err(constraint_error(
-                "ordered member list contains duplicate ids",
-            ));
+    let mut seen: HashSet<&str> = HashSet::with_capacity(ordered_ids.len());
+    for id in ordered_ids {
+        if !seen.insert(id.as_str()) {
+            return Err(constraint_error("ordered id list contains duplicate ids"));
         }
     }
     if seen != *expected {
         return Err(constraint_error(
-            "ordered member list must contain exactly the collection members",
+            "ordered id list must contain exactly the existing ids",
         ));
     }
     Ok(())
+}
+
+/// 按给定顺序重排合集（同一事务中逐个更新 sort_order）。
+///
+/// ordered_collection_ids 必须与现有合集完整一致（仅顺序不同），否则报错。
+pub fn reorder_project_collections(
+    database_path: &Path,
+    ordered_collection_ids: &[String],
+) -> Result<()> {
+    database::with_write_lock(|| {
+        database::with_write_retry(
+            || {
+                database::open_connection(database_path).and_then(|mut connection| {
+                    let transaction = connection.transaction()?;
+
+                    let existing_collection_ids: Vec<String> = {
+                        let mut statement = transaction
+                            .prepare("SELECT collection_id FROM project_collections")?;
+                        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                        rows.collect::<rusqlite::Result<Vec<_>>>()?
+                    };
+                    let expected: HashSet<&str> = existing_collection_ids
+                        .iter()
+                        .map(|id| id.as_str())
+                        .collect();
+                    ensure_ordered_ids_match(ordered_collection_ids, &expected)?;
+
+                    for (index, collection_id) in ordered_collection_ids.iter().enumerate() {
+                        transaction.execute(
+                            "UPDATE project_collections
+                                SET sort_order = ?1
+                              WHERE collection_id = ?2",
+                            params![index as i32, collection_id],
+                        )?;
+                    }
+
+                    transaction.commit()
+                })
+            },
+            "reorder project collections",
+        )
+    })
+    .map_err(|error| {
+        database::database_error(database_path, "reorder project collections", error)
+    })
 }
 
 /// 按给定顺序重排合集内成员（同一事务中逐个更新 sort_order）。
@@ -425,7 +468,7 @@ query_collection_members(&transaction, collection_id, false)?;
                         .iter()
                         .map(|id| id.as_str())
                         .collect();
-                    ensure_ordered_members_match(ordered_member_ids, &expected)?;
+                    ensure_ordered_ids_match(ordered_member_ids, &expected)?;
 
                     for (index, directory_id) in ordered_member_ids.iter().enumerate() {
                         transaction.execute(
@@ -480,7 +523,7 @@ query_collection_members(&transaction, target_collection_id, false)?;
                         .map(|id| id.as_str())
                         .collect();
                     expected.insert(directory_id);
-                    ensure_ordered_members_match(ordered_member_ids, &expected)?;
+                    ensure_ordered_ids_match(ordered_member_ids, &expected)?;
 
                     // 受影响的其它合集 updated_at 提前刷新（删除成员后就找不到它们了）
                     transaction.execute(

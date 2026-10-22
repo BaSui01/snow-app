@@ -6,6 +6,7 @@ import type {
 } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
 import { toPersistableDirectoryInput } from "./directoryInputs";
+import { PROJECT_COLLECTION_DRAG_TYPE } from "./projectCollectionDrag";
 
 type UseDirectoryDragDropOptions = {
   workspaceDirectories: WorkspaceDirectoryRecord[];
@@ -40,9 +41,14 @@ export function useDirectoryDragDrop({
   const [dragOverCollectionId, setDragOverCollectionId] = useState<
     string | null
   >(null);
+  // 正在拖拽的合集 id（合集行之间的排序拖拽，与项目拖拽互斥）
+  const [draggedCollectionId, setDraggedCollectionId] = useState<string | null>(
+    null,
+  );
 
   const handleDirectoryDragStart = (directoryId: string): void => {
     setDraggedDirectoryId(directoryId);
+    setDraggedCollectionId(null);
     setDragOverDirectoryId(null);
     setDragOverCollectionId(null);
   };
@@ -55,6 +61,7 @@ export function useDirectoryDragDrop({
 
   const handleDirectoryDragEnd = (): void => {
     setDraggedDirectoryId(null);
+    setDraggedCollectionId(null);
     setDragOverDirectoryId(null);
     setDragOverCollectionId(null);
   };
@@ -210,6 +217,70 @@ export function useDirectoryDragDrop({
     })();
   };
 
+  // 合集行开始拖拽：只携带合集 id（不写 text/plain，避免被项目 drop 误识别）
+  const handleCollectionDragStart = (collectionId: string): void => {
+    setDraggedCollectionId(collectionId);
+    setDraggedDirectoryId(null);
+    setDragOverDirectoryId(null);
+    setDragOverCollectionId(null);
+  };
+
+  // 合集行之间的 drop：重排合集本身（与合集内成员排序互不影响）
+  const handleCollectionReorderDrop = (
+    targetCollectionId: string,
+    dataTransfer?: DataTransfer,
+  ): void => {
+    const sourceId =
+      draggedCollectionId ??
+      dataTransfer?.getData(PROJECT_COLLECTION_DRAG_TYPE) ??
+      null;
+    if (!sourceId || sourceId === targetCollectionId) {
+      handleDirectoryDragEnd();
+      return;
+    }
+
+    const sourceIndex = collections.findIndex(
+      (collection) => collection.collectionId === sourceId,
+    );
+    const targetIndex = collections.findIndex(
+      (collection) => collection.collectionId === targetCollectionId,
+    );
+    if (sourceIndex < 0 || targetIndex < 0) {
+      handleDirectoryDragEnd();
+      return;
+    }
+
+    const previousCollections = collections;
+    const nextCollections = [...collections];
+    const [movedCollection] = nextCollections.splice(sourceIndex, 1);
+    nextCollections.splice(targetIndex, 0, movedCollection);
+    handleDirectoryDragEnd();
+    // 先本地重排，落库失败时回滚
+    setCollections(nextCollections);
+
+    setIsSavingDirectory(true);
+    setDirectoryError(null);
+    void (async (): Promise<void> => {
+      try {
+        const persisted = await window.snow.reorderProjectCollections(
+          nextCollections.map((collection) => collection.collectionId),
+        );
+        setCollections(persisted);
+      } catch (error) {
+        setCollections(previousCollections);
+        setDirectoryError(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.reorderCollectionsError", {
+                defaultValue: "Failed to reorder collections",
+              }),
+        );
+      } finally {
+        setIsSavingDirectory(false);
+      }
+    })();
+  };
+
   // 合集成员行之间的 drop：源与目标同属一个合集 → 合集内成员重排；
   // 源为顶层项目或其它合集成员 → 移动到该合集的目标位置。
   const handleCollectionMemberDrop = (
@@ -285,6 +356,7 @@ export function useDirectoryDragDrop({
 
   return {
     draggedDirectoryId,
+    draggedCollectionId,
     dragOverDirectoryId,
     dragOverCollectionId,
     handleDirectoryDragStart,
@@ -294,6 +366,8 @@ export function useDirectoryDragDrop({
     handleDropOutside,
     handleCollectionDragOver,
     handleCollectionDrop,
+    handleCollectionDragStart,
+    handleCollectionReorderDrop,
     handleCollectionMemberDrop,
   };
 }

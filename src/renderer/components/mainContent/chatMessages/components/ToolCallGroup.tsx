@@ -44,7 +44,10 @@ export const ToolCallGroup = ({
         aria-expanded={isOpen}
       >
         <span className="tcg-label">{label}</span>
-        <MessageTimestamp timestamp={timestamp} className="tcg-time" />
+        {/* 自带一层容器，避免 Tooltip 的 wrapper 成为 toggle 的 flex 子项 */}
+        <span className="tcg-time">
+          <MessageTimestamp timestamp={timestamp} />
+        </span>
         {hasError ? (
           <CircleAlert
             size={12}

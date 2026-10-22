@@ -139,6 +139,15 @@ pub fn reorder_project_collection_members(
     )
 }
 
+/// 按给定顺序重排合集本身（侧边栏合集列表的拖拽排序）。
+pub fn reorder_project_collections(ordered_collection_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_collections::reorder_project_collections(
+        &database_path,
+        &ordered_collection_ids,
+    )
+}
+
 pub fn move_project_to_collection(
     target_collection_id: String,
     directory_id: String,

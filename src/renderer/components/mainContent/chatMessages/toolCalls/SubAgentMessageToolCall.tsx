@@ -16,6 +16,7 @@ type ParsedResult =
       messageId?: string;
       queuedAt?: number;
       recipientName: string;
+      recipientConversationId: string;
     }
   | { type: "error"; message: string }
   | { type: "empty" };
@@ -23,17 +24,43 @@ type ParsedResult =
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const parseArgs = (args: string): ParsedArgs | null => {
+/** 输入由下方正则限定为完整 JSON 字符/转义，未完成的转义不会进入解码。 */
+const decodeJsonString = (value: string): string =>
+  JSON.parse(`"${value}"`) as string;
+
+/**
+ * 解析 sub-agents-sendMessage 的参数。
+ * 流式输出期间 arguments 可能还是半截 JSON（message 里还可能含转义引号），
+ * 因此完整解析失败时用正则提前提取已经到达的字段，让卡片头部尽早有内容。
+ */
+const parseArgs = (raw: string | undefined): ParsedArgs | null => {
+  if (!raw || !raw.trim()) return null;
   try {
-    const parsed: unknown = JSON.parse(args);
+    const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return null;
     return {
       conversationId:
-        typeof parsed.conversationId === "string" ? parsed.conversationId : "",
+        typeof parsed.conversationId === "string"
+          ? parsed.conversationId.trim()
+          : "",
       message: typeof parsed.message === "string" ? parsed.message : "",
     };
   } catch {
-    return null;
+    // ID 必须完整闭合；正文可以只到达一部分。仅匹配完整转义，避免把
+    // 末尾的反斜杠、半截 \uXXXX 或字面量 \\n 错解码成其他内容。
+    const conversationMatch = raw.match(
+      /"conversationId"\s*:\s*"((?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*)"/,
+    );
+    const messageMatch = raw.match(
+      /"message"\s*:\s*"((?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*)/,
+    );
+    if (!conversationMatch && !messageMatch) return null;
+    return {
+      conversationId: conversationMatch
+        ? decodeJsonString(conversationMatch[1]).trim()
+        : "",
+      message: messageMatch ? decodeJsonString(messageMatch[1]) : "",
+    };
   }
 };
 
@@ -54,6 +81,10 @@ const parseResult = (result: string | undefined): ParsedResult => {
         typeof parsed.queuedAt === "number" ? parsed.queuedAt : undefined,
       recipientName:
         typeof recipient.agentName === "string" ? recipient.agentName : "",
+      recipientConversationId:
+        typeof recipient.conversationId === "string"
+          ? recipient.conversationId
+          : "",
     };
   } catch {
     return { type: "error", message: result };
@@ -72,6 +103,7 @@ export const SubAgentMessageToolCall = ({
   const {
     activeConversationId,
     subAgentSessionEvents,
+    sessions,
     handleSelectConversation,
   } = useChatConversationContext();
 
@@ -91,11 +123,17 @@ export const SubAgentMessageToolCall = ({
     (result.type === "queued" ? result.recipientName : "") ||
     targetEvent?.agentName ||
     targetId;
-  // 会话隔离：仅同一父会话下的队友可跳转
+  // 会话隔离：仅同一父会话下的队友可跳转。实时事件只存在于内存，重启后
+  // 目标会话仍可凭成功回执里的 recipient.conversationId 或已加载的历史
+  // 佐证——请求参数（可能还没发送成功）不参与导航判定。
+  const jumpTargetId =
+    (result.type === "queued" ? result.recipientConversationId : "") ||
+    (targetEvent ? targetId : "");
   const canJump =
-    !!targetEvent &&
-    !!senderEvent &&
-    targetEvent.parentConversationId === senderEvent.parentConversationId;
+    !!jumpTargetId &&
+    (targetEvent
+      ? targetEvent.parentConversationId === senderEvent?.parentConversationId
+      : sessions[jumpTargetId]?.isInitialHistoryLoaded === true);
 
   const status =
     result.type === "error" || toolCall.status === "error"
@@ -121,9 +159,11 @@ export const SubAgentMessageToolCall = ({
           {canJump ? (
             <button
               type="button"
-              className="tool-call-sub-agent-comms-party"
-              title={targetId}
-              onClick={() => void handleSelectConversation(targetId)}
+              className={`tool-call-sub-agent-comms-party ${
+                activeConversationId === jumpTargetId ? "active" : ""
+              }`}
+              title={jumpTargetId}
+              onClick={() => void handleSelectConversation(jumpTargetId)}
             >
               <Bot size={12} aria-hidden="true" />
               <span>{recipientName}</span>

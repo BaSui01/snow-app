@@ -1208,6 +1208,15 @@ export const en = {
     "Not re-confirmed by this report; showing the previously recorded status",
   "toolCall.subAgentContinue.name": "Continue sub-agent",
   "toolCall.subAgentContinue.message": "Message",
+  "toolCall.subAgentMessage.error.invalidArgs":
+    "The tool arguments are not valid JSON",
+  "toolCall.subAgentMessage.error.missingArgs":
+    "A recipient and message are required",
+  "toolCall.subAgentMessage.error.self": "Cannot send a message to yourself",
+  "toolCall.subAgentMessage.error.isolation":
+    "The target sub-agent does not exist or belongs to another conversation (session isolation: only teammates in the same session can communicate)",
+  "toolCall.subAgentMessage.error.notRunning":
+    "The target sub-agent is no longer running; messages can only be sent to active teammates",
   "toolCall.subAgentList.name": "Sub-agents",
   "toolCall.subAgentList.loading": "Listing sub-agents...",
   "toolCall.subAgentList.count": "{{count}} sub-agents",

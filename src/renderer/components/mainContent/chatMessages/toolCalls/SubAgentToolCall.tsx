@@ -192,6 +192,17 @@ const getToolSummary = (name: string, args: string): string => {
         return typeof parsed.action === "string" ? parsed.action : "";
       case "askUserQuestion":
         return typeof parsed.question === "string" ? parsed.question : "";
+      case "agents-sendMessage": {
+        const message =
+          typeof parsed.message === "string" ? parsed.message.trim() : "";
+        if (!message) {
+          return "";
+        }
+        const firstLine = message.split("\n")[0];
+        return firstLine.length > 80
+          ? `${firstLine.slice(0, 80)}...`
+          : firstLine;
+      }
       default:
         return "";
     }

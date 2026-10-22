@@ -16,6 +16,7 @@ import {
   Plug,
   ScanSearch,
   Search,
+  Send,
   Sparkles,
   Terminal,
   Workflow,
@@ -35,6 +36,7 @@ export type ToolCategory =
   | "todo"
   | "interaction"
   | "agent"
+  | "message"
   | "workflow"
   | "lens"
   | "image"
@@ -57,6 +59,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   todo: ListChecks,
   interaction: MessageCircleQuestion,
   agent: Bot,
+  message: Send,
   workflow: Workflow,
   lens: ScanSearch,
   image: ImageIcon,
@@ -83,6 +86,7 @@ const getToolIcon = (category: ToolCategory): LucideIcon =>
  *   "terminal-execute"             -> "terminal"
  *   "websearch-search"             -> "web"
  *   "skills-skill-execute"         -> "skill"
+ *   "sub-agents-sendMessage"       -> "message"
  */
 export const getToolCategory = (toolName: string): ToolCategory => {
   const lower = toolName.toLowerCase();
@@ -91,6 +95,13 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   }
   if (lower.includes("skill")) {
     return "skill";
+  }
+  if (
+    lower.includes("sendmessage") ||
+    lower.includes("send-message") ||
+    lower.includes("message-")
+  ) {
+    return "message";
   }
   if (
     lower.includes("sub-agent") ||

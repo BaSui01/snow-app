@@ -1158,14 +1158,11 @@
 }
 
 :root[data-theme-preset="google"] .pending-message-send-now {
-  background: var(--google-blue);
-  color: var(--google-on-primary);
-  box-shadow: 0 1px 3px rgba(11, 87, 208, 0.24);
+  color: var(--google-blue);
 }
 
 :root[data-theme-preset="google"] .pending-message-send-now:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--google-blue) 88%, #000000);
+  background: color-mix(in srgb, var(--google-blue) 12%, transparent);
 }
 
 :root[data-theme-preset="google"] .pending-message-withdraw:hover {

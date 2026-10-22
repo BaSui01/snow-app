@@ -1373,6 +1373,9 @@ export const useChatConversation = (
     pendingMessageModes: (
       pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ?? []
     ).map((item) => item.options.deliveryMode ?? "queue"),
+    pendingMessageSources: (
+      pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ?? []
+    ).map((item) => item.source),
     withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
     sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
     compactConversation: compactionApi.compactConversation,

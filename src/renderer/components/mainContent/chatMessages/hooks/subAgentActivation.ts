@@ -18,6 +18,10 @@ import {
   takeNextQueuedMessage,
   takePendingSteering,
 } from "../utils/pendingInputs";
+import {
+  createSubAgentMessageId,
+  registerSubAgentMessage,
+} from "./subAgentMessageStatus";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import type {
   ChatConversationRecord,
@@ -382,13 +386,20 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         });
       }
 
-      // 消息自带发送方标识，目标子代理收到后可知来源。
-      const queuedText = `[来自子代理 ${senderAgentName} (${senderConvId})]\n${message}`;
+      // 来源结构化存放，投递时再拼接发送方标识（见 composePendingDeliveryText）。
+      const messageId = createSubAgentMessageId();
+      const queuedAt = registerSubAgentMessage(messageId);
       const queue = ctx.pendingQueueRef.current.get(targetConvId) ?? [];
       queue.push({
-        text: queuedText,
+        text: message,
         options: { deliveryMode: "steer" },
         steeringRunId: ctx.sessionsRefData.current.get(targetConvId)?.runId,
+        source: {
+          kind: "teammate",
+          agentName: senderAgentName,
+          conversationId: senderConvId,
+          messageId,
+        },
       });
       ctx.pendingQueueRef.current.set(targetConvId, queue);
       // 目标会话若正处于激活状态，让 Pending 消息气泡实时可见。
@@ -399,6 +410,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       return JSON.stringify({
         success: true,
         queued: true,
+        messageId,
+        queuedAt,
         recipient: {
           conversationId: targetConvId,
           agentName: targetEvent.agentName,
@@ -1737,12 +1750,20 @@ const createSubAgentResume = (
     }
     // 运行中：消息进入 Pending 队列，目标回合结束时自动切入。
     if (resumeRef.isSending && !resumeRef.subAgentTerminated) {
+      const messageId = createSubAgentMessageId();
+      const queuedAt = registerSubAgentMessage(messageId);
       const queue = ctx.pendingQueueRef.current.get(subConvId) ?? [];
       queue.push(
-        ...messages.map((m) => ({
+        ...messages.map((m, index) => ({
           text: m.content,
           options: { deliveryMode: "steer" as const },
           steeringRunId: resumeRef.runId,
+          // 多条消息共用一条通信记录，首条送达即回写
+          source: {
+            kind: "parent" as const,
+            conversationId: parentConversationId,
+            ...(index === 0 ? { messageId } : {}),
+          },
         })),
       );
       ctx.pendingQueueRef.current.set(subConvId, queue);
@@ -1752,6 +1773,8 @@ const createSubAgentResume = (
       return JSON.stringify({
         success: true,
         queued: true,
+        messageId,
+        queuedAt,
         acceptance: peekSubAgentAcceptanceSnapshot(subConvId),
         note: "The target sub-agent is still running; the message was queued as a Pending message and will be delivered at the end of its current round.",
       });

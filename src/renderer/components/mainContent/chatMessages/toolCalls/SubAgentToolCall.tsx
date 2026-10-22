@@ -28,6 +28,8 @@ import { parseSubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { HookExecutionUI } from "./HookExecutionUI";
+import { PromptPreview } from "../components/PromptPreview";
+import { SubAgentMessageDelivery } from "./SubAgentMessageDelivery";
 
 type SubAgentToolCallProps = {
   toolCall: ToolCallInfo;
@@ -54,7 +56,7 @@ type ParsedSubAgentResult =
       summary: string;
       acceptance: SubAgentAcceptanceSnapshot | null;
     }
-  | { type: "queued"; note: string }
+  | { type: "queued"; note: string; messageId?: string; queuedAt?: number }
   | {
       type: "error";
       message: string;
@@ -122,6 +124,10 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
       return {
         type: "queued",
         note: typeof parsed.note === "string" ? parsed.note : "",
+        messageId:
+          typeof parsed.messageId === "string" ? parsed.messageId : undefined,
+        queuedAt:
+          typeof parsed.queuedAt === "number" ? parsed.queuedAt : undefined,
       };
     }
 
@@ -144,13 +150,6 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
     return { type: "raw", text: result };
   }
 };
-
-const PROMPT_PREVIEW_MAX = 120;
-
-const getPromptPreview = (prompt: string): string =>
-  prompt.length > PROMPT_PREVIEW_MAX
-    ? `${prompt.slice(0, PROMPT_PREVIEW_MAX)}...`
-    : prompt;
 
 const SUMMARY_PREVIEW_MAX = 80;
 
@@ -414,10 +413,10 @@ export const SubAgentToolCall = ({
       : (matchedEvent?.summary ?? "");
   const headSummaryPreview = getSummaryPreview(headSummary);
 
-  const promptPreview = parsedArgs
-    ? getPromptPreview(
-        parsedArgs.mode === "continue" ? parsedArgs.message : parsedArgs.prompt,
-      )
+  const promptText = parsedArgs
+    ? parsedArgs.mode === "continue"
+      ? parsedArgs.message
+      : parsedArgs.prompt
     : "";
 
   const displayAgentName =
@@ -547,17 +546,15 @@ export const SubAgentToolCall = ({
         </div>
 
         {/* Prompt / message preview */}
-        {promptPreview ? (
-          <div className="tool-call-sub-agent-prompt">
-            <span className="tool-call-sub-agent-prompt-label">
-              {parsedArgs?.mode === "continue"
+        {promptText ? (
+          <PromptPreview
+            text={promptText}
+            label={
+              parsedArgs?.mode === "continue"
                 ? t("toolCall.subAgentContinue.message")
-                : t("toolCall.subAgent.prompt")}
-            </span>
-            <pre className="tool-call-sub-agent-prompt-value">
-              {promptPreview}
-            </pre>
-          </div>
+                : t("toolCall.subAgent.prompt")
+            }
+          />
         ) : null}
 
         {/* Live tool activity list */}
@@ -671,10 +668,10 @@ export const SubAgentToolCall = ({
 
         {/* Queued notice (continue 目标仍在运行：消息已进入 Pending 队列） */}
         {parsedResult.type === "queued" ? (
-          <div className="tool-call-sub-agent-queued">
-            <CheckCircle2 size={12} aria-hidden="true" />
-            <span>{t("toolCall.subAgent.queued")}</span>
-          </div>
+          <SubAgentMessageDelivery
+            messageId={parsedResult.messageId}
+            queuedAt={parsedResult.queuedAt}
+          />
         ) : null}
 
         {/* Summary on success */}

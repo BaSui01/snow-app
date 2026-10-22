@@ -462,13 +462,11 @@
 }
 
 :root[data-theme-preset="notion"] .pending-message-send-now {
-  background: var(--nt-charcoal);
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 :root[data-theme-preset="notion"] .pending-message-send-now:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--nt-charcoal) 88%, #000000);
+  background: var(--surface-hover);
 }
 
 :root[data-theme-preset="notion"] .pending-message-withdraw:hover {

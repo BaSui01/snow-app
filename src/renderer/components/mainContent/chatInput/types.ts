@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 import type { MainContentView } from "../types";
+import type { PendingQueueSource } from "../chatMessages/utils/conversationTypes";
 
 export type ConversationInputRuntimeState = {
   model: string;
@@ -111,6 +112,9 @@ export type ChatInputProps = {
   loadOlderMessages: () => Promise<void>;
   pendingMessages?: string[];
   pendingMessageModes?: ("queue" | "steer")[];
+  pendingMessageSources?: (PendingQueueSource | undefined)[];
+  /** 点击排队项来源 chip 跳转对应会话（调用方负责会话隔离校验） */
+  onOpenPendingSource?: (conversationId: string) => void;
   onWithdrawPendingMessage?: (index: number) => string | null;
   onSendPendingMessageNow?: (index: number) => void;
   onCompactConversation?: (
@@ -265,6 +269,8 @@ export type ChatInputViewProps = ChatInputState &
     loadOlderMessages: () => Promise<void>;
     pendingMessages: string[];
     pendingMessageModes?: ("queue" | "steer")[];
+    pendingMessageSources?: (PendingQueueSource | undefined)[];
+    onOpenPendingSource?: (conversationId: string) => void;
     onWithdrawPendingMessage?: (index: number) => string | null;
     onSendPendingMessageNow?: (index: number) => void;
     onCompactConversation?: (

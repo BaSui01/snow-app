@@ -23,7 +23,11 @@ import {
   toNonBlockingRecord,
 } from "./hookOutcome";
 import { prefetchMarkdown } from "../components/markdownRenderer";
-import { demotePendingSteering } from "../utils/pendingInputs";
+import {
+  deliverPendingItem,
+  demotePendingSteering,
+} from "../utils/pendingInputs";
+import { settleSubAgentMessage } from "./subAgentMessageStatus";
 import { cancelSubAgentRunWaits } from "./subAgentRunControl";
 import { imageGenerationRuntime } from "./imageGenerationRuntime";
 import {
@@ -108,6 +112,7 @@ export const useConversationManagement = (
       if (queue.length === 0) {
         ctx.pendingQueueRef.current.delete(sessionKey);
       }
+      settleSubAgentMessage(removed?.source?.messageId, "withdrawn");
       // 显示镜像只反映当前激活会话的队列（会话隔离）：目标为后台会话时
       // 不更新镜像，等切回该会话时再从队列重载。激活基准同样经迁移映射
       // 解析（槽位迁移后 activeSessionKey 与队列 key 可能相差一层映射）。
@@ -1161,10 +1166,12 @@ export const useConversationManagement = (
 
       // Remove the target message (and its original send options) from
       // the pending queue.
-      const [removed] = queue.splice(index, 1);
+      const [taken] = queue.splice(index, 1);
       if (queue.length === 0) {
         ctx.pendingQueueRef.current.delete(sessionKey);
       }
+      // 立即发送即视为送达，正文按投递格式拼接来源
+      const removed = taken ? deliverPendingItem(taken) : undefined;
 
       if (!removed) {
         if (isActiveTarget) {

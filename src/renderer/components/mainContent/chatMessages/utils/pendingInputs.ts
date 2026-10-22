@@ -2,6 +2,28 @@ import type {
   ConversationContextValue,
   PendingQueueItem,
 } from "./conversationTypes";
+import { formatTeammateMessage } from "./teammateMessage";
+import { settleSubAgentMessage } from "../hooks/subAgentMessageStatus";
+
+/** 投递给模型的正文：队友来信在此拼接发送方标识。 */
+export const composePendingDeliveryText = (item: PendingQueueItem): string =>
+  item.source?.kind === "teammate" &&
+  item.source.agentName &&
+  item.source.conversationId
+    ? formatTeammateMessage(
+        item.source.agentName,
+        item.source.conversationId,
+        item.text,
+      )
+    : item.text;
+
+/** 消费出队条目：回写送达状态并返回投递正文。 */
+export const deliverPendingItem = (
+  item: PendingQueueItem,
+): PendingQueueItem => {
+  settleSubAgentMessage(item.source?.messageId, "delivered");
+  return { ...item, text: composePendingDeliveryText(item) };
+};
 
 /** Keep the visible queue scoped to its owning conversation. */
 export const refreshPendingMessages = (
@@ -60,7 +82,7 @@ export const takePendingSteering = (
   if (remaining.length) ctx.pendingQueueRef.current.set(sessionKey, remaining);
   else ctx.pendingQueueRef.current.delete(sessionKey);
   refreshPendingMessages(ctx, sessionKey);
-  return selected;
+  return selected.map(deliverPendingItem);
 };
 
 /** A complete run consumes one follow-up, preserving its own options and FIFO. */
@@ -72,7 +94,7 @@ export const takeNextQueuedMessage = (
   const item = queue?.shift();
   if (queue && !queue.length) ctx.pendingQueueRef.current.delete(sessionKey);
   refreshPendingMessages(ctx, sessionKey);
-  return item;
+  return item ? deliverPendingItem(item) : undefined;
 };
 
 /** Once a run stops, unconsumed steers remain withdrawable as ordinary tasks. */

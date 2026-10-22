@@ -516,14 +516,12 @@
 }
 
 :root[data-theme-preset="cyberpunk"] .pending-message-send-now {
-  background: var(--cp-neon-pink);
-  color: #ffffff;
+  color: var(--cp-neon-pink);
   clip-path: var(--cp-clip-sm);
 }
 
 :root[data-theme-preset="cyberpunk"] .pending-message-send-now:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--cp-neon-pink) 85%, #ffffff);
+  background: color-mix(in srgb, var(--cp-neon-pink) 16%, transparent);
 }
 
 :root[data-theme-preset="cyberpunk"] .pending-message-withdraw:hover {

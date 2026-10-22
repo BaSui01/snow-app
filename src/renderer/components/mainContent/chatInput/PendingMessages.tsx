@@ -1,12 +1,16 @@
 import {
   ArrowUp,
   BookOpen,
+  Bot,
+  BotMessageSquare,
+  Clock,
+  CornerDownRight,
   FileText,
   GitCommitHorizontal,
   GitCompare,
   Globe,
+  Inbox,
   Link2,
-  ListEnd,
   MessageSquareQuote,
   MessageSquareText,
   MousePointer2,
@@ -15,6 +19,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
+import type { PendingQueueSource } from "../chatMessages/utils/conversationTypes";
 import {
   extractUrlHost,
   formatAnnotationLabel,
@@ -29,6 +34,8 @@ import { getFileTypeIcon } from "../../../utils/fileIcons";
 type PendingMessagesProps = {
   messages: string[];
   modes?: ("queue" | "steer")[];
+  sources?: (PendingQueueSource | undefined)[];
+  onOpenSource?: (conversationId: string) => void;
   onWithdraw?: (index: number) => string | null;
   onSendNow?: (index: number) => void;
 };
@@ -343,6 +350,8 @@ const renderSegments = (content: string): React.ReactNode => {
 export const PendingMessages = ({
   messages,
   modes,
+  sources,
+  onOpenSource,
   onWithdraw,
   onSendNow,
 }: PendingMessagesProps): React.JSX.Element | null => {
@@ -369,6 +378,46 @@ export const PendingMessages = ({
     onSendNow(index);
   };
 
+  const renderSourceChip = (
+    source: PendingQueueSource | undefined,
+  ): React.ReactNode => {
+    if (!source || source.kind === "user") return null;
+    const isTeammate = source.kind === "teammate";
+    const name = isTeammate
+      ? source.agentName || t("chatInput.pendingSource.teammateFallback")
+      : t("chatInput.pendingSource.parentName");
+    const title = source.conversationId
+      ? t("chatInput.pendingSource.chipTitle", {
+          values: { id: source.conversationId },
+        })
+      : name;
+    const icon = isTeammate ? (
+      <Bot size={12} aria-hidden="true" />
+    ) : (
+      <BotMessageSquare size={12} aria-hidden="true" />
+    );
+    if (!source.conversationId || !onOpenSource) {
+      return (
+        <span className="pending-message-source" title={title}>
+          {icon}
+          <span className="pending-message-source-name">{name}</span>
+        </span>
+      );
+    }
+    const targetId = source.conversationId;
+    return (
+      <button
+        type="button"
+        className="pending-message-source is-clickable"
+        title={title}
+        onClick={() => onOpenSource(targetId)}
+      >
+        {icon}
+        <span className="pending-message-source-name">{name}</span>
+      </button>
+    );
+  };
+
   return (
     <div
       className="pending-messages-area"
@@ -377,41 +426,48 @@ export const PendingMessages = ({
       aria-label={t("chatInput.pendingLabel")}
     >
       <ul className="pending-messages-list">
-        {messages.map((msg, index) => (
-          <li key={index} className="pending-message-item">
-            <ListEnd size={14} className="pending-message-icon" />
-            <span className="pending-message-text">{renderSegments(msg)}</span>
-            <span className="pending-message-mode">
-              {t(
-                modes?.[index] === "steer"
-                  ? "chatInput.busySteer"
-                  : "chatInput.busyQueue",
+        {messages.map((msg, index) => {
+          const source = sources?.[index];
+          const kind = source?.kind ?? "user";
+          const isSteer = modes?.[index] === "steer";
+          const modeKey = `chatInput.pendingSource.${kind}${
+            isSteer ? "Steer" : "Queue"
+          }`;
+          const ItemIcon =
+            kind === "user" ? (isSteer ? CornerDownRight : Clock) : Inbox;
+          return (
+            <li key={index} className={`pending-message-item is-${kind}`}>
+              <ItemIcon size={14} className="pending-message-icon" />
+              {renderSourceChip(source)}
+              <span className="pending-message-text">
+                {renderSegments(msg)}
+              </span>
+              <span className="pending-message-mode">{t(modeKey)}</span>
+              {onSendNow && (
+                <button
+                  type="button"
+                  className="pending-message-send-now"
+                  onClick={() => handleSendNow(index)}
+                  aria-label={t("chatInput.interruptAndSend")}
+                  title={t("chatInput.interruptAndSend")}
+                >
+                  <ArrowUp size={12} strokeWidth={2.25} />
+                </button>
               )}
-            </span>
-            {onSendNow && (
-              <button
-                type="button"
-                className="pending-message-send-now"
-                onClick={() => handleSendNow(index)}
-                aria-label={t("chatInput.interruptAndSend")}
-                title={t("chatInput.interruptAndSend")}
-              >
-                <ArrowUp size={12} />
-              </button>
-            )}
-            {onWithdraw && (
-              <button
-                type="button"
-                className="pending-message-withdraw"
-                onClick={() => handleWithdraw(index)}
-                aria-label={t("chatInput.withdraw")}
-                title={t("chatInput.withdraw")}
-              >
-                <Undo2 size={12} />
-              </button>
-            )}
-          </li>
-        ))}
+              {onWithdraw && (
+                <button
+                  type="button"
+                  className="pending-message-withdraw"
+                  onClick={() => handleWithdraw(index)}
+                  aria-label={t("chatInput.withdraw")}
+                  title={t("chatInput.withdraw")}
+                >
+                  <Undo2 size={12} strokeWidth={2.25} />
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

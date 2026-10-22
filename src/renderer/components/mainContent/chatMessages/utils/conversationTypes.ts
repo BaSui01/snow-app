@@ -638,11 +638,22 @@ export type UserQuestionTarget = {
   assistantMessageId: string;
 };
 
+/** 排队消息来源；缺省视为用户本人。 */
+export type PendingQueueSource = {
+  kind: "user" | "teammate" | "parent";
+  agentName?: string;
+  conversationId?: string;
+  /** 通信记录 id，用于送达状态回写 */
+  messageId?: string;
+};
+
 export type PendingQueueItem = {
+  /** 真实消息正文（不含来源前缀，前缀在投递时拼接） */
   text: string;
   options: ChatInputSendOptions;
   /** A steer belongs to this generation, never to a later replacement run. */
   steeringRunId?: number;
+  source?: PendingQueueSource;
 };
 
 export type ConversationNotificationContext = {
@@ -1043,6 +1054,7 @@ export type UseChatConversationResult = {
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   pendingMessageModes?: ("queue" | "steer")[];
+  pendingMessageSources?: (PendingQueueSource | undefined)[];
   /** 撤回一条待发送消息。targetSessionKey 缺省为当前激活会话（桌面面板
    *  只操作激活会话）；远控等跨会话通道可指定“消息所属会话”，从该会话的
    *  队列移除（目标为后台会话时不更新显示镜像，切回时重载）。返回原文；

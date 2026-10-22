@@ -1486,13 +1486,13 @@
 }
 
 :root[data-theme-preset="compact"] .pending-message-send-now {
-  background: var(--compact-button-bg);
-  color: #ffffff;
+  color: var(--compact-button-bg);
 }
 
 :root[data-theme-preset="compact"]
   .pending-message-send-now:hover:not(:disabled):not([aria-disabled="true"]) {
-  background: var(--compact-button-hover);
+  background: color-mix(in srgb, var(--compact-button-bg) 14%, transparent);
+  color: var(--compact-button-hover);
 }
 
 :root[data-theme-preset="compact"] .pending-message-withdraw:hover {

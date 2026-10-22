@@ -12,6 +12,7 @@ export { GrepToolCall } from "./GrepToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
 export { SubAgentContinueToolCall } from "./SubAgentContinueToolCall";
 export { SubAgentListToolCall } from "./SubAgentListToolCall";
+export { SubAgentMessageToolCall } from "./SubAgentMessageToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
 export { LspToolCall } from "./LspToolCall";

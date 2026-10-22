@@ -17,6 +17,7 @@ import {
   SubAgentToolCall,
   SubAgentContinueToolCall,
   SubAgentListToolCall,
+  SubAgentMessageToolCall,
   CodebaseToolCall,
   CodeLensToolCall,
   LspToolCall,
@@ -141,6 +142,15 @@ const renderToolCall = ({
 
   if (toolCall.name === "sub-agents-listSubAgents") {
     return <SubAgentListToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "sub-agents-sendMessage") {
+    return (
+      <SubAgentMessageToolCall
+        toolCall={toolCall}
+        conversationId={conversationId}
+      />
+    );
   }
 
   if (toolCall.name === "codebase-search") {

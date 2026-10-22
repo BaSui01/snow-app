@@ -3,12 +3,14 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import {
   BookOpen,
+  Bot,
   ChevronDown,
   ChevronUp,
   FileText,
@@ -36,6 +38,8 @@ import {
 } from "../../chatInput/fileTagUtils";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { useI18n } from "../../../../i18n";
+import { parseTeammateMessage } from "../utils/teammateMessage";
+import { getPromptStats, renderPromptInline } from "./PromptPreview";
 
 const COLLAPSE_LINES = 6;
 
@@ -50,7 +54,20 @@ export const UserMessage = memo(
     hookExecutions,
   }: UserMessageProps): React.JSX.Element => {
     const { t } = useI18n();
-    const segments = parseContentSegments(content);
+    // 队友来信：前缀提升为来源 chip，正文只渲染真实消息
+    const teammate = useMemo(() => parseTeammateMessage(content), [content]);
+    const bodyContent = teammate ? teammate.body : content;
+    const segments = parseContentSegments(bodyContent);
+    // 规模只统计纯文本，避免编码标签（图片等）虚增字数
+    const stats = useMemo(
+      () =>
+        getPromptStats(
+          parseContentSegments(bodyContent)
+            .map((segment) => (segment.type === "text" ? segment.content : " "))
+            .join(""),
+        ),
+      [bodyContent],
+    );
     const [expanded, setExpanded] = useState(false);
     const [collapsible, setCollapsible] = useState(false);
     const pRef = useRef<HTMLParagraphElement>(null);
@@ -227,13 +244,32 @@ export const UserMessage = memo(
     return (
       <div className="user-message-row">
         <article className="user-message-bubble">
+          {teammate ? (
+            <span
+              className="user-message-source"
+              title={t("chatInput.pendingSource.chipTitle", {
+                values: { id: teammate.conversationId },
+              })}
+            >
+              <Bot size={12} aria-hidden="true" />
+              <span>
+                {t("chat.message.fromTeammate", {
+                  values: { name: teammate.agentName },
+                })}
+              </span>
+            </span>
+          ) : null}
           <p
             ref={pRef}
             className={collapsed ? "user-message-text-collapsed" : undefined}
           >
             {segments.map((segment, index) => {
               if (segment.type === "text") {
-                return <span key={index}>{segment.content}</span>;
+                return (
+                  <span key={index}>
+                    {renderPromptInline(segment.content, `${index}-`)}
+                  </span>
+                );
               }
 
               if (segment.type === "image") {
@@ -612,6 +648,11 @@ export const UserMessage = memo(
               {isExpanded
                 ? t("chat.message.collapse")
                 : t("chat.message.expand")}
+              <span className="user-message-toggle-stats">
+                {t("chat.promptPreview.stats", {
+                  values: { chars: stats.chars, lines: stats.lines },
+                })}
+              </span>
             </button>
           )}
         </article>

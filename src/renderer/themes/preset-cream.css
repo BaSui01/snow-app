@@ -467,13 +467,11 @@
 }
 
 :root[data-theme-preset="cream"] .pending-message-send-now {
-  background: var(--accent-orange);
-  color: #fffaf5;
+  color: var(--accent-orange);
 }
 
 :root[data-theme-preset="cream"] .pending-message-send-now:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--accent-orange) 88%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-orange) 14%, transparent);
 }
 
 :root[data-theme-preset="cream"] .pending-message-withdraw:hover {

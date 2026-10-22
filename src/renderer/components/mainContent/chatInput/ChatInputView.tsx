@@ -101,6 +101,8 @@ export const ChatInputView = ({
   loadOlderMessages,
   pendingMessages,
   pendingMessageModes,
+  pendingMessageSources,
+  onOpenPendingSource,
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
   onCompactConversation,
@@ -896,6 +898,8 @@ export const ChatInputView = ({
         <PendingMessages
           messages={pendingMessages}
           modes={pendingMessageModes}
+          sources={pendingMessageSources}
+          onOpenSource={onOpenPendingSource}
           onWithdraw={handleWithdrawPending}
           onSendNow={handleSendPendingNow}
         />

@@ -51937,7 +51937,8 @@ pre.file-viewer-code {
 .system-logs-stream-meta {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 6px;
 }
 
@@ -51979,11 +51980,170 @@ pre.file-viewer-code {
   background: var(--bg-hover);
 }
 
+/* 勾选 / 单条导出：行内选择与操作 */
+.system-logs-entry-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.system-logs-entry.selected {
+  background: var(--bg-hover);
+}
+
+.system-logs-entry-checkbox {
+  width: 13px;
+  height: 13px;
+  margin: 0 0 0 10px;
+  flex-shrink: 0;
+  accent-color: var(--accent-color, #4a9eff);
+  cursor: pointer;
+}
+
+.system-logs-entry-export {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  margin-right: 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition:
+    opacity 0.14s,
+    color 0.14s,
+    background 0.14s;
+}
+
+.system-logs-entry:hover .system-logs-entry-export,
+.system-logs-entry.expanded .system-logs-entry-export,
+.system-logs-entry-export:focus-visible {
+  opacity: 1;
+}
+
+.system-logs-entry-export:hover {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.system-logs-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.system-logs-select-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.system-logs-select-page input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent-color, #4a9eff);
+  cursor: pointer;
+}
+
+.system-logs-selected-count {
+  font-size: 11.5px;
+  color: var(--accent-color);
+}
+
+.system-logs-clear-selection {
+  padding: 1px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.system-logs-clear-selection:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* 导出对话框 */
+.system-logs-export-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.system-logs-export-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.system-logs-export-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.system-logs-export-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.system-logs-export-option {
+  padding: 5px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.14s,
+    border-color 0.14s,
+    color 0.14s;
+}
+
+.system-logs-export-option:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.system-logs-export-option.active {
+  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  color: var(--accent-color);
+}
+
+.system-logs-export-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.system-logs-export-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 .system-logs-entry-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 7px 10px;
   border: none;
   background: transparent;

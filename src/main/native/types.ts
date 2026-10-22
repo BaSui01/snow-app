@@ -313,6 +313,13 @@ export type AppLogPage = {
   total: number;
 };
 
+/** 导出文件片段：fileName 不含扩展名，由主进程补 .log / .json。 */
+export type AppLogExportFile = {
+  fileName: string;
+  content: string;
+  count: number;
+};
+
 export type PrivacyApiConfig = {
   url: string;
   apiKey: string;
@@ -3184,6 +3191,16 @@ export type NativeBridge = ImageGenerationNativeApi & {
   setAppLogsRetentionDays: (days: number) => Promise<void>;
   /** 按当前保留期清理过期系统日志，返回删除条数。 */
   pruneAppLogs: () => Promise<number>;
+  /** 导出系统日志内容（format: text | json；groupByDay 按日期拆分为多个文件片段）。 */
+  exportAppLogs: (
+    level: string,
+    module: string,
+    since: string,
+    until: string,
+    ids: string[],
+    format: string,
+    groupByDay: boolean,
+  ) => Promise<AppLogExportFile[]>;
   exportConversation: (
     conversationId: string,
     format: string,

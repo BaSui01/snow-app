@@ -1,4 +1,6 @@
-import { BrowserWindow, ipcMain, nativeTheme } from "electron";
+import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setFlagsFromString } from "node:v8";
 import type {
@@ -1641,4 +1643,95 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("logs:prune", () => native.pruneAppLogs());
+
+  // 导出系统日志：Rust 生成格式化内容，主进程负责保存对话框与写文件。
+  ipcMain.handle(
+    "logs:export",
+    async (
+      event,
+      level: unknown,
+      module: unknown,
+      since: unknown,
+      until: unknown,
+      ids: unknown,
+      format: unknown,
+      groupByDay: unknown,
+    ) => {
+      const levelStr = typeof level === "string" ? level.trim() : "";
+      const moduleStr = typeof module === "string" ? module.trim() : "";
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      const idList = Array.isArray(ids)
+        ? ids
+            .filter(
+              (item): item is string =>
+                typeof item === "string" && item.trim().length > 0,
+            )
+            .map((item) => item.trim())
+        : [];
+      const exportFormat = format === "json" ? "json" : "text";
+      const extension = exportFormat === "json" ? "json" : "log";
+      const fileLabel = exportFormat === "json" ? "JSON" : "Log";
+      const perDay = groupByDay === true;
+
+      const files = await native.exportAppLogs(
+        levelStr,
+        moduleStr,
+        sinceStr,
+        untilStr,
+        idList,
+        exportFormat,
+        perDay,
+      );
+      if (files.length === 0) {
+        return { canceled: false, files: [], count: 0 };
+      }
+
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const totalCount = files.reduce((sum, file) => sum + file.count, 0);
+
+      // 按天拆分：选择一个目录，每天写一个文件。
+      if (perDay) {
+        const options: Electron.OpenDialogOptions = {
+          title: "Export logs",
+          properties: ["openDirectory", "createDirectory"],
+        };
+        const result = browserWindow
+          ? await dialog.showOpenDialog(browserWindow, options)
+          : await dialog.showOpenDialog(options);
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true, files: [], count: 0 };
+        }
+
+        const directory = result.filePaths[0];
+        const written: string[] = [];
+        for (const file of files) {
+          const target = join(directory, `${file.fileName}.${extension}`);
+          await writeFile(target, file.content, "utf-8");
+          written.push(target);
+        }
+        return { canceled: false, files: written, count: totalCount };
+      }
+
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
+        2,
+        "0",
+      )}${String(now.getDate()).padStart(2, "0")}`;
+      const saveOptions: Electron.SaveDialogOptions = {
+        title: "Export logs",
+        defaultPath: `${files[0].fileName}-${stamp}.${extension}`,
+        filters: [{ name: fileLabel, extensions: [extension] }],
+      };
+      const result = browserWindow
+        ? await dialog.showSaveDialog(browserWindow, saveOptions)
+        : await dialog.showSaveDialog(saveOptions);
+      if (result.canceled || !result.filePath) {
+        return { canceled: true, files: [], count: 0 };
+      }
+
+      await writeFile(result.filePath, files[0].content, "utf-8");
+      return { canceled: false, files: [result.filePath], count: totalCount };
+    },
+  );
 };

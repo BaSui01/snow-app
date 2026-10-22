@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Timer,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -50,6 +51,11 @@ const formatCountdown = (ms: number): string => {
 };
 
 type LogLevelFilter = "" | "DEBUG" | "INFO" | "WARN" | "ERROR";
+
+/** 导出范围：当前筛选结果 / 按天拆分 / 已勾选条目。 */
+type LogExportScope = "filtered" | "perDay" | "selection";
+
+type LogExportFormat = "text" | "json";
 
 const LEVEL_FILTERS: LogLevelFilter[] = ["", "DEBUG", "INFO", "WARN", "ERROR"];
 
@@ -192,6 +198,13 @@ export function SystemLogsPanel(): React.JSX.Element {
   const [copiedRowLabel, setCopiedRowLabel] = useState<string | null>(null);
   const copyResetTimerRef = useRef<number | null>(null);
 
+  /** 勾选用于自定义选择的日志 id（随列表刷新清空）。 */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportScope, setExportScope] = useState<LogExportScope>("filtered");
+  const [exportFormat, setExportFormat] = useState<LogExportFormat>("text");
+  const [isExporting, setIsExporting] = useState(false);
+
   const [datePreset, setDatePreset] = useState<UsageDatePreset>("today");
   const [sinceDate, setSinceDate] = useState<string>(() =>
     formatDateForInput(getPresetRange("today", new Date()).since),
@@ -253,6 +266,7 @@ export function SystemLogsPanel(): React.JSX.Element {
         setOffset(pageOffset);
         setModules(moduleNames);
         setExpandedIds(new Set());
+        setSelectedIds(new Set());
       } catch (e) {
         setError(
           e instanceof Error
@@ -501,6 +515,108 @@ export function SystemLogsPanel(): React.JSX.Element {
     }, 2000);
   }, []);
 
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const allPageSelected =
+    records.length > 0 && records.every((record) => selectedIds.has(record.id));
+
+  // 全选 / 取消全选本页（选择会随翻页或刷新清空）。
+  const toggleSelectPage = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const everySelected = records.every((record) => next.has(record.id));
+      for (const record of records) {
+        if (everySelected) {
+          next.delete(record.id);
+        } else {
+          next.add(record.id);
+        }
+      }
+      return next;
+    });
+  }, [records]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const runExport = useCallback(
+    async (scope: LogExportScope, format: LogExportFormat, ids: string[]) => {
+      setIsExporting(true);
+      setError("");
+      try {
+        // 自定义选择优先按 id 导出，其余范围沿用当前筛选条件。
+        const useFilter = scope !== "selection";
+        const result = await window.snow.exportAppLogs(
+          useFilter ? levelFilter : "",
+          useFilter ? moduleFilter : "",
+          useFilter ? sinceDateTime : "",
+          useFilter ? untilDateTime : "",
+          ids,
+          format,
+          scope === "perDay",
+        );
+        if (result.canceled) return;
+        if (result.count === 0) {
+          setNotice(
+            t("settings.systemLogsExportEmpty", {
+              defaultValue: "No log entries match the current filters.",
+            }),
+          );
+          return;
+        }
+        setNotice(
+          t("settings.systemLogsExportSuccess", {
+            defaultValue: "Exported {{count}} entries to {{path}}",
+            values: {
+              count: result.count.toLocaleString(),
+              path:
+                result.files.length > 1
+                  ? `${result.files[0]} (+${result.files.length - 1})`
+                  : result.files[0],
+            },
+          }),
+        );
+        if (scope === "selection") {
+          setSelectedIds(new Set());
+        }
+        setShowExportDialog(false);
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : t("settings.systemLogsExportError", {
+                defaultValue: "Failed to export system logs.",
+              }),
+        );
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [levelFilter, moduleFilter, sinceDateTime, untilDateTime, t],
+  );
+
+  const handleExportConfirm = useCallback(() => {
+    const ids = exportScope === "selection" ? Array.from(selectedIds) : [];
+    void runExport(exportScope, exportFormat, ids);
+  }, [exportScope, exportFormat, selectedIds, runExport]);
+
+  // 单条导出：直接导出该条日志（当前格式）。
+  const handleExportEntry = useCallback(
+    (record: AppLogRecord) => {
+      void runExport("selection", exportFormat, [record.id]);
+    },
+    [exportFormat, runExport],
+  );
+
   const handleClear = useCallback(async () => {
     if (!confirmingClear) {
       setConfirmingClear(true);
@@ -538,6 +654,20 @@ export function SystemLogsPanel(): React.JSX.Element {
     useMemo<SettingsPageAction[]>(
       () => [
         {
+          id: "export",
+          label: t("settings.systemLogsExport", {
+            defaultValue: "Export logs",
+          }),
+          icon: Upload,
+          disabled: total === 0 || isExporting,
+          spinning: isExporting,
+          onClick: () => {
+            // 已有勾选时默认导出所选条目，否则导出当前筛选结果。
+            setExportScope(selectedIds.size > 0 ? "selection" : "filtered");
+            setShowExportDialog(true);
+          },
+        },
+        {
           id: "refresh",
           label: t("settings.systemLogsRefresh", {
             defaultValue: "Refresh logs",
@@ -561,7 +691,16 @@ export function SystemLogsPanel(): React.JSX.Element {
           onClick: () => void handleClear(),
         },
       ],
-      [t, isLoading, handleRefresh, confirmingClear, total, handleClear],
+      [
+        t,
+        isLoading,
+        handleRefresh,
+        confirmingClear,
+        total,
+        handleClear,
+        isExporting,
+        selectedIds,
+      ],
     ),
   );
 
@@ -805,8 +944,196 @@ export function SystemLogsPanel(): React.JSX.Element {
         </div>
       </Modal>
 
+      <Modal
+        open={showExportDialog}
+        title={t("settings.systemLogsExportDialogTitle", {
+          defaultValue: "Export logs",
+        })}
+        description={t("settings.systemLogsExportDialogDescription", {
+          defaultValue: "Choose what to export and the file format.",
+        })}
+        closeLabel={t("settings.systemLogsExportCancel", {
+          defaultValue: "Cancel",
+        })}
+        onClose={() => {
+          if (!isExporting) setShowExportDialog(false);
+        }}
+        className="system-logs-export-modal"
+        footer={
+          <>
+            <button
+              type="button"
+              className="confirm-dialog-btn cancel"
+              disabled={isExporting}
+              onClick={() => setShowExportDialog(false)}
+            >
+              {t("settings.systemLogsExportCancel", {
+                defaultValue: "Cancel",
+              })}
+            </button>
+            <button
+              type="button"
+              className="confirm-dialog-btn primary"
+              disabled={
+                isExporting ||
+                (exportScope === "selection" && selectedIds.size === 0)
+              }
+              onClick={handleExportConfirm}
+            >
+              {isExporting
+                ? t("settings.systemLogsExportRunning", {
+                    defaultValue: "Exporting...",
+                  })
+                : t("settings.systemLogsExportConfirm", {
+                    defaultValue: "Export",
+                  })}
+            </button>
+          </>
+        }
+      >
+        <div className="system-logs-export-body">
+          <div className="system-logs-export-group">
+            <span className="system-logs-export-label">
+              {t("settings.systemLogsExportScope", {
+                defaultValue: "What to export",
+              })}
+            </span>
+            <div className="system-logs-export-options" role="radiogroup">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={exportScope === "filtered"}
+                className={`system-logs-export-option${
+                  exportScope === "filtered" ? " active" : ""
+                }`}
+                onClick={() => setExportScope("filtered")}
+              >
+                {t("settings.systemLogsExportScopeFiltered", {
+                  defaultValue: "Current filter ({{count}} entries)",
+                  values: { count: total.toLocaleString() },
+                })}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={exportScope === "perDay"}
+                className={`system-logs-export-option${
+                  exportScope === "perDay" ? " active" : ""
+                }`}
+                onClick={() => setExportScope("perDay")}
+              >
+                {t("settings.systemLogsExportScopePerDay", {
+                  defaultValue: "Split by day",
+                })}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={exportScope === "selection"}
+                className={`system-logs-export-option${
+                  exportScope === "selection" ? " active" : ""
+                }`}
+                disabled={selectedIds.size === 0}
+                onClick={() => setExportScope("selection")}
+              >
+                {t("settings.systemLogsExportScopeSelection", {
+                  defaultValue: "Selected entries ({{count}})",
+                  values: { count: selectedIds.size },
+                })}
+              </button>
+            </div>
+          </div>
+
+          <div className="system-logs-export-group">
+            <span className="system-logs-export-label">
+              {t("settings.systemLogsExportFormat", {
+                defaultValue: "File format",
+              })}
+            </span>
+            <div className="system-logs-export-options" role="radiogroup">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={exportFormat === "text"}
+                className={`system-logs-export-option${
+                  exportFormat === "text" ? " active" : ""
+                }`}
+                onClick={() => setExportFormat("text")}
+              >
+                {t("settings.systemLogsExportFormatText", {
+                  defaultValue: "Plain text (.log)",
+                })}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={exportFormat === "json"}
+                className={`system-logs-export-option${
+                  exportFormat === "json" ? " active" : ""
+                }`}
+                onClick={() => setExportFormat("json")}
+              >
+                {t("settings.systemLogsExportFormatJson", {
+                  defaultValue: "JSON (.json)",
+                })}
+              </button>
+            </div>
+          </div>
+
+          {exportScope !== "filtered" && (
+            <p className="system-logs-export-hint">
+              {exportScope === "perDay"
+                ? t("settings.systemLogsExportPerDayHint", {
+                    defaultValue:
+                      "Each day is written as a separate file into the folder you pick.",
+                  })
+                : t("settings.systemLogsExportSelectionHint", {
+                    defaultValue: "Only the entries you selected are exported.",
+                  })}
+            </p>
+          )}
+        </div>
+      </Modal>
+
       <div className="system-logs-stream-section">
         <div className="system-logs-stream-meta">
+          <div className="system-logs-selection-bar">
+            <label className="system-logs-select-page">
+              <input
+                type="checkbox"
+                checked={allPageSelected}
+                disabled={records.length === 0}
+                onChange={toggleSelectPage}
+                aria-label={t("settings.systemLogsSelectPage", {
+                  defaultValue: "Select page",
+                })}
+              />
+              <span>
+                {t("settings.systemLogsSelectPage", {
+                  defaultValue: "Select page",
+                })}
+              </span>
+            </label>
+            {selectedIds.size > 0 && (
+              <>
+                <span className="system-logs-selected-count">
+                  {t("settings.systemLogsSelectedCount", {
+                    defaultValue: "{{count}} selected",
+                    values: { count: selectedIds.size.toLocaleString() },
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="system-logs-clear-selection"
+                  onClick={clearSelection}
+                >
+                  {t("settings.systemLogsClearSelection", {
+                    defaultValue: "Clear",
+                  })}
+                </button>
+              </>
+            )}
+          </div>
           <span className="settings-item-description">
             {t("settings.systemLogsTotalInfo", {
               defaultValue: "{{count}} entries",
@@ -834,58 +1161,85 @@ export function SystemLogsPanel(): React.JSX.Element {
               return (
                 <div
                   key={record.id}
-                  className={`system-logs-entry${expanded ? " expanded" : ""}`}
+                  className={`system-logs-entry${expanded ? " expanded" : ""}${
+                    selectedIds.has(record.id) ? " selected" : ""
+                  }`}
                 >
-                  <button
-                    type="button"
-                    className="system-logs-entry-head"
-                    onClick={() => detail && toggleExpand(record.id)}
-                    aria-expanded={detail ? expanded : undefined}
-                  >
-                    <span className="system-logs-entry-time">
-                      <span className="system-logs-entry-date">
-                        {formatDate(record.createdAt)}
+                  <div className="system-logs-entry-row">
+                    <input
+                      type="checkbox"
+                      className="system-logs-entry-checkbox"
+                      checked={selectedIds.has(record.id)}
+                      onChange={() => toggleSelect(record.id)}
+                      aria-label={t("settings.systemLogsSelectEntry", {
+                        defaultValue: "Select this entry",
+                      })}
+                    />
+                    <button
+                      type="button"
+                      className="system-logs-entry-head"
+                      onClick={() => detail && toggleExpand(record.id)}
+                      aria-expanded={detail ? expanded : undefined}
+                    >
+                      <span className="system-logs-entry-time">
+                        <span className="system-logs-entry-date">
+                          {formatDate(record.createdAt)}
+                        </span>
+                        <span className="system-logs-entry-clock">
+                          {formatTime(record.createdAt)}
+                        </span>
                       </span>
-                      <span className="system-logs-entry-clock">
-                        {formatTime(record.createdAt)}
+                      <span
+                        className={`system-logs-level-badge ${levelClass(
+                          record.level,
+                        )}`}
+                      >
+                        {record.level}
                       </span>
-                    </span>
-                    <span
-                      className={`system-logs-level-badge ${levelClass(
-                        record.level,
-                      )}`}
+                      <span
+                        className={`system-logs-source-tag ${
+                          record.source === "renderer" ? "renderer" : "main"
+                        }`}
+                      >
+                        {record.source}
+                      </span>
+                      <span
+                        className="system-logs-entry-location"
+                        title={`${record.module}:${record.func}${
+                          record.line !== undefined && record.line !== null
+                            ? `:${record.line}`
+                            : ""
+                        }`}
+                      >
+                        {record.module}
+                        {record.func ? `.${record.func}` : ""}
+                      </span>
+                      <span className="system-logs-entry-message">
+                        {record.message || "-"}
+                      </span>
+                      {detail && (
+                        <ChevronDown
+                          size={14}
+                          strokeWidth={1.8}
+                          className="system-logs-entry-chevron"
+                        />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="system-logs-entry-export"
+                      disabled={isExporting}
+                      onClick={() => handleExportEntry(record)}
+                      aria-label={t("settings.systemLogsExportEntry", {
+                        defaultValue: "Export this entry",
+                      })}
+                      title={t("settings.systemLogsExportEntry", {
+                        defaultValue: "Export this entry",
+                      })}
                     >
-                      {record.level}
-                    </span>
-                    <span
-                      className={`system-logs-source-tag ${
-                        record.source === "renderer" ? "renderer" : "main"
-                      }`}
-                    >
-                      {record.source}
-                    </span>
-                    <span
-                      className="system-logs-entry-location"
-                      title={`${record.module}:${record.func}${
-                        record.line !== undefined && record.line !== null
-                          ? `:${record.line}`
-                          : ""
-                      }`}
-                    >
-                      {record.module}
-                      {record.func ? `.${record.func}` : ""}
-                    </span>
-                    <span className="system-logs-entry-message">
-                      {record.message || "-"}
-                    </span>
-                    {detail && (
-                      <ChevronDown
-                        size={14}
-                        strokeWidth={1.8}
-                        className="system-logs-entry-chevron"
-                      />
-                    )}
-                  </button>
+                      <Upload size={13} strokeWidth={1.8} />
+                    </button>
+                  </div>
                   {detail && expanded && (
                     <div className="system-logs-entry-detail">
                       {rows.map((row) => (

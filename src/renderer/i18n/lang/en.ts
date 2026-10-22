@@ -6057,6 +6057,33 @@ export const en = {
   "settings.systemLogsRetentionPruned":
     "Log retention updated. {{count}} expired entries deleted.",
   "settings.systemLogsRetentionError": "Failed to update log retention.",
+  "settings.systemLogsExport": "Export logs",
+  "settings.systemLogsExportDialogTitle": "Export logs",
+  "settings.systemLogsExportDialogDescription":
+    "Choose what to export and the file format.",
+  "settings.systemLogsExportScope": "What to export",
+  "settings.systemLogsExportScopeFiltered":
+    "Current filter ({{count}} entries)",
+  "settings.systemLogsExportScopePerDay": "Split by day",
+  "settings.systemLogsExportScopeSelection": "Selected entries ({{count}})",
+  "settings.systemLogsExportFormat": "File format",
+  "settings.systemLogsExportFormatText": "Plain text (.log)",
+  "settings.systemLogsExportFormatJson": "JSON (.json)",
+  "settings.systemLogsExportPerDayHint":
+    "Each day is written as a separate file into the folder you pick.",
+  "settings.systemLogsExportSelectionHint":
+    "Only the entries you selected are exported.",
+  "settings.systemLogsExportCancel": "Cancel",
+  "settings.systemLogsExportConfirm": "Export",
+  "settings.systemLogsExportRunning": "Exporting...",
+  "settings.systemLogsExportSuccess": "Exported {{count}} entries to {{path}}",
+  "settings.systemLogsExportEmpty": "No log entries match the current filters.",
+  "settings.systemLogsExportError": "Failed to export system logs.",
+  "settings.systemLogsExportEntry": "Export this entry",
+  "settings.systemLogsSelectEntry": "Select this entry",
+  "settings.systemLogsSelectPage": "Select page",
+  "settings.systemLogsSelectedCount": "{{count}} selected",
+  "settings.systemLogsClearSelection": "Clear",
   "settings.close": "Close",
   "settings.closePanel": "Close",
   "settings.loadingModels": "Loading models...",

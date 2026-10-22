@@ -107,6 +107,23 @@ pub async fn clear_app_logs() -> napi::Result<u32> {
 }
 
 #[napi]
+pub async fn export_app_logs(
+    level: String,
+    module: String,
+    since: String,
+    until: String,
+    ids: Vec<String>,
+    format: String,
+    group_by_day: bool,
+) -> napi::Result<Vec<crate::storage::services::app_logs::AppLogExportFile>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::export_app_logs(level, module, since, until, ids, format, group_by_day)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_app_log_modules() -> napi::Result<Vec<String>> {
     tokio::task::spawn_blocking(crate::storage::list_app_log_modules)
         .await

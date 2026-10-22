@@ -335,6 +335,13 @@ export type AppLogPage = {
   total: number;
 };
 
+/** 系统日志导出结果：canceled 为用户取消对话框，files 为写入的文件路径。 */
+export type AppLogExportResult = {
+  canceled: boolean;
+  files: string[];
+  count: number;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;

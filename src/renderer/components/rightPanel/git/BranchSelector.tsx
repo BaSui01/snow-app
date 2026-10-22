@@ -380,25 +380,28 @@ export const BranchSelector = ({
       return;
     }
 
-    const handleClickOutside = (event: MouseEvent): void => {
-      const inside = insideMouseDownRef.current;
+    // 每个手势开始前先清空上一手势残留的内部标记：打开下拉那次 mousedown
+    // 早于本监听注册，标记会一直为 true，导致首次点空白被判为内部而不收起。
+    const resetInsideMark = (): void => {
       insideMouseDownRef.current = false;
-      if (
-        !inside &&
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-        setCreateMode(null);
-        setNewBranchName("");
-        setWorktreeBranchName("");
-        setCreateError(null);
-        setSearchQuery("");
-      }
     };
 
+    const handleClickOutside = (): void => {
+      // 内部点击（根容器 or Portal 弹层）已由 onMouseDown 标记为 true
+      if (insideMouseDownRef.current) return;
+      setIsOpen(false);
+      setCreateMode(null);
+      setNewBranchName("");
+      setWorktreeBranchName("");
+      setCreateError(null);
+      setSearchQuery("");
+    };
+
+    // 捕获阶段先重置，再由根容器的 onMouseDown 标记内部点击（含 Portal 弹层）
+    document.addEventListener("mousedown", resetInsideMark, true);
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
+      document.removeEventListener("mousedown", resetInsideMark, true);
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);

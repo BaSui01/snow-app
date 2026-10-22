@@ -6,6 +6,7 @@ import type {
   ApiConfigInput,
   ApiConfigRecord,
   ApiModelsConfig,
+  AppLogExportResult,
   AppLogPage,
   CodebaseSettingsInput,
   ConversationModesResult,
@@ -499,6 +500,26 @@ export const apiConfigApi = {
   setAppLogsRetentionDays: (days: number): Promise<void> =>
     ipcRenderer.invoke("settings:set-app-logs-retention-days", days),
   pruneAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:prune"),
+  /** 导出系统日志文件（自定义选择时传 ids；groupByDay 按天拆分到所选目录）。 */
+  exportAppLogs: (
+    level: string,
+    module: string,
+    since: string,
+    until: string,
+    ids: string[],
+    format: "text" | "json",
+    groupByDay: boolean,
+  ): Promise<AppLogExportResult> =>
+    ipcRenderer.invoke(
+      "logs:export",
+      level,
+      module,
+      since,
+      until,
+      ids,
+      format,
+      groupByDay,
+    ),
 
   getKeyboardShortcutsSettings: (): Promise<KeyboardShortcutsSettings> =>
     ipcRenderer.invoke("settings:get-keyboard-shortcuts"),

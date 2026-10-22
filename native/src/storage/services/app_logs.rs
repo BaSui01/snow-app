@@ -23,6 +23,8 @@ pub struct AppLogInput {
 }
 
 #[napi(object)]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppLogRecord {
     pub id: String,
     pub level: String,
@@ -43,6 +45,54 @@ pub struct AppLogRecord {
 pub struct AppLogPage {
     pub items: Vec<AppLogRecord>,
     pub total: i32,
+}
+
+/// 导出文件片段：fileName 不含扩展名，由主进程按格式补 .log / .json。
+#[napi(object)]
+pub struct AppLogExportFile {
+    pub file_name: String,
+    pub content: String,
+    pub count: u32,
+}
+
+const LOG_SELECT_COLUMNS: &str = "id, level, module, func, line, message, input, output, duration, context, error, source, created_at";
+
+/// 构造日志筛选条件：自定义选择（ids 非空）时只按 id 过滤，忽略其它筛选。
+fn build_log_filters(
+    level: &str,
+    module: &str,
+    since: &str,
+    until: &str,
+    ids: &[String],
+) -> (String, Vec<Value>) {
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut values: Vec<Value> = Vec::new();
+    if ids.is_empty() {
+        for (column, operator, raw_value) in [
+            ("level", "=", level),
+            ("module", "=", module),
+            ("created_at", ">=", since),
+            ("created_at", "<=", until),
+        ] {
+            let value = raw_value.trim();
+            if !value.is_empty() {
+                where_clauses.push(format!("{column} {operator} ?"));
+                values.push(Value::Text(value.to_string()));
+            }
+        }
+    } else {
+        let placeholders = vec!["?"; ids.len()].join(", ");
+        where_clauses.push(format!("id IN ({placeholders})"));
+        for id in ids {
+            values.push(Value::Text(id.clone()));
+        }
+    }
+    let where_sql = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", where_clauses.join(" AND "))
+    };
+    (where_sql, values)
 }
 
 fn context_conversation_id(context: &str) -> Option<String> {
@@ -103,25 +153,7 @@ pub fn list_app_logs(
 
     database::open_connection(database_path)
         .and_then(|connection| {
-            let mut where_clauses: Vec<String> = Vec::new();
-            let mut filter_values = Vec::new();
-            for (column, operator, raw_value) in [
-                ("level", "=", level),
-                ("module", "=", module),
-                ("created_at", ">=", since),
-                ("created_at", "<=", until),
-            ] {
-                let value = raw_value.trim();
-                if !value.is_empty() {
-                    where_clauses.push(format!("{column} {operator} ?"));
-                    filter_values.push(Value::Text(value.to_string()));
-                }
-            }
-            let where_sql = if where_clauses.is_empty() {
-                String::new()
-            } else {
-                format!(" WHERE {}", where_clauses.join(" AND "))
-            };
+            let (where_sql, filter_values) = build_log_filters(level, module, since, until, &[]);
 
             let count_sql = format!("SELECT COUNT(*) FROM app_logs{where_sql}");
             let total: i32 = connection.query_row(
@@ -131,8 +163,7 @@ pub fn list_app_logs(
             )?;
 
             let list_sql = format!(
-                "SELECT id, level, module, func, line, message,
-                        input, output, duration, context, error, source, created_at
+                "SELECT {LOG_SELECT_COLUMNS}
                    FROM app_logs{where_sql}
                   ORDER BY created_at DESC, id DESC
                   LIMIT ? OFFSET ?"
@@ -148,6 +179,105 @@ pub fn list_app_logs(
             Ok(AppLogPage { items, total })
         })
         .map_err(|error| database::database_error(database_path, "list app logs", error))
+}
+
+/// 导出日志：Rust 负责查询与格式化，主进程负责保存对话框与写文件。
+/// format 为 "json" 时输出 JSON 数组，否则输出单行文本日志。
+/// group_by_day 为 true 时按 created_at 的日期拆分成多个文件片段。
+pub fn export_app_logs(
+    database_path: &Path,
+    level: &str,
+    module: &str,
+    since: &str,
+    until: &str,
+    ids: &[String],
+    format: &str,
+    group_by_day: bool,
+) -> Result<Vec<AppLogExportFile>> {
+    let json = format == "json";
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let (where_sql, filter_values) = build_log_filters(level, module, since, until, ids);
+            let sql = format!(
+                "SELECT {LOG_SELECT_COLUMNS}
+                   FROM app_logs{where_sql}
+                  ORDER BY created_at ASC, id ASC"
+            );
+            let mut statement = connection.prepare(&sql)?;
+            let rows = statement.query_map(params_from_iter(filter_values.iter()), map_log_row)?;
+            let records = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+
+            if records.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            if !group_by_day {
+                let content = render_log_export(&records, json);
+                return Ok(vec![AppLogExportFile {
+                    file_name: "snow-logs".to_string(),
+                    content,
+                    count: records.len() as u32,
+                }]);
+            }
+
+            // created_at 为 "YYYY-MM-DD HH:MM:SS"，按日期前缀分组（BTreeMap 保证日期升序）。
+            let mut grouped: std::collections::BTreeMap<String, Vec<AppLogRecord>> =
+                std::collections::BTreeMap::new();
+            for record in records {
+                let day = record.created_at.get(0..10).unwrap_or("unknown").to_string();
+                grouped.entry(day).or_default().push(record);
+            }
+            Ok(grouped
+                .into_iter()
+                .map(|(day, items)| AppLogExportFile {
+                    file_name: format!("snow-logs-{day}"),
+                    content: render_log_export(&items, json),
+                    count: items.len() as u32,
+                })
+                .collect())
+        })
+        .map_err(|error| database::database_error(database_path, "export app logs", error))
+}
+
+fn render_log_export(records: &[AppLogRecord], json: bool) -> String {
+    if json {
+        return serde_json::to_string_pretty(records).unwrap_or_else(|_| "[]".to_string());
+    }
+    let mut output = String::new();
+    for record in records {
+        output.push_str(&format_log_entry(record));
+    }
+    output
+}
+
+fn format_log_entry(record: &AppLogRecord) -> String {
+    let mut location = record.module.clone();
+    if !record.func.is_empty() {
+        location.push('.');
+        location.push_str(&record.func);
+    }
+    if let Some(line) = record.line {
+        if line > 0 {
+            location.push_str(&format!(":{line}"));
+        }
+    }
+    let mut output = format!(
+        "{} [{}] [{}] {} {}\n",
+        record.created_at, record.level, record.source, location, record.message
+    );
+    for (label, value) in [
+        ("input", &record.input),
+        ("output", &record.output),
+        ("duration", &record.duration),
+        ("context", &record.context),
+        ("error", &record.error),
+    ] {
+        if !value.is_empty() {
+            output.push_str(&format!("  {label}: {value}\n"));
+        }
+    }
+    output
 }
 
 pub fn clear_app_logs(database_path: &Path) -> Result<u32> {

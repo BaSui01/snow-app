@@ -1,6 +1,7 @@
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "../../../../../i18n";
+import { resolveToolDisplayName } from "./toolDisplayName";
 import type { ToolCategory } from "./ToolNameBadge";
 import { ToolNameBadge } from "./ToolNameBadge";
 
@@ -34,12 +35,6 @@ type ToolCallNodeProps = {
   children?: ReactNode;
 };
 
-/**
- * 提取工具短名：去掉 `prefix-`（内置工具）或 `prefix_`（外部 MCP 规范化名，
- * 如 dbx_list_tables -> list_tables），未匹配时返回原名。
- */
-const shortName = (name: string): string => name.replace(/^.*?[-_]/, "");
-
 export const ToolCallNode = ({
   toolName,
   badgeName,
@@ -71,13 +66,10 @@ export const ToolCallNode = ({
   }, [defaultOpen]);
 
   // Resolve the badge name: explicit badgeName wins; otherwise look up the
-  // full tool name in the i18n `toolNames` table (e.g. "browser-create" →
-  // "创建浏览器"); finally fall back to the parsed short name.
-  // 注意：使用 `||` 而非 `??`——i18n 查找可能返回空字符串（defaultValue: ""），
-  // 空字符串应视为"未提供"并继续走 fallback 链，避免徽章只显示图标没有文字。
-  const localizedToolName = t(`toolNames.${toolName}`, { defaultValue: "" });
-  const resolvedBadgeName =
-    badgeName || localizedToolName || shortName(toolName);
+  // tool name in the i18n `toolNames` table (e.g. "browser-create" → "创建浏览器",
+  // "anysearch-extract" → "网页提取"); finally fall back to the readable short
+  // name so external MCP tools never show a raw `batch_search` token.
+  const resolvedBadgeName = badgeName || resolveToolDisplayName(t, toolName);
 
   const dotClass =
     status === "completed"

@@ -16,8 +16,13 @@ const DEFAULT_MAX_CONTENT_LENGTH: u64 = 20_000;
 const MIN_MAX_CONTENT_LENGTH: u64 = 1_000;
 const MAX_MAX_CONTENT_LENGTH: u64 = 100_000;
 const MAX_WAIT_TIME_MS: u64 = 30_000;
+/// browser-scroll 单次 deltaY 的绝对值上限（防止误滚到极端值）。
+const MAX_SCROLL_DELTA: i64 = 20_000;
 // Record ids cross the JSON bridge into JavaScript numbers.
 const MAX_SAFE_RECORD_ID: u64 = 9_007_199_254_740_991;
+
+/** 省略 instanceId 时的目标语义（issue #253）：Agent 工作标签，而非用户最近聚焦的标签。 */
+const INSTANCE_ID_DESCRIPTION: &str = "Optional browser instance ID. Omit it or use current to target the agent's working browser tab (set by browser-create / browser-focus; the user switching tabs does not change it).";
 
 /** 动作类工具描述共用的回执语义说明（issue #236）。 */
 const ACTION_RECEIPT_NOTE: &str = " success=true means only that the input event was dispatched, not that the site handled it. The top-level url/title are read after the action, before holds the pre-action page, and observation reports the post-action state (changed/unchanged/navigating/blocked/expect-timeout) from a bounded wait that never waits for network-idle. An observation or wait timeout never means the action failed; verify the page state instead of repeating a side-effecting action. URL query/fragment are redacted by policy: urlRedaction marks that they were hidden.";
@@ -140,7 +145,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "create".to_string(),
-                description: "Create a new embedded browser tab in the right panel (each browser tab hosts one page and its instanceId is the tab ID). Returns an instanceId for explicitly targeting it later. Optionally opens an initial URL. Tabs created this way count as shared with the agent and use an isolated session by default (their own cookies/storage, no access to the user's login state).".to_string(),
+                description: "Create a new embedded browser tab in the right panel (each browser tab hosts one page and its instanceId is the tab ID). Returns an instanceId for explicitly targeting it later. The new tab becomes the agent's working tab: later browser calls that omit instanceId target it until browser-focus selects another tab. Optionally opens an initial URL. Tabs created this way count as shared with the agent and use an isolated session by default (their own cookies/storage, no access to the user's login state).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -154,13 +159,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "navigate".to_string(),
-                description: "Navigate an embedded browser instance to a URL (http://, https://, or file://) and wait asynchronously for loading to finish, or reload the current page with reload=true (optionally ignoreCache=true). initScript injects JavaScript before any other script runs in the next document (one-shot, credential access blocked). Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Navigate an embedded browser instance to a URL (http://, https://, or file://) and wait asynchronously for loading to finish, or reload the current page with reload=true (optionally ignoreCache=true). initScript injects JavaScript before any other script runs in the next document (one-shot, credential access blocked). Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "url": {
                             "type": "string",
@@ -193,13 +198,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "click".to_string(),
-                description: "Click page content in an embedded browser with a real Electron mouse input event. Target an element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax), or click viewport coordinates with x and y. Set dblClick to double-click. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Click page content in an embedded browser with a real Electron mouse input event. Target an element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax), or click viewport coordinates with x and y. Set dblClick to double-click. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -237,13 +242,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screenshot".to_string(),
-                description: "Capture an embedded browser page or a single element as an image (CDP, including off-screen content). Pass selector or ref to capture only that element, format/quality to choose the output type, and filePath to save the image to a file instead of returning it inline. Omit instanceId to capture the most recently focused browser tab, including a browser opened by the user. Returns page metadata and, when filePath is omitted, an image content block containing base64 image data.".to_string(),
+                description: "Capture an embedded browser page or a single element as an image (CDP, including off-screen content). Pass selector or ref to capture only that element, format/quality to choose the output type, and filePath to save the image to a file instead of returning it inline. Omit instanceId to capture the agent's working browser tab. Returns page metadata and, when filePath is omitted, an image content block containing base64 image data.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "fullPage": {
                             "type": "boolean",
@@ -280,13 +285,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "devtools".to_string(),
-                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=ax for a compact, ref-addressable accessibility tree that keeps control values and states (verbose=true returns every node and AX property), action=console for captured console messages (filterable by level/types, paginated with pageIdx/pageSize, includePreserved covers the last 3 navigations, clearConsole clears after returning), action=console_message for one message by msgid, action=network for a compact request list (id/method/url/status/duration/resourceType/source; filterable by regexp/resourceTypes/methods, paginated, includePreserved covers the last 3 navigations; request/response headers are omitted by default, pass includeHeaders=true to include them; CDP records include a numeric id and a requestId string), action=network_detail for full details of a single request by numeric id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request (requestFilePath/responseFilePath save bodies to files), action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
+                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the agent's working browser tab. Use action=snapshot for page metadata and text, action=ax for a compact, ref-addressable accessibility tree that keeps control values and states (verbose=true returns every node and AX property), action=console for captured console messages (filterable by level/types, paginated with pageIdx/pageSize, includePreserved covers the last 3 navigations, clearConsole clears after returning), action=console_message for one message by msgid, action=network for a compact request list (id/method/url/status/duration/resourceType/source; filterable by regexp/resourceTypes/methods, paginated, includePreserved covers the last 3 navigations; request/response headers are omitted by default, pass includeHeaders=true to include them; CDP records include a numeric id and a requestId string), action=network_detail for full details of a single request by numeric id, action=network_clear to clear all recorded requests, action=networkDetails for full request/response headers and bodies of one request (requestFilePath/responseFilePath save bodies to files), action=networkState to simulate offline/online, action=route to mock network responses (intercept and fulfill matching requests), action=routeClear to remove all route mocks, action=storageSave to save login state (cookies + localStorage) as an encrypted file, action=storageRestore to restore login state from an encrypted file, action=cookies to list session cookies (values masked by default), action=cookieDelete to remove one cookie, action=dialog to list and respond to pending JavaScript dialogs (alert/confirm/prompt), or action=open to open Electron DevTools for the page.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "action": {
                             "type": "string",
@@ -472,13 +477,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "wait".to_string(),
-                description: "Wait for a condition on the page: fixed time, text to appear/disappear, or element (CSS selector) to appear/disappear. Inspired by Playwright's browser_wait_for. Returns status=satisfied/elapsed/timed-out: a timed-out wait means the condition was not met, not that the preceding action failed, so verify the page state before repeating a side-effecting action. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Wait for a condition on the page: fixed time, text to appear/disappear, or element (CSS selector) to appear/disappear. Inspired by Playwright's browser_wait_for. Returns status=satisfied/elapsed/timed-out: a timed-out wait means the condition was not met, not that the preceding action failed, so verify the page state before repeating a side-effecting action. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "time": {
                             "type": "integer",
@@ -515,13 +520,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "press_key".to_string(),
-                description: "Press a keyboard key on the page. Use for shortcuts, Enter, Escape, Tab, Arrow keys, etc. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Press a keyboard key on the page. Use for shortcuts, Enter, Escape, Tab, Arrow keys, etc. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "key": {
                             "type": "string",
@@ -533,14 +538,47 @@ impl McpService for BrowserService {
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
-                name: "hover".to_string(),
-                description: "Hover over an element on the page with a real mouse move event. Target an element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                name: "scroll".to_string(),
+                description: "Scroll the page or an inner scroll container (feeds, virtual lists, overflow panels) and report whether it actually moved. Provide exactly one of deltaY (pixels, positive scrolls down) or position (top / bottom). Target the container with selector (CSS, pierces open shadow roots) or ref (uid from browser-devtools action=ax); a target that cannot scroll itself resolves to its nearest scrollable ancestor. Without selector/ref the document is scrolled, or, when the document itself cannot scroll, the largest visible scroll container (container.auto=true). Returns moved, before/after {scrollTop, scrollHeight, clientHeight}, atTop/atBottom and the scrolled container (tag/id/class). Prefer this over browser-press_key PageDown/End (which only scroll the document) and over browser-evaluate scroll scripts. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "Optional CSS selector of the scroll container (or an element inside it). Mutually exclusive with ref."
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Optional accessibility ref (uid from a recent browser-devtools action=ax snapshot) of the scroll container or an element inside it. Mutually exclusive with selector."
+                        },
+                        "deltaY": {
+                            "type": "integer",
+                            "description": "Vertical scroll distance in pixels (positive scrolls down, negative scrolls up; non-zero, absolute value at most 20000). Mutually exclusive with position.",
+                            "minimum": -MAX_SCROLL_DELTA,
+                            "maximum": MAX_SCROLL_DELTA
+                        },
+                        "position": {
+                            "type": "string",
+                            "enum": ["top", "bottom"],
+                            "description": "Scroll straight to the top or bottom of the container. Mutually exclusive with deltaY."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "hover".to_string(),
+                description: "Hover over an element on the page with a real mouse move event. Target an element with a CSS selector or visible text. Omit instanceId to use the agent's working browser tab.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -561,13 +599,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "select_option".to_string(),
-                description: "Select option(s) in a dropdown (<select>) element. Target the element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Select option(s) in a dropdown (<select>) element. Target the element with a CSS selector or visible text. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -594,13 +632,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "close".to_string(),
-                description: "Close an embedded browser tab and destroy its webview. Omit instanceId to close the most recently focused browser tab. Use the list tool to see available browser tabs and their IDs.".to_string(),
+                description: "Close an embedded browser tab and destroy its webview. Omit instanceId to close the agent's working browser tab (later calls without instanceId then fail until browser-focus or browser-create selects a new working tab). Use the list tool to see available browser tabs and their IDs.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID to close. Omit it or use current to close the most recently focused browser tab."
+                            "description": "Optional browser instance ID to close. Omit it or use current to close the agent's working browser tab."
                         }
                     }
                 }),
@@ -608,7 +646,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "focus".to_string(),
-                description: "Switch to (activate) an embedded browser tab by its instance ID, bringing it to the foreground. Use the list tool to see available browser tabs and their IDs.".to_string(),
+                description: "Switch to (activate) an embedded browser tab by its instance ID, bringing it to the foreground, and make it the agent's working tab: later browser calls that omit instanceId target it (the user switching tabs does not change this). Use the list tool to see available browser tabs and their IDs.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -623,7 +661,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "list".to_string(),
-                description: "List all open embedded browser tabs with their instance IDs, titles, URLs, active state and agent access flags (shared / isolated / origin). Tabs the user has not shared with the agent only expose their instanceId and a placeholder title (url is null); call browser-request_share to ask the user to share such a tab. Use this to discover available tabs before closing or switching.".to_string(),
+                description: "List all open embedded browser tabs with their instance IDs, titles, URLs, active state, agentTarget (true for the agent's working tab that calls without instanceId target) and agent access flags (shared / isolated / origin). Tabs the user has not shared with the agent only expose their instanceId and a placeholder title (url is null); call browser-request_share to ask the user to share such a tab. Use this to discover available tabs before closing or switching.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {}
@@ -632,13 +670,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "evaluate".to_string(),
-                description: "Evaluate JavaScript in an embedded browser page and return the serialized result. Provide the source via expression (inline) or sourcePath (a local file); with format=function the source is treated as a function and args are passed to it (JSON-serializable). waitForStableDom (default true) waits for the DOM to settle before evaluating; filePath saves the result JSON to a file instead of returning it. Credential/storage access (cookies, localStorage, etc.) is blocked; use browser-devtools cookies for those. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Evaluate JavaScript in an embedded browser page and return the serialized result. Provide the source via expression (inline) or sourcePath (a local file); with format=function the source is treated as a function and args are passed to it (JSON-serializable). waitForStableDom (default true) waits for the DOM to settle before evaluating; filePath saves the result JSON to a file instead of returning it. Credential/storage access (cookies, localStorage, etc.) is blocked; use browser-devtools cookies for those. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "expression": {
                             "type": "string",
@@ -678,13 +716,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "type".to_string(),
-                description: "Type text into an editable element (or fill a form control) in an embedded browser. Target the element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax; same locating rules as browser-click). Supports inputs, textareas, contenteditable, checkboxes and radios (value \"true\"/\"false\") and <select> (value or label). By default the value is set at once and input/change events are fired; pass delayMs to type character by character for key handlers. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Type text into an editable element (or fill a form control) in an embedded browser. Target the element with a CSS selector, visible text, or an accessibility ref (uid=... from browser-devtools action=ax; same locating rules as browser-click). Supports inputs, textareas, contenteditable, checkboxes and radios (value \"true\"/\"false\") and <select> (value or label). By default the value is set at once and input/change events are fired; pass delayMs to type character by character for key handlers. In delayMs mode the target must hold keyboard focus: focus is verified before the first and every following keystroke, and the call fails (reporting how many characters were typed and where focus went) instead of typing into another element; submit sends Enter only while the target is still focused. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -721,13 +759,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "upload-file".to_string(),
-                description: "Upload file(s) to a file input element. Target with a CSS selector, visible text, or accessibility ref. Files are injected directly via CDP (no file chooser dialog). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Upload file(s) to a file input element. Target with a CSS selector, visible text, or accessibility ref. Files are injected directly via CDP (no file chooser dialog). Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -753,13 +791,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "drag".to_string(),
-                description: "Drag an element onto another element with a real mouse input sequence (HTML5 drag-and-drop and pointer-drag widgets). Locate the source with fromSelector/fromText/fromRef and the drop target with toSelector/toText/toRef; fromFrameId/toFrameId optionally target specific frames from browser-frames. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Drag an element onto another element with a real mouse input sequence (HTML5 drag-and-drop and pointer-drag widgets). Locate the source with fromSelector/fromText/fromRef and the drop target with toSelector/toText/toRef; fromFrameId/toFrameId optionally target specific frames from browser-frames. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "fromSelector": {
                             "type": "string",
@@ -809,13 +847,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "fill_form".to_string(),
-                description: "Fill multiple form elements in one call (inputs, textareas, checkboxes, radios, selects, contenteditable). Each elements entry locates its target with selector/text/ref and provides a value; checkbox/radio use \"true\"/\"false\", selects accept the option value or label, and submit=true submits the containing form. Failures are reported per element without aborting the remaining ones. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Fill multiple form elements in one call (inputs, textareas, checkboxes, radios, selects, contenteditable). Each elements entry locates its target with selector/text/ref and provides a value; checkbox/radio use \"true\"/\"false\", selects accept the option value or label, and submit=true submits the containing form. Failures are reported per element without aborting the remaining ones. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "elements": {
                             "type": "array",
@@ -856,13 +894,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "back".to_string(),
-                description: "Go back to the previous page in the browser history and wait for navigation. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Go back to the previous page in the browser history and wait for navigation. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         }
                     }
                 }),
@@ -870,13 +908,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "forward".to_string(),
-                description: "Go forward in the browser history and wait for navigation. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Go forward in the browser history and wait for navigation. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         }
                     }
                 }),
@@ -884,13 +922,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "emulate".to_string(),
-                description: "Emulate browser features on the target page (CDP Emulation/Network domains): color scheme, CPU throttling, geolocation, extra HTTP headers, network conditions, user agent and viewport. Omitted fields are unchanged; null clears an override (colorScheme maps to auto, cpuThrottlingRate maps to 1). Empty userAgent/viewport also clear their overrides. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Emulate browser features on the target page (CDP Emulation/Network domains): color scheme, CPU throttling, geolocation, extra HTTP headers, network conditions, user agent and viewport. Omitted fields are unchanged; null clears an override (colorScheme maps to auto, cpuThrottlingRate maps to 1). Empty userAgent/viewport also clear their overrides. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "colorScheme": {
                             "type": ["string", "null"],
@@ -937,13 +975,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "resize_page".to_string(),
-                description: "Resize the page viewport to the given dimensions (device metrics override). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Resize the page viewport to the given dimensions (device metrics override). Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "width": {
                             "type": "integer",
@@ -964,13 +1002,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "performance_start_trace".to_string(),
-                description: "Start recording a performance trace (CDP Tracing) on the target page. Navigate or reload BEFORE starting when you want to capture load performance. Stop with performance_stop_trace to receive Core Web Vitals, long tasks and actionable insights. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Start recording a performance trace (CDP Tracing) on the target page. Navigate or reload BEFORE starting when you want to capture load performance. Stop with performance_stop_trace to receive Core Web Vitals, long tasks and actionable insights. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "categories": {
                             "type": "array",
@@ -983,13 +1021,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "performance_stop_trace".to_string(),
-                description: "Stop the active performance trace and return Core Web Vitals (FCP/LCP/CLS/load/DCL/first response), long-task statistics and insights (long-tasks, render-blocking, lcp, cls, document-latency, third-parties). filePath optionally saves the raw trace (.json or .json.gz) for Perfetto/DevTools. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Stop the active performance trace and return Core Web Vitals (FCP/LCP/CLS/load/DCL/first response), long-task statistics and insights (long-tasks, render-blocking, lcp, cls, document-latency, third-parties). filePath optionally saves the raw trace (.json or .json.gz) for Perfetto/DevTools. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "filePath": {
                             "type": "string",
@@ -1001,13 +1039,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "performance_analyze_insight".to_string(),
-                description: "Return full details of one insight from the last stopped trace: long-tasks, render-blocking, lcp, cls, document-latency or third-parties. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Return full details of one insight from the last stopped trace: long-tasks, render-blocking, lcp, cls, document-latency or third-parties. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "insightId": {
                             "type": "string",
@@ -1020,13 +1058,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "get_css_styles".to_string(),
-                description: "Inspect the CSS cascade for an element: matched rules from all origins with source locations and media queries, inline style, inherited rules and computed values; overridden declarations are marked overloaded. Locate the element with selector or an accessibility ref (uid from browser-devtools action=ax). Rules are paginated (10 per page by default). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Inspect the CSS cascade for an element: matched rules from all origins with source locations and media queries, inline style, inherited rules and computed values; overridden declarations are marked overloaded. Locate the element with selector or an accessibility ref (uid from browser-devtools action=ax). Rules are paginated (10 per page by default). Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "selector": {
                             "type": "string",
@@ -1054,13 +1092,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "audit".to_string(),
-                description: "Audit the current page: axe-core accessibility scan (violations with impact, help and failing targets), lightweight SEO checks (title, meta description, h1, lang, viewport, canonical, Open Graph) and best-practice checks (secure context, doctype, charset, duplicate ids, image alt). Also reports the console error count. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Audit the current page: axe-core accessibility scan (violations with impact, help and failing targets), lightweight SEO checks (title, meta description, h1, lang, viewport, canonical, Open Graph) and best-practice checks (secure context, doctype, charset, duplicate ids, image alt). Also reports the console error count. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "categories": {
                             "type": "array",
@@ -1076,13 +1114,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "take_heapsnapshot".to_string(),
-                description: "Capture a V8 heap snapshot of the page and save it to filePath (.heapsnapshot). Analyze it with the get_heapsnapshot_* tools and compare_heapsnapshots. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Capture a V8 heap snapshot of the page and save it to filePath (.heapsnapshot). Analyze it with the get_heapsnapshot_* tools and compare_heapsnapshots. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "filePath": {
                             "type": "string",
@@ -1314,13 +1352,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screencast_start".to_string(),
-                description: "Start recording the page as a video (CDP screencast frames, combined into a MJPEG AVI on stop). Recording auto-stops at maxFrames or maxDurationMs. Stop with screencast_stop. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Start recording the page as a video (CDP screencast frames, combined into a MJPEG AVI on stop). Recording auto-stops at maxFrames or maxDurationMs. Stop with screencast_stop. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "filePath": {
                             "type": "string",
@@ -1356,13 +1394,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screencast_stop".to_string(),
-                description: "Stop the active screencast and produce the MJPEG AVI file (returns file path, frame count, duration, size and fps). Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Stop the active screencast and produce the MJPEG AVI file (returns file path, frame count, duration, size and fps). Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         }
                     }
                 }),
@@ -1370,13 +1408,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "list_page_tools".to_string(),
-                description: "List tools exposed by the page itself (WebMCP-style): the page registers window.__snowPageTools as an array or record of { name, description?, parameters?, run(args) }. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "List tools exposed by the page itself (WebMCP-style): the page registers window.__snowPageTools as an array or record of { name, description?, parameters?, run(args) }. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         }
                     }
                 }),
@@ -1384,13 +1422,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "call_page_tool".to_string(),
-                description: "Execute a page-registered tool (window.__snowPageTools) by name with JSON parameters and return its JSON-serializable result. Use list_page_tools first. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Execute a page-registered tool (window.__snowPageTools) by name with JSON parameters and return its JSON-serializable result. Use list_page_tools first. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "name": {
                             "type": "string",
@@ -1406,13 +1444,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "get_tab_content".to_string(),
-                description: "Extract the visible text content (document.body.innerText) of a browser tab, together with its URL and title. Also returns a compact `times` array (DOM metadata, kept separate from the body text) collected from <time>, relative-time and [datetime] elements: visible text, verbatim datetime attribute, timezone marker and nearby context, including dates that never reach the visible text. Useful for reading article text or page content without a screenshot. Omit instanceId to use the most recently focused browser tab.".to_string(),
+                description: "Extract the visible text content (document.body.innerText) of a browser tab, together with its URL and title. Also returns a compact `times` array (DOM metadata, kept separate from the body text) collected from <time>, relative-time and [datetime] elements: visible text, verbatim datetime attribute, timezone marker and nearby context, including dates that never reach the visible text. Useful for reading article text or page content without a screenshot. Omit instanceId to use the agent's working browser tab.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
+                            "description": INSTANCE_ID_DESCRIPTION
                         },
                         "maxLength": {
                             "type": "integer",
@@ -1434,18 +1472,18 @@ impl McpService for BrowserService {
             server_id: SERVER_ID.to_string(),
             name: "frames".to_string(),
             description: "Enumerate attached frames of an embedded browser, including cross-origin frames. Returns opaque document-scoped frameId and parentFrameId, main-frame flag and redacted URL/name. Re-enumerate after navigation or detachment; stale IDs never fall back to the main frame. Does not read cookies or authentication storage.".to_string(),
-            input_schema: json!({"type": "object", "properties": {"instanceId": {"type": "string", "description": "Optional browser tab ID; omit or use current for the focused tab."}}}),
+            input_schema: json!({"type": "object", "properties": {"instanceId": {"type": "string", "description": INSTANCE_ID_DESCRIPTION}}}),
         });
         tools.push(McpTool {
             server_id: SERVER_ID.to_string(),
             name: "request_share".to_string(),
-            description: "Ask the user to share a browser tab with the agent. Only tabs explicitly shared by the user (or tabs the agent created itself) can be driven by the other browser tools; this tool shows an in-app confirmation on the tab and waits for the user's answer. Returns { shared: true } when granted, or { shared: false, reason: \"denied\" | \"domain-blocked\" } when the user declined, did not answer in time, or the tab URL is excluded by the browser agent domain policy. Returns an error when browser agent access is turned off in settings. Omit instanceId to target the focused tab.".to_string(),
+            description: "Ask the user to share a browser tab with the agent. Only tabs explicitly shared by the user (or tabs the agent created itself) can be driven by the other browser tools; this tool shows an in-app confirmation on the tab and waits for the user's answer. Returns { shared: true } when granted, or { shared: false, reason: \"denied\" | \"domain-blocked\" } when the user declined, did not answer in time, or the tab URL is excluded by the browser agent domain policy. Returns an error when browser agent access is turned off in settings. Omit instanceId to target the agent's working browser tab.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "instanceId": {
                         "type": "string",
-                        "description": "Optional browser instance ID to share. Omit it or use current to target the most recently focused embedded browser tab."
+                        "description": INSTANCE_ID_DESCRIPTION
                     }
                 }
             }),
@@ -1480,7 +1518,7 @@ impl McpService for BrowserService {
             // 并在描述里明确 success 只代表派发成功。
             if matches!(
                 tool.name.as_str(),
-                "click" | "type" | "fill_form" | "select_option" | "press_key"
+                "click" | "type" | "fill_form" | "select_option" | "press_key" | "scroll"
             ) {
                 let schema = std::mem::take(&mut tool.input_schema);
                 tool.input_schema = with_observation_schema(schema);
@@ -1542,6 +1580,7 @@ impl McpService for BrowserService {
             | "drag"
             | "wait"
             | "press_key"
+            | "scroll"
             | "select_option"
             | "hover"
             | "upload-file"

@@ -11,6 +11,9 @@
 //! - 全部执行体走同步实现，由分发层（call.rs 默认分支）在
 //!   spawn_blocking 线程池中调用，绝不阻塞 Node.js / NAPI 线程
 //! - macOS 权限预检：辅助功能 / 屏幕录制缺失时返回可行动指引
+//! - 失败分类与环境快照：所有对外错误经 error.rs 归类（code + NEXT +
+//!   CONTEXT），动作工具回报 landedOnTarget / focusedWindow，让失败可归因、
+//!   可恢复，模型不必靠原样重试摸索
 //!
 //! 安全边界：本服务器默认关闭，与 terminal/lsp 同一白名单机制
 //! （system_settings DEFAULT_DISABLED_BUILTIN_SERVERS + collect.rs
@@ -20,8 +23,10 @@
 
 mod capture;
 mod chain;
+mod error;
 mod input;
 mod platform;
+mod window;
 
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
@@ -30,6 +35,7 @@ use super::super::service::McpService;
 use super::super::tools::McpTool;
 use capture::{ensure_point_on_desktop, list_displays, ScreenshotOutput};
 use enigo::{Axis, Button};
+use error::{ErrorKind, Failure};
 use input::{parse_button, parse_key};
 
 const SERVER_ID: &str = "computer-use";
@@ -42,6 +48,12 @@ const WORKFLOW_DOC: &str = "WORKFLOW: screenshot -> locate ALL targets you need 
 
 /// 连续操作效率指引：动作工具的结果自带成功确认，动作之间不插入截图。
 const EFFICIENCY_DOC: &str = "EFFICIENCY: every screenshot costs a full round-trip. Action tools (mouse-click, type-text, key-tap, perform-actions) report success in their own result - do NOT re-screenshot between consecutive actions. Screenshot again ONLY when the screen visibly changed (new window/dialog/page appeared), an action failed, or you need to locate a target that was not visible in the last screenshot. Example task 'send a chat message': ONE screenshot (locate the input box) -> perform-actions [type at x/y, key-tap enter] -> done, no screenshot in between.";
+
+/// 动作落点判定说明（mouse-click / type-text / key-tap 的结果字段）。
+const LANDED_DOC: &str = "landedOnTarget reports whether the action actually reached a window: true = a foreground window covers the action point afterwards (the input was delivered), false = a window covers the point but is NOT the foreground window (the input may have been dropped, e.g. by an elevated window on Windows or a non-activating surface) and the result carries a warning, null = could not be determined. focusedWindow is the foreground window right after the action: check it to confirm the input went to the window you intended. When landedOnTarget is false or the warning is present, do NOT retry blindly - re-screenshot, make sure the target window is in the foreground, then retry.";
+
+/// 错误契约说明（挂在 screen-info 上，模型第一次调用就能看到）。
+const ERROR_DOC: &str = "FAILURES: every error from this server is classified - it starts with a [code] (permission_denied | window_unavailable | desktop_unavailable | activation_blocked | capture_failed | timeout | driver_error), followed by NEXT: the concrete next step, then CONTEXT: a live environment snapshot (displays, cursor, permissions, foreground window) so you never need a separate screen-info call to triage a failure. Follow NEXT instead of repeating the same action.";
 
 pub struct ComputerUseService;
 
@@ -61,7 +73,7 @@ impl McpService for ComputerUseService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screen-info".to_string(),
-                description: "Read the computer-use environment: the list of displays (index, id, name, global position, size, scaleFactor, primary), the current mouse cursor position (GLOBAL coordinates, the display it is on, and its display-local position), and platform permission status. Read-only, no side effects. ALWAYS call this first when starting a screen task, when you are unsure which display to capture, or when mouse/keyboard tools fail with a permission or bounds error.".to_string(),
+                description: format!("Read the computer-use environment: the list of displays (index, id, name, global position, size, scaleFactor, primary), the current mouse cursor position (GLOBAL coordinates, the display it is on, and its display-local position), and platform permission status. Read-only, no side effects. ALWAYS call this first when starting a screen task, when you are unsure which display to capture, or when mouse/keyboard tools fail with a permission or bounds error. {ERROR_DOC}"),
                 input_schema: json!({
                     "type": "object",
                     "properties": {}
@@ -130,7 +142,7 @@ impl McpService for ComputerUseService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "mouse-click".to_string(),
-                description: format!("Click the mouse: single (clicks=1), double (clicks=2, e.g. open file / select word), triple (clicks=3, e.g. select paragraph), or PRESS-AND-HOLD (holdMs > 0, e.g. long-press context menus / drag handles on touch-like UIs). Pass x/y to move-and-click in one step - preferred over a separate mouse-move call (durationMs controls that move). {COORDINATES_DOC} {WORKFLOW_DOC}"),
+                description: format!("Click the mouse: single (clicks=1), double (clicks=2, e.g. open file / select word), triple (clicks=3, e.g. select paragraph), or PRESS-AND-HOLD (holdMs > 0, e.g. long-press context menus / drag handles on touch-like UIs). Pass x/y to move-and-click in one step - preferred over a separate mouse-move call (durationMs controls that move). {COORDINATES_DOC} {WORKFLOW_DOC} {LANDED_DOC}"),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -266,7 +278,7 @@ impl McpService for ComputerUseService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "key-tap".to_string(),
-                description: "Tap a key or a key combination (chord). Pass a single key (e.g. [\"enter\"], [\"esc\"], [\"a\"]) or a combination pressed in order (e.g. [\"ctrl\",\"shift\",\"t\"], [\"cmd\",\"c\"] on macOS - use ctrl on Windows/Linux). Modifier keys: ctrl, alt/option, shift, win/cmd/meta. Named keys: enter/return, tab, esc, backspace, delete, insert, space, up, down, left, right, home, end, pageup, pagedown, f1-f20, capslock, printscr, pause, numpad0-9, volume/playback media keys. Any other single character is typed as-is. After typing text into an input, submit it directly with key-tap (e.g. [\"enter\"], or [\"ctrl\",\"enter\"] where the app requires it) - no screenshot in between.".to_string(),
+                description: format!("Tap a key or a key combination (chord). Pass a single key (e.g. [\"enter\"], [\"esc\"], [\"a\"]) or a combination pressed in order (e.g. [\"ctrl\",\"shift\",\"t\"], [\"cmd\",\"c\"] on macOS - use ctrl on Windows/Linux). Modifier keys: ctrl, alt/option, shift, win/cmd/meta. Named keys: enter/return, tab, esc, backspace, delete, insert, space, up, down, left, right, home, end, pageup, pagedown, f1-f20, capslock, printscr, pause, numpad0-9, volume/playback media keys. Any other single character is typed as-is. After typing text into an input, submit it directly with key-tap (e.g. [\"enter\"], or [\"ctrl\",\"enter\"] where the app requires it) - no screenshot in between. Keystrokes go to the FOREGROUND window: the result reports the foreground window it was delivered to, and landedOnTarget stays null because there is no coordinate to verify against - check focusedWindow instead. {LANDED_DOC}"),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -311,7 +323,7 @@ impl McpService for ComputerUseService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "type-text".to_string(),
-                description: format!("Type literal text through the OS text-input channel (supports any Unicode incl. CJK - no per-key layout mapping, so do NOT use it for shortcuts; use key-tap for those). Pass x/y to single-click an input field and focus it in the SAME call (focus + type in one step). To submit after typing (chat message, search query), call key-tap right after - no screenshot in between. Text longer than a few hundred chars may be slow - prefer clipboard-style batch entry by typing once into a field. {COORDINATES_DOC}"),
+                description: format!("Type literal text through the OS text-input channel (supports any Unicode incl. CJK - no per-key layout mapping, so do NOT use it for shortcuts; use key-tap for those). Pass x/y to single-click an input field and focus it in the SAME call (focus + type in one step). To submit after typing (chat message, search query), call key-tap right after - no screenshot in between. Text longer than a few hundred chars may be slow - prefer clipboard-style batch entry by typing once into a field. Text goes to the FOREGROUND window, so when x/y are omitted landedOnTarget is null and only focusedWindow is reported - check it to confirm the text went to the intended window. {COORDINATES_DOC} {LANDED_DOC}"),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -454,7 +466,7 @@ impl McpService for ComputerUseService {
 // ---------- 工具执行 ----------
 
 fn execute_screen_info() -> napi::Result<Value> {
-    let displays = list_displays().map_err(napi_error)?;
+    let displays = list_displays().map_err(Failure::into_napi)?;
     let cursor = cursor_info(&displays);
     let main_display = match capture::primary_display_size() {
         Ok((width, height)) => json!({"width": width, "height": height}),
@@ -519,7 +531,7 @@ fn execute_screenshot(args: &Value) -> napi::Result<Value> {
     let max_width = bounded_u64(args, "maxWidth", 1280, 200, 4000) as u32;
     let png = optional_str(args, "format", "jpeg") == "png";
 
-    let output = capture::capture_screen(display, region, max_width, png).map_err(napi_error)?;
+    let output = capture::capture_screen(display, region, max_width, png).map_err(Failure::into_napi)?;
     Ok(screenshot_result(&output))
 }
 
@@ -602,14 +614,14 @@ fn execute_mouse_move(args: &Value) -> napi::Result<Value> {
     let x = required_i32(args, "x")?;
     let y = required_i32(args, "y")?;
     let duration = bounded_u64(args, "durationMs", 0, 0, 5000);
-    ensure_point_on_desktop(x, y).map_err(napi_error)?;
+    ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
 
     let (final_x, final_y) = if duration > 0 {
         input::smooth_move_mouse(x, y, duration)
     } else {
         input::move_mouse_instant(x, y)
     }
-    .map_err(napi_error)?;
+    .map_err(Failure::into_napi)?;
 
     Ok(json!({
         "moved": true,
@@ -634,7 +646,7 @@ fn execute_mouse_click(args: &Value) -> napi::Result<Value> {
         ));
     }
     if let (Some(x), Some(y)) = (target_x, target_y) {
-        ensure_point_on_desktop(x, y).map_err(napi_error)?;
+        ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
     }
 
     let (final_x, final_y) = input::click_mouse(
@@ -646,16 +658,19 @@ fn execute_mouse_click(args: &Value) -> napi::Result<Value> {
         hold_ms,
         move_duration,
     )
-    .map_err(napi_error)?;
+    .map_err(Failure::into_napi)?;
 
-    Ok(json!({
+    let mut result = json!({
         "clicked": true,
         "x": final_x,
         "y": final_y,
         "button": format!("{button:?}").to_ascii_lowercase(),
         "clicks": clicks,
         "holdMs": hold_ms,
-    }))
+    });
+    // 事件已派发不等于目标收到：报告点击落点判定与动作后的前台窗口
+    attach_target_report(&mut result, Some((final_x, final_y)));
+    Ok(result)
 }
 
 fn execute_mouse_drag(args: &Value) -> napi::Result<Value> {
@@ -668,9 +683,9 @@ fn execute_mouse_drag(args: &Value) -> napi::Result<Value> {
     let pre_move_duration = bounded_u64(args, "preMoveDurationMs", 0, 0, 5000);
     let release_at_end = optional_bool(args, "releaseAtEnd", true);
 
-    ensure_point_on_desktop(to_x, to_y).map_err(napi_error)?;
+    ensure_point_on_desktop(to_x, to_y).map_err(Failure::into_napi)?;
     if let (Some(x), Some(y)) = (from_x, from_y) {
-        ensure_point_on_desktop(x, y).map_err(napi_error)?;
+        ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
     }
 
     // 拖动时长：省略 = 按距离自适应（150-800ms）；显式 0 = 瞬移
@@ -693,7 +708,7 @@ fn execute_mouse_drag(args: &Value) -> napi::Result<Value> {
         drag_duration,
         release_at_end,
     )
-    .map_err(napi_error)?;
+    .map_err(Failure::into_napi)?;
 
     Ok(json!({
         "dragged": true,
@@ -720,11 +735,11 @@ fn execute_mouse_scroll(args: &Value) -> napi::Result<Value> {
     };
     let (target_x, target_y) = optional_point_pair(args)?;
     if let (Some(x), Some(y)) = (target_x, target_y) {
-        ensure_point_on_desktop(x, y).map_err(napi_error)?;
-        input::move_mouse_instant(x, y).map_err(napi_error)?;
+        ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
+        input::move_mouse_instant(x, y).map_err(Failure::into_napi)?;
     }
 
-    input::scroll_mouse(amount, axis).map_err(napi_error)?;
+    input::scroll_mouse(amount, axis).map_err(Failure::into_napi)?;
 
     Ok(json!({
         "scrolled": true,
@@ -746,7 +761,7 @@ fn execute_mouse_button(args: &Value) -> napi::Result<Value> {
     let button = parse_button(&optional_str(args, "button", "left")).map_err(napi_error)?;
     let (target_x, target_y) = optional_point_pair(args)?;
     if let (Some(x), Some(y)) = (target_x, target_y) {
-        ensure_point_on_desktop(x, y).map_err(napi_error)?;
+        ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
     }
 
     let (final_x, final_y) = input::mouse_button(
@@ -756,7 +771,7 @@ fn execute_mouse_button(args: &Value) -> napi::Result<Value> {
         target_y,
         0,
     )
-    .map_err(napi_error)?;
+    .map_err(Failure::into_napi)?;
 
     Ok(json!({
         "action": if action_press { "press" } else { "release" },
@@ -775,12 +790,15 @@ fn execute_key_tap(args: &Value) -> napi::Result<Value> {
         })?;
         keys.push(key);
     }
-    input::tap_keys(&keys).map_err(napi_error)?;
+    input::tap_keys(&keys).map_err(Failure::into_napi)?;
 
-    Ok(json!({
+    // 按键送给前台窗口：无坐标锚点，落点判定为 null，改为回报前台窗口本身
+    let mut result = json!({
         "tapped": true,
         "keys": names,
-    }))
+    });
+    attach_target_report(&mut result, None);
+    Ok(result)
 }
 
 fn execute_key_button(args: &Value) -> napi::Result<Value> {
@@ -790,18 +808,18 @@ fn execute_key_button(args: &Value) -> napi::Result<Value> {
 
     match action.as_str() {
         "press" => {
-            input::key_button(key, true).map_err(napi_error)?;
+            input::key_button(key, true).map_err(Failure::into_napi)?;
             Ok(json!({"action": "press", "key": key_name}))
         }
         "release" => {
-            input::key_button(key, false).map_err(napi_error)?;
+            input::key_button(key, false).map_err(Failure::into_napi)?;
             Ok(json!({"action": "release", "key": key_name}))
         }
         "hold" => {
             let hold_ms = bounded_u64(args, "holdMs", 500, 50, 10_000);
-            input::key_button(key, true).map_err(napi_error)?;
+            input::key_button(key, true).map_err(Failure::into_napi)?;
             std::thread::sleep(std::time::Duration::from_millis(hold_ms));
-            input::key_button(key, false).map_err(napi_error)?;
+            input::key_button(key, false).map_err(Failure::into_napi)?;
             Ok(json!({"action": "hold", "key": key_name, "holdMs": hold_ms}))
         }
         other => Err(napi_error(format!(
@@ -823,26 +841,71 @@ fn execute_type_text(args: &Value) -> napi::Result<Value> {
     }
     let (target_x, target_y) = optional_point_pair(args)?;
     if let (Some(x), Some(y)) = (target_x, target_y) {
-        ensure_point_on_desktop(x, y).map_err(napi_error)?;
+        ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
         input::click_mouse(Some(x), Some(y), Button::Left, 1, 90, 0, 0)
-            .map_err(napi_error)?;
+            .map_err(Failure::into_napi)?;
     }
 
-    input::type_text(&text).map_err(napi_error)?;
+    input::type_text(&text).map_err(Failure::into_napi)?;
 
     let preview: String = text.chars().take(50).collect();
-    Ok(json!({
+    let mut result = json!({
         "typed": text.chars().count(),
         "preview": preview,
-    }))
+    });
+    // 带坐标时按聚焦点击点判定落点；无坐标时文本送给前台窗口，只回报该窗口
+    attach_target_report(&mut result, target_x.zip(target_y));
+    Ok(result)
 }
 
 fn execute_perform_actions(args: &Value) -> napi::Result<Value> {
     let actions = chain::parse_actions(args)?;
     let continue_on_error = optional_bool(args, "continueOnError", false);
     let (outcomes, cursor) = input::run_action_chain(&actions, continue_on_error)
-        .map_err(napi_error)?;
+        .map_err(Failure::into_napi)?;
     Ok(chain::format_result(actions.len(), &outcomes, cursor))
+}
+
+// ---------- 动作落点判定 ----------
+
+/// 把「动作是否落在目标上」写入动作结果：
+///
+/// - `landedOnTarget`：true = 动作后前台窗口覆盖动作点（输入确实落到窗口上）；
+///   false = 动作点上有窗口但前台窗口不是它（输入可能被系统丢弃）；
+///   null = 无法确认（无桌面会话、缺少权限、点不在任何可枚举窗口上）。
+/// - `focusedWindow`：动作结束时的前台窗口（app / title / bounds），
+///   模型据此核对输入是否送到了预期的窗口。
+/// - `warning`：仅当判定为「没落到目标上」时附加，给出 activation_blocked
+///   的下一步动作，避免模型原样重试。
+fn attach_target_report(result: &mut Value, point: Option<(i32, i32)>) {
+    let focused = window::focused_window();
+    let landed = point.and_then(|(x, y)| match focused.as_ref() {
+        None => None,
+        Some(window) if window.contains(x, y) => Some(true),
+        Some(window) => match window::window_at_point(x, y) {
+            // macOS 的焦点是应用级：目标点窗口与前台窗口同属一个应用也算命中
+            Some(target) if !window.app.is_empty() && window.app == target.app => Some(true),
+            Some(_) => Some(false),
+            None => None,
+        },
+    });
+    result["landedOnTarget"] = match landed {
+        Some(landed) => json!(landed),
+        None => Value::Null,
+    };
+    result["focusedWindow"] = match focused {
+        Some(window) => window.to_json(),
+        None => Value::Null,
+    };
+    if landed == Some(false) {
+        result["warning"] = json!({
+            "code": ErrorKind::ActivationBlocked.code(),
+            "message": format!(
+                "The input was dispatched, but no focused window covers the action point. {}",
+                ErrorKind::ActivationBlocked.guidance()
+            ),
+        });
+    }
 }
 
 // ---------- 参数辅助 ----------

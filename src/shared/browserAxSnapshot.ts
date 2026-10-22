@@ -29,7 +29,8 @@ export type AxSerializeOptions = {
   maxNodes?: number;
   /** 帧快照沿用既有隐私策略：不输出控件取值，只保留角色、名称与状态。 */
   redactValues?: boolean;
-  refForNode?: (node: AxNode) => string | null;
+  /** 节点 ref 分配由调用方负责：ref 必须绑定到所属标签页与文档，避免跨文档误解析。 */
+  refForNode: (node: AxNode) => string | null;
 };
 const INTERESTING_ROLES = new Set([
   "button",
@@ -122,7 +123,6 @@ const NAME_MAX_CHARS = 200;
 const ROW_TEXT_MAX_CHARS = 240;
 /** 段落只保留短文本（价格、错误提示等），避免把全站正文灌进快照。 */
 const PARAGRAPH_MAX_CHARS = 160;
-let axUidCounter = 0;
 /** 把任意运行时 AX value 安全转成文本；number 0、false 等合法值不丢失。 */
 const axText = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -135,26 +135,15 @@ const normalizeText = (value: string): string =>
 const clip = (value: string, limit: number): string =>
   value.length > limit ? `${value.slice(0, limit)}…` : value;
 const escapeAxText = (value: string): string => value.replace(/"/g, '\\"');
-const axUidByDomKey = new Map<string, string>();
-const axUidToBackend = new Map<string, number>();
-const uidOf = (node: AxNode): string | null => {
+/** AX 节点对应的 DOM backendNodeId（CDP 不同版本字段名不同）。 */
+export const axBackendNodeId = (node: AxNode): number | null => {
   const backend = node.backendDOMNodeId ?? node.backendNodeId;
-  if (typeof backend !== "number") return null;
-  const key = `${node.frameId ?? "root"}:${backend}`;
-  let uid = axUidByDomKey.get(key);
-  if (!uid) {
-    uid = `e${++axUidCounter}`;
-    axUidByDomKey.set(key, uid);
-    axUidToBackend.set(uid, backend);
-  }
-  return uid;
+  return typeof backend === "number" ? backend : null;
 };
-export const resolveAxRef = (ref: string): number | null =>
-  axUidToBackend.get(ref) ?? null;
-/** Serialize engine AX nodes; custom refs allow callers to isolate snapshots by document/session. */
+/** Serialize engine AX nodes; refs are issued by the caller per tab/document. */
 export const serializeAxTree = (
   nodes: AxNode[],
-  options: AxSerializeOptions = {},
+  options: AxSerializeOptions,
 ): AxSnapshotResult => {
   const verbose = options.verbose === true;
   const redactValues = options.redactValues === true;
@@ -342,7 +331,7 @@ export const serializeAxTree = (
       const bareSummary = !verbose && TEXT_SUMMARY_ROLES.has(role) && !label;
       const lineEmitted = parts.length > 0 && !bareSummary;
       if (lineEmitted) {
-        const uid = options.refForNode ? options.refForNode(node) : uidOf(node);
+        const uid = options.refForNode(node);
         if (uid) parts.push(`[uid=${uid}]`);
         lines.push(`${"  ".repeat(depth)}- ${parts.join(" ")}`);
         emitted++;

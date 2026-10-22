@@ -11,6 +11,7 @@ use std::time::Duration;
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 
 use super::chain::{ChainAction, ChainStepOutcome};
+use super::error::{Domain, ErrorKind, Failure};
 use super::platform;
 
 /// 平滑移动的最小总时长；低于此值直接瞬移（无意义插值）。
@@ -290,37 +291,44 @@ impl InputController {
 static CONTROLLER: OnceLock<Mutex<Option<InputController>>> = OnceLock::new();
 
 /// 键鼠操作前置检查：平台权限（macOS 辅助功能）。
-pub fn ensure_input_permission() -> Result<(), String> {
+pub fn ensure_input_permission() -> Result<(), Failure> {
     if platform::has_input_permission() {
         Ok(())
     } else {
-        Err(platform::input_permission_hint())
+        Err(Failure::of(
+            ErrorKind::PermissionDenied,
+            platform::input_permission_hint(),
+        ))
     }
 }
 
 /// 获取全局控制器并在互斥锁下执行闭包。所有键鼠操作串行化，
 /// 避免 AI 的多次并发调用产生交错事件序列。
+/// 底层 String 错误在此统一归入输入域（权限/超时/驱动错误分类）。
 fn with_controller<R>(
     operation: impl FnOnce(&mut InputController) -> Result<R, String>,
-) -> Result<R, String> {
+) -> Result<R, Failure> {
     let mutex = CONTROLLER.get_or_init(|| Mutex::new(None));
     let mut guard = mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if guard.is_none() {
         match InputController::new() {
             Ok(controller) => *guard = Some(controller),
             Err(error) => {
-                return Err(format!("{error}. {}", platform::input_permission_hint()));
+                return Err(Failure::classify(
+                    Domain::Input,
+                    format!("{error}. {}", platform::input_permission_hint()),
+                ));
             }
         }
     }
     let controller = guard
         .as_mut()
         .expect("input controller must be initialized above");
-    operation(controller)
+    operation(controller).map_err(|message| Failure::classify(Domain::Input, message))
 }
 
 /// 当前鼠标全局坐标。
-pub fn mouse_location() -> Result<(i32, i32), String> {
+pub fn mouse_location() -> Result<(i32, i32), Failure> {
     if let Some(point) = platform::cursor_position() {
         return Ok(point);
     }
@@ -329,7 +337,7 @@ pub fn mouse_location() -> Result<(i32, i32), String> {
 }
 
 /// 瞬移鼠标到全局坐标。
-pub fn move_mouse_instant(x: i32, y: i32) -> Result<(i32, i32), String> {
+pub fn move_mouse_instant(x: i32, y: i32) -> Result<(i32, i32), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         controller.move_to_instant(x, y)?;
@@ -338,7 +346,7 @@ pub fn move_mouse_instant(x: i32, y: i32) -> Result<(i32, i32), String> {
 }
 
 /// 平滑移动鼠标到全局坐标，返回最终位置。
-pub fn smooth_move_mouse(x: i32, y: i32, duration_ms: u64) -> Result<(i32, i32), String> {
+pub fn smooth_move_mouse(x: i32, y: i32, duration_ms: u64) -> Result<(i32, i32), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         controller.smooth_move_to(x, y, duration_ms)?;
@@ -356,7 +364,7 @@ pub fn click_mouse(
     interval_ms: u64,
     hold_ms: u64,
     move_duration_ms: u64,
-) -> Result<(i32, i32), String> {
+) -> Result<(i32, i32), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         if let (Some(x), Some(y)) = (x, y) {
@@ -377,7 +385,7 @@ pub fn drag_mouse(
     pre_move_duration_ms: u64,
     drag_duration_ms: u64,
     release_at_end: bool,
-) -> Result<(i32, i32), String> {
+) -> Result<(i32, i32), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         controller.drag(
@@ -394,7 +402,7 @@ pub fn drag_mouse(
 }
 
 /// 滚动。amount 单位为滚轮格（15° 档），正负号代表方向。
-pub fn scroll_mouse(amount: i32, axis: Axis) -> Result<(), String> {
+pub fn scroll_mouse(amount: i32, axis: Axis) -> Result<(), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| controller.scroll(amount, axis))
 }
@@ -406,7 +414,7 @@ pub fn mouse_button(
     x: Option<i32>,
     y: Option<i32>,
     move_duration_ms: u64,
-) -> Result<(i32, i32), String> {
+) -> Result<(i32, i32), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         if let (Some(x), Some(y)) = (x, y) {
@@ -425,13 +433,13 @@ pub fn mouse_button(
 }
 
 /// 组合键点击。
-pub fn tap_keys(keys: &[Key]) -> Result<(), String> {
+pub fn tap_keys(keys: &[Key]) -> Result<(), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| controller.tap_combination(keys))
 }
 
 /// 底层按键按下/释放（长按场景原语）。
-pub fn key_button(key: Key, action_press: bool) -> Result<(), String> {
+pub fn key_button(key: Key, action_press: bool) -> Result<(), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         controller.key(
@@ -446,7 +454,7 @@ pub fn key_button(key: Key, action_press: bool) -> Result<(), String> {
 }
 
 /// 输入文本（Unicode，走系统文本通道，非逐键模拟）。
-pub fn type_text(text: &str) -> Result<(), String> {
+pub fn type_text(text: &str) -> Result<(), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| controller.type_text(text))
 }
@@ -458,12 +466,14 @@ pub fn type_text(text: &str) -> Result<(), String> {
 pub fn run_action_chain(
     actions: &[ChainAction],
     continue_on_error: bool,
-) -> Result<(Vec<ChainStepOutcome>, Option<(i32, i32)>), String> {
+) -> Result<(Vec<ChainStepOutcome>, Option<(i32, i32)>), Failure> {
     ensure_input_permission()?;
     with_controller(|controller| {
         let mut outcomes = Vec::with_capacity(actions.len());
         for action in actions {
-            let error = execute_chain_action(controller, action).err();
+            let error = execute_chain_action(controller, action)
+                .err()
+                .map(|message| Failure::classify(Domain::Input, message));
             let aborted = error.is_some() && !continue_on_error;
             outcomes.push(ChainStepOutcome {
                 detail: super::chain::describe_action(action),

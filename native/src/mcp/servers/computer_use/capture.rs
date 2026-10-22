@@ -13,12 +13,13 @@ use image::{DynamicImage, ExtendedColorType, ImageFormat, Rgba};
 use serde_json::{json, Value};
 use xcap::Monitor;
 
+use super::error::{Domain, ErrorKind, Failure};
 use super::input;
 use super::platform;
 
-/// XCapError -> String 统一转换（模块内 Result<T, String> 用）。
-fn xerr(error: xcap::XCapError) -> String {
-    format!("{error}")
+/// XCapError -> 显示器域失败（枚举显示器 / 读取显示器属性用）。
+fn xerr(error: xcap::XCapError) -> Failure {
+    Failure::classify(Domain::Display, format!("{error}"))
 }
 
 /// 截图输出：编码后的图像 + 换算元数据。
@@ -112,7 +113,7 @@ fn cursor_position_on_image(
 }
 
 /// 列出显示器（primary 优先，再按 (x, y) 排序，index 即工具 display 参数）。
-pub fn list_displays() -> Result<Vec<Value>, String> {
+pub fn list_displays() -> Result<Vec<Value>, Failure> {
     let monitors = fetch_monitors()?;
     let mut entries: Vec<Value> = Vec::new();
     for (index, monitor) in monitors.iter().enumerate() {
@@ -133,11 +134,14 @@ pub fn list_displays() -> Result<Vec<Value>, String> {
 }
 
 /// 主显示器尺寸（逻辑点，与键鼠工具坐标系一致）。
-pub fn primary_display_size() -> Result<(u32, u32), String> {
+pub fn primary_display_size() -> Result<(u32, u32), Failure> {
     let monitors = fetch_monitors()?;
-    let monitor = monitors
-        .first()
-        .ok_or_else(|| "No displays were found".to_string())?;
+    let monitor = monitors.first().ok_or_else(|| {
+        Failure::of(
+            ErrorKind::DesktopUnavailable,
+            "No displays were found: the desktop session seems to be unavailable",
+        )
+    })?;
     Ok((
         monitor.width().map_err(xerr)?,
         monitor.height().map_err(xerr)?,
@@ -145,7 +149,7 @@ pub fn primary_display_size() -> Result<(u32, u32), String> {
 }
 
 /// 检查指定坐标是否落在任一显示器边界内（含容差），返回覆盖它的显示器。
-pub fn display_containing_point(x: i32, y: i32) -> Result<Option<usize>, String> {
+pub fn display_containing_point(x: i32, y: i32) -> Result<Option<usize>, Failure> {
     const EDGE_TOLERANCE: i32 = 2;
     let monitors = fetch_monitors()?;
     for (index, monitor) in monitors.iter().enumerate() {
@@ -165,17 +169,17 @@ pub fn display_containing_point(x: i32, y: i32) -> Result<Option<usize>, String>
 }
 
 /// 校验目标坐标在虚拟桌面内，越界时报错并列出显示器矩形，帮助模型自纠。
-pub fn ensure_point_on_desktop(x: i32, y: i32) -> Result<(), String> {
+pub fn ensure_point_on_desktop(x: i32, y: i32) -> Result<(), Failure> {
     if display_containing_point(x, y)?.is_some() {
         return Ok(());
     }
-    Err(format!(
+    Err(Failure::usage(format!(
         "Coordinate ({x}, {y}) is outside every display. Valid display rectangles: {}",
         display_rectangles_description()?
-    ))
+    )))
 }
 
-fn display_rectangles_description() -> Result<String, String> {
+fn display_rectangles_description() -> Result<String, Failure> {
     let monitors = fetch_monitors()?;
     let parts: Vec<String> = monitors
         .iter()
@@ -194,12 +198,15 @@ fn display_rectangles_description() -> Result<String, String> {
     Ok(parts.join(", "))
 }
 
-fn fetch_monitors() -> Result<Vec<Monitor>, String> {
+fn fetch_monitors() -> Result<Vec<Monitor>, Failure> {
     Monitor::all()
         .map_err(|error| {
-            format!(
-                "Failed to enumerate displays: {error}. {}",
-                platform::screen_capture_permission_hint()
+            Failure::classify(
+                Domain::Display,
+                format!(
+                    "Failed to enumerate displays: {error}. {}",
+                    platform::screen_capture_permission_hint()
+                ),
             )
         })
         .map(|mut monitors| {
@@ -218,16 +225,16 @@ fn fetch_monitors() -> Result<Vec<Monitor>, String> {
         })
 }
 
-fn resolve_display(display_index: u32) -> Result<Monitor, String> {
+fn resolve_display(display_index: u32) -> Result<Monitor, Failure> {
     let monitors = fetch_monitors()?;
     monitors
         .get(display_index as usize)
         .cloned()
         .ok_or_else(|| {
-            format!(
+            Failure::usage(format!(
                 "Display index {display_index} does not exist. Available displays: {}",
                 display_rectangles_description().unwrap_or_default()
-            )
+            ))
         })
 }
 
@@ -242,12 +249,15 @@ pub fn capture_screen(
     region: Option<(u32, u32, u32, u32)>,
     max_width: u32,
     png: bool,
-) -> Result<ScreenshotOutput, String> {
+) -> Result<ScreenshotOutput, Failure> {
     // macOS 权限预检：无屏幕录制权限时截图会返回黑屏或失败，
     // 主动触发授权弹窗并返回可行动的错误信息。
     if !platform::has_screen_capture_permission() {
         platform::request_screen_capture_permission();
-        return Err(platform::screen_capture_permission_hint());
+        return Err(Failure::of(
+            ErrorKind::PermissionDenied,
+            platform::screen_capture_permission_hint(),
+        ));
     }
 
     let monitor = resolve_display(display_index)?;
@@ -257,31 +267,37 @@ pub fn capture_screen(
     // 提前校验区域（xcap 内部也校验，这里给出带屏幕尺寸的清晰错误）
     if let Some((rx, ry, rw, rh)) = region {
         if rw == 0 || rh == 0 {
-            return Err("Region width and height must be positive".to_string());
+            return Err(Failure::usage("Region width and height must be positive"));
         }
         if rx.saturating_add(rw) > monitor_width || ry.saturating_add(rh) > monitor_height {
-            return Err(format!(
+            return Err(Failure::usage(format!(
                 "Region (x={rx}, y={ry}, width={rw}, height={rh}) exceeds display {display_index} bounds ({monitor_width}x{monitor_height}). Region uses display-local LOGICAL coordinates."
-            ));
+            )));
         }
     }
 
     let (image, region_or_full) = match region {
         Some((rx, ry, rw, rh)) => (
-            monitor
-                .capture_region(rx, ry, rw, rh)
-                .map_err(|error| format!("Failed to capture region: {error}"))?,
+            monitor.capture_region(rx, ry, rw, rh).map_err(|error| {
+                Failure::classify(Domain::Capture, format!("Failed to capture region: {error}"))
+            })?,
             (rx, ry, rw, rh),
         ),
         None => (
-            monitor
-                .capture_image()
-                .map_err(|error| format!("Failed to capture display: {error}"))?,
+            monitor.capture_image().map_err(|error| {
+                Failure::classify(Domain::Capture, format!("Failed to capture display: {error}"))
+            })?,
             (0, 0, monitor_width, monitor_height),
         ),
     };
     let original_width = image.width();
     let original_height = image.height();
+    if original_width == 0 || original_height == 0 {
+        return Err(Failure::of(
+            ErrorKind::CaptureFailed,
+            format!("The capture of display {display_index} came back empty (0x0 pixels)"),
+        ));
+    }
 
     // 等比缩小到 max_width（只缩不放，保持像素密度信息）
     let scale_down = if original_width > max_width {
@@ -315,7 +331,9 @@ pub fn capture_screen(
         let mut buffer = Vec::new();
         resized
             .write_to(&mut std::io::Cursor::new(&mut buffer), ImageFormat::Png)
-            .map_err(|error| format!("Failed to encode PNG: {error}"))?;
+            .map_err(|error| {
+                Failure::classify(Domain::Capture, format!("Failed to encode PNG: {error}"))
+            })?;
         ("image/png", BASE64_STANDARD.encode(buffer))
     } else {
         // JPEG 不支持 alpha：转 RGB 后用可控质量编码
@@ -324,7 +342,9 @@ pub fn capture_screen(
         let mut encoder = JpegEncoder::new_with_quality(&mut buffer, 82);
         encoder
             .encode(rgb.as_raw(), image_width, image_height, ExtendedColorType::Rgb8)
-            .map_err(|error| format!("Failed to encode JPEG: {error}"))?;
+            .map_err(|error| {
+                Failure::classify(Domain::Capture, format!("Failed to encode JPEG: {error}"))
+            })?;
         ("image/jpeg", BASE64_STANDARD.encode(buffer))
     };
 

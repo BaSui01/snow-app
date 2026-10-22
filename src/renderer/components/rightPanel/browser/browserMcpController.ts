@@ -13,7 +13,15 @@ type InstanceWaiter = {
 
 const instances = new Map<string, BrowserMcpCommandHandler>();
 const instanceWaiters = new Map<string, Set<InstanceWaiter>>();
-let focusedInstanceId: string | null = null;
+/** 用户在面板中当前激活的标签：只用于 Agent 尚未选定工作标签时的首次绑定。 */
+let userFocusedInstanceId: string | null = null;
+/**
+ * Agent 工作标签（issue #253）：省略 instanceId 的命令始终指向它，用户切换
+ * 标签只影响面板显示。由 browser-create / browser-focus 显式选定；尚未选定时，
+ * 首次省略 instanceId 的调用绑定到用户当前激活的标签。工作标签关闭后保留其
+ * ID，后续省略 instanceId 的调用明确报错，不回退到其他标签。
+ */
+let agentInstanceId: string | null = null;
 
 const parseCommandArgs = (argsJson: string): BrowserMcpCommandArgs => {
   const value = JSON.parse(argsJson) as unknown;
@@ -23,30 +31,58 @@ const parseCommandArgs = (argsJson: string): BrowserMcpCommandArgs => {
   return value as BrowserMcpCommandArgs;
 };
 
-const getFallbackInstanceId = (): string | null => {
-  if (focusedInstanceId && instances.has(focusedInstanceId)) {
-    return focusedInstanceId;
+const resolveAgentInstanceId = (operation: string): string => {
+  if (agentInstanceId) {
+    if (instances.has(agentInstanceId)) {
+      return agentInstanceId;
+    }
+    throw new Error(
+      `The agent's working browser tab ${agentInstanceId} is no longer available in this window (closed or moved to a separate window). Call browser-list, then browser-focus with an instanceId (or browser-create) to choose a new working tab, or pass instanceId explicitly.`,
+    );
   }
+  if (userFocusedInstanceId && instances.has(userFocusedInstanceId)) {
+    agentInstanceId = userFocusedInstanceId;
+    return agentInstanceId;
+  }
+  throw new Error(
+    `No embedded browser tab is selected for browser ${operation}; open one with browser-create or select one with browser-focus`,
+  );
+};
 
-  const registeredInstanceIds = [...instances.keys()];
-  return registeredInstanceIds.at(-1) ?? null;
+/** 解析命令目标：显式 instanceId 原样使用，省略或 current 时取 Agent 工作标签。 */
+export const resolveBrowserMcpTargetInstanceId = (
+  requested: unknown,
+  operation: string,
+): string => {
+  const instanceId = typeof requested === "string" ? requested.trim() : "";
+  if (instanceId && instanceId.toLowerCase() !== "current") {
+    return instanceId;
+  }
+  return resolveAgentInstanceId(operation);
 };
 
 export const createBrowserInstanceId = (): string =>
   `browser-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+/** 用户在面板中激活标签（点击/切换）时调用；不改变 Agent 工作标签。 */
 export const focusBrowserMcpInstance = (instanceId: string): void => {
   if (instances.has(instanceId)) {
-    focusedInstanceId = instanceId;
+    userFocusedInstanceId = instanceId;
   }
 };
+
+/** Agent 经 browser-create / browser-focus 显式选定工作标签。 */
+export const selectAgentBrowserInstance = (instanceId: string): void => {
+  agentInstanceId = instanceId;
+};
+
+export const getAgentBrowserInstanceId = (): string | null => agentInstanceId;
 
 export const registerBrowserMcpInstance = (
   instanceId: string,
   handler: BrowserMcpCommandHandler,
 ): (() => void) => {
   instances.set(instanceId, handler);
-  focusedInstanceId = instanceId;
   // 上报实例归属到主进程：命令按 instanceId 路由时能定位到本渲染进程
   // （实例弹出到独立浏览器窗口后归属随窗口迁移）。
   window.snow.notifyBrowserInstanceRegistered(instanceId);
@@ -63,8 +99,8 @@ export const registerBrowserMcpInstance = (
     if (instances.get(instanceId) === handler) {
       instances.delete(instanceId);
       window.snow.notifyBrowserInstanceUnregistered(instanceId);
-      if (focusedInstanceId === instanceId) {
-        focusedInstanceId = getFallbackInstanceId();
+      if (userFocusedInstanceId === instanceId) {
+        userFocusedInstanceId = null;
       }
       // 实例在就绪前被关闭(如 create 命令等待期间用户关掉 tab):
       // 立即 reject 挂起的 waiter 并清掉其超时定时器,避免定时器
@@ -140,18 +176,10 @@ export const executeBrowserMcpCommand = async (
       await window.snow.browserHeap(offlineHeapAction, args),
     );
   }
-  const requestedInstanceId =
-    typeof args.instanceId === "string" ? args.instanceId.trim() : "";
-  const useFocusedInstance =
-    !requestedInstanceId || requestedInstanceId.toLowerCase() === "current";
-  const instanceId = useFocusedInstance
-    ? getFallbackInstanceId()
-    : requestedInstanceId;
-  if (!instanceId) {
-    throw new Error(
-      `No embedded browser is available for browser ${operation}; open and focus a browser tab first`,
-    );
-  }
+  const instanceId = resolveBrowserMcpTargetInstanceId(
+    args.instanceId,
+    operation,
+  );
 
   const handler = instances.get(instanceId);
   if (!handler) {
@@ -162,9 +190,6 @@ export const executeBrowserMcpCommand = async (
 };
 
 export const parseBrowserMcpCommandArgs = parseCommandArgs;
-
-export const getFocusedBrowserInstanceId = (): string | null =>
-  getFallbackInstanceId();
 
 export const hasBrowserMcpInstance = (instanceId: string): boolean =>
   instances.has(instanceId);

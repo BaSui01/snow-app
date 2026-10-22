@@ -8,6 +8,7 @@ use enigo::{Axis, Button, Key};
 use serde_json::{json, Value};
 
 use super::capture::ensure_point_on_desktop;
+use super::error::Failure;
 use super::input::{parse_button, parse_key};
 use super::{
     bounded_u64, napi_error, optional_bool, optional_point_pair, optional_str, raw_i64,
@@ -83,10 +84,10 @@ pub enum ChainAction {
     },
 }
 
-/// 单步执行结果（detail 为动作摘要，error 为执行错误）。
+/// 单步执行结果（detail 为动作摘要，error 为已分类的执行错误）。
 pub struct ChainStepOutcome {
     pub detail: String,
-    pub error: Option<String>,
+    pub error: Option<Failure>,
 }
 
 /// 解析并校验整个动作链；任一步非法则报错且不执行任何动作。
@@ -128,7 +129,7 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
             let x = required_i32(raw, "x")?;
             let y = required_i32(raw, "y")?;
             let duration_ms = bounded_u64(raw, "durationMs", 0, 0, 5000);
-            ensure_point_on_desktop(x, y).map_err(napi_error)?;
+            ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             Ok(ChainAction::Move {
                 x,
                 y,
@@ -148,7 +149,7 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
                 ));
             }
             if let (Some(x), Some(y)) = (x, y) {
-                ensure_point_on_desktop(x, y).map_err(napi_error)?;
+                ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             }
             Ok(ChainAction::Click {
                 x,
@@ -169,9 +170,9 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
             let pre_move_duration_ms = bounded_u64(raw, "preMoveDurationMs", 0, 0, 5000);
             let duration = raw_i64(raw, "durationMs").map(|ms| ms.clamp(0, 10_000));
             let release_at_end = optional_bool(raw, "releaseAtEnd", true);
-            ensure_point_on_desktop(to_x, to_y).map_err(napi_error)?;
+            ensure_point_on_desktop(to_x, to_y).map_err(Failure::into_napi)?;
             if let (Some(x), Some(y)) = (x, y) {
-                ensure_point_on_desktop(x, y).map_err(napi_error)?;
+                ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             }
             Ok(ChainAction::Drag {
                 from: x.zip(y),
@@ -188,7 +189,7 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
             let axis = parse_axis(&optional_str(raw, "axis", "vertical"))?;
             let (x, y) = optional_point_pair(raw)?;
             if let (Some(x), Some(y)) = (x, y) {
-                ensure_point_on_desktop(x, y).map_err(napi_error)?;
+                ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             }
             Ok(ChainAction::Scroll { amount, axis, x, y })
         }
@@ -196,7 +197,7 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
             let button = parse_button(&optional_str(raw, "button", "left")).map_err(napi_error)?;
             let (x, y) = optional_point_pair(raw)?;
             if let (Some(x), Some(y)) = (x, y) {
-                ensure_point_on_desktop(x, y).map_err(napi_error)?;
+                ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             }
             Ok(ChainAction::MousePress { button, x, y })
         }
@@ -236,7 +237,7 @@ fn parse_action(raw: &Value) -> napi::Result<ChainAction> {
             }
             let (x, y) = optional_point_pair(raw)?;
             if let (Some(x), Some(y)) = (x, y) {
-                ensure_point_on_desktop(x, y).map_err(napi_error)?;
+                ensure_point_on_desktop(x, y).map_err(Failure::into_napi)?;
             }
             Ok(ChainAction::TypeText { text, x, y })
         }
@@ -376,7 +377,10 @@ pub fn format_result(
                 "detail": outcome.detail,
             });
             if let Some(error) = &outcome.error {
-                step["error"] = json!(error);
+                step["error"] = json!(error.labeled());
+                if let Some(code) = error.code() {
+                    step["errorCode"] = json!(code);
+                }
             }
             step
         })
@@ -392,17 +396,19 @@ pub fn format_result(
     });
     if let Some(index) = failed_index {
         let outcome = &outcomes[index];
-        let reason = outcome.error.as_deref().unwrap_or_default();
+        // 顶层错误给出完整分类信息（含环境快照），步骤级只给单行摘要
+        let reason = outcome
+            .error
+            .as_ref()
+            .map(Failure::render)
+            .unwrap_or_default();
         result["error"] = if performed < total {
             json!(format!(
-                "Action {index} ({}) failed and the chain was ABORTED: {reason}. Steps 0..{index} executed OK, steps {}..{} were skipped. Screenshot to recover, then re-send the remaining steps.",
+                "Action {index} ({}) failed and the chain was ABORTED. Steps 0..{index} executed OK, steps {}..{} were skipped. Screenshot to recover, then re-send the remaining steps.\n{reason}",
                 outcome.detail, index + 1, total
             ))
         } else {
-            json!(format!(
-                "Action {} ({}) failed: {reason}.",
-                index, outcome.detail
-            ))
+            json!(format!("Action {} ({}) failed.\n{reason}", index, outcome.detail))
         };
     }
     result

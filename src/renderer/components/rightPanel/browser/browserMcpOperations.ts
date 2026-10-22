@@ -1,5 +1,6 @@
 import {
   buildElementLocatorScript,
+  COLLECT_ROOTS_SCRIPT,
   DESCRIBE_ELEMENT_SCRIPT,
 } from "../../../../shared/browserElementLocator";
 import {
@@ -10,11 +11,7 @@ import {
   parseObservationRequest,
   startActionObservation,
 } from "./browserObservation";
-import {
-  resolveAxRef,
-  serializeAxTree,
-  type AxNode,
-} from "./browserAxSnapshot";
+import { resolveAxRef, snapshotAxTree, type AxNode } from "./browserAxSnapshot";
 import type { BrowserMcpCommandArgs } from "./browserMcpController";
 import {
   acquireCaptureRenderLease,
@@ -115,12 +112,66 @@ const requiredString = (args: BrowserMcpCommandArgs, field: string): string => {
 };
 
 /**
- * 无障碍快照 ref 回指：uid → backendDOMNodeId → DOM.resolveNode → callFunctionOn
+ * 无障碍快照 ref → CDP 对象（issue #251）：先按标签页 + 文档代际查表，再确认
+ * 节点仍属于快照时的主文档。backendNodeId 在跨进程导航后可能被新文档复用，
+ * 只做查表会静默命中新页面上的另一个节点，因此文档归属校验不可省略。
+ */
+const resolveRefObject = async (
+  webContentsId: number,
+  instanceId: string,
+  ref: string,
+): Promise<{ objectId: string; backendNodeId: number }> => {
+  const { backendNodeId, documentBackendId } = resolveAxRef(instanceId, ref);
+  const staleError = (detail?: string): Error =>
+    new Error(
+      `Element for ref ${ref} no longer belongs to the current document (the page navigated, reloaded or re-rendered). Capture a new accessibility snapshot (browser-devtools action=ax).${detail ? ` (${detail})` : ""}`,
+    );
+  const resolveObject = async (backend: number): Promise<string> => {
+    let resolved: { object?: { objectId?: string } } | undefined;
+    try {
+      resolved = (await window.snow.browserCdpCommand(
+        webContentsId,
+        "DOM.resolveNode",
+        { backendNodeId: backend },
+      )) as { object?: { objectId?: string } };
+    } catch (error) {
+      throw staleError(error instanceof Error ? error.message : String(error));
+    }
+    const objectId = resolved?.object?.objectId;
+    if (!objectId) {
+      throw staleError();
+    }
+    return objectId;
+  };
+  const documentObjectId = await resolveObject(documentBackendId);
+  const objectId = await resolveObject(backendNodeId);
+  const membership = (await window.snow.browserCdpCommand(
+    webContentsId,
+    "Runtime.callFunctionOn",
+    {
+      objectId,
+      functionDeclaration: `function(snapshotDocument) {
+        return snapshotDocument === document &&
+          this.isConnected &&
+          this.getRootNode({ composed: true }) === snapshotDocument;
+      }`,
+      arguments: [{ objectId: documentObjectId }],
+      returnByValue: true,
+    },
+  )) as { result?: { value?: unknown } };
+  if (membership?.result?.value !== true) {
+    throw staleError();
+  }
+  return { objectId, backendNodeId };
+};
+
+/**
+ * 无障碍快照 ref 回指：resolveRefObject（含文档归属校验）→ callFunctionOn
  * 取元素中心坐标与可见性（页面上下文执行）。返回 objectId 供 type 复用。
  */
 const resolveRefHandle = async (
-  webview: Electron.WebviewTag,
   webContentsId: number,
+  instanceId: string,
   ref: string,
 ): Promise<{
   objectId: string;
@@ -133,23 +184,7 @@ const resolveRefHandle = async (
     viewportH: number;
   };
 }> => {
-  const backend = resolveAxRef(ref);
-  if (backend === null) {
-    throw new Error(
-      `Ref ${ref} is not in the current snapshot. Capture a new accessibility snapshot (browser-devtools action=ax) first.`,
-    );
-  }
-  const resolved = (await window.snow.browserCdpCommand(
-    webContentsId,
-    "DOM.resolveNode",
-    { backendNodeId: backend },
-  )) as { object?: { objectId?: string } };
-  const objectId = resolved?.object?.objectId;
-  if (!objectId) {
-    throw new Error(
-      `Element for ref ${ref} no longer exists in the DOM. Capture a new accessibility snapshot.`,
-    );
-  }
+  const { objectId } = await resolveRefObject(webContentsId, instanceId, ref);
   const called = (await window.snow.browserCdpCommand(
     webContentsId,
     "Runtime.callFunctionOn",
@@ -548,6 +583,7 @@ const navigate = async (
  */
 const locateElementTarget = async (
   webview: Electron.WebviewTag,
+  instanceId: string,
   args: BrowserMcpCommandArgs,
   actionBody: string,
   exact = false,
@@ -563,8 +599,8 @@ const locateElementTarget = async (
   const ref = optionalString(args, "ref");
   if (ref) {
     const { info } = await resolveRefHandle(
-      webview,
       webview.getWebContentsId(),
+      instanceId,
       ref,
     );
     return { x: info.x, y: info.y, element: { tagName: info.tag, ref } };
@@ -599,6 +635,7 @@ const click = async (
     } else {
       target = await locateElementTarget(
         webview,
+        instanceId,
         args,
         `const rect = element.getBoundingClientRect();
     const x = Math.round(rect.left + rect.width / 2);
@@ -748,9 +785,217 @@ const buildFillBody = (
     },
   };`;
 
+/** 逐键输入的目标标记属性（issue #256）：焦点校验据此找回目标元素。 */
+const TYPE_TARGET_MARKER = "data-snow-type-target";
+
+type TypeTargetState = {
+  status: "focused" | "lost" | "missing";
+  /** 焦点不在目标上时，当前焦点元素的简述。 */
+  active?: string;
+  /** 输入结束后目标取值/文本是否包含本次输入（只回布尔，不回显取值）。 */
+  valueContainsInput?: boolean;
+};
+
+/** 页面上下文片段：按标记在 document 与 open shadow root 中找回目标，定义 target。 */
+const buildTypeTargetLookup = (token: string): string => `
+  ${COLLECT_ROOTS_SCRIPT}
+  const markerSelector = '[${TYPE_TARGET_MARKER}="' + ${JSON.stringify(token)} + '"]';
+  let target = null;
+  for (const root of roots) {
+    target = root.querySelector(markerSelector);
+    if (target) break;
+  }`;
+
+/**
+ * 焦点校验脚本：深层 activeElement（穿透 shadow root）沿 parentNode/host 向上
+ * 追溯到目标才算聚焦成功。focusFirst=true 时先聚焦并等两帧，让 focus 监听器
+ * 与异步渲染的抢焦点行为在校验前发生。
+ */
+const buildTypeTargetCheckScript = (
+  token: string,
+  focusFirst: boolean,
+  expectedText: string | null,
+): string => `(async () => {
+  ${buildTypeTargetLookup(token)}
+  if (!target) return { status: 'missing' };
+  if (${JSON.stringify(focusFirst)}) {
+    target.focus();
+    await new Promise((resolve) => {
+      // 后台/隐藏 webview 可能不调度动画帧，超时兜底。
+      const timer = setTimeout(resolve, 100);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clearTimeout(timer);
+        resolve();
+      }));
+    });
+  }
+  let active = document.activeElement;
+  while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+    active = active.shadowRoot.activeElement;
+  }
+  let within = false;
+  for (let node = active; node; node = node.parentNode || node.host) {
+    if (node === target) {
+      within = true;
+      break;
+    }
+  }
+  const result = { status: within ? 'focused' : 'lost' };
+  if (!within) {
+    if (!active || active === document.body || active === document.documentElement) {
+      result.active = 'the document body (no element focused)';
+    } else {
+      const tag = active.tagName ? active.tagName.toLowerCase() : 'unknown';
+      const label = String(
+        active.getAttribute('aria-label') ||
+        active.getAttribute('placeholder') ||
+        active.getAttribute('name') ||
+        ''
+      ).trim().slice(0, 60);
+      result.active = tag + (active.id ? '#' + active.id : '') + (label ? ' "' + label + '"' : '');
+    }
+  }
+  const expected = ${JSON.stringify(expectedText)};
+  if (expected !== null) {
+    const current = typeof target.value === 'string' ? target.value : (target.textContent || '');
+    result.valueContainsInput = current.includes(expected);
+  }
+  return result;
+})()`;
+
+const describeTypeTargetFailure = (state: TypeTargetState): string =>
+  state.status === "missing"
+    ? "the target element was removed or replaced (the page re-rendered)"
+    : `focus moved to ${state.active ?? "another element"}`;
+
+/**
+ * 逐键模式（issue #256）：真实键盘事件只会送达当前焦点元素，因此聚焦后先确认
+ * 焦点确实在目标上，每个按键前再复查一次；焦点被抢或目标被替换时立即报错并
+ * 停止输入，submit 的 Enter 也只在焦点仍在目标上时发送。
+ */
+const typeByKeys = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+  value: string,
+  submit: boolean,
+  delayMs: number,
+): Promise<Record<string, unknown>> => {
+  const selector = optionalPayloadString(args, "selector");
+  const text = optionalPayloadString(args, "text");
+  const ref = optionalString(args, "ref");
+  const webContentsId = webview.getWebContentsId();
+  const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  let element: unknown;
+  if (ref) {
+    const { objectId } = await resolveRefHandle(webContentsId, instanceId, ref);
+    const marked = (await window.snow.browserCdpCommand(
+      webContentsId,
+      "Runtime.callFunctionOn",
+      {
+        objectId,
+        functionDeclaration: `function(marker, token) {
+          this.setAttribute(marker, token);
+          return {
+            element: {
+              tagName: this.tagName ? this.tagName.toLowerCase() : '',
+              id: this.id || null,
+              text: (this.innerText || this.textContent || '')
+                .replace(/\\s+/g, ' ').trim().slice(0, ${TEXT_PREVIEW_LENGTH}),
+            },
+          };
+        }`,
+        arguments: [{ value: TYPE_TARGET_MARKER }, { value: token }],
+        returnByValue: true,
+      },
+    )) as { result?: { value?: { element?: unknown } } };
+    element = marked?.result?.value?.element;
+  } else {
+    const markScript = buildElementLocatorScript(
+      selector ?? null,
+      text ?? null,
+      false,
+      `element.setAttribute(${JSON.stringify(TYPE_TARGET_MARKER)}, ${JSON.stringify(token)});
+      return {
+        element: {
+          tagName: element.tagName.toLowerCase(),
+          id: element.id || null,
+          text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
+        },
+      };`,
+    );
+    element = (
+      (await webview.executeJavaScript(markScript)) as { element: unknown }
+    ).element;
+  }
+  const check = async (
+    focusFirst: boolean,
+    expectedText: string | null = null,
+  ): Promise<TypeTargetState> =>
+    (await webview.executeJavaScript(
+      buildTypeTargetCheckScript(token, focusFirst, expectedText),
+    )) as TypeTargetState;
+  try {
+    // 先让 guest 获得输入焦点再聚焦目标：顺序反过来时，guest 获焦的瞬间
+    // 页面可能把焦点交给其他元素。
+    webview.focus();
+    const initial = await check(true);
+    if (initial.status !== "focused") {
+      throw new Error(
+        `Focus check failed before typing: ${describeTypeTargetFailure(initial)}. Nothing was typed. Re-observe the page (browser-devtools action=ax) and retry.`,
+      );
+    }
+    const chars = Array.from(value);
+    for (const [index, char] of chars.entries()) {
+      if (index > 0) {
+        const state = await check(false);
+        if (state.status !== "focused") {
+          throw new Error(
+            `Focus was lost while typing: ${describeTypeTargetFailure(state)} after ${index} of ${chars.length} characters; the remaining characters were not sent. Re-observe the page before retrying (the target may already contain partial input).`,
+          );
+        }
+      }
+      await webview.sendInputEvent({ type: "keyDown", keyCode: char });
+      await webview.sendInputEvent({ type: "char", keyCode: char });
+      await webview.sendInputEvent({ type: "keyUp", keyCode: char });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    const final = await check(false, value);
+    if (submit) {
+      if (final.status !== "focused") {
+        throw new Error(
+          `Focus was lost before submitting: ${describeTypeTargetFailure(final)}. All ${chars.length} characters were typed but Enter was not sent. Re-observe the page before retrying.`,
+        );
+      }
+      await webview.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+      await webview.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+    }
+    return {
+      mode: "keys",
+      element,
+      typedChars: chars.length,
+      // 每个按键发送前都确认过焦点在目标上。
+      focusVerified: true,
+      focusRetained: final.status === "focused",
+      ...(final.valueContainsInput !== undefined
+        ? { valueContainsInput: final.valueContainsInput }
+        : {}),
+    };
+  } finally {
+    await webview
+      .executeJavaScript(
+        `(() => {${buildTypeTargetLookup(token)}
+          if (target) target.removeAttribute(${JSON.stringify(TYPE_TARGET_MARKER)});
+        })()`,
+      )
+      .catch(() => {});
+  }
+};
+
 /** 输入/设值的实际派发逻辑（不含观察与回执）；fill_form 复用。 */
 const typeInto = async (
   webview: Electron.WebviewTag,
+  instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<Record<string, unknown>> => {
   const selector = optionalPayloadString(args, "selector");
@@ -761,69 +1006,14 @@ const typeInto = async (
   const delayMs = typeof args.delayMs === "number" ? args.delayMs : 0;
   const webContentsId = webview.getWebContentsId();
 
-  // 逐键模式：聚焦元素，用真实键盘事件逐字符输入（触发表单校验）。
+  // 逐键模式：用真实键盘事件逐字符输入（触发表单校验），全程校验焦点。
   if (delayMs > 0) {
-    let target: { element: unknown };
-    if (ref) {
-      const { objectId } = await resolveRefHandle(webview, webContentsId, ref);
-      const focused = (await window.snow.browserCdpCommand(
-        webContentsId,
-        "Runtime.callFunctionOn",
-        {
-          objectId,
-          functionDeclaration: `function() {
-            this.focus();
-            return {
-              element: {
-                tagName: this.tagName ? this.tagName.toLowerCase() : '',
-                id: this.id || null,
-                text: (this.innerText || this.textContent || this.value || '')
-                  .replace(/\\s+/g, ' ').trim().slice(0, ${TEXT_PREVIEW_LENGTH}),
-              },
-            };
-          }`,
-          returnByValue: true,
-        },
-      )) as { result?: { value?: { element?: unknown } } };
-      target = { element: focused?.result?.value?.element };
-    } else {
-      const focusScript = buildElementLocatorScript(
-        selector ?? null,
-        text ?? null,
-        false,
-        `element.focus();
-        return {
-          element: {
-            tagName: element.tagName.toLowerCase(),
-            id: element.id || null,
-            text: describe(element).slice(0, ${TEXT_PREVIEW_LENGTH}),
-          },
-        };`,
-      );
-      target = (await webview.executeJavaScript(focusScript)) as {
-        element: unknown;
-      };
-    }
-    webview.focus();
-    for (const char of value) {
-      await webview.sendInputEvent({ type: "keyDown", keyCode: char });
-      await webview.sendInputEvent({ type: "char", keyCode: char });
-      await webview.sendInputEvent({ type: "keyUp", keyCode: char });
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-    if (submit) {
-      await webview.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
-      await webview.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
-    }
-    return {
-      mode: "keys",
-      element: target.element,
-    };
+    return typeByKeys(webview, instanceId, args, value, submit, delayMs);
   }
 
   // 默认一次性设值模式。
   if (ref) {
-    const { objectId } = await resolveRefHandle(webview, webContentsId, ref);
+    const { objectId } = await resolveRefHandle(webContentsId, instanceId, ref);
     const filled = (await window.snow.browserCdpCommand(
       webContentsId,
       "Runtime.callFunctionOn",
@@ -867,7 +1057,7 @@ const type = async (
   getConsoleMessages: () => readonly unknown[],
 ): Promise<unknown> =>
   actionReceipt(webview, instanceId, args, getConsoleMessages, () =>
-    typeInto(webview, args),
+    typeInto(webview, instanceId, args),
   );
 
 /** 批量填充表单：逐个元素复用 type 的填充逻辑，单项失败不中断，汇总结果。 */
@@ -890,7 +1080,7 @@ const fillForm = async (
           ? (item as BrowserMcpCommandArgs)
           : {};
       try {
-        await typeInto(webview, itemArgs);
+        await typeInto(webview, instanceId, itemArgs);
         results.push({ index, ok: true });
         successCount += 1;
       } catch (error) {
@@ -1039,15 +1229,10 @@ const cssStyles = async (
 ): Promise<unknown> => {
   const selector = optionalPayloadString(args, "selector");
   const ref = optionalString(args, "ref");
-  let backendNodeId: number | undefined;
-  if (ref) {
-    backendNodeId = resolveAxRef(ref) ?? undefined;
-    if (backendNodeId === undefined) {
-      throw new Error(
-        `Ref ${ref} is not in the current snapshot. Capture a new accessibility snapshot (browser-devtools action=ax) first.`,
-      );
-    }
-  }
+  const backendNodeId = ref
+    ? (await resolveRefObject(webview.getWebContentsId(), instanceId, ref))
+        .backendNodeId
+    : undefined;
   if (!selector && backendNodeId === undefined) {
     throw new Error(
       "Either selector or ref is required for browser-get_css_styles",
@@ -1281,17 +1466,16 @@ const uploadFile = async (
   const ref = optionalString(args, "ref");
 
   if (ref) {
-    const backend = resolveAxRef(ref);
-    if (backend === null) {
-      throw new Error(
-        `Ref ${ref} is not in the current snapshot. Capture a new accessibility snapshot (browser-devtools action=ax) first.`,
-      );
-    }
+    const { backendNodeId } = await resolveRefObject(
+      webContentsId,
+      instanceId,
+      ref,
+    );
     await window.snow.browserCdpCommand(
       webContentsId,
       "DOM.setFileInputFiles",
       {
-        backendNodeId: backend,
+        backendNodeId,
         files,
       },
     );
@@ -1306,6 +1490,7 @@ const uploadFile = async (
   // selector/text：定位并打临时标记，再经 CDP DOM 查询后注入文件。
   await locateElementTarget(
     webview,
+    instanceId,
     args,
     `if (!element.matches('input[type="file"]')) {
       throw new Error('Target element is not a file input');
@@ -1468,7 +1653,7 @@ const screenshotInRenderMode = async (
     null;
   let elementInfo: unknown = null;
   if (ref) {
-    const { objectId } = await resolveRefHandle(webview, webContentsId, ref);
+    const { objectId } = await resolveRefHandle(webContentsId, instanceId, ref);
     const rectInfo = (await window.snow.browserCdpCommand(
       webContentsId,
       "Runtime.callFunctionOn",
@@ -1520,6 +1705,7 @@ const screenshotInRenderMode = async (
   } else if (selector) {
     const target = await locateElementTarget(
       webview,
+      instanceId,
       args,
       `const rect = element.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0) throw new Error('Element has no layout box');
@@ -1638,6 +1824,164 @@ const pressKey = async (
     }
 
     return { key };
+  });
+
+/**
+ * 页面上下文的滚动函数（issue #252）：(start, deltaY, position) => 回执。
+ * start 自身不可滚动时沿父节点（穿透 shadow host）找最近的可滚动祖先；未指定
+ * start 时滚动文档，文档不可滚动则选视口内可见面积最大的可滚动容器。滚动采用
+ * 程序化 scrollBy/scrollTo（可作用于内部容器），返回前后位置供核验是否移动。
+ */
+const SCROLL_FUNCTION = `async (start, deltaY, position) => {
+  const scrollingRoot = document.scrollingElement || document.documentElement;
+  const canScroll = (element) => {
+    if (element.scrollHeight <= element.clientHeight) return false;
+    if (element === scrollingRoot) return true;
+    return /(auto|scroll|overlay)/.test(getComputedStyle(element).overflowY);
+  };
+  let container = null;
+  let auto = false;
+  if (start) {
+    let node = start;
+    while (node) {
+      if (canScroll(node)) {
+        container = node;
+        break;
+      }
+      const root = node.getRootNode();
+      node = node.parentElement || (root instanceof ShadowRoot ? root.host : null);
+    }
+  } else if (canScroll(scrollingRoot)) {
+    container = scrollingRoot;
+  } else {
+    ${COLLECT_ROOTS_SCRIPT}
+    let bestArea = 0;
+    for (const root of roots) {
+      for (const element of root.querySelectorAll('*')) {
+        if (!canScroll(element)) continue;
+        const rect = element.getBoundingClientRect();
+        const width = Math.min(rect.right, innerWidth) - Math.max(rect.left, 0);
+        const height = Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0);
+        const area = Math.max(0, width) * Math.max(0, height);
+        if (area > bestArea) {
+          bestArea = area;
+          container = element;
+        }
+      }
+    }
+    auto = container !== null;
+  }
+  if (!container) container = scrollingRoot;
+  const read = () => ({
+    scrollTop: Math.round(container.scrollTop),
+    scrollHeight: container.scrollHeight,
+    clientHeight: container.clientHeight,
+  });
+  const before = read();
+  if (position === 'top') {
+    container.scrollTo({ top: 0, behavior: 'instant' });
+  } else if (position === 'bottom') {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'instant' });
+  } else {
+    container.scrollBy({ top: deltaY, behavior: 'instant' });
+  }
+  await new Promise((resolve) => {
+    // 等两帧让滚动生效并触发懒加载监听；后台 webview 可能不调度动画帧。
+    const timer = setTimeout(resolve, 100);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      clearTimeout(timer);
+      resolve();
+    }));
+  });
+  const after = read();
+  const className = container !== scrollingRoot && typeof container.className === 'string'
+    ? container.className.trim().slice(0, 80)
+    : '';
+  return {
+    moved: after.scrollTop !== before.scrollTop,
+    before,
+    after,
+    atTop: after.scrollTop <= 0,
+    atBottom: after.scrollTop >= after.scrollHeight - after.clientHeight - 1,
+    container: {
+      tagName: container === scrollingRoot ? 'document' : container.tagName.toLowerCase(),
+      id: container === scrollingRoot ? null : container.id || null,
+      className: className || null,
+      auto,
+    },
+  };
+}`;
+
+const scroll = async (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+  getConsoleMessages: () => readonly unknown[],
+): Promise<unknown> =>
+  actionReceipt(webview, instanceId, args, getConsoleMessages, async () => {
+    const selector = optionalPayloadString(args, "selector");
+    const ref = optionalString(args, "ref");
+    const position =
+      args.position === "top" || args.position === "bottom"
+        ? args.position
+        : null;
+    const deltaY =
+      position === null && typeof args.deltaY === "number" ? args.deltaY : null;
+    if (position === null && deltaY === null) {
+      throw new Error(
+        "Either deltaY or position is required for browser-scroll",
+      );
+    }
+    const webContentsId = webview.getWebContentsId();
+    let result: Record<string, unknown> | undefined;
+    if (ref) {
+      const { objectId } = await resolveRefObject(
+        webContentsId,
+        instanceId,
+        ref,
+      );
+      const called = (await window.snow.browserCdpCommand(
+        webContentsId,
+        "Runtime.callFunctionOn",
+        {
+          objectId,
+          functionDeclaration: `function(deltaY, position) {
+            return (${SCROLL_FUNCTION})(this, deltaY, position);
+          }`,
+          arguments: [{ value: deltaY }, { value: position }],
+          awaitPromise: true,
+          returnByValue: true,
+        },
+      )) as { result?: { value?: Record<string, unknown> } };
+      result = called?.result?.value;
+    } else {
+      result = (await webview.executeJavaScript(`(async () => {
+        const selector = ${JSON.stringify(selector ?? null)};
+        let start = null;
+        if (selector) {
+          ${COLLECT_ROOTS_SCRIPT}
+          try {
+            for (const root of roots) {
+              start = root.querySelector(selector);
+              if (start) break;
+            }
+          } catch {
+            throw new Error('Invalid CSS selector: ' + selector);
+          }
+          if (!start) {
+            throw new Error('No element matches the selector: ' + selector);
+          }
+        }
+        return (${SCROLL_FUNCTION})(start, ${JSON.stringify(deltaY)}, ${JSON.stringify(position)});
+      })()`)) as Record<string, unknown> | undefined;
+    }
+    if (!result || typeof result !== "object") {
+      throw new Error("Browser scroll did not return a result");
+    }
+    return {
+      ...(position ? { position } : { deltaY }),
+      ...result,
+    };
   });
 
 const hover = async (
@@ -1778,7 +2122,7 @@ const devtools = async (
         "Accessibility tree is empty; ensure the page is loaded and the browser debugger is available (close page DevTools if open)",
       );
     }
-    const result = serializeAxTree(nodes, { verbose, maxNodes });
+    const result = snapshotAxTree(instanceId, nodes, { verbose, maxNodes });
     return {
       ...(await currentPageMetadata(webview, instanceId)),
       accessibility: result.tree,
@@ -1787,7 +2131,7 @@ const devtools = async (
         emitted: result.emitted,
         truncated: result.truncated,
       },
-      note: "Elements are addressable via [uid=...] with browser-click ref=<uid> or browser-type ref=<uid>. Compact output keeps control values (value/min/max) and states (checked/selected/expanded/disabled); password-like values are masked. Take a new snapshot after the page changes.",
+      note: "Elements are addressable via [uid=...] with browser-click ref=<uid> or browser-type ref=<uid>. Compact output keeps control values (value/min/max) and states (checked/selected/expanded/disabled); password-like values are masked. Uids are bound to this tab and its current document: after a navigation or reload they are rejected, so take a new snapshot after the page changes.",
     };
   }
   if (action === "trace") {
@@ -2246,6 +2590,7 @@ const OBSERVABLE_OPERATIONS = new Set([
   "fill_form",
   "select_option",
   "press_key",
+  "scroll",
 ]);
 
 export const executeBrowserMcpOperation = async (
@@ -2322,6 +2667,8 @@ export const executeBrowserMcpOperation = async (
       return wait(webview, instanceId, args);
     case "press_key":
       return pressKey(webview, instanceId, args, getConsoleMessages);
+    case "scroll":
+      return scroll(webview, instanceId, args, getConsoleMessages);
     case "hover":
       return hover(webview, instanceId, args);
     case "select_option":

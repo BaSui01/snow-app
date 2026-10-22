@@ -5,6 +5,7 @@ import {
   Activity,
   AlertCircle,
   AppWindow,
+  ArrowDownUp,
   ArrowLeft,
   ArrowRight,
   Bot,
@@ -83,6 +84,7 @@ type BrowserOperation =
   | "request_share"
   | "wait"
   | "press_key"
+  | "scroll"
   | "hover"
   | "navigate_back"
   | "navigate_forward"
@@ -903,6 +905,84 @@ const PressKeyView = ({
         <Keyboard size={12} aria-hidden="true" />
         <code className="tool-call-browser-target-selector">{key}</code>
       </div>
+      {url || instanceId ? (
+        <PageCard title={title ?? ""} url={url ?? ""} instanceId={instanceId} />
+      ) : null}
+    </>
+  );
+};
+
+/* scroll：滚动目标 + 前后位置 + 是否移动 */
+const ScrollView = ({
+  args,
+  data,
+}: {
+  args: Record<string, unknown> | null;
+  data: Record<string, unknown> | null;
+}): React.JSX.Element => {
+  const { t } = useI18n();
+  const selector = asString(args?.selector);
+  const ref = asString(args?.ref);
+  const position = asString(data?.position) ?? asString(args?.position);
+  const deltaY = asNumber(data?.deltaY) ?? asNumber(args?.deltaY);
+  const container = isRecord(data?.container) ? data.container : null;
+  const containerTag = asString(container?.tagName);
+  const containerId = asString(container?.id);
+  const containerLabel = containerTag
+    ? `${containerTag}${containerId ? `#${containerId}` : ""}`
+    : undefined;
+  const beforeTop = asNumber(
+    isRecord(data?.before) ? data.before.scrollTop : undefined,
+  );
+  const afterTop = asNumber(
+    isRecord(data?.after) ? data.after.scrollTop : undefined,
+  );
+  const url = asString(data?.url);
+  const title = asString(data?.title);
+  const instanceId = asString(data?.instanceId);
+  const actionLabel =
+    position === "top"
+      ? t("toolCall.browser.scroll.top")
+      : position === "bottom"
+        ? t("toolCall.browser.scroll.bottom")
+        : deltaY !== undefined
+          ? t("toolCall.browser.scroll.delta", { values: { count: deltaY } })
+          : undefined;
+  const target = selector ?? ref ?? containerLabel;
+  return (
+    <>
+      <div className="tool-call-browser-target">
+        <ArrowDownUp size={12} aria-hidden="true" />
+        {target ? (
+          <code className="tool-call-browser-target-selector">
+            {String(sanitizeBrowserDisplayValue(target))}
+          </code>
+        ) : null}
+        {actionLabel ? (
+          <span className="tool-call-browser-target-text">{actionLabel}</span>
+        ) : null}
+      </div>
+      {data ? (
+        <StatusRow
+          icon={data.moved === true ? CheckCircle2 : AlertCircle}
+          label={
+            data.moved === true
+              ? t("toolCall.browser.scroll.moved", {
+                  values: { from: beforeTop ?? 0, to: afterTop ?? 0 },
+                })
+              : t("toolCall.browser.scroll.notMoved")
+          }
+        >
+          {container?.auto === true ? (
+            <Tag tone="blue">{t("toolCall.browser.scroll.autoContainer")}</Tag>
+          ) : null}
+          {data.atBottom === true ? (
+            <Tag>{t("toolCall.browser.scroll.atBottom")}</Tag>
+          ) : data.atTop === true ? (
+            <Tag>{t("toolCall.browser.scroll.atTop")}</Tag>
+          ) : null}
+        </StatusRow>
+      ) : null}
       {url || instanceId ? (
         <PageCard title={title ?? ""} url={url ?? ""} instanceId={instanceId} />
       ) : null}
@@ -2213,6 +2293,7 @@ const RUNNING_LABEL_KEYS: Partial<Record<BrowserOperation, string>> = {
   request_share: "toolCall.browser.running.request_share",
   wait: "toolCall.browser.running.wait",
   press_key: "toolCall.browser.running.press_key",
+  scroll: "toolCall.browser.running.scroll",
   hover: "toolCall.browser.running.hover",
   navigate_back: "toolCall.browser.running.navigate_back",
   navigate_forward: "toolCall.browser.running.navigate_forward",
@@ -2348,6 +2429,17 @@ export const BrowserToolCall = ({
     case "press_key":
       displayName = asString(parsedArgs?.key) ?? undefined;
       break;
+    case "scroll": {
+      const position = asString(parsedArgs?.position);
+      const deltaY = asNumber(parsedArgs?.deltaY);
+      const scrollTarget = argSelector ?? argRef;
+      const amount = position ?? (deltaY !== undefined ? `${deltaY}px` : "");
+      displayName =
+        [scrollTarget ? truncateLabel(scrollTarget, 40) : "", amount]
+          .filter(Boolean)
+          .join(" ") || undefined;
+      break;
+    }
     case "hover":
       displayName = argSelector
         ? truncateLabel(argSelector, 48)
@@ -2640,6 +2732,8 @@ export const BrowserToolCall = ({
         return <WaitView args={parsedArgs} data={data} />;
       case "press_key":
         return <PressKeyView args={parsedArgs} data={data} />;
+      case "scroll":
+        return <ScrollView args={parsedArgs} data={data} />;
       case "hover":
         return <HoverView args={parsedArgs} data={data} />;
       case "select_option":

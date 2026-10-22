@@ -6,6 +6,18 @@ export const DESCRIBE_ELEMENT_SCRIPT = `
     element.getAttribute('aria-label') ||
     element.getAttribute('title')
   );`;
+/** 页面上下文片段：收集 document 与全部 open shadow root，定义 roots。 */
+export const COLLECT_ROOTS_SCRIPT = `
+  const collectRoots = (root, roots) => {
+    roots.push(root);
+    for (const element of root.querySelectorAll('*')) {
+      if (element.shadowRoot) {
+        collectRoots(element.shadowRoot, roots);
+      }
+    }
+  };
+  const roots = [];
+  collectRoots(document, roots);`;
 // 公共元素定位脚本：selector/text + shadowRoot 遍历 + 可见性/禁用检查 +
 // scrollIntoView 居中。actionBody 在元素就绪后执行（可返回任意结果）。
 // 被 click / type 复用，避免定位逻辑重复。
@@ -42,16 +54,7 @@ export const buildElementLocatorScript = (
       rect.width > 0 &&
       rect.height > 0;
   };
-  const collectRoots = (root, roots) => {
-    roots.push(root);
-    for (const element of root.querySelectorAll('*')) {
-      if (element.shadowRoot) {
-        collectRoots(element.shadowRoot, roots);
-      }
-    }
-  };
-  const roots = [];
-  collectRoots(document, roots);
+  ${COLLECT_ROOTS_SCRIPT}
   let element = null;
   if (selector) {
     try {

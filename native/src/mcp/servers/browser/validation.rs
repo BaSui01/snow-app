@@ -42,6 +42,7 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
         "nodeType",
         "sortBy",
         "insightId",
+        "position",
     ] {
         if let Some(Value::String(value)) = normalized.get_mut(field) {
             *value = value.trim().to_string();
@@ -738,6 +739,68 @@ pub(crate) fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi
             required_non_empty_string(args, "key", tool_name)?;
             validate_observation_args(args, tool_name, &mut normalized)?;
         }
+        "scroll" => {
+            optional_non_empty_string(args, "instanceId")?;
+            let selector = optional_non_empty_string(args, "selector")?;
+            let ref_value = optional_non_empty_string(args, "ref")?;
+            if selector.is_some() && ref_value.is_some() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "selector and ref are mutually exclusive for browser-scroll".to_string(),
+                ));
+            }
+            let position = optional_non_empty_string(args, "position")?;
+            let delta = match args.get("deltaY") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(
+                    value
+                        .as_f64()
+                        .filter(|number| number.is_finite())
+                        .ok_or_else(|| {
+                            Error::new(
+                                Status::InvalidArg,
+                                "deltaY must be an integer for browser-scroll".to_string(),
+                            )
+                        })?
+                        .round() as i64,
+                ),
+            };
+            match (delta, position) {
+                (Some(_), Some(_)) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "deltaY and position are mutually exclusive for browser-scroll"
+                            .to_string(),
+                    ));
+                }
+                (None, None) => {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "Either deltaY or position is required for browser-scroll".to_string(),
+                    ));
+                }
+                (Some(delta), None) => {
+                    if delta == 0 || delta.abs() > MAX_SCROLL_DELTA {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!(
+                                "deltaY must be a non-zero integer between -{MAX_SCROLL_DELTA} and {MAX_SCROLL_DELTA}"
+                            ),
+                        ));
+                    }
+                    normalized.insert("deltaY".to_string(), json!(delta));
+                }
+                (None, Some(position)) => {
+                    if !matches!(position, "top" | "bottom") {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            "position must be top or bottom for browser-scroll".to_string(),
+                        ));
+                    }
+                }
+            }
+            validate_observation_args(args, tool_name, &mut normalized)?;
+        }
         "select_option" => {
             optional_non_empty_string(args, "instanceId")?;
             let selector = optional_non_empty_string(args, "selector")?;
@@ -1401,7 +1464,7 @@ pub(crate) fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-fill_form, browser-drag, browser-select_option, browser-press_key, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames, browser-request_share, browser-emulate, browser-resize_page, browser-performance_start_trace, browser-performance_stop_trace, browser-performance_analyze_insight, browser-get_css_styles, browser-audit, browser-take_heapsnapshot, browser-get_heapsnapshot_summary, browser-query_heapsnapshot_objects, browser-get_heapsnapshot_object_details, browser-get_heapsnapshot_edges, browser-get_heapsnapshot_retainers, browser-get_heapsnapshot_retaining_paths, browser-get_heapsnapshot_duplicate_strings, browser-compare_heapsnapshots, browser-screencast_start, browser-screencast_stop, browser-list_page_tools, browser-call_page_tool]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-hover, browser-type, browser-fill_form, browser-drag, browser-select_option, browser-press_key, browser-scroll, browser-screenshot, browser-wait, browser-devtools, browser-close, browser-focus, browser-list, browser-evaluate, browser-upload-file, browser-back, browser-forward, browser-get_tab_content, browser-frames, browser-request_share, browser-emulate, browser-resize_page, browser-performance_start_trace, browser-performance_stop_trace, browser-performance_analyze_insight, browser-get_css_styles, browser-audit, browser-take_heapsnapshot, browser-get_heapsnapshot_summary, browser-query_heapsnapshot_objects, browser-get_heapsnapshot_object_details, browser-get_heapsnapshot_edges, browser-get_heapsnapshot_retainers, browser-get_heapsnapshot_retaining_paths, browser-get_heapsnapshot_duplicate_strings, browser-compare_heapsnapshots, browser-screencast_start, browser-screencast_stop, browser-list_page_tools, browser-call_page_tool]"
         ),
     )
 }

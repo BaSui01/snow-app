@@ -44,6 +44,7 @@ import {
   recordMainFrameNavigationFailure,
   recordMainFrameNavigationSuccess,
 } from "./browser/browserMcpOperations";
+import { invalidateAxRefs } from "./browser/browserAxSnapshot";
 import {
   TERMINAL_INSERT_TEXT_EVENT,
   type TerminalInsertTextPayload,
@@ -510,6 +511,12 @@ export const BrowserPanelContent = ({
         onUrlChangeRef.current?.(e.url);
       };
 
+      // 主 frame 跨文档导航（含重载）：旧文档的无障碍快照 ref 全部作废
+      // （issue #251）。页面内导航（pushState/hash）不换文档，ref 仍有效。
+      const handleDidNavigateDocument = (): void => {
+        invalidateAxRefs(instanceId);
+      };
+
       const handleDidStartLoading = (): void => {
         setIsLoading(true);
       };
@@ -605,6 +612,7 @@ export const BrowserPanelContent = ({
 
       webview.addEventListener("dom-ready", handleDomReady);
       webview.addEventListener("did-navigate", handleDidNavigate);
+      webview.addEventListener("did-navigate", handleDidNavigateDocument);
       webview.addEventListener("did-navigate-in-page", handleDidNavigate);
       webview.addEventListener(
         "did-start-loading",
@@ -784,6 +792,7 @@ export const BrowserPanelContent = ({
       clearBrowserRecordingRenderLease(instanceId);
       clearBrowserRouteRulesForInstance(instanceId);
       clearBrowserNavigationState(instanceId);
+      invalidateAxRefs(instanceId);
     };
   }, [instanceId]);
 

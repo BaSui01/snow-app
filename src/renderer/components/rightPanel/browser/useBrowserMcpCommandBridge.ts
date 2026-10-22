@@ -4,9 +4,11 @@ import { rightPanelEvents } from "../rightPanelEvents";
 import {
   createBrowserInstanceId,
   executeBrowserMcpCommand,
-  getFocusedBrowserInstanceId,
+  getAgentBrowserInstanceId,
   isOfflineBrowserHeapOperation,
   parseBrowserMcpCommandArgs,
+  resolveBrowserMcpTargetInstanceId,
+  selectAgentBrowserInstance,
   waitForBrowserMcpInstance,
 } from "./browserMcpController";
 import {
@@ -46,16 +48,6 @@ export type BrowserMcpTabCallbacks = {
   closeTab: (instanceId: string) => boolean;
   focusTab: (instanceId: string) => boolean;
   listTabs: () => BrowserTabInfo[];
-};
-
-const resolveInstanceId = (argsJson: string): string | null => {
-  const args = parseBrowserMcpCommandArgs(argsJson);
-  const requested =
-    typeof args.instanceId === "string" ? args.instanceId.trim() : "";
-  if (!requested || requested.toLowerCase() === "current") {
-    return getFocusedBrowserInstanceId();
-  }
-  return requested;
 };
 
 const readStringArg = (
@@ -133,6 +125,9 @@ export const useBrowserMcpCommandBridge = (
               url: url ?? "",
             });
             await waitForBrowserMcpInstance(instanceId);
+            // 新建的标签成为 Agent 工作标签：之后省略 instanceId 的命令
+            // 都指向它，用户切换标签不会改变目标（issue #253）。
+            selectAgentBrowserInstance(instanceId);
             return JSON.stringify({
               instanceId,
               url: url || null,
@@ -143,12 +138,10 @@ export const useBrowserMcpCommandBridge = (
           }
 
           case "close": {
-            const instanceId = resolveInstanceId(request.argsJson);
-            if (!instanceId) {
-              throw new Error(
-                "No embedded browser is available to close; open a browser tab first",
-              );
-            }
+            const instanceId = resolveBrowserMcpTargetInstanceId(
+              args.instanceId,
+              request.operation,
+            );
             ensureBrowserAgentAccess(instanceId);
             await ensurePanelExpanded();
             const closed = callbacksRef.current.closeTab(instanceId);
@@ -172,17 +165,21 @@ export const useBrowserMcpCommandBridge = (
             if (!focused) {
               throw new Error(`Browser tab was not found: ${instanceId}`);
             }
+            selectAgentBrowserInstance(instanceId);
             return JSON.stringify({
               instanceId,
               focused: true,
+              agentTarget: true,
             });
           }
 
           case "list": {
             ensureBrowserAgentEnabled();
+            const agentInstanceId = getAgentBrowserInstanceId();
             const tabs = callbacksRef.current.listTabs().map((tab) => ({
               instanceId: tab.instanceId,
               isActive: tab.isActive,
+              agentTarget: tab.instanceId === agentInstanceId,
               shared: tab.shared,
               isolated: tab.isolated,
               origin: tab.origin,
@@ -201,12 +198,10 @@ export const useBrowserMcpCommandBridge = (
 
           case "request_share": {
             ensureBrowserAgentEnabled();
-            const instanceId = resolveInstanceId(request.argsJson);
-            if (!instanceId) {
-              throw new Error(
-                "No embedded browser is available to share; open a browser tab first",
-              );
-            }
+            const instanceId = resolveBrowserMcpTargetInstanceId(
+              args.instanceId,
+              request.operation,
+            );
             const access = getBrowserAgentAccess(instanceId);
             if (!access) {
               throw new Error(`Browser tab was not found: ${instanceId}`);
@@ -234,15 +229,16 @@ export const useBrowserMcpCommandBridge = (
           }
 
           default: {
-            const instanceId = resolveInstanceId(request.argsJson);
-            if (instanceId) {
-              ensureBrowserAgentAccess(
-                instanceId,
-                request.operation === "navigate"
-                  ? readStringArg(args, "url")
-                  : undefined,
-              );
-            }
+            const instanceId = resolveBrowserMcpTargetInstanceId(
+              args.instanceId,
+              request.operation,
+            );
+            ensureBrowserAgentAccess(
+              instanceId,
+              request.operation === "navigate"
+                ? readStringArg(args, "url")
+                : undefined,
+            );
             await ensurePanelExpanded();
             return executeBrowserMcpCommand(
               request.operation,

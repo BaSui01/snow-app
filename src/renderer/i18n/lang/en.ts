@@ -1786,6 +1786,7 @@ export const en = {
   "toolCall.lsp.typeDefinitionsCount": "{{count}} type definitions",
   "toolCall.lsp.copySignature": "Copy signature",
   "toolCall.lsp.copyDoc": "Copy doc",
+  "toolCall.lsp.copyList": "Copy list",
   "toolCall.lsp.copied": "Copied",
   "toolCall.lsp.vulnCount": "{{count}} vulnerability(ies)",
   "toolCall.lsp.noVulns": "No known vulnerabilities found",

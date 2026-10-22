@@ -50500,68 +50500,305 @@ pre.file-viewer-code {
 
 /* ---- workspace-symbols（lsp-workspace-symbols） ---- */
 
-.tool-call-lsp-symbol-list {
+.tool-call-lsp-workspace-symbols {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 420px;
-  overflow: auto;
+}
+
+.tool-call-lsp-ws-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: 11.5px;
+}
+
+.tool-call-lsp-ws-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tool-call-lsp-ws-toolbar-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-ws-toolbar-count {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tool-call-lsp-ws-query-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+}
+
+.tool-call-lsp-ws-query-pill-label {
+  color: var(--text-tertiary);
+}
+
+.tool-call-lsp-ws-query-pill-val {
+  color: var(--accent-blue-text);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.tool-call-lsp-ws-copy-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-call-lsp-ws-copy-all-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.tool-call-lsp-ws-copy-all-btn .copy-ok {
+  color: var(--accent-green);
+}
+
+.tool-call-lsp-symbol-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .tool-call-lsp-symbol-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
-.tool-call-lsp-symbol-item svg {
-  display: block;
+.tool-call-lsp-symbol-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+}
+
+.tool-call-lsp-symbol-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tool-call-lsp-symbol-kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
   color: var(--text-tertiary);
 }
 
-.tool-call-lsp-symbol-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 1;
-  min-width: 0;
-  font-size: 12px;
-  font-weight: 500;
+.tool-call-lsp-symbol-kind-icon.kind-function {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
 }
 
-.tool-call-lsp-symbol-name code {
-  max-width: 260px;
+.tool-call-lsp-symbol-kind-icon.kind-type {
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+}
+
+.tool-call-lsp-symbol-kind-icon.kind-interface {
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.tool-call-lsp-symbol-kind-icon.kind-constant {
+  color: var(--syntax-keyword);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-lsp-symbol-kind-icon.kind-variable {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-lsp-symbol-identity {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  max-width: 380px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tool-call-lsp-symbol-scope {
+  color: var(--text-tertiary);
+  font-weight: 400;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-lsp-symbol-core-name {
   color: var(--text-primary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+  border: 1px solid transparent;
+}
+
+.tool-call-lsp-kind-badge.kind-function {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.tool-call-lsp-kind-badge.kind-type {
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.tool-call-lsp-kind-badge.kind-interface {
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.tool-call-lsp-kind-badge.kind-constant {
+  color: var(--syntax-keyword);
+  background: var(--bg-tertiary);
+  border-color: var(--border-light);
+}
+
+.tool-call-lsp-kind-badge.kind-variable {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-light);
 }
 
 .tool-call-lsp-symbol-detail {
   flex-shrink: 1;
   min-width: 0;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-lsp-symbol-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.tool-call-lsp-symbol-file-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
-.tool-call-lsp-symbol-path {
-  flex-shrink: 0;
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+.tool-call-lsp-symbol-file-icon {
   color: var(--text-tertiary);
-  user-select: text;
+  flex-shrink: 0;
 }
 
+.tool-call-lsp-symbol-file-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-lsp-symbol-loc {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.tool-call-lsp-symbol-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0.7;
+}
+
+.tool-call-lsp-symbol-item:hover .tool-call-lsp-symbol-copy-btn {
+  opacity: 1;
+}
+
+.tool-call-lsp-symbol-copy-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+.tool-call-lsp-symbol-copy-btn .copy-ok {
+  color: var(--accent-green);
+}
 /* ---- ambiguous symbol ---- */
 
 .tool-call-lsp-ambiguous-block {
@@ -50835,23 +51072,256 @@ pre.file-viewer-code {
   background: var(--warning, #f59e0b);
 }
 .tool-call-lsp-result-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
   font-size: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
   overflow-wrap: anywhere;
+  transition: all 0.15s ease;
 }
-.tool-call-lsp-result-notice p {
-  margin: 4px 0;
+
+.tool-call-lsp-result-notice.is-warning {
+  background: var(--accent-amber-bg);
+  border-color: rgba(245, 158, 11, 0.28);
 }
-.tool-call-lsp-result-notice p > svg {
-  vertical-align: middle;
-  margin-right: 5px;
+
+.tool-call-lsp-result-notice.is-failed {
+  background: var(--accent-red-bg);
+  border-color: rgba(239, 68, 68, 0.28);
 }
-.tool-call-lsp-result-notice ul {
-  padding-left: 20px;
-  max-height: 240px;
-  overflow: auto;
+
+.tool-call-lsp-notice-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.tool-call-lsp-result-notice [role="alert"] {
+
+.tool-call-lsp-notice-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-call-lsp-notice-icon {
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-notice-icon.is-warning {
+  color: var(--accent-amber-text);
+}
+
+.tool-call-lsp-notice-icon.is-failed {
   color: var(--accent-red-text);
+}
+
+.tool-call-lsp-notice-icon.is-info {
+  color: var(--accent-blue-text);
+}
+
+.tool-call-lsp-notice-title {
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.tool-call-lsp-result-notice.is-warning .tool-call-lsp-notice-title {
+  color: var(--accent-amber-text);
+}
+
+.tool-call-lsp-result-notice.is-failed .tool-call-lsp-notice-title {
+  color: var(--accent-red-text);
+}
+
+.tool-call-lsp-notice-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-call-lsp-notice-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.tool-call-lsp-notice-pill.is-warning {
+  background: var(--bg-primary);
+  color: var(--accent-amber-text);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.tool-call-lsp-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-lsp-notice-desc {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.tool-call-lsp-notice-desc.is-alert {
+  color: var(--accent-red-text);
+  font-weight: 500;
+}
+
+.tool-call-lsp-notice-meta-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.tool-call-lsp-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 100%;
+}
+
+.tool-call-lsp-meta-tag svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-meta-tag-label {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.tool-call-lsp-meta-tag-val {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tool-call-lsp-meta-tag-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-primary);
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-lsp-notice-warnings-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-top: 2px;
+}
+
+.tool-call-lsp-notice-warnings-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-amber-text);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tool-call-lsp-notice-warnings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.tool-call-lsp-notice-warning-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.tool-call-lsp-notice-warning-lang {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-notice-warning-text {
+  word-break: break-all;
+}
+
+/* 参数区针对 LSP 的样式美化 */
+.tool-call-lsp-body .tool-call-codelens-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.tool-call-lsp-body .tool-call-codelens-param-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.tool-call-lsp-body .tool-call-codelens-param-item svg {
+  color: var(--accent-blue-text);
+  flex-shrink: 0;
+}
+
+.tool-call-lsp-body .tool-call-codelens-param-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.tool-call-lsp-body .tool-call-codelens-param-value {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  word-break: break-all;
 }
 .tool-call-lsp-symbol-tree {
   display: flex;

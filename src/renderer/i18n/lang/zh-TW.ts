@@ -1687,6 +1687,7 @@ export const zhTW = {
   "toolCall.lsp.typeDefinitionsCount": "{{count}} 處型別定義",
   "toolCall.lsp.copySignature": "複製程式碼簽名",
   "toolCall.lsp.copyDoc": "複製文件",
+  "toolCall.lsp.copyList": "複製清單",
   "toolCall.lsp.copied": "已複製",
   "toolCall.lsp.vulnCount": "{{count}} 個漏洞",
   "toolCall.lsp.noVulns": "未發現已知依賴漏洞",

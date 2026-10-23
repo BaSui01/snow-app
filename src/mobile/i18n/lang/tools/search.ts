@@ -61,6 +61,12 @@ export const searchEn: Record<string, string> = {
   "remote.toolCall.search.grep.matchCount": "{{count}} match(es)",
   "remote.toolCall.search.grep.noMatches": "No matches found",
 
+  // ── grep-find ──
+  "remote.toolCall.search.find.name": "find",
+  "remote.toolCall.search.find.fileCount": "{{count}} file(s)",
+  "remote.toolCall.search.find.noFiles": "No files found",
+  "remote.toolCall.search.find.searchAll": "Full search",
+
   // ── codebase-search ──
   "remote.toolCall.search.codebase.name": "codebase",
   "remote.toolCall.search.codebase.resultCount": "{{count}} result(s)",
@@ -190,6 +196,12 @@ export const searchZhCN: Record<string, string> = {
   "remote.toolCall.search.grep.matchCount": "{{count}} 处匹配",
   "remote.toolCall.search.grep.noMatches": "未找到匹配",
 
+  // ── grep-find ──
+  "remote.toolCall.search.find.name": "查找",
+  "remote.toolCall.search.find.fileCount": "{{count}} 个文件",
+  "remote.toolCall.search.find.noFiles": "未找到文件",
+  "remote.toolCall.search.find.searchAll": "全量搜索",
+
   // ── codebase-search ──
   "remote.toolCall.search.codebase.name": "代码库",
   "remote.toolCall.search.codebase.resultCount": "{{count}} 个结果",
@@ -317,6 +329,12 @@ export const searchZhTW: Record<string, string> = {
   "remote.toolCall.search.grep.caseInsensitive": "忽略大小寫",
   "remote.toolCall.search.grep.matchCount": "{{count}} 處符合",
   "remote.toolCall.search.grep.noMatches": "未找到符合",
+
+  // ── grep-find ──
+  "remote.toolCall.search.find.name": "尋找",
+  "remote.toolCall.search.find.fileCount": "{{count}} 個檔案",
+  "remote.toolCall.search.find.noFiles": "未找到檔案",
+  "remote.toolCall.search.find.searchAll": "全量搜尋",
 
   // ── codebase-search ──
   "remote.toolCall.search.codebase.name": "程式碼庫",

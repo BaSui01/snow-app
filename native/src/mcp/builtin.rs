@@ -93,6 +93,7 @@ pub fn get_builtin_servers_with_tools() -> Vec<(String, Vec<McpTool>)> {
 pub const READONLY_TOOL_NAMES: &[&str] = &[
     "filesystem-read",
     "grep-search",
+    "grep-find",
     "websearch-websearch-search",
     "websearch-websearch-fetch",
     "config-get",

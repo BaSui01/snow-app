@@ -925,7 +925,7 @@ fn remote_workspace_path_fields(tool_full_name: &str) -> &'static [&'static str]
         "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => &["filePath"],
         // 复制/剪切会同时读写源文件与目标文件，两个路径都必须解析到远端。
         "filesystem-copy" => &["filePath", "sourceFilePath"],
-        "grep-search" => &["path"],
+        "grep-search" | "grep-find" => &["path"],
         "bash-terminal-execute" => &["workingDirectory"],
         _ => &[],
     }
@@ -1007,7 +1007,7 @@ async fn resolve_local_workspace_args(
     project_id: Option<&str>,
 ) -> napi::Result<Value> {
     let (path_field, default_to_workspace) = match tool_full_name {
-        "grep-search" => ("path", true),
+        "grep-search" | "grep-find" => ("path", true),
         name if name.starts_with("filesystem-") => ("filePath", false),
         _ => return Ok(args),
     };
@@ -1038,16 +1038,17 @@ async fn resolve_local_workspace_args(
         expanded
     };
 
-    // 绝对路径本身无需重写，但 grep 直接指向项目根时仍要覆盖关联项目组；
+    // 绝对路径本身无需重写，但 grep / find 直接指向项目根时仍要覆盖关联项目组；
     // 其余绝对路径调用（filesystem-read 等）保持原样、省掉一次项目根解析。
     if Path::new(&requested_path).is_absolute() {
-        let is_grep = tool_full_name == "grep-search";
-        let project_root = if is_grep {
+        let searches_project_root =
+            tool_full_name == "grep-search" || tool_full_name == "grep-find";
+        let project_root = if searches_project_root {
             resolve_local_project_root(project_id).await?
         } else {
             None
         };
-        if is_grep
+        if searches_project_root
             && project_root
                 .as_deref()
                 .is_some_and(|root| paths_equal_ignore_case(&requested_path, root))
@@ -1068,8 +1069,9 @@ async fn resolve_local_workspace_args(
             .to_string_lossy()
             .to_string()
     };
-    let searches_whole_project =
-        tool_full_name == "grep-search" && paths_equal_ignore_case(&resolved, &project_root);
+    let searches_whole_project = (tool_full_name == "grep-search"
+        || tool_full_name == "grep-find")
+        && paths_equal_ignore_case(&resolved, &project_root);
     args[path_field] = Value::String(resolved);
     if searches_whole_project {
         inject_linked_project_roots(&mut args, project_id, &project_root).await?;

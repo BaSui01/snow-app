@@ -97,6 +97,7 @@ pub async fn call_mcp_tool(
                 | "filesystem-create"
                 | "filesystem-copy"
                 | "grep-search"
+                | "grep-find"
                 | "bash-terminal-execute"
         );
     // Workspace tools must never resolve relative paths against the Electron
@@ -466,6 +467,28 @@ pub async fn call_mcp_tool(
             sub_agent_allowed_tools.as_deref(),
         )
         .await
+    } else if tool_full_name == "grep-find" {
+        // 本地遍历自带 30s 超时；只有 SSH 分支需要注册可取消执行。
+        let remote_cancel = if args
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(is_ssh_path)
+        {
+            Some(register_remote_tool_execution(&on_chunk))
+        } else {
+            None
+        };
+        let find_result = GrepService::new()
+            .execute_find(
+                &args,
+                &on_remote_workspace_command,
+                remote_cancel.as_ref().map(|(_, token)| token),
+            )
+            .await;
+        if let Some((tool_execution_id, _)) = remote_cancel {
+            crate::api::cancel::unregister_tool_execution(&tool_execution_id);
+        }
+        find_result?
     } else if uses_remote_workspace {
         let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
             Error::new(

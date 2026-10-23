@@ -169,7 +169,7 @@ pub(crate) fn fingerprint<'a>(
         rules.insert(ancestor.join(".gitignore"));
     }
     rules.insert(root.join(".git/info/exclude"));
-    for name in ["AGENTS.md", "ROLE.md"] {
+    for name in ["AGENTS.md", "ROLE.md", "CLAUDE.md"] {
         rules.insert(root.join(name));
     }
     let paths: BTreeSet<_> = paths.into_iter().collect();

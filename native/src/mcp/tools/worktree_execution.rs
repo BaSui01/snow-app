@@ -180,7 +180,7 @@ pub(super) fn force_worktree_execution_args(
             Status::GenericFailure,
             "WorkTree terminal-send is unavailable because terminal tabs are not bound to a conversation/worktree; use bash-terminal-execute for serialized WorkTree commands".to_string(),
         ));
-    } else if tool_full_name == "grep-search" {
+    } else if tool_full_name == "grep-search" || tool_full_name == "grep-find" {
         let requested = args
             .get("path")
             .and_then(Value::as_str)

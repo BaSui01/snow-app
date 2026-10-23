@@ -51,12 +51,13 @@ export type PetChatContext = {
 
 /**
  * 宠物聊天可用的工具白名单（请求级，非子代理语义）：
- * 联网搜索、文件搜索（grep）、文件阅读。
+ * 联网搜索、文件搜索（grep / find）、文件阅读。
  * 均为只读工具，不会写入工作区，因此不需要 checkpoint。
  */
 const PET_CHAT_ALLOWED_TOOLS = [
   "websearch-websearch-search",
   "grep-search",
+  "grep-find",
   "filesystem-read",
 ] as const;
 
@@ -505,6 +506,7 @@ const buildPetSystemPrompt = (
     `- \`websearch-websearch-search\`: search the web for current information (news, docs, releases, anything after your training data).`,
     `- \`websearch-websearch-fetch\`: read one web page found by a search (pick a single most credible result).`,
     `- \`grep-search\`: search the user's project files for text or symbols.`,
+    `- \`grep-find\`: locate files by glob pattern when only the path is needed.`,
     `- \`filesystem-read\`: read a file's content (code, config, docs).`,
     `Rules for tools:`,
     `- Call a tool only when it genuinely helps; casual chat needs no tools at all.`,

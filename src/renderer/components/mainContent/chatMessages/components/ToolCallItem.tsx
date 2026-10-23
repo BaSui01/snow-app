@@ -14,6 +14,7 @@ import {
   FilesystemCopyToolCall,
   TodoToolCall,
   GrepToolCall,
+  FindToolCall,
   SubAgentToolCall,
   SubAgentContinueToolCall,
   SubAgentListToolCall,
@@ -123,6 +124,10 @@ const renderToolCall = ({
 
   if (toolCall.name === "grep-search") {
     return <GrepToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "grep-find") {
+    return <FindToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name === "sub-agents-activate") {

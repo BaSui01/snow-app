@@ -64,7 +64,7 @@ pub async fn build_linked_projects_section(
     lines.push(String::new());
     lines.push(
         "Rules:\n\
-         - `grep-search` on the current project root (or without `path`) automatically searches ALL roots above and merges the matches; every match carries an absolute `file` path you can pass straight to `filesystem-read`.\n\
+         - `grep-search` / `grep-find` on the current project root (or without `path`) automatically search ALL roots above and merge the results; every match carries an absolute `file` path you can pass straight to `filesystem-read`.\n\
          - File search (file names, @-mentions and their results) covers every root above as well.\n\
          - Relative paths still resolve against the current project root; use the absolute paths above to reach files inside sibling roots."
             .to_string(),

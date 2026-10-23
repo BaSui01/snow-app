@@ -60089,6 +60089,18 @@ img.plugin-icon {
   color: var(--text-muted);
 }
 
+.plugin-market-summary {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.plugin-market-hide-installed .plugins-toggle-track {
+  flex-shrink: 0;
+}
+
 .plugin-market-source {
   display: flex;
   flex-shrink: 0;

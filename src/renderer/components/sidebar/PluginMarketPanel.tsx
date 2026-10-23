@@ -23,6 +23,10 @@ import {
   type MarketCategory,
   type MarketPluginEntry,
 } from "../../plugins/market";
+import {
+  readMarketHideInstalled,
+  writeMarketHideInstalled,
+} from "../../plugins/marketPreferences";
 import { marketStore, useMarketStore } from "../../plugins/marketStore";
 import {
   resolveLucideIcon,
@@ -100,6 +104,7 @@ export const PluginMarketPanel = ({
   const [privacyTarget, setPrivacyTarget] =
     useState<PluginPrivacyTarget | null>(null);
   const [userscripts, setUserscripts] = useState<UserscriptRecord[]>([]);
+  const [hideInstalled, setHideInstalled] = useState(readMarketHideInstalled);
 
   const selectCategory = useCallback(
     (next: MarketCategory): void => {
@@ -142,15 +147,39 @@ export const PluginMarketPanel = ({
     [installedById, userscripts],
   );
 
+  const categoryEntries = useMemo(
+    () => market.entries.filter((entry) => entry.category === category),
+    [market.entries, category],
+  );
+
+  // 已安装且无新版本的条目：开启过滤时隐藏（有更新的条目仍需可见）
+  const installedStats = useMemo(() => {
+    let installed = 0;
+    const hideableIds = new Set<string>();
+    for (const entry of categoryEntries) {
+      const current = findInstalled(entry);
+      if (!current) {
+        continue;
+      }
+      installed += 1;
+      if (!hasMarketUpdate(current.version, entry.version)) {
+        hideableIds.add(entry.id);
+      }
+    }
+    return { installed, hideableIds };
+  }, [categoryEntries, findInstalled]);
+
   const filteredEntries = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const inCategory = market.entries.filter(
-      (entry) => entry.category === category,
-    );
+    const base = hideInstalled
+      ? categoryEntries.filter(
+          (entry) => !installedStats.hideableIds.has(entry.id),
+        )
+      : categoryEntries;
     if (!keyword) {
-      return inCategory;
+      return base;
     }
-    return inCategory.filter((entry) => {
+    return base.filter((entry) => {
       const haystack = [
         entry.id,
         resolveLocalized(entry.name, locale),
@@ -162,7 +191,15 @@ export const PluginMarketPanel = ({
         .toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [market.entries, locale, query, category]);
+  }, [categoryEntries, hideInstalled, installedStats, locale, query]);
+
+  const toggleHideInstalled = useCallback((): void => {
+    setHideInstalled((current) => {
+      const next = !current;
+      writeMarketHideInstalled(next);
+      return next;
+    });
+  }, []);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<MarketCategory, number> = {
@@ -283,6 +320,39 @@ export const PluginMarketPanel = ({
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
+          <span className="plugin-market-summary">
+            {t("plugins.market.summary", {
+              values: {
+                total: categoryCounts[category],
+                installed: installedStats.installed,
+              },
+              defaultValue: "{{total}} plugins · {{installed}} installed",
+            })}
+          </span>
+          <button
+            aria-checked={hideInstalled}
+            className={`plugins-toolbar-btn plugin-market-hide-installed${
+              hideInstalled ? " active" : ""
+            }`}
+            role="switch"
+            type="button"
+            title={t("plugins.market.hideInstalledHint", {
+              defaultValue:
+                "Hide installed plugins that are already up to date; plugins with updates stay visible.",
+            })}
+            onClick={toggleHideInstalled}
+          >
+            <span
+              className={`plugins-toggle-track${hideInstalled ? " on" : ""}`}
+            >
+              <span className="plugins-toggle-thumb" />
+            </span>
+            <span>
+              {t("plugins.market.hideInstalled", {
+                defaultValue: "Hide installed",
+              })}
+            </span>
+          </button>
           <button
             className="plugins-toolbar-btn"
             type="button"
@@ -353,9 +423,13 @@ export const PluginMarketPanel = ({
                 ? t("plugins.market.empty", {
                     defaultValue: "No plugins in the market yet",
                   })
-                : t("plugins.market.noMatch", {
-                    defaultValue: "No matching plugins",
-                  })}
+                : hideInstalled && !query.trim()
+                  ? t("plugins.market.allInstalled", {
+                      defaultValue: "All plugins are already installed",
+                    })
+                  : t("plugins.market.noMatch", {
+                      defaultValue: "No matching plugins",
+                    })}
             </span>
           </div>
         )}

@@ -9,6 +9,7 @@ export { FilesystemCopyToolCall } from "./FilesystemCopyToolCall";
 export { MemoryToolCall } from "./MemoryToolCall";
 export { TodoToolCall } from "./TodoToolCall";
 export { GrepToolCall } from "./GrepToolCall";
+export { FindToolCall } from "./FindToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
 export { SubAgentContinueToolCall } from "./SubAgentContinueToolCall";
 export { SubAgentListToolCall } from "./SubAgentListToolCall";

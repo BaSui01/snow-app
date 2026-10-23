@@ -379,6 +379,7 @@ export class ReadonlyCallGuard {
       if (
         snapshot.toolName === "filesystem-read" ||
         snapshot.toolName === "grep-search" ||
+        snapshot.toolName === "grep-find" ||
         snapshot.toolName === "codebase-search"
       ) {
         this.completedCalls.delete(key);
@@ -443,6 +444,7 @@ export class ReadonlyCallGuard {
 
       if (
         toolCall.name === "grep-search" ||
+        toolCall.name === "grep-find" ||
         toolCall.name === "codebase-search"
       ) {
         const repoPath =
@@ -525,6 +527,7 @@ export class ReadonlyCallGuard {
         }
       } else if (
         toolCall.name === "grep-search" ||
+        toolCall.name === "grep-find" ||
         toolCall.name === "codebase-search"
       ) {
         const repoPath = this.workspacePath;

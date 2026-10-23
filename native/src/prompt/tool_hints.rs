@@ -41,6 +41,9 @@ pub(crate) fn analysis_tools_lines(tools: &ToolSnapshot) -> Vec<String> {
     if tools.has("grep-search") {
         lines.push("- `grep-search` - Search literal strings/patterns; text matches are not semantic references".to_string());
     }
+    if tools.has("grep-find") {
+        lines.push("- `grep-find` - Locate files by glob (path only); use it instead of `grep-search` when you only need filenames".to_string());
+    }
     if tools.has("filesystem-read") {
         lines
             .push("- `filesystem-read` - Read raw source to understand implementation".to_string());

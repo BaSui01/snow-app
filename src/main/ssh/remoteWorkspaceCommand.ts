@@ -75,6 +75,7 @@ type RemoteWorkspaceCommandArgs = {
   isRegex?: unknown;
   caseSensitive?: unknown;
   maxResults?: unknown;
+  searchAll?: unknown;
   command?: unknown;
   workingDirectory?: unknown;
   timeout?: unknown;
@@ -1060,6 +1061,67 @@ const buildRemoteGrepCommand = (
   return `sh -lc ${shellQuote(script)}`;
 };
 
+// 远端 glob 查找：优先 rg --files，回退 find（find 的 * 跨目录，语义略宽）。
+const REMOTE_FIND_SKIP_DIRS = [
+  "node_modules",
+  ".git",
+  ".svn",
+  ".hg",
+  "target",
+  "dist",
+  "out",
+  "build",
+  ".next",
+  ".nuxt",
+  ".snow",
+  ".cache",
+  ".turbo",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".idea",
+  ".vscode",
+  "coverage",
+  ".nyc_output",
+  "release",
+];
+
+const buildRemoteFindCommand = (
+  remotePath: string,
+  pattern: string,
+  maxResults: number,
+  searchAll: boolean,
+): string => {
+  const root = normalizeRemotePath(remotePath);
+  const limit = Math.max(1, maxResults);
+  const skipGlobs = REMOTE_FIND_SKIP_DIRS.map(
+    (name) => `--glob ${shellQuote(`!${name}`)}`,
+  ).join(" ");
+  const prune = REMOTE_FIND_SKIP_DIRS.map(
+    (name) => `-type d -name ${shellQuote(name)}`,
+  ).join(" -o ");
+  const matcher = pattern.includes("/")
+    ? `-path ${shellQuote(root === "/" ? `/${pattern}` : `${root}/${pattern}`)}`
+    : `-name ${shellQuote(pattern)}`;
+  // 无损全量：远端 rg 不遵守 ignore 规则，find 也不剪枝。
+  const rgFlags = searchAll ? "--no-ignore" : skipGlobs;
+  const findCommand = searchAll
+    ? `find "$root" -type f ${matcher} -print 2>/dev/null | head -n "$limit"`
+    : `find "$root" \\( ${prune} \\) -prune -o -type f ${matcher} -print 2>/dev/null | head -n "$limit"`;
+  const script = [
+    `root=${shellQuote(root)}`,
+    `pat=${shellQuote(pattern)}`,
+    `limit=${limit}`,
+    `if command -v rg >/dev/null 2>&1; then`,
+    `  rg --files --hidden --glob "$pat" ${rgFlags} "$root" 2>/dev/null | head -n "$limit"`,
+    `else`,
+    `  ${findCommand}`,
+    `fi`,
+  ].join("\n");
+
+  return `sh -lc ${shellQuote(script)}`;
+};
+
 const parseGrepLines = (
   output: string,
   workspacePath: string,
@@ -1783,6 +1845,51 @@ const executeGrepSearch = async (
   );
 };
 
+const executeGrepFind = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  const workspacePath = validateSshWorkspacePath(args.path, "path");
+  const pattern = ensureString(args.pattern, "pattern").trim();
+  if (!pattern) {
+    throw new Error('pattern (glob) is required for tool "grep-find"');
+  }
+  const maxResults =
+    typeof args.maxResults === "number" && Number.isFinite(args.maxResults)
+      ? Math.max(1, Math.floor(args.maxResults))
+      : 200;
+  const searchAll = args.searchAll === true;
+
+  return withSshSession(
+    workspacePath,
+    async (sessionId, remotePath) => {
+      const output = await executeSshCommand(
+        sessionId,
+        buildRemoteFindCommand(remotePath, pattern, maxResults, searchAll),
+        { timeoutMs: REMOTE_GREP_TIMEOUT_MS, signal },
+      );
+      const files = output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .slice(0, maxResults)
+        .map((filePath) =>
+          buildRemoteWorkspaceUri(workspacePath, filePath, remotePath),
+        );
+      return {
+        backend: "remote-find",
+        pattern,
+        path: workspacePath,
+        searchAll,
+        files,
+        totalMatches: files.length,
+        truncated: files.length >= maxResults,
+      };
+    },
+    { signal },
+  );
+};
+
 const executeBashCommand = async (
   args: RemoteWorkspaceCommandArgs,
   signal?: AbortSignal,
@@ -2375,6 +2482,8 @@ const dispatchRemoteWorkspaceOperation = async (
       return executeFilesystemCopy(args, signal);
     case "grep-search":
       return executeGrepSearch(args, signal);
+    case "grep-find":
+      return executeGrepFind(args, signal);
     case "bash-terminal-execute":
       return executeBashCommand(args, signal);
     case "checkpoint-stat":

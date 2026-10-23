@@ -40,7 +40,11 @@ export const resolveToolWatchdogMs = (
         : DEFAULT_BASH_TIMEOUT_MS;
     return timeoutMs + BASH_WATCHDOG_GRACE_MS;
   }
-  if (toolName === "grep-search" || toolName.startsWith("filesystem-")) {
+  if (
+    toolName === "grep-search" ||
+    toolName === "grep-find" ||
+    toolName.startsWith("filesystem-")
+  ) {
     return LOCAL_TOOL_WATCHDOG_MS;
   }
   return undefined;

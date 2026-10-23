@@ -716,6 +716,109 @@ const renderGrep = (tool: SnowRemoteToolCall): HTMLElement | null => {
   });
 };
 
+// ── grep-find ───────────────────────────────────────────────────────────────
+
+const renderFind = (tool: SnowRemoteToolCall): HTMLElement | null => {
+  if (unparsable(tool)) return null;
+
+  const args = parseJsonRecord(tool.arguments);
+  const record = parseJsonRecord(tool.result);
+  const error = optional(record ? readString(record, "error") : undefined);
+  const files =
+    record && Array.isArray(record.files)
+      ? record.files.filter((item): item is string => typeof item === "string")
+      : null;
+  const pattern =
+    optional(args ? readString(args, "pattern") : undefined) ??
+    optional(record ? readString(record, "pattern") : undefined) ??
+    "";
+  const searchPath =
+    optional(args ? readString(args, "path") : undefined) ??
+    optional(record ? readString(record, "path") : undefined);
+  const maxResults = args ? readNumber(args, "maxResults") : undefined;
+  const searchAll =
+    (args ? readBoolean(args, "searchAll") : undefined) ??
+    (record ? readBoolean(record, "searchAll") : undefined);
+  const backend = optional(record ? readString(record, "backend") : undefined);
+  const truncated = record ? readBoolean(record, "truncated") === true : false;
+  const totalFiles = files
+    ? ((record ? readNumber(record, "totalMatches") : undefined) ??
+      files.length)
+    : 0;
+
+  const body = document.createDocumentFragment();
+
+  const params: Node[] = [];
+  if (pattern) params.push(kv(tr("label.pattern"), pattern, true));
+  if (searchPath) params.push(kv(tr("label.path"), searchPath, true));
+  if (maxResults !== undefined) {
+    params.push(kv(tr("label.maxResults"), String(maxResults)));
+  }
+  if (params.length) body.append(paramsHost(...params));
+
+  const flags: Node[] = [];
+  if (backend) {
+    flags.push(
+      badge(`${tr("label.backend")}: ${backend}`, { icon: "circle-check" }),
+    );
+  }
+  if (searchAll) flags.push(badge(tr("find.searchAll"), { variant: "warn" }));
+  if (truncated) flags.push(badge(tr("truncated"), { variant: "warn" }));
+  if (flags.length) body.append(flagsHost(...flags));
+
+  if (error) {
+    body.append(tcErrorRow(error));
+  } else if (files) {
+    if (!files.length) {
+      body.append(noteRow("empty", "search", tr("find.noFiles")));
+    } else {
+      const { shown, omitted } = capEntries(files);
+      const rows = shown.map((file) =>
+        row(textSpan("tc-search-file-path", file)),
+      );
+      body.append(
+        section(tr("label.files"), listBlock(rows, omitted), "search"),
+      );
+    }
+  } else if (record) {
+    body.append(
+      section(tr("result"), tcPre(decodeEscapedNewlines(tool.result ?? ""))),
+    );
+  } else {
+    body.append(
+      noteRow(
+        "note",
+        "search",
+        tool.status === "running" ? tr("running") : tr("waiting"),
+      ),
+    );
+  }
+
+  const meta: Node[] = [];
+  if (files) {
+    meta.push(
+      badge(tr("find.fileCount", { count: totalFiles }), {
+        variant: totalFiles > 0 ? "ok" : "muted",
+      }),
+    );
+  }
+
+  return createToolNode({
+    tool,
+    status: resolveStatus(tool),
+    badge: tr("find.name"),
+    display: pattern
+      ? clip(pattern, DISPLAY_MAX_CHARS)
+      : argsSummary(tool.arguments),
+    displayTitle:
+      [pattern, searchPath].filter(Boolean).join(" · ") || undefined,
+    meta,
+    className: "tc-search-grep",
+    bodyClass: "tc-search",
+    body,
+  });
+};
+
 // ── codebase-search ─────────────────────────────────────────────────────────
 
 type CodebaseArgs = { query?: string; topN?: number };
@@ -1647,6 +1750,7 @@ const renderLsp = (tool: SnowRemoteToolCall): HTMLElement | null => {
 export const searchModule: ToolModule = {
   renderers: {
     "grep-search": renderGrep,
+    "grep-find": renderFind,
     "codebase-search": renderCodebase,
   },
   prefixes: [{ prefix: "lsp-", render: renderLsp }],

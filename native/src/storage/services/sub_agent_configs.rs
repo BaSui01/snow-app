@@ -121,6 +121,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 
 ### Code Search Tools (Literal Text Only)
 - grep-search: Search file contents using ripgrep (preferred) or native Rust walker (fallback). Supports regex patterns and file glob filtering. Returns matching lines with file paths and line numbers. Automatically skips node_modules, .git, target, dist, out and other heavy directories. Requires pattern and description (a short user-friendly one-sentence explanation of WHAT the search looks for, written in the user's language, shown to the user instead of the raw regex).
+- grep-find: Locate files by glob pattern (paths only, no content). Returns file paths directly readable with filesystem-read. Requires pattern and description; use it instead of grep-search when only filenames are needed. Set searchAll=true to include heavy directories and normally ignored files (slower).
 
 ### Filesystem Tools (Primary Work)
 - filesystem-read: Read file content with line numbers. Supports text files, images, and directories. Can read multiple files in batch mode.

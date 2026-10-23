@@ -15,7 +15,7 @@ Listed in registration order:
 | `filesystem`       | Local file read/write (read / replace_edit / create)                                                                                                      |
 | `bash`             | Terminal command execution                                                                                                                                |
 | `todo`             | Session task list management                                                                                                                              |
-| `grep`             | File content search (ripgrep)                                                                                                                             |
+| `grep`             | File content search and file name lookup (ripgrep)                                                                                                        |
 | `websearch`        | Web search and page fetching                                                                                                                              |
 | `browser`          | Built-in browser automation (embedded Electron browser)                                                                                                   |
 | `user-interaction` | Ask the user questions (blocking interaction)                                                                                                             |
@@ -78,12 +78,22 @@ Listed in registration order:
 | Full tool name | Purpose                           | Key parameters                                                                         |
 | -------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
 | `grep-search`  | Search file contents with ripgrep | `pattern`, `description`, `path`, `fileGlob`, `caseSensitive`, `isRegex`, `maxResults` |
+| `grep-find`    | Find file paths by glob pattern   | `pattern`, `description`, `path`, `maxResults`, `searchAll`                            |
 
 > **Explanation**: `description` lets users skip decoding the regex — the model
 > writes one sentence (in the user's language) describing what the search looks
 > for, and the UI shows it in place of the raw regex (the regex itself stays
 > visible in the card). When the model omits it the card just falls back to the
 > regex — the search still runs.
+
+> **Glob semantics**: a `grep-find` `pattern` without `/` matches file names at
+> any depth (e.g. `*.ts`); with `/` it matches the path relative to the search
+> root (e.g. `src/**/*.{ts,tsx}`). Results contain file paths only.
+>
+> **Filtering vs. exhaustive search**: heavy directories (`node_modules`,
+> `.git`, `target`, `dist`, ...) are skipped by default (the ripgrep backend also
+> honors `.gitignore`); set `searchAll: true` to disable those filters for an
+> exhaustive search (noticeably slower on large repositories).
 
 ### websearch
 

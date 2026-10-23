@@ -290,17 +290,6 @@ pub(crate) async fn scan_fingerprint(root: &str) -> Result<Fingerprint> {
     .map_err(|error| Error::from_reason(format!("Failed to scan workspace: {error}")))
 }
 
-/// 新增、删除或修改过的相对路径。
-pub(crate) fn diff_fingerprint(old: &Fingerprint, new: &Fingerprint) -> Vec<String> {
-    let mut changed: Vec<String> = new
-        .iter()
-        .filter(|(path, value)| old.get(*path) != Some(*value))
-        .map(|(path, _)| path.clone())
-        .collect();
-    changed.extend(old.keys().filter(|path| !new.contains_key(*path)).cloned());
-    changed
-}
-
 /// 指纹差异（按新增 / 删除 / 修改分类）。
 #[derive(Default)]
 pub(crate) struct FingerprintDiff {

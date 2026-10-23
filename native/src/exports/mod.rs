@@ -15,6 +15,7 @@ mod pets;
 mod prompt_optimization;
 pub(crate) mod pre_script;
 mod remote_control;
+mod repo_wiki;
 mod sample;
 mod scheduled_wake;
 mod sphere_layout;

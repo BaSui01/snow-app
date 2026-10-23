@@ -297,6 +297,8 @@ export function TreeProjectNode({
           <WorkspaceDirectoryMenu
             canDelete={directory.source !== "builtin" && !hasActiveSession}
             contextMenuAnchor={contextMenuAnchor}
+            directoryId={directoryId}
+            directoryName={directory.name}
             directoryPath={directory.path}
             disabled={isActionLocked}
             isActive={isActive}

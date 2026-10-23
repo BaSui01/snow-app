@@ -25,3 +25,4 @@ export type * from "./team";
 export type * from "./userscripts";
 export type * from "./remoteControl";
 export type * from "./promptOptimization";
+export type * from "./repoWiki";

@@ -9,6 +9,8 @@ mod event;
 pub(crate) mod payload;
 mod stream;
 
+pub(crate) use event::{apply_message_delta_usage, apply_message_start_usage};
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

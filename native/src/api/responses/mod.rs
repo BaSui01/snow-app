@@ -11,6 +11,8 @@ pub(crate) mod payload;
 mod stream;
 mod ws;
 
+pub(crate) use event::extract_token_usage as extract_responses_token_usage;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

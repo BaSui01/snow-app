@@ -142,6 +142,38 @@ pub(super) fn process_anthropic_sse_event_block(
     }
 }
 
+/// message_start 携带的用量（输入与缓存）。
+pub(crate) fn apply_message_start_usage(usage: &Value, token_usage: &mut ChatTokenUsage) {
+    if let Some(input_tokens) = read_path_i64(usage, &["input_tokens"]) {
+        token_usage.input_tokens = input_tokens;
+    }
+    if let Some(cache_creation) = read_path_i64(usage, &["cache_creation_input_tokens"]) {
+        token_usage.cache_creation_input_tokens = cache_creation;
+    }
+    if let Some(cache_read) = read_path_i64(usage, &["cache_read_input_tokens"]) {
+        token_usage.cache_read_input_tokens = cache_read;
+    }
+}
+
+/// message_delta 携带的用量：输出必更新，其余只在非零时覆盖。
+pub(crate) fn apply_message_delta_usage(usage: &Value, token_usage: &mut ChatTokenUsage) {
+    if let Some(output_tokens) = read_path_i64(usage, &["output_tokens"]) {
+        token_usage.output_tokens = output_tokens;
+    }
+    if let Some(input_tokens) = read_path_i64(usage, &["input_tokens"]).filter(|n| *n > 0) {
+        token_usage.input_tokens = input_tokens;
+    }
+    if let Some(cache_creation) =
+        read_path_i64(usage, &["cache_creation_input_tokens"]).filter(|n| *n > 0)
+    {
+        token_usage.cache_creation_input_tokens = cache_creation;
+    }
+    if let Some(cache_read) = read_path_i64(usage, &["cache_read_input_tokens"]).filter(|n| *n > 0)
+    {
+        token_usage.cache_read_input_tokens = cache_read;
+    }
+}
+
 /// Process a single parsed Anthropic SSE event.
 #[allow(clippy::too_many_arguments)]
 fn process_anthropic_event(
@@ -175,17 +207,7 @@ fn process_anthropic_event(
                     *response_model = model;
                 }
                 if let Some(usage) = message.get("usage").filter(|v| !v.is_null()) {
-                    if let Some(input_tokens) = read_path_i64(usage, &["input_tokens"]) {
-                        token_usage.input_tokens = input_tokens;
-                    }
-                    if let Some(cache_creation) =
-                        read_path_i64(usage, &["cache_creation_input_tokens"])
-                    {
-                        token_usage.cache_creation_input_tokens = cache_creation;
-                    }
-                    if let Some(cache_read) = read_path_i64(usage, &["cache_read_input_tokens"]) {
-                        token_usage.cache_read_input_tokens = cache_read;
-                    }
+                    apply_message_start_usage(usage, token_usage);
                 }
             }
         }
@@ -362,24 +384,7 @@ fn process_anthropic_event(
                 }
             }
             if let Some(usage) = event.get("usage").filter(|v| !v.is_null()) {
-                if let Some(output_tokens) = read_path_i64(usage, &["output_tokens"]) {
-                    token_usage.output_tokens = output_tokens;
-                }
-                if let Some(input_tokens) =
-                    read_path_i64(usage, &["input_tokens"]).filter(|n| *n > 0)
-                {
-                    token_usage.input_tokens = input_tokens;
-                }
-                if let Some(cache_creation) =
-                    read_path_i64(usage, &["cache_creation_input_tokens"]).filter(|n| *n > 0)
-                {
-                    token_usage.cache_creation_input_tokens = cache_creation;
-                }
-                if let Some(cache_read) =
-                    read_path_i64(usage, &["cache_read_input_tokens"]).filter(|n| *n > 0)
-                {
-                    token_usage.cache_read_input_tokens = cache_read;
-                }
+                apply_message_delta_usage(usage, token_usage);
             }
         }
         "error" => {

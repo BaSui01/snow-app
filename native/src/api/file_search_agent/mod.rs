@@ -23,6 +23,11 @@ pub(crate) use crate::api::gemini::payload::{
 pub(crate) use crate::api::responses::payload::build_responses_reasoning;
 pub(crate) use crate::api::retry::RetryOptions;
 pub(crate) use crate::api::sse::send_streaming_sse_request;
+pub(crate) use crate::api::anthropic::{apply_message_delta_usage, apply_message_start_usage};
+pub(crate) use crate::api::chat::extract_chat_token_usage;
+pub(crate) use crate::api::gemini::apply_gemini_event_usage;
+pub(crate) use crate::api::responses::extract_responses_token_usage;
+pub(crate) use crate::storage::services::chat_conversations::ChatTokenUsage;
 pub(crate) use crate::api::summary::{
     build_anthropic_header_map, build_gemini_header_map, build_header_map,
     resolve_anthropic_endpoint, resolve_chat_endpoint,
@@ -111,6 +116,43 @@ pub(crate) enum AgentRound {
     Continue(Vec<Value>),
 }
 
+/// 各协议 round 共用的工具执行入口（文件搜索 / 仓库 Wiki 各自实现）。
+pub(crate) trait AgentToolExecutor: Send + Sync {
+    fn execute<'a>(
+        &'a self,
+        name: &'a str,
+        arguments_json: &'a str,
+    ) -> futures::future::BoxFuture<'a, Result<String>>;
+    /// 请求日志标签。
+    fn label(&self) -> &'static str;
+}
+
+struct FileSearchExecutor<'r> {
+    roots: &'r [FileSearchRoot],
+    round: usize,
+    on_progress: Option<&'r FileSearchAgentProgressCallback>,
+}
+
+impl AgentToolExecutor for FileSearchExecutor<'_> {
+    fn execute<'a>(
+        &'a self,
+        name: &'a str,
+        arguments_json: &'a str,
+    ) -> futures::future::BoxFuture<'a, Result<String>> {
+        Box::pin(execute_agent_tool(
+            name,
+            arguments_json,
+            self.roots,
+            self.round,
+            self.on_progress,
+        ))
+    }
+
+    fn label(&self) -> &'static str {
+        "run_file_search_agent"
+    }
+}
+
 /// 模型发起的一次工具调用（三种协议统一归一化）。
 pub(crate) struct AgentToolCall {
     name: String,
@@ -163,6 +205,7 @@ pub async fn run_file_search_agent(
     let roots = build_search_roots(workspace_path.trim(), &linked_roots);
 
     let context = get_active_api_request_context()?;
+    let database_path = context.database_path.clone();
     let api_config = context.api_config;
     // A file-search request belongs to no conversation: session-scoped header
     // placeholders (`{{session_id}}`) are dropped instead of sending the
@@ -180,6 +223,26 @@ pub async fn run_file_search_agent(
             "API key not configured. Please configure API settings first.",
         ));
     }
+    let api_key = api_key.to_string();
+
+    // 用量记录归属：按工作区路径匹配项目（路径无效时为空）
+    let usage_directory_id = {
+        let database = database_path.clone();
+        let workspace = workspace_path.trim().to_string();
+        tokio::task::spawn_blocking(move || {
+            crate::api::usage::resolve_directory_id(&database, &workspace)
+        })
+        .await
+        .unwrap_or_default()
+    };
+    let usage = crate::api::usage::UsageContext {
+        database_path,
+        model: model.clone(),
+        api_profile_name: api_config.profile_name.clone(),
+        api_config_id: api_config.id.clone(),
+        request_method: api_config.request_method.clone(),
+        directory_id: usage_directory_id,
+    };
 
     let retry_options = RetryOptions::from_config(
         api_config.max_retries,
@@ -217,32 +280,42 @@ pub async fn run_file_search_agent(
     };
 
     for round in 0..MAX_AGENT_ROUNDS {
+        let executor = FileSearchExecutor {
+            roots: &roots,
+            round,
+            on_progress: on_progress.as_ref(),
+        };
         let outcome = tokio::select! {
             _ = cancel_token.cancelled() => return Ok(Vec::new()),
             result = async {
                 match api_config.request_method.as_str() {
                     "responses" => run_responses_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompts,
-                        &messages, &tools, &retry_options, &roots,
-                        round, on_progress.as_ref(),
+                        &messages, &tools, &retry_options, &executor,
                     ).await,
                     "anthropic" => run_anthropic_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompts,
-                        &messages, &tools, &retry_options, &roots,
-                        round, on_progress.as_ref(),
+                        &messages, &tools, &retry_options, &executor,
                     ).await,
                     "gemini" | "interactions" => run_gemini_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompts,
-                        &messages, &tools, &retry_options, &roots,
-                        round, on_progress.as_ref(),
+                        &messages, &tools, &retry_options, &executor,
                     ).await,
                     _ => run_chat_round(
                         &api_config, &api_key, &custom_headers, &model, &system_prompts,
-                        &messages, &tools, &retry_options, &roots,
-                        round, on_progress.as_ref(),
+                        &messages, &tools, &retry_options, &executor,
                     ).await,
                 }
-            } => result?,
+            } => match result {
+                Ok((round_outcome, round_usage)) => {
+                    usage.record(round_usage, "completed").await;
+                    round_outcome
+                }
+                Err(error) => {
+                    usage.record(ChatTokenUsage::default(), "error").await;
+                    return Err(error);
+                }
+            },
         };
 
         match outcome {
@@ -266,6 +339,16 @@ pub async fn run_file_search_agent(
 /// 首轮无工具调用的追问：把模型的无依据回答与"必须使用工具"的指令
 /// 追加进消息历史，促使模型下一轮发起工具调用。
 fn push_no_tool_follow_up(messages: &mut Vec<Value>, request_method: &str, text: &str) {
+    push_follow_up(messages, request_method, text, NO_TOOL_FOLLOW_UP_PROMPT);
+}
+
+/// 追加「助手回答 + 用户追问」一对消息（按协议形状）。
+pub(crate) fn push_follow_up(
+    messages: &mut Vec<Value>,
+    request_method: &str,
+    text: &str,
+    prompt: &str,
+) {
     let assistant_message = match request_method {
         "responses" => json!({
             "type": "message",
@@ -283,12 +366,12 @@ fn push_no_tool_follow_up(messages: &mut Vec<Value>, request_method: &str, text:
         "responses" => json!({
             "type": "message",
             "role": "user",
-            "content": [{"type": "input_text", "text": NO_TOOL_FOLLOW_UP_PROMPT}],
+            "content": [{"type": "input_text", "text": prompt}],
         }),
         "gemini" | "interactions" => {
-            json!({"role": "user", "parts": [{"text": NO_TOOL_FOLLOW_UP_PROMPT}]})
+            json!({"role": "user", "parts": [{"text": prompt}]})
         }
-        _ => json!({"role": "user", "content": NO_TOOL_FOLLOW_UP_PROMPT}),
+        _ => json!({"role": "user", "content": prompt}),
     };
     messages.push(assistant_message);
     messages.push(follow_up);
@@ -726,7 +809,7 @@ fn parse_line_matches(value: Option<&Value>) -> Vec<FileSearchLineMatch> {
 }
 
 /// 去除 ```json ... ``` 形式的 markdown 代码围栏。
-fn strip_code_fences(text: &str) -> &str {
+pub(crate) fn strip_code_fences(text: &str) -> &str {
     let text = text.trim();
     let Some(stripped) = text.strip_prefix("```") else {
         return text;

@@ -312,7 +312,7 @@ export function MainSidebarContent({
   // 独立页面入口收纳在「更多」折叠区内：页面打开时自动展开，
   // 保证当前页面的入口可见、选中态可被看到。
   useEffect(() => {
-    if (isFeaturePageView(activeMainView)) {
+    if (isFeaturePageView(activeMainView) && activeMainView !== "repo-wiki") {
       setIsMoreExpanded(true);
     }
   }, [activeMainView]);
@@ -483,7 +483,12 @@ export function MainSidebarContent({
           <button
             className={`nav-item sidebar-more-btn${
               isMoreExpanded ? " expanded" : ""
-            }${isFeaturePageView(activeMainView) ? " active" : ""}`}
+            }${
+              isFeaturePageView(activeMainView) &&
+              activeMainView !== "repo-wiki"
+                ? " active"
+                : ""
+            }`}
             aria-expanded={isMoreExpanded}
             onClick={() => setIsMoreExpanded((prev) => !prev)}
             title={t("sidebar.more", { defaultValue: "More" })}

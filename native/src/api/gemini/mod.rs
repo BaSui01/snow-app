@@ -10,6 +10,8 @@ mod event;
 pub(crate) mod payload;
 mod stream;
 
+pub(crate) use event::apply_event_usage as apply_gemini_event_usage;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

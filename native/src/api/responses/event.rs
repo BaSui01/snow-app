@@ -630,7 +630,7 @@ pub(super) fn read_stream_text_delta(value: Option<&Value>) -> String {
 }
 
 /// Extract token usage from a Responses API `response` JSON object.
-pub(super) fn extract_token_usage(response: &Value) -> ChatTokenUsage {
+pub(crate) fn extract_token_usage(response: &Value) -> ChatTokenUsage {
     let usage = response.get("usage").unwrap_or(response);
 
     ChatTokenUsage {

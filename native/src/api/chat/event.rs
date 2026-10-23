@@ -253,7 +253,7 @@ fn collect_tool_call_argument_delta(delta: &Value, out: &mut String) {
 }
 
 /// Extract token usage from a Chat Completions `usage` JSON object.
-pub(super) fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
+pub(crate) fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
     ChatTokenUsage {
         input_tokens: read_first_i64(usage, &[&["prompt_tokens"], &["input_tokens"]]),
         output_tokens: read_first_i64(usage, &[&["completion_tokens"], &["output_tokens"]]),

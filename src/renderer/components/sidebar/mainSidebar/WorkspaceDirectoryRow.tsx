@@ -321,6 +321,8 @@ export function WorkspaceDirectoryRow({
       <WorkspaceDirectoryMenu
         canDelete={directory.source !== "builtin" && !hasActiveSession}
         contextMenuAnchor={contextMenuAnchor}
+        directoryId={directory.directoryId}
+        directoryName={directory.name}
         directoryPath={directory.path}
         disabled={isActionLocked}
         isActive={isActive}

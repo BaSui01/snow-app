@@ -30,6 +30,7 @@ import {
   OPEN_PROJECT_MCP_PANEL_EVENT,
   requestOpenProjectMcpPanel,
 } from "./components/mainContent/chatInput/projectMcpNavigation";
+import { OPEN_REPO_WIKI_EVENT } from "./components/repoWiki/repoWikiNavigation";
 import {
   KeyboardShortcutsProvider,
   useKeyboardShortcutsSettings,
@@ -511,6 +512,17 @@ export const App = (): React.JSX.Element => {
     window.addEventListener(CONVERSATION_SELECTED_EVENT, handler);
     return () => {
       window.removeEventListener(CONVERSATION_SELECTED_EVENT, handler);
+    };
+  }, []);
+
+  // 项目右键菜单「仓库 Wiki」：切到 Wiki 独立页面。
+  useEffect(() => {
+    const handleOpenWiki = (): void => {
+      setActiveMainView("repo-wiki");
+    };
+    window.addEventListener(OPEN_REPO_WIKI_EVENT, handleOpenWiki);
+    return () => {
+      window.removeEventListener(OPEN_REPO_WIKI_EVENT, handleOpenWiki);
     };
   }, []);
 

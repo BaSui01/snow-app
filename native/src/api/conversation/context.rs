@@ -302,6 +302,22 @@ pub(crate) async fn build_builtin_system_prompt(
     } else {
         format!("{system_prompt}\n\n{memory_section}")
     };
+    // 仓库 Wiki：项目已生成 Wiki 时告知 wiki.json 绝对路径（文本稳定，不破坏缓存前缀）。
+    let wiki_project_path = request
+        .directory_id
+        .and_then(|id| {
+            get_workspace_directory_path(request.database_path, id)
+                .ok()
+                .flatten()
+        })
+        .unwrap_or_else(|| working_directory.clone());
+    let wiki_section =
+        crate::api::repo_wiki::build_system_prompt_section(&wiki_project_path).await;
+    let system_prompt = if wiki_section.is_empty() {
+        system_prompt
+    } else {
+        format!("{system_prompt}\n\n{wiki_section}")
+    };
     system_prompt
 }
 

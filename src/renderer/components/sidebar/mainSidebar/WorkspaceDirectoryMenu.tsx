@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   ChevronRight,
   CircleDot,
   Code2,
@@ -21,12 +22,16 @@ import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { ShortcutHint } from "../../ShortcutHint";
 import { FileManagerIcon } from "../../icons/fileManagerIcons";
 import { IdeIcon } from "../../icons/ideIcons";
+import { requestOpenRepoWiki } from "../../repoWiki/repoWikiNavigation";
 import { isMacOS } from "../../../utils/shortcutUtils";
 import { useMenuPosition } from "./useMenuPosition";
 
 type WorkspaceDirectoryMenuProps = {
   canDelete?: boolean;
   directoryPath?: string;
+  /** 项目 id / 名称：用于打开仓库 Wiki */
+  directoryId?: string;
+  directoryName?: string;
   disabled?: boolean;
   /** 当前目录是否为活动目录（控制“设为活动目录”菜单项的显隐） */
   isActive?: boolean;
@@ -59,6 +64,8 @@ const getIdeIcon = (ideId: string): React.JSX.Element => (
 export function WorkspaceDirectoryMenu({
   canDelete = true,
   directoryPath,
+  directoryId,
+  directoryName,
   disabled,
   isActive = false,
   onActivate,
@@ -288,6 +295,24 @@ export function WorkspaceDirectoryMenu({
     setShowConfirm(false);
     setIsOpenWithOpen(false);
     onShowDetails?.();
+  };
+
+  const handleOpenWikiClick = (): void => {
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
+    setShowConfirm(false);
+    setIsOpenWithOpen(false);
+    if (!directoryPath) {
+      return;
+    }
+    requestOpenRepoWiki({
+      directoryId: directoryId ?? "",
+      path: directoryPath,
+      name:
+        directoryName?.trim() ||
+        directoryPath.split(/[\\/]/).filter(Boolean).pop() ||
+        directoryPath,
+    });
   };
 
   const handleDeleteConfirm = (): void => {
@@ -532,6 +557,21 @@ export function WorkspaceDirectoryMenu({
                   </span>
                   <ShortcutHint action="openProjectExplorer" />
                 </button>
+                {canOpenWith ? (
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={handleOpenWikiClick}
+                    role="menuitem"
+                  >
+                    <BookOpen size={13} />
+                    <span>
+                      {t("sidebar.repoWiki", {
+                        defaultValue: "Repo Wiki",
+                      })}
+                    </span>
+                  </button>
+                ) : null}
                 {onShowRelinkHistory ? (
                   <button
                     type="button"

@@ -9,6 +9,8 @@ mod event;
 pub(crate) mod payload;
 mod stream;
 
+pub(crate) use event::extract_token_usage as extract_chat_token_usage;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

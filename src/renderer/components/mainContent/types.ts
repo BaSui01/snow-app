@@ -5,6 +5,7 @@ export type MainContentView =
   | "memory"
   | "scheduled-tasks"
   | "plugins"
+  | "repo-wiki"
   | "api-settings"
   | "imagegen-settings"
   | "image-library"

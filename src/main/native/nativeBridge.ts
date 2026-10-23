@@ -19,6 +19,10 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "abortPromptOptimization",
   // 对话请求代理回调是进程级注册状态，不依赖 SQLite。
   "setRequestProxyHandler",
+  // 仓库 Wiki：事件回调注册与内存态查询
+  "setRepoWikiEventHandler",
+  "repoWikiStop",
+  "repoWikiFilePath",
   // OAuth 插件宿主回调与 provider 声明是进程内状态，不依赖 SQLite。
   "setOAuthPluginHandler",
   "setOAuthPluginProviders",
@@ -162,6 +166,7 @@ const createUnavailableBridge = (): NativeBridge => {
     setRemoteControlRendererBridge: () => {},
     setCheckpointRemoteCallback: () => {},
     setRequestProxyHandler: () => {},
+    setRepoWikiEventHandler: () => {},
     setOAuthPluginHandler: () => {},
     setOAuthPluginProviders: () => 0,
   };

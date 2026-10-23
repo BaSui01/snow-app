@@ -2081,6 +2081,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               // onStop hook failures must not block cleanup
             });
 
+          // 仓库 Wiki 自动更新：是否刷新由 Rust 按开关与代码指纹判断
+          if (!runFailed) {
+            const wikiProjectPath =
+              directoryIdToPath(stopDirId) ?? ctx.directoryPath;
+            if (wikiProjectPath) {
+              void window.snow
+                .repoWikiNotifyTurnEnded(wikiProjectPath)
+                .catch(() => undefined);
+            }
+          }
+
           window.snow.notifyPetTurnEnded(
             petTurnId,
             runFailed || isRunCancelled(finalSessionKey),

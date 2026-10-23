@@ -31,6 +31,7 @@ import { registerPluginHandlers } from "./handlers/pluginHandlers";
 import { registerPetHandlers } from "./handlers/petHandlers";
 import { registerProcessHandlers } from "./handlers/processHandlers";
 import { registerRemoteControlHandlers } from "./handlers/remoteControlHandlers";
+import { registerRepoWikiHandlers } from "./handlers/repoWikiHandlers";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
   registerPtyHandlers();
@@ -66,4 +67,5 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerPetHandlers(native);
   registerProcessHandlers(native);
   registerRemoteControlHandlers();
+  registerRepoWikiHandlers(native);
 };

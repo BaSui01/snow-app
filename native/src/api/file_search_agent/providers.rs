@@ -15,10 +15,8 @@ pub(crate) async fn run_chat_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    roots: &[FileSearchRoot],
-    round: usize,
-    on_progress: Option<&FileSearchAgentProgressCallback>,
-) -> Result<AgentRound> {
+    executor: &dyn AgentToolExecutor,
+) -> Result<(AgentRound, ChatTokenUsage)> {
     let endpoint = resolve_chat_endpoint(api_config);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
@@ -41,6 +39,8 @@ pub(crate) async fn run_chat_round(
         "model": model,
         "messages": chat_messages,
         "stream": true,
+        // 与主流程一致：流式末尾携带用量，供用量记录统计
+        "stream_options": {"include_usage": true},
         "tools": tools_as_openai_chat_json(tools),
         "tool_choice": "auto",
     });
@@ -63,15 +63,19 @@ pub(crate) async fn run_chat_round(
     let mut content_chunks: Vec<String> = Vec::new();
     let mut reasoning_chunks: Vec<String> = Vec::new();
     let mut tool_calls_by_index: BTreeMap<usize, Value> = BTreeMap::new();
+    let mut usage = ChatTokenUsage::default();
     send_streaming_sse_request(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
-        "run_file_search_agent",
+        executor.label(),
         "chat",
         |event| {
+            if let Some(event_usage) = event.get("usage").filter(|value| value.is_object()) {
+                usage = extract_chat_token_usage(event_usage);
+            }
             merge_chat_stream_event(
                 &event,
                 &mut content_chunks,
@@ -124,7 +128,7 @@ pub(crate) async fn run_chat_round(
         // 部分 OpenAI 兼容网关把 content 返回为数组（[{type, text}]），
         // 拼接所有 text 片段作为最终答案。
         let text = extract_chat_content_text(&message);
-        return Ok(AgentRound::Done(text));
+        return Ok((AgentRound::Done(text), usage));
     }
 
     let mut assistant_message = json!({
@@ -143,14 +147,9 @@ pub(crate) async fn run_chat_round(
     );
     let mut append = vec![assistant_message];
     for call in &tool_calls {
-        let output = execute_agent_tool(
-            &call.name,
-            &call.arguments_json,
-            roots,
-            round,
-            on_progress,
-        )
-        .await?;
+        let output = executor
+            .execute(&call.name, &call.arguments_json)
+            .await?;
         append.push(json!({
             "role": "tool",
             "tool_call_id": call.call_id,
@@ -158,7 +157,7 @@ pub(crate) async fn run_chat_round(
         }));
     }
 
-    Ok(AgentRound::Continue(append))
+    Ok((AgentRound::Continue(append), usage))
 }
 
 /// 提取 chat 协议 message.content 的文本（兼容字符串与数组两种形态）。
@@ -274,10 +273,8 @@ pub(crate) async fn run_responses_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    roots: &[FileSearchRoot],
-    round: usize,
-    on_progress: Option<&FileSearchAgentProgressCallback>,
-) -> Result<AgentRound> {
+    executor: &dyn AgentToolExecutor,
+) -> Result<(AgentRound, ChatTokenUsage)> {
     let base_url = normalize_base_url(&api_config.base_url);
     if base_url.is_empty() {
         return Err(Error::from_reason(
@@ -322,15 +319,24 @@ pub(crate) async fn run_responses_round(
     let mut output_items: Vec<Value> = Vec::new();
     let mut output_text = String::new();
     let mut completed_response: Option<Value> = None;
+    let mut usage = ChatTokenUsage::default();
     send_streaming_sse_request(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
-        "run_file_search_agent",
+        executor.label(),
         "responses",
         |event| {
+            // response.completed 的 response.usage，或完整响应形态的顶层 usage
+            let usage_source = event
+                .get("response")
+                .filter(|response| response.get("usage").is_some_and(Value::is_object))
+                .or_else(|| event.get("usage").is_some_and(Value::is_object).then_some(&event));
+            if let Some(source) = usage_source {
+                usage = extract_responses_token_usage(source);
+            }
             merge_responses_stream_event(
                 &event,
                 &mut output_items,
@@ -401,7 +407,7 @@ pub(crate) async fn run_responses_round(
         if let Some(output_text) = body.get("output_text").and_then(Value::as_str) {
             text.push_str(output_text);
         }
-        return Ok(AgentRound::Done(text));
+        return Ok((AgentRound::Done(text), usage));
     }
 
     let mut append = Vec::new();
@@ -412,14 +418,9 @@ pub(crate) async fn run_responses_round(
             "name": call.name,
             "arguments": call.arguments_json,
         }));
-        let output = execute_agent_tool(
-            &call.name,
-            &call.arguments_json,
-            roots,
-            round,
-            on_progress,
-        )
-        .await?;
+        let output = executor
+            .execute(&call.name, &call.arguments_json)
+            .await?;
         append.push(json!({
             "type": "function_call_output",
             "call_id": call.call_id,
@@ -427,7 +428,7 @@ pub(crate) async fn run_responses_round(
         }));
     }
 
-    Ok(AgentRound::Continue(append))
+    Ok((AgentRound::Continue(append), usage))
 }
 
 /// 合并 responses 协议流式事件：累积 output_item.done 条目与 output_text
@@ -483,10 +484,8 @@ pub(crate) async fn run_anthropic_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    roots: &[FileSearchRoot],
-    round: usize,
-    on_progress: Option<&FileSearchAgentProgressCallback>,
-) -> Result<AgentRound> {
+    executor: &dyn AgentToolExecutor,
+) -> Result<(AgentRound, ChatTokenUsage)> {
     let endpoint = resolve_anthropic_endpoint(api_config);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
@@ -549,15 +548,38 @@ pub(crate) async fn run_anthropic_round(
     // 流式请求：按 index 合并 content blocks（text 拼接、tool_use 的 input
     // 用 input_json_delta 累积），最后还原为等价于非流式响应的 body。
     let mut blocks_by_index: BTreeMap<usize, Value> = BTreeMap::new();
+    let mut usage = ChatTokenUsage::default();
     send_streaming_sse_request(
         &client,
         &endpoint,
         build_anthropic_header_map(api_key, custom_headers, enable_one_m_context)?,
         &payload,
         retry_options,
-        "run_file_search_agent",
+        executor.label(),
         "anthropic",
         |event| {
+            match event.get("type").and_then(Value::as_str) {
+                Some("message_start") => {
+                    if let Some(start_usage) = event.pointer("/message/usage") {
+                        apply_message_start_usage(start_usage, &mut usage);
+                    }
+                }
+                Some("message_delta") => {
+                    if let Some(delta_usage) = event.get("usage").filter(|v| v.is_object()) {
+                        apply_message_delta_usage(delta_usage, &mut usage);
+                    }
+                }
+                // 非流式完整响应：一次给出输入与输出用量
+                _ => {
+                    if let Some(full_usage) = event
+                        .get("usage")
+                        .filter(|_| event.get("content").is_some_and(Value::is_array))
+                    {
+                        apply_message_start_usage(full_usage, &mut usage);
+                        apply_message_delta_usage(full_usage, &mut usage);
+                    }
+                }
+            }
             merge_anthropic_stream_event(&event, &mut blocks_by_index);
             Ok(())
         },
@@ -622,19 +644,14 @@ pub(crate) async fn run_anthropic_round(
     tool_calls.retain(|call| !call.name.is_empty());
 
     if tool_calls.is_empty() {
-        return Ok(AgentRound::Done(text));
+        return Ok((AgentRound::Done(text), usage));
     }
 
     let mut append = vec![json!({"role": "assistant", "content": assistant_blocks})];
     for call in &tool_calls {
-        let output = execute_agent_tool(
-            &call.name,
-            &call.arguments_json,
-            roots,
-            round,
-            on_progress,
-        )
-        .await?;
+        let output = executor
+            .execute(&call.name, &call.arguments_json)
+            .await?;
         append.push(json!({
             "role": "user",
             "content": [{
@@ -645,7 +662,7 @@ pub(crate) async fn run_anthropic_round(
         }));
     }
 
-    Ok(AgentRound::Continue(append))
+    Ok((AgentRound::Continue(append), usage))
 }
 
 /// 合并 anthropic 协议流式事件：content_block_start 登记块（只保留 text /
@@ -728,10 +745,8 @@ pub(crate) async fn run_gemini_round(
     messages: &[Value],
     tools: &[McpTool],
     retry_options: &RetryOptions,
-    roots: &[FileSearchRoot],
-    round: usize,
-    on_progress: Option<&FileSearchAgentProgressCallback>,
-) -> Result<AgentRound> {
+    executor: &dyn AgentToolExecutor,
+) -> Result<(AgentRound, ChatTokenUsage)> {
     let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
@@ -769,15 +784,17 @@ pub(crate) async fn run_gemini_round(
     // 流式请求（:streamGenerateContent?alt=sse）：合并所有 chunk 的
     // candidates[0].content.parts，还原为等价于非流式响应的 body。
     let mut parts: Vec<Value> = Vec::new();
+    let mut usage = ChatTokenUsage::default();
     send_streaming_sse_request(
         &client,
         &endpoint,
         build_gemini_header_map(custom_headers)?,
         &payload,
         retry_options,
-        "run_file_search_agent",
+        executor.label(),
         "gemini",
         |event| {
+            apply_gemini_event_usage(&event, &mut usage);
             merge_gemini_stream_event(&event, &mut parts);
             Ok(())
         },
@@ -791,17 +808,17 @@ pub(crate) async fn run_gemini_round(
     });
 
     let Some(candidates) = body.get("candidates").and_then(Value::as_array) else {
-        return Ok(AgentRound::Done(String::new()));
+        return Ok((AgentRound::Done(String::new()), usage));
     };
     let Some(candidate) = candidates.first() else {
-        return Ok(AgentRound::Done(String::new()));
+        return Ok((AgentRound::Done(String::new()), usage));
     };
     let Some(parts) = candidate
         .get("content")
         .and_then(|content| content.get("parts"))
         .and_then(Value::as_array)
     else {
-        return Ok(AgentRound::Done(String::new()));
+        return Ok((AgentRound::Done(String::new()), usage));
     };
 
     let mut tool_calls: Vec<AgentToolCall> = Vec::new();
@@ -844,19 +861,14 @@ pub(crate) async fn run_gemini_round(
     tool_calls.retain(|call| !call.name.is_empty());
 
     if tool_calls.is_empty() {
-        return Ok(AgentRound::Done(text));
+        return Ok((AgentRound::Done(text), usage));
     }
 
     let mut append = vec![json!({"role": "model", "parts": model_parts})];
     for call in &tool_calls {
-        let output = execute_agent_tool(
-            &call.name,
-            &call.arguments_json,
-            roots,
-            round,
-            on_progress,
-        )
-        .await?;
+        let output = executor
+            .execute(&call.name, &call.arguments_json)
+            .await?;
         append.push(json!({
             "role": "user",
             "parts": [{
@@ -868,7 +880,7 @@ pub(crate) async fn run_gemini_round(
         }));
     }
 
-    Ok(AgentRound::Continue(append))
+    Ok((AgentRound::Continue(append), usage))
 }
 
 /// 合并 gemini 协议流式事件：每个 chunk 的 candidates[0].content.parts

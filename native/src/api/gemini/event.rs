@@ -14,6 +14,59 @@ fn unwrap_response_envelope(event: &Value) -> &Value {
         .unwrap_or(event)
 }
 
+/// 解析 usageMetadata（兼容 CLIProxyAPI 等别名字段）。
+fn apply_usage_metadata(usage: &Value, token_usage: &mut ChatTokenUsage) {
+    token_usage.input_tokens = read_first_i64(
+        usage,
+        &[
+            &["promptTokenCount"],
+            &["prompt_tokens"],
+            &["input_tokens"],
+            &["total_input_tokens"],
+        ],
+    );
+    let has_cpa_output = usage.get("total_output_tokens").is_some();
+    let mut output_tokens = read_first_i64(
+        usage,
+        &[
+            &["candidatesTokenCount"],
+            &["completion_tokens"],
+            &["output_tokens"],
+            &["total_output_tokens"],
+            &["totalTokenCount"],
+        ],
+    );
+    // CLIProxyAPI reports thinking/tool-use tokens separately. Include
+    // them in Snow's output total when the CPA total is present, matching
+    // the Interactions usage mapping and preventing under-counted runs.
+    if has_cpa_output {
+        output_tokens += read_first_i64(usage, &[&["total_thought_tokens"]]);
+        output_tokens += read_first_i64(usage, &[&["total_tool_use_tokens"]]);
+    }
+    token_usage.output_tokens = output_tokens;
+    token_usage.cache_read_input_tokens = read_first_i64(
+        usage,
+        &[
+            &["cachedContentTokenCount"],
+            &["cache_read_input_tokens"],
+            &["cached_tokens"],
+            &["total_cached_tokens"],
+        ],
+    );
+}
+
+/// 从原始 SSE 事件（可能带 response 包裹）读取用量。
+pub(crate) fn apply_event_usage(event: &Value, token_usage: &mut ChatTokenUsage) {
+    let event = unwrap_response_envelope(event);
+    if let Some(usage) = event
+        .get("usageMetadata")
+        .or_else(|| event.get("usage"))
+        .filter(|value| !value.is_null())
+    {
+        apply_usage_metadata(usage, token_usage);
+    }
+}
+
 /// Process a raw SSE event block (text between two separators) for the
 /// Gemini streaming protocol. Each `data:` line is parsed independently.
 #[allow(clippy::too_many_arguments)]
@@ -177,43 +230,7 @@ fn process_gemini_event(
         .or_else(|| event.get("usage"))
         .filter(|value| !value.is_null())
     {
-        token_usage.input_tokens = read_first_i64(
-            usage,
-            &[
-                &["promptTokenCount"],
-                &["prompt_tokens"],
-                &["input_tokens"],
-                &["total_input_tokens"],
-            ],
-        );
-        let has_cpa_output = usage.get("total_output_tokens").is_some();
-        let mut output_tokens = read_first_i64(
-            usage,
-            &[
-                &["candidatesTokenCount"],
-                &["completion_tokens"],
-                &["output_tokens"],
-                &["total_output_tokens"],
-                &["totalTokenCount"],
-            ],
-        );
-        // CLIProxyAPI reports thinking/tool-use tokens separately. Include
-        // them in Snow's output total when the CPA total is present, matching
-        // the Interactions usage mapping and preventing under-counted runs.
-        if has_cpa_output {
-            output_tokens += read_first_i64(usage, &[&["total_thought_tokens"]]);
-            output_tokens += read_first_i64(usage, &[&["total_tool_use_tokens"]]);
-        }
-        token_usage.output_tokens = output_tokens;
-        token_usage.cache_read_input_tokens = read_first_i64(
-            usage,
-            &[
-                &["cachedContentTokenCount"],
-                &["cache_read_input_tokens"],
-                &["cached_tokens"],
-                &["total_cached_tokens"],
-            ],
-        );
+        apply_usage_metadata(usage, token_usage);
     }
 
     if let Some(prompt_feedback) = event.get("promptFeedback") {

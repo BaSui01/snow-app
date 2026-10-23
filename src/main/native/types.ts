@@ -1792,6 +1792,32 @@ export type FileSearchAgentProgress = {
   resultPreview: string;
 };
 
+/** 仓库 Wiki 任务事件（status / page / activity）。 */
+export type RepoWikiEvent = {
+  projectPath: string;
+  kind: string;
+  status: string;
+  phase: string;
+  pageId?: string | null;
+  pageStatus?: string | null;
+  activityTool?: string | null;
+  activityTarget?: string | null;
+  error?: string | null;
+  totalPages: number;
+  donePages: number;
+  failedPages: number;
+};
+
+export type RepoWikiStartOptions = {
+  projectPath: string;
+  projectName?: string;
+  language: string;
+  apiProfile?: string;
+  model?: string;
+  diagrams: boolean;
+  retries: number;
+};
+
 /** `git clone` 的实时进度：一条 stderr 进度行 + 解析出的百分比。 */
 export type GitCloneProgress = {
   line: string;
@@ -2905,6 +2931,25 @@ export type NativeBridge = ImageGenerationNativeApi & {
   setRequestProxyHandler: (
     handler: ((message: string) => Promise<string>) | null,
   ) => void;
+  /** 仓库 Wiki：注册任务事件回调（主进程广播给窗口）。 */
+  setRepoWikiEventHandler: (
+    handler: ((event: RepoWikiEvent) => void) | null,
+  ) => void;
+  repoWikiLoad: (projectPath: string) => Promise<string | null | undefined>;
+  repoWikiStart: (options: RepoWikiStartOptions) => Promise<void>;
+  repoWikiStop: (projectPath: string) => boolean;
+  repoWikiPause: (projectPath: string) => Promise<void>;
+  repoWikiResume: (projectPath: string) => Promise<void>;
+  repoWikiRetryPage: (projectPath: string, pageId: string) => Promise<void>;
+  repoWikiExport: (projectPath: string, targetPath: string) => Promise<number>;
+  repoWikiImport: (projectPath: string, json: string) => Promise<number>;
+  repoWikiDelete: (projectPath: string) => Promise<boolean>;
+  repoWikiSetAutoRefresh: (
+    projectPath: string,
+    enabled: boolean,
+  ) => Promise<void>;
+  repoWikiNotifyTurnEnded: (projectPath: string) => Promise<boolean>;
+  repoWikiFilePath: (projectPath: string) => string;
   /** Registers the SSH remote-command dispatcher used by checkpoint APIs. */
   setCheckpointRemoteCallback: (
     callback: ((command: RemoteWorkspaceCommand) => Promise<string>) | null,

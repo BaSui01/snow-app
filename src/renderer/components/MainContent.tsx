@@ -154,6 +154,11 @@ const ScheduledTasksPanel = lazy(() =>
 const PluginsPanel = lazy(() =>
   import("./sidebar/PluginsPanel").then((m) => ({ default: m.PluginsPanel })),
 );
+const RepoWikiPanel = lazy(() =>
+  import("./repoWiki/RepoWikiPanel").then((m) => ({
+    default: m.RepoWikiPanel,
+  })),
+);
 const ScriptEditorOverlay = lazy(() =>
   import("../userscripts/ScriptEditorOverlay").then((m) => ({
     default: m.ScriptEditorOverlay,
@@ -252,6 +257,8 @@ export const MainContent = ({
             />
           ) : activeView === "plugins" ? (
             <PluginsPanel onClose={closePanel} />
+          ) : activeView === "repo-wiki" ? (
+            <RepoWikiPanel activeDirectory={activeDirectory ?? null} />
           ) : activeView === "api-settings" ? (
             <ApiSettingsTreePanel />
           ) : activeView === "imagegen-settings" ? (

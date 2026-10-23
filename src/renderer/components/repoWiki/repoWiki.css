@@ -1,0 +1,639 @@
+/* ===== Repo Wiki ===== */
+.repo-wiki-page {
+  container-type: inline-size;
+}
+
+.repo-wiki-layout {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.repo-wiki-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--repo-wiki-split-width, 280px);
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  overflow: hidden;
+}
+
+.repo-wiki-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 6px 12px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.repo-wiki-sidebar-header > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-wiki-failed-badge {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.repo-wiki-projects,
+.repo-wiki-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repo-wiki-projects {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 10px;
+  overflow-y: auto;
+}
+
+.repo-wiki-project + .repo-wiki-project {
+  margin-top: 2px;
+}
+
+.repo-wiki-project-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-md);
+}
+
+.repo-wiki-project-row:hover {
+  background: var(--bg-hover);
+}
+
+.repo-wiki-project-row.active .repo-wiki-project-btn {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.repo-wiki-project-btn,
+.repo-wiki-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repo-wiki-project-btn svg,
+.repo-wiki-tree-item svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.repo-wiki-tree-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.repo-wiki-tree-item.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.repo-wiki-tree-item.status-pending {
+  color: var(--text-muted);
+}
+
+.repo-wiki-tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-wiki-tree-empty {
+  padding: 6px 12px 8px 34px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.repo-wiki-icon-failed {
+  color: var(--accent-red) !important;
+}
+
+.repo-wiki-icon-pending {
+  color: var(--text-muted) !important;
+}
+
+.repo-wiki-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.repo-wiki-icon-btn.ghost {
+  width: 22px;
+  height: 22px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.repo-wiki-icon-btn:hover,
+.repo-wiki-icon-btn.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.repo-wiki-icon-btn.danger:hover {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.repo-wiki-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.repo-wiki-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.repo-wiki-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.repo-wiki-btn.primary {
+  border-color: transparent;
+  background: var(--text-primary);
+  color: var(--on-solid);
+  font-weight: 600;
+}
+
+.repo-wiki-btn.primary:hover:not(:disabled) {
+  background: var(--text-primary);
+  color: var(--on-solid);
+  opacity: 0.88;
+}
+
+.repo-wiki-btn.danger {
+  color: var(--accent-red-text);
+}
+
+.repo-wiki-btn.danger:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.repo-wiki-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.repo-wiki-layout.collapsed .repo-wiki-main {
+  padding-left: 0;
+}
+
+.repo-wiki-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 10px 12px;
+  flex-shrink: 0;
+}
+
+.repo-wiki-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-wiki-title strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-wiki-status {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-active);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.repo-wiki-status.status-running {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.repo-wiki-status.status-completed {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.repo-wiki-status.status-failed {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.repo-wiki-status.status-stopped {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.repo-wiki-status.status-paused {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.repo-wiki-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.repo-wiki-actions .toggle-switch {
+  margin-right: 4px;
+}
+
+.repo-wiki-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 4px 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.repo-wiki-meta dt {
+  color: var(--text-tertiary);
+}
+
+.repo-wiki-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-wiki-meta dd.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.repo-wiki-meta code.md-file-path {
+  cursor: pointer;
+}
+
+.repo-wiki-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 10px 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.repo-wiki-progress-phase {
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.repo-wiki-progress-count {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-wiki-progress-activity {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-wiki-progress-bar {
+  position: relative;
+  width: 96px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-active);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.repo-wiki-progress-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--text-primary);
+  transition: width 0.3s ease;
+}
+
+.repo-wiki-error {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.repo-wiki-inline-error {
+  margin: 0 4px 10px 12px;
+}
+
+.repo-wiki-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.repo-wiki-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  min-height: 220px;
+  padding: 24px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.repo-wiki-placeholder strong {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.repo-wiki-placeholder span {
+  max-width: 520px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.repo-wiki-page-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.repo-wiki-page-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 920px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 24px 8px;
+  flex-shrink: 0;
+}
+
+.repo-wiki-page-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-wiki-article {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 4px 24px 32px;
+}
+
+.repo-wiki-article > .repo-wiki-error {
+  margin-bottom: 12px;
+}
+
+.repo-wiki-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.repo-wiki-files-title {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.repo-wiki-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.repo-wiki-files-list code.md-file-path {
+  cursor: pointer;
+  font-size: 11.5px;
+}
+
+.repo-wiki-setup-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.repo-wiki-setup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 560px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  background: var(--surface-island-muted);
+}
+
+.repo-wiki-setup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.repo-wiki-setup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-active);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.repo-wiki-setup-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.repo-wiki-setup-copy strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.repo-wiki-setup-copy span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.repo-wiki-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.repo-wiki-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.repo-wiki-field > span {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.repo-wiki-field-wide {
+  grid-column: 1 / -1;
+}
+
+.repo-wiki-switch-field .toggle-switch {
+  min-height: 30px;
+}
+
+.repo-wiki-setup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.repo-wiki-setup-actions .repo-wiki-btn {
+  height: 30px;
+  padding: 0 14px;
+}
+
+/* 窄宽度：目录与正文上下堆叠 */
+@container (max-width: 680px) {
+  .repo-wiki-layout {
+    flex-direction: column;
+  }
+
+  .repo-wiki-sidebar {
+    width: 100%;
+    max-height: 38%;
+    margin-bottom: 10px;
+  }
+
+  .repo-wiki-resizer {
+    display: none;
+  }
+
+  .repo-wiki-toolbar {
+    padding-left: 4px;
+  }
+
+  .repo-wiki-meta,
+  .repo-wiki-progress,
+  .repo-wiki-inline-error {
+    margin-left: 0;
+  }
+
+  .repo-wiki-setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .repo-wiki-article {
+    padding: 4px 8px 24px;
+  }
+
+  .repo-wiki-page-toolbar {
+    padding: 0 8px 8px;
+  }
+}

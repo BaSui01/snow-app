@@ -22,6 +22,7 @@ import {
   Scale,
   ScrollText,
   Server,
+  Settings,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -1250,6 +1251,7 @@ export function GeneralSettingsPanel(): React.JSX.Element {
           }`}
           onClick={() => setActiveTab("general")}
         >
+          <Settings size={13} strokeWidth={1.8} />
           {t("settings.generalSettings", {
             defaultValue: "General settings",
           })}

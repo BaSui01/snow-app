@@ -295,10 +295,11 @@ pub async fn call_mcp_tool(
             .unwrap_or(Value::Null);
     }
 
-    // 先定 checkpoint 影响范围再捕获：None/Unknown 的工具不校验
+    // 先定 checkpoint 影响范围再捕获：None 的工具不校验
     // checkpointWorkDir，Skill / 外部 MCP 等不因缺失上下文被阻断。
     let checkpoint_scope = tool_checkpoint_scope(&tool_full_name);
-    if matches!(checkpoint_scope, ToolCheckpointScope::Unknown) && !checkpoint_ids.is_empty() {
+    // 外部 MCP 不取 checkpoint 锁、也不记录变更：只提示本次调用无回滚保护。
+    if !is_builtin_mcp_tool(&tool_full_name) && !checkpoint_ids.is_empty() {
         let locale = crate::i18n::app_locale().await;
         emit_stream_chunk(
             &on_chunk,
@@ -315,12 +316,12 @@ pub async fn call_mcp_tool(
             .and_then(Value::as_str)
             .is_some_and(is_readonly_bash_command);
 
-    // 执行级锁覆盖 before、真实工具执行和 after（文件工具共享读锁、外部
-    // MCP 独占锁），不能只锁两次扫描本身；否则同项目的另一个会话可在
-    // 中间落盘，其结果会被当前会话误认为自己的变更。bash 命令例外：
-    // 执行期间不持锁——跨会话命令并行运行，回滚/预览也不再被长时间命令
-    // 阻塞；bash 的 before/after 扫描内部的短时共享读锁 + 回滚纪元保证
-    // 变更记录不与回滚混淆。
+    // 执行级锁覆盖 before、真实工具执行和 after（文件工具共享读锁），不能
+    // 只锁两次扫描本身；否则同项目的另一个会话可在中间落盘，其结果会被当前
+    // 会话误认为自己的变更。bash 与外部 MCP 例外：执行期间不持锁——跨会话
+    // 命令并行运行，慢速外部请求也不再阻塞其他会话的文件编辑与回滚；bash
+    // 的 before/after 扫描内部的短时共享读锁 + 回滚纪元保证变更记录不与
+    // 回滚混淆。
     let checkpoint_operation_guard = if skip_checkpoint_capture {
         ToolCheckpointOperationGuard::None
     } else {
@@ -340,7 +341,7 @@ pub async fn call_mcp_tool(
                 checkpoint_ids
             }
         }
-        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Vec::new(),
+        ToolCheckpointScope::None => Vec::new(),
     };
 
     let checkpoint_capture = if uses_remote_workspace {

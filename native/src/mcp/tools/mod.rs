@@ -26,9 +26,8 @@ enum ToolCheckpointCapture {
 }
 
 /// 持有完整 before → 工具执行 → after 周期的异步锁。单文件工具共享目录
-/// 读锁并按文件串行；影响范围未知的外部 MCP 独占目录锁。bash 命令执行
-/// 期间不持任何执行级锁——跨会话命令并行运行，回滚/预览也不会被长时间
-/// 命令阻塞（bash 的 before/after 扫描内部另有短时共享读锁 + 回滚纪元）。
+/// 读锁并按文件串行；bash 与外部 MCP 不参与执行级锁，跨会话的长时间
+/// 命令/网络请求不会互相阻塞（见 `tool_checkpoint_scope`）。
 /// 字段只用于 RAII，离开调用作用域时自动释放。
 enum ToolCheckpointOperationGuard {
     None,
@@ -37,11 +36,6 @@ enum ToolCheckpointOperationGuard {
     Files {
         _work_dir_guard: tokio::sync::OwnedRwLockReadGuard<()>,
         _file_guards: Vec<tokio::sync::OwnedMutexGuard<()>>,
-    },
-    /// 影响范围未知的外部 MCP 工具：整树独占锁，避免污染可捕获工具
-    /// （bash / 文件工具）的 before/after 记录。
-    Exclusive {
-        _work_dir_guard: tokio::sync::OwnedRwLockWriteGuard<()>,
     },
 }
 
@@ -1156,7 +1150,6 @@ enum ToolCheckpointScope {
     None,
     File,
     Worktree,
-    Unknown,
 }
 
 /// 一次工具调用会改写的文件路径（剪切会同时改写源文件与目标文件）。去重并按路径
@@ -1182,22 +1175,16 @@ fn checkpoint_file_paths(tool_full_name: &str, args: &Value) -> Vec<String> {
     paths
 }
 
+/// 只有能可靠捕获变更的内置工具参与 checkpoint。其余工具（含全部外部 MCP）
+/// 一律视为不修改工作区：不取目录/文件执行锁，避免慢速外部请求把同项目其他
+/// 会话的文件编辑与回滚串行化；代价是这些调用不在回滚覆盖范围内。
 fn tool_checkpoint_scope(tool_full_name: &str) -> ToolCheckpointScope {
     match tool_full_name {
         "filesystem-replace_edit" | "filesystem-create" | "filesystem-copy" => {
             ToolCheckpointScope::File
         }
         "bash-terminal-execute" => ToolCheckpointScope::Worktree,
-        _ => {
-            // 内置 server 其余工具不修改工作区；外部 MCP 影响范围未知。
-            let builtin = split_tool_full_name(tool_full_name)
-                .is_some_and(|(server_id, _)| BUILTIN_SERVER_IDS.contains(&server_id));
-            if builtin {
-                ToolCheckpointScope::None
-            } else {
-                ToolCheckpointScope::Unknown
-            }
-        }
+        _ => ToolCheckpointScope::None,
     }
 }
 
@@ -1238,24 +1225,12 @@ async fn acquire_tool_checkpoint_operation_guard(
                 _file_guards: file_guards,
             })
         }
-        ToolCheckpointScope::Worktree => {
-            // bash 命令执行期间不持有执行级锁：跨会话命令并行运行，回滚/
-            // 预览也不再被长时间运行的命令阻塞。变更捕获由 before/after
-            // 扫描内部的短时共享读锁与回滚纪元（见 checkpoint 模块）保证
-            // 不与回滚混淆。
+        // bash 与外部 MCP 执行期间不持有执行级锁：跨会话命令与慢速外部请求
+        // 并行运行，回滚/预览也不被长时间调用阻塞。bash 的变更捕获由
+        // before/after 扫描内部的短时共享读锁与回滚纪元（见 checkpoint 模块）保证。
+        ToolCheckpointScope::Worktree | ToolCheckpointScope::None => {
             Ok(ToolCheckpointOperationGuard::None)
         }
-        ToolCheckpointScope::Unknown => {
-            // 外部 MCP 的影响范围未知：虽然无法生成可靠 checkpoint，仍按整树
-            // 独占锁隔离，避免它与可捕获工具并行时污染后者的 before/after。
-            let work_dir_lock =
-                crate::storage::services::checkpoint::checkpoint_operation_lock(work_dir)?;
-            let work_dir_guard = work_dir_lock.write_owned().await;
-            Ok(ToolCheckpointOperationGuard::Exclusive {
-                _work_dir_guard: work_dir_guard,
-            })
-        }
-        ToolCheckpointScope::None => Ok(ToolCheckpointOperationGuard::None),
     }
 }
 
@@ -1279,7 +1254,7 @@ fn capture_checkpoint_before_tool(
     }
     // 先定范围再校验 work_dir，Skill / 外部 MCP 不被前置阶段阻断。
     match tool_checkpoint_scope(tool_full_name) {
-        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Ok(ToolCheckpointCapture::None),
+        ToolCheckpointScope::None => Ok(ToolCheckpointCapture::None),
         ToolCheckpointScope::File => {
             let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;
             let file_paths = checkpoint_file_paths(tool_full_name, args);
@@ -1355,7 +1330,7 @@ async fn capture_checkpoint_before_tool_remote(
     }
     // 先定范围再校验 work_dir（与本地版本一致），Skill / 外部 MCP 不阻断。
     match tool_checkpoint_scope(tool_full_name) {
-        ToolCheckpointScope::None | ToolCheckpointScope::Unknown => Ok(ToolCheckpointCapture::None),
+        ToolCheckpointScope::None => Ok(ToolCheckpointCapture::None),
         ToolCheckpointScope::File => {
             // 回滚语义不变：记录失败按工具错误上抛。
             let work_dir = require_checkpoint_work_dir(checkpoint_work_dir)?;

@@ -137,6 +137,12 @@ export function McpSettingsPanel({
     server: McpSettingsListItem;
     scope: McpScope;
   } | null>(null);
+  const [pendingGlobalToggle, setPendingGlobalToggle] = useState<{
+    server: McpSettingsListItem;
+    kind: "builtin" | "external";
+    nextEnabled: boolean;
+    askProject: boolean;
+  } | null>(null);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [toolsByServerId, setToolsByServerId] = useState<
     Record<string, McpServerTool[]>
@@ -633,31 +639,6 @@ export function McpSettingsPanel({
     }
   };
 
-  const toggleEnabled = async (server: McpServerConfig) => {
-    setError("");
-    setStatus("");
-
-    try {
-      const items = await window.snow.upsertMcpServerConfig({
-        serverId: server.serverId,
-        name: server.name,
-        transportType: server.transportType,
-        url: server.url,
-        command: server.command,
-        argsJson: server.argsJson,
-        envJson: server.envJson,
-        headersJson: server.headersJson,
-        enabled: !server.enabled,
-        ...(server.timeoutMs ? { timeoutMs: server.timeoutMs } : {}),
-        sortOrder: server.sortOrder,
-        source: server.source,
-      });
-      setServers(items);
-    } catch (e) {
-      setError(formatMcpSaveError(e, t));
-    }
-  };
-
   /** 保存后静默重新发现全局服务器工具；失败时丢弃旧缓存。 */
   const refreshGlobalServerTools = async (serverId: string): Promise<void> => {
     setFetchingToolServerIds((previous) => new Set(previous).add(serverId));
@@ -1016,37 +997,6 @@ export function McpSettingsPanel({
               defaultValue: "No MCP servers are available for this project.",
             });
 
-  /** 全局总闸启停内置服务器，并刷新依赖它的项目列表。 */
-  const toggleGlobalBuiltin = async (
-    server: McpSettingsListItem,
-  ): Promise<void> => {
-    if (isBusy || !server.globalEnabled) {
-      return;
-    }
-    const serverId = server.serverId.slice(GLOBAL_BUILTIN_KEY_PREFIX.length);
-    const nextEnabled = !server.enabled;
-    const generation = loadGenerationRef.current;
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-    try {
-      await window.snow.setMcpGlobalServerEnabled(serverId, nextEnabled);
-      // 启用精简模式服务器时 Rust 侧会关闭精简模式
-      if (nextEnabled && LITE_MODE_SERVER_IDS.has(serverId)) {
-        window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
-      }
-      notifyMcpServerStateChanged();
-      await refreshGlobalBuiltinServers();
-      if (activeDirectory) {
-        await refreshProjectServers(activeDirectory.directoryId, generation);
-      }
-    } catch (updateError) {
-      setError(formatMcpSaveError(updateError, t));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleGlobalBuiltinFetchTools = async (
     server: McpSettingsListItem,
   ): Promise<void> => {
@@ -1189,6 +1139,120 @@ export function McpSettingsPanel({
     return projectServerConfigs.find((server) => server.serverId === serverId);
   };
 
+  /** 项目层是否已启用该服务器；未加载到条目时按已启用处理。 */
+  const isProjectServerEnabled = (scopeServerId: string): boolean => {
+    const projectServer = projectServers.find(
+      (server) => server.id === scopeServerId,
+    );
+    return projectServer ? projectServer.enabled : true;
+  };
+
+  /** 把全局列表项 id 还原成项目层使用的服务器 id。 */
+  const toProjectScopeServerId = (
+    server: McpSettingsListItem,
+    kind: "builtin" | "external",
+  ): string =>
+    kind === "builtin"
+      ? server.serverId.slice(GLOBAL_BUILTIN_KEY_PREFIX.length)
+      : `external:${server.serverId}`;
+
+  /**
+   * 全局启停入口：停用前提醒各项目会一并停用；启用时若当前项目尚未启用，
+   * 弹窗询问是否同时为当前项目启用。
+   */
+  const requestGlobalToggle = (
+    server: McpSettingsListItem,
+    kind: "builtin" | "external",
+  ): void => {
+    if (isBusy || !server.globalEnabled) {
+      return;
+    }
+    const nextEnabled = !server.enabled;
+    const askProject =
+      nextEnabled &&
+      Boolean(activeDirectory) &&
+      !isProjectServerEnabled(toProjectScopeServerId(server, kind));
+    if (!nextEnabled || askProject) {
+      setPendingGlobalToggle({ server, kind, nextEnabled, askProject });
+      return;
+    }
+    void applyGlobalToggle(server, kind, nextEnabled, false);
+  };
+
+  /** 执行全局启停，并按需同时为当前项目启用。 */
+  const applyGlobalToggle = async (
+    server: McpSettingsListItem,
+    kind: "builtin" | "external",
+    nextEnabled: boolean,
+    alsoProject: boolean,
+  ): Promise<void> => {
+    const generation = loadGenerationRef.current;
+    const projectId = activeDirectory?.directoryId;
+    const scopeServerId = toProjectScopeServerId(server, kind);
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+    try {
+      if (kind === "builtin") {
+        await window.snow.setMcpGlobalServerEnabled(scopeServerId, nextEnabled);
+        // 启用精简模式服务器时 Rust 侧会关闭精简模式
+        if (nextEnabled && LITE_MODE_SERVER_IDS.has(scopeServerId)) {
+          window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
+        }
+        notifyMcpServerStateChanged();
+        await refreshGlobalBuiltinServers();
+      } else {
+        const globalServer = findGlobalServer(server.serverId);
+        if (!globalServer) {
+          return;
+        }
+        const items = await window.snow.upsertMcpServerConfig({
+          serverId: globalServer.serverId,
+          name: globalServer.name,
+          transportType: globalServer.transportType,
+          url: globalServer.url,
+          command: globalServer.command,
+          argsJson: globalServer.argsJson,
+          envJson: globalServer.envJson,
+          headersJson: globalServer.headersJson,
+          enabled: nextEnabled,
+          ...(globalServer.timeoutMs
+            ? { timeoutMs: globalServer.timeoutMs }
+            : {}),
+          sortOrder: globalServer.sortOrder,
+          source: globalServer.source,
+        });
+        setServers(items);
+      }
+      if (alsoProject && projectId) {
+        await window.snow.setMcpProjectServerEnabled(
+          projectId,
+          scopeServerId,
+          true,
+        );
+        if (LITE_MODE_SERVER_IDS.has(scopeServerId)) {
+          window.dispatchEvent(new CustomEvent(LITE_MODE_CHANGED_EVENT));
+        }
+      }
+      if (projectId) {
+        await refreshProjectServers(projectId, generation);
+      }
+      setStatus(
+        nextEnabled
+          ? t("settings.mcpGlobalEnableSuccess", {
+              defaultValue: "Enabled globally.",
+            })
+          : t("settings.mcpGlobalDisableSuccess", {
+              defaultValue: "Disabled globally for every project.",
+            }),
+      );
+    } catch (updateError) {
+      setError(formatMcpSaveError(updateError, t));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleProjectDelete = async (
     server: ProjectMcpServerConfig,
   ): Promise<void> => {
@@ -1241,14 +1305,11 @@ export function McpSettingsPanel({
 
   const handleListToggle = (server: McpSettingsListItem): void => {
     if (isGlobalBuiltinView) {
-      void toggleGlobalBuiltin(server);
+      requestGlobalToggle(server, "builtin");
       return;
     }
     if (isGlobalScope) {
-      const globalServer = findGlobalServer(server.serverId);
-      if (globalServer) {
-        void toggleEnabled(globalServer);
-      }
+      requestGlobalToggle(server, "external");
       return;
     }
     void handleProjectToggle(server);
@@ -1591,6 +1652,71 @@ export function McpSettingsPanel({
           />
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(pendingGlobalToggle)}
+        title={
+          pendingGlobalToggle?.nextEnabled
+            ? t("settings.mcpGlobalEnableTitle", {
+                defaultValue: "Enable global MCP server",
+              })
+            : t("settings.mcpGlobalDisableTitle", {
+                defaultValue: "Disable global MCP server",
+              })
+        }
+        message={
+          pendingGlobalToggle?.nextEnabled
+            ? t("settings.mcpGlobalEnableConfirm", {
+                defaultValue:
+                  "Also enable {{name}} for the current project {{project}}?",
+                values: {
+                  name: pendingGlobalToggle?.server.name ?? "",
+                  project: activeDirectory?.name ?? "",
+                },
+              })
+            : t("settings.mcpGlobalDisableConfirm", {
+                defaultValue:
+                  "Disabling {{name}} globally also stops it in every project, including the current one. Disable anyway?",
+                values: { name: pendingGlobalToggle?.server.name ?? "" },
+              })
+        }
+        confirmLabel={
+          pendingGlobalToggle?.askProject
+            ? t("settings.mcpGlobalEnableBoth", {
+                defaultValue: "Global and current project",
+              })
+            : t("settings.disable", { defaultValue: "Disable" })
+        }
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        extraLabel={
+          pendingGlobalToggle?.askProject
+            ? t("settings.mcpGlobalEnableOnly", { defaultValue: "Global only" })
+            : undefined
+        }
+        onExtra={() => {
+          const pending = pendingGlobalToggle;
+          if (!pending) {
+            return;
+          }
+          setPendingGlobalToggle(null);
+          void applyGlobalToggle(pending.server, pending.kind, true, false);
+        }}
+        variant={pendingGlobalToggle?.nextEnabled ? "default" : "warning"}
+        onConfirm={() => {
+          const pending = pendingGlobalToggle;
+          if (!pending) {
+            return;
+          }
+          setPendingGlobalToggle(null);
+          void applyGlobalToggle(
+            pending.server,
+            pending.kind,
+            pending.nextEnabled,
+            pending.askProject,
+          );
+        }}
+        onCancel={() => setPendingGlobalToggle(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

@@ -2557,6 +2557,8 @@ export const en = {
   "settings.delete": "Delete",
   "settings.duplicate": "Duplicate",
   "settings.cancel": "Cancel",
+  "settings.enable": "Enable",
+  "settings.disable": "Disable",
   "settings.add": "Add",
   "settings.name": "Name",
   "settings.value": "Value",
@@ -2985,6 +2987,14 @@ export const en = {
   "settings.skillsEnableSuccess": "Skill enabled.",
   "settings.skillsDisableSuccess":
     "Skill disabled and removed from skill-execute.",
+  "settings.skillsGlobalDisableTitle": "Disable global Skill",
+  "settings.skillsGlobalDisableConfirm":
+    'Disabling "{{name}}" globally also disables it in every project that has not enabled it separately. Disable anyway?',
+  "settings.skillsGlobalEnableTitle": "Enable global Skill",
+  "settings.skillsGlobalEnableConfirm":
+    'Also enable "{{name}}" for the current project {{project}}?',
+  "settings.skillsGlobalEnableBoth": "Global and current project",
+  "settings.skillsGlobalEnableOnly": "Global only",
   "settings.skillsUpdateError": "Failed to update Skill",
   "settings.skillsInstallTitle": "Install from GitHub",
   "settings.skillsInstallUrlLabel": "GitHub URL",
@@ -3045,6 +3055,16 @@ export const en = {
   "settings.mcpProjectListTitle": "Project MCP servers",
   "settings.mcpGlobalTabInfo":
     "Manage external MCP servers shared by all projects.",
+  "settings.mcpGlobalDisableTitle": "Disable global MCP server",
+  "settings.mcpGlobalDisableConfirm":
+    "Disabling {{name}} globally also stops it in every project, including the current one. Disable anyway?",
+  "settings.mcpGlobalDisableSuccess": "Disabled globally for every project.",
+  "settings.mcpGlobalEnableTitle": "Enable global MCP server",
+  "settings.mcpGlobalEnableConfirm":
+    "Also enable {{name}} for the current project {{project}}?",
+  "settings.mcpGlobalEnableSuccess": "Enabled globally.",
+  "settings.mcpGlobalEnableBoth": "Global and current project",
+  "settings.mcpGlobalEnableOnly": "Global only",
   "settings.mcpProjectTabInfo":
     "Manage project MCP servers for {{name}} and control inherited system or global servers.",
   "settings.mcpProjectNoServers":

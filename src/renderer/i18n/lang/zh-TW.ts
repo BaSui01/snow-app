@@ -2428,6 +2428,8 @@ export const zhTW = {
   "settings.delete": "刪除",
   "settings.duplicate": "複製",
   "settings.cancel": "取消",
+  "settings.enable": "啟用",
+  "settings.disable": "停用",
   "settings.add": "新增",
   "settings.name": "名稱",
   "settings.value": "值",
@@ -2841,6 +2843,14 @@ export const zhTW = {
   "settings.skillsEnableSuccess": "Skill 已啟用。",
   "settings.skillsDisableSuccess":
     "Skill 已停用，並已從 skill-execute 中移除。",
+  "settings.skillsGlobalDisableTitle": "停用全域 Skill",
+  "settings.skillsGlobalDisableConfirm":
+    "全域停用「{{name}}」後，未個別啟用它的專案也會一併停用。確定停用嗎？",
+  "settings.skillsGlobalEnableTitle": "啟用全域 Skill",
+  "settings.skillsGlobalEnableConfirm":
+    "是否同時為目前專案 {{project}} 啟用「{{name}}」？",
+  "settings.skillsGlobalEnableBoth": "全域與目前專案",
+  "settings.skillsGlobalEnableOnly": "僅全域",
   "settings.skillsUpdateError": "更新 Skill 失敗",
   "settings.skillsInstallTitle": "從 GitHub 安裝",
   "settings.skillsInstallUrlLabel": "GitHub 連結",
@@ -2900,6 +2910,16 @@ export const zhTW = {
   "settings.mcpGlobalListTitle": "全域 MCP 服務",
   "settings.mcpProjectListTitle": "專案 MCP 服務",
   "settings.mcpGlobalTabInfo": "管理所有專案共用的外部 MCP 服務。",
+  "settings.mcpGlobalDisableTitle": "停用全域 MCP 服務",
+  "settings.mcpGlobalDisableConfirm":
+    "全域停用 {{name}} 後，所有專案（包含目前專案）也將無法使用該服務。確定停用嗎？",
+  "settings.mcpGlobalDisableSuccess": "已全域停用，所有專案同步停用。",
+  "settings.mcpGlobalEnableTitle": "啟用全域 MCP 服務",
+  "settings.mcpGlobalEnableConfirm":
+    "是否同時為目前專案 {{project}} 啟用 {{name}}？",
+  "settings.mcpGlobalEnableSuccess": "全域已啟用。",
+  "settings.mcpGlobalEnableBoth": "全域與目前專案",
+  "settings.mcpGlobalEnableOnly": "僅全域",
   "settings.mcpProjectTabInfo":
     "管理 {{name}} 的專案自有 MCP 服務，並控制繼承的系統或全域服務。",
   "settings.mcpProjectNoServers": "目前專案沒有可用的 MCP 服務。",

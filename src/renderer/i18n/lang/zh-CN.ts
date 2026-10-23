@@ -2428,6 +2428,8 @@ export const zhCN = {
   "settings.delete": "删除",
   "settings.duplicate": "复制",
   "settings.cancel": "取消",
+  "settings.enable": "启用",
+  "settings.disable": "停用",
   "settings.add": "添加",
   "settings.name": "名称",
   "settings.value": "值",
@@ -2841,6 +2843,14 @@ export const zhCN = {
   "settings.skillsEnableSuccess": "Skill 已启用。",
   "settings.skillsDisableSuccess":
     "Skill 已停用，并已从 skill-execute 中移除。",
+  "settings.skillsGlobalDisableTitle": "停用全局 Skill",
+  "settings.skillsGlobalDisableConfirm":
+    "全局停用「{{name}}」后，未单独启用它的项目也会一并停用。确定停用吗？",
+  "settings.skillsGlobalEnableTitle": "启用全局 Skill",
+  "settings.skillsGlobalEnableConfirm":
+    "是否同时为当前项目 {{project}} 启用「{{name}}」？",
+  "settings.skillsGlobalEnableBoth": "全局与当前项目",
+  "settings.skillsGlobalEnableOnly": "仅全局",
   "settings.skillsUpdateError": "更新 Skill 失败",
   "settings.skillsInstallTitle": "从 GitHub 安装",
   "settings.skillsInstallUrlLabel": "GitHub 链接",
@@ -2899,6 +2909,16 @@ export const zhCN = {
   "settings.mcpGlobalListTitle": "全局 MCP 服务",
   "settings.mcpProjectListTitle": "项目 MCP 服务",
   "settings.mcpGlobalTabInfo": "管理所有项目共享的外部 MCP 服务。",
+  "settings.mcpGlobalDisableTitle": "停用全局 MCP 服务",
+  "settings.mcpGlobalDisableConfirm":
+    "全局停用 {{name}} 后，所有项目（包括当前项目）也将无法使用该服务。确定停用吗？",
+  "settings.mcpGlobalDisableSuccess": "已全局停用，所有项目同步停用。",
+  "settings.mcpGlobalEnableTitle": "启用全局 MCP 服务",
+  "settings.mcpGlobalEnableConfirm":
+    "是否同时为当前项目 {{project}} 启用 {{name}}？",
+  "settings.mcpGlobalEnableSuccess": "全局已启用。",
+  "settings.mcpGlobalEnableBoth": "全局与当前项目",
+  "settings.mcpGlobalEnableOnly": "仅全局",
   "settings.mcpProjectTabInfo":
     "管理 {{name}} 的项目自有 MCP 服务，并控制继承的系统或全局服务。",
   "settings.mcpProjectNoServers": "当前项目没有可用的 MCP 服务。",

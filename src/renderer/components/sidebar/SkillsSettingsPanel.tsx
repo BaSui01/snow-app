@@ -69,6 +69,16 @@ export function SkillsSettingsPanel({
   const [editingSkill, setEditingSkill] = useState<SkillDefinition | null>(
     null,
   );
+  // 当前项目里各 Skill 的有效启用态：全局启停时据此判断是否询问
+  // 同时为当前项目启用。
+  const [projectSkillStates, setProjectSkillStates] = useState<
+    Record<string, boolean>
+  >({});
+  const [pendingSkillToggle, setPendingSkillToggle] = useState<{
+    skill: SkillDefinition;
+    nextEnabled: boolean;
+    askProject: boolean;
+  } | null>(null);
 
   const loadSequenceRef = useRef(0);
   // 仅首次加载周期用整块 loading 占位；之后的常规刷新
@@ -112,6 +122,11 @@ export function SkillsSettingsPanel({
         global: globalSkills,
         project: projectSkills,
       });
+      setProjectSkillStates(
+        Object.fromEntries(
+          effectiveSkills.map((skill) => [skill.id, skill.enabled]),
+        ),
+      );
       setGithubSkills(githubRecords);
       loadedScopeKeyRef.current = requestScopeKey;
       setLoadedScopeKey(requestScopeKey);
@@ -124,6 +139,7 @@ export function SkillsSettingsPanel({
       // 同范围刷新失败则保留旧列表：清空同样会塌缩列表并重置滚动位置。
       if (loadedScopeKeyRef.current !== requestScopeKey) {
         setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
+        setProjectSkillStates({});
         loadedScopeKeyRef.current = requestScopeKey;
         setLoadedScopeKey(requestScopeKey);
       }
@@ -142,9 +158,12 @@ export function SkillsSettingsPanel({
     }
   }, [activeDirectory, t]);
 
-  const toggleSkillEnabled = useCallback(
-    async (skill: SkillDefinition): Promise<void> => {
-      const nextEnabled = !skill.enabled;
+  const applySkillEnabled = useCallback(
+    async (
+      skill: SkillDefinition,
+      nextEnabled: boolean,
+      alsoProject: boolean,
+    ): Promise<void> => {
       setUpdatingSkillId(skill.id);
       setError("");
       setStatus("");
@@ -157,6 +176,14 @@ export function SkillsSettingsPanel({
           skill.id,
           nextEnabled,
         );
+        // 全局启用时按需为当前项目写入启用覆盖。
+        if (alsoProject && activeDirectory) {
+          await window.snow.setSkillEnabled(
+            activeDirectory.directoryId,
+            skill.id,
+            true,
+          );
+        }
         await loadSkills();
         setStatus(
           t(
@@ -182,7 +209,31 @@ export function SkillsSettingsPanel({
         setUpdatingSkillId("");
       }
     },
-    [activeDirectory?.directoryId, loadSkills, t],
+    [activeDirectory, loadSkills, t],
+  );
+
+  /**
+   * 全局 Skill 启停入口：停用前提醒项目层会一并停用；启用时若当前项目
+   * 仍处于停用状态，弹窗询问是否同时为当前项目启用。
+   */
+  const requestSkillToggle = useCallback(
+    (skill: SkillDefinition): void => {
+      const nextEnabled = !skill.enabled;
+      if (skill.location === "project") {
+        void applySkillEnabled(skill, nextEnabled, false);
+        return;
+      }
+      const askProject =
+        nextEnabled &&
+        Boolean(activeDirectory) &&
+        projectSkillStates[skill.id] === false;
+      if (!nextEnabled || askProject) {
+        setPendingSkillToggle({ skill, nextEnabled, askProject });
+        return;
+      }
+      void applySkillEnabled(skill, nextEnabled, false);
+    },
+    [activeDirectory, applySkillEnabled, projectSkillStates],
   );
 
   const handleInstall = useCallback(async (): Promise<void> => {
@@ -598,7 +649,7 @@ export function SkillsSettingsPanel({
                       <input
                         type="checkbox"
                         checked={skill.enabled}
-                        onChange={() => void toggleSkillEnabled(skill)}
+                        onChange={() => requestSkillToggle(skill)}
                         disabled={
                           isLoading || Boolean(updatingSkillId) || isInstalling
                         }
@@ -689,6 +740,72 @@ export function SkillsSettingsPanel({
           )}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={Boolean(pendingSkillToggle)}
+        title={
+          pendingSkillToggle?.nextEnabled
+            ? t("settings.skillsGlobalEnableTitle", {
+                defaultValue: "Enable global Skill",
+              })
+            : t("settings.skillsGlobalDisableTitle", {
+                defaultValue: "Disable global Skill",
+              })
+        }
+        message={
+          pendingSkillToggle?.nextEnabled
+            ? t("settings.skillsGlobalEnableConfirm", {
+                defaultValue:
+                  "Also enable {{name}} for the current project {{project}}?",
+                values: {
+                  name: pendingSkillToggle?.skill.name ?? "",
+                  project: activeDirectory?.name ?? "",
+                },
+              })
+            : t("settings.skillsGlobalDisableConfirm", {
+                defaultValue:
+                  "Disabling {{name}} globally also disables it in every project that has not enabled it separately. Disable anyway?",
+                values: { name: pendingSkillToggle?.skill.name ?? "" },
+              })
+        }
+        confirmLabel={
+          pendingSkillToggle?.askProject
+            ? t("settings.skillsGlobalEnableBoth", {
+                defaultValue: "Global and current project",
+              })
+            : t("settings.disable", { defaultValue: "Disable" })
+        }
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        extraLabel={
+          pendingSkillToggle?.askProject
+            ? t("settings.skillsGlobalEnableOnly", {
+                defaultValue: "Global only",
+              })
+            : undefined
+        }
+        onExtra={() => {
+          const pending = pendingSkillToggle;
+          if (!pending) {
+            return;
+          }
+          setPendingSkillToggle(null);
+          void applySkillEnabled(pending.skill, true, false);
+        }}
+        variant={pendingSkillToggle?.nextEnabled ? "default" : "warning"}
+        onConfirm={() => {
+          const pending = pendingSkillToggle;
+          if (!pending) {
+            return;
+          }
+          setPendingSkillToggle(null);
+          void applySkillEnabled(
+            pending.skill,
+            pending.nextEnabled,
+            pending.askProject,
+          );
+        }}
+        onCancel={() => setPendingSkillToggle(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingUninstallSkill)}

@@ -4047,6 +4047,8 @@ export const zhTW = {
   "plusMenu.selectFilesTitle": "選擇檔案",
   "plusMenu.selectFoldersTitle": "選擇資料夾",
   "plusMenu.sectionMode": "模式",
+  "plusMenu.sectionPreferences": "偏好",
+  "plusMenu.modeNone": "未啟用",
   "plusMenu.autoScroll": "自動捲動",
   "plusMenu.autoScrollDescription": "回應時自動捲到底部",
   "plusMenu.autoFormat": "自動格式化",

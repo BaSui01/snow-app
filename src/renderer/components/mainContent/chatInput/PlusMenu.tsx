@@ -1,18 +1,27 @@
 import {
   ArrowDownToLine,
+  ChevronRight,
   ClipboardList,
   Drill,
   Feather,
   GitBranch,
   Plus,
   ShieldAlert,
+  SlidersHorizontal,
   Sparkles,
   Target,
   Wand2,
   Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { useReplyPredictionPreference } from "../../../hooks/useReplyPredictionPreference";
 import { useDropdownDirection } from "./useDropdownDirection";
@@ -70,6 +79,53 @@ export type PlusMenuProps = {
   onRefreshToolCorrection?: () => void | Promise<boolean | void>;
 };
 
+type PlusToggleRowProps = {
+  icon: LucideIcon;
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  locked?: boolean;
+  lockedTitle?: string;
+  onChange?: () => void;
+};
+
+const PlusToggleRow = ({
+  icon: Icon,
+  label,
+  description,
+  checked,
+  disabled = false,
+  locked = false,
+  lockedTitle,
+  onChange,
+}: PlusToggleRowProps): React.JSX.Element => (
+  <div
+    className={`plus-menu-item plus-menu-yolo-item${locked ? " is-locked" : ""}`}
+    title={locked ? lockedTitle : undefined}
+  >
+    <Icon size={14} className="plus-menu-item-icon" />
+    <div className="plus-menu-item-content">
+      <span className="plus-menu-item-label">{label}</span>
+      <span className="plus-menu-item-description">{description}</span>
+    </div>
+    <label className="toggle-switch plus-menu-yolo-switch">
+      <input
+        aria-label={label}
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        type="checkbox"
+      />
+      <span className="toggle-slider" />
+    </label>
+  </div>
+);
+
+// 模式二级面板尺寸（固定定位挂到 body，避免被下拉容器裁切）
+const MODE_FLYOUT_WIDTH = 300;
+const MODE_FLYOUT_GAP = 6;
+
 export const PlusMenu = ({
   sections,
   yoloMode,
@@ -116,12 +172,26 @@ export const PlusMenu = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownDir = useDropdownDirection(containerRef, isOpen);
   const [showGoalBudget, setShowGoalBudget] = useState(false);
+  const [isModesOpen, setIsModesOpen] = useState(false);
+  const [modeFlyoutPosition, setModeFlyoutPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const modesTriggerRef = useRef<HTMLButtonElement>(null);
+  const modesFlyoutRef = useRef<HTMLDivElement>(null);
+  const modeCloseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!goalMode) {
       setShowGoalBudget(false);
     }
   }, [goalMode]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsModesOpen(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isClosing) {
@@ -172,22 +242,97 @@ export const PlusMenu = ({
     [handleClose],
   );
 
-  const modeItemClassName = `plus-menu-item plus-menu-yolo-item${
-    modesLocked ? " is-locked" : ""
-  }`;
+  const clearModeCloseTimer = useCallback(() => {
+    if (modeCloseTimerRef.current !== null) {
+      window.clearTimeout(modeCloseTimerRef.current);
+      modeCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const openModeFlyout = useCallback(() => {
+    clearModeCloseTimer();
+    setIsModesOpen(true);
+  }, [clearModeCloseTimer]);
+
+  // 悬停留出缓冲，避免指针穿过间隙时面板闪退
+  const scheduleCloseModeFlyout = useCallback(() => {
+    clearModeCloseTimer();
+    modeCloseTimerRef.current = window.setTimeout(() => {
+      modeCloseTimerRef.current = null;
+      setIsModesOpen(false);
+    }, 140);
+  }, [clearModeCloseTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearModeCloseTimer();
+    };
+  }, [clearModeCloseTimer]);
+
+  const updateModeFlyoutPosition = useCallback(() => {
+    const trigger = modesTriggerRef.current;
+    if (!trigger) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    const maxHeight = Math.min(420, Math.round(window.innerHeight * 0.6));
+    let left = rect.right + MODE_FLYOUT_GAP;
+    if (left + MODE_FLYOUT_WIDTH > window.innerWidth - 8) {
+      left = Math.max(8, rect.left - MODE_FLYOUT_WIDTH - MODE_FLYOUT_GAP);
+    }
+    const height = Math.min(
+      modesFlyoutRef.current?.offsetHeight ?? maxHeight,
+      maxHeight,
+    );
+    let top = rect.top;
+    if (top + height > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - 8 - height);
+    }
+    setModeFlyoutPosition({ left, top });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isModesOpen) {
+      setModeFlyoutPosition(null);
+      return;
+    }
+    updateModeFlyoutPosition();
+    const raf = window.requestAnimationFrame(updateModeFlyoutPosition);
+    window.addEventListener("resize", updateModeFlyoutPosition);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", updateModeFlyoutPosition);
+    };
+  }, [isModesOpen, updateModeFlyoutPosition]);
+
   const modeItemTitle = modesLocked
     ? t("plusMenu.modeLockedRunning")
     : undefined;
+
+  const activeModeLabels = [
+    yoloMode ? t("plusMenu.yoloMode") : null,
+    liteMode ? t("plusMenu.liteMode") : null,
+    planMode ? t("plusMenu.planMode") : null,
+    worktreeMode ? t("plusMenu.worktreeMode") : null,
+    workflowMode ? t("plusMenu.workflowMode") : null,
+    goalMode ? t("plusMenu.goalMode") : null,
+  ].filter((label): label is string => Boolean(label));
+  const activeModeSummary =
+    activeModeLabels.length > 0
+      ? activeModeLabels.join(" · ")
+      : t("plusMenu.modeNone");
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
     const handleDocumentPointerDown = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
+      const target = event.target as Node;
+      // 二级面板挂在 body 上，需单独放行
+      if (modesFlyoutRef.current?.contains(target)) {
+        return;
+      }
+      if (containerRef.current && !containerRef.current.contains(target)) {
         handleClose();
       }
     };
@@ -213,6 +358,12 @@ export const PlusMenu = ({
           className={`plus-menu-dropdown drop-${dropdownDir}${
             isClosing ? " is-closing" : ""
           }`}
+          onScroll={() => {
+            // 滚动后触发器位置失效，收掉二级面板
+            if (isModesOpen) {
+              setIsModesOpen(false);
+            }
+          }}
         >
           {sections.map((section, sectionIndex) => (
             <div key={section.id} className="plus-menu-section">
@@ -244,293 +395,217 @@ export const PlusMenu = ({
             </div>
           ))}
           <div className="plus-menu-section">
-            <div className="plus-menu-section-divider" />
-            <div className="plus-menu-section-title">
-              {t("plusMenu.sectionMode")}
-            </div>
-            <div className="plus-menu-item plus-menu-yolo-item">
-              <ArrowDownToLine size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.autoScroll")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.autoScrollDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.autoScroll")}
-                  checked={autoScrollEnabled}
-                  disabled={!onAutoScrollChange}
-                  onChange={() => {
-                    onAutoScrollChange?.(!autoScrollEnabled);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="plus-menu-item plus-menu-yolo-item">
-              <Wand2 size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.autoFormat")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.autoFormatDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.autoFormat")}
-                  checked={autoFormatEnabled}
-                  disabled={!onAutoFormatChange}
-                  onChange={() => {
-                    onAutoFormatChange?.(!autoFormatEnabled);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="plus-menu-item plus-menu-yolo-item">
-              <Sparkles size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.replyPrediction")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.replyPredictionDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.replyPrediction")}
-                  checked={replyPredictionEnabled}
-                  onChange={() => {
-                    setReplyPredictionEnabled(!replyPredictionEnabled);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="plus-menu-item plus-menu-yolo-item">
-              <Drill size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.toolCorrection")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.toolCorrectionDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.toolCorrection")}
-                  checked={toolCorrectionEnabled}
-                  disabled={!onToolCorrectionChange}
-                  onChange={() => {
-                    onToolCorrectionChange?.(!toolCorrectionEnabled);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className="plus-menu-item plus-menu-yolo-item">
-              <ShieldAlert size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.yoloMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.yoloModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.yoloMode")}
-                  checked={yoloMode}
-                  disabled={isUpdatingYoloMode || !onYoloModeChange}
-                  onChange={() => {
-                    void onYoloModeChange?.(!yoloMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className={modeItemClassName} title={modeItemTitle}>
-              <Feather size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.liteMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.liteModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.liteMode")}
-                  checked={liteMode}
-                  disabled={
-                    modesLocked || isUpdatingLiteMode || !onLiteModeChange
-                  }
-                  onChange={() => {
-                    void onLiteModeChange?.(!liteMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className={modeItemClassName} title={modeItemTitle}>
-              <ClipboardList size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.planMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.planModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.planMode")}
-                  checked={planMode}
-                  disabled={
-                    modesLocked || isUpdatingPlanMode || !onPlanModeChange
-                  }
-                  onChange={() => {
-                    void onPlanModeChange?.(!planMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className={modeItemClassName} title={modeItemTitle}>
-              <GitBranch size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.worktreeMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.worktreeModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.worktreeMode")}
-                  checked={worktreeMode}
-                  disabled={
-                    modesLocked ||
-                    isUpdatingWorktreeMode ||
-                    !onWorktreeModeChange
-                  }
-                  onChange={() => {
-                    void onWorktreeModeChange?.(!worktreeMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className={modeItemClassName} title={modeItemTitle}>
-              <Workflow size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.workflowMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.workflowModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.workflowMode")}
-                  checked={workflowMode}
-                  disabled={
-                    modesLocked ||
-                    isUpdatingWorkflowMode ||
-                    !onWorkflowModeChange
-                  }
-                  onChange={() => {
-                    void onWorkflowModeChange?.(!workflowMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            <div className={modeItemClassName} title={modeItemTitle}>
-              <Target size={14} className="plus-menu-item-icon" />
-              <div className="plus-menu-item-content">
-                <span className="plus-menu-item-label">
-                  {t("plusMenu.goalMode")}
-                </span>
-                <span className="plus-menu-item-description">
-                  {t("plusMenu.goalModeDescription")}
-                </span>
-              </div>
-              <label className="toggle-switch plus-menu-yolo-switch">
-                <input
-                  aria-label={t("plusMenu.goalMode")}
-                  checked={goalMode}
-                  disabled={
-                    modesLocked || isUpdatingGoalMode || !onGoalModeChange
-                  }
-                  onChange={() => {
-                    void onGoalModeChange?.(!goalMode);
-                  }}
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
-            {goalMode && (
-              <div className="plus-menu-goal-budget-row">
-                <span className="plus-menu-goal-budget-title">
-                  {t("plusMenu.goalBudgetTitle")}
-                </span>
-                <input
-                  className="plus-menu-goal-budget-input"
-                  type="number"
-                  min={10000}
-                  step={100000}
-                  value={goalModeTokenBudget}
-                  disabled={modesLocked || goalModeTokenBudget <= 0}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value, 10);
-                    if (!Number.isNaN(value) && value > 0) {
-                      onGoalModeTokenBudgetChange?.(value);
-                    }
-                  }}
-                  aria-label={t("plusMenu.goalBudgetTitle")}
-                />
-                <span className="plus-menu-goal-budget-unit">tokens</span>
-                <label className="plus-menu-goal-unlimited-row">
-                  <input
-                    type="checkbox"
-                    checked={goalModeTokenBudget <= 0}
-                    disabled={modesLocked}
-                    onChange={(e) => {
-                      // 0 = unlimited (no budget section is injected into the
-                      // Goal Mode system prompt); unchecking restores the
-                      // built-in default budget.
-                      onGoalModeTokenBudgetChange?.(
-                        e.target.checked ? 0 : 2000000,
-                      );
-                    }}
-                    aria-label={t("plusMenu.goalBudgetUnlimited")}
-                  />
-                  <span>{t("plusMenu.goalBudgetUnlimited")}</span>
-                </label>
-              </div>
+            {sections.length > 0 && (
+              <div className="plus-menu-section-divider" />
             )}
+            <div className="plus-menu-section-title">
+              {t("plusMenu.sectionPreferences")}
+            </div>
+            <PlusToggleRow
+              icon={ArrowDownToLine}
+              label={t("plusMenu.autoScroll")}
+              description={t("plusMenu.autoScrollDescription")}
+              checked={autoScrollEnabled}
+              disabled={!onAutoScrollChange}
+              onChange={() => {
+                onAutoScrollChange?.(!autoScrollEnabled);
+              }}
+            />
+            <PlusToggleRow
+              icon={Wand2}
+              label={t("plusMenu.autoFormat")}
+              description={t("plusMenu.autoFormatDescription")}
+              checked={autoFormatEnabled}
+              disabled={!onAutoFormatChange}
+              onChange={() => {
+                onAutoFormatChange?.(!autoFormatEnabled);
+              }}
+            />
+            <PlusToggleRow
+              icon={Sparkles}
+              label={t("plusMenu.replyPrediction")}
+              description={t("plusMenu.replyPredictionDescription")}
+              checked={replyPredictionEnabled}
+              onChange={() => {
+                setReplyPredictionEnabled(!replyPredictionEnabled);
+              }}
+            />
+            <PlusToggleRow
+              icon={Drill}
+              label={t("plusMenu.toolCorrection")}
+              description={t("plusMenu.toolCorrectionDescription")}
+              checked={toolCorrectionEnabled}
+              disabled={!onToolCorrectionChange}
+              onChange={() => {
+                onToolCorrectionChange?.(!toolCorrectionEnabled);
+              }}
+            />
+          </div>
+          <div className="plus-menu-section">
+            <div className="plus-menu-section-divider" />
+            <button
+              ref={modesTriggerRef}
+              type="button"
+              className={`plus-menu-item plus-menu-submenu-trigger${
+                isModesOpen ? " is-open" : ""
+              }`}
+              aria-haspopup="true"
+              aria-expanded={isModesOpen}
+              onMouseEnter={openModeFlyout}
+              onMouseLeave={scheduleCloseModeFlyout}
+              onFocus={openModeFlyout}
+              onClick={openModeFlyout}
+            >
+              <SlidersHorizontal size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.sectionMode")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {activeModeSummary}
+                </span>
+              </div>
+              <ChevronRight size={14} className="plus-menu-submenu-chevron" />
+            </button>
+            {isModesOpen &&
+              createPortal(
+                <div
+                  ref={modesFlyoutRef}
+                  className="plus-menu-modes-flyout"
+                  style={{
+                    width: MODE_FLYOUT_WIDTH,
+                    left: modeFlyoutPosition?.left ?? 0,
+                    top: modeFlyoutPosition?.top ?? 0,
+                    visibility: modeFlyoutPosition ? "visible" : "hidden",
+                  }}
+                  onMouseEnter={clearModeCloseTimer}
+                  onMouseLeave={scheduleCloseModeFlyout}
+                >
+                  <PlusToggleRow
+                    icon={ShieldAlert}
+                    label={t("plusMenu.yoloMode")}
+                    description={t("plusMenu.yoloModeDescription")}
+                    checked={yoloMode}
+                    disabled={isUpdatingYoloMode || !onYoloModeChange}
+                    onChange={() => {
+                      void onYoloModeChange?.(!yoloMode);
+                    }}
+                  />
+                  <PlusToggleRow
+                    icon={Feather}
+                    label={t("plusMenu.liteMode")}
+                    description={t("plusMenu.liteModeDescription")}
+                    checked={liteMode}
+                    disabled={
+                      modesLocked || isUpdatingLiteMode || !onLiteModeChange
+                    }
+                    locked={modesLocked}
+                    lockedTitle={modeItemTitle}
+                    onChange={() => {
+                      void onLiteModeChange?.(!liteMode);
+                    }}
+                  />
+                  <PlusToggleRow
+                    icon={ClipboardList}
+                    label={t("plusMenu.planMode")}
+                    description={t("plusMenu.planModeDescription")}
+                    checked={planMode}
+                    disabled={
+                      modesLocked || isUpdatingPlanMode || !onPlanModeChange
+                    }
+                    locked={modesLocked}
+                    lockedTitle={modeItemTitle}
+                    onChange={() => {
+                      void onPlanModeChange?.(!planMode);
+                    }}
+                  />
+                  <PlusToggleRow
+                    icon={GitBranch}
+                    label={t("plusMenu.worktreeMode")}
+                    description={t("plusMenu.worktreeModeDescription")}
+                    checked={worktreeMode}
+                    disabled={
+                      modesLocked ||
+                      isUpdatingWorktreeMode ||
+                      !onWorktreeModeChange
+                    }
+                    locked={modesLocked}
+                    lockedTitle={modeItemTitle}
+                    onChange={() => {
+                      void onWorktreeModeChange?.(!worktreeMode);
+                    }}
+                  />
+                  <PlusToggleRow
+                    icon={Workflow}
+                    label={t("plusMenu.workflowMode")}
+                    description={t("plusMenu.workflowModeDescription")}
+                    checked={workflowMode}
+                    disabled={
+                      modesLocked ||
+                      isUpdatingWorkflowMode ||
+                      !onWorkflowModeChange
+                    }
+                    locked={modesLocked}
+                    lockedTitle={modeItemTitle}
+                    onChange={() => {
+                      void onWorkflowModeChange?.(!workflowMode);
+                    }}
+                  />
+                  <PlusToggleRow
+                    icon={Target}
+                    label={t("plusMenu.goalMode")}
+                    description={t("plusMenu.goalModeDescription")}
+                    checked={goalMode}
+                    disabled={
+                      modesLocked || isUpdatingGoalMode || !onGoalModeChange
+                    }
+                    locked={modesLocked}
+                    lockedTitle={modeItemTitle}
+                    onChange={() => {
+                      void onGoalModeChange?.(!goalMode);
+                    }}
+                  />
+                  {goalMode && (
+                    <div className="plus-menu-goal-budget-row">
+                      <span className="plus-menu-goal-budget-title">
+                        {t("plusMenu.goalBudgetTitle")}
+                      </span>
+                      <input
+                        className="plus-menu-goal-budget-input"
+                        type="number"
+                        min={10000}
+                        step={100000}
+                        value={goalModeTokenBudget}
+                        disabled={modesLocked || goalModeTokenBudget <= 0}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value, 10);
+                          if (!Number.isNaN(value) && value > 0) {
+                            onGoalModeTokenBudgetChange?.(value);
+                          }
+                        }}
+                        aria-label={t("plusMenu.goalBudgetTitle")}
+                      />
+                      <span className="plus-menu-goal-budget-unit">tokens</span>
+                      <label className="plus-menu-goal-unlimited-row">
+                        <input
+                          type="checkbox"
+                          checked={goalModeTokenBudget <= 0}
+                          disabled={modesLocked}
+                          onChange={(e) => {
+                            // 0 = unlimited；取消勾选恢复默认预算
+                            onGoalModeTokenBudgetChange?.(
+                              e.target.checked ? 0 : 2000000,
+                            );
+                          }}
+                          aria-label={t("plusMenu.goalBudgetUnlimited")}
+                        />
+                        <span>{t("plusMenu.goalBudgetUnlimited")}</span>
+                      </label>
+                    </div>
+                  )}
+                </div>,
+                document.body,
+              )}
           </div>
         </div>
       )}

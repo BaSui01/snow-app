@@ -4351,6 +4351,8 @@ export const en = {
   "plusMenu.selectFilesTitle": "Select files",
   "plusMenu.selectFoldersTitle": "Select folders",
   "plusMenu.sectionMode": "Mode",
+  "plusMenu.sectionPreferences": "Preferences",
+  "plusMenu.modeNone": "None enabled",
   "plusMenu.autoScroll": "Auto scroll",
   "plusMenu.autoScrollDescription": "Scroll to bottom while responding",
   "plusMenu.autoFormat": "Auto format",

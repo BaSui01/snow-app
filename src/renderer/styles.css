@@ -29533,6 +29533,68 @@ button.user-message-source:hover {
   cursor: default;
 }
 
+.plus-menu-submenu-trigger {
+  cursor: pointer;
+}
+
+.plus-menu-submenu-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.plus-menu-submenu-trigger.is-open {
+  background: var(--bg-hover);
+}
+
+.plus-menu-submenu-trigger.is-open .plus-menu-submenu-chevron {
+  transform: rotate(90deg);
+}
+
+/* 二级面板：固定定位挂到 body，避开下拉容器的 overflow 裁切 */
+.plus-menu-modes-flyout {
+  position: fixed;
+  z-index: 120;
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  box-shadow:
+    var(--island-shadow),
+    0 12px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: plus-submenu-in 0.12s ease;
+}
+
+.plus-menu-modes-flyout::-webkit-scrollbar {
+  width: 6px;
+}
+
+.plus-menu-modes-flyout::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+
+@keyframes plus-submenu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.plus-menu-modes-flyout .plus-menu-goal-budget-row {
+  padding-left: 32px;
+}
+
 .plus-menu-item.is-locked .plus-menu-item-icon,
 .plus-menu-item.is-locked .plus-menu-item-label,
 .plus-menu-item.is-locked .plus-menu-item-description {

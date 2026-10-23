@@ -4100,6 +4100,8 @@ export const zhCN = {
   "plusMenu.selectFilesTitle": "选择文件",
   "plusMenu.selectFoldersTitle": "选择文件夹",
   "plusMenu.sectionMode": "模式",
+  "plusMenu.sectionPreferences": "偏好",
+  "plusMenu.modeNone": "未启用",
   "plusMenu.autoScroll": "自动滚动",
   "plusMenu.autoScrollDescription": "响应时自动滚到底部",
   "plusMenu.autoFormat": "自动格式化",

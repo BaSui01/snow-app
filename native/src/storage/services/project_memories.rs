@@ -147,10 +147,17 @@ const MEMORY_COLUMNS: &str = "id, memory_id, directory_id, kind, title, content,
 
 fn map_memory_row(row: &Row) -> rusqlite::Result<MemoryRecord> {
     let tags_json: String = row.get(11)?;
+    let directory_id: String = row.get(2)?;
+    let scope = if directory_id.is_empty() {
+        "global"
+    } else {
+        "project"
+    };
     Ok(MemoryRecord {
         id: row.get(0)?,
         memory_id: row.get(1)?,
-        directory_id: row.get(2)?,
+        directory_id,
+        scope: scope.to_string(),
         kind: row.get(3)?,
         title: row.get(4)?,
         content: row.get(5)?,
@@ -211,12 +218,8 @@ pub fn upsert_memory(
             "Memory content is required and must not be empty".to_string(),
         ));
     }
-    if input.directory_id.trim().is_empty() {
-        return Err(Error::new(
-            Status::InvalidArg,
-            "Memory operations require a selected project (directory id)".to_string(),
-        ));
-    }
+    // directory_id 为空串 = 跨项目用户记忆（全局作用域），仅 MCP 的
+    // scope=user 写入；面板与普通保存始终携带项目 ID。
 
     // —— DB 操作（rusqlite 错误在边界统一转换）——
     let connection = database::open_connection(database_path)
@@ -926,10 +929,12 @@ fn query_memories_page(
     // 内部 sanitize 过的整数直接内联（非用户可控文本，无注入风险），
     // 避免各分支占位符数量不一致造成 rusqlite 参数个数校验失败。
     let where_clause = match (status_ok, kind_ok) {
-        (true, true) => "WHERE directory_id = ?1 AND status = ?2 AND kind = ?3",
-        (true, false) => "WHERE directory_id = ?1 AND status = ?2",
-        (false, true) => "WHERE directory_id = ?1 AND kind = ?2",
-        (false, false) => "WHERE directory_id = ?1",
+        (true, true) => {
+            "WHERE (directory_id = ?1 OR directory_id = '') AND status = ?2 AND kind = ?3"
+        }
+        (true, false) => "WHERE (directory_id = ?1 OR directory_id = '') AND status = ?2",
+        (false, true) => "WHERE (directory_id = ?1 OR directory_id = '') AND kind = ?2",
+        (false, false) => "WHERE (directory_id = ?1 OR directory_id = '')",
     };
 
     let total: i32 = {
@@ -993,7 +998,8 @@ pub fn get_memory_stats(database_path: &Path, directory_id: &str) -> Result<Memo
                         COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0),
                         COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0),
                         COALESCE(SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END), 0)
-                   FROM project_memories WHERE directory_id = ?1",
+                   FROM project_memories
+                  WHERE directory_id = ?1 OR directory_id = ''",
                 params![directory_id.trim()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )?;
@@ -1009,23 +1015,33 @@ pub fn get_memory_stats(database_path: &Path, directory_id: &str) -> Result<Memo
 
 /// 系统提示词注入用的头部记忆：active + importance >= min_importance，
 /// 按 importance、更新时间倒序取前 `max_entries` 条。
+/// 合并全局（directory_id 空串）跨项目用户记忆，且其门槛放宽一级
+/// （软性偏好也尽量生效），全局条目排在项目条目之前。
 pub fn top_memories_for_injection(
     database_path: &Path,
     directory_id: &str,
     min_importance: i32,
     max_entries: i32,
 ) -> Result<Vec<MemoryRecord>> {
+    let global_min_importance = (min_importance - 1).max(1);
     database::open_connection(database_path)
         .and_then(|connection| {
             let sql = format!(
                 "SELECT {MEMORY_COLUMNS} FROM project_memories
-                  WHERE directory_id = ?1 AND status = 'active' AND importance >= ?2
-                  ORDER BY importance DESC, updated_at DESC, id DESC
+                  WHERE (directory_id = ?1 OR directory_id = '')
+                    AND status = 'active'
+                    AND (importance >= ?2 OR (directory_id = '' AND importance >= ?4))
+                  ORDER BY (directory_id = '') DESC, importance DESC, updated_at DESC, id DESC
                   LIMIT ?3"
             );
             let mut statement = connection.prepare(&sql)?;
             let rows = statement.query_map(
-                params![directory_id.trim(), min_importance, max_entries],
+                params![
+                    directory_id.trim(),
+                    min_importance,
+                    max_entries,
+                    global_min_importance
+                ],
                 map_memory_row,
             )?;
             rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -1162,7 +1178,7 @@ fn search_memories_with_connection(
     offset: i32,
 ) -> rusqlite::Result<(Vec<MemoryRecord>, i32)> {
     let mut sql = format!(
-        "SELECT {MEMORY_COLUMNS} FROM project_memories WHERE directory_id = ?1"
+        "SELECT {MEMORY_COLUMNS} FROM project_memories WHERE (directory_id = ?1 OR directory_id = '')"
     );
     if !statuses.is_empty() {
         let list = statuses

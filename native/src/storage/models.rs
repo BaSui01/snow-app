@@ -904,7 +904,9 @@ pub struct DiffReviewCommentRecord {
 }
 
 /// 项目级持久记忆条目（project_memories 表）。按 `directory_id` 做项目
-/// 隔离；`kind` 为 fact | decision | preference | pitfall | task_state，
+/// 隔离；`directory_id` 为空串表示跨项目用户记忆（全局作用域）。
+/// `scope` 由 directory_id 派生：project | global。
+/// `kind` 为 fact | decision | preference | pitfall | task_state，
 /// `source` 为 agent（AI 工具写入）| auto（蒸馏）| user（手动），
 /// `status` 为 active | pending（待确认）| archived。
 #[napi(object)]
@@ -913,6 +915,8 @@ pub struct MemoryRecord {
     pub id: String,
     pub memory_id: String,
     pub directory_id: String,
+    /// project | global（global = 跨项目用户偏好，注入所有项目会话）。
+    pub scope: String,
     pub kind: String,
     pub title: String,
     pub content: String,

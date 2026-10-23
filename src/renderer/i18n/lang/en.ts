@@ -724,6 +724,9 @@ export const en = {
   "memory.filterAllKinds": "All kinds",
   "memory.new": "New",
   "memory.clearAll": "Clear all",
+  "memory.scopeGlobal": "Cross-project",
+  "memory.scopeGlobalHint":
+    "Saved with scope=user: injected into every project's new conversations.",
   "memory.delete": "Delete",
   "memory.save": "Save",
   "memory.titlePlaceholder": "Title (dedup key)",
@@ -4352,6 +4355,10 @@ export const en = {
   "plusMenu.autoScrollDescription": "Scroll to bottom while responding",
   "plusMenu.autoFormat": "Auto format",
   "plusMenu.autoFormatDescription": "Format edited files automatically",
+  "plusMenu.replyPrediction": "Reply prediction",
+  "plusMenu.replyPredictionDescription":
+    "Predict your next message, press Tab to accept",
+  "chatInput.replyPredictionHint": "Tab to accept",
   "plusMenu.toolCorrection": "Auto tool correction",
   "plusMenu.toolCorrectionDescription":
     "Repair failed tool calls and retry automatically",

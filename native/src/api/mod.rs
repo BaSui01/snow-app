@@ -21,6 +21,7 @@ pub mod model_health;
 pub mod models;
 pub mod oauth;
 pub mod reranking;
+pub mod reply_prediction;
 pub mod repo_wiki;
 pub mod request_proxy;
 pub mod responses;

@@ -161,3 +161,15 @@ export type ToolCorrectionResponse = {
   argumentsJson: string;
   reasoning: string;
 };
+
+/** 回复预测请求：requestId 用于取消。 */
+export type ReplyPredictionRequest = {
+  requestId: string;
+  conversationId: string;
+  apiProfile?: string;
+};
+
+/** content 为空表示无可用预测。 */
+export type ReplyPredictionResult = {
+  content: string;
+};

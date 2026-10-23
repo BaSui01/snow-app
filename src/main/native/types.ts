@@ -5,6 +5,8 @@ import type {
   PromptOptimizationResult,
 } from "../../preload/types/promptOptimization";
 import type {
+  ReplyPredictionRequest,
+  ReplyPredictionResult,
   ToolCorrectionRequest,
   ToolCorrectionResponse,
 } from "../../preload/types/chat";
@@ -2858,6 +2860,11 @@ export type NativeBridge = ImageGenerationNativeApi & {
   correctToolCall: (
     request: ToolCorrectionRequest,
   ) => Promise<ToolCorrectionResponse>;
+  /** 基础模型预测用户下一条消息（回复预测）。 */
+  predictReply: (
+    request: ReplyPredictionRequest,
+  ) => Promise<ReplyPredictionResult>;
+  abortReplyPrediction: (requestId: string) => Promise<boolean>;
   listAvailableSkills: (projectId?: string) => Promise<SkillDefinition[]>;
   setSkillEnabled: (
     projectId: string | undefined,

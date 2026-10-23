@@ -21,6 +21,7 @@ import { ChatInputToolbar } from "./ChatInputToolbar";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { RollbackTargetPopup } from "./RollbackTargetPopup";
 import { useRollbackPicker } from "./useRollbackPicker";
+import { useReplyPrediction } from "./useReplyPrediction";
 import { PendingMessages } from "./PendingMessages";
 import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
@@ -688,6 +689,16 @@ export const ChatInputView = ({
     handleDragOver,
     handleDragLeave,
   } = contentEditableInteractions;
+  const { prediction: replyPrediction, consumePrediction } = useReplyPrediction(
+    {
+      conversationId: activeConversationId ?? null,
+      isStreaming,
+      disabled: isSubAgentConversation,
+      value,
+      apiProfile: selectedApiProfile || undefined,
+      messages,
+    },
+  );
   // 回滚目标列表优先接管按键：列表打开时 ↑/↓/Enter/Esc 不再触达输入区逻辑
   // （历史回溯、发送、@ 提及面板等）；列表关闭时它只累计连续 ESC。
   const handleInputKeyDownWithRollback = useCallback(
@@ -695,9 +706,36 @@ export const ChatInputView = ({
       if (rollbackPicker.handleKeyDown(event)) {
         return;
       }
+      // Tab 采用回复预测
+      if (
+        replyPrediction &&
+        event.key === "Tab" &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.nativeEvent.isComposing &&
+        !isMentionOpen &&
+        !isCommandOpen
+      ) {
+        event.preventDefault();
+        const text = consumePrediction();
+        if (text) {
+          restoreContent(text);
+        }
+        return;
+      }
       handleInputKeyDown(event);
     },
-    [handleInputKeyDown, rollbackPicker.handleKeyDown],
+    [
+      handleInputKeyDown,
+      rollbackPicker.handleKeyDown,
+      replyPrediction,
+      isMentionOpen,
+      isCommandOpen,
+      consumePrediction,
+      restoreContent,
+    ],
   );
   const {
     imagePreview,
@@ -909,7 +947,7 @@ export const ChatInputView = ({
             className="input-field input-field-editable"
             contentEditable
             suppressContentEditableWarning
-            data-placeholder={placeholder}
+            data-placeholder={replyPrediction ? "" : placeholder}
             data-empty="true"
             onInput={handleInput}
             onKeyDown={handleInputKeyDownWithRollback}
@@ -938,6 +976,26 @@ export const ChatInputView = ({
               handleWebChipClick(event);
             }}
           />
+          {replyPrediction ? (
+            <div
+              className="reply-prediction-ghost"
+              aria-hidden="true"
+              style={
+                textareaRef.current
+                  ? {
+                      top: textareaRef.current.offsetTop,
+                      left: textareaRef.current.offsetLeft,
+                      width: textareaRef.current.clientWidth,
+                    }
+                  : undefined
+              }
+            >
+              <span className="reply-prediction-text">{replyPrediction}</span>
+              <kbd className="reply-prediction-hint">
+                {t("chatInput.replyPredictionHint")}
+              </kbd>
+            </div>
+          ) : null}
           <InputOverlayLayer
             imagePreview={imagePreview}
             setImagePreview={setImagePreview}

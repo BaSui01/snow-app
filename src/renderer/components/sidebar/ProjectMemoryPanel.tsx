@@ -973,6 +973,19 @@ export function ProjectMemoryPanel({
                     <span className={`memory-kind-badge ${record.kind}`}>
                       {kindLabel(record.kind)}
                     </span>
+                    {record.scope === "global" && (
+                      <span
+                        className="memory-kind-badge scope-global"
+                        title={t("memory.scopeGlobalHint", {
+                          defaultValue:
+                            "Saved with scope=user: injected into every project's new conversations.",
+                        })}
+                      >
+                        {t("memory.scopeGlobal", {
+                          defaultValue: "Cross-project",
+                        })}
+                      </span>
+                    )}
                     <span className="memory-list-item-title">
                       {activeQuery ? (
                         <HighlightedText

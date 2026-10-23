@@ -6,6 +6,7 @@ import {
   GitBranch,
   Plus,
   ShieldAlert,
+  Sparkles,
   Target,
   Wand2,
   Workflow,
@@ -13,6 +14,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
+import { useReplyPredictionPreference } from "../../../hooks/useReplyPredictionPreference";
 import { useDropdownDirection } from "./useDropdownDirection";
 
 export type PlusMenuItem = {
@@ -107,6 +109,8 @@ export const PlusMenu = ({
   onRefreshToolCorrection,
 }: PlusMenuProps): React.JSX.Element => {
   const { t } = useI18n();
+  const { replyPredictionEnabled, setReplyPredictionEnabled } =
+    useReplyPredictionPreference();
   const [isOpen, setIsOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -284,6 +288,28 @@ export const PlusMenu = ({
                   disabled={!onAutoFormatChange}
                   onChange={() => {
                     onAutoFormatChange?.(!autoFormatEnabled);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <Sparkles size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.replyPrediction")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.replyPredictionDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.replyPrediction")}
+                  checked={replyPredictionEnabled}
+                  onChange={() => {
+                    setReplyPredictionEnabled(!replyPredictionEnabled);
                   }}
                   type="checkbox"
                 />

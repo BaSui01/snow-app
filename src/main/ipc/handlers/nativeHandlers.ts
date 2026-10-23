@@ -799,6 +799,34 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           : undefined,
     });
   });
+  ipcMain.handle("chat:predict-reply", (_event, request: unknown) => {
+    if (!request || typeof request !== "object" || Array.isArray(request)) {
+      throw new Error("Reply prediction request is required");
+    }
+    const record = request as Record<string, unknown>;
+    const requestId =
+      typeof record.requestId === "string" ? record.requestId.trim() : "";
+    const conversationId =
+      typeof record.conversationId === "string"
+        ? record.conversationId.trim()
+        : "";
+    if (!requestId || !conversationId) {
+      throw new Error("Reply prediction requires requestId and conversationId");
+    }
+    return native.predictReply({
+      requestId,
+      conversationId,
+      apiProfile:
+        typeof record.apiProfile === "string" && record.apiProfile.trim()
+          ? record.apiProfile.trim()
+          : undefined,
+    });
+  });
+  ipcMain.handle("chat:abort-reply-prediction", (_event, requestId: unknown) =>
+    typeof requestId === "string" && requestId
+      ? native.abortReplyPrediction(requestId)
+      : false,
+  );
   ipcMain.handle("skills:list", (_event, projectId: unknown) => {
     if (
       projectId !== undefined &&

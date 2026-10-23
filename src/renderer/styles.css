@@ -28694,6 +28694,39 @@ button.user-message-source:hover {
   left: 0;
 }
 
+/* 回复预测：输入框为空时的浅色模拟回复，Tab 采用 */
+.reply-prediction-ghost {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  z-index: 1;
+  pointer-events: none;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--text-muted);
+  opacity: 0.75;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.reply-prediction-hint {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 5px;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-muted);
+  vertical-align: 1px;
+}
+
 .input-field-editable.drag-over {
   outline: 2px dashed var(--text-primary);
   outline-offset: -2px;
@@ -58388,6 +58421,12 @@ pre.file-viewer-code {
 .memory-kind-badge.task_state {
   background: var(--accent-amber-bg);
   color: var(--accent-amber-text);
+}
+
+.memory-kind-badge.scope-global {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent-blue-text) 40%, transparent);
+  color: var(--accent-blue-text);
 }
 
 .memory-list-item-title {

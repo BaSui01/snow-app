@@ -10,6 +10,8 @@ export type MemoryRecord = {
   id: string;
   memoryId: string;
   directoryId: string;
+  /** project = 当前项目；global = 跨项目用户记忆（directoryId 为空串）。 */
+  scope: "project" | "global";
   kind: MemoryKind;
   title: string;
   content: string;

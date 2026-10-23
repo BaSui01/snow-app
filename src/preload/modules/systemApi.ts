@@ -42,6 +42,8 @@ import type {
   OpenBrowserTabInMainPayload,
   GithubSkillRecord,
   ProjectSkillDefinition,
+  ReplyPredictionRequest,
+  ReplyPredictionResult,
   ResumableCodebaseSession,
   SkillBatchInstallResult,
   SkillDefinition,
@@ -776,6 +778,12 @@ export const systemApi = {
     request: ToolCorrectionRequest,
   ): Promise<ToolCorrectionResponse> =>
     ipcRenderer.invoke("mcp:correct-tool-call", request),
+  predictReply: (
+    request: ReplyPredictionRequest,
+  ): Promise<ReplyPredictionResult> =>
+    ipcRenderer.invoke("chat:predict-reply", request),
+  abortReplyPrediction: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke("chat:abort-reply-prediction", requestId),
   listAvailableSkills: (projectId?: string): Promise<SkillDefinition[]> =>
     ipcRenderer.invoke("skills:list", projectId),
   setSkillEnabled: (

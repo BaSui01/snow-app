@@ -1,10 +1,11 @@
-//! 项目级持久记忆（Project Memory）内置 MCP 服务。
+//! 持久记忆（Project Memory）内置 MCP 服务。
 //!
-//! 5 个工具（save / search / list / update / delete）按会话项目隔离读写
-//! `project_memories` 表，全部 SQLite I/O 走 spawn_blocking。项目上下文
-//! （directory_id）与会话溯源（conversation_id，仅 save 用作锚点）都由
-//! `call_mcp_tool` 分发层注入，工具参数无需携带，模型不可能跨项目读写，
-//! 也不可能伪造溯源。
+//! 5 个工具（save / search / list / update / delete）读写 `project_memories`
+//! 表：scope=project 按会话项目（directory_id）隔离；scope=user 写入全局
+//! 作用域（directory_id 空串），跨项目注入。search / list / 注入章节合并
+//! 项目与全局条目，条目带 `scope` 字段。全部 SQLite I/O 走 spawn_blocking，
+//! 项目上下文（directory_id）与会话溯源（conversation_id）由 `call_mcp_tool`
+//! 分发层注入，模型不可能伪造。
 //!
 //! 系统提示词注入：`build_system_prompt_section` 仿 LSP / imagegen 的
 //! 「方案 B」——域 scope 允许时在系统提示词末尾追加 `## Project Memory`
@@ -39,7 +40,7 @@ impl MemoryService {
     }
 
     /// call.rs 分发入口：`project_id` 为当前会话项目（directory_id），
-    /// 所有操作都以它为隔离键；无项目上下文时直接报错。
+    /// scope=project 时作为隔离键；无项目上下文时直接报错。
     /// `conversation_id` 为当前会话 ID（分发层注入，AI 不可填写），仅
     /// memory-save 用作溯源锚点。
     pub async fn execute_async(
@@ -89,6 +90,19 @@ impl MemoryService {
         let content = required_string(args, "content")?;
         let importance = optional_i32(args, "importance").unwrap_or(2);
         let tags = optional_string_array(args, "tags");
+        // scope=user 写全局作用域（directory_id 空串），条目会注入所有项目
+        // 的新会话；scope=project（默认）仍按当前项目隔离。
+        let scope = optional_string(args, "scope").unwrap_or_else(|| "project".to_string());
+        let directory_id = match scope.as_str() {
+            "user" | "global" => String::new(),
+            "project" => project_id.to_string(),
+            other => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("Invalid scope: \"{other}\". Use \"project\" or \"user\"."),
+                ))
+            }
+        };
         // 溯源锚点由分发层注入（call_mcp_tool 传入当前会话 ID），AI 不可
         // 填写——避免抄写错误/伪造；无会话上下文（如 PENDING 会话）时为
         // 空串，会话删除联动不会匹配到空溯源记忆。
@@ -105,10 +119,9 @@ impl MemoryService {
             .filter(|value| !value.is_empty())
             .unwrap_or_default();
 
-        let project_id = project_id.to_string();
         let (record, created) = tokio::task::spawn_blocking(move || {
             crate::storage::upsert_project_memory(
-                project_id,
+                directory_id,
                 kind,
                 title,
                 content,
@@ -123,14 +136,19 @@ impl MemoryService {
         .await
         .map_err(spawn_error("save memory"))??;
 
+        let target = if record.scope == "global" {
+            "the cross-project user memory"
+        } else {
+            "this project"
+        };
         let message = if created {
             format!(
-                "Memory saved as a new entry (id: {}). It will be injected into the system prompt of NEW conversations only — the injected section of the current session stays frozen so its context cache keeps hitting.",
+                "Memory saved as a new entry in {target} (id: {}). It will be injected into the system prompt of NEW conversations only — the injected section of the current session stays frozen so its context cache keeps hitting.",
                 record.memory_id
             )
         } else {
             format!(
-                "An existing memory with the same title was found and has been MERGED/updated instead of creating a duplicate (id: {}). The injected section of the current session stays frozen; the change shows up in NEW conversations.",
+                "An existing memory with the same title was found in {target} and has been MERGED/updated instead of creating a duplicate (id: {}). The injected section of the current session stays frozen; the change shows up in NEW conversations.",
                 record.memory_id
             )
         };
@@ -322,10 +340,15 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "save".to_string(),
-                description: "Save a durable, cross-session memory about the CURRENT project to its persistent memory bank (SQLite, scoped to the conversation's project). Use for knowledge worth remembering in FUTURE sessions: key technical decisions, user preferences/conventions, pitfalls and their fixes, project structure facts, task state. NOT for transient session state (use the todo tool for that).\n\nFields:\n- kind (optional): \"fact\" | \"decision\" | \"preference\" | \"pitfall\" | \"task_state\" (default \"fact\")\n- title (required): one concise line; it is the dedup key — saving with an existing title MERGES into that entry instead of creating a duplicate\n- content (required): concrete details (paths, commands, reasons); keep under ~400 chars\n- importance (optional, default 2): 1-5. 1-2 = retrieval-only (found via memory-search, never injected) — the default and correct level for specific, task-bound events (a fixed bug, a one-off decision, current task state). >= 3 = auto-injected into the system prompt of EVERY new conversation — reserve it strictly for general project knowledge useful to nearly all sessions (build/test commands, core conventions, architecture facts); if an entry only matters for one specific topic or task, keep it at 1-2 even if it feels important\n- tags (optional): lowercase keywords for retrieval\n\nWhat to save: architecture choices the user confirmed, build/test conventions, \"don't do X\" lessons, environment quirks, recurring user instructions specific to this project. Do NOT save secrets, one-off facts easily re-derived from code, or content the user asked to forget.\n\nInjection timing: entries are injected into the system prompt of conversations started AFTERWARDS only — the running session's injected section is frozen so its prompt cache is never invalidated by saving.".to_string(),
+                description: "Save a durable, cross-session memory to the persistent memory bank (SQLite). scope=project (default) writes to the CURRENT project's bank; scope=user writes to the cross-project user memory, which is injected into EVERY project's new conversations. Use for knowledge worth remembering in FUTURE sessions: key technical decisions, user preferences/conventions, the user's durable working style and communication preferences (reply language/length/detail level, formatting habits, how they want code written, how much confirmation they want before acting, tool and workflow preferences, tone), pitfalls and their fixes, project structure facts, task state. NOT for transient session state (use the todo tool for that).\n\nFields:\n- scope (optional): \"project\" (default) | \"user\" — cross-project user preferences must use \"user\"\n- kind (optional): \"fact\" | \"decision\" | \"preference\" | \"pitfall\" | \"task_state\" (default \"fact\")\n- title (required): one concise line; it is the dedup key — saving with an existing title in the same scope MERGES into that entry instead of creating a duplicate\n- content (required): concrete details (paths, commands, reasons); keep under ~400 chars\n- importance (optional, default 2): 1-5. 1-2 = retrieval-only (found via memory-search, never injected) — the default and correct level for specific, task-bound events (a fixed bug, a one-off decision, current task state). >= 3 = auto-injected into the system prompt of EVERY new conversation — reserve it strictly for general knowledge useful to nearly all sessions (build/test commands, core conventions, architecture facts, cross-project user rules); if an entry only matters for one specific topic or task, keep it at 1-2 even if it feels important\n- tags (optional): lowercase keywords for retrieval\n\nUser style: when the user states a standing preference or repeats it across sessions (reply language, verbosity, formatting, code/comment conventions, confirmation appetite, tool or workflow choices, tone), save one `preference` entry with scope=\"user\", tagged `user-style`, with a self-describing title (e.g. \"User prefers concise Chinese replies\"). Use importance 3 only for rule-like preferences the user wants applied everywhere; keep softer observations at 1-2. Ignore one-off requests and temporary moods, and never turn an inferred habit into a rule the user did not ask for.\n\nWhat to save: architecture choices the user confirmed, build/test conventions, \"don't do X\" lessons, environment quirks, recurring user instructions specific to this project. Do NOT save secrets, one-off facts easily re-derived from code, or content the user asked to forget.\n\nInjection timing: entries are injected into the system prompt of conversations started AFTERWARDS only — the running session's injected section is frozen so its prompt cache is never invalidated by saving.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
+                        "scope": {
+                            "type": "string",
+                            "enum": ["project", "user"],
+                            "description": "project (default) = this project's memory; user = cross-project user memory injected into every project (use it for durable user style/preferences)."
+                        },
                         "kind": {
                             "type": "string",
                             "enum": ["fact", "decision", "preference", "pitfall", "task_state"],
@@ -357,7 +380,7 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "search".to_string(),
-                description: "Search the CURRENT project's persistent memory bank by keywords. Results are ranked (title/tag/content hits, importance, recency) and only entries with actual text matches are returned. Use when the injected Project Memory section is not enough and you need prior knowledge about this project (past decisions, pitfalls, user preferences).".to_string(),
+                description: "Search the CURRENT project's memory bank AND the cross-project user memory by keywords (entries carry `scope`: project | global). Results are ranked (title/tag/content hits, importance, recency) and only entries with actual text matches are returned. Use when the injected Project Memory section is not enough and you need prior knowledge (past decisions, pitfalls) or the user's saved `user-style` habits.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -386,7 +409,7 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "list".to_string(),
-                description: "Browse the CURRENT project's persistent memory bank page by page, ordered by importance then last update. Use to review what is already remembered (e.g. before saving, to avoid duplicates) or to audit/clean up entries.".to_string(),
+                description: "Browse the CURRENT project's memory bank plus the cross-project user memory page by page (each entry carries `scope`: project | global), ordered by importance then last update. Use to review what is already remembered (e.g. before saving, to avoid duplicates) or to audit/clean up entries.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -409,7 +432,7 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "update".to_string(),
-                description: "Update an existing memory entry in the CURRENT project's memory bank by id (obtained from memory-list / memory-search results). Only provided fields change; omitted fields keep their values. Use to refine wording, correct an outdated memory, or change importance/status. memoryId may be an array to apply the same kind / importance / status / tags patch to several entries at once (all-or-nothing). title and content can only be changed with a single memoryId string.".to_string(),
+                description: "Update an existing memory entry by id (obtained from memory-list / memory-search results; works for both project and global `scope` entries). Only provided fields change; omitted fields keep their values. Use to refine wording, correct an outdated memory, or change importance/status. memoryId may be an array to apply the same kind / importance / status / tags patch to several entries at once (all-or-nothing). title and content can only be changed for a single memoryId string.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -441,7 +464,7 @@ impl McpService for MemoryService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "delete".to_string(),
-                description: "Delete one or more memory entries (memoryId string or array) from the CURRENT project's memory bank. DESTRUCTIVE — before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. Prefer memory-update with status=\"archived\" when the memory may still be useful later. An array of memoryIds deletes several entries in one call under a single confirmation.".to_string(),
+                description: "Delete one or more memory entries (memoryId string or array) from the memory bank — project or global `scope`, so removing a cross-project user preference is allowed. DESTRUCTIVE — before calling, you MUST obtain the user's explicit approval via the user-interaction askUserQuestion tool, then retry with confirmed: true; calls without it are rejected. Prefer memory-update with status=\"archived\" when the memory may still be useful later. An array of memoryIds deletes several entries in one call under a single confirmation.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -586,8 +609,11 @@ fn render_memory_section(
 ) -> String {
     let mut section = String::from(
         "## Project Memory\n\nThis project keeps a persistent, cross-session memory bank — \
-knowledge learned about THIS project in earlier sessions. Treat the entries as \
-reference material (not binding rules); verify against the actual code when it matters. \
+knowledge learned about THIS project in earlier sessions, plus the user's durable \
+working style saved as cross-project memory (reply language/format/verbosity, code and \
+comment conventions, how much confirmation they want, tool preferences). Project facts \
+are reference material (verify them against the actual code when it matters); follow \
+saved user-style preferences unless the current request says otherwise. \
 This section is a snapshot taken when the session started: memories saved or edited \
 afterwards are NOT listed here, so use `memory-search` to look up recent changes.\n",
     );
@@ -596,50 +622,85 @@ afterwards are NOT listed here, so use `memory-search` to look up recent changes
         if stats.total == 0 {
             section.push_str(
                 "\nThe bank is currently empty. When you learn durable, cross-session \
-knowledge about this project (confirmed decisions, user preferences, pitfalls, \
-task state), save it with `memory-save` — it will be available in future sessions.",
+knowledge about this project (confirmed decisions, pitfalls, task state) or the user's \
+durable working style (reply language/format, code conventions, confirmation appetite, \
+tool preferences), save it with `memory-save` — it will be available in future sessions.",
             );
         } else {
             section.push_str(&format!(
-                "\nNo entry currently meets the auto-inject importance bar (>= {}), \
-though the bank holds {} entries. Use `memory-search` to look up prior knowledge \
-about this project when needed.",
-                INJECT_MIN_IMPORTANCE, stats.total
+                "\nNo entry currently meets the auto-inject importance bar (>= {} for \
+this project, >= {} for cross-project user memory), though the bank holds {} entries. \
+Use `memory-search` to look up prior knowledge when needed.",
+                INJECT_MIN_IMPORTANCE,
+                (INJECT_MIN_IMPORTANCE - 1).max(1),
+                stats.total
             ));
         }
     } else {
-        section.push_str("\nTop entries by importance:\n");
+        let (global_records, project_records): (Vec<&crate::storage::MemoryRecord>, Vec<&crate::storage::MemoryRecord>) =
+            records.iter().partition(|record| record.directory_id.is_empty());
         let mut used = section.chars().count();
-        for record in records.iter() {
-            let date = record.updated_at.chars().take(10).collect::<String>();
-            let content = truncate_chars(&record.content, INJECT_CONTENT_TRUNCATE);
-            let line = if content.is_empty() {
-                format!("- [{}] {} ({})\n", record.kind, record.title, date)
-            } else {
-                format!("- [{}] {} — {} ({})\n", record.kind, record.title, content, date)
-            };
-            used += line.chars().count();
-            if used > INJECT_MAX_CHARS {
-                section.push_str(
-                    "- ... more entries exist in the bank (use `memory-search`)\n",
-                );
-                break;
-            }
-            section.push_str(&line);
+        let truncated = push_memory_lines(
+            &mut section,
+            &mut used,
+            "\nCross-project user memory (apply these preferences in every project):\n",
+            &global_records,
+        );
+        if !truncated {
+            push_memory_lines(
+                &mut section,
+                &mut used,
+                "\nProject knowledge:\n",
+                &project_records,
+            );
         }
 
         section.push_str(&format!(
-            "\nBank stats: {} total ({} active / {} pending / {} archived). Use \
+            "\nBank stats: {} total ({} active / {} pending / {} archived, including the \
+cross-project user memory). Use \
 `memory-search` for details on any topic, and `memory-save` when you learn \
-durable knowledge worth keeping for future sessions (same-title saves merge \
-instead of duplicating). When saving, keep specific/task-bound events at \
-importance 1-2 (retrieval-only) and reserve importance >= 3 for general \
-project knowledge worth auto-injecting into every new session.",
+durable knowledge worth keeping for future sessions (same-title saves in the same \
+scope merge instead of duplicating). Save the user's standing preferences and \
+communication style with scope=\"user\", tagged `user-style` (reply language, \
+verbosity, formatting, code/comment conventions, confirmation appetite, tool \
+habits) — one entry per topic, updated in place rather than duplicated. When \
+saving, keep specific/task-bound events at importance 1-2 (retrieval-only) and \
+reserve importance >= 3 for general knowledge worth auto-injecting into every new \
+session.",
             stats.total, stats.active, stats.pending, stats.archived
         ));
     }
 
     section
+}
+
+/// 追加一组记忆条目；返回 true 表示命中字符预算并已截断。
+fn push_memory_lines(
+    section: &mut String,
+    used: &mut usize,
+    label: &str,
+    records: &[&crate::storage::MemoryRecord],
+) -> bool {
+    if records.is_empty() {
+        return false;
+    }
+    section.push_str(label);
+    for record in records {
+        let date = record.updated_at.chars().take(10).collect::<String>();
+        let content = truncate_chars(&record.content, INJECT_CONTENT_TRUNCATE);
+        let line = if content.is_empty() {
+            format!("- [{}] {} ({})\n", record.kind, record.title, date)
+        } else {
+            format!("- [{}] {} — {} ({})\n", record.kind, record.title, content, date)
+        };
+        *used += line.chars().count();
+        if *used > INJECT_MAX_CHARS {
+            section.push_str("- ... more entries exist in the bank (use `memory-search`)\n");
+            return true;
+        }
+        section.push_str(&line);
+    }
+    false
 }
 
 fn truncate_chars(value: &str, max_chars: usize) -> String {

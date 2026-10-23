@@ -17,6 +17,14 @@ export const TOOL_ERROR_CODE_MESSAGE_KEYS: Record<string, string> = {
     "toolCall.duplicateReadonlyProtection.toolsDisabled",
   DUPLICATE_READONLY_TOOL_CALL:
     "toolCall.duplicateReadonlyProtection.duplicateCall",
+  "Invalid JSON arguments": "toolCall.subAgentMessage.error.invalidArgs",
+  "conversationId and message are required":
+    "toolCall.subAgentMessage.error.missingArgs",
+  "Cannot send a message to yourself": "toolCall.subAgentMessage.error.self",
+  "Target sub-agent does not exist or belongs to another conversation (session isolation: teammates must be in the same session)":
+    "toolCall.subAgentMessage.error.isolation",
+  "Target sub-agent is no longer running; messages can only be sent to teammates that are still active":
+    "toolCall.subAgentMessage.error.notRunning",
 };
 
 /** 已有专门 UI 承载的错误码（如拒绝理由提示条）：卡片内不再重复展示。 */

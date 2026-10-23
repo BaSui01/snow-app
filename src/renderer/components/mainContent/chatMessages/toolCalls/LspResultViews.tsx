@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
+  Boxes,
   Check,
-  ChevronDown,
   ChevronRight,
   Code,
+  Code2,
   Copy,
   Crosshair,
   FileCode,
+  FolderGit2,
   Hash,
+  Info,
   Languages,
   ListTree,
+  ScanSearch,
+  XCircle,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import type { DocumentSymbolNode, SymbolFileResult } from "./LspToolCall";
+import type {
+  DocumentSymbolNode,
+  SymbolFileResult,
+  WorkspaceSymbolItem,
+} from "./LspToolCall";
 import type {
   BatchDiagnosticsFile,
   LspDiagnosticsSummary,
@@ -21,60 +31,200 @@ import type {
 import type { LspRenameSafety } from "./lspRenameSafety";
 import type { LspResultMeta } from "./lspResultMeta";
 
+/** 清洗 Windows 设备扩展长路径前缀 \\?\ */
+export const cleanWorkspacePath = (rawPath?: string): string => {
+  if (!rawPath) return "";
+  return rawPath.replace(/^\\\\\?\\/, "");
+};
+
 export function LspResultNotice({
   meta,
 }: {
   meta: LspResultMeta;
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const { t } = useI18n();
+
+  const hasNotice =
+    meta.status === "failed" ||
+    meta.status === "partial" ||
+    meta.unsupportedOperations ||
+    meta.truncated ||
+    meta.incomplete ||
+    meta.requiresExplicitCoordinates ||
+    meta.failedFiles > 0 ||
+    meta.warnings.length > 0;
+
+  if (!hasNotice && meta.languages.length === 0 && !meta.workspaceRoot) {
+    return null;
+  }
+
+  const isFailed = meta.status === "failed" || meta.failedFiles > 0;
+  const isWarning =
+    !isFailed &&
+    (meta.status === "partial" ||
+      meta.truncated ||
+      meta.incomplete ||
+      meta.warnings.length > 0);
+
+  const variantClass = isFailed
+    ? "is-failed"
+    : isWarning
+      ? "is-warning"
+      : "is-info";
+
+  const cleanWorkspace = cleanWorkspacePath(meta.workspaceRoot);
+
   return (
-    <section className="tool-call-lsp-result-notice" aria-live="polite">
-      {meta.status === "failed" && (
-        <p role="alert">
-          <AlertCircle size={13} aria-hidden="true" />
-          {t("toolCall.lsp.resultStatus.failed")}
-        </p>
+    <section
+      className={`tool-call-lsp-result-notice ${variantClass}`}
+      aria-live="polite"
+    >
+      {/* 状态标头 */}
+      <div className="tool-call-lsp-notice-header">
+        <div className="tool-call-lsp-notice-title-wrap">
+          {isFailed ? (
+            <AlertCircle
+              size={13}
+              className="tool-call-lsp-notice-icon is-failed"
+              aria-hidden="true"
+            />
+          ) : isWarning ? (
+            <AlertTriangle
+              size={13}
+              className="tool-call-lsp-notice-icon is-warning"
+              aria-hidden="true"
+            />
+          ) : (
+            <Info
+              size={13}
+              className="tool-call-lsp-notice-icon is-info"
+              aria-hidden="true"
+            />
+          )}
+          <span className="tool-call-lsp-notice-title">
+            {meta.status === "failed"
+              ? t("toolCall.lsp.resultStatus.failed")
+              : meta.status === "partial"
+                ? t("toolCall.lsp.resultStatus.partial")
+                : t("toolCall.lsp.result")}
+          </span>
+        </div>
+
+        <div className="tool-call-lsp-notice-status-pills">
+          {meta.truncated && (
+            <span className="tool-call-lsp-notice-pill is-warning">
+              {t("toolCall.lsp.truncated", {
+                values: { count: "" },
+                defaultValue: "结果截断",
+              })
+                .replace(/[{}]/g, "")
+                .trim() || "结果截断"}
+            </span>
+          )}
+          {meta.incomplete && (
+            <span className="tool-call-lsp-notice-pill is-warning">
+              {t("toolCall.lsp.incomplete", { defaultValue: "分析未完全" })}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 描述与说明 */}
+      {(meta.truncated ||
+        meta.incomplete ||
+        meta.unsupportedOperations ||
+        meta.requiresExplicitCoordinates ||
+        meta.failedFiles > 0) && (
+        <div className="tool-call-lsp-notice-body">
+          {meta.truncated && (
+            <p className="tool-call-lsp-notice-desc">
+              {t("toolCall.lsp.resultTruncated")}
+            </p>
+          )}
+          {meta.incomplete && (
+            <p className="tool-call-lsp-notice-desc">
+              {t("toolCall.lsp.resultIncomplete")}
+            </p>
+          )}
+          {meta.unsupportedOperations && (
+            <p className="tool-call-lsp-notice-desc is-alert" role="alert">
+              {t("toolCall.lsp.unsupportedOperations")}
+            </p>
+          )}
+          {meta.requiresExplicitCoordinates && (
+            <p className="tool-call-lsp-notice-desc">
+              {t("toolCall.lsp.requiresCoordinates")}
+            </p>
+          )}
+          {meta.failedFiles > 0 && (
+            <p className="tool-call-lsp-notice-desc is-alert">
+              {t("toolCall.lsp.failedFiles", {
+                values: { count: meta.failedFiles },
+              })}
+            </p>
+          )}
+        </div>
       )}
-      {meta.status === "partial" && (
-        <p>
-          <AlertCircle size={13} aria-hidden="true" />
-          {t("toolCall.lsp.resultStatus.partial")}
-        </p>
+
+      {/* 作用域与技术栈标签 */}
+      {(meta.languages.length > 0 || cleanWorkspace) && (
+        <div className="tool-call-lsp-notice-meta-bar">
+          {meta.languages.length > 0 && (
+            <div
+              className="tool-call-lsp-meta-tag"
+              title={`${t("toolCall.lsp.checkedLanguages")}: ${meta.languages.join(", ")}`}
+            >
+              <Languages size={11} aria-hidden="true" />
+              <span className="tool-call-lsp-meta-tag-label">
+                {t("toolCall.lsp.checkedLanguages")}:
+              </span>
+              <span className="tool-call-lsp-meta-tag-val">
+                {meta.languages.join(", ")}
+              </span>
+            </div>
+          )}
+          {cleanWorkspace && (
+            <div
+              className="tool-call-lsp-meta-tag"
+              title={`${t("toolCall.lsp.workspaceRoot")}: ${cleanWorkspace}`}
+            >
+              <FolderGit2 size={11} aria-hidden="true" />
+              <span className="tool-call-lsp-meta-tag-label">
+                {t("toolCall.lsp.workspaceRoot")}:
+              </span>
+              <code className="tool-call-lsp-meta-tag-code">
+                {cleanWorkspace}
+              </code>
+            </div>
+          )}
+        </div>
       )}
-      {meta.unsupportedOperations && (
-        <p role="alert">{t("toolCall.lsp.unsupportedOperations")}</p>
-      )}
-      {meta.truncated && <p>{t("toolCall.lsp.resultTruncated")}</p>}
-      {meta.incomplete && <p>{t("toolCall.lsp.resultIncomplete")}</p>}
-      {meta.requiresExplicitCoordinates && (
-        <p>{t("toolCall.lsp.requiresCoordinates")}</p>
-      )}
-      {meta.languages.length > 0 && (
-        <p>
-          {t("toolCall.lsp.checkedLanguages")}: {meta.languages.join(", ")}
-        </p>
-      )}
-      {meta.workspaceRoot && (
-        <p>
-          {t("toolCall.lsp.workspaceRoot")}: <code>{meta.workspaceRoot}</code>
-        </p>
-      )}
-      {meta.failedFiles > 0 && (
-        <p>
-          {t("toolCall.lsp.failedFiles", {
-            values: { count: meta.failedFiles },
-          })}
-        </p>
-      )}
+
+      {/* 告警信息列表 */}
       {meta.warnings.length > 0 && (
-        <ul>
-          {meta.warnings.map((warning, index) => (
-            <li key={`${warning.language ?? ""}:${index}`}>
-              {warning.language && <strong>{warning.language}: </strong>}
-              {warning.message}
-            </li>
-          ))}
-        </ul>
+        <div className="tool-call-lsp-notice-warnings-box">
+          <div className="tool-call-lsp-notice-warnings-header">
+            <AlertTriangle size={11} aria-hidden="true" />
+            <span>告警信息 ({meta.warnings.length})</span>
+          </div>
+          <div className="tool-call-lsp-notice-warnings-list">
+            {meta.warnings.map((warning, index) => (
+              <div
+                key={`${warning.language ?? ""}:${index}`}
+                className="tool-call-lsp-notice-warning-row"
+              >
+                {warning.language && (
+                  <span className="tool-call-lsp-notice-warning-lang">
+                    {warning.language}
+                  </span>
+                )}
+                <span className="tool-call-lsp-notice-warning-text">
+                  {warning.message}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -1091,6 +1241,276 @@ export function LspBatchSymbolsView({
             />
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/** 拆解符号名称：分离前置包/模块路径与核心符号标识 */
+export function splitSymbolName(fullName: string): {
+  scope?: string;
+  name: string;
+} {
+  if (!fullName) return { name: "" };
+  const lastSlash = fullName.lastIndexOf("/");
+  if (lastSlash >= 0) {
+    return {
+      scope: fullName.slice(0, lastSlash),
+      name: fullName.slice(lastSlash + 1),
+    };
+  }
+  return { name: fullName };
+}
+
+function getSymbolKindCategory(
+  kind?: string,
+): "function" | "type" | "interface" | "constant" | "variable" | "default" {
+  if (!kind) return "default";
+  const k = kind.toLowerCase();
+  if (k.includes("func") || k.includes("method") || k.includes("construct"))
+    return "function";
+  if (
+    k.includes("struct") ||
+    k.includes("class") ||
+    k.includes("type") ||
+    k.includes("enum")
+  )
+    return "type";
+  if (k.includes("interface") || k.includes("trait")) return "interface";
+  if (k.includes("const")) return "constant";
+  if (k.includes("var") || k.includes("field") || k.includes("prop"))
+    return "variable";
+  return "default";
+}
+
+function WorkspaceSymbolRow({
+  symbol,
+  query: _query,
+}: {
+  symbol: WorkspaceSymbolItem;
+  query?: string;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+
+  const parsedName = useMemo(() => splitSymbolName(symbol.name), [symbol.name]);
+  const category = useMemo(
+    () => getSymbolKindCategory(symbol.kind),
+    [symbol.kind],
+  );
+
+  const handleCopyPath = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!symbol.filePath) return;
+    const loc =
+      symbol.line !== undefined && symbol.line > 0
+        ? `:${symbol.line}:${symbol.column ?? 0}`
+        : "";
+    navigator.clipboard.writeText(`${symbol.filePath}${loc}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const fileName = symbol.filePath ? getFileName(symbol.filePath) : "";
+  const locationText =
+    symbol.line !== undefined && symbol.line > 0
+      ? `:${symbol.line}:${symbol.column ?? 0}`
+      : "";
+
+  return (
+    <div className={`tool-call-lsp-symbol-item kind-${category}`}>
+      <div className="tool-call-lsp-symbol-left">
+        <span
+          className={`tool-call-lsp-symbol-kind-icon kind-${category}`}
+          aria-hidden="true"
+        >
+          {category === "function" ? (
+            <Code2 size={12} />
+          ) : category === "type" ? (
+            <Boxes size={12} />
+          ) : category === "constant" ? (
+            <Hash size={12} />
+          ) : (
+            <ScanSearch size={12} />
+          )}
+        </span>
+
+        <div className="tool-call-lsp-symbol-identity" title={symbol.name}>
+          {parsedName.scope && (
+            <span className="tool-call-lsp-symbol-scope">
+              {parsedName.scope}/
+            </span>
+          )}
+          <span className="tool-call-lsp-symbol-core-name">
+            {parsedName.name}
+          </span>
+        </div>
+
+        {symbol.kind && (
+          <span className={`tool-call-lsp-kind-badge kind-${category}`}>
+            {symbol.kind}
+          </span>
+        )}
+
+        {symbol.detail && symbol.detail !== symbol.name && (
+          <span className="tool-call-lsp-symbol-detail" title={symbol.detail}>
+            {symbol.detail}
+          </span>
+        )}
+      </div>
+
+      {symbol.filePath && (
+        <div className="tool-call-lsp-symbol-right">
+          <div
+            className="tool-call-lsp-symbol-file-loc"
+            title={`${symbol.filePath}${locationText}`}
+          >
+            <FileCode
+              size={11}
+              className="tool-call-lsp-symbol-file-icon"
+              aria-hidden="true"
+            />
+            <span className="tool-call-lsp-symbol-file-name">{fileName}</span>
+            {locationText && (
+              <span className="tool-call-lsp-symbol-loc">{locationText}</span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="tool-call-lsp-symbol-copy-btn"
+            onClick={handleCopyPath}
+            title={
+              copied
+                ? t("toolCall.lsp.copied", { defaultValue: "已复制" })
+                : t("common.copyPath", { defaultValue: "复制路径" })
+            }
+          >
+            {copied ? (
+              <Check size={11} className="copy-ok" />
+            ) : (
+              <Copy size={11} />
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function LspWorkspaceSymbolsListView({
+  symbols,
+  query,
+  total,
+  count: _count,
+  status,
+}: {
+  symbols: WorkspaceSymbolItem[];
+  query?: string;
+  total?: number;
+  count?: number;
+  status?: string;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  const [copiedAll, setCopiedAll] = useState(false);
+
+  const displayTotal = total ?? symbols.length;
+  const isTruncated = displayTotal > symbols.length;
+
+  const handleCopyAll = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const listText = symbols
+      .map((s) => {
+        const loc = s.filePath
+          ? ` ${s.filePath}${s.line !== undefined && s.line > 0 ? `:${s.line}:${s.column ?? 0}` : ""}`
+          : "";
+        return `${s.name}${s.kind ? ` [${s.kind}]` : ""}${loc}`;
+      })
+      .join("\n");
+    navigator.clipboard.writeText(listText);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 1500);
+  };
+
+  if (symbols.length === 0) {
+    return (
+      <div className="tool-call-codelens-no-results">
+        <XCircle size={14} aria-hidden="true" />
+        <span>
+          {t(
+            status === "partial"
+              ? "toolCall.lsp.incompleteEmpty"
+              : "toolCall.lsp.noSymbols",
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tool-call-lsp-workspace-symbols">
+      <div className="tool-call-lsp-ws-toolbar">
+        <div className="tool-call-lsp-ws-toolbar-left">
+          <ScanSearch
+            size={12}
+            className="tool-call-lsp-ws-toolbar-icon"
+            aria-hidden="true"
+          />
+          <span className="tool-call-lsp-ws-toolbar-count">
+            {isTruncated
+              ? t("toolCall.lsp.symbolsCount", {
+                  values: { shown: symbols.length, total: displayTotal },
+                  defaultValue: `${symbols.length}/${displayTotal} 个符号`,
+                })
+              : t("toolCall.lsp.symbolsCount", {
+                  values: { shown: symbols.length, total: symbols.length },
+                  defaultValue: `${symbols.length} 个符号`,
+                })}
+          </span>
+          {query && (
+            <span className="tool-call-lsp-ws-query-pill" title={query}>
+              <span className="tool-call-lsp-ws-query-pill-label">
+                {t("toolCall.lsp.query")}:
+              </span>
+              <code className="tool-call-lsp-ws-query-pill-val">{query}</code>
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="tool-call-lsp-ws-copy-all-btn"
+          onClick={handleCopyAll}
+          title={
+            copiedAll
+              ? t("toolCall.lsp.copied", { defaultValue: "已复制" })
+              : t("toolCall.lsp.copyList", { defaultValue: "复制清单" })
+          }
+        >
+          {copiedAll ? (
+            <>
+              <Check size={11} className="copy-ok" />
+              <span>
+                {t("toolCall.lsp.copied", { defaultValue: "已复制" })}
+              </span>
+            </>
+          ) : (
+            <>
+              <Copy size={11} />
+              <span>
+                {t("toolCall.lsp.copyList", { defaultValue: "复制清单" })}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="tool-call-lsp-symbol-list">
+        {symbols.map((symbol, idx) => (
+          <WorkspaceSymbolRow
+            key={`${symbol.name}-${symbol.filePath ?? ""}-${symbol.line ?? 0}-${idx}`}
+            symbol={symbol}
+            query={query}
+          />
+        ))}
       </div>
     </div>
   );

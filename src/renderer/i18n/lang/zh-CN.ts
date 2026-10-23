@@ -1136,6 +1136,13 @@ export const zhCN = {
     "本次回执未重新确认，沿用之前记录的状态",
   "toolCall.subAgentContinue.name": "继续子代理",
   "toolCall.subAgentContinue.message": "消息",
+  "toolCall.subAgentMessage.error.invalidArgs": "工具参数不是有效的 JSON",
+  "toolCall.subAgentMessage.error.missingArgs": "缺少接收方或消息内容",
+  "toolCall.subAgentMessage.error.self": "不能向自己发送消息",
+  "toolCall.subAgentMessage.error.isolation":
+    "目标子代理不存在或不属于当前会话（会话隔离：只能与同一会话内的队友通信）",
+  "toolCall.subAgentMessage.error.notRunning":
+    "目标子代理已停止运行，只能向仍在运行的队友发送消息",
   "toolCall.subAgentList.name": "子代理列表",
   "toolCall.subAgentList.loading": "正在查询子代理...",
   "toolCall.subAgentList.count": "共 {{count}} 个子代理",
@@ -1681,6 +1688,7 @@ export const zhCN = {
   "toolCall.lsp.typeDefinitionsCount": "{{count}} 处类型定义",
   "toolCall.lsp.copySignature": "复制代码签名",
   "toolCall.lsp.copyDoc": "复制文档",
+  "toolCall.lsp.copyList": "复制清单",
   "toolCall.lsp.copied": "已复制",
   "toolCall.lsp.vulnCount": "{{count}} 个漏洞",
   "toolCall.lsp.noVulns": "未发现已知依赖漏洞",

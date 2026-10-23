@@ -44,6 +44,7 @@ import {
   LspReferencesListView,
   LspGotoListView,
   LspBatchSymbolsView,
+  LspWorkspaceSymbolsListView,
   type HoverItem,
   type ReferenceLocation,
   type ReferenceGroup,
@@ -190,7 +191,7 @@ type DeferredCommand = {
   note?: string;
 };
 
-type WorkspaceSymbolItem = {
+export type WorkspaceSymbolItem = {
   name: string;
   kind?: string;
   detail?: string;
@@ -2674,56 +2675,13 @@ function LspToolBody({
 
             {/* Workspace symbols view */}
             {parsedResult.type === "workspace-symbols" ? (
-              parsedResult.symbols.length > 0 ? (
-                <div className="tool-call-lsp-symbol-list">
-                  {parsedResult.symbols.map((symbol, idx) => (
-                    <div
-                      key={`${symbol.name}-${symbol.filePath ?? ""}-${symbol.line ?? 0}-${idx}`}
-                      className="tool-call-lsp-symbol-item"
-                    >
-                      <span className="tool-call-lsp-symbol-name">
-                        <ScanSearch size={11} aria-hidden="true" />
-                        <code>{symbol.name}</code>
-                      </span>
-                      {symbol.kind ? (
-                        <span className="tool-call-lsp-kind-badge">
-                          {symbol.kind}
-                        </span>
-                      ) : null}
-                      {symbol.detail ? (
-                        <span
-                          className="tool-call-lsp-symbol-detail"
-                          title={symbol.detail}
-                        >
-                          {symbol.detail}
-                        </span>
-                      ) : null}
-                      {symbol.filePath ? (
-                        <span
-                          className="tool-call-lsp-symbol-path"
-                          title={symbol.filePath}
-                        >
-                          {getFileName(symbol.filePath)}
-                          {symbol.line !== undefined && symbol.line > 0
-                            ? `:${symbol.line}:${symbol.column ?? 0}`
-                            : ""}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="tool-call-codelens-no-results">
-                  <XCircle size={14} aria-hidden="true" />
-                  <span>
-                    {t(
-                      resultMeta.status === "partial"
-                        ? "toolCall.lsp.incompleteEmpty"
-                        : "toolCall.lsp.noSymbols",
-                    )}
-                  </span>
-                </div>
-              )
+              <LspWorkspaceSymbolsListView
+                symbols={parsedResult.symbols}
+                query={parsedResult.query}
+                total={parsedResult.total}
+                count={parsedResult.count}
+                status={resultMeta.status}
+              />
             ) : null}
 
             {/* Call hierarchy view */}

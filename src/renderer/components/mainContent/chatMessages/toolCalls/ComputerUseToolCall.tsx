@@ -317,7 +317,6 @@ export const ComputerUseToolCall = ({
   const effectiveStatus = hasError ? "error" : toolCall.status;
   const isRunning = toolCall.status === "running";
 
-  const badgeName = t(`toolNames.${toolCall.name}`, { defaultValue: "" });
   const argsSummary = buildArgsSummary(toolCall.name, parsedArgs);
   const Icon = getToolIconName(toolCall.name);
 
@@ -378,7 +377,6 @@ export const ComputerUseToolCall = ({
   return (
     <ToolCallNode
       toolName={toolCall.name}
-      badgeName={badgeName || undefined}
       category={isScreenshot ? "image" : "generic"}
       displayName={
         argsSummary ? (

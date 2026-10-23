@@ -1136,6 +1136,13 @@ export const zhTW = {
     "本次回執未重新確認，沿用之前記錄的狀態",
   "toolCall.subAgentContinue.name": "繼續子代理",
   "toolCall.subAgentContinue.message": "訊息",
+  "toolCall.subAgentMessage.error.invalidArgs": "工具參數不是有效的 JSON",
+  "toolCall.subAgentMessage.error.missingArgs": "缺少接收方或訊息內容",
+  "toolCall.subAgentMessage.error.self": "不能向自己發送訊息",
+  "toolCall.subAgentMessage.error.isolation":
+    "目標子代理不存在或不屬於目前會話（會話隔離：只能與同一會話內的隊友通訊）",
+  "toolCall.subAgentMessage.error.notRunning":
+    "目標子代理已停止執行，只能向仍在執行的隊友發送訊息",
   "toolCall.subAgentList.name": "子代理列表",
   "toolCall.subAgentList.loading": "正在查詢子代理...",
   "toolCall.subAgentList.count": "共 {{count}} 個子代理",
@@ -1682,6 +1689,7 @@ export const zhTW = {
   "toolCall.lsp.typeDefinitionsCount": "{{count}} 處型別定義",
   "toolCall.lsp.copySignature": "複製程式碼簽名",
   "toolCall.lsp.copyDoc": "複製文件",
+  "toolCall.lsp.copyList": "複製清單",
   "toolCall.lsp.copied": "已複製",
   "toolCall.lsp.vulnCount": "{{count}} 個漏洞",
   "toolCall.lsp.noVulns": "未發現已知依賴漏洞",

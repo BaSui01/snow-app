@@ -29,6 +29,7 @@ import type { HookExecutionRecord } from "../utils/conversationTypes";
 import type { SubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
 import { parseSubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { resolveToolDisplayName } from "./shared/toolDisplayName";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { HookExecutionUI } from "./HookExecutionUI";
 import { PromptPreview } from "../components/PromptPreview";
@@ -164,7 +165,6 @@ const getSummaryPreview = (summary: string): string =>
 type SubAgentToolCallEntry = {
   id: string;
   name: string;
-  shortName: string;
   status: "pending" | "running" | "completed" | "error";
   summary: string;
 };
@@ -195,6 +195,17 @@ const getToolSummary = (name: string, args: string): string => {
         return typeof parsed.action === "string" ? parsed.action : "";
       case "askUserQuestion":
         return typeof parsed.question === "string" ? parsed.question : "";
+      case "agents-sendMessage": {
+        const message =
+          typeof parsed.message === "string" ? parsed.message.trim() : "";
+        if (!message) {
+          return "";
+        }
+        const firstLine = message.split("\n")[0];
+        return firstLine.length > 80
+          ? `${firstLine.slice(0, 80)}...`
+          : firstLine;
+      }
       default:
         return "";
     }
@@ -217,11 +228,9 @@ const extractSubAgentToolCalls = (
       continue;
     }
     for (const tc of message.toolCalls) {
-      const shortName = tc.name.replace(/^.*?-/, "");
       entries.push({
         id: tc.callId ?? `${tc.name}-${entries.length}`,
         name: tc.name,
-        shortName,
         status: tc.status,
         summary: getToolSummary(tc.name, tc.arguments),
       });
@@ -575,7 +584,7 @@ export const SubAgentToolCall = ({
                 >
                   {renderActivityIcon(entry.status)}
                   <span className="tool-call-sub-agent-activity-name">
-                    {entry.shortName}
+                    {resolveToolDisplayName(t, entry.name)}
                   </span>
                   {entry.summary ? (
                     <span

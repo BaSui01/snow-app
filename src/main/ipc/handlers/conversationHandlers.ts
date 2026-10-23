@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import type { NativeBridge } from "../../native/types";
 import { snowLog } from "../../../utils/snowLogger";
 import { safeSend } from "../../utils/safeSend";
+import { registerSubAgentRunHost } from "../../subAgents/subAgentRunHost";
 
 const EXPORT_FORMATS = ["markdown", "html", "json", "csv"] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -81,6 +82,7 @@ const readImportedConversations = (
 };
 
 export const registerConversationHandlers = (native: NativeBridge): void => {
+  registerSubAgentRunHost(native);
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
     if (typeof directoryId !== "string" || !directoryId.trim()) {
       throw new Error("Directory ID is required to list chat conversations");

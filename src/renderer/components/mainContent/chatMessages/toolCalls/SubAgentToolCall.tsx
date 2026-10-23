@@ -1,12 +1,27 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type {
+  SubAgentAccepted,
+  SubAgentMessageQueued,
+  SubAgentCancelReceipt,
+  SubAgentResultPage,
+  SubAgentRunRecord,
+} from "../../../../../shared/subAgentRuns";
+import {
+  getSubAgentRunResult,
+  requestSubAgentRunCancel,
+  requestSubAgentRunContinue,
+  useSubAgentRuns,
+} from "../hooks/subAgentRuntimeClient";
+import {
+  SubAgentAcceptanceDetails,
+  SubAgentRunDetails,
+} from "../components/SubAgentRunDetails";
 import {
   AlertCircle,
   ArrowRight,
-  Ban,
   Bot,
   CheckCircle2,
   CircleDot,
-  CircleQuestionMark,
   Hourglass,
   Loader2,
   RotateCcw,
@@ -37,6 +52,7 @@ import { SubAgentMessageDelivery } from "./SubAgentMessageDelivery";
 
 type SubAgentToolCallProps = {
   toolCall: ToolCallInfo;
+  parentConversationId?: string;
   /** Hook execution records bound to this tool call (matched by
    *  toolCallInteractionId). beforeSubAgentStart renders as a "pre" step,
    *  onSubAgentComplete as a "post" step inside the card. */
@@ -52,7 +68,11 @@ type ParsedSubAgentArgs =
   | { mode: "activate"; agentId: string; summary: string; prompt: string }
   | { mode: "continue"; conversationId: string; message: string };
 
-type ParsedSubAgentResult =
+type ParsedSubAgentResult = { runId?: string } & (
+  | ({ type: "receipt" } & Pick<
+      SubAgentAccepted | SubAgentMessageQueued,
+      "kind" | "conversationId" | "requestId" | "runId"
+    >)
   | {
       type: "success";
       conversationId: string;
@@ -67,7 +87,8 @@ type ParsedSubAgentResult =
       acceptance: SubAgentAcceptanceSnapshot | null;
     }
   | { type: "raw"; text: string }
-  | { type: "empty" };
+  | { type: "empty" }
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -117,9 +138,29 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
     }
 
     const acceptance = parseSubAgentAcceptanceSnapshot(parsed.acceptance);
+    const runId =
+      typeof parsed.runId === "string" && parsed.runId
+        ? parsed.runId
+        : undefined;
+    if (
+      parsed.success === true &&
+      runId &&
+      typeof parsed.conversationId === "string" &&
+      typeof parsed.requestId === "string" &&
+      parsed.requestId.length > 0 &&
+      (parsed.kind === "accepted" || parsed.kind === "message_queued")
+    ) {
+      return {
+        type: "receipt",
+        kind: parsed.kind,
+        requestId: parsed.requestId,
+        runId,
+        conversationId: parsed.conversationId,
+      };
+    }
 
     if (typeof parsed.error === "string") {
-      return { type: "error", message: parsed.error, acceptance };
+      return { type: "error", message: parsed.error, acceptance, runId };
     }
 
     // continue 的目标子代理仍在运行：消息已进入 Pending 队列，
@@ -127,6 +168,7 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
     if (parsed.success === true && parsed.queued === true) {
       return {
         type: "queued",
+        runId,
         note: typeof parsed.note === "string" ? parsed.note : "",
         messageId:
           typeof parsed.messageId === "string" ? parsed.messageId : undefined,
@@ -142,6 +184,7 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
     ) {
       return {
         type: "success",
+        runId,
         conversationId: parsed.conversationId,
         agentName: parsed.agentName,
         summary: typeof parsed.summary === "string" ? parsed.summary : "",
@@ -242,6 +285,7 @@ const extractSubAgentToolCalls = (
 
 export const SubAgentToolCall = ({
   toolCall,
+  parentConversationId,
   hookExecutions,
   mode = "activate",
 }: SubAgentToolCallProps): React.JSX.Element => {
@@ -253,6 +297,8 @@ export const SubAgentToolCall = ({
   } = useChatConversationContext();
   // 会话内存态表每个流式帧都会更换引用：单独订阅（读取子代理会话状态）。
   const sessions = useChatConversationSessions();
+  const parentId = parentConversationId ?? activeConversationId;
+  const { runs, error: runsError, refresh } = useSubAgentRuns(parentId);
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments, mode),
@@ -280,55 +326,30 @@ export const SubAgentToolCall = ({
     [acceptance],
   );
 
-  // Match the sub-agent session event to this tool call so the sub-agent
-  // conversation id is available while the tool is still running (before the
-  // result is available).
-  // - activate：多个子代理可以并行激活同一个 agentId，toolCallInteractionId
-  //   是主键（agentId 匹配仅作旧事件兜底）。
-  // - continue：resume 不绑定 toolCallInteractionId（重新激活不是新的
-  //   激活流程），按目标 conversationId 精确匹配。
+  // Returned receipt identity wins. Never attach a newer run by agent/session.
+  const run = parsedResult.runId
+    ? runs.find((item) => item.runId === parsedResult.runId)
+    : parsedResult.type === "empty"
+      ? runs.find((item) => item.interactionId === toolCall.interactionId)
+      : undefined;
   const matchedEvent = useMemo(() => {
-    if (!parsedArgs) {
-      return null;
-    }
-    const events = Object.values(subAgentSessionEvents);
-
-    if (parsedArgs.mode === "continue") {
-      return (
-        events.find(
-          (event) =>
-            event.conversationId === parsedArgs.conversationId &&
-            event.parentConversationId === activeConversationId,
-        ) ?? null
-      );
-    }
-
-    const byInteractionId = events.find(
-      (event) =>
-        event.toolCallInteractionId === toolCall.interactionId &&
-        event.parentConversationId === activeConversationId,
+    if (parsedResult.type !== "empty" || run) return null;
+    return (
+      Object.values(subAgentSessionEvents).find(
+        (event) =>
+          event.toolCallInteractionId === toolCall.interactionId &&
+          event.parentConversationId === parentId,
+      ) ?? null
     );
-    if (byInteractionId) {
-      return byInteractionId;
-    }
-
-    const byAgentId = events.find(
-      (event) =>
-        event.agentId === parsedArgs.agentId &&
-        event.parentConversationId === activeConversationId,
-    );
-    return byAgentId ?? null;
   }, [
     subAgentSessionEvents,
-    parsedArgs,
-    activeConversationId,
+    parsedResult.type,
+    run,
+    parentId,
     toolCall.interactionId,
   ]);
-
-  // The sub-agent conversation id may come from the parsed result (once the
-  // activation call resolves) or from the live session event (while running).
   const subConversationId =
-    parsedResult.type === "success"
+    parsedResult.type === "success" || parsedResult.type === "receipt"
       ? parsedResult.conversationId
       : matchedEvent?.conversationId;
 
@@ -469,20 +490,67 @@ export const SubAgentToolCall = ({
     return <CircleDot size={11} aria-hidden="true" />;
   };
 
-  const renderAcceptanceIcon = (
-    status: SubAgentAcceptanceSnapshot["items"][number]["status"],
-  ): React.ReactNode => {
-    if (status === "completed") {
-      return <CheckCircle2 size={12} aria-hidden="true" />;
-    }
-    if (status === "incomplete") {
-      return <AlertCircle size={12} aria-hidden="true" />;
-    }
-    if (status === "blocked") {
-      return <Ban size={12} aria-hidden="true" />;
-    }
-    return <CircleQuestionMark size={12} aria-hidden="true" />;
-  };
+  // The wrapper status describes dispatch only, never the background run.
+  if (run || parsedResult.runId) {
+    return (
+      <ToolCallNode
+        toolName={toolCall.name}
+        category="agent"
+        status={toolCall.status}
+        displayName={run?.summary || displayAgentName}
+        meta={
+          <span>
+            {t("subAgentRun.dispatch")}:{" "}
+            {t(`toolCall.common.status.${toolCall.status}`)} ·{" "}
+            {run
+              ? t(`subAgentRun.status.${run.status}`)
+              : t("subAgentRun.unavailable")}
+          </span>
+        }
+        className="tool-call-sub-agent"
+      >
+        <div className="sub-agent-run">
+          <p>{t("subAgentRun.receiptNotCompletion")}</p>
+          {parsedResult.type === "receipt" ? (
+            <p>{t(`subAgentRun.receipt.${parsedResult.kind}`)}</p>
+          ) : null}
+          {parsedResult.type === "error" ? (
+            <p role="alert">{localizeToolError(t, parsedResult.message)}</p>
+          ) : null}
+          {preHooks.length > 0 ? (
+            <HookExecutionUI executions={preHooks} />
+          ) : null}
+          {runsError ? (
+            <div role="alert">
+              {t("subAgentRun.queryFailed")}
+              <pre>{runsError}</pre>
+            </div>
+          ) : null}
+          {!run ? (
+            <>
+              <p>
+                {t("subAgentRun.unavailable")}: {parsedResult.runId}
+              </p>
+              <button type="button" onClick={() => void refresh()}>
+                {t("subAgentRun.refresh")}
+              </button>
+            </>
+          ) : null}
+        </div>
+        {run ? (
+          <SubAgentRunCard
+            key={run.runId}
+            run={run}
+            runs={runs}
+            refresh={refresh}
+          />
+        ) : null}
+        {postHooks.length > 0 ? (
+          <HookExecutionUI executions={postHooks} />
+        ) : null}
+      </ToolCallNode>
+    );
+  }
 
   return (
     <ToolCallNode
@@ -535,6 +603,9 @@ export const SubAgentToolCall = ({
       className="tool-call-sub-agent"
     >
       <div className="tool-call-body tool-call-sub-agent-body">
+        {toolCall.result ? (
+          <p className="sub-agent-run-notice">{t("subAgentRun.legacy")}</p>
+        ) : null}
         {/* Pre-step: beforeSubAgentStart hook ran before the sub-agent session
             was created — show it at the top of the card. */}
         {preHooks.length > 0 ? (
@@ -702,125 +773,7 @@ export const SubAgentToolCall = ({
         {/* Acceptance receipt: per-item status verified against the real tool
             execution log. Missing evidence is never treated as passed. */}
         {acceptance ? (
-          <div className="tool-call-sub-agent-acceptance">
-            <div className="tool-call-sub-agent-acceptance-head">
-              <span className="tool-call-sub-agent-acceptance-label">
-                {t("toolCall.subAgent.acceptance.title")}
-              </span>
-              <span
-                className={`tool-call-sub-agent-acceptance-verdict${
-                  acceptance.satisfied ? " is-passed" : " is-unmet"
-                }`}
-              >
-                {acceptance.satisfied
-                  ? t("toolCall.subAgent.acceptance.verdictPassed")
-                  : t("toolCall.subAgent.acceptance.verdictUnmet")}
-              </span>
-              <span className="tool-call-sub-agent-acceptance-count">
-                {t("toolCall.subAgent.acceptance.count", {
-                  values: {
-                    completed: acceptance.counts.completed,
-                    total: acceptance.counts.total,
-                  },
-                })}
-              </span>
-            </div>
-            {acceptance.reportState === "invalid" ? (
-              <div className="tool-call-sub-agent-acceptance-notice">
-                {t("toolCall.subAgent.acceptance.reportInvalid")}
-              </div>
-            ) : acceptance.reportState === "none" ? (
-              <div className="tool-call-sub-agent-acceptance-notice">
-                {t("toolCall.subAgent.acceptance.reportMissing")}
-              </div>
-            ) : null}
-            <ul className="tool-call-sub-agent-acceptance-list">
-              {acceptance.items.map((item) => {
-                const reason =
-                  item.reasonCode === "not_reported"
-                    ? t("toolCall.subAgent.acceptance.reason.notReported")
-                    : item.reasonCode === "no_valid_evidence"
-                      ? t("toolCall.subAgent.acceptance.reason.noEvidence")
-                      : item.reason;
-                return (
-                  <li
-                    key={item.id}
-                    className={`tool-call-sub-agent-acceptance-item tool-call-sub-agent-acceptance-item--${item.status}`}
-                  >
-                    <span
-                      className={`tool-call-sub-agent-acceptance-item-icon tool-call-sub-agent-acceptance-item-icon--${item.status}`}
-                    >
-                      {renderAcceptanceIcon(item.status)}
-                    </span>
-                    <div className="tool-call-sub-agent-acceptance-main">
-                      <div className="tool-call-sub-agent-acceptance-row">
-                        <span className="tool-call-sub-agent-acceptance-description">
-                          {item.description}
-                        </span>
-                        {item.required ? (
-                          <span className="tool-call-sub-agent-acceptance-required">
-                            {t("toolCall.subAgent.acceptance.required")}
-                          </span>
-                        ) : null}
-                        <span
-                          className={`tool-call-sub-agent-acceptance-status tool-call-sub-agent-acceptance-status--${item.status}`}
-                        >
-                          {t(
-                            `toolCall.subAgent.acceptance.status.${item.status}`,
-                          )}
-                        </span>
-                      </div>
-                      <span className="tool-call-sub-agent-acceptance-id">
-                        {item.id}
-                      </span>
-                      {item.observation ? (
-                        <div className="tool-call-sub-agent-acceptance-observation">
-                          {item.observation}
-                        </div>
-                      ) : null}
-                      {reason ? (
-                        <div className="tool-call-sub-agent-acceptance-reason">
-                          {reason}
-                        </div>
-                      ) : null}
-                      {acceptance.reportState === "received" &&
-                      !item.confirmedInLatestReport &&
-                      item.updatedAt > 0 ? (
-                        <div className="tool-call-sub-agent-acceptance-reason">
-                          {t("toolCall.subAgent.acceptance.previous")}
-                        </div>
-                      ) : null}
-                      {item.evidence.length > 0 ? (
-                        <div className="tool-call-sub-agent-acceptance-evidence">
-                          <span className="tool-call-sub-agent-acceptance-evidence-label">
-                            {t("toolCall.subAgent.acceptance.evidence")}
-                          </span>
-                          {item.evidence.map((ref) => (
-                            <span
-                              key={ref.id}
-                              className="tool-call-sub-agent-acceptance-evidence-chip"
-                              title={ref.preview || undefined}
-                            >
-                              <span className="tool-call-sub-agent-acceptance-evidence-id">
-                                {ref.id}
-                              </span>
-                              <span className="tool-call-sub-agent-acceptance-evidence-tool">
-                                {ref.toolName}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : item.status === "completed" ? (
-                        <div className="tool-call-sub-agent-acceptance-no-evidence">
-                          {t("toolCall.subAgent.acceptance.noEvidence")}
-                        </div>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          <SubAgentAcceptanceDetails acceptance={acceptance} />
         ) : null}
 
         {/* Error */}
@@ -870,5 +823,215 @@ export const SubAgentToolCall = ({
         ) : null}
       </div>
     </ToolCallNode>
+  );
+};
+
+type PendingContinue = { requestId: string; message: string };
+// Uncertain receipts retain identity across card unmounts / conversation switches.
+const pendingContinues = new Map<string, PendingContinue>();
+const pendingContinueListeners = new Set<() => void>();
+const subscribePendingContinues = (listener: () => void): (() => void) => {
+  pendingContinueListeners.add(listener);
+  return () => {
+    pendingContinueListeners.delete(listener);
+  };
+};
+const notifyPendingContinues = (): void => {
+  for (const listener of pendingContinueListeners) listener();
+};
+
+/** An exact persisted run, reusable by its original dispatch and sidebar history. */
+export const SubAgentRunCard = ({
+  run,
+  runs,
+  refresh,
+}: {
+  run: SubAgentRunRecord;
+  runs: readonly SubAgentRunRecord[];
+  refresh: () => Promise<void>;
+}): React.JSX.Element => {
+  const { t } = useI18n();
+  const { handleSelectConversation } = useChatConversationContext();
+  const pendingOperation = useSyncExternalStore(subscribePendingContinues, () =>
+    pendingContinues.get(run.runId),
+  );
+  const [result, setResult] = useState<SubAgentResultPage | null>(null);
+  const [loadingResult, setLoadingResult] = useState(false);
+  const [busyAction, setBusyAction] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelReceipt, setCancelReceipt] =
+    useState<SubAgentCancelReceipt | null>(null);
+  const [continueReceipt, setContinueReceipt] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const parsedContinueReceipt = useMemo(
+    () => parseResult(continueReceipt ?? undefined),
+    [continueReceipt],
+  );
+  const linkedRunId =
+    parsedContinueReceipt.type === "receipt"
+      ? parsedContinueReceipt.runId
+      : undefined;
+  const linkedRun = linkedRunId
+    ? runs.find(
+        (item) =>
+          item.runId === linkedRunId &&
+          item.parentConversationId === run.parentConversationId,
+      )
+    : undefined;
+  const actionInFlight = useRef(false);
+  const resultRequest = useRef(0);
+  const visibleRun =
+    result && result.run.version > run.version ? result.run : run;
+  const loadResult = async (offset = 0): Promise<void> => {
+    const request = ++resultRequest.current;
+    setLoadingResult(true);
+    setQueryError(null);
+    try {
+      const page = await getSubAgentRunResult(
+        run.parentConversationId,
+        run.runId,
+        offset,
+      );
+      if (request === resultRequest.current) setResult(page);
+    } catch (error) {
+      if (request === resultRequest.current)
+        setQueryError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (request === resultRequest.current) setLoadingResult(false);
+    }
+  };
+  const cancel = async (): Promise<void> => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setBusyAction(true);
+    setActionError(null);
+    try {
+      setCancelReceipt(
+        await requestSubAgentRunCancel(run.parentConversationId, run.runId),
+      );
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      actionInFlight.current = false;
+      setBusyAction(false);
+    }
+  };
+  const continueRun = async (): Promise<void> => {
+    const submittedMessage = pendingOperation?.message ?? message;
+    if (actionInFlight.current || !submittedMessage.trim()) return;
+    const existing = pendingContinues.get(run.runId);
+    if (existing && existing !== pendingOperation) {
+      setActionError(
+        "REQUEST_CONFLICT: another UI request is awaiting its receipt",
+      );
+      return;
+    }
+    actionInFlight.current = true;
+    setBusyAction(true);
+    setActionError(null);
+    try {
+      let pending = pendingContinues.get(run.runId);
+      if (!pending) {
+        pending = {
+          requestId: crypto.randomUUID(),
+          message: submittedMessage.trim(),
+        };
+        pendingContinues.set(run.runId, pending);
+        setContinueReceipt(null);
+        notifyPendingContinues();
+      }
+      const receipt = await requestSubAgentRunContinue(
+        run.parentConversationId,
+        run.conversationId,
+        pending.message,
+        pending.requestId,
+      );
+      const parsed = parseResult(receipt);
+      if (parsed.type === "error") throw new Error(parsed.message);
+      if (parsed.type !== "receipt")
+        throw new Error("PERSISTENCE_ERROR: invalid continue receipt");
+      if (
+        parsed.conversationId !== run.conversationId ||
+        parsed.requestId !== pending.requestId
+      ) {
+        throw new Error(
+          "REQUEST_CONFLICT: continue receipt identity does not match the UI request",
+        );
+      }
+      setContinueReceipt(receipt);
+      // A late replay receipt must not clear a newer logical UI request.
+      if (pendingContinues.get(run.runId) === pending) {
+        pendingContinues.delete(run.runId);
+        notifyPendingContinues();
+      }
+      setMessage("");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      actionInFlight.current = false;
+      setBusyAction(false);
+    }
+  };
+  const openConversation = async (): Promise<void> => {
+    setActionError(null);
+    try {
+      await handleSelectConversation(run.conversationId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    }
+  };
+  return (
+    <>
+      <SubAgentRunDetails
+        run={visibleRun}
+        page={
+          result?.run.version === visibleRun.version
+            ? result.summaryPage
+            : undefined
+        }
+        loadingResult={loadingResult}
+        busyAction={busyAction}
+        queryError={queryError}
+        actionError={actionError}
+        cancelReceipt={cancelReceipt}
+        continueReceipt={continueReceipt}
+        message={pendingOperation?.message ?? message}
+        pendingContinue={pendingOperation !== undefined}
+        onMessageChange={setMessage}
+        onLoadResult={(offset) => void loadResult(offset)}
+        onCancel={() => void cancel()}
+        onContinue={() => void continueRun()}
+        onOpenConversation={() => void openConversation()}
+      />
+      {parsedContinueReceipt.type === "receipt" ? (
+        <div className="sub-agent-run" role="status">
+          <p>{t(`subAgentRun.receipt.${parsedContinueReceipt.kind}`)}</p>
+          <code>{parsedContinueReceipt.runId}</code>
+        </div>
+      ) : null}
+      {linkedRunId && linkedRunId !== run.runId ? (
+        <details open className="sub-agent-run">
+          <summary>
+            {t("subAgentRun.linkedRun")} · {linkedRunId}
+          </summary>
+          {linkedRun ? (
+            <SubAgentRunCard
+              key={linkedRun.runId}
+              run={linkedRun}
+              runs={runs}
+              refresh={refresh}
+            />
+          ) : (
+            <>
+              <p>{t("subAgentRun.unavailable")}</p>
+              <button type="button" onClick={() => void refresh()}>
+                {t("subAgentRun.refresh")}
+              </button>
+            </>
+          )}
+        </details>
+      ) : null}
+    </>
   );
 };

@@ -8,6 +8,8 @@ import type {
   ConversationImportSummary,
   ConversationSearchResult,
   UserMessageSummary,
+  SubAgentRunCommand,
+  SubAgentRunCommandResult,
   WorkflowCanvasRecord,
   WorkflowGraphValidationResult,
   WorkflowNodeSessionRecord,
@@ -47,6 +49,15 @@ const createImportStreamId = (): string =>
   `conversation-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const conversationApi = {
+  subAgentRunCommand: (
+    command: SubAgentRunCommand,
+  ): Promise<SubAgentRunCommandResult> =>
+    ipcRenderer.invoke("sub-agents:command", command),
+  onSubAgentRunsChanged: (callback: () => void): (() => void) => {
+    const listener = (): void => callback();
+    ipcRenderer.on("sub-agents:changed", listener);
+    return () => ipcRenderer.removeListener("sub-agents:changed", listener);
+  },
   listChatConversations: (
     directoryId: string,
   ): Promise<ChatConversationRecord[]> =>

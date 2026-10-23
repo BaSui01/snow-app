@@ -157,6 +157,10 @@ pub fn create_sub_agent_session(
                 database::open_connection(database_path).and_then(|mut connection| {
                     let transaction = connection
                         .transaction_with_behavior(TransactionBehavior::Immediate)?;
+                    super::sub_agent_runs::check_gate(&transaction, parent_conversation_id)
+                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+                    super::sub_agent_runs::check_gate(&transaction, conversation_id)
+                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
                     let parent_runtime: (Option<String>, Option<i64>) = transaction
                         .query_row(
                             "SELECT thinking_strength, responses_fast_mode
@@ -262,40 +266,30 @@ pub fn update_sub_agent_session_status(
         _ => "running",
     };
 
-    database::open_connection(database_path)
-        .and_then(|connection| {
-            connection.execute(
-                "UPDATE sub_agent_sessions
-                    SET run_status = ?2,
-                        error_message = ?3,
-                        updated_at = datetime('now', 'localtime')
-                  WHERE conversation_id = ?1",
-                params![conversation_id, normalized_status, error_message.trim()],
-            )
-        })
-        .map_err(|error| {
-            database::database_error(database_path, "update sub-agent session status", error)
-        })
-        .map(|_| ())
+    let mut connection = database::open_connection(database_path).map_err(|error| {
+        database::database_error(database_path, "update sub-agent session status", error)
+    })?;
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|error| database::database_error(database_path, "update sub-agent session status", error))?;
+    let has_run: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sub_agent_runs WHERE conversation_id=?1)",
+        [conversation_id], |row| row.get(0),
+    ).map_err(|error| database::database_error(database_path, "check sub-agent run ownership", error))?;
+    if has_run {
+        return Err(Error::from_reason("OWNER_MISMATCH: run-backed sessions must use owner-scoped transition/settle"));
+    }
+    transaction.execute(
+        "UPDATE sub_agent_sessions SET run_status=?2,error_message=?3,updated_at=datetime('now','localtime')
+         WHERE conversation_id=?1",
+        params![conversation_id, normalized_status, error_message.trim()],
+    ).map_err(|error| database::database_error(database_path, "update sub-agent session status", error))?;
+    transaction.commit().map_err(|error| database::database_error(database_path, "update sub-agent session status", error))
 }
 
 pub fn cancel_running_sub_agent_sessions(database_path: &Path) -> Result<usize> {
-    database::open_connection(database_path)
-        .and_then(|connection| {
-            connection.execute(
-                "UPDATE sub_agent_sessions
-                    SET run_status = 'cancelled',
-                        error_message = '',
-                        updated_at = datetime('now', 'localtime')
-                  WHERE run_status = 'running'",
-                [],
-            )
-        })
-        .map_err(|error| {
-            database::database_error(
-                database_path,
-                "cancel interrupted sub-agent sessions",
-                error,
-            )
-        })
+    // Compatibility startup entry point: process loss is interrupted, not a
+    // user cancellation. Recovery never runs hooks, tools or parent wakeups.
+    let receipt = super::sub_agent_run_command(database_path, &serde_json::json!({"op":"recover"}))?;
+    receipt["count"].as_u64().map(|count| count as usize)
+        .ok_or_else(|| Error::from_reason("PERSISTENCE_ERROR: invalid recovery count"))
 }

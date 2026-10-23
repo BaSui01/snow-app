@@ -14,6 +14,7 @@ mod task_history;
 pub use self::task_history::*;
 mod query;
 mod sub_agent;
+mod sub_agent_runs;
 mod tombstones;
 mod workflow;
 
@@ -21,6 +22,11 @@ pub use self::fork_truncate::*;
 pub use self::messages::*;
 pub use self::query::*;
 pub use self::sub_agent::*;
+pub use self::sub_agent_runs::sub_agent_run_command;
+pub(crate) use self::sub_agent_runs::{
+    check_gate as check_sub_agent_conversation_gate, ensure_sub_agent_run_data_tables,
+    ensure_sub_agent_run_tables, guard_sub_agent_physical_delete,
+};
 pub(crate) use self::tombstones::{
     clear_conversation_tombstones, is_conversation_tombstoned, record_conversation_tombstones,
 };

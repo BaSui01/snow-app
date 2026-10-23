@@ -99,7 +99,9 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
-    let mut conversation_ids = vec![conversation_id.to_string()];
+    let mut conversation_ids = super::guard_sub_agent_physical_delete(
+        &transaction, &[conversation_id.to_string()],
+    )?;
     let child_ids = {
         let mut statement = transaction
             .prepare(
@@ -173,6 +175,9 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
         };
         conversation_ids.extend(node_sub_agent_ids);
     }
+
+    let mut seen_targets = HashSet::new();
+    conversation_ids.retain(|id| seen_targets.insert(id.clone()));
 
     // 删除前收集消息中内联图片标签路径（`@@image:upload/...@@`），
     // 供提交后清理不再被任何消息引用的孤儿文件
@@ -340,7 +345,7 @@ pub fn delete_conversations(
         .map_err(|error| database::database_error(database_path, "delete conversations", error))?;
 
     // 一次查出所有直接子代理会话 id（覆盖全部选中父会话）
-    let mut all_target_ids = unique_ids.clone();
+    let mut all_target_ids = super::guard_sub_agent_physical_delete(&transaction, &unique_ids)?;
     {
         let placeholders = in_clause_placeholders(unique_ids.len());
         let mut statement = transaction

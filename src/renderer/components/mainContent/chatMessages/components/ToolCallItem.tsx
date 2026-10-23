@@ -17,7 +17,6 @@ import {
   FindToolCall,
   SubAgentToolCall,
   SubAgentMessageToolCall,
-  SubAgentContinueToolCall,
   SubAgentListToolCall,
   CodebaseToolCall,
   LspToolCall,
@@ -130,19 +129,26 @@ const renderToolCall = ({
     return <FindToolCall toolCall={toolCall} />;
   }
 
-  if (toolCall.name === "sub-agents-activate") {
+  if (
+    toolCall.name === "sub-agents-activate" ||
+    toolCall.name === "sub-agents-continue"
+  ) {
     return (
-      <SubAgentToolCall toolCall={toolCall} hookExecutions={hookExecutions} />
+      <SubAgentToolCall
+        toolCall={toolCall}
+        parentConversationId={conversationId}
+        hookExecutions={hookExecutions}
+        mode={toolCall.name === "sub-agents-continue" ? "continue" : "activate"}
+      />
     );
   }
 
-  if (toolCall.name === "sub-agents-continue") {
-    return (
-      <SubAgentContinueToolCall
-        toolCall={toolCall}
-        hookExecutions={hookExecutions}
-      />
-    );
+  if (
+    toolCall.name === "sub-agents-getResult" ||
+    toolCall.name === "sub-agents-wait" ||
+    toolCall.name === "sub-agents-cancel"
+  ) {
+    return <GenericToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name === "sub-agents-listSubAgents") {

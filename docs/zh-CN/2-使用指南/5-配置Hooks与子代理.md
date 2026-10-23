@@ -274,7 +274,7 @@ sequenceDiagram
     Main->>Hooks: beforeSubAgentStart 上下文
     alt Hook 以 2+ 阻断
         Hooks-->>Main: 返回阻断消息
-    else 允许或 Hook 执行异常
+    else 启动 Hook 正常允许
         Hooks-->>Main: 继续
         Main->>Sub: 自包含 systemPrompt + 用户任务 + 允许工具
         Sub->>Sub: 独立执行与验证
@@ -289,13 +289,46 @@ sequenceDiagram
     end
 ```
 
-注意：`beforeSubAgentStart` Hook 执行自身发生异常时，当前调用方会继续激活子代理；因此安全阻断脚本必须可靠、可测试，并用明确的 `2+` 退出码返回阻断。
+注意：`beforeSubAgentStart` 调用抛出异常时，受理失败，不会继续启动子代理，也不会返回 accepted。正常返回的 Hook 决策仍按现有退出码语义处理；安全阻断应明确返回 `2+`，不要依赖异常代替决策。
 
 ### 2.6 子代理会话恢复与同会话通信
 
-- **重启后恢复**：子代理会话在应用重启后仍可恢复——`sub-agents-listSubAgents` 列出当前会话的子代理（含本次运行期间已结束的）及其 `status`/`resumable` 状态；`sub-agents-continue` 对已结束的子代理按**原配置（模型、工具、系统提示词）与完整会话历史**重新激活继续执行；
+- **重启后查询与显式继续**：有项目持久绑定时，会话及运行结果在重启后保留；未终态运行变为 `interrupted`，不会自动续跑。`sub-agents-listSubAgents` 列出当前父会话的子代理与实际运行状态，`sub-agents-getResult` 按 `runId` 查询结果；`sub-agents-continue` 根据保存的配置与完整会话历史启动**新的**运行，原配置缺失时明确失败，不静默替换。无项目旧同步路径仍是运行期记录；
 - **同会话通信**：`sub-agents-listTeammates` 查询当前会话中仍在运行的子代理，`sub-agents-sendMessage` 向其投递消息（以 Pending 消息在对方当前轮次结束时送达，并带发送者身份前缀）；并行子代理之间可直接协作，无需经主会话中转；
 - **会话隔离**：以上工具只对**当前会话**生效——`listTeammates` 不暴露其他会话的子代理，`sendMessage`/`continue` 跨会话调用会被拒绝。
+
+### 2.7 同步兼容的异步运行
+
+默认省略 `executionMode`（或传 `"sync"`）保持同步新运行：父工具等待最终结果。**忙碌目标的 continue 仍立即返回消息排队回执**，不改为等待终态。需要让父代理继续无依赖工作时，显式传 `executionMode: "async"`。
+
+```json
+{
+  "agentId": "agent_general",
+  "summary": "只读目录检查",
+  "prompt": "只读取当前项目的 package.json，概括构建命令；不要运行命令或修改文件。",
+  "executionMode": "async"
+}
+```
+
+使用 `sub-agents-activate` 提交上例。成功受理返回 `kind: "accepted"`、`runId`、`conversationId`、`runStatus`，**不表示完成**。配置、权限、启动 Hook 和持久受理失败不会返回 accepted。桌面主会话及已登记的独立会话窗口复用宿主运行机制；异步需实际项目/工作区绑定。无项目旧同步路径保留 legacy 行为；工作流节点只支持同步，异步请求明确拒绝。应用退出后不继续运行。
+
+| 工具                       | 参数与语义                                                                                                                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sub-agents-continue`      | `{conversationId,message,executionMode?,requestId?,acceptance?}`；忙碌时只把消息排入当前 run，async 回 `kind: "message_queued"`；终态时显式继续创建新 run 并保留历史。未消费消息留在原子会话，不转成父代理授权。 |
+| `sub-agents-getResult`     | `{runId,offset?,limit?}`；运行中返回真实状态，终态返回 outcome。摘要默认每页 16000 个 Unicode 字符，limit 为 1–64000，offset 非负；`summaryPage.nextOffset` 可继续取回，错误/验收元数据不截断。                  |
+| `sub-agents-wait`          | `{runIds,mode?:"any"或"all",timeoutMs?}`；1–32 个唯一 ID，默认 any/30000ms，timeoutMs 为 0–120000 整数。统一截止时间，超时不取消原运行；未知或跨父会话/项目 ID 报错。不要无止境轮询。                            |
+| `sub-agents-cancel`        | `{runId}`；区分 requested、confirmed、already_terminal、too_late。请求不等于确认停止；finalizing 赢得竞争时 too_late；不撤销已发生的文件或外部副作用。                                                           |
+| `sub-agents-listSubAgents` | 保留原字段，增量给出 active/latest run 身份与投递状态；旧记录不伪造 run、结果或验收证据。                                                                                                                        |
+
+`requestId` 标识一次逻辑操作：模型未传时宿主从稳定工具调用身份派生；UI 为同一次操作生成并复用 UUID。回执未知后的重试必须复用原 ID 和原输入；有意再次执行才用新 ID。相同输入回原 run/消息，不同输入明确冲突；不会因目标从忙碌变终态而重复派发。
+
+状态依次区分 queued（等名额）、running、waiting_input（去实际子会话处理授权/提问/失败决策）、finalizing、cancelling，以及 completed/failed/cancelled/interrupted。**completed 和 acceptanceSatisfied 分开**；验收缺项不是全部成功。卡片中的“派发工具完成”也不是后台任务完成。
+
+异步结果先持久结算再通知：父忙时在完整工具屏障后消费；父闲且原委派任务开放时可启动内部处理回合；用户停止、关闭任务或开始新用户任务后，旧结果保留但不隐式续跑原任务。内部结果不是新用户消息，也不是 Plan 审批或新授权。`received` 仅表示已持久加入父输入，不声称模型理解。同步最终回包及已观察的 get/wait 与自动通知按事件身份去重，UI 查询不确认模型接收。
+
+重启或执行 owner 丢失时非终态 run 标为 interrupted，不冒充用户取消，不自动重放；显式继续生成新 run，固定配置缺失则失败、不换供应商。删除/归档先关闭新受理与唤醒，停止并等待 owner，再物理清理；失败保留门禁，显式重试，不假称删除成功。归档保留完整 run 结果与身份，恢复不重新开放历史任务或重放运行。
+
+定位时记录时间及 `runId`/`eventId`/`interactionId`，在系统日志中查 `sub-agents` 模块，区分受理、执行、结算、接收和唤醒阶段。不要粘贴 API key、Cookie、完整敏感 prompt。界面/实际端到端效果需在新 native 构建并重启后验收，工程检查不等同手测通过。
 
 ## 3. 验证与排错
 

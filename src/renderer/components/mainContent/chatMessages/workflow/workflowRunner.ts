@@ -2312,7 +2312,7 @@ export function createWorkflowRunner(
             continue;
           }
 
-          const toolArgs = injectSessionIdIntoToolArgs(
+          let toolArgs = injectSessionIdIntoToolArgs(
             toolCall.name,
             toolCall.arguments,
             conversationId,
@@ -2359,6 +2359,27 @@ export function createWorkflowRunner(
             // Electron interaction bridge"。节点内与主会话一致，允许
             // 激活子代理（在节点会话下运行）与 listSubAgents/continue
             // 管理工具，侧边栏以 节点 → 子代理 树形展示。
+            if (
+              toolCall.name === "sub-agents-activate" ||
+              toolCall.name === "sub-agents-continue"
+            ) {
+              const args = JSON.parse(toolArgs) as Record<string, unknown>;
+              if (args.executionMode === "async")
+                throw new Error(
+                  "UNSUPPORTED_EXECUTION_MODE: workflow nodes support synchronous sub-agents only",
+                );
+              if (
+                toolCall.name === "sub-agents-continue" &&
+                args.requestId === undefined
+              ) {
+                if (!toolCall.interactionId)
+                  throw new Error(
+                    "VALIDATION_ERROR: stable workflow tool identity is required",
+                  );
+                args.requestId = `continue:${toolCall.interactionId}`;
+                toolArgs = JSON.stringify(args);
+              }
+            }
             if (toolCall.name === "sub-agents-activate") {
               result = await executeSubAgentActivation(
                 toolArgs,

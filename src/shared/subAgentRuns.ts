@@ -1,0 +1,376 @@
+/** Frozen async sub-agent wire contract v1. Host scope is never model supplied. */
+export type SubAgentExecutionMode = "sync" | "async";
+export type SubAgentRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "finalizing"
+  | "cancelling"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export type SubAgentTerminalStatus = Extract<
+  SubAgentRunStatus,
+  "completed" | "failed" | "cancelled" | "interrupted"
+>;
+export type SubAgentErrorCategory =
+  | "validation"
+  | "configuration"
+  | "permission"
+  | "model"
+  | "tool"
+  | "hook"
+  | "persistence"
+  | "interrupted";
+export type SubAgentRunError = {
+  category: SubAgentErrorCategory;
+  code: string;
+  message: string;
+  detail?: string;
+  retryable: boolean;
+};
+export type SubAgentRunScope = {
+  projectId: string;
+  parentConversationId: string;
+};
+const SUB_AGENT_ACCEPTANCE_STATUSES = [
+  "completed",
+  "incomplete",
+  "blocked",
+  "unverified",
+] as const;
+
+export type SubAgentAcceptanceStatus =
+  (typeof SUB_AGENT_ACCEPTANCE_STATUSES)[number];
+
+export type SubAgentAcceptanceCriterion = {
+  id: string;
+  description: string;
+  /** 默认 true；非必需项不满足时不影响整体验收结论。 */
+  required: boolean;
+};
+
+/** 宿主生成的降级原因：UI 可按 code 本地化，模型侧按 reason 阅读。 */
+export type SubAgentAcceptanceReasonCode = "not_reported" | "no_valid_evidence";
+
+export type SubAgentAcceptanceEvidenceStatus =
+  "completed" | "error" | "rejected";
+
+export type SubAgentAcceptanceEvidenceRef = {
+  id: string;
+  toolName: string;
+  callId: string;
+  status: SubAgentAcceptanceEvidenceStatus;
+  /** 截断后的结果预览；不向主控复制完整工具结果。 */
+  preview: string;
+};
+
+export type SubAgentAcceptanceItemReceipt = {
+  id: string;
+  description: string;
+  required: boolean;
+  status: SubAgentAcceptanceStatus;
+  observation: string;
+  reason: string;
+  reasonCode: SubAgentAcceptanceReasonCode | null;
+  evidence: SubAgentAcceptanceEvidenceRef[];
+  /** 回执里引用了但宿主执行记录中不存在的证据 id（不会被采信）。 */
+  invalidEvidenceIds: string[];
+  /** 最近一轮回执是否覆盖该项；false 表示沿用之前记录的状态。 */
+  confirmedInLatestReport: boolean;
+  updatedAt: number;
+};
+
+export type SubAgentAcceptanceReportState = "none" | "invalid" | "received";
+
+export type SubAgentAcceptanceSnapshot = {
+  items: SubAgentAcceptanceItemReceipt[];
+  counts: {
+    total: number;
+    completed: number;
+    incomplete: number;
+    blocked: number;
+    unverified: number;
+  };
+  /** 所有 required 项均为 completed 且至少引用一条有效证据。 */
+  satisfied: boolean;
+  reportState: SubAgentAcceptanceReportState;
+  /** 回执里出现、但不在清单中的验收项 id（已忽略）。 */
+  ignoredReportIds: string[];
+  updatedAt: number | null;
+};
+/** Same shape as the existing validated acceptance receipt, without a UI dependency. */
+export type SubAgentRunAcceptance = SubAgentAcceptanceSnapshot;
+export type SubAgentHookOutcome = {
+  kind: "none" | "success" | "warn" | "abort" | "failed";
+  message?: string;
+};
+export type SubAgentOutcome = {
+  version: 1;
+  runId: string;
+  conversationId: string;
+  parentConversationId: string;
+  parentTaskId: string;
+  terminalStatus: SubAgentTerminalStatus;
+  summary: string;
+  error?: SubAgentRunError;
+  acceptance?: SubAgentRunAcceptance;
+  acceptanceSatisfied?: boolean;
+  unavailableTools: { name: string; reason: string }[];
+  hookOutcome: SubAgentHookOutcome;
+  acceptedAt: number;
+  startedAt?: number;
+  completedAt: number;
+};
+export type SubAgentExecutionSnapshot = {
+  agentId: string;
+  agentName: string;
+  apiProfile: string;
+  model: string;
+  systemPrompt: string;
+  toolsJson: string;
+  effectiveThinkingStrength?: string | null;
+  effectiveResponsesFastMode?: string | null;
+  workspacePath: string;
+  worktreeMode: boolean;
+};
+export type SubAgentRunRecord = SubAgentRunScope & {
+  runId: string;
+  conversationId: string;
+  parentTaskId: string;
+  interactionId: string;
+  requestId: string;
+  previousRunId?: string;
+  ownerInstanceId: string;
+  version: number;
+  executionMode: SubAgentExecutionMode;
+  status: SubAgentRunStatus;
+  summary: string;
+  agentId: string;
+  agentName: string;
+  acceptedAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  waitingReason?:
+    "authorization" | "question" | "failure_decision" | "hook_decision";
+  outcome?: SubAgentOutcome;
+  snapshot: SubAgentExecutionSnapshot;
+  eventId?: string;
+  deliveryStatus?: "pending" | "received" | "revoked";
+};
+export type SubAgentAccepted = {
+  success: true;
+  kind: "accepted";
+  runId: string;
+  conversationId: string;
+  runStatus: SubAgentRunStatus;
+  requestId: string;
+  /** false for an idempotent replay: do not start another execution. */
+  created: boolean;
+};
+export type SubAgentMessageQueued = {
+  success: true;
+  kind: "message_queued";
+  runId: string;
+  conversationId: string;
+  messageId: string;
+  requestId: string;
+  queuedAt: number;
+  created: boolean;
+};
+export type SubAgentEvent = SubAgentRunScope & {
+  eventId: string;
+  runId: string;
+  parentTaskId: string;
+  status: "pending" | "received" | "revoked";
+  createdAt: number;
+  outcome: SubAgentOutcome;
+};
+export type SubAgentResultPage = {
+  success: true;
+  kind: "result";
+  run: SubAgentRunRecord;
+  /** A UTF-8-safe character slice of outcome.summary. Metadata is never truncated. */
+  summaryPage?: {
+    text: string;
+    offset: number;
+    total: number;
+    nextOffset: number | null;
+  };
+};
+export type SubAgentCancelReceipt = {
+  success: true;
+  kind: "cancel";
+  runId: string;
+  disposition: "requested" | "confirmed" | "already_terminal" | "too_late";
+  runStatus: SubAgentRunStatus;
+};
+export type SubAgentParentTaskState = "open" | "stopped" | "closed";
+/** v1.1: only normalized logical caller inputs participate in request identity. */
+export type SubAgentLogicalInput = {
+  operation: "activate" | "continue";
+  executionMode: SubAgentExecutionMode;
+  agentId?: string;
+  conversationId?: string;
+  summary?: string;
+  text: string;
+  acceptance: SubAgentAcceptanceCriterion[];
+};
+export type SubAgentRunCommand =
+  | {
+      op: "lookup_request";
+      scope: SubAgentRunScope;
+      requestId: string;
+      requestInput: SubAgentLogicalInput;
+    }
+  | {
+      op: "accept";
+      scope: SubAgentRunScope;
+      requestId: string;
+      requestInput: SubAgentLogicalInput;
+      operation: "activate" | "continue";
+      conversationId: string;
+      parentTaskId: string;
+      interactionId: string;
+      executionMode: SubAgentExecutionMode;
+      summary: string;
+      prompt: string;
+      snapshot: SubAgentExecutionSnapshot;
+      acceptance?: SubAgentRunAcceptance;
+      ownerInstanceId?: string;
+    }
+  | {
+      op: "queue_message";
+      scope: SubAgentRunScope;
+      requestId: string;
+      requestInput: SubAgentLogicalInput;
+      conversationId: string;
+      message: string;
+      acceptance?: SubAgentRunAcceptance;
+    }
+  | {
+      op: "take_messages";
+      scope: SubAgentRunScope;
+      runId: string;
+      ownerInstanceId?: string;
+    }
+  | {
+      op: "transition";
+      scope: SubAgentRunScope;
+      runId: string;
+      ownerInstanceId?: string;
+      from: SubAgentRunStatus[];
+      to: SubAgentRunStatus;
+      waitingReason?: SubAgentRunRecord["waitingReason"];
+    }
+  | {
+      op: "settle";
+      scope: SubAgentRunScope;
+      runId: string;
+      ownerInstanceId?: string;
+      outcome: SubAgentOutcome;
+    }
+  | {
+      op: "get";
+      scope: SubAgentRunScope;
+      runId: string;
+      offset?: number;
+      limit?: number;
+    }
+  | {
+      op: "list";
+      scope: SubAgentRunScope;
+      conversationId?: string;
+      limit?: number;
+      offset?: number;
+    }
+  | { op: "cancel"; scope: SubAgentRunScope; runId: string }
+  | {
+      op: "events";
+      scope: SubAgentRunScope;
+      parentTaskId?: string;
+      limit?: number;
+    }
+  | {
+      op: "receive";
+      scope: SubAgentRunScope;
+      parentTaskId: string;
+      eventIds: string[];
+      /** Existing persisted tool result containing these runIds; otherwise commit an internal pair. */
+      toolMessageId?: string;
+    }
+  | {
+      op: "parent_task";
+      scope: SubAgentRunScope;
+      parentTaskId: string;
+      state: SubAgentParentTaskState;
+    }
+  | { op: "prepare_delete"; scope: SubAgentRunScope; conversationId: string }
+  | { op: "deletion_status"; scope: SubAgentRunScope; conversationId: string }
+  | { op: "recover"; ownerInstanceId?: string };
+export type SubAgentRunCommandResult =
+  | {
+      success: true;
+      kind: "request";
+      receipt: SubAgentAccepted | SubAgentMessageQueued | null;
+    }
+  | SubAgentAccepted
+  | SubAgentMessageQueued
+  | SubAgentResultPage
+  | SubAgentCancelReceipt
+  | { success: true; kind: "runs"; runs: SubAgentRunRecord[]; total: number }
+  | { success: true; kind: "events"; events: SubAgentEvent[] }
+  | {
+      success: true;
+      kind: "messages";
+      messages: {
+        messageId: string;
+        runId: string;
+        text: string;
+        acceptance?: SubAgentRunAcceptance;
+      }[];
+    }
+  | {
+      success: true;
+      kind: "transition";
+      changed: boolean;
+      run: SubAgentRunRecord;
+    }
+  | {
+      success: true;
+      kind: "settled";
+      committed: boolean;
+      run: SubAgentRunRecord;
+      event?: SubAgentEvent;
+    }
+  | {
+      success: true;
+      kind: "received";
+      eventIds: string[];
+      messageIds: string[];
+    }
+  | { success: true; kind: "parent_task"; state: SubAgentParentTaskState }
+  | {
+      success: true;
+      kind: "deletion";
+      deleting: boolean;
+      ready: boolean;
+      runs: SubAgentRunRecord[];
+      error?: SubAgentRunError;
+    }
+  | { success: true; kind: "recovered"; count: number };
+export type SubAgentWaitResult = {
+  success: true;
+  kind: "wait";
+  timedOut: boolean;
+  mode: "any" | "all";
+  results: SubAgentResultPage[];
+};
+export const isSubAgentTerminal = (
+  status: SubAgentRunStatus,
+): status is SubAgentTerminalStatus =>
+  status === "completed" ||
+  status === "failed" ||
+  status === "cancelled" ||
+  status === "interrupted";

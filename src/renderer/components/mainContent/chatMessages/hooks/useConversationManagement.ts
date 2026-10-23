@@ -1,3 +1,8 @@
+import {
+  isDurableSubAgentConversation,
+  reportSubAgentParentError,
+  stopSubAgentParentTask,
+} from "./subAgentParentInbox";
 import { useCallback } from "react";
 import type {
   ConversationContextValue,
@@ -882,6 +887,12 @@ export const useConversationManagement = (
    */
   const abortSubAgentTree = useCallback(
     (subKey: string): void => {
+      if (isDurableSubAgentConversation(subKey)) {
+        void stopSubAgentParentTask(ctx, subKey).catch((error) =>
+          reportSubAgentParentError(ctx, subKey, error),
+        );
+        return;
+      }
       const subRef = ctx.sessionsRefData.current.get(subKey);
       if (!subRef || subRef.isAbortRequested) {
         return;
@@ -957,6 +968,12 @@ export const useConversationManagement = (
         typeof targetSessionKey === "string" && targetSessionKey.length > 0
           ? targetSessionKey
           : (ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY);
+      if (!isPendingSessionKey(key)) {
+        void stopSubAgentParentTask(ctx, key).catch((error) =>
+          reportSubAgentParentError(ctx, key, error),
+        );
+        if (isDurableSubAgentConversation(key)) return;
+      }
       const ref = ctx.sessionsRefData.current.get(key);
       if (!ref?.isSending || ref.isAbortRequested) {
         return;
@@ -1158,6 +1175,14 @@ export const useConversationManagement = (
       if (!queue || index < 0 || index >= queue.length) {
         return false;
       }
+
+      // A terminated child retains its pending input; it is not parent authorization.
+      if (
+        ctx.subAgentSessionEventsRef.current[sessionKey]
+          ?.parentConversationId &&
+        ctx.sessionsRefData.current.get(sessionKey)?.subAgentTerminated
+      )
+        return false;
 
       // Abort the target session's streaming run so isSending flips to
       // false and handleSendMessage will start a new agent loop instead of

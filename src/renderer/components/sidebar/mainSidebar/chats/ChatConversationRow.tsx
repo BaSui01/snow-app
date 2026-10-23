@@ -1,7 +1,16 @@
-import { Fragment, memo, useCallback } from "react";
+import { Fragment, memo, useCallback, useMemo, useState } from "react";
+import { useI18n } from "../../../../i18n";
+import { isSubAgentTerminal } from "../../../../../shared/subAgentRuns";
+import {
+  useSubAgentDeletionStatus,
+  useSubAgentRuns,
+} from "../../../mainContent/chatMessages/hooks/subAgentRuntimeClient";
+import "../../../mainContent/chatMessages/components/SubAgentRunDetails.css";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import { ChatItem } from "../ChatItem";
+import { SubAgentRunCard } from "../../../mainContent/chatMessages/toolCalls/SubAgentToolCall";
+import { ChatDeleteConfirmDialog } from "../ChatDeleteConfirmDialog";
 import type { ExportFormat } from "../ChatItemMenu";
 import { LazyCollapse } from "../LazyCollapse";
 import { SubAgentListPanel } from "../SubAgentListPanel";
@@ -100,7 +109,47 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onFork,
   onArchive,
 }: ChatConversationRowProps): React.JSX.Element {
+  const { t } = useI18n();
   const conversationId = conversation.conversationId;
+  const {
+    runs,
+    error: runsError,
+    refresh,
+  } = useSubAgentRuns(
+    isPendingSessionKey(conversationId) ? undefined : conversationId,
+  );
+  const deletion = useSubAgentDeletionStatus(
+    isPendingSessionKey(conversationId) ? undefined : conversationId,
+    isPendingSessionKey(conversationId) ? undefined : conversationId,
+  );
+  const deletionPending = isDeleting || deletion.deleting;
+  const [retryDeleteCounts, setRetryDeleteCounts] = useState<{
+    images: number;
+    memories: number;
+  } | null>(null);
+  const [retryDeleteLoading, setRetryDeleteLoading] = useState(false);
+  const [retryDeleteError, setRetryDeleteError] = useState<string | null>(null);
+  const [deleteImages, setDeleteImages] = useState(false);
+  const [deleteMemories, setDeleteMemories] = useState(false);
+  // Show persisted runs, including older undelivered results; never invent legacy history.
+  const activeRuns = runs.filter((run) => !isSubAgentTerminal(run.status));
+  const backgroundCount = activeRuns.filter(
+    (run) => run.executionMode === "async",
+  ).length;
+  const pendingCount = runs.filter(
+    (run) => run.status === "waiting_input" || run.deliveryStatus === "pending",
+  ).length;
+  const needsAttention = pendingCount > 0;
+  const runAttentionIds = useMemo(
+    () =>
+      new Set([
+        ...attentionRequiredConversationIds,
+        ...runs
+          .filter((run) => run.status === "waiting_input")
+          .map((run) => run.conversationId),
+      ]),
+    [attentionRequiredConversationIds, runs],
+  );
   const isWorkflow = workflowNodeConversations.length > 0;
   const hasTreeChildren = isWorkflow || subAgentConversations.length > 0;
 
@@ -133,6 +182,30 @@ export const ChatConversationRow = memo(function ChatConversationRow({
       onDelete(conversation, deleteImages, deleteMemories),
     [conversation, onDelete],
   );
+  const openRetryDelete = async (): Promise<void> => {
+    setRetryDeleteLoading(true);
+    setRetryDeleteError(null);
+    try {
+      const [images, memories] = await Promise.all([
+        window.snow.countConversationImages([conversationId]),
+        window.snow.countProjectMemoriesByConversations([conversationId]),
+      ]);
+      setDeleteImages(false);
+      setDeleteMemories(false);
+      setRetryDeleteCounts({ images, memories });
+    } catch (error) {
+      setRetryDeleteError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setRetryDeleteLoading(false);
+    }
+  };
+  const confirmRetryDelete = (): void => {
+    // Closing the confirmation only submits the existing action, never reports success.
+    setRetryDeleteCounts(null);
+    handleDelete(deleteImages, deleteMemories);
+  };
   const handleExport = useCallback(
     (format: ExportFormat): void => onExport(conversation, format),
     [conversation, onExport],
@@ -156,19 +229,31 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         conversation={conversation}
         isDraggable={!isPendingSessionKey(conversationId)}
         isActive={isActive}
-        isAttentionRequired={attentionRequiredConversationIds.has(
-          conversationId,
-        )}
+        isAttentionRequired={
+          needsAttention ||
+          !!deletion.error ||
+          !!retryDeleteError ||
+          !!runsError ||
+          attentionRequiredConversationIds.has(conversationId)
+        }
         isStreaming={streamingConversationIds.has(conversationId)}
         isPaused={pausedConversationIds.has(conversationId)}
-        isCompleted={completedConversationIds.has(conversationId)}
+        isCompleted={
+          activeRuns.length === 0 &&
+          !needsAttention &&
+          !runsError &&
+          !deletionPending &&
+          !deletion.error &&
+          completedConversationIds.has(conversationId)
+        }
         isRunning={
+          activeRuns.length > 0 ||
           runningConversationIds.has(conversationId) ||
           surfacedConversationIds.has(conversationId)
         }
         showPinBadge={showPinBadge}
         subAgentConversations={subAgentConversations}
-        subAgentAttentionRequiredIds={attentionRequiredConversationIds}
+        subAgentAttentionRequiredIds={runAttentionIds}
         isWorkflow={isWorkflow}
         isTreeExpanded={isTreeExpanded}
         onToggleTree={handleToggleTree}
@@ -186,6 +271,110 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         isDeleting={isDeleting}
         onArchive={conversation.status === "pin" ? undefined : handleArchive}
         onSelect={handleSelect}
+      />
+      {runs.length > 0 ||
+      runsError ||
+      deletionPending ||
+      deletion.error ||
+      retryDeleteError ? (
+        <div className="sub-agent-run-sidebar">
+          {deletionPending ? (
+            <p role="status">{t("subAgentRun.sidebar.deleting")}</p>
+          ) : null}
+          {deletion.deleting ? (
+            <p role="status">
+              {t(
+                deletion.ready
+                  ? "subAgentRun.sidebar.readyToDelete"
+                  : "subAgentRun.sidebar.waitingOwner",
+              )}
+            </p>
+          ) : null}
+          {deletion.error ? (
+            <details open>
+              <summary>{t("subAgentRun.sidebar.deletionError")}</summary>
+              <pre role="alert">{deletion.error}</pre>
+            </details>
+          ) : null}
+          {deletion.deleting || deletion.error ? (
+            <div>
+              <button type="button" onClick={() => void deletion.refresh()}>
+                {t("subAgentRun.sidebar.refreshDeletion")}
+              </button>
+              {deletion.deleting ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={isDeleting || retryDeleteLoading}
+                    onClick={() => void openRetryDelete()}
+                  >
+                    {t("subAgentRun.sidebar.retryDelete")}
+                  </button>
+                  <p>{t("subAgentRun.sidebar.retryDeleteHint")}</p>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          {retryDeleteLoading ? (
+            <p role="status">{t("subAgentRun.sidebar.loadingDeleteOptions")}</p>
+          ) : null}
+          {retryDeleteError ? (
+            <details open>
+              <summary>{t("subAgentRun.sidebar.deleteOptionsError")}</summary>
+              <pre role="alert">{retryDeleteError}</pre>
+            </details>
+          ) : null}
+          {runsError ? (
+            <details>
+              <summary>{t("subAgentRun.queryFailed")}</summary>
+              <pre role="alert">{runsError}</pre>
+            </details>
+          ) : null}
+          {runs.length > 0 ? (
+            <details>
+              <summary>
+                {t("subAgentRun.sidebar.counts", {
+                  values: {
+                    background: backgroundCount,
+                    pending: pendingCount,
+                  },
+                })}
+              </summary>
+              <ul>
+                {runs.map((run) => (
+                  <li key={run.runId}>
+                    <details>
+                      <summary>
+                        {run.summary || run.agentName} · {run.runId} ·{" "}
+                        {t(`subAgentRun.mode.${run.executionMode}`)} ·{" "}
+                        {t(`subAgentRun.status.${run.status}`)}
+                      </summary>
+                      <SubAgentRunCard
+                        run={run}
+                        runs={runs}
+                        refresh={refresh}
+                      />
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+      <ChatDeleteConfirmDialog
+        open={retryDeleteCounts !== null}
+        conversationCount={1}
+        isBatch={false}
+        imagesCount={retryDeleteCounts?.images ?? null}
+        memoriesCount={retryDeleteCounts?.memories ?? null}
+        deleteImages={deleteImages}
+        deleteMemories={deleteMemories}
+        onDeleteImagesChange={setDeleteImages}
+        onDeleteMemoriesChange={setDeleteMemories}
+        isConfirming={isDeleting}
+        onCancel={() => setRetryDeleteCounts(null)}
+        onConfirm={confirmRetryDelete}
       />
       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
           完全不继承父级会话项的背景色。
@@ -211,9 +400,7 @@ export const ChatConversationRow = memo(function ChatConversationRow({
             {subAgentConversations.length > 0 ? (
               <SubAgentListPanel
                 conversations={subAgentConversations}
-                attentionRequiredConversationIds={
-                  attentionRequiredConversationIds
-                }
+                attentionRequiredConversationIds={runAttentionIds}
                 onSelect={handleSelectChild}
               />
             ) : null}

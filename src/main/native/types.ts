@@ -2140,6 +2140,7 @@ export type AppLockTotpBinding = {
 
 export type NativeBridge = ImageGenerationNativeApi & {
   initializeAppStorage: () => Promise<AppStorageInfo>;
+  subAgentRunCommand: (commandJson: string) => Promise<string>;
 
   getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (

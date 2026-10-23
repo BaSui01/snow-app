@@ -105,31 +105,27 @@ pub(super) fn build_responses_payload(
                         "content": content_blocks,
                     }));
                 } else {
-                    // function_call_output only accepts a plain string, so the
-                    // screenshot base64 must travel in a following structured
-                    // user message as input_image blocks.
+                    // Responses supports multimodal function outputs. Keep each
+                    // image with its call instead of inserting user messages
+                    // between the outputs of parallel tool calls.
+                    let output = if tool_result.images.is_empty() {
+                        json!(text)
+                    } else {
+                        let mut parts = Vec::with_capacity(tool_result.images.len() + 1);
+                        parts.push(json!({"type": "input_text", "text": text}));
+                        parts.extend(tool_result.images.iter().map(|image| {
+                            json!({
+                                "type": "input_image",
+                                "image_url": image.data_url,
+                            })
+                        }));
+                        json!(parts)
+                    };
                     input.push(json!({
                         "type": "function_call_output",
                         "call_id": tool_result.call_id,
-                        "output": text,
+                        "output": output,
                     }));
-                    if !tool_result.images.is_empty() {
-                        let image_blocks: Vec<Value> = tool_result
-                            .images
-                            .iter()
-                            .map(|image| {
-                                json!({
-                                    "type": "input_image",
-                                    "image_url": image.data_url,
-                                })
-                            })
-                            .collect();
-                        input.push(json!({
-                            "type": "message",
-                            "role": "user",
-                            "content": image_blocks,
-                        }));
-                    }
                 }
             }
             continue;
@@ -474,4 +470,3 @@ pub(super) fn build_header_map(
 
     Ok(headers)
 }
-

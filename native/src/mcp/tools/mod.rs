@@ -165,7 +165,6 @@ pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "websearch",
     "imagegen",
     "codebase",
-    "codelens",
     "browser",
     "config",
     "skills",
@@ -926,7 +925,6 @@ fn remote_workspace_path_fields(tool_full_name: &str) -> &'static [&'static str]
         "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => &["filePath"],
         // 复制/剪切会同时读写源文件与目标文件，两个路径都必须解析到远端。
         "filesystem-copy" => &["filePath", "sourceFilePath"],
-        name if name.starts_with("codelens-") => &["filePath"],
         "grep-search" => &["path"],
         "bash-terminal-execute" => &["workingDirectory"],
         _ => &[],
@@ -995,7 +993,7 @@ async fn default_bash_working_directory(
     Ok(args)
 }
 
-/// 将本地 filesystem / grep / codelens 工具的相对路径解析到当前项目根目录。
+/// 将本地 filesystem / grep 工具的相对路径解析到当前项目根目录。
 /// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用工具时，避免路径被
 /// Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。grep 未提供 path
 /// 时也应默认搜索项目根目录，而不是 Electron 进程目录。
@@ -1010,9 +1008,7 @@ async fn resolve_local_workspace_args(
 ) -> napi::Result<Value> {
     let (path_field, default_to_workspace) = match tool_full_name {
         "grep-search" => ("path", true),
-        name if name.starts_with("filesystem-") || name.starts_with("codelens-") => {
-            ("filePath", false)
-        }
+        name if name.starts_with("filesystem-") => ("filePath", false),
         _ => return Ok(args),
     };
 

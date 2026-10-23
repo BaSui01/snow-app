@@ -45,17 +45,6 @@ pub(crate) fn analysis_tools_lines(tools: &ToolSnapshot) -> Vec<String> {
         lines
             .push("- `filesystem-read` - Read raw source to understand implementation".to_string());
     }
-    for name in [
-        "codelens-find_definition",
-        "codelens-find_references",
-        "codelens-file_outline",
-    ] {
-        if tools.has(name) {
-            lines.push(format!(
-                "- `{name}` - Static-analysis fallback for unsupported languages or operations"
-            ));
-        }
-    }
     lines.extend(tools.required_workflow_lines());
     lines
 }

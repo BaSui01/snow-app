@@ -21,7 +21,6 @@ Listed in registration order:
 | `user-interaction` | Ask the user questions (blocking interaction)                                                                                                             |
 | `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                            |
 | `codebase`         | Codebase semantic search (embedding index; **only exposed when the project has codebase indexing enabled and an index has been built**)                   |
-| `codelens`         | Code diagnostics and symbol location                                                                                                                      |
 | `lsp`              | External language-server semantic tools (**exposed only when an enabled AND installed server exists — enabled alone is not enough**)                      |
 | `app-control`      | App control (mode / settings pages / scheduled tasks / projects)                                                                                          |
 | `config`           | Config tools for file and DB settings, including `config-logs-read` for current-session App log/request-response analysis (secret-redacted)               |
@@ -156,14 +155,6 @@ Same-session communication is bounded by **session isolation**: `listTeammates` 
 | Full tool name    | Purpose                                                                                                                                       | Key parameters                                  |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | `codebase-search` | Codebase semantic search (embedding index based); **only exposed when the project has codebase indexing enabled and an index has been built** | `query` (required), `topN` (default 10, max 50) |
-
-### codelens
-
-| Full tool name             | Purpose                             | Key parameters               |
-| -------------------------- | ----------------------------------- | ---------------------------- |
-| `codelens-find_definition` | Find a symbol's definition location | `filePath`, `line`, `column` |
-| `codelens-find_references` | Find a symbol's reference locations | `filePath`, `line`, `column` |
-| `codelens-file_outline`    | Get a file's symbol outline         | `filePath`                   |
 
 ### lsp
 

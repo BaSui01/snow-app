@@ -70,7 +70,7 @@ Tool mapping per phase:
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | Feedback loop  | `bash-terminal-execute` runs tests/repro; `terminal-*` starts services                                                                     | `browser-create/navigate` loads the page; `browser-click/type` reproduces                                               |
 | Capture errors | `terminal-read` (PTY screen) / `filesystem-read` (detach log) / `grep-search` logs                                                         | `browser-devtools action=console` (JS errors); `action=network` (failed requests + bodies)                              |
-| Locate code    | `codelens-find_definition/references` from stack traces; `grep-search` / `codebase-search`                                                 | same + `browser-evaluate` for runtime state                                                                             |
+| Locate code    | `lsp-references` / `lsp-goto` from stack traces; `grep-search` / `codebase-search`                                                         | same + `browser-evaluate` for runtime state                                                                             |
 | Perf locating  | layered timing / profiler / `EXPLAIN QUERY PLAN`                                                                                           | `browser-devtools action=trace` (long tasks); `action=network` (waterfall); `browser-evaluate` with `performance.now()` |
 | Verify fix     | `bash-terminal-execute` re-runs tests                                                                                                      | `browser-wait` + `browser-screenshot` + re-check console                                                                |
 | Parallel work  | `sub-agents-activate` generic agents gather evidence (e.g. read-only "what is the correct usage of this API"), main session keeps the loop | same                                                                                                                    |
@@ -94,7 +94,7 @@ You: "frontend error / backend 500 / slow"
    backend  → terminal-read / detach logPath / grep logs
    frontend → browser-devtools console + network
   │
-④ Auto-locate: codelens call-chain → find the bug point
+④ Auto-locate: LSP call-chain → find the bug point
   │
 ⑤ Auto-verify: write repro test → run → fix → re-run
   │
@@ -168,8 +168,8 @@ flowchart LR
 | Question type                              | Approach                                                                              |
 | ------------------------------------------ | ------------------------------------------------------------------------------------- |
 | Third-party library / API usage            | `websearch-search/fetch`, ctx7, official docs; **never guess interfaces from memory** |
-| Existing implementation / patterns in repo | `grep-search` / `codebase-search` (semantic) / `codelens-file_outline`                |
-| How existing code calls a function         | `codelens-find_references` to trace call sites                                        |
+| Existing implementation / patterns in repo | `grep-search` / `codebase-search` (semantic) / `lsp-symbols`                          |
+| How existing code calls a function         | `lsp-references` to trace call sites                                                  |
 | Independent sub-questions in parallel      | `sub-agents-activate` several agents at once, each summarizing its own finding        |
 
 ### 4.4 Implement

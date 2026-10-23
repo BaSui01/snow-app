@@ -1,8 +1,8 @@
 # 7-Codebase Index & Symbol Location
 
 Snow App provides codebase semantic search (the `codebase` server) and code
-symbol location (the `codelens` server) to help the agent understand and
-navigate code quickly.
+symbol location through external language servers (the `lsp` server) to help
+the agent understand and navigate code quickly.
 
 ## 1. Codebase semantic search (codebase)
 
@@ -51,43 +51,11 @@ codebase-search query="retry logic" topN=5
 | Exact keywords, regex, path-limited search                | `grep-search` (faster, precise)         |
 | Semantic/intent queries ("find the login handling logic") | `codebase-search` (understands meaning) |
 
-## 2. Code symbol location (codelens)
-
-The `codelens` server performs lightweight static analysis (oxc /
-tree-sitter based) for symbol resolution and reference lookup without
-running a full LSP.
-
-### 2.1 Tools
-
-| Tool                       | Purpose                                                   |
-| -------------------------- | --------------------------------------------------------- |
-| `codelens-find_definition` | Find a symbol's definition location                       |
-| `codelens-find_references` | Find a symbol's references within the file                |
-| `codelens-file_outline`    | Get a file's symbol outline (functions/classes/variables) |
-
-### 2.2 Examples
-
-```text
-# Understand file structure
-codelens-file_outline filePath=src/main/app/bootstrap.ts
-→ top-level symbol list
-
-# Jump to definition (pair with filesystem-read)
-codelens-find_definition filePath=src/main/native/types.ts line=414 column=20
-→ symbol name + definition location
-```
-
-### 2.3 Notes
-
-- `find_definition`/`find_references` locate symbols by **line + column**:
-  use `filesystem-read` to find the target position first.
-
-### 2.4 About LSP (lsp-config)
+## 2. Code symbol location (LSP)
 
 Snow App's `lsp` server consumes **external language servers** (rust-analyzer /
 gopls / pyright ...) for semantics-based **diagnostics** (`lsp-diagnostics`)
-and **hover** (`lsp-hover`). `codelens` remains the built-in static analysis
-(symbol navigation); the two are complementary.
+and **hover** (`lsp-hover`).
 
 Configuration is persisted in the app database table `lsp_server_configs`
 (**DB-backed, no config file**):
@@ -115,14 +83,14 @@ lsp-hover items=[{"symbol":"TargetName","workspaceRoot":"/absolute/project"}]
 
 For partial or ambiguous results, address warnings, narrow scope and verify coordinates instead of assuming uniqueness. Preview rename edits with `dryRun=true` first.
 
-### 2.5 LSP preference and troubleshooting (2026-09-26)
+### 2.1 LSP preference and troubleshooting (2026-09-26)
 
 - **Check actual tools first:** main and sub-agent requests use final `ToolSnapshot` data for the LSP section and analysis list. Global/project tool switches, installation/capabilities and sub-agent whitelists all matter. Disabled grep/read/codebase tools are not an unconditional baseline either.
 - **Choose scope deliberately:** `lsp-workspace-symbols` (Workspace Symbol Search), `lsp-workspace-diagnostics` and symbol-only addressing accept optional `workspaceRoot`. Supply an existing absolute local directory, not a relative path, file or SSH path. When omitted, the current project root is used; without a reliable root, supply one explicitly. This does not search every other project or elevate permissions.
 - **Read completeness first:** partial, warnings, unsupportedOperations, incomplete and `partial_symbol_search` indicate coverage gaps. An empty list does not prove a clean project; a single candidate does not establish uniqueness. `requiresExplicitCoordinates` means inspect the declaration and provide `filePath/line/column`; ordinary ranges are not safe rename coordinates.
 - **Running is not ready:** a running badge describes process/session state; initialization, indexing or diagnostic builds may still take time. Refresh stale snapshots. Neither completed prompt prewarming nor instantaneous first calls are guaranteed.
 - **Document/diagnostic freshness:** `ensure_open` compares full text each time, updates send didChange, and workspace requests close deleted documents. Diagnostics no longer read/write persistent result caches; old tables/data are not deleted. Re-diagnosis cost is preferred to stale results after dependency/configuration changes.
-- **Retain fallbacks:** CodeLens remains for uncovered languages/extensions/operations and incomplete scans. It may forward to an authorized available LSP; failure returns marked static analysis (`lspFallback`) without bypassing a sub-agent whitelist.
+- **Fallback path:** uncovered languages/extensions/operations or incomplete scans have no extra static-analysis service; use the visible `grep-search` / `filesystem-read` instead, without bypassing a sub-agent whitelist.
 
 Labels are `全局符号搜索` / `全域符號搜尋` / `Workspace Symbol Search`; the tool ID remains `lsp-workspace-symbols`. <!-- docs-check: allow-cjk -->
 
@@ -140,9 +108,9 @@ Collapsing large UI results reduces rendering work without removing warnings or 
 | `crashed; restarts on next use`                | Session crashed (≥2 consecutive restarts error out)                             | Check installation/configuration and startup backoff; do not loop during cooldown                                                                                                        |
 | Dig deeper                                     | Snow App SQLite system logs                                                     | Use `config-logs-read` for the current conversation (conversationId is runtime-injected), filtered to `module=lsp`; development-mode native `[lsp]` fallback logs remain in the terminal |
 
-**Logging**: LSP fallback/failure reasons are written to Snow App SQLite `app_logs`, the same source as Settings → System Logs. `config-logs-read` is scoped to the current conversation; API request/response bodies are truncated, with sensitive-name fields and exact occurrences of the active API key redacted before persistence. This does not guarantee detection of every possible credential format. Request headers are not logged. Filter by `module=lsp` for prompt injection, codelens forwarding, scope checks and project-root failures. Native stderr remains visible in development terminals. `~/.snow/log/` belongs to Snow CLI and is not accessible through Snow App's config scopes.
+**Logging**: LSP fallback/failure reasons are written to Snow App SQLite `app_logs`, the same source as Settings → System Logs. `config-logs-read` is scoped to the current conversation; API request/response bodies are truncated, with sensitive-name fields and exact occurrences of the active API key redacted before persistence. This does not guarantee detection of every possible credential format. Request headers are not logged. Filter by `module=lsp` for prompt injection, scope checks and project-root failures. Native stderr remains visible in development terminals. `~/.snow/log/` belongs to Snow CLI and is not accessible through Snow App's config scopes.
 
-### 2.6 Batch diagnostics and safe rename
+### 2.2 Batch diagnostics and safe rename
 
 The 11 semantic labels match across both i18n families and all three locales, with unchanged tool IDs; see the [tool reference](../3-reference/2-builtin-tools-reference.md). Semantic work **MUST** use the corresponding visible LSP tool when it supports the target language/operation. Check languages, capabilities and health per tool, not a global language list. Do not loop during startup backoff; explain unmet conditions and use visible fallbacks.
 
@@ -166,7 +134,7 @@ Read-only batches are capped at concurrency 3 and preserve input order. The Rust
 
 ```text
 1. Confirm scope/access → current tools, project root; explicit workspaceRoot if needed
-2. Understand/locate    → visible supported LSP; visible CodeLens / raw reads for gaps
+2. Understand/locate    → visible supported LSP; `grep-search` / raw reads for gaps
 3. Check completeness  → warnings / partial / candidate coordinates; text matches are literal evidence
 4. Formally verify     → project builds/tests, not just empty diagnostics or a running badge
 ```

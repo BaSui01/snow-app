@@ -42,7 +42,6 @@ const LANG_DETECT_TTL: Duration = Duration::from_secs(60);
 pub(crate) struct ProjectLanguageProfile {
     pub langs: Vec<String>,
     pub extensions: HashSet<String>,
-    pub incomplete: bool,
 }
 static LANG_DETECT_CACHE: OnceLock<Mutex<HashMap<String, (ProjectLanguageProfile, Instant)>>> =
     OnceLock::new();
@@ -228,11 +227,7 @@ pub(crate) fn detect_project_languages_cached(project_root: &str) -> ProjectLang
                 .map(str::to_ascii_lowercase)
         })
         .collect();
-    let profile = ProjectLanguageProfile {
-        langs,
-        extensions,
-        incomplete: inventory.incomplete,
-    };
+    let profile = ProjectLanguageProfile { langs, extensions };
     if let Ok(mut guard) = cache.lock() {
         guard.retain(|_, (_, at)| now.duration_since(*at) < LANG_DETECT_TTL);
         guard.insert(key, (profile.clone(), now));

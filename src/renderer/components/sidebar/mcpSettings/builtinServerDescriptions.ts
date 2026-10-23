@@ -12,7 +12,6 @@ const BUILTIN_SERVER_DESCRIPTION_KEYS: Record<string, string> = {
   "builtin:user-interaction": "mcpBuiltinServer.desc.userInteraction",
   "builtin:sub-agents": "mcpBuiltinServer.desc.subAgents",
   "builtin:codebase": "mcpBuiltinServer.desc.codebase",
-  "builtin:codelens": "mcpBuiltinServer.desc.codelens",
   "builtin:app-control": "mcpBuiltinServer.desc.appControl",
   "builtin:config": "mcpBuiltinServer.desc.config",
   "builtin:terminal": "mcpBuiltinServer.desc.terminal",

@@ -6,7 +6,6 @@ pub mod app_logs;
 pub mod bash;
 pub mod browser;
 pub mod codebase;
-pub mod codelens;
 pub mod computer_use;
 pub mod config;
 pub mod filesystem;

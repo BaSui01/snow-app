@@ -1,6 +1,6 @@
 /**
  * search 工具族词条：检索与代码智能类卡片（grep-search / codebase-search /
- * codelens-* / lsp-*）。
+ * codelens 共享标签 / lsp-*）。
  *
  * 键前缀统一 remote.toolCall.search.*，三语必须同键同集合；标签类词条集中在 label.*
  * 供各渲染器共用，避免同一文案重复登记。插值统一 {{name}}。
@@ -85,22 +85,10 @@ export const searchEn: Record<string, string> = {
   "remote.toolCall.search.codebase.progress.relevant":
     "{{relevant}}/{{total}} relevant",
 
-  // ── codelens-* ──
-  "remote.toolCall.search.codelens.op.find_definition": "go-to-def",
-  "remote.toolCall.search.codelens.op.find_references": "find-refs",
-  "remote.toolCall.search.codelens.op.file_outline": "outline",
-  "remote.toolCall.search.codelens.found": "Found",
-  "remote.toolCall.search.codelens.notFound": "Not found",
+  // ── 共享代码符号标签（LSP 卡片复用）──
   "remote.toolCall.search.codelens.referenceCount": "{{count}} ref(s)",
-  "remote.toolCall.search.codelens.symbolCount": "{{count}} symbol(s)",
   "remote.toolCall.search.codelens.exported": "Exported",
-  "remote.toolCall.search.codelens.local": "Local",
-  "remote.toolCall.search.codelens.scopeFile": "File scope",
-  "remote.toolCall.search.codelens.scopeProject": "Project scope",
-  "remote.toolCall.search.codelens.noSymbol":
-    "No symbol found at this position",
   "remote.toolCall.search.codelens.noReferences": "No references found",
-  "remote.toolCall.search.codelens.noSymbols": "No symbols found",
 
   // ── lsp-*：操作名（徽章 lsp.<操作名>） ──
   "remote.toolCall.search.lsp.op.diagnostics": "diagnostics",
@@ -226,21 +214,10 @@ export const searchZhCN: Record<string, string> = {
   "remote.toolCall.search.codebase.progress.relevant":
     "{{relevant}}/{{total}} 条相关",
 
-  // ── codelens-* ──
-  "remote.toolCall.search.codelens.op.find_definition": "转到定义",
-  "remote.toolCall.search.codelens.op.find_references": "查找引用",
-  "remote.toolCall.search.codelens.op.file_outline": "文件大纲",
-  "remote.toolCall.search.codelens.found": "已找到",
-  "remote.toolCall.search.codelens.notFound": "未找到",
+  // ── 共享代码符号标签（LSP 卡片复用）──
   "remote.toolCall.search.codelens.referenceCount": "{{count}} 个引用",
-  "remote.toolCall.search.codelens.symbolCount": "{{count}} 个符号",
   "remote.toolCall.search.codelens.exported": "已导出",
-  "remote.toolCall.search.codelens.local": "局部",
-  "remote.toolCall.search.codelens.scopeFile": "文件范围",
-  "remote.toolCall.search.codelens.scopeProject": "项目范围",
-  "remote.toolCall.search.codelens.noSymbol": "在给定位置未找到符号",
   "remote.toolCall.search.codelens.noReferences": "未找到引用",
-  "remote.toolCall.search.codelens.noSymbols": "未找到符号",
 
   // ── lsp-*：操作名（徽章 lsp.<操作名>） ──
   "remote.toolCall.search.lsp.op.diagnostics": "诊断",
@@ -365,21 +342,10 @@ export const searchZhTW: Record<string, string> = {
   "remote.toolCall.search.codebase.progress.relevant":
     "{{relevant}}/{{total}} 條相關",
 
-  // ── codelens-* ──
-  "remote.toolCall.search.codelens.op.find_definition": "前往定義",
-  "remote.toolCall.search.codelens.op.find_references": "尋找參照",
-  "remote.toolCall.search.codelens.op.file_outline": "檔案大綱",
-  "remote.toolCall.search.codelens.found": "已找到",
-  "remote.toolCall.search.codelens.notFound": "未找到",
+  // ── 共享程式碼符號標籤（LSP 卡片複用）──
   "remote.toolCall.search.codelens.referenceCount": "{{count}} 個參照",
-  "remote.toolCall.search.codelens.symbolCount": "{{count}} 個符號",
   "remote.toolCall.search.codelens.exported": "已匯出",
-  "remote.toolCall.search.codelens.local": "區域",
-  "remote.toolCall.search.codelens.scopeFile": "檔案範圍",
-  "remote.toolCall.search.codelens.scopeProject": "專案範圍",
-  "remote.toolCall.search.codelens.noSymbol": "在指定位置未找到符號",
   "remote.toolCall.search.codelens.noReferences": "未找到參照",
-  "remote.toolCall.search.codelens.noSymbols": "未找到符號",
 
   // ── lsp-*：操作名（徽章 lsp.<操作名>） ──
   "remote.toolCall.search.lsp.op.diagnostics": "診斷",

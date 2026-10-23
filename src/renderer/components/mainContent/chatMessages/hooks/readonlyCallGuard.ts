@@ -379,8 +379,7 @@ export class ReadonlyCallGuard {
       if (
         snapshot.toolName === "filesystem-read" ||
         snapshot.toolName === "grep-search" ||
-        snapshot.toolName === "codebase-search" ||
-        snapshot.toolName.startsWith("codelens-")
+        snapshot.toolName === "codebase-search"
       ) {
         this.completedCalls.delete(key);
       }
@@ -444,8 +443,7 @@ export class ReadonlyCallGuard {
 
       if (
         toolCall.name === "grep-search" ||
-        toolCall.name === "codebase-search" ||
-        toolCall.name.startsWith("codelens-")
+        toolCall.name === "codebase-search"
       ) {
         const repoPath =
           prior.gitSnapshot?.repoPath ||
@@ -527,8 +525,7 @@ export class ReadonlyCallGuard {
         }
       } else if (
         toolCall.name === "grep-search" ||
-        toolCall.name === "codebase-search" ||
-        toolCall.name.startsWith("codelens-")
+        toolCall.name === "codebase-search"
       ) {
         const repoPath = this.workspacePath;
         snapshot.targetPath = repoPath;

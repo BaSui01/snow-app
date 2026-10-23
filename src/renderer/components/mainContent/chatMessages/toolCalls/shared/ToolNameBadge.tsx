@@ -150,9 +150,7 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   if (lower.includes("imagegen") || lower.includes("generate-image"))
     return "image";
   if (lower.includes("git")) return "git";
-  if (lower.includes("codelens") || lower.startsWith("lsp-")) {
-    return "lens";
-  }
+  if (lower.startsWith("lsp-")) return "lens";
   if (
     lower.includes("outline") ||
     lower.includes("tree") ||

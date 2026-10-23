@@ -19,7 +19,6 @@ import {
   SubAgentListToolCall,
   SubAgentMessageToolCall,
   CodebaseToolCall,
-  CodeLensToolCall,
   LspToolCall,
   WebSearchToolCall,
   ImageGenToolCall,
@@ -156,14 +155,6 @@ const renderToolCall = ({
 
   if (toolCall.name === "codebase-search") {
     return <CodebaseToolCall toolCall={toolCall} />;
-  }
-
-  if (
-    toolCall.name === "codelens-find_definition" ||
-    toolCall.name === "codelens-find_references" ||
-    toolCall.name === "codelens-file_outline"
-  ) {
-    return <CodeLensToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name.startsWith("lsp-")) {

@@ -190,13 +190,13 @@ flowchart LR
     gitipc --> remotegit["SSH remoteGit"]
     workspace["Workspace source files"] --> index["Rust codebase indexing"]
     index --> chunks["Vector chunks and embed sessions"]
-    chunks --> search["codebase and codelens MCP tools"]
+    chunks --> search["codebase MCP tools"]
     search --> agent["Agent context"]
 ```
 
 **Maintenance**: Git UI operations and model tool authorization are separate entry points. Codebase tools require a valid project, project enablement, and existing chunks; hide them before indexing instead of advertising an empty capability.
 
-**Source anchors**: `src/main/ipc/handlers/gitHandlers.ts`, `src/main/ssh/remoteGit.ts`, `native/src/exports/git.rs`, `native/src/exports/codebase.rs`, `native/src/mcp/servers/codebase.rs`, `native/src/mcp/servers/codelens/`, `native/src/storage/services/codebase_embed_sessions.rs`.
+**Source anchors**: `src/main/ipc/handlers/gitHandlers.ts`, `src/main/ssh/remoteGit.ts`, `native/src/exports/git.rs`, `native/src/exports/codebase.rs`, `native/src/mcp/servers/codebase.rs`, `native/src/storage/services/codebase_embed_sessions.rs`.
 
 ## 9. Git Worktrees and Session Execution Isolation
 
@@ -278,7 +278,7 @@ flowchart LR
     DiagTools --> AgentContext["Model context feedback & verification"]
 ```
 
-**Maintenance**: LSP tools dynamically register based on server readiness and language coverage. If an LSP server enters backoff or is uninstalled, requests fall back to CodeLens or grep. Diagnostic tools require `filePaths` array arguments.
+**Maintenance**: LSP tools dynamically register based on server readiness and language coverage. If an LSP server enters backoff or is uninstalled, the corresponding `lsp-*` tools are not exposed; use literal search instead. Diagnostic tools require `filePaths` array arguments.
 
 **Source anchors**: `native/src/mcp/servers/lsp/`, `native/src/mcp/servers/lsp/client.rs`, `native/src/mcp/servers/lsp/prompt_context.rs`, `src/renderer/components/mainContent/chatInput/LspStatusBadge.tsx`.
 

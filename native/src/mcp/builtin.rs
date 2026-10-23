@@ -9,7 +9,6 @@ use super::servers::app_control::AppControlService;
 use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
-use super::servers::codelens::CodeLensService;
 use super::servers::computer_use::ComputerUseService;
 use super::servers::config::ConfigService;
 use super::servers::filesystem::FilesystemService;
@@ -43,7 +42,6 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(UserInteractionService::new()),
         Arc::new(SubAgentsService::new()),
         Arc::new(CodebaseService::new()),
-        Arc::new(CodeLensService::new()),
         Arc::new(AppControlService::new()),
         Arc::new(ConfigService::new()),
         Arc::new(TerminalService::new()),
@@ -97,9 +95,6 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "grep-search",
     "websearch-websearch-search",
     "websearch-websearch-fetch",
-    "codelens-find_definition",
-    "codelens-find_references",
-    "codelens-file_outline",
     "config-get",
     "config-list",
     "config-logs-read",

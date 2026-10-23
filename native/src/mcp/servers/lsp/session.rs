@@ -20,7 +20,7 @@ use crate::utils::process_tree::ProcessTreeGuard;
 
 use std::sync::Arc;
 
-/// 最大分析文件大小（与 codelens MAX_FILE_SIZE 一致，§9）。
+/// 最大分析文件大小（§9）。
 pub const MAX_FILE_SIZE: u64 = 512 * 1024;
 
 /// 请求超时（§7.3）。

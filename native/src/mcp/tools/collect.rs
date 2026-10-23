@@ -113,26 +113,6 @@ async fn collect_mcp_tools(
     .await?;
 
     let builtin_tools = get_builtin_tools();
-    // Only suppress static fallbacks if every replacement operation survives
-    // project/global switches AND this request's sub-agent whitelist.
-    let lsp_replacements_available =
-        ["lsp-goto", "lsp-references", "lsp-symbols"]
-            .iter()
-            .all(|name| {
-                builtin_tools.iter().any(|tool| {
-                    tool.server_id == "lsp"
-                        && tool.full_name() == *name
-                        && lsp_available_tools.contains(&tool.full_name())
-                        && allowed_names.is_none_or(|names| names.contains(*name))
-                        && tool_visible(
-                            tool,
-                            global_scope.as_ref(),
-                            scope.as_ref(),
-                            project_override,
-                        )
-                })
-            });
-    let codelens_hidden = lsp_replacements_available && lsp_exposure.codelens_covered;
 
     let mut tools = builtin_tools
         .into_iter()
@@ -176,13 +156,6 @@ async fn collect_mcp_tools(
             // default-disabled server gate (project opt-in) is applied by
             // tool_is_enabled below.
             if tool.server_id == "lsp" && !lsp_available_tools.contains(&tool.full_name()) {
-                return false;
-            }
-            // codelens 的暴露（2026-09-25 修订）：仅当项目内**全部**语言都有
-            // 可用 LSP server 时隐藏（语义分析更优）；存在 LSP 覆盖不到的
-            // 语言时保留 codelens，避免那些语言失去静态分析兜底。判定见上方
-            // `codelens_hidden` 的预计算注释。
-            if tool.server_id == "codelens" && codelens_hidden {
                 return false;
             }
             tool_visible(tool, global_scope.as_ref(), scope.as_ref(), project_override)
@@ -419,8 +392,6 @@ async fn diagnose_unavailable_tools(
                     .unwrap_or_default();
                 if lite_mode && LITE_MODE_DISABLED_SERVER_IDS.contains(&server_id) {
                     "lite_mode"
-                } else if server_id == "codelens" {
-                    "superseded"
                 } else {
                     "not_ready"
                 }
@@ -656,8 +627,6 @@ mod visibility_tests {
         let tools = vec!["grep-search".to_string(), "lsp-hover".to_string()];
         assert!(request_allows_tool(Some(&tools), "lsp-hover"));
         assert!(!request_allows_tool(Some(&tools), "lsp-goto"));
-        let codelens_only = vec!["codelens-find_definition".to_string()];
-        assert!(!request_allows_tool(Some(&codelens_only), "lsp-goto"));
     }
 }
 
@@ -681,7 +650,6 @@ pub(crate) fn builtin_server_name(server_id: &str) -> &str {
         "app-control" => "App Control",
         "sub-agents" => "Sub-agents",
         "codebase" => "Codebase",
-        "codelens" => "CodeLens",
         "computer-use" => "Computer Use",
         "terminal" => "Terminal Control",
         "config" => "Config",

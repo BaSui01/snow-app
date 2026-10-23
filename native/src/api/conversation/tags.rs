@@ -4,7 +4,9 @@ use std::path::Path;
 use base64::Engine;
 use napi::bindgen_prelude::*;
 
-use super::images::{parse_image_tag_value, try_extract_svg_source, ChatImage};
+use super::images::{
+    media_type_for_upload_path, parse_image_tag_value, try_extract_svg_source, ChatImage,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct ParsedChatMessageContent {
@@ -136,12 +138,8 @@ pub fn parse_chat_message_content(
             // image from base64. Inline the raw SVG source code instead.
             parsed.text.push_str(&svg_text);
         } else if let Some(image) = parse_image_tag_value(value, database_path, true)? {
-            // Insert an inline placeholder so the model can see the image's
-            // position and order within the message text. The 1-based index
-            // matches the order images appear in the `parsed.images` vector,
-            // which is also the order they are emitted as multimodal parts.
             let index = parsed.images.len() + 1;
-            parsed.text.push_str(&format!("[Image #{index}]"));
+            parsed.text.push_str(&image_placeholder(index, &image, database_path));
             parsed.images.push(image);
         } else {
             parsed.text.push_str(&remaining[tag_start..full_tag_end]);
@@ -153,6 +151,24 @@ pub fn parse_chat_message_content(
     parsed.text.push_str(remaining);
     parsed.text = parsed.text.trim().to_string();
     Ok(parsed)
+}
+
+/// 图片占位符：已落盘图片带绝对路径与 MIME，未落盘的内联图片只给序号。
+fn image_placeholder(index: usize, image: &ChatImage, database_path: &Path) -> String {
+    let Some(source) = image.source.as_deref() else {
+        return format!("[Image #{index}]");
+    };
+    let absolute = database_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(source)
+        .to_string_lossy()
+        .replace('\\', "/");
+    // 落盘扩展名来自内容嗅探，请求副本可能已降采样转码，按原图扩展名还原 MIME。
+    let media_type = media_type_for_upload_path(&absolute)
+        .map(str::to_string)
+        .unwrap_or_else(|| image.media_type.clone());
+    format!("[Image #{index} {absolute} ({media_type})]")
 }
 
 /// 返回 remaining 中最先出现的任一标签前缀的位置。

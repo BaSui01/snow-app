@@ -206,10 +206,6 @@ pub(super) fn force_worktree_execution_args(
                 "sourceFilePath is required for filesystem-copy".to_string(),
             ));
         }
-    } else if tool_full_name.starts_with("codelens-") {
-        if let Some(requested) = args.get("filePath").and_then(Value::as_str) {
-            args["filePath"] = Value::String(resolve_path_inside_worktree(root, requested)?);
-        }
     } else if tool_full_name.starts_with("lsp-") {
         if matches!(
             tool_full_name,

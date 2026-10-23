@@ -12,7 +12,6 @@ use super::super::servers::app_control::{
 use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChunk};
 use super::super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::super::servers::codebase::CodebaseService;
-use super::super::servers::codelens::CodeLensService;
 use super::super::servers::config::ConfigService;
 use super::super::servers::filesystem::FilesystemService;
 use super::super::servers::grep::GrepService;
@@ -90,7 +89,6 @@ pub async fn call_mcp_tool(
     let tool_full_name = sanitize_tool_full_name(&tool_full_name);
     let is_sub_agent_call = sub_agent_allowed_tools.is_some();
     let requires_workspace_context = tool_full_name.starts_with("terminal-")
-        || tool_full_name.starts_with("codelens-")
         || tool_full_name.starts_with("lsp-")
         || matches!(
             tool_full_name.as_str(),
@@ -263,7 +261,7 @@ pub async fn call_mcp_tool(
     let (args, uses_remote_workspace) =
         prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
 
-    // 本地（非 SSH）filesystem / grep / codelens 工具：将相对路径（如 "."）
+    // 本地（非 SSH）filesystem / grep 工具：将相对路径（如 "."）
     // 解析到当前项目根目录，避免其被解析为 Electron 进程的工作目录。
     let mut args = if uses_remote_workspace {
         args
@@ -468,21 +466,6 @@ pub async fn call_mcp_tool(
             sub_agent_allowed_tools.as_deref(),
         )
         .await
-    } else if uses_remote_workspace && tool_full_name.starts_with("codelens-") {
-        let codelens_tool = tool_full_name
-            .strip_prefix("codelens-")
-            .expect("codelens prefix checked above");
-        let (tool_execution_id, cancel_token) = register_remote_tool_execution(&on_chunk);
-        let codelens_result = CodeLensService::new()
-            .execute_remote(
-                codelens_tool,
-                &args,
-                &on_remote_workspace_command,
-                Some(&cancel_token),
-            )
-            .await;
-        crate::api::cancel::unregister_tool_execution(&tool_execution_id);
-        codelens_result?
     } else if uses_remote_workspace {
         let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
             Error::new(
@@ -618,84 +601,6 @@ pub async fn call_mcp_tool(
         CodebaseService::new()
             .execute_search(&args, project_id.as_deref(), &on_chunk)
             .await?
-    } else if let Some(codelens_tool) = tool_full_name.strip_prefix("codelens-") {
-        // LSP 优先（2026-08-15）：项目启用了匹配文件语言的 LSP 服务器且
-        // 可用时，优先通过外部 LSP 语义分析执行（结果归一化为 codelens
-        // 输出格式，附加 "engine": "lsp" 标记）；LSP 不可用/失败时回退到
-        // tree-sitter 静态分析——LSP 只是更优路径，不应阻断代码定位。
-        let lsp_service = LspService::new();
-        let replacement = match codelens_tool {
-            "find_definition" => Some("lsp-goto"),
-            "find_references" => Some("lsp-references"),
-            "file_outline" => Some("lsp-symbols"),
-            _ => None,
-        };
-        // A CodeLens-only sub-agent must not bypass its LSP whitelist through
-        // internal forwarding. Project/global scope is also checked by LSP.
-        let lsp_result = if replacement.is_some_and(|name| {
-            super::collect::request_allows_tool(sub_agent_allowed_tools.as_deref(), name)
-        }) {
-            lsp_service
-                .execute_codelens_preferred(codelens_tool, &args, project_id.as_deref())
-                .await?
-        } else {
-            None
-        };
-        if worktree_binding.is_none() {
-            if let Some(lsp_result) = lsp_result {
-                lsp_result
-            } else {
-                let service = CodeLensService::new();
-                let mut fallback = match codelens_tool {
-                    "find_definition" => {
-                        service
-                            .execute_find_definition(&args, project_id.as_deref())
-                            .await?
-                    }
-                    "find_references" => {
-                        service
-                            .execute_find_references(&args, project_id.as_deref())
-                            .await?
-                    }
-                    "file_outline" => service.execute_file_outline(&args).await?,
-                    _ => {
-                        return Err(Error::new(
-                            Status::GenericFailure,
-                            format!(
-                                "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
-                            ),
-                        ));
-                    }
-                };
-                if let serde_json::Value::Object(map) = &mut fallback {
-                    map.insert("lspFallback".to_string(), serde_json::json!(true));
-                }
-                fallback
-            }
-        } else {
-            let service = CodeLensService::new();
-            match codelens_tool {
-                "find_definition" => {
-                    service
-                        .execute_find_definition(&args, project_id.as_deref())
-                        .await?
-                }
-                "find_references" => {
-                    service
-                        .execute_find_references(&args, project_id.as_deref())
-                        .await?
-                }
-                "file_outline" => service.execute_file_outline(&args).await?,
-                _ => {
-                    return Err(Error::new(
-                        Status::GenericFailure,
-                        format!(
-                            "Unknown codelens tool: \"{codelens_tool}\". Available tools: [find_definition, find_references, file_outline]"
-                        ),
-                    ));
-                }
-            }
-        }
     } else if let Some(lsp_tool) = tool_full_name.strip_prefix("lsp-") {
         let service = LspService::new();
         service

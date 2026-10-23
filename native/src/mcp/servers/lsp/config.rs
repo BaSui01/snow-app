@@ -18,8 +18,6 @@ pub struct LspToolExposure {
     pub tools: Vec<String>,
     /// Per-tool applicable languages; never advertise every server on every tool.
     pub tool_summaries: HashMap<String, String>,
-    /// Same discovery/health snapshot used by collect's fallback decision.
-    pub codelens_covered: bool,
 }
 
 /// 探测结果 TTL 缓存：`collect_all_mcp_tools` 每轮对话都会执行（工具列表
@@ -81,19 +79,10 @@ pub(crate) async fn tool_exposure_for_workspace(
         return Ok(LspToolExposure::default());
     };
     let configs = load_configs(project_id).await?;
-    let root_for_scan = root.clone();
-    let profile = tokio::task::spawn_blocking(move || {
-        super::detect::detect_project_languages_cached(&root_for_scan.to_string_lossy())
-    })
-    .await
-    .map_err(|error| Error::from_reason(format!("LSP discovery failed: {error}")))?;
     let manager = super::manager::ServerManager::instance();
     let mut exposure = LspToolExposure::default();
     let mut summaries: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
         Default::default();
-    let mut covered_langs = std::collections::HashSet::new();
-    let mut covered_extensions = std::collections::HashSet::new();
-    let mut coverage_complete = !profile.incomplete;
 
     for config in configs
         .iter()
@@ -106,7 +95,6 @@ pub(crate) async fn tool_exposure_for_workspace(
         })
         .await
         .map_err(|error| Error::from_reason(format!("LSP stack discovery failed: {error}")))?;
-        coverage_complete &= !discovery.incomplete;
         let mut roots = discovery.roots;
         if roots.is_empty()
             && super::detect::markers_for_lang(&config.lang).is_empty()
@@ -120,7 +108,6 @@ pub(crate) async fn tool_exposure_for_workspace(
         let installed = is_command_installed_cached(&config.command);
         // govulncheck is a separate executable, not a gopls capability.
         let vulncheck_installed = config.lang == "go" && is_command_installed_cached("govulncheck");
-        let mut all_roots_covered = true;
         for stack_root in roots {
             let negotiated = if installed {
                 manager.tool_availability(config, &stack_root).await
@@ -129,9 +116,6 @@ pub(crate) async fn tool_exposure_for_workspace(
             };
             let available =
                 effective_server_tools(&config.lang, negotiated.as_deref(), vulncheck_installed);
-            all_roots_covered &= ["goto", "references", "symbols"]
-                .iter()
-                .all(|name| available.iter().any(|tool| tool == name));
             let goto_kinds = std::iter::once("definition")
                 .chain(
                     ["type-definition", "implementation"]
@@ -174,15 +158,6 @@ pub(crate) async fn tool_exposure_for_workspace(
                 ));
             }
         }
-        if all_roots_covered {
-            covered_langs.insert(config.lang.as_str());
-            covered_extensions.extend(
-                config
-                    .file_extensions
-                    .iter()
-                    .map(|ext| ext.trim_start_matches('.').to_ascii_lowercase()),
-            );
-        }
     }
     exposure.tool_summaries = summaries
         .into_iter()
@@ -196,8 +171,6 @@ pub(crate) async fn tool_exposure_for_workspace(
             )
         })
         .collect();
-    exposure.codelens_covered = coverage_complete
-        && detected_coverage_complete(&profile, &covered_langs, &covered_extensions);
     Ok(exposure)
 }
 
@@ -222,25 +195,6 @@ fn effective_server_tools(
     tools.sort();
     tools.dedup();
     tools
-}
-
-/// Deliberately conservative: an incomplete scan cannot justify hiding a fallback.
-fn detected_coverage_complete(
-    profile: &super::detect::ProjectLanguageProfile,
-    covered_langs: &std::collections::HashSet<&str>,
-    covered_extensions: &std::collections::HashSet<String>,
-) -> bool {
-    !profile.incomplete
-        && !profile.langs.is_empty()
-        && !profile.extensions.is_empty()
-        && profile
-            .langs
-            .iter()
-            .all(|lang| covered_langs.contains(lang.as_str()))
-        && profile
-            .extensions
-            .iter()
-            .all(|ext| covered_extensions.contains(ext))
 }
 
 /// Missing/invalid default roots fail closed. An explicit root is validated
@@ -338,7 +292,6 @@ fn parse_record(record: crate::storage::LspServerConfigRecord) -> napi::Result<S
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
-    use std::collections::HashSet;
 
     #[tokio::test]
     async fn unknown_root_has_no_cwd_fallback() {
@@ -397,41 +350,5 @@ mod coverage_tests {
         ] {
             assert!(validate_analysis_root(Path::new(root)).is_err(), "{root}");
         }
-    }
-
-    #[test]
-    fn uncovered_extensions_and_incomplete_scans_keep_fallbacks() {
-        let mut profile = super::super::detect::ProjectLanguageProfile {
-            langs: vec!["typescript".to_string()],
-            extensions: ["ts".to_string()].into_iter().collect(),
-            incomplete: false,
-        };
-        let langs = HashSet::from(["typescript"]);
-        let extensions = HashSet::from(["ts".to_string()]);
-        assert!(detected_coverage_complete(&profile, &langs, &extensions));
-        profile.extensions.insert("py".to_string());
-        assert!(!detected_coverage_complete(&profile, &langs, &extensions));
-        profile.extensions.remove("py");
-        profile.incomplete = true;
-        assert!(!detected_coverage_complete(&profile, &langs, &extensions));
-    }
-
-    #[test]
-    fn empty_or_uncovered_language_profiles_keep_fallbacks() {
-        assert!(!detected_coverage_complete(
-            &Default::default(),
-            &HashSet::new(),
-            &HashSet::new()
-        ));
-        let profile = super::super::detect::ProjectLanguageProfile {
-            langs: vec!["rust".to_string()],
-            extensions: ["rs".to_string()].into_iter().collect(),
-            incomplete: false,
-        };
-        assert!(!detected_coverage_complete(
-            &profile,
-            &HashSet::from(["typescript"]),
-            &HashSet::from(["rs".to_string()])
-        ));
     }
 }

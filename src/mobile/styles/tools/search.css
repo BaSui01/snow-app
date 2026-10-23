@@ -1,5 +1,5 @@
 /*
- * search 族（grep / codebase / codelens / lsp）卡片样式。
+ * search 族（grep / codebase / lsp）卡片样式。
  *
  * DOM 契约见 src/mobile/tools/search.ts 顶部注释；框架通用类（.tc-section /
  * .tc-kv / .tc-badge / .tc-pre / .tc-fold / .tc-more）来自 styles/tools/base.css，
@@ -10,7 +10,6 @@
    命中行 / 路径 / 匹配模式都可能是不含空格的长 token，统一允许任意断点换行。 */
 details.tool.tcn.tc-search-grep .tc-body,
 details.tool.tcn.tc-search-codebase .tc-body,
-details.tool.tcn.tc-search-codelens .tc-body,
 details.tool.tcn.tc-search-lsp .tc-body {
   overflow-wrap: anywhere;
 }

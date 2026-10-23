@@ -248,7 +248,7 @@ config-set scope=subAgents key=agent_project_reviewer projectId=<projectId> valu
   "toolsJson": [
     "filesystem-read",
     "grep-search",
-    "codelens-file_outline"
+    "lsp-symbols"
   ],
   "configProfile": "",
   "model": ""

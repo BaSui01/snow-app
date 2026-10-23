@@ -162,7 +162,7 @@ fn location_link_to_json(link: &LocationLink) -> Value {
     })
 }
 
-/// goto definition 响应 → 工具输出 JSON（对齐 codelens-find_definition 输出）。
+/// goto definition 响应 → 工具输出 JSON。
 ///
 /// LSP 不返回符号名/类型：name 由调用方从请求位置行提取后传入。
 pub fn definition_to_value(

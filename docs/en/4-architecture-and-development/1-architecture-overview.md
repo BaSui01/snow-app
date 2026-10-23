@@ -115,7 +115,7 @@ Rust `api/conversation/stream.rs` dispatches by `request_method` to four protoco
 
 The direct batch in `native/src/storage/database.rs::create_schema` creates 29 tables, followed by `image_library::ensure_image_library_table`; the current core business schema is therefore **30 tables including `image_library`**. Codebase indexing also creates auxiliary or per-project dynamic tables. `storage/services/` currently contains **43 service implementation modules plus `mod.rs`**.
 
-The **15 fixed-order built-in MCP services** are filesystem, bash, todo, grep, websearch, browser, user_interaction, sub_agents, codebase, codelens, app_control, config, terminal, imagegen, and memory. Their order stabilizes the model tool array and prompt cache. The Skills tool is injected dynamically by `SkillsService`; `remote_workspace.rs` supports SSH and is not one of the 15 services.
+The **14 fixed-order built-in MCP services** are filesystem, bash, todo, grep, websearch, browser, user_interaction, sub_agents, codebase, app_control, config, terminal, imagegen, and memory. Their order stabilizes the model tool array and prompt cache. The Skills tool is injected dynamically by `SkillsService`; `remote_workspace.rs` supports SSH and is not one of the 14 services.
 
 ## 6. Startup Flow
 

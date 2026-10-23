@@ -2,10 +2,10 @@ import { Bot, CircleAlert, Loader2 } from "lucide-react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
+import { useChatConversationContext } from "../../mainContent/chatMessages";
 
 type SubAgentListPanelProps = {
   conversations: ChatConversationRecord[];
-  activeConversationId?: string;
   /** 待用户确认的子代理会话 id 集合（提问或工具授权） */
   attentionRequiredConversationIds?: Set<string>;
   onSelect?: (conversationId: string) => void;
@@ -46,11 +46,13 @@ function renderStatusIcon(
  */
 export function SubAgentListPanel({
   conversations,
-  activeConversationId,
   attentionRequiredConversationIds,
   onSelect,
 }: SubAgentListPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  // 活动会话 id 直接从会话上下文读取（而不是由每个会话项透传）：它变化时只让
+  // 这些正在渲染的面板重渲染，不会波及整张侧边栏列表的每一行。
+  const { activeConversationId } = useChatConversationContext();
 
   const handleItemClick = (
     event: React.MouseEvent,

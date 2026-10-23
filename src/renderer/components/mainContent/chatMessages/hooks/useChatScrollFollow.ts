@@ -694,26 +694,41 @@ export const useChatScrollFollow = ({
     const resizeObserver = new ResizeObserver(keepAtBottomSync);
 
     resizeObserver.observe(container);
-    const observeCurrentChildren = (): void => {
-      for (const child of observedChildren) {
-        if (!container.contains(child)) {
-          resizeObserver.unobserve(child);
-          observedChildren.delete(child);
+    // 只处理本批 DOM 变动涉及的节点：旧实现每次变动都遍历容器的全部子元素
+    // （会话切换/翻页时可达数百个），在切换帧与流式帧上都是纯粹的额外开销。
+    const observeChildNodes = (nodes: NodeList): void => {
+      for (const node of Array.from(nodes)) {
+        if (!(node instanceof Element) || observedChildren.has(node)) {
+          continue;
         }
+        if (!container.contains(node)) {
+          continue;
+        }
+        observedChildren.add(node);
+        resizeObserver.observe(node);
       }
-
-      for (const child of Array.from(container.children)) {
-        if (!observedChildren.has(child)) {
-          observedChildren.add(child);
-          resizeObserver.observe(child);
+    };
+    const unobserveChildNodes = (nodes: NodeList): void => {
+      for (const node of Array.from(nodes)) {
+        if (!(node instanceof Element) || !observedChildren.has(node)) {
+          continue;
         }
+        observedChildren.delete(node);
+        resizeObserver.unobserve(node);
       }
     };
 
-    observeCurrentChildren();
+    observeChildNodes(container.childNodes);
 
-    const mutationObserver = new MutationObserver(() => {
-      observeCurrentChildren();
+    const mutationObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.removedNodes.length > 0) {
+          unobserveChildNodes(record.removedNodes);
+        }
+        if (record.addedNodes.length > 0) {
+          observeChildNodes(record.addedNodes);
+        }
+      }
       scheduleResizeCheck();
     });
     mutationObserver.observe(container, { childList: true });

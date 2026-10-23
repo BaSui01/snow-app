@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import type { WorkspaceDirectoryRecord } from "../../preload";
-import { useChatConversationContext } from "../components/mainContent/chatMessages";
+import {
+  useChatConversationContext,
+  useChatConversationSessions,
+} from "../components/mainContent/chatMessages";
 import { useTodoPanel } from "../components/mainContent/chatMessages/hooks/useTodoPanel";
 import { isPendingSessionKey } from "../components/mainContent/chatMessages/utils/conversationTypes";
 import {
@@ -24,6 +27,8 @@ export const PluginRuntimeBridge = ({
   activeDirectory,
 }: PluginRuntimeBridgeProps): null => {
   const conversation = useChatConversationContext();
+  // 会话内存态表每个流式帧都会更换引用：单独订阅（只在本组件内使用）。
+  const sessions = useChatConversationSessions();
   const todoPanel = useTodoPanel(conversation.messages);
 
   // 独立面板窗口没有本组件，插件面板在那边读取的会话 / 项目状态经主进程镜像获得。
@@ -133,7 +138,7 @@ export const PluginRuntimeBridge = ({
 
   const streamingSessions = useMemo<RuntimeStreamingSession[]>(() => {
     const list: RuntimeStreamingSession[] = [];
-    for (const [sessionKey, session] of Object.entries(conversation.sessions)) {
+    for (const [sessionKey, session] of Object.entries(sessions)) {
       if (!session.isStreaming && session.streamStartedAt <= 0) {
         continue;
       }
@@ -157,7 +162,7 @@ export const PluginRuntimeBridge = ({
     }
     list.sort((a, b) => b.startedAt - a.startedAt);
     return list;
-  }, [conversation.sessions]);
+  }, [sessions]);
 
   const signatureRef = useRef("");
   const latestSnapshotRef = useRef({ payload, streamingSessions });

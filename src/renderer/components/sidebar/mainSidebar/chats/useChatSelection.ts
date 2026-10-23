@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import { isPendingSessionKey } from "../../../mainContent/chatMessages/utils/conversationTypes";
@@ -18,10 +18,10 @@ export function useChatSelection({
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
-  const enterMultiSelect = (): void => {
+  const enterMultiSelect = useCallback((): void => {
     setSelectedIds(new Set());
     setIsMultiSelectMode(true);
-  };
+  }, []);
 
   const exitMultiSelect = (): void => {
     setIsMultiSelectMode(false);
@@ -33,21 +33,24 @@ export function useChatSelection({
     setIsMultiSelectMode(false);
   };
 
-  const handleToggleSelect = (conversationId: string): void => {
-    // 运行中的会话不允许进入多选集合
-    if (runningConversationIds.has(conversationId)) {
-      return;
-    }
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(conversationId)) {
-        next.delete(conversationId);
-      } else {
-        next.add(conversationId);
+  const handleToggleSelect = useCallback(
+    (conversationId: string): void => {
+      // 运行中的会话不允许进入多选集合
+      if (runningConversationIds.has(conversationId)) {
+        return;
       }
-      return next;
-    });
-  };
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(conversationId)) {
+          next.delete(conversationId);
+        } else {
+          next.add(conversationId);
+        }
+        return next;
+      });
+    },
+    [runningConversationIds],
+  );
 
   /** 可参与多选的会话：排除 PENDING 占位会话与运行中会话（流式/待确认/含待确认子代理） */
   const isMultiSelectable = (conv: ChatConversationRecord): boolean =>

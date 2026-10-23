@@ -5,7 +5,10 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../preload";
 import type { MainContentView } from "./mainContent/types";
-import { useChatConversationContext } from "./mainContent/chatMessages";
+import {
+  useChatConversationContext,
+  useChatConversationSessions,
+} from "./mainContent/chatMessages";
 import { parseTodoResult } from "./mainContent/chatMessages/hooks/useTodoPanel";
 import {
   collectConversationFileChanges,
@@ -533,11 +536,15 @@ export const RemoteControlBridge = ({
   onSelectMainView,
 }: RemoteControlBridgeProps): null => {
   const conversation = useChatConversationContext();
+  // 会话内存态表每个流式帧都会更换引用：单独订阅，并与 conversation 一起放进
+  // 状态镜像，供异步的远控快照 / 翻页逻辑读取最新值。
+  const sessions = useChatConversationSessions();
   const stateRef = useRef({
     activeDirectory,
     onActiveDirectoryChange,
     onSelectMainView,
     conversation,
+    sessions,
   });
 
   stateRef.current = {
@@ -545,6 +552,7 @@ export const RemoteControlBridge = ({
     onActiveDirectoryChange,
     onSelectMainView,
     conversation,
+    sessions,
   };
 
   // 远控 Phase A：读取输入区快照并做会话绑定二次校验。
@@ -679,7 +687,7 @@ export const RemoteControlBridge = ({
     const conversation = stateRef.current.conversation;
     const activeId = conversation.activeConversationId;
     return activeId
-      ? (conversation.sessions[activeId]?.messages.length ?? 0)
+      ? (stateRef.current.sessions[activeId]?.messages.length ?? 0)
       : 0;
   };
 
@@ -700,7 +708,7 @@ export const RemoteControlBridge = ({
           const conversation = stateRef.current.conversation;
           const activeId = conversation.activeConversationId;
           return Boolean(
-            activeId && conversation.sessions[activeId]?.hasMoreMessages,
+            activeId && stateRef.current.sessions[activeId]?.hasMoreMessages,
           );
         },
         getLoadedCount: activeMessageCount,
@@ -784,7 +792,7 @@ export const RemoteControlBridge = ({
     return {
       streamingIds: current.streamingConversationIds,
       pausedIds: new Set(
-        Object.entries(current.sessions)
+        Object.entries(stateRef.current.sessions)
           .filter(([, session]) => session.isPaused)
           .map(([conversationId]) => conversationId),
       ),
@@ -1900,8 +1908,7 @@ export const RemoteControlBridge = ({
           // 也无法触发加载。
           hasOlderMessages: activeConversationId
             ? Boolean(
-                current.conversation.sessions[activeConversationId]
-                  ?.hasMoreMessages,
+                current.sessions[activeConversationId]?.hasMoreMessages,
               ) || conversationMessages.length > MAX_MESSAGES
             : false,
           // 回滚入口可见性：与桌面 canRollback 同源（子代理 / 节点会话不可回滚，
@@ -1945,7 +1952,7 @@ export const RemoteControlBridge = ({
         }
         const anchor =
           typeof beforeMessageId === "string" ? beforeMessageId.trim() : "";
-        const session = current.conversation.sessions[conversationId];
+        const session = current.sessions[conversationId];
         // 1. 锚点命中桌面会话内存：本进程内产生的消息只活在内存里（assistant
         //    / tool 消息的 id 是前端临时串，数据库没有对应行，按 id 无法翻页），
         //    直接从内存向前切片——翻页内容与桌面所见完全一致，也不受数据库

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import { isChatDrag, readChatDragData } from "../chatDrag";
@@ -131,33 +131,34 @@ export function useChatsSectionInteractions({
       });
   };
 
-  const handleSelectConversationFromList = (
-    conversation: ChatConversationRecord,
-  ): void => {
-    void handleSelectConversation(
-      conversation.conversationId,
-      conversation.summary || conversation.title,
-      {
-        inputTokens: conversation.inputTokens,
-        outputTokens: conversation.outputTokens,
-        cacheCreationInputTokens: conversation.cacheCreationInputTokens,
-        cacheReadInputTokens: conversation.cacheReadInputTokens,
-      },
-      conversation.directoryId,
-    );
-  };
+  const handleSelectConversationFromList = useCallback(
+    (conversation: ChatConversationRecord): void => {
+      void handleSelectConversation(
+        conversation.conversationId,
+        conversation.summary || conversation.title,
+        {
+          inputTokens: conversation.inputTokens,
+          outputTokens: conversation.outputTokens,
+          cacheCreationInputTokens: conversation.cacheCreationInputTokens,
+          cacheReadInputTokens: conversation.cacheReadInputTokens,
+        },
+        conversation.directoryId,
+      );
+    },
+    [handleSelectConversation],
+  );
 
-  const handleSelectChildConversation = (
-    conversationId: string,
-    childDirectoryId: string,
-  ): void => {
-    void handleSelectConversation(
-      conversationId,
-      undefined,
-      undefined,
-      childDirectoryId,
-    );
-  };
+  const handleSelectChildConversation = useCallback(
+    (conversationId: string, childDirectoryId: string): void => {
+      void handleSelectConversation(
+        conversationId,
+        undefined,
+        undefined,
+        childDirectoryId,
+      );
+    },
+    [handleSelectConversation],
+  );
 
   return {
     handleOpenCrossProjectNotification,

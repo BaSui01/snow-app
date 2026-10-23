@@ -134,7 +134,9 @@ const ChatContentBody = ({
     conversationListVersion,
     conversationTreeVersion,
     subAgentSessionEvents,
-    sessions,
+    // 项目切换自动选中读取的会话投影：内容指纹不变时引用稳定，不会随后台
+    // 会话的每个流式帧重渲染。
+    sessionsForList: sessions,
     newChatRequested,
     streamingConversationIds,
     attentionRequiredConversationIds,

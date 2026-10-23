@@ -13,11 +13,14 @@ import type {
 } from "../../../../../preload";
 
 import type {
+  ChatConversationMessage,
+  ChatConversationSessions,
   ConversationContextValue,
   CompactionResult,
   GlobalModeDefaults,
   FileChangeRecord,
   PauseController,
+  PendingQueueItem,
   UseChatConversationResult,
 } from "../utils/conversationTypes";
 import {
@@ -51,11 +54,42 @@ import {
   type PluginConversationListChangedDetail,
 } from "../../../../plugins/pluginEvents";
 
+/** 空数组常量：避免"无当前会话 / 无队列"时每次渲染都产生新引用，击穿下游 memo。 */
+const EMPTY_MESSAGES: ChatConversationMessage[] = [];
+const EMPTY_CHECKPOINT_IDS: string[] = [];
+const EMPTY_PENDING_QUEUE: PendingQueueItem[] = [];
+
+/**
+ * 内容不变时复用上一次的数组引用。用于把"每帧新建的派生数组"变成可作为
+ * useMemo 依赖的稳定值：内容相同则引用不变，下游 memo 不会被击穿。
+ */
+const useStableArray = <T>(next: T[]): T[] => {
+  const ref = useRef<T[]>(next);
+  const previous = ref.current;
+  if (previous.length === next.length) {
+    let same = true;
+    for (let index = 0; index < next.length; index += 1) {
+      if (previous[index] !== next[index]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) {
+      return previous;
+    }
+  }
+  ref.current = next;
+  return next;
+};
+
 export const useChatConversation = (
   directoryId?: string,
   directoryPath?: string,
   isDetachedWindow = false,
-): UseChatConversationResult => {
+): {
+  conversation: UseChatConversationResult;
+  sessions: ChatConversationSessions;
+} => {
   // --- State ---
   const [sessions, setSessions] = useState<
     Record<string, ConversationContextValue["sessions"][string]>
@@ -1307,117 +1341,30 @@ export const useChatConversation = (
     [activateNextAutoSend],
   );
 
-  return {
-    messages: activeSession?.messages ?? [],
-    summary: activeSession?.summary ?? "",
-    conversationVersion,
-    conversationListVersion,
-    conversationTreeVersion,
-    upsertedConversation,
-    // pending 槽位 -> 真实 conversationId 映射（侧边栏占位替换用）。
-    pendingToRealConversationIdRef,
-    // 当前视图会话 key（真实 id 或新会话槽位 key）：远控通道用它定位
-    // “所见 pending 队列”的真实归属（含槽位→真实会话迁移的解析）。
-    activeSessionKeyRef,
-    // 待发送队列存储（会话 key -> 队列）：远控通道在操作失败时据此输出
-    // 现场摘要（诊断用）。
-    pendingQueueRef,
-    subAgentSessionEvents,
-    fileChangeStats,
-    fileChangeCoverage,
-    recordFileChangeCoverage,
-    mergeFileChangeCoverage,
-    recordFileChange,
-    sessions,
-    activeConversationId,
-    sessionViewKey,
-    newChatGeneration,
-    newChatRequested,
-    conversationDirectoryId: activeSession?.directoryId,
-    // The execution snapshot belongs to activeKey, unlike the toolbar's live mode state.
-    conversationWorktreeMode: activeKey
-      ? sessionsRefData.current.get(activeKey)?.worktreeMode
-      : undefined,
-    conversationWorktreeId: activeKey
-      ? sessionsRefData.current.get(activeKey)?.worktreeId
-      : undefined,
-    tokenUsage: activeSession?.tokenUsage ?? null,
-    runTokenUsage: activeSession?.runTokenUsage ?? null,
-    conversationTokenUsage: activeSession?.conversationTokenUsage ?? null,
-    lastRunDurationMs: activeSession?.lastRunDurationMs ?? 0,
-    conversationTtftSumMs: activeSession?.conversationTtftSumMs ?? 0,
-    conversationRequestCount: activeSession?.conversationRequestCount ?? 0,
-    streamTokenCount: activeSession?.streamTokenCount ?? 0,
-    streamElapsedMs: activeSession?.streamElapsedMs ?? 0,
-    streamTtftMs: activeSession?.streamTtftMs ?? 0,
-    runTtftMs: activeSession?.runTtftMs ?? 0,
-    baselineCheckpointId: activeSession?.baselineCheckpointId,
-    checkpointIds: activeKey
-      ? (sessionsRefData.current.get(activeKey)?.checkpointIds ?? [])
-      : [],
-    streamStartedAt: activeSession?.streamStartedAt ?? 0,
-    visionAnalysis: activeSession?.visionAnalysis,
-    triggeredByTask: activeSession?.triggeredByTask,
-    forkedFromConversationId: activeSession?.forkedFromConversationId,
-    forkMessageCount: activeSession?.forkMessageCount,
-    streamingConversationIds,
-    completedConversationIds,
-    attentionRequiredConversationIds,
-    isLoadingOlderMessages: activeSession?.isLoadingOlderMessages ?? false,
-    hasMoreMessages: activeSession?.hasMoreMessages ?? false,
-    isInitialHistoryLoaded: activeSession?.isInitialHistoryLoaded ?? false,
-    isLoadingInitialHistory,
-    loadOlderMessages: conversationManagementApi.loadOlderMessages,
-    handleSendMessage: agentLoopApi.handleSendMessage,
-    pendingMessages: activePendingMessages,
-    pendingMessageModes: (
-      pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ?? []
-    ).map((item) => item.options.deliveryMode ?? "queue"),
-    pendingMessageSources: (
-      pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ?? []
-    ).map((item) => item.source),
-    withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
-    sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
-    compactConversation: compactionApi.compactConversation,
-    compactionPreview,
-    compactionError,
-    isCompacting,
-    compactingConversationId,
-    handleSelectConversation: handleSelectConversationGuarded,
-    handleNewChat: conversationManagementApi.handleNewChat,
-    refreshConversations: conversationManagementApi.refreshConversations,
-    refreshConversationTree: conversationManagementApi.refreshConversationTree,
-    releaseConversationSessions,
-    updateConversationSummary,
-    updateSessionMessages: sessionApi.updateSessionMessages,
-    isStreaming: Boolean(
-      activeSession?.isStreaming ||
-      (activeKey && streamingConversationIds.has(activeKey)) ||
-      (activeKey && sessionsRefData.current.get(activeKey)?.isSending),
-    ),
-    isAborting: activeSession?.isAborting ?? false,
-    isPaused: activeSession?.isPaused ?? false,
-    handleAbort: conversationManagementApi.handleAbort,
-    handlePause,
-    handleResume,
-    abortConversation: conversationManagementApi.abortConversation,
-    abortWorkflowNodes: conversationManagementApi.abortWorkflowNodes,
-    handleForkConversation: conversationManagementApi.handleForkConversation,
-    draftToRestore,
-    clearDraftToRestore: rollbackApi.clearDraftToRestore,
-    saveInputDraft,
-    getInputDraft,
-    clearInputDraft,
-    updateRuntimeInputState,
-    getRuntimeInputState,
-    buildFromContent,
-    startBackgroundConversation,
-    runBackgroundConversation,
-    autoSendRequest: activeAutoSend,
-    claimAutoSend,
-    completeAutoSend,
-    // 回填输入框但不发送（不走自动发送队列）；newChat 时先新建会话。
-    prefillComposer: (
+  // --- 对外 context 值 ---
+  // 运行时 ref 快照：这些值在渲染期读出（与原先"每次渲染直接读 ref"一致），
+  // 并作为下方 memo 的依赖——ref 内容变化本身不触发渲染，但一旦有渲染发生
+  // 就会读到新值并让值引用随之更换，因此与旧实现等价。
+  const activeRuntimeRef = activeKey
+    ? sessionsRefData.current.get(activeKey)
+    : undefined;
+  const conversationWorktreeModeForActive = activeRuntimeRef?.worktreeMode;
+  const conversationWorktreeIdForActive = activeRuntimeRef?.worktreeId;
+  const checkpointIdsForActive =
+    activeRuntimeRef?.checkpointIds ?? EMPTY_CHECKPOINT_IDS;
+  const isSendingForActive = activeRuntimeRef?.isSending === true;
+  // 待发送队列快照：派生数组按内容稳定化，避免每帧新建引用击穿 memo。
+  const activePendingQueue =
+    pendingQueueRef.current.get(activeKey ?? PENDING_SESSION_KEY) ??
+    EMPTY_PENDING_QUEUE;
+  const pendingMessageModesForActive = useStableArray(
+    activePendingQueue.map((item) => item.options.deliveryMode ?? "queue"),
+  );
+  const pendingMessageSourcesForActive = useStableArray(
+    activePendingQueue.map((item) => item.source),
+  );
+  const prefillComposer = useCallback(
+    (
       content: string,
       options?: { newChat?: boolean; directoryId?: string },
     ) => {
@@ -1426,52 +1373,316 @@ export const useChatConversation = (
       }
       setDraftToRestore(content);
     },
-    handleRollback: rollbackApi.handleRollback,
-    rollbackPreparingMessageId: rollbackApi.preparingMessageId,
-    rollbackPreview,
-    rollbackNewChatState,
-    confirmRollback: rollbackApi.confirmRollback,
-    cancelRollback: rollbackApi.cancelRollback,
-    yoloMode,
-    isUpdatingYoloMode,
-    setYoloMode: toolAuthApi.setYoloMode,
-    refreshYoloMode: toolAuthApi.refreshYoloMode,
-    liteMode,
-    isUpdatingLiteMode,
-    setLiteMode: toolAuthApi.setLiteMode,
-    refreshLiteMode: toolAuthApi.refreshLiteMode,
-    planMode,
-    isUpdatingPlanMode,
-    setPlanMode: toolAuthApi.setPlanMode,
-    refreshPlanMode: toolAuthApi.refreshPlanMode,
-    goalMode,
-    isUpdatingGoalMode,
-    setGoalMode: toolAuthApi.setGoalMode,
-    refreshGoalMode: toolAuthApi.refreshGoalMode,
-    worktreeMode,
-    isUpdatingWorktreeMode,
-    pendingWorktreeId,
-    setPendingWorktreeId,
-    worktreeModeNotice,
-    setWorktreeModeNotice,
-    setWorktreeMode: toolAuthApi.setWorktreeMode,
-    refreshWorktreeMode: toolAuthApi.refreshWorktreeMode,
-    workflowMode,
-    isUpdatingWorkflowMode,
-    setWorkflowMode: toolAuthApi.setWorkflowMode,
-    refreshWorkflowMode: toolAuthApi.refreshWorkflowMode,
-    goalModeTokenBudget,
-    setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
-    refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,
-    pendingToolAuthorizations,
-    approveToolAuthorization,
-    approveToolAuthorizationAlways: toolAuthApi.approveToolAuthorizationAlways,
-    rejectToolAuthorization,
-    answerUserQuestion: userQuestionApi.answerUserQuestion,
-    cancelUserQuestion: userQuestionApi.cancelUserQuestion,
-    getUserQuestionDraft: userQuestionApi.getUserQuestionDraft,
-    saveUserQuestionDraft: userQuestionApi.saveUserQuestionDraft,
-    clearUserQuestionDraft: userQuestionApi.clearUserQuestionDraft,
-    isDetachedWindow,
-  };
+    [conversationManagementApi.handleNewChat],
+  );
+
+  // 侧边栏消费的会话内存态投影。签名是"内容指纹"：只覆盖侧边栏实际读取的
+  // 字段（暂停/运行态、所属项目，以及 pending 会话用于重建占位记录的首条
+  // 用户消息、消息数与模型）。会话消息正文在每个流式帧都会更换引用，但侧边栏
+  // 不读它们，因此签名不变时投影沿用上一份快照，侧边栏列表不会逐帧重渲染。
+  const sessionsListSignature = useMemo(() => {
+    const parts: string[] = [];
+    for (const [key, session] of Object.entries(sessions)) {
+      parts.push(
+        `${key}\u0001${session.isPaused ? 1 : 0}\u0001${
+          session.isStreaming ? 1 : 0
+        }\u0001${session.directoryId ?? ""}`,
+      );
+      if (!isPendingSessionKey(key)) {
+        continue;
+      }
+      const firstUserMessage = session.messages.find(
+        (message) => message.role === "user",
+      );
+      const firstAssistantMessage = session.messages.find(
+        (message) => message.role === "assistant",
+      );
+      parts.push(
+        `${session.summary}\u0001${session.messages.length}\u0001${
+          firstUserMessage?.content ?? ""
+        }\u0001${firstAssistantMessage?.model ?? ""}`,
+      );
+    }
+    return parts.join("\u0002");
+  }, [sessions]);
+  // 依赖只取签名：签名不变即"侧边栏可见字段没变"，复用上一份快照即可（侧边栏
+  // 读到的这些字段在快照里始终是最新的），这正是"不逐帧重渲染"的关键。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sessionsForList = useMemo(() => sessions, [sessionsListSignature]);
+
+  // 主 context 值：只在"真正影响它的状态"变化时更换引用。会话内存态表
+  // （sessions）不在其中——它在每个流式帧都会更换引用，若放进这里，所有
+  // 消费者（聊天区整棵树、侧边栏、远控桥等）都会跟着每帧重渲染；它改由
+  // 单独的 sessions context 提供（见返回值）。
+  const conversation = useMemo<UseChatConversationResult>(
+    () => ({
+      messages: activeSession?.messages ?? EMPTY_MESSAGES,
+      summary: activeSession?.summary ?? "",
+      conversationVersion,
+      conversationListVersion,
+      conversationTreeVersion,
+      upsertedConversation,
+      // pending 槽位 -> 真实 conversationId 映射（侧边栏占位替换用）。
+      pendingToRealConversationIdRef,
+      // 当前视图会话 key（真实 id 或新会话槽位 key）：远控通道用它定位
+      // “所见 pending 队列”的真实归属（含槽位→真实会话迁移的解析）。
+      activeSessionKeyRef,
+      // 待发送队列存储（会话 key -> 队列）：远控通道在操作失败时据此输出
+      // 现场摘要（诊断用）。
+      pendingQueueRef,
+      subAgentSessionEvents,
+      fileChangeStats,
+      fileChangeCoverage,
+      recordFileChangeCoverage,
+      mergeFileChangeCoverage,
+      recordFileChange,
+      sessionsForList,
+      activeConversationId,
+      sessionViewKey,
+      newChatGeneration,
+      newChatRequested,
+      conversationDirectoryId: activeSession?.directoryId,
+      // The execution snapshot belongs to activeKey, unlike the toolbar's live mode state.
+      conversationWorktreeMode: conversationWorktreeModeForActive,
+      conversationWorktreeId: conversationWorktreeIdForActive,
+      tokenUsage: activeSession?.tokenUsage ?? null,
+      runTokenUsage: activeSession?.runTokenUsage ?? null,
+      conversationTokenUsage: activeSession?.conversationTokenUsage ?? null,
+      lastRunDurationMs: activeSession?.lastRunDurationMs ?? 0,
+      conversationTtftSumMs: activeSession?.conversationTtftSumMs ?? 0,
+      conversationRequestCount: activeSession?.conversationRequestCount ?? 0,
+      streamTokenCount: activeSession?.streamTokenCount ?? 0,
+      streamElapsedMs: activeSession?.streamElapsedMs ?? 0,
+      streamTtftMs: activeSession?.streamTtftMs ?? 0,
+      runTtftMs: activeSession?.runTtftMs ?? 0,
+      baselineCheckpointId: activeSession?.baselineCheckpointId,
+      checkpointIds: checkpointIdsForActive,
+      streamStartedAt: activeSession?.streamStartedAt ?? 0,
+      visionAnalysis: activeSession?.visionAnalysis,
+      triggeredByTask: activeSession?.triggeredByTask,
+      forkedFromConversationId: activeSession?.forkedFromConversationId,
+      forkMessageCount: activeSession?.forkMessageCount,
+      streamingConversationIds,
+      completedConversationIds,
+      attentionRequiredConversationIds,
+      isLoadingOlderMessages: activeSession?.isLoadingOlderMessages ?? false,
+      hasMoreMessages: activeSession?.hasMoreMessages ?? false,
+      isInitialHistoryLoaded: activeSession?.isInitialHistoryLoaded ?? false,
+      isLoadingInitialHistory,
+      loadOlderMessages: conversationManagementApi.loadOlderMessages,
+      handleSendMessage: agentLoopApi.handleSendMessage,
+      pendingMessages: activePendingMessages,
+      pendingMessageModes: pendingMessageModesForActive,
+      pendingMessageSources: pendingMessageSourcesForActive,
+      withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
+      sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
+      compactConversation: compactionApi.compactConversation,
+      compactionPreview,
+      compactionError,
+      isCompacting,
+      compactingConversationId,
+      handleSelectConversation: handleSelectConversationGuarded,
+      handleNewChat: conversationManagementApi.handleNewChat,
+      refreshConversations: conversationManagementApi.refreshConversations,
+      refreshConversationTree:
+        conversationManagementApi.refreshConversationTree,
+      releaseConversationSessions,
+      updateConversationSummary,
+      updateSessionMessages: sessionApi.updateSessionMessages,
+      isStreaming: Boolean(
+        activeSession?.isStreaming ||
+        (activeKey && streamingConversationIds.has(activeKey)) ||
+        (activeKey && isSendingForActive),
+      ),
+      isAborting: activeSession?.isAborting ?? false,
+      isPaused: activeSession?.isPaused ?? false,
+      handleAbort: conversationManagementApi.handleAbort,
+      handlePause,
+      handleResume,
+      abortConversation: conversationManagementApi.abortConversation,
+      abortWorkflowNodes: conversationManagementApi.abortWorkflowNodes,
+      handleForkConversation: conversationManagementApi.handleForkConversation,
+      draftToRestore,
+      clearDraftToRestore: rollbackApi.clearDraftToRestore,
+      saveInputDraft,
+      getInputDraft,
+      clearInputDraft,
+      updateRuntimeInputState,
+      getRuntimeInputState,
+      buildFromContent,
+      startBackgroundConversation,
+      runBackgroundConversation,
+      autoSendRequest: activeAutoSend,
+      claimAutoSend,
+      completeAutoSend,
+      // 回填输入框但不发送（不走自动发送队列）；newChat 时先新建会话。
+      prefillComposer,
+      handleRollback: rollbackApi.handleRollback,
+      rollbackPreparingMessageId: rollbackApi.preparingMessageId,
+      rollbackPreview,
+      rollbackNewChatState,
+      confirmRollback: rollbackApi.confirmRollback,
+      cancelRollback: rollbackApi.cancelRollback,
+      yoloMode,
+      isUpdatingYoloMode,
+      setYoloMode: toolAuthApi.setYoloMode,
+      refreshYoloMode: toolAuthApi.refreshYoloMode,
+      liteMode,
+      isUpdatingLiteMode,
+      setLiteMode: toolAuthApi.setLiteMode,
+      refreshLiteMode: toolAuthApi.refreshLiteMode,
+      planMode,
+      isUpdatingPlanMode,
+      setPlanMode: toolAuthApi.setPlanMode,
+      refreshPlanMode: toolAuthApi.refreshPlanMode,
+      goalMode,
+      isUpdatingGoalMode,
+      setGoalMode: toolAuthApi.setGoalMode,
+      refreshGoalMode: toolAuthApi.refreshGoalMode,
+      worktreeMode,
+      isUpdatingWorktreeMode,
+      pendingWorktreeId,
+      setPendingWorktreeId,
+      worktreeModeNotice,
+      setWorktreeModeNotice,
+      setWorktreeMode: toolAuthApi.setWorktreeMode,
+      refreshWorktreeMode: toolAuthApi.refreshWorktreeMode,
+      workflowMode,
+      isUpdatingWorkflowMode,
+      setWorkflowMode: toolAuthApi.setWorkflowMode,
+      refreshWorkflowMode: toolAuthApi.refreshWorkflowMode,
+      goalModeTokenBudget,
+      setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
+      refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,
+      pendingToolAuthorizations,
+      approveToolAuthorization,
+      approveToolAuthorizationAlways:
+        toolAuthApi.approveToolAuthorizationAlways,
+      rejectToolAuthorization,
+      answerUserQuestion: userQuestionApi.answerUserQuestion,
+      cancelUserQuestion: userQuestionApi.cancelUserQuestion,
+      getUserQuestionDraft: userQuestionApi.getUserQuestionDraft,
+      saveUserQuestionDraft: userQuestionApi.saveUserQuestionDraft,
+      clearUserQuestionDraft: userQuestionApi.clearUserQuestionDraft,
+      isDetachedWindow,
+    }),
+    [
+      activeSession,
+      activeKey,
+      conversationVersion,
+      conversationListVersion,
+      conversationTreeVersion,
+      upsertedConversation,
+      pendingToRealConversationIdRef,
+      activeSessionKeyRef,
+      pendingQueueRef,
+      subAgentSessionEvents,
+      fileChangeStats,
+      fileChangeCoverage,
+      recordFileChangeCoverage,
+      mergeFileChangeCoverage,
+      recordFileChange,
+      sessionsForList,
+      activeConversationId,
+      sessionViewKey,
+      newChatGeneration,
+      newChatRequested,
+      conversationWorktreeModeForActive,
+      conversationWorktreeIdForActive,
+      checkpointIdsForActive,
+      isSendingForActive,
+      streamingConversationIds,
+      completedConversationIds,
+      attentionRequiredConversationIds,
+      isLoadingInitialHistory,
+      activePendingMessages,
+      pendingMessageModesForActive,
+      pendingMessageSourcesForActive,
+      compactionPreview,
+      compactionError,
+      isCompacting,
+      compactingConversationId,
+      draftToRestore,
+      activeAutoSend,
+      rollbackApi.preparingMessageId,
+      rollbackPreview,
+      rollbackNewChatState,
+      yoloMode,
+      isUpdatingYoloMode,
+      liteMode,
+      isUpdatingLiteMode,
+      planMode,
+      isUpdatingPlanMode,
+      goalMode,
+      isUpdatingGoalMode,
+      worktreeMode,
+      isUpdatingWorktreeMode,
+      workflowMode,
+      isUpdatingWorkflowMode,
+      goalModeTokenBudget,
+      pendingWorktreeId,
+      worktreeModeNotice,
+      pendingToolAuthorizations,
+      isDetachedWindow,
+      prefillComposer,
+      conversationManagementApi.loadOlderMessages,
+      agentLoopApi.handleSendMessage,
+      conversationManagementApi.withdrawPendingMessage,
+      conversationManagementApi.sendPendingMessageNow,
+      compactionApi.compactConversation,
+      handleSelectConversationGuarded,
+      conversationManagementApi.handleNewChat,
+      conversationManagementApi.refreshConversations,
+      conversationManagementApi.refreshConversationTree,
+      releaseConversationSessions,
+      updateConversationSummary,
+      sessionApi.updateSessionMessages,
+      conversationManagementApi.handleAbort,
+      handlePause,
+      handleResume,
+      conversationManagementApi.abortConversation,
+      conversationManagementApi.abortWorkflowNodes,
+      conversationManagementApi.handleForkConversation,
+      rollbackApi.clearDraftToRestore,
+      saveInputDraft,
+      getInputDraft,
+      clearInputDraft,
+      updateRuntimeInputState,
+      getRuntimeInputState,
+      buildFromContent,
+      startBackgroundConversation,
+      runBackgroundConversation,
+      claimAutoSend,
+      completeAutoSend,
+      rollbackApi.handleRollback,
+      rollbackApi.confirmRollback,
+      rollbackApi.cancelRollback,
+      toolAuthApi.setYoloMode,
+      toolAuthApi.refreshYoloMode,
+      toolAuthApi.setLiteMode,
+      toolAuthApi.refreshLiteMode,
+      toolAuthApi.setPlanMode,
+      toolAuthApi.refreshPlanMode,
+      toolAuthApi.setGoalMode,
+      toolAuthApi.refreshGoalMode,
+      setPendingWorktreeId,
+      setWorktreeModeNotice,
+      toolAuthApi.setWorktreeMode,
+      toolAuthApi.refreshWorktreeMode,
+      toolAuthApi.setWorkflowMode,
+      toolAuthApi.refreshWorkflowMode,
+      toolAuthApi.setGoalModeTokenBudget,
+      toolAuthApi.refreshGoalModeTokenBudget,
+      approveToolAuthorization,
+      toolAuthApi.approveToolAuthorizationAlways,
+      rejectToolAuthorization,
+      userQuestionApi.answerUserQuestion,
+      userQuestionApi.cancelUserQuestion,
+      userQuestionApi.getUserQuestionDraft,
+      userQuestionApi.saveUserQuestionDraft,
+      userQuestionApi.clearUserQuestionDraft,
+    ],
+  );
+
+  return { conversation, sessions };
 };

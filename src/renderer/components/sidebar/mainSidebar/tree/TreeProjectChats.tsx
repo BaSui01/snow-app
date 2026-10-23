@@ -7,7 +7,10 @@ import type { ChatConversationRecord } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../../../mainContent/chatMessages";
 import { ChatDeleteConfirmDialog } from "../ChatDeleteConfirmDialog";
-import { ChatConversationRow } from "../chats/ChatConversationRow";
+import {
+  ChatConversationRow,
+  EMPTY_CONVERSATION_LIST,
+} from "../chats/ChatConversationRow";
 import { ChatListFooter } from "../chats/ChatListFooter";
 import {
   ChatMultiSelectBar,
@@ -47,11 +50,12 @@ export function TreeProjectChats({
     handleNewChat,
     activeSessionKeyRef,
     abortConversation,
-    sessions,
     streamingConversationIds,
     attentionRequiredConversationIds,
     completedConversationIds,
     clearInputDraft,
+    // 会话内存态投影：内容指纹不变时引用稳定，列表不随后台会话逐帧重渲染。
+    sessionsForList: sessions,
   } = useChatConversationContext();
 
   const runningConversationIds = useMemo(
@@ -160,52 +164,53 @@ export function TreeProjectChats({
     },
   ];
 
-  const handleSelectConversationFromList = (
-    conversation: ChatConversationRecord,
-  ): void => {
-    void (async (): Promise<void> => {
-      if (
-        conversation.directoryId &&
-        conversation.directoryId !== activeDirectoryId
-      ) {
-        try {
-          await window.snow.activateWorkspaceDirectory(
-            conversation.directoryId,
-          );
-        } catch {}
-      }
-      await handleSelectConversation(
-        conversation.conversationId,
-        conversation.summary || conversation.title,
-        {
-          inputTokens: conversation.inputTokens,
-          outputTokens: conversation.outputTokens,
-          cacheCreationInputTokens: conversation.cacheCreationInputTokens,
-          cacheReadInputTokens: conversation.cacheReadInputTokens,
-        },
-        conversation.directoryId,
-      );
-    })();
-  };
+  const handleSelectConversationFromList = useCallback(
+    (conversation: ChatConversationRecord): void => {
+      void (async (): Promise<void> => {
+        if (
+          conversation.directoryId &&
+          conversation.directoryId !== activeDirectoryId
+        ) {
+          try {
+            await window.snow.activateWorkspaceDirectory(
+              conversation.directoryId,
+            );
+          } catch {}
+        }
+        await handleSelectConversation(
+          conversation.conversationId,
+          conversation.summary || conversation.title,
+          {
+            inputTokens: conversation.inputTokens,
+            outputTokens: conversation.outputTokens,
+            cacheCreationInputTokens: conversation.cacheCreationInputTokens,
+            cacheReadInputTokens: conversation.cacheReadInputTokens,
+          },
+          conversation.directoryId,
+        );
+      })();
+    },
+    [activeDirectoryId, handleSelectConversation],
+  );
 
-  const handleSelectChildConversation = (
-    conversationId: string,
-    childDirectoryId: string,
-  ): void => {
-    void (async (): Promise<void> => {
-      if (childDirectoryId && childDirectoryId !== activeDirectoryId) {
-        try {
-          await window.snow.activateWorkspaceDirectory(childDirectoryId);
-        } catch {}
-      }
-      await handleSelectConversation(
-        conversationId,
-        undefined,
-        undefined,
-        childDirectoryId,
-      );
-    })();
-  };
+  const handleSelectChildConversation = useCallback(
+    (conversationId: string, childDirectoryId: string): void => {
+      void (async (): Promise<void> => {
+        if (childDirectoryId && childDirectoryId !== activeDirectoryId) {
+          try {
+            await window.snow.activateWorkspaceDirectory(childDirectoryId);
+          } catch {}
+        }
+        await handleSelectConversation(
+          conversationId,
+          undefined,
+          undefined,
+          childDirectoryId,
+        );
+      })();
+    },
+    [activeDirectoryId, handleSelectConversation],
+  );
 
   const renderConversationRow = (
     conversation: ChatConversationRecord,
@@ -220,45 +225,44 @@ export function TreeProjectChats({
           activeConversationId);
     return (
       <ChatConversationRow
-        activeConversationId={isActive ? conversationId : activeConversationId}
         attentionRequiredConversationIds={attentionRequiredConversationIds}
         completedConversationIds={completedConversationIds}
         conversation={conversation}
         expandedWorkflowNodeConversationIds={
           tree.expandedWorkflowNodeConversationIds
         }
+        isActive={isActive}
         isArchiving={actions.archivingIds.has(conversationId)}
         isDeleting={actions.deletingIds.has(conversationId)}
         isMultiSelectMode={selection.isMultiSelectMode}
         isSelected={selection.selectedIds.has(conversationId)}
         isTreeExpanded={tree.isConversationTreeExpanded(conversationId)}
-        onArchive={() => void actions.handleArchive(conversation)}
-        onDelete={(deleteImages, deleteMemories) =>
-          void actions.handleDelete(conversation, deleteImages, deleteMemories)
-        }
+        onArchive={actions.handleArchive}
+        onDelete={actions.handleDelete}
         onEnterMultiSelect={selection.enterMultiSelect}
-        onExport={(format) => void actions.handleExport(conversation, format)}
-        onFork={() => actions.handleFork(conversation)}
-        onPin={() =>
-          void (conversation.status === "pin"
-            ? actions.handleUnpin(conversation)
-            : actions.handlePin(conversation))
-        }
-        onRename={(newTitle) => actions.handleRename(conversation, newTitle)}
+        onExport={actions.handleExport}
+        onFork={actions.handleFork}
+        onPin={actions.handlePin}
+        onRename={actions.handleRename}
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
-        onSetEmoji={(emoji) => actions.handleSetEmoji(conversation, emoji)}
-        onToggleSelect={() => selection.handleToggleSelect(conversationId)}
-        onToggleTree={() => tree.handleToggleConversationTree(conversationId)}
+        onSetEmoji={actions.handleSetEmoji}
+        onToggleSelect={selection.handleToggleSelect}
+        onToggleTree={tree.handleToggleConversationTree}
         onToggleWorkflowNode={tree.handleToggleWorkflowNode}
+        onUnpin={actions.handleUnpin}
         pausedConversationIds={pausedConversationIds}
         runningConversationIds={runningConversationIds}
         showPinBadge
         streamingConversationIds={streamingConversationIds}
-        subAgentConversations={tree.subAgentMap[conversationId] ?? []}
+        subAgentConversations={
+          tree.subAgentMap[conversationId] ?? EMPTY_CONVERSATION_LIST
+        }
         subAgentMap={tree.subAgentMap}
         surfacedConversationIds={tree.surfacedConversationIds}
-        workflowNodeConversations={tree.workflowNodeMap[conversationId] ?? []}
+        workflowNodeConversations={
+          tree.workflowNodeMap[conversationId] ?? EMPTY_CONVERSATION_LIST
+        }
       />
     );
   };

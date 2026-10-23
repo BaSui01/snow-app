@@ -14,7 +14,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import { useChatConversationContext } from "../components/ChatConversationContext";
+import {
+  useChatConversationContext,
+  useChatConversationSessions,
+} from "../components/ChatConversationContext";
 import {
   resolveSubAgentFailureDecision,
   useSubAgentFailurePending,
@@ -235,11 +238,12 @@ export const SubAgentToolCall = ({
 }: SubAgentToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
   const {
-    sessions,
     handleSelectConversation,
     activeConversationId,
     subAgentSessionEvents,
   } = useChatConversationContext();
+  // 会话内存态表每个流式帧都会更换引用：单独订阅（读取子代理会话状态）。
+  const sessions = useChatConversationSessions();
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments, mode),

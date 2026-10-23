@@ -9287,6 +9287,10 @@ body.is-panel-resizing * {
 
 .snowflake-spin {
   animation: snow-spin 1.5s linear infinite;
+  /* SVG 图标的旋转默认由主线程驱动：主线程一旦繁忙（切换会话、流式内容提交），
+     视觉上会整段停转、看起来像卡死。提升为独立合成层后由合成器线程持续推进，
+     阻塞期间动画照常播放（外观不变，只是不再受主线程阻塞影响）。 */
+  will-change: transform;
 }
 
 @keyframes snow-spin {

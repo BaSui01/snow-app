@@ -960,6 +960,11 @@ export type ConversationContextValue = {
   ) => void;
 };
 
+/** 会话内存态实时表（每个流式帧都会更换引用）：单独走一个 context 提供。
+ *  放进主 context 值会让聊天区整棵树、侧边栏、远控桥等全部消费者随后台
+ *  会话的每个流式帧重渲染。 */
+export type ChatConversationSessions = Record<string, ConversationSessionState>;
+
 export type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
@@ -991,10 +996,11 @@ export type UseChatConversationResult = {
   fileChangeStats: Record<string, FileChangeRecord[]>;
   /** Records a successful file modification for a conversation. */
   recordFileChange: (conversationId: string, record: FileChangeRecord) => void;
-  /** All conversation sessions, keyed by conversation id. Used by tool-call
-   *  UIs (e.g. sub-agent activation) to inspect the live state of other
-   *  sessions such as streaming sub-agent conversations. */
-  sessions: Record<string, ConversationSessionState>;
+  /** 侧边栏消费的会话内存态投影：只在侧边栏实际读取的字段（暂停/运行态、
+   *  所属项目，以及 pending 会话用于重建占位记录的首条消息与消息数）变化时
+   *  更换引用；消息正文的每个流式帧变化不会影响它，因此整棵侧边栏列表不会
+   *  跟着逐帧重渲染。 */
+  sessionsForList: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
   /** 聊天视图身份 key（chat-area / ChatInput 的 key 用），pending 迁移时保持稳定。 */
   sessionViewKey: string;

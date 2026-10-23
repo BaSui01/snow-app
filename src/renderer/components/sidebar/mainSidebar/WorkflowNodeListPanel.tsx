@@ -2,13 +2,13 @@ import { ChevronRight, CircleAlert, Loader2, Workflow } from "lucide-react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
+import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { LazyCollapse } from "./LazyCollapse";
 import { SubAgentListPanel } from "./SubAgentListPanel";
 
 type WorkflowNodeListPanelProps = {
   /** Workflow 节点会话列表（按创建顺序排列） */
   conversations: ChatConversationRecord[];
-  activeConversationId?: string;
   /** 待用户确认的会话 id 集合（节点自身或其子代理等待输入/授权） */
   attentionRequiredConversationIds?: Set<string>;
   /** 流式输出中的会话 id 集合：节点仅在实际运行时显示 loading */
@@ -55,7 +55,6 @@ function renderNodeIcon(
  */
 export function WorkflowNodeListPanel({
   conversations,
-  activeConversationId,
   attentionRequiredConversationIds,
   streamingConversationIds,
   subAgentMap,
@@ -64,6 +63,9 @@ export function WorkflowNodeListPanel({
   onSelect,
 }: WorkflowNodeListPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  // 活动会话 id 直接从会话上下文读取（而不是由每个会话项透传）：它变化时只让
+  // 这些正在渲染的面板重渲染，不会波及整张侧边栏列表的每一行。
+  const { activeConversationId } = useChatConversationContext();
 
   const handleItemClick = (
     event: React.MouseEvent,
@@ -158,7 +160,6 @@ export function WorkflowNodeListPanel({
               renderContent={() => (
                 <SubAgentListPanel
                   conversations={subAgents}
-                  activeConversationId={activeConversationId}
                   attentionRequiredConversationIds={
                     attentionRequiredConversationIds
                   }

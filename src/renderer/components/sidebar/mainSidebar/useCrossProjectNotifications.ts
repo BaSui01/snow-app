@@ -56,9 +56,6 @@ export const useCrossProjectNotifications = (
     streamingConversationIds,
     attentionRequiredConversationIds,
     completedConversationIds,
-    // 内存会话状态：pending 槽位（首条 AI 响应未返回、会话行尚未落库）的
-    // 通知记录只能从内存 session 重建，无法按 id 查库。
-    sessions,
     // 会话记录更新广播（LLM 摘要生成、fork 等）：项目内列表依赖它刷新，
     // 跨项目通知的缓存同样需要跟进，否则摘要生成后这里仍显示旧记录
     // （运行中会话的 summary 初始是第一条用户消息，生成摘要后才变成标题）。
@@ -66,6 +63,10 @@ export const useCrossProjectNotifications = (
     // 列表版本（重命名/置顶/删除等递增）：同步触发按 id 重查，
     // 保证跨项目通知与项目内列表显示的标题始终一致。
     conversationListVersion,
+    // 内存会话状态投影（pending 槽位：首条 AI 响应未返回、会话行尚未落库时，
+    // 通知记录只能从内存 session 重建，无法按 id 查库）。内容指纹不变时引用
+    // 稳定，通知区块不会随后台会话逐帧刷新。
+    sessionsForList: sessions,
   } = useChatConversationContext();
 
   // 内存 session 的实时镜像：按 id 查询是异步的，重建 pending 占位记录时

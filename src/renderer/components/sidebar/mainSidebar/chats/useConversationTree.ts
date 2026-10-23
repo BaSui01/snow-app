@@ -354,45 +354,54 @@ export function useConversationTree({
   }, [subAgentMap, workflowNodeMap, activeConversationId]);
 
   /** 会话树（Workflow 节点 + 子代理）是否已展开：两者共用单一展开按钮 */
-  const isConversationTreeExpanded = (conversationId: string): boolean =>
-    expandedWorkflowConversationIds.has(conversationId) ||
-    expandedSubAgentConversationIds.has(conversationId);
+  const isConversationTreeExpanded = useCallback(
+    (conversationId: string): boolean =>
+      expandedWorkflowConversationIds.has(conversationId) ||
+      expandedSubAgentConversationIds.has(conversationId),
+    [expandedSubAgentConversationIds, expandedWorkflowConversationIds],
+  );
 
   /** 展开/收起会话树：Workflow 节点面板与子代理面板同时切换 */
-  const handleToggleConversationTree = (conversationId: string): void => {
-    const isExpanded = isConversationTreeExpanded(conversationId);
-    setExpandedWorkflowConversationIds((prev) => {
-      const next = new Set(prev);
-      if (isExpanded) {
-        next.delete(conversationId);
-      } else {
-        next.add(conversationId);
-      }
-      return next;
-    });
-    setExpandedSubAgentConversationIds((prev) => {
-      const next = new Set(prev);
-      if (isExpanded) {
-        next.delete(conversationId);
-      } else {
-        next.add(conversationId);
-      }
-      return next;
-    });
-  };
+  const handleToggleConversationTree = useCallback(
+    (conversationId: string): void => {
+      const isExpanded = isConversationTreeExpanded(conversationId);
+      setExpandedWorkflowConversationIds((prev) => {
+        const next = new Set(prev);
+        if (isExpanded) {
+          next.delete(conversationId);
+        } else {
+          next.add(conversationId);
+        }
+        return next;
+      });
+      setExpandedSubAgentConversationIds((prev) => {
+        const next = new Set(prev);
+        if (isExpanded) {
+          next.delete(conversationId);
+        } else {
+          next.add(conversationId);
+        }
+        return next;
+      });
+    },
+    [isConversationTreeExpanded],
+  );
 
   /** 展开/收起 Workflow 节点会话的子代理列表 */
-  const handleToggleWorkflowNode = (conversationId: string): void => {
-    setExpandedWorkflowNodeConversationIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(conversationId)) {
-        next.delete(conversationId);
-      } else {
-        next.add(conversationId);
-      }
-      return next;
-    });
-  };
+  const handleToggleWorkflowNode = useCallback(
+    (conversationId: string): void => {
+      setExpandedWorkflowNodeConversationIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(conversationId)) {
+          next.delete(conversationId);
+        } else {
+          next.add(conversationId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   return {
     subAgentMap,

@@ -14,7 +14,9 @@ export type {
 export {
   ChatConversationProvider,
   useChatConversationContext,
+  useChatConversationSessions,
 } from "./components/ChatConversationContext";
+export type { ChatConversationSessions } from "./utils/conversationTypes";
 export type {
   AiResponseProps,
   AiResponseSection,

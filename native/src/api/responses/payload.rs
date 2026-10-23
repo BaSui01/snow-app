@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use crate::api::common::inject_custom_headers;
 use crate::api::config::{normalize_base_url, resolve_advanced_model, resolve_sdk_api_base_url};
 use crate::api::conversation::parse_chat_message_content;
+use crate::api::conversation::tool_messages::ParsedToolResult;
 use crate::api::responses::ResponsesApiRequest;
 use crate::storage::services::chat_conversations::ChatContextMessage;
 use crate::storage::ApiConfigRecord;
@@ -81,56 +82,7 @@ pub(super) fn build_responses_payload(
                 None => Vec::new(),
             };
             for tool_result in &results {
-                let text = if tool_result.text.is_empty() && !tool_result.images.is_empty() {
-                    "[image attached]".to_string()
-                } else {
-                    tool_result.text.clone()
-                };
-                if tool_result.call_id.is_empty() {
-                    // No paired call: emit text and images as a single user
-                    // message with multimodal content blocks.
-                    let mut content_blocks = Vec::new();
-                    if !text.is_empty() {
-                        content_blocks.push(json!({"type": "input_text", "text": text}));
-                    }
-                    content_blocks.extend(tool_result.images.iter().map(|image| {
-                        json!({
-                            "type": "input_image",
-                            "image_url": image.data_url,
-                        })
-                    }));
-                    input.push(json!({
-                        "type": "message",
-                        "role": "user",
-                        "content": content_blocks,
-                    }));
-                } else {
-                    // function_call_output only accepts a plain string, so the
-                    // screenshot base64 must travel in a following structured
-                    // user message as input_image blocks.
-                    input.push(json!({
-                        "type": "function_call_output",
-                        "call_id": tool_result.call_id,
-                        "output": text,
-                    }));
-                    if !tool_result.images.is_empty() {
-                        let image_blocks: Vec<Value> = tool_result
-                            .images
-                            .iter()
-                            .map(|image| {
-                                json!({
-                                    "type": "input_image",
-                                    "image_url": image.data_url,
-                                })
-                            })
-                            .collect();
-                        input.push(json!({
-                            "type": "message",
-                            "role": "user",
-                            "content": image_blocks,
-                        }));
-                    }
-                }
+                push_tool_result(&mut input, tool_result);
             }
             continue;
         }
@@ -376,6 +328,43 @@ pub(super) fn build_responses_payload(
     Ok(payload)
 }
 
+/// Responses function outputs accept text/image parts. Keep images with their
+/// call instead of inserting user messages between parallel tool outputs.
+fn push_tool_result(input: &mut Vec<Value>, tool_result: &ParsedToolResult) {
+    let text = if tool_result.text.is_empty() && !tool_result.images.is_empty() {
+        "[image attached]".to_string()
+    } else {
+        tool_result.text.clone()
+    };
+
+    let output = if tool_result.call_id.is_empty() || !tool_result.images.is_empty() {
+        let mut parts = Vec::with_capacity(tool_result.images.len() + 1);
+        if !text.is_empty() {
+            parts.push(json!({"type": "input_text", "text": text}));
+        }
+        parts.extend(tool_result.images.iter().map(|image| {
+            json!({
+                "type": "input_image",
+                "image_url": image.data_url,
+            })
+        }));
+        json!(parts)
+    } else {
+        json!(text)
+    };
+
+    if tool_result.call_id.is_empty() {
+        // No paired call: retain the existing multimodal user-message fallback.
+        input.push(json!({"type": "message", "role": "user", "content": output}));
+    } else {
+        input.push(json!({
+            "type": "function_call_output",
+            "call_id": tool_result.call_id,
+            "output": output,
+        }));
+    }
+}
+
 fn normalize_message_role(role: &str) -> &str {
     match role.trim() {
         "assistant" => "assistant",
@@ -475,3 +464,86 @@ pub(super) fn build_header_map(
     Ok(headers)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::conversation::tool_messages::parse_tool_results_with_images;
+
+    const IMAGE_URL: &str =
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    fn image_result(call_id: &str) -> Value {
+        json!({
+            "name": "read",
+            "callId": call_id,
+            "result": format!("{{\"text\":\"{call_id}\"}}\n@@image:{IMAGE_URL}@@"),
+        })
+    }
+
+    fn append_tool_results(input: &mut Vec<Value>, results: Value) {
+        for result in parse_tool_results_with_images(&results.to_string(), Path::new(""), false) {
+            push_tool_result(input, &result);
+        }
+    }
+
+    #[test]
+    fn parallel_image_results_stay_inside_their_matching_outputs() {
+        let mut input = vec![
+            json!({"type": "function_call", "call_id": "call_a", "name": "read", "arguments": "{}"}),
+            json!({"type": "function_call", "call_id": "call_b", "name": "read", "arguments": "{}"}),
+        ];
+        append_tool_results(
+            &mut input,
+            json!([image_result("call_a"), image_result("call_b")]),
+        );
+        assert_eq!(
+            json!(input),
+            json!([
+                {"type": "function_call", "call_id": "call_a", "name": "read", "arguments": "{}"},
+                {"type": "function_call", "call_id": "call_b", "name": "read", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "call_a", "output": [
+                    {"type": "input_text", "text": "{\"text\":\"call_a\"}\n[Image #1]"},
+                    {"type": "input_image", "image_url": IMAGE_URL},
+                ]},
+                {"type": "function_call_output", "call_id": "call_b", "output": [
+                    {"type": "input_text", "text": "{\"text\":\"call_b\"}\n[Image #1]"},
+                    {"type": "input_image", "image_url": IMAGE_URL},
+                ]},
+            ])
+        );
+    }
+
+    #[test]
+    fn text_only_results_keep_string_outputs() {
+        let mut input = Vec::new();
+        append_tool_results(
+            &mut input,
+            json!([
+                {"name": "read", "callId": "call_a", "result": "file contents"},
+                {"name": "read", "callId": "call_b", "result": ""},
+            ]),
+        );
+        assert_eq!(
+            json!(input),
+            json!([
+                {"type": "function_call_output", "call_id": "call_a", "output": "file contents"},
+                {"type": "function_call_output", "call_id": "call_b", "output": ""},
+            ])
+        );
+    }
+
+    #[test]
+    fn call_less_images_still_fall_back_to_a_user_message() {
+        let mut input = Vec::new();
+        append_tool_results(&mut input, json!([image_result("")]));
+        assert_eq!(
+            json!(input),
+            json!([{
+                "type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "{\"text\":\"\"}\n[Image #1]"},
+                    {"type": "input_image", "image_url": IMAGE_URL},
+                ],
+            }])
+        );
+    }
+}

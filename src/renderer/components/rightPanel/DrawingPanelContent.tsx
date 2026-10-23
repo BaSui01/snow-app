@@ -102,6 +102,7 @@ import {
   saveBlobToFile,
   srcToBlob,
 } from "../../utils/imageDownload";
+import { copyImageToClipboard } from "../../utils/imageClipboard";
 import { imageProxyUrl, localImageProxyUrl } from "../../utils/imageProxyUrl";
 
 type DrawingPanelContentProps = {
@@ -1980,6 +1981,18 @@ export function DrawingPanelContent({
     [appendRefImages, t],
   );
 
+  /** 复制图库历史图片到系统剪贴板（可直接粘贴到 QQ / 微信分享）。 */
+  const handleCopyHistoryImage = useCallback(
+    (record: Pick<DrawingLibraryRecord, "relativePath">): Promise<boolean> =>
+      copyImageToClipboard({ libraryPath: record.relativePath }).catch(
+        (error) => {
+          console.warn("[ai-drawing] copy image failed", error);
+          return false;
+        },
+      ),
+    [],
+  );
+
   // ----------------------------------------------------------------
   // 保存（单张 / 全部）
   // ----------------------------------------------------------------
@@ -3052,6 +3065,7 @@ export function DrawingPanelContent({
           hasMoreLibrary={hasMoreLibrary}
           handleLoadMore={handleLoadMore}
           handleUseAsReference={handleUseAsReference}
+          onCopyImage={handleCopyHistoryImage}
           handleDelete={handleDelete}
           deleteTarget={deleteTarget}
           setDeleteTarget={setDeleteTarget}

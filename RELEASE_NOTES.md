@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.5.4
+
+## New Features
+
+- **Reply Prediction**: an opt-in ghost hint in the chat input predicts your next message from recent history and saved user memories, accepted with Tab.
+- **Cross-Project User Memory**: memory tools gain `scope=user` - global entries are injected into every project and ranked first.
+- **Repo Wiki**: the AI reads the codebase with read-only tools and generates an architecture guide stored under `~/.snowapp/repo-wiki`, with token usage tracking and the wiki path injected into the system prompt.
+- **File Lookup Tool**: `grep-find` finds files by glob (ripgrep `--files` with a native fallback and SSH remote dispatch), reports per-root stats and searches linked projects.
+- **Image Path Annotation**: vision-capable models now receive the resolved absolute path and MIME type of attached images, so they can pass them straight to `imagegen-generate`.
+- **Copy Generated Images**: generated images can be copied to the clipboard from the tool card, lightbox, drawing studio history and image library.
+
+## Improvements
+
+- The plus menu hides toggles in a secondary panel, grouping auto-scroll, auto-format, reply prediction and tool correction under Preferences.
+- Workspace symbols and LSP result notices get a reworked view: symbol category icons, scope splitting, copy path / copy list, and severity-graded status, description and warnings.
+- Global MCP server and Skill switches now ask for confirmation, explain the impact and offer to keep them enabled for the current project.
+- Tool card display names are resolved by a shared helper, including readable fallbacks for external MCP tools; sub-agent `sendMessage` cards parse incomplete streamed arguments safely, work after a restart and map error codes.
+- External MCP tools no longer participate in the checkpoint execution lock.
+- Session state is split into separate contexts with stable sidebar projections and incremental scroll following, reducing re-renders while streaming and switching sessions.
+- The plugin market gains a "Hide installed" toggle with an installed count.
+
+## Breaking Changes
+
+- The built-in CodeLens service and tools are removed; code navigation is covered solely by the `lsp` server, with grep/read as fallback.
+
 ## v0.5.3
 
 ## New Features

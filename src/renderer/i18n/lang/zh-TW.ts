@@ -6324,6 +6324,7 @@ export const zhTW = {
   "repoWiki.activitySearch": "搜尋 {{target}}",
   "repoWiki.activityFind": "尋找 {{target}}",
   "repoWiki.activityEdit": "編輯 {{target}}",
+  "repoWiki.activityCatalog": "調整目錄：{{target}}",
   "repoWiki.closeProject": "關閉專案",
   "repoWiki.notGenerated": "尚未產生",
   "repoWiki.metaBranch": "分支",

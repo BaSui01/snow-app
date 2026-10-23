@@ -6315,6 +6315,7 @@ export const zhCN = {
   "repoWiki.activitySearch": "搜索 {{target}}",
   "repoWiki.activityFind": "查找 {{target}}",
   "repoWiki.activityEdit": "编辑 {{target}}",
+  "repoWiki.activityCatalog": "调整目录：{{target}}",
   "repoWiki.closeProject": "关闭项目",
   "repoWiki.notGenerated": "尚未生成",
   "repoWiki.metaBranch": "分支",

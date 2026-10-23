@@ -156,3 +156,80 @@ pub(crate) fn catalog_outline(pages: &[WikiPage]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// 每页关键文件清单（目录审视用）。
+pub(crate) fn catalog_file_map(pages: &[WikiPage]) -> String {
+    pages
+        .iter()
+        .map(|page| {
+            let files = if page.files.is_empty() {
+                "(none)".to_string()
+            } else {
+                page.files.join(", ")
+            };
+            format!("- {} ({}): {}\n  files: {}", page.title, page.id, page.description, files)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 目录审视系统提示：代码变化后判断目录是否需要增删改。
+pub(crate) fn catalog_review_system_prompt(
+    language: &str,
+    project_name: &str,
+    root: &str,
+    max_pages: usize,
+) -> String {
+    format!(
+        "You are a senior software architect MAINTAINING the table of contents of an existing REPO WIKI for the project \"{project_name}\" (workspace root: {root}).\n\
+The wiki already exists and code changed since the last update; decide whether the CATALOG itself must change.\n\n\
+{READ_RULES}\n\
+- wiki-catalog-edit: the ONLY way to change the catalog. Arguments: action (\"add\" | \"remove\" | \"update\"), pageId (existing page id for remove/update), title, description, parentId (id of an existing top-level page; empty string or null = top level; omit = keep current parent), files (workspace-relative key paths). Page bodies are written automatically afterwards: never write content.\n\n\
+WHEN TO CHANGE:\n\
+- add: a new feature, module or subsystem that NO existing page covers (see the added files below). Give it a clear title, a 1-3 sentence scope description and its key files.\n\
+- remove: an existing page describes something that no longer exists in the code (its key files are gone or the feature was replaced).\n\
+- update: an existing page's title, scope or key files genuinely changed (module renamed, responsibility split, files moved).\n\
+WHEN NOT TO CHANGE: bug fixes, internal refactors, tests, dependency or version bumps, or anything already covered by an existing page. Leaving the catalog unchanged is the correct answer most of the time.\n\n\
+RULES: at most {max_pages} pages; never invent ids for existing pages; keep at most 2 levels; read the code with the tools before adding or removing a page.\n\
+FINAL ANSWER: one short sentence listing the operations you applied, or \"No catalog change needed\".\n\
+{}",
+        language_rule(language)
+    )
+}
+
+/// 目录审视用户提示：现有目录 + 变更文件清单。
+pub(crate) fn catalog_review_user_prompt(
+    catalog: &str,
+    file_map: &str,
+    added: &[String],
+    removed: &[String],
+    modified: &[String],
+) -> String {
+    format!(
+        "Current catalog:\n{catalog}\n\n\
+Key files per page:\n{file_map}\n\n\
+Changed since the last update:\n\
+Added files:\n{}\n\
+Removed files:\n{}\n\
+Modified files:\n{}\n\n\
+Decide whether the catalog must change, apply every change with wiki-catalog-edit, then answer.",
+        bullet_list(added, 80),
+        bullet_list(removed, 80),
+        bullet_list(modified, 40)
+    )
+}
+
+fn bullet_list(items: &[String], limit: usize) -> String {
+    if items.is_empty() {
+        return "(none)".to_string();
+    }
+    let mut lines: Vec<String> = items
+        .iter()
+        .take(limit)
+        .map(|item| format!("- {item}"))
+        .collect();
+    if items.len() > limit {
+        lines.push(format!("- ... and {} more", items.len() - limit));
+    }
+    lines.join("\n")
+}

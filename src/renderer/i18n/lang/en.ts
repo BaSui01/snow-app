@@ -6720,6 +6720,7 @@ export const en = {
   "repoWiki.activitySearch": "Searching {{target}}",
   "repoWiki.activityFind": "Finding {{target}}",
   "repoWiki.activityEdit": "Editing {{target}}",
+  "repoWiki.activityCatalog": "Updating the catalog: {{target}}",
   "repoWiki.closeProject": "Close project",
   "repoWiki.notGenerated": "Not generated yet",
   "repoWiki.metaBranch": "Branch",

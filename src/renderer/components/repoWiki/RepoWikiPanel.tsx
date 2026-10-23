@@ -335,6 +335,12 @@ export const RepoWikiPanel = ({
         defaultValue: "Editing {{target}}",
       });
     }
+    if (activity.activityTool === "catalog") {
+      return t("repoWiki.activityCatalog", {
+        values,
+        defaultValue: "Updating the catalog: {{target}}",
+      });
+    }
     return t("repoWiki.activityRead", {
       values,
       defaultValue: "Reading {{target}}",

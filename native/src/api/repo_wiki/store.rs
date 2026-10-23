@@ -7,6 +7,10 @@ use napi::bindgen_prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub(crate) const WIKI_VERSION: u32 = 1;
+/// 目录页数上限。
+pub(crate) const MAX_PAGES: usize = 40;
+/// 单页关键文件上限。
+pub(crate) const MAX_FILES_PER_PAGE: usize = 16;
 const WIKI_FILE: &str = "wiki.json";
 const FINGERPRINT_FILE: &str = "fingerprint.json";
 const META_FILE: &str = "meta.json";
@@ -83,6 +87,19 @@ pub(crate) fn now_ms() -> i64 {
 
 pub(crate) fn normalize_project_path(path: &str) -> String {
     crate::utils::paths::normalize_project_path(path)
+}
+
+/// 页面 id 规范化为 kebab-case（最长 64 字符）。
+pub(crate) fn sanitize_page_id(raw: &str) -> String {
+    let mut id = String::new();
+    for ch in raw.trim().to_lowercase().chars() {
+        if ch.is_ascii_alphanumeric() {
+            id.push(ch);
+        } else if !id.ends_with('-') && !id.is_empty() {
+            id.push('-');
+        }
+    }
+    id.trim_end_matches('-').chars().take(64).collect()
 }
 
 /// 导出为 zip（README.md + pages/*.md + wiki.json）。
@@ -282,6 +299,40 @@ pub(crate) fn diff_fingerprint(old: &Fingerprint, new: &Fingerprint) -> Vec<Stri
         .collect();
     changed.extend(old.keys().filter(|path| !new.contains_key(*path)).cloned());
     changed
+}
+
+/// 指纹差异（按新增 / 删除 / 修改分类）。
+#[derive(Default)]
+pub(crate) struct FingerprintDiff {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub modified: Vec<String>,
+}
+
+impl FingerprintDiff {
+    pub(crate) fn changed(&self) -> Vec<String> {
+        let mut all = self.modified.clone();
+        all.extend(self.added.iter().cloned());
+        all.extend(self.removed.iter().cloned());
+        all
+    }
+}
+
+pub(crate) fn diff_fingerprints(old: &Fingerprint, new: &Fingerprint) -> FingerprintDiff {
+    let mut diff = FingerprintDiff::default();
+    for (path, value) in new {
+        match old.get(path) {
+            None => diff.added.push(path.clone()),
+            Some(previous) if previous != value => diff.modified.push(path.clone()),
+            Some(_) => {}
+        }
+    }
+    diff.removed = old
+        .keys()
+        .filter(|path| !new.contains_key(*path))
+        .cloned()
+        .collect();
+    diff
 }
 
 /// 分支名与 HEAD 提交（非 git 仓库返回 None）。

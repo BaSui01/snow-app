@@ -9,11 +9,17 @@ use serde_json::Value;
 
 use super::agent::{resolve_model_context, run_agent, ModelContext};
 use super::prompts::{
-    catalog_outline, catalog_system_prompt, catalog_user_prompt, page_edit_system_prompt,
-    page_edit_user_prompt, page_system_prompt, page_user_prompt,
+    catalog_file_map, catalog_outline, catalog_review_system_prompt, catalog_review_user_prompt,
+    catalog_system_prompt, catalog_user_prompt, page_edit_system_prompt, page_edit_user_prompt,
+    page_system_prompt, page_user_prompt,
 };
-use super::store::{self, now_ms, Fingerprint, RepoWiki, WikiPage, WikiSource, WIKI_VERSION};
-use super::tools::{page_edit_tool, PageDraft, WikiReadView, WikiToolExecutor};
+use super::store::{
+    self, now_ms, sanitize_page_id, Fingerprint, RepoWiki, WikiPage, WikiSource, MAX_FILES_PER_PAGE,
+    MAX_PAGES, WIKI_VERSION,
+};
+use super::tools::{
+    catalog_edit_tool, page_edit_tool, CatalogDraft, PageDraft, WikiReadView, WikiToolExecutor,
+};
 use super::{
     emit, new_handle, normalize_project_path, running_job, try_register, unregister, JobHandle,
     RepoWikiEvent, RepoWikiStartOptions,
@@ -22,12 +28,19 @@ use crate::api::file_search_agent::{strip_code_fences, AgentToolExecutor};
 use crate::mcp::tools::McpTool;
 
 const CATALOG_MAX_ROUNDS: usize = 30;
+/// 目录审视轮次（只做结构判断，比完整分析轻）。
+const CATALOG_REVIEW_MAX_ROUNDS: usize = 12;
 const PAGE_MAX_ROUNDS: usize = 24;
 const PAGE_CONCURRENCY: usize = 3;
-const MAX_PAGES: usize = 40;
-const MAX_FILES_PER_PAGE: usize = 16;
 const MAX_SOURCES_PER_PAGE: usize = 200;
 const MAX_RETRIES: u32 = 5;
+
+/// 自动更新触发的目录审视输入。
+pub(super) struct CatalogReview {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub modified: Vec<String>,
+}
 
 enum JobMode {
     Full,
@@ -36,6 +49,8 @@ enum JobMode {
         fingerprint: Fingerprint,
         /// 触发刷新的改动文件（用于局部编辑提示词）
         changed_files: Vec<String>,
+        /// 代码结构变化时的目录审视（无变化为 None）
+        review: Option<CatalogReview>,
     },
 }
 
@@ -148,7 +163,8 @@ pub(super) async fn auto_refresh(project_path: String) -> Result<bool> {
     }
     let previous = store::load_fingerprint(&project_path).await;
     let current = store::scan_fingerprint(&project_path).await?;
-    let changed_files = store::diff_fingerprint(&previous, &current);
+    let diff = store::diff_fingerprints(&previous, &current);
+    let changed_files = diff.changed();
     if changed_files.is_empty() {
         return Ok(false);
     }
@@ -165,7 +181,8 @@ pub(super) async fn auto_refresh(project_path: String) -> Result<bool> {
             .map(|page| page.id.clone())
             .collect()
     };
-    if affected.is_empty() {
+    let structural = !previous.is_empty() && structural_change(&wiki, &diff, &current);
+    if affected.is_empty() && !structural {
         store::save_fingerprint(&project_path, &current).await?;
         return Ok(false);
     }
@@ -178,6 +195,11 @@ pub(super) async fn auto_refresh(project_path: String) -> Result<bool> {
     wiki.phase = "analyzing".to_string();
     wiki.error = None;
     wiki.updated_at = now_ms();
+    let review = structural.then(|| CatalogReview {
+        added: diff.added.clone(),
+        removed: diff.removed.clone(),
+        modified: diff.modified.clone(),
+    });
     let handle = new_handle(wiki);
     if !try_register(&project_path, handle.clone()) {
         return Ok(false);
@@ -190,9 +212,90 @@ pub(super) async fn auto_refresh(project_path: String) -> Result<bool> {
             page_ids: affected,
             fingerprint: current,
             changed_files,
+            review,
         },
     ));
     Ok(true)
+}
+
+/// 需要重新审视目录的信号：出现未被任何页面覆盖的新增文件，或某页关键文件全部消失。
+fn structural_change(
+    wiki: &RepoWiki,
+    diff: &store::FingerprintDiff,
+    current: &Fingerprint,
+) -> bool {
+    if diff.added.is_empty() && diff.removed.is_empty() {
+        return false;
+    }
+    let covered: HashSet<&str> = wiki
+        .pages
+        .iter()
+        .flat_map(|page| {
+            page.files
+                .iter()
+                .map(String::as_str)
+                .chain(page.sources.iter().map(|source| source.path.as_str()))
+        })
+        .collect();
+    let uncovered_added = diff
+        .added
+        .iter()
+        .filter(|file| is_code_file(file.as_str()))
+        .filter(|file| !covered.contains(file.as_str()))
+        .count();
+    let broken_page = wiki.pages.iter().any(|page| {
+        !page.files.is_empty() && page.files.iter().all(|file| !current.contains_key(file))
+    });
+    uncovered_added >= 1 || broken_page
+}
+
+/// 只看代码文件，避免文档/资源/测试新增频繁触发目录审视。
+fn is_code_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    if lower.contains(".test.")
+        || lower.contains(".spec.")
+        || lower.contains("__tests__/")
+        || lower.contains("/tests/")
+        || lower.ends_with("_test.rs")
+    {
+        return false;
+    }
+    let extension = path
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default();
+    matches!(
+        extension.as_str(),
+        "rs" | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "mts"
+            | "cts"
+            | "py"
+            | "go"
+            | "java"
+            | "kt"
+            | "kts"
+            | "swift"
+            | "c"
+            | "h"
+            | "cc"
+            | "cpp"
+            | "hpp"
+            | "cs"
+            | "rb"
+            | "php"
+            | "vue"
+            | "svelte"
+            | "dart"
+            | "scala"
+            | "lua"
+            | "ex"
+            | "exs"
+    )
 }
 
 /// 单章节重新生成：成功或失败过的页面都可重试。
@@ -330,7 +433,29 @@ async fn execute(job: &Job, mode: JobMode) -> Result<()> {
             page_ids,
             fingerprint,
             changed_files,
-        } => (page_ids, fingerprint, true, changed_files),
+            review,
+        } => {
+            let mut page_ids = page_ids;
+            if let Some(review) = review {
+                set_phase(job, "catalog").await;
+                match review_catalog(job, &review).await {
+                    Ok(touched) => {
+                        for id in touched {
+                            if !page_ids.contains(&id) {
+                                page_ids.push(id);
+                            }
+                        }
+                    }
+                    // 目录审视失败不影响内容刷新
+                    Err(error) => {
+                        eprintln!("[repo-wiki] catalog review failed: {}", error.reason)
+                    }
+                }
+                let wiki = job.handle.wiki.lock().await;
+                page_ids.retain(|id| wiki.pages.iter().any(|page| &page.id == id));
+            }
+            (page_ids, fingerprint, true, changed_files)
+        }
     };
 
     set_phase(job, "pages").await;
@@ -393,6 +518,7 @@ async fn root_listing(job: &Job) -> String {
         view: &job.view,
         on_activity: &noop,
         draft: None,
+        catalog: None,
     };
     let output = executor
         .execute("filesystem-read", r#"{"filePath":"."}"#)
@@ -418,6 +544,7 @@ async fn generate_catalog(job: &Job) -> Result<(String, String, Vec<WikiPage>)> 
         view: &job.view,
         on_activity: &activity,
         draft: None,
+        catalog: None,
     };
     let mut last_error = Error::from_reason("Catalog generation failed");
     for _ in 0..=retries {
@@ -440,16 +567,60 @@ async fn generate_catalog(job: &Job) -> Result<(String, String, Vec<WikiPage>)> 
     Err(last_error)
 }
 
-fn sanitize_id(raw: &str) -> String {
-    let mut id = String::new();
-    for ch in raw.trim().to_lowercase().chars() {
-        if ch.is_ascii_alphanumeric() {
-            id.push(ch);
-        } else if !id.ends_with('-') && !id.is_empty() {
-            id.push('-');
-        }
+/// 目录审视：结构变化时让模型用 wiki-catalog-edit 增删改章节，返回被改动的页面 id。
+async fn review_catalog(job: &Job, review: &CatalogReview) -> Result<Vec<String>> {
+    let (language, name, pages) = {
+        let wiki = job.handle.wiki.lock().await;
+        (
+            wiki.language.clone(),
+            wiki.project_name.clone(),
+            wiki.pages.clone(),
+        )
+    };
+    let outline = catalog_outline(&pages);
+    let file_map = catalog_file_map(&pages);
+    let draft = CatalogDraft::new(pages);
+    let system = catalog_review_system_prompt(&language, &name, &job.project_path, MAX_PAGES);
+    let user = catalog_review_user_prompt(
+        &outline,
+        &file_map,
+        &review.added,
+        &review.removed,
+        &review.modified,
+    );
+    let project_path = job.project_path.clone();
+    let activity = move |tool: &str, target: &str| emit_activity(&project_path, None, tool, target);
+    let executor = WikiToolExecutor {
+        view: &job.view,
+        on_activity: &activity,
+        draft: None,
+        catalog: Some(&draft),
+    };
+    let outcome = run_agent(
+        &job.ctx,
+        &system,
+        &user,
+        CATALOG_REVIEW_MAX_ROUNDS,
+        job.handle.pause.as_ref(),
+        &executor,
+        &[catalog_edit_tool()],
+    )
+    .await;
+    if !draft.was_edited() {
+        return outcome.map(|_| Vec::new());
     }
-    id.trim_end_matches('-').chars().take(64).collect()
+    if let Err(error) = outcome {
+        eprintln!("[repo-wiki] catalog review agent stopped: {}", error.reason);
+    }
+    let (pages, touched) = draft.take().await;
+    {
+        let mut wiki = job.handle.wiki.lock().await;
+        wiki.pages = pages;
+        wiki.updated_at = now_ms();
+        save_logged(&wiki).await;
+        emit(build_event(&wiki, "status"));
+    }
+    Ok(touched)
 }
 
 fn parse_catalog(text: &str, view: &WikiReadView) -> Result<(String, String, Vec<WikiPage>)> {
@@ -479,7 +650,7 @@ fn parse_catalog(text: &str, view: &WikiReadView) -> Result<(String, String, Vec
             continue;
         }
         let raw_id = item.get("id").and_then(Value::as_str).unwrap_or("").trim();
-        let mut id = sanitize_id(raw_id);
+        let mut id = sanitize_page_id(raw_id);
         if id.is_empty() {
             id = format!("page-{}", index + 1);
         }
@@ -697,6 +868,7 @@ async fn generate_page(
         view: &job.view,
         on_activity: &activity,
         draft: draft.as_ref(),
+        catalog: None,
     };
     let mut result: Result<String> = Err(Error::from_reason("Page generation failed"));
     for _ in 0..=retries {

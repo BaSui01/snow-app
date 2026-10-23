@@ -15,6 +15,8 @@ use crate::mcp::tools::McpTool;
 use crate::storage::services::file_scanner::{BINARY_EXTENSIONS, IMAGE_EXTENSIONS, SKIP_DIRS};
 use crate::storage::services::gitignore::GitignoreMatcher;
 
+use super::store::{sanitize_page_id, WikiPage, MAX_FILES_PER_PAGE, MAX_PAGES};
+
 
 const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
 const MAX_DIR_ENTRIES: usize = 400;
@@ -238,6 +240,203 @@ pub(crate) fn page_edit_tool() -> McpTool {
     }
 }
 
+/// 目录调整工具定义（自动更新时用于增删改章节）。
+pub(crate) fn catalog_edit_tool() -> McpTool {
+    McpTool {
+        server_id: "wiki".to_string(),
+        name: "catalog-edit".to_string(),
+        description: "Change the wiki CATALOG (table of contents): add a page for a new feature, remove a page whose feature no longer exists, or update a page's title/scope/key files. Page bodies are written automatically afterwards, so never provide content here.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "remove", "update"],
+                    "description": "Which catalog operation to apply."
+                },
+                "pageId": {
+                    "type": "string",
+                    "description": "Existing page id (required for remove/update; add generates the id from title)."
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Page title (required for add)."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "What the page must explain, 1-3 sentences (add/update)."
+                },
+                "parentId": {
+                    "type": "string",
+                    "description": "Id of an existing top-level page to nest under (max 2 levels). Empty string or null puts the page at the top level; omit to keep the current parent."
+                },
+                "files": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Key file paths, workspace-relative, that really exist (add/update replaces the list)."
+                }
+            },
+            "required": ["action"]
+        }),
+    }
+}
+
+/// 目录草稿：模型用 wiki-catalog-edit 增删改章节，结束后整体替换 wiki.pages。
+pub(crate) struct CatalogDraft {
+    state: tokio::sync::Mutex<CatalogState>,
+    edited: AtomicBool,
+}
+
+struct CatalogState {
+    pages: Vec<WikiPage>,
+    /// 结构被改动的页面 id（新增或元数据更新）。
+    touched: Vec<String>,
+}
+
+impl CatalogDraft {
+    pub(crate) fn new(pages: Vec<WikiPage>) -> Self {
+        Self {
+            state: tokio::sync::Mutex::new(CatalogState {
+                pages,
+                touched: Vec::new(),
+            }),
+            edited: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn was_edited(&self) -> bool {
+        self.edited.load(Ordering::SeqCst)
+    }
+
+    pub(crate) async fn take(&self) -> (Vec<WikiPage>, Vec<String>) {
+        let mut state = self.state.lock().await;
+        (
+            std::mem::take(&mut state.pages),
+            std::mem::take(&mut state.touched),
+        )
+    }
+
+    async fn add(
+        &self,
+        title: Option<String>,
+        description: Option<String>,
+        parent: Option<Option<String>>,
+        files: Option<Vec<String>>,
+    ) -> std::result::Result<Value, String> {
+        let mut state = self.state.lock().await;
+        if state.pages.len() >= MAX_PAGES {
+            return Err(format!(
+                "the catalog already has {MAX_PAGES} pages: update or remove an existing page instead of adding"
+            ));
+        }
+        let title = title.unwrap_or_default();
+        if title.trim().is_empty() {
+            return Err("title is required when action=add".to_string());
+        }
+        let mut id = sanitize_page_id(&title);
+        if id.is_empty() {
+            id = format!("page-{}", state.pages.len() + 1);
+        }
+        let base = id.clone();
+        let mut suffix = 2;
+        while state.pages.iter().any(|page| page.id == id) {
+            id = format!("{base}-{suffix}");
+            suffix += 1;
+        }
+        let requested_parent = parent.flatten();
+        let parent_id = resolve_parent(&state.pages, requested_parent.as_deref(), None)?;
+        state.pages.push(WikiPage {
+            id: id.clone(),
+            title: title.trim().to_string(),
+            description: description.unwrap_or_default(),
+            parent_id,
+            files: files.unwrap_or_default(),
+            status: "pending".to_string(),
+            ..Default::default()
+        });
+        state.touched.push(id.clone());
+        self.edited.store(true, Ordering::SeqCst);
+        Ok(json!({ "action": "add", "pageId": id, "pages": state.pages.len() }))
+    }
+
+    async fn remove(&self, page_id: &str) -> std::result::Result<Value, String> {
+        if page_id.is_empty() {
+            return Err("pageId is required when action=remove".to_string());
+        }
+        let mut state = self.state.lock().await;
+        let Some(index) = state.pages.iter().position(|page| page.id == page_id) else {
+            return Err(format!("page \"{page_id}\" does not exist"));
+        };
+        if state.pages.len() <= 1 {
+            return Err("the catalog must keep at least one page".to_string());
+        }
+        state.pages.remove(index);
+        for page in state.pages.iter_mut() {
+            if page.parent_id.as_deref() == Some(page_id) {
+                page.parent_id = None;
+            }
+        }
+        state.touched.retain(|id| id.as_str() != page_id);
+        self.edited.store(true, Ordering::SeqCst);
+        Ok(json!({ "action": "remove", "pageId": page_id, "pages": state.pages.len() }))
+    }
+
+    async fn update(
+        &self,
+        page_id: &str,
+        title: Option<String>,
+        description: Option<String>,
+        parent: Option<Option<String>>,
+        files: Option<Vec<String>>,
+    ) -> std::result::Result<Value, String> {
+        if page_id.is_empty() {
+            return Err("pageId is required when action=update".to_string());
+        }
+        let mut state = self.state.lock().await;
+        let Some(index) = state.pages.iter().position(|page| page.id == page_id) else {
+            return Err(format!("page \"{page_id}\" does not exist"));
+        };
+        if let Some(title) = title.filter(|value| !value.trim().is_empty()) {
+            state.pages[index].title = title;
+        }
+        if let Some(description) = description {
+            state.pages[index].description = description;
+        }
+        if let Some(requested_parent) = parent {
+            let resolved = resolve_parent(&state.pages, requested_parent.as_deref(), Some(page_id))?;
+            state.pages[index].parent_id = resolved;
+        }
+        if let Some(files) = files {
+            state.pages[index].files = files;
+        }
+        if !state.touched.iter().any(|id| id.as_str() == page_id) {
+            state.touched.push(page_id.to_string());
+        }
+        self.edited.store(true, Ordering::SeqCst);
+        Ok(json!({ "action": "update", "pageId": page_id, "pages": state.pages.len() }))
+    }
+}
+
+/// 父级只能是顶层页，保证最多两级。
+fn resolve_parent(
+    pages: &[WikiPage],
+    requested: Option<&str>,
+    self_id: Option<&str>,
+) -> std::result::Result<Option<String>, String> {
+    let Some(requested) = requested.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if Some(requested) == self_id {
+        return Err("a page cannot be its own parent".to_string());
+    }
+    let Some(parent) = pages.iter().find(|page| page.id == requested) else {
+        return Err(format!("parentId \"{requested}\" does not exist"));
+    };
+    Ok(Some(
+        parent.parent_id.clone().unwrap_or_else(|| parent.id.clone()),
+    ))
+}
+
 /// 工具活动回调：(工具名, 目标)。
 pub(crate) type ActivityFn<'a> = &'a (dyn Fn(&str, &str) + Send + Sync);
 
@@ -246,6 +445,8 @@ pub(crate) struct WikiToolExecutor<'a> {
     pub on_activity: ActivityFn<'a>,
     /// 局部编辑草稿；None 时 wiki-page-edit 不可用。
     pub draft: Option<&'a PageDraft>,
+    /// 目录草稿；None 时 wiki-catalog-edit 不可用。
+    pub catalog: Option<&'a CatalogDraft>,
 }
 
 
@@ -265,8 +466,9 @@ impl AgentToolExecutor for WikiToolExecutor<'_> {
                 "grep-search" => self.search(args).await,
                 "grep-find" => self.find(args).await,
                 "wiki-page-edit" => self.edit(&args).await,
+                "wiki-catalog-edit" => self.catalog_edit(&args).await,
                 other => Err(format!(
-                    "unsupported tool \"{other}\". Available tools: filesystem-read, grep-search, grep-find, wiki-page-edit"
+                    "unsupported tool \"{other}\". Available tools: filesystem-read, grep-search, grep-find, wiki-page-edit, wiki-catalog-edit"
                 )),
             };
             Ok(match result {
@@ -327,6 +529,67 @@ impl WikiToolExecutor<'_> {
         );
         let (applied, page_chars) = draft.apply(old, new, replace_all).await?;
         Ok(json!({ "applied": applied, "pageChars": page_chars }))
+    }
+
+    /// 目录增删改：落到 CatalogDraft，新页留给后续生成阶段。
+    async fn catalog_edit(&self, args: &Value) -> std::result::Result<Value, String> {
+        let Some(catalog) = self.catalog else {
+            return Err("wiki-catalog-edit is not available for this task".to_string());
+        };
+        let action = args
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let page_id = args
+            .get("pageId")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let title = args
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        // 字段缺失=不改；空串或 null=提升为顶层
+        let parent = match args.get("parentId") {
+            Some(Value::Null) => Some(None),
+            Some(Value::String(text)) => {
+                let text = text.trim();
+                Some((!text.is_empty()).then(|| text.to_string()))
+            }
+            _ => None,
+        };
+        let files = args.get("files").and_then(Value::as_array).map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(|file| self.view.relative(file))
+                .filter(|file| !file.is_empty())
+                .take(MAX_FILES_PER_PAGE)
+                .collect::<Vec<String>>()
+        });
+        let label = if page_id.is_empty() {
+            format!("{action} {}", title.clone().unwrap_or_default())
+        } else {
+            format!("{action} {page_id}")
+        };
+        (self.on_activity)("catalog", label.trim());
+        match action.as_str() {
+            "add" => catalog.add(title, description, parent, files).await,
+            "remove" => catalog.remove(&page_id).await,
+            "update" => catalog.update(&page_id, title, description, parent, files).await,
+            other => Err(format!(
+                "unknown action \"{other}\": use add, remove or update"
+            )),
+        }
     }
 
     async fn read(&self, mut args: Value) -> std::result::Result<Value, String> {

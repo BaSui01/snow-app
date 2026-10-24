@@ -4,8 +4,7 @@ use std::collections::HashMap;
 
 use crate::api::common::{push_reasoning_text, push_trimmed_string, read_first_i64, read_string};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
-use napi::bindgen_prelude::*;
-use crate::api::ephemeral::diagnostic as eprintln;
+use crate::api::failure::ProviderFailure;
 use serde_json::Value;
 
 /// Process a raw SSE event block (text between two separators) for the
@@ -25,6 +24,8 @@ pub(super) fn process_sse_event_block(
     tool_args_delta: &mut String,
     stream_finished: &mut bool,
     finish_reason_seen: &mut bool,
+    failure: &mut Option<ProviderFailure>,
+    api_key: &str,
 ) {
     // Process each `data:` line independently as a separate SSE event.
     // This matches the TypeScript reference implementation where each line
@@ -49,12 +50,9 @@ pub(super) fn process_sse_event_block(
             return;
         }
 
-        let event = match serde_json::from_str::<Value>(data) {
-            Ok(event) => event,
-            Err(error) => {
-                eprintln!("Chat stream event parse error (skipping line): {}", error);
-                continue;
-            }
+        let Ok(event) = serde_json::from_str::<Value>(data) else {
+            // Parser details may include provider input; never echo them.
+            continue;
         };
 
         if let Err(process_error) = process_chat_completion_event(
@@ -69,11 +67,12 @@ pub(super) fn process_sse_event_block(
             token_usage,
             tool_args_delta,
             finish_reason_seen,
+            api_key,
         ) {
-            eprintln!(
-                "Chat stream event processing error (terminal provider error): {}",
-                process_error.reason
-            );
+            *failure = Some(process_error);
+            tool_calls.clear();
+            tool_call_positions_by_index.clear();
+            tool_args_delta.clear();
             *response_status = String::from("failed");
             *stream_finished = true;
             return;
@@ -108,11 +107,12 @@ pub(super) fn process_sse_event_block(
                 token_usage,
                 tool_args_delta,
                 finish_reason_seen,
+                api_key,
             ) {
-                eprintln!(
-                    "Chat stream event processing error (terminal provider error): {}",
-                    process_error.reason
-                );
+                *failure = Some(process_error);
+                tool_calls.clear();
+                tool_call_positions_by_index.clear();
+                tool_args_delta.clear();
                 *response_status = String::from("failed");
                 *stream_finished = true;
                 return;
@@ -135,13 +135,11 @@ fn process_chat_completion_event(
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
     finish_reason_seen: &mut bool,
-) -> Result<()> {
-    if let Some(error) = event.get("error") {
-        let message = error
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("Chat completions stream failed");
-        return Err(Error::from_reason(message.to_string()));
+    api_key: &str,
+) -> std::result::Result<(), ProviderFailure> {
+    if event.get("error").is_some_and(|error| !error.is_null()) {
+        if let Some(id) = read_string(event, "id") { *response_id = id; }
+        return Err(ProviderFailure::from_event(event, Some(api_key)));
     }
 
     if let Some(id) = read_string(event, "id") {

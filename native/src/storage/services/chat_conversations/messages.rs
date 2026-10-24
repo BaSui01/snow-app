@@ -866,7 +866,9 @@ pub fn list_chat_messages(
                         retry_attempts,
                         retry_error,
                         created_at,
-                        tool_corrections_json
+                        tool_corrections_json,
+                        CASE WHEN role = 'assistant' AND status IN ('failed', 'error')
+                             THEN raw_json ELSE '{}' END
                    FROM chat_messages
                   WHERE conversation_id = ?1
                   ORDER BY id ASC",
@@ -895,6 +897,9 @@ pub fn list_chat_messages(
                     retry_error: row.get(18)?,
                     created_at: row.get(19)?,
                     tool_corrections_json: row.get(20)?,
+                    failure_reason: crate::api::failure::failure_reason_from_raw(
+                        &row.get::<_, String>(21)?,
+                    ),
                 })
             })?;
 
@@ -1004,7 +1009,9 @@ pub fn list_chat_messages_paginated(
                         retry_attempts,
                         retry_error,
                         created_at,
-                        tool_corrections_json
+                        tool_corrections_json,
+                        CASE WHEN role = 'assistant' AND status IN ('failed', 'error')
+                             THEN raw_json ELSE '{}' END
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id < ?2)
@@ -1037,6 +1044,9 @@ pub fn list_chat_messages_paginated(
                         retry_error: row.get(18)?,
                         created_at: row.get(19)?,
                         tool_corrections_json: row.get(20)?,
+                        failure_reason: crate::api::failure::failure_reason_from_raw(
+                            &row.get::<_, String>(21)?,
+                        ),
                     })
                 },
             )?;

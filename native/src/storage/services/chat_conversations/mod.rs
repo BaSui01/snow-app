@@ -682,12 +682,10 @@ pub fn store_failed_chat_exchange(
 
     let conversation_id =
         resolve_conversation_id(database_path, conversation_id, previous_response_id)?;
-    let error_message = error_message.trim();
-    let response_content = if error_message.is_empty() {
-        "AI response failed, please try again later."
-    } else {
-        error_message
-    };
+    // Request failures have no generated body. Store diagnostics separately so
+    // both live rendering and history never confuse errors with assistant text.
+    let raw_response_json = crate::api::failure::failure_raw_json(error_message);
+    let response_content = "";
 
     let persisted_user_message_ids = store_chat_exchange(
         database_path,
@@ -704,7 +702,7 @@ pub fn store_failed_chat_exchange(
             recovery_outcome: None,
             retry_attempts: 0,
             retry_error: "",
-            raw_response_json: "{}",
+            raw_response_json: &raw_response_json,
             token_usage: ChatTokenUsage::default(),
             response_thinking: "",
             response_thinking_blocks_json: "[]",

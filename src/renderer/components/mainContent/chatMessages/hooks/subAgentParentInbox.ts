@@ -485,6 +485,39 @@ export const stopSubAgentParentTask = async (
       "PERSISTENCE_ERROR: one or more delegated runs did not stop",
     );
 };
+/** Archiving is a move, not a durable deletion request. Never cancel active runs. */
+export const prepareSubAgentArchive = async (
+  conversationId: string,
+  stopParent: () => void,
+): Promise<void> => {
+  const record = await window.snow.getChatConversation(conversationId);
+  if (record?.directoryId) {
+    const receipt = await command({
+      op: "deletion_status",
+      scope: {
+        projectId: record.directoryId,
+        parentConversationId: record.parentConversationId || conversationId,
+      },
+      conversationId,
+    });
+    if (receipt.kind !== "deletion")
+      throw new Error("PERSISTENCE_ERROR: invalid archive preparation");
+    if (!receipt.ready)
+      throw new Error(
+        "RUN_BUSY: wait for delegated runs to finish before archiving",
+      );
+    // A terminal commit can precede the owner's final local writes. Drain those
+    // owners without requesting cancellation; Rust rechecks under its write lock.
+    for (const run of receipt.runs) {
+      if (hasOwnedSubAgentRun(run.runId))
+        await awaitOwnedSubAgentRun(run.runId);
+    }
+  }
+  const group = groups.get(conversationId);
+  if (group) group.state = "stopped";
+  if (!isDurableSubAgentConversation(conversationId)) stopParent();
+};
+
 export const prepareSubAgentDeletion = async (
   ctx: ConversationContextValue,
   conversationId: string,

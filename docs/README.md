@@ -53,6 +53,8 @@
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
+- [归档与删除门禁解耦 ADR](zh-CN/4-架构与开发/15-归档与删除门禁解耦ADR.md) / [Archive and deletion-gate separation ADR](en/4-architecture-and-development/15-archive-deletion-gate-separation-adr.md)：归档直接搬移终态会话，永久删除保护不变 / Move settled conversations without entering the deletion lifecycle.
+
 - [子代理取消归因与验收边界 ADR](zh-CN/4-架构与开发/14-子代理取消归因与验收边界ADR.md) / [Sub-agent cancellation attribution and evidence boundaries ADR](en/4-architecture-and-development/14-subagent-cancellation-attribution-evidence-boundaries-adr.md)：首次取消受理来源、摘要与验收证据边界 / First accepted cancellation attribution, summary and acceptance evidence boundaries.
 
 - [响应失败诊断与安全恢复 ADR](zh-CN/4-架构与开发/13-响应失败诊断与安全恢复ADR.md) / [Response failure diagnostics and safe recovery ADR](en/4-architecture-and-development/13-response-failure-diagnostics-safe-recovery-adr.md)：安全失败原因、正文分离与模型/工具重放边界 / Safe failure metadata, separate body rendering and model/tool replay boundaries.

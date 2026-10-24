@@ -790,10 +790,10 @@ pub fn archive_conversations(
         return Ok(());
     }
 
-    // Reuse the live guard before copying or deleting anything. It returns the
-    // complete recursive target tree and rejects owners that have not settled.
+    // A settled tree can move atomically without entering the persistent delete
+    // lifecycle. Recheck every generation under this transaction's write lock.
     let all_target_ids =
-        super::chat_conversations::guard_sub_agent_physical_delete(&transaction, &archivable_ids)?;
+        super::chat_conversations::guard_sub_agent_archive(&transaction, &archivable_ids)?;
 
     // ---- 拷贝到归档库 ----
     // 会话先写入（外键依赖），再写子代理会话、消息、todo
@@ -911,9 +911,26 @@ pub fn archive_conversations(
             })?;
     }
 
-    copy_sub_agent_run_data(&transaction, "main", "archive_db", &all_target_ids).map_err(
-        |error| database::database_error(main_database_path, "archive conversations", error),
-    )?;
+    let archived_run_ids =
+        copy_sub_agent_run_data(&transaction, "main", "archive_db", &all_target_ids).map_err(
+            |error| database::database_error(main_database_path, "archive conversations", error),
+        )?;
+
+    // All run facts are now copied, and admission cannot race this write lock.
+    // Remove those exact terminal runs before session/conversation cleanup so
+    // permanent-delete triggers remain strict without requiring deletion gates
+    // for a move. Any failure rolls back BOTH the cold copies and live cleanup.
+    for chunk in archived_run_ids.chunks(MAX_VARIABLES) {
+        let placeholders = in_clause_placeholders(chunk.len());
+        transaction
+            .execute(
+                &format!("DELETE FROM sub_agent_runs WHERE run_id IN ({placeholders})"),
+                params_from_iter(chunk.iter()),
+            )
+            .map_err(|error| {
+                database::database_error(main_database_path, "archive conversations", error)
+            })?;
+    }
 
     // ---- 清理运行库（与 delete_conversations 语义一致）----
     for chunk in all_target_ids.chunks(MAX_VARIABLES) {

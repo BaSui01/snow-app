@@ -25,7 +25,8 @@ pub use self::sub_agent::*;
 pub use self::sub_agent_runs::sub_agent_run_command;
 pub(crate) use self::sub_agent_runs::{
     check_gate as check_sub_agent_conversation_gate, ensure_sub_agent_run_data_tables,
-    ensure_sub_agent_run_tables, guard_sub_agent_physical_delete, sub_agent_async_tool_usage,
+    ensure_sub_agent_run_tables, guard_sub_agent_archive, guard_sub_agent_physical_delete,
+    sub_agent_async_tool_usage,
 };
 pub(crate) use self::tombstones::{
     clear_conversation_tombstones, is_conversation_tombstoned, record_conversation_tombstones,

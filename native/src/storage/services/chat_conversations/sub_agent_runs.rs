@@ -1628,8 +1628,23 @@ fn deletion(db: &Connection, command: &Value, prepare: bool) -> Result<Value> {
         json!({"success":true,"kind":"deletion","deleting":deleting(db,target)?,"ready":ready,"runs":runs}),
     )
 }
+/// Archive admission is read-only and checked under the caller's Immediate
+/// transaction. Moving a settled tree must not create durable deletion gates.
+pub(crate) fn guard_sub_agent_archive(db: &Connection, roots: &[String]) -> Result<Vec<String>> {
+    let ids = descendants(db, roots)?;
+    for run in deletion_runs(db, &ids)? {
+        if !terminal(status(&run)?) {
+            return Err(fault(
+                "RUN_BUSY",
+                "wait for delegated runs to finish before archiving",
+            ));
+        }
+    }
+    Ok(ids)
+}
+
 /// Called inside the existing deletion Immediate transaction, before any cleanup.
-/// The database triggers additionally guard non-service deletion paths (archive).
+/// The database triggers additionally guard non-service deletion paths.
 pub(crate) fn guard_sub_agent_physical_delete(
     db: &Connection,
     roots: &[String],

@@ -52,6 +52,15 @@ import {
   extractFileChangeCoverageFromTool,
 } from "./fileChangeTracking";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
+import {
+  appendToolCorrectionNote,
+  type ToolCorrectionSuccess,
+} from "./toolCorrection";
+import {
+  applyToolCorrectionToCall,
+  correctFailedToolCall,
+  createToolDefinitionLookup,
+} from "./toolCorrectionRunner";
 import type { SubAgentRuntimeConfig } from "./subAgentRuntimeConfig";
 import {
   buildUnavailableToolsPrompt,
@@ -886,6 +895,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       result: string;
     }[] = [];
     let parentPlanApprovalRequired = false;
+    // 纠错所需的工具 schema：仅在本批首次失败时拉取一次。
+    const getSubToolDefinition = createToolDefinitionLookup();
 
     for (
       let subToolIndex = 0;
@@ -1007,65 +1018,30 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }),
       );
 
-      let subResult: string;
-      let subToolErrored = false;
-      try {
-        if (SUB_AGENT_COMMS_TOOL_NAMES.has(subToolCall.name)) {
-          // 队友通信工具由渲染进程直接执行（会话隔离与 Pending 队列
-          // 都在渲染进程），不走 Rust callMcpTool。
-          subResult = await executeSubAgentCommsTool(
-            subToolCall.name,
-            subToolArgs,
-            subConvId,
-            agentName,
-          );
-        } else {
-          subResult = await window.snow.callMcpTool(
-            subToolCall.name,
-            subToolArgs,
-            dirId,
-            [
-              ...parentCheckpointIdsRef.current,
-              ...(activeCheckpointId ? [activeCheckpointId] : []),
-            ],
-            activeCheckpointWorkDir,
-            subSensitiveAuthorizationToken,
-            (chunk) => {
-              if (!chunk.data) {
-                return;
-              }
-              if (
-                chunk.stream === "interactive_session" ||
-                chunk.stream === "tool_execution"
-              ) {
-                ctx.updateSessionMessages(subConvId, (currentMessages) =>
-                  currentMessages.map((currentMessage) => {
-                    if (currentMessage.id !== subAssistantMessageId) {
-                      return currentMessage;
-                    }
-                    return {
-                      ...currentMessage,
-                      toolCalls: updateFirstMatchingToolCall(
-                        currentMessage.toolCalls,
-                        subToolCall,
-                        ["pending", "running"],
-                        (currentToolCall) => ({
-                          ...currentToolCall,
-                          interactiveSessionId:
-                            chunk.stream === "interactive_session"
-                              ? chunk.data
-                              : currentToolCall.interactiveSessionId,
-                          toolExecutionId:
-                            chunk.stream === "tool_execution"
-                              ? chunk.data
-                              : currentToolCall.toolExecutionId,
-                        }),
-                      ),
-                    };
-                  }),
-                );
-                return;
-              }
+      // 原始调用与纠错重试共用同一执行上下文（工具白名单 / checkpoint /
+      // 父会话写闸门 / 溯源会话），保证修正后的调用不越权。
+      const invokeSubTool = (
+        toolArgs: string,
+        sensitiveAuthorizationToken: string | undefined,
+      ): Promise<string> =>
+        window.snow.callMcpTool(
+          subToolCall.name,
+          toolArgs,
+          dirId,
+          [
+            ...parentCheckpointIdsRef.current,
+            ...(activeCheckpointId ? [activeCheckpointId] : []),
+          ],
+          activeCheckpointWorkDir,
+          sensitiveAuthorizationToken,
+          (chunk) => {
+            if (!chunk.data) {
+              return;
+            }
+            if (
+              chunk.stream === "interactive_session" ||
+              chunk.stream === "tool_execution"
+            ) {
               ctx.updateSessionMessages(subConvId, (currentMessages) =>
                 currentMessages.map((currentMessage) => {
                   if (currentMessage.id !== subAssistantMessageId) {
@@ -1079,40 +1055,85 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                       ["pending", "running"],
                       (currentToolCall) => ({
                         ...currentToolCall,
-                        streamingStdout:
-                          chunk.stream === "stdout"
-                            ? `${currentToolCall.streamingStdout ?? ""}${
-                                chunk.data
-                              }`
-                            : currentToolCall.streamingStdout,
-                        streamingStderr:
-                          chunk.stream === "stderr"
-                            ? `${currentToolCall.streamingStderr ?? ""}${
-                                chunk.data
-                              }`
-                            : currentToolCall.streamingStderr,
+                        interactiveSessionId:
+                          chunk.stream === "interactive_session"
+                            ? chunk.data
+                            : currentToolCall.interactiveSessionId,
+                        toolExecutionId:
+                          chunk.stream === "tool_execution"
+                            ? chunk.data
+                            : currentToolCall.toolExecutionId,
                       }),
                     ),
                   };
                 }),
               );
-            },
-            subToolCall.interactionId,
-            allowedTools,
-            // These booleans carry only the parent conversation's Rust
-            // write-gate state; they do not enable Plan Mode for the sub-agent.
-            // Read from the parent session's own ref so a background parent
-            // keeps its gate even after the user switches conversations.
-            ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
-              ctx.planModeRef.current,
-            planApprovedSessionKeysRef.current.has(parentConversationId),
-            // 会话溯源：子代理内 memory-save 溯源到子代理会话（删除主会话
-            // 时级联子会话一并清理）。
+              return;
+            }
+            ctx.updateSessionMessages(subConvId, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== subAssistantMessageId) {
+                  return currentMessage;
+                }
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    subToolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      streamingStdout:
+                        chunk.stream === "stdout"
+                          ? `${currentToolCall.streamingStdout ?? ""}${
+                              chunk.data
+                            }`
+                          : currentToolCall.streamingStdout,
+                      streamingStderr:
+                        chunk.stream === "stderr"
+                          ? `${currentToolCall.streamingStderr ?? ""}${
+                              chunk.data
+                            }`
+                          : currentToolCall.streamingStderr,
+                    }),
+                  ),
+                };
+              }),
+            );
+          },
+          subToolCall.interactionId,
+          allowedTools,
+          // These booleans carry only the parent conversation's Rust
+          // write-gate state; they do not enable Plan Mode for the sub-agent.
+          // Read from the parent session's own ref so a background parent
+          // keeps its gate even after the user switches conversations.
+          ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
+            ctx.planModeRef.current,
+          planApprovedSessionKeysRef.current.has(parentConversationId),
+          // 会话溯源：子代理内 memory-save 溯源到子代理会话（删除主会话
+          // 时级联子会话一并清理）。
+          subConvId,
+        );
+
+      let subResult: string;
+      let subToolErrored = false;
+      try {
+        if (SUB_AGENT_COMMS_TOOL_NAMES.has(subToolCall.name)) {
+          // 队友通信工具由渲染进程直接执行（会话隔离与 Pending 队列
+          // 都在渲染进程），不走 Rust callMcpTool。
+          subResult = await executeSubAgentCommsTool(
+            subToolCall.name,
+            subToolArgs,
             subConvId,
+            agentName,
+          );
+        } else {
+          subResult = await invokeSubTool(
+            subToolArgs,
+            subSensitiveAuthorizationToken,
           );
         }
       } catch (err) {
-        stopped = true;
         subToolErrored = true;
         const errorMessage = getErrorMessage(err);
 
@@ -1148,6 +1169,71 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
           subResult = JSON.stringify({ error: errorMessage });
         }
       }
+
+      // 工具失败（含抛错）：与主会话一致交给纠错 Agent 修正参数并重新执行，
+      // 最多 3 次；修正后的调用重新经过子代理会话的授权。Plan 审批阻断
+      // 不是参数问题，不参与纠错。
+      let subCorrection: ToolCorrectionSuccess | null = null;
+      if (!parentPlanApprovalRequired) {
+        const failedSubResult = subResult;
+        subCorrection = await correctFailedToolCall({
+          toolCall: subToolCall,
+          failedResult: failedSubResult,
+          apiProfile: runtimeConfig.apiProfile,
+          conversationId: subConvId,
+          responseId: subResponse.id || undefined,
+          getToolDefinition: getSubToolDefinition,
+          authorize: async (authorizationCall) => {
+            const decisions = await requestToolAuthorizations(
+              [authorizationCall],
+              subConvId,
+              dirId,
+            );
+            return decisions[0]?.status === "approved";
+          },
+          execute: (argumentsJson) =>
+            invokeSubTool(
+              injectSessionIdIntoToolArgs(
+                subToolCall.name,
+                argumentsJson,
+                subConvId,
+              ),
+              undefined,
+            ),
+          onUpdate: (correction) =>
+            ctx.updateSessionMessages(subConvId, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== subAssistantMessageId) {
+                  return currentMessage;
+                }
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    subToolCall,
+                    ["pending", "running", "completed", "error"],
+                    (currentToolCall) =>
+                      applyToolCorrectionToCall(
+                        currentToolCall,
+                        correction,
+                        false,
+                        failedSubResult,
+                      ),
+                  ),
+                };
+              }),
+            ),
+          isCancelled: isSubCancelled,
+        });
+        if (subCorrection) {
+          subResult = subCorrection.result;
+          subToolErrored = false;
+        }
+      }
+      if (subToolErrored) {
+        stopped = true;
+      }
+      const subExecutedArgs = subCorrection?.arguments ?? subToolArgs;
 
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
         currentMessages.map((currentMessage) => {
@@ -1195,7 +1281,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }
         const subFileChanges = extractFileChangesFromTool(
           subToolCall.name,
-          subToolArgs,
+          subExecutedArgs,
           subResult,
         );
         for (const subFileChange of subFileChanges) {
@@ -1210,13 +1296,19 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }
       }
 
+      const subBaseModelResult = formatMcpToolResultForModel(subResult);
       const subModelResult = withSubAgentEvidence(
         subConvId,
         subToolCall.name,
         subToolCall.callId,
         subToolErrored ? "error" : "completed",
         subResult,
-        formatMcpToolResultForModel(subResult),
+        subCorrection
+          ? appendToolCorrectionNote(
+              subBaseModelResult,
+              subCorrection.reasoning,
+            )
+          : subBaseModelResult,
       );
       subToolResults.push(subModelResult);
       subStructuredResults.push({

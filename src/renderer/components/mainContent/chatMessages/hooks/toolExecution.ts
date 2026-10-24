@@ -2,7 +2,6 @@ import {
   directoryIdToPath,
   formatMcpToolResultForModel,
   getErrorMessage,
-  isValidToolName,
   isUserQuestionCancellationResult,
   resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
@@ -46,15 +45,13 @@ import {
 import { settleImageGenerationReceipt } from "../utils/imageGenerationState";
 import {
   appendToolCorrectionNote,
-  detectToolFailure,
-  isNonCorrectableToolFailure,
-  isToolCorrectionEligible,
-  runToolCorrection,
-  serializeToolCorrectionState,
   type ToolCorrectionSuccess,
-  type ToolCorrectionToolDefinition,
 } from "./toolCorrection";
-import { ensureToolCorrectionPreference } from "../utils/toolCorrectionPreference";
+import {
+  applyToolCorrectionToCall,
+  correctFailedToolCall,
+  createToolDefinitionLookup,
+} from "./toolCorrectionRunner";
 
 export type ToolExecutionResult = {
   structuredToolResults: {
@@ -421,35 +418,7 @@ export function createToolExecutor(
 
       // Tool definitions are fetched lazily once per executor: only failed
       // calls need the schema, and most turns never fail.
-      let toolDefinitionsPromise: Promise<
-        Map<string, ToolCorrectionToolDefinition>
-      > | null = null;
-      const getToolDefinition = async (
-        toolName: string,
-      ): Promise<ToolCorrectionToolDefinition | null> => {
-        if (!toolDefinitionsPromise) {
-          toolDefinitionsPromise = window.snow
-            .listMcpTools()
-            .then(
-              (tools) =>
-                new Map(
-                  tools.map(
-                    (tool) =>
-                      [
-                        tool.name,
-                        {
-                          description: tool.description,
-                          inputSchemaJson: tool.inputSchemaJson,
-                        },
-                      ] as const,
-                  ),
-                ),
-            )
-            .catch(() => new Map<string, ToolCorrectionToolDefinition>());
-        }
-        const definitions = await toolDefinitionsPromise;
-        return definitions.get(toolName) ?? null;
-      };
+      const getToolDefinition = createToolDefinitionLookup();
 
       /** 用纠错后的参数重新执行同一条工具调用。 */
       const executeCorrectedTool = async (
@@ -493,9 +462,6 @@ export function createToolExecutor(
         settle: boolean,
         originalResult: string,
       ): void => {
-        const succeeded = correction.attempts.find(
-          (attempt) => attempt.status === "succeeded",
-        );
         ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((message) => {
             if (message.id !== currentAssistantMessageId) return message;
@@ -505,37 +471,13 @@ export function createToolExecutor(
                 message.toolCalls,
                 correctedCall,
                 ["pending", "running", "completed", "error"],
-                (currentToolCall) => {
-                  if (succeeded?.result !== undefined) {
-                    return {
-                      ...currentToolCall,
-                      arguments: succeeded.arguments,
-                      result: succeeded.result,
-                      status: "completed" as const,
-                      correction,
-                      streamingStdout: undefined,
-                      streamingStderr: undefined,
-                    };
-                  }
-                  if (settle) {
-                    return {
-                      ...currentToolCall,
-                      result: originalResult,
-                      status: "completed" as const,
-                      correction,
-                      streamingStdout: undefined,
-                      streamingStderr: undefined,
-                    };
-                  }
-                  return {
-                    ...currentToolCall,
-                    status: "running" as const,
-                    result: undefined,
+                (currentToolCall) =>
+                  applyToolCorrectionToCall(
+                    currentToolCall,
                     correction,
-                    streamingStdout: undefined,
-                    streamingStderr: undefined,
-                  };
-                },
+                    settle,
+                    originalResult,
+                  ),
               ),
             };
           }),
@@ -543,94 +485,26 @@ export function createToolExecutor(
       };
 
       /**
-       * 落库纠错状态：应用重启后历史消息重建时仍能展开纠错树（审计）。
-       * 与修正参数一样，仅在助手消息已持久化的会话中写入。
-       */
-      const persistToolCorrection = (
-        correctedCall: ToolCallInfo,
-        correction: ToolCorrectionState,
-      ): void => {
-        if (
-          !responseId ||
-          !correctedCall.callId ||
-          isPendingSessionKey(effectiveKey)
-        ) {
-          return;
-        }
-        void window.snow
-          .updateToolCallCorrection(
-            effectiveKey,
-            responseId,
-            correctedCall.callId,
-            serializeToolCorrectionState(correction),
-          )
-          .catch(() => undefined);
-      };
-
-      /** 让下一轮请求看到修正后的工具调用参数。 */
-      const persistCorrectedArguments = async (
-        correctedCall: ToolCallInfo,
-        argsJson: string,
-      ): Promise<void> => {
-        if (
-          !responseId ||
-          !correctedCall.callId ||
-          isPendingSessionKey(effectiveKey)
-        ) {
-          return;
-        }
-        await window.snow
-          .updateToolCallArguments(
-            effectiveKey,
-            responseId,
-            correctedCall.callId,
-            argsJson,
-          )
-          .catch(() => undefined);
-      };
-
-      /**
        * 失败工具纠错入口：仅对可纠错的普通工具触发，最多 3 次。
        * `settle` 为 true 时，纠错失败会把卡片恢复为原始结果
        * （并行预启动路径不会再经过顺序路径的最终结算）。
        */
-      const runCorrectionForTool = async (
+      const runCorrectionForTool = (
         correctedCall: ToolCallInfo,
         failedResult: string,
         workDir: string | undefined,
         settle: boolean,
-      ): Promise<ToolCorrectionSuccess | null> => {
-        if (
-          !isToolCorrectionEligible(correctedCall.name) ||
-          !isValidToolName(correctedCall.name) ||
-          !(await ensureToolCorrectionPreference())
-        ) {
-          return null;
-        }
-        const failure = detectToolFailure(failedResult);
-        if (!failure || isNonCorrectableToolFailure(failure)) {
-          return null;
-        }
-
-        const outcome = await runToolCorrection({
-          toolName: correctedCall.name,
-          originalArguments: correctedCall.arguments,
+      ): Promise<ToolCorrectionSuccess | null> =>
+        correctFailedToolCall({
+          toolCall: correctedCall,
           failedResult,
           apiProfile,
           conversationId: isPendingSessionKey(effectiveKey)
             ? undefined
             : effectiveKey,
-          getToolDefinition: () => getToolDefinition(correctedCall.name),
-          requestCorrection: (request) => window.snow.correctToolCall(request),
-          authorize: async (argumentsJson, attempt) => {
-            const authorizationCall: ToolCallInfo = {
-              ...correctedCall,
-              arguments: argumentsJson,
-              interactionId: `${correctedCall.interactionId}-correction-${attempt}`,
-              status: "pending",
-              result: undefined,
-              correction: undefined,
-            };
+          responseId,
+          getToolDefinition,
+          authorize: async (authorizationCall) => {
             const decisions = await requestToolAuthorizations(
               [authorizationCall],
               effectiveKey,
@@ -650,23 +524,15 @@ export function createToolExecutor(
               throw error;
             }
           },
-          onUpdate: (correction) => {
+          onUpdate: (correction) =>
             publishToolCorrection(
               correctedCall,
               correction,
               settle,
               failedResult,
-            );
-            persistToolCorrection(correctedCall, correction);
-          },
+            ),
           isCancelled: () => isRunCancelled(effectiveKey),
         });
-
-        if (outcome) {
-          await persistCorrectedArguments(correctedCall, outcome.arguments);
-        }
-        return outcome;
-      };
 
       // Pre-start every approved call up front and store the pending promises
       // keyed by tool index; the main loop below simply awaits the already-

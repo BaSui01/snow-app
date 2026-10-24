@@ -50,6 +50,12 @@ import {
   resetRunStreamMetrics,
 } from "../hooks/agentLoopHelpers";
 import { SUB_AGENT_MAIN_TOOL_NAMES } from "../hooks/subAgentActivation";
+import { appendToolCorrectionNote } from "../hooks/toolCorrection";
+import {
+  applyToolCorrectionToCall,
+  correctFailedToolCall,
+  createToolDefinitionLookup,
+} from "../hooks/toolCorrectionRunner";
 
 export type WorkflowNodeData = {
   id: string;
@@ -1860,7 +1866,8 @@ export function createWorkflowRunner(
     const updateAssistantToolCalls = (
       assistantMessageId: string,
       toolCall: ToolCallInfo,
-      matchStatus: "pending" | "running" | ("pending" | "running")[],
+      matchStatus:
+        ToolCallInfo["status"] | ReadonlyArray<ToolCallInfo["status"]>,
       patch: (currentToolCall: ToolCallInfo) => ToolCallInfo,
     ): void => {
       ctx.updateSessionMessages(conversationId, (currentMessages) =>
@@ -2239,6 +2246,8 @@ export function createWorkflowRunner(
           callId: string;
           result: string;
         }[] = [];
+        // 纠错所需的工具 schema：仅在本批首次失败时拉取一次。
+        const getNodeToolDefinition = createToolDefinitionLookup();
         for (let index = 0; index < toolCalls.length; index++) {
           const toolCall = toolCalls[index];
           const decision = decisions[index];
@@ -2358,6 +2367,75 @@ export function createWorkflowRunner(
             : flowCheckpointId
               ? directoryIdToPath(dirId)
               : undefined;
+          // 第三参 projectId 必须传目录 id：工具执行的工作目录上下文。
+          // 第四参 checkpointIds 传 flow checkpoint：文件工具 before
+          // 阶段把被改文件的原始状态捕获进该 checkpoint（lazy
+          // capture），回滚时恢复它即可撤销节点的文件改动。
+          // onChunk 把 tool_execution id 记录到工具卡片：会话级联
+          // 中止时 killRunningToolExecutions 据此杀掉节点仍在运行
+          // 的子进程。原始调用与纠错重试共用同一执行上下文。
+          const invokeNodeTool = (
+            nodeToolArgs: string,
+            nodeSensitiveToken: string | undefined,
+          ): Promise<string> =>
+            window.snow.callMcpTool(
+              toolCall.name,
+              nodeToolArgs,
+              dirId,
+              toolCheckpointIds,
+              flowCheckpointWorkDir,
+              nodeSensitiveToken,
+              (chunk) => {
+                if (!chunk.data) {
+                  return;
+                }
+                if (
+                  chunk.stream === "interactive_session" ||
+                  chunk.stream === "tool_execution"
+                ) {
+                  updateAssistantToolCalls(
+                    assistantMessageId,
+                    toolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      interactiveSessionId:
+                        chunk.stream === "interactive_session"
+                          ? chunk.data
+                          : currentToolCall.interactiveSessionId,
+                      toolExecutionId:
+                        chunk.stream === "tool_execution"
+                          ? chunk.data
+                          : currentToolCall.toolExecutionId,
+                    }),
+                  );
+                  return;
+                }
+                updateAssistantToolCalls(
+                  assistantMessageId,
+                  toolCall,
+                  ["pending", "running"],
+                  (currentToolCall) => ({
+                    ...currentToolCall,
+                    streamingStdout:
+                      chunk.stream === "stdout"
+                        ? `${currentToolCall.streamingStdout ?? ""}${chunk.data}`
+                        : currentToolCall.streamingStdout,
+                    streamingStderr:
+                      chunk.stream === "stderr"
+                        ? `${currentToolCall.streamingStderr ?? ""}${chunk.data}`
+                        : currentToolCall.streamingStderr,
+                  }),
+                );
+              },
+              toolCall.interactionId,
+              undefined,
+              ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
+                false,
+              planApprovedSessionKeysRef.current.has(parentConversationId),
+              // 会话溯源：节点内 memory-save 由 Rust 分发层注入节点会话 ID。
+              conversationId,
+            );
           try {
             // 子代理工具必须走渲染进程异步运行时：Rust callMcpTool 端
             // 会拒绝并报 "must be executed through the asynchronous
@@ -2380,76 +2458,68 @@ export function createWorkflowRunner(
                 toolCheckpointIds,
               );
             } else {
-              // 第三参 projectId 必须传目录 id：工具执行的工作目录上下文。
-              // 第四参 checkpointIds 传 flow checkpoint：文件工具 before
-              // 阶段把被改文件的原始状态捕获进该 checkpoint（lazy
-              // capture），回滚时恢复它即可撤销节点的文件改动。
-              // onChunk 把 tool_execution id 记录到工具卡片：会话级联
-              // 中止时 killRunningToolExecutions 据此杀掉节点仍在运行
-              // 的子进程。
-              result = await window.snow.callMcpTool(
-                toolCall.name,
+              result = await invokeNodeTool(
                 toolArgs,
-                dirId,
-                toolCheckpointIds,
-                flowCheckpointWorkDir,
                 sensitiveAuthorizationToken,
-                (chunk) => {
-                  if (!chunk.data) {
-                    return;
-                  }
-                  if (
-                    chunk.stream === "interactive_session" ||
-                    chunk.stream === "tool_execution"
-                  ) {
-                    updateAssistantToolCalls(
-                      assistantMessageId,
-                      toolCall,
-                      ["pending", "running"],
-                      (currentToolCall) => ({
-                        ...currentToolCall,
-                        interactiveSessionId:
-                          chunk.stream === "interactive_session"
-                            ? chunk.data
-                            : currentToolCall.interactiveSessionId,
-                        toolExecutionId:
-                          chunk.stream === "tool_execution"
-                            ? chunk.data
-                            : currentToolCall.toolExecutionId,
-                      }),
-                    );
-                    return;
-                  }
-                  updateAssistantToolCalls(
-                    assistantMessageId,
-                    toolCall,
-                    ["pending", "running"],
-                    (currentToolCall) => ({
-                      ...currentToolCall,
-                      streamingStdout:
-                        chunk.stream === "stdout"
-                          ? `${currentToolCall.streamingStdout ?? ""}${chunk.data}`
-                          : currentToolCall.streamingStdout,
-                      streamingStderr:
-                        chunk.stream === "stderr"
-                          ? `${currentToolCall.streamingStderr ?? ""}${chunk.data}`
-                          : currentToolCall.streamingStderr,
-                    }),
-                  );
-                },
-                toolCall.interactionId,
-                undefined,
-                ctx.sessionsRefData.current.get(parentConversationId)
-                  ?.planMode ?? false,
-                planApprovedSessionKeysRef.current.has(parentConversationId),
-                // 会话溯源：节点内 memory-save 由 Rust 分发层注入节点会话 ID。
-                conversationId,
               );
             }
           } catch (error) {
-            runHadToolError = true;
             toolErrored = true;
             result = JSON.stringify({ error: getErrorMessage(error) });
+          }
+
+          // 工具失败（含抛错）：与主会话一致交给纠错 Agent 修正参数并重新
+          // 执行，最多 3 次。修正后的调用沿用节点授权策略：只读工具自动
+          // 放行，其余重新走授权气泡。
+          const failedNodeResult = result;
+          const correction = await correctFailedToolCall({
+            toolCall,
+            failedResult: failedNodeResult,
+            apiProfile: effectiveApiProfile || undefined,
+            conversationId,
+            responseId: response.id || undefined,
+            getToolDefinition: getNodeToolDefinition,
+            authorize: async (authorizationCall) => {
+              if (readonlyToolNames.has(authorizationCall.name)) {
+                return true;
+              }
+              const retryDecisions = await requestToolAuthorizations(
+                [authorizationCall],
+                conversationId,
+                dirId,
+              );
+              return retryDecisions[0]?.status === "approved";
+            },
+            execute: (argumentsJson) =>
+              invokeNodeTool(
+                injectSessionIdIntoToolArgs(
+                  toolCall.name,
+                  argumentsJson,
+                  conversationId,
+                ),
+                undefined,
+              ),
+            onUpdate: (state) =>
+              updateAssistantToolCalls(
+                assistantMessageId,
+                toolCall,
+                ["pending", "running", "completed", "error"],
+                (currentToolCall) =>
+                  applyToolCorrectionToCall(
+                    currentToolCall,
+                    state,
+                    false,
+                    failedNodeResult,
+                  ),
+              ),
+            isCancelled: isNodeCancelled,
+          });
+          if (correction) {
+            result = correction.result;
+            toolErrored = false;
+          }
+          if (toolErrored) {
+            runHadToolError = true;
           }
 
           updateAssistantToolCalls(
@@ -2465,7 +2535,9 @@ export function createWorkflowRunner(
           structuredResults.push({
             name: toolCall.name,
             callId: toolCall.callId || "",
-            result,
+            result: correction
+              ? appendToolCorrectionNote(result, correction.reasoning)
+              : result,
           });
         }
 

@@ -4,6 +4,36 @@ import type { ChatConversationMessage } from "../chatMessages/utils/conversation
 
 /** 回合结束后等待落库再请求，避免读到不完整历史。 */
 const PREDICTION_DELAY_MS = 800;
+/** 会话级预测池上限：只保留最近若干会话，长期运行也不会无限增长。 */
+const PREDICTION_POOL_LIMIT = 64;
+
+/**
+ * 会话级预测缓存（conversationId -> 预测文本）。ChatInput 随会话切换（key
+ * 变化）而重建，预测与输入草稿一样按会话留存：切走时不丢，切回且输入框仍为
+ * 空时原样恢复；用户开始输入、采用预测或新一轮对话开始即清除该会话的预测。
+ */
+const predictionPool = new Map<string, string>();
+
+const readPrediction = (conversationId: string | null): string | null =>
+  conversationId ? (predictionPool.get(conversationId) ?? null) : null;
+
+const writePrediction = (conversationId: string, text: string): void => {
+  predictionPool.delete(conversationId);
+  predictionPool.set(conversationId, text);
+  while (predictionPool.size > PREDICTION_POOL_LIMIT) {
+    const oldest = predictionPool.keys().next().value;
+    if (oldest === undefined) {
+      break;
+    }
+    predictionPool.delete(oldest);
+  }
+};
+
+const dropPrediction = (conversationId: string | null): void => {
+  if (conversationId) {
+    predictionPool.delete(conversationId);
+  }
+};
 
 type UseReplyPredictionOptions = {
   conversationId: string | null;
@@ -28,11 +58,15 @@ export const useReplyPrediction = ({
   consumePrediction: () => string | null;
 } => {
   const { replyPredictionEnabled } = useReplyPredictionPreference();
+  // 初始为空：恢复放在 effect 里，与输入草稿的恢复同批提交，避免有草稿的
+  // 会话切回时先闪一帧预测再被草稿盖住。
   const [prediction, setPrediction] = useState<string | null>(null);
   const [turnCounter, setTurnCounter] = useState(0);
   const isEmpty = value.trim().length === 0;
   const isEmptyRef = useRef(isEmpty);
   isEmptyRef.current = isEmpty;
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
   const lastMessageRef = useRef<ChatConversationMessage | undefined>(undefined);
   lastMessageRef.current = messages[messages.length - 1];
   const wasStreamingRef = useRef(isStreaming);
@@ -48,17 +82,29 @@ export const useReplyPrediction = ({
   const active =
     replyPredictionEnabled && !disabled && !isStreaming && !!conversationId;
 
+  /** 丢弃当前会话的预测：内存态与池同时清除。 */
+  const clearPrediction = useCallback((): void => {
+    setPrediction(null);
+    dropPrediction(conversationIdRef.current);
+  }, []);
+
+  // 挂载或会话标识变化而实例未重建时（pending 槽位迁移为真实 ID），
+  // 恢复目标会话留存的预测。
+  useEffect(() => {
+    setPrediction(readPrediction(conversationId));
+  }, [conversationId]);
+
   useEffect(() => {
     if (!active) {
-      setPrediction(null);
+      clearPrediction();
     }
-  }, [active]);
+  }, [active, clearPrediction]);
 
   useEffect(() => {
     if (!isEmpty) {
-      setPrediction(null);
+      clearPrediction();
     }
-  }, [isEmpty]);
+  }, [isEmpty, clearPrediction]);
 
   useEffect(() => {
     if (!active || turnCounter === 0 || !conversationId) {
@@ -85,6 +131,8 @@ export const useReplyPrediction = ({
           requestId = null;
           const text = result.content.trim();
           if (!cancelled && text && isEmptyRef.current) {
+            // 请求期间未切走会话（cancelled 为假），结果归属当前会话。
+            writePrediction(conversationId, text);
             setPrediction(text);
           }
         })
@@ -103,9 +151,9 @@ export const useReplyPrediction = ({
 
   const consumePrediction = useCallback((): string | null => {
     const text = prediction;
-    setPrediction(null);
+    clearPrediction();
     return text;
-  }, [prediction]);
+  }, [prediction, clearPrediction]);
 
   return { prediction: isEmpty ? prediction : null, consumePrediction };
 };

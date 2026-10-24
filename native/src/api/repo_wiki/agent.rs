@@ -104,6 +104,7 @@ pub(crate) async fn resolve_model_context(
         api_profile_name: api_config.profile_name.clone(),
         api_config_id: api_config.id.clone(),
         request_method: api_config.request_method.clone(),
+        conversation_id: String::new(),
         directory_id,
     };
     Ok(ModelContext {

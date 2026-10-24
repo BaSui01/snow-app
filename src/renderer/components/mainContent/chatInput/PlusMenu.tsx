@@ -284,9 +284,14 @@ export const PlusMenu = ({
       modesFlyoutRef.current?.offsetHeight ?? maxHeight,
       maxHeight,
     );
-    let top = rect.top;
-    if (top + height > window.innerHeight - 8) {
-      top = Math.max(8, window.innerHeight - 8 - height);
+    // 二级面板在侧面展开：优先向上，底部与触发项底部对齐
+    let top = rect.bottom - height;
+    if (top < 8) {
+      // 上方空间不足时改回向下展开
+      top = rect.top;
+      if (top + height > window.innerHeight - 8) {
+        top = Math.max(8, window.innerHeight - 8 - height);
+      }
     }
     setModeFlyoutPosition({ left, top });
   }, []);

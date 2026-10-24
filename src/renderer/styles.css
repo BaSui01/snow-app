@@ -29571,8 +29571,10 @@ button.user-message-source:hover {
   background: var(--bg-hover);
 }
 
+/* 二级面板在侧面展开，箭头保持指向展开方向，仅做高亮与微移 */
 .plus-menu-submenu-trigger.is-open .plus-menu-submenu-chevron {
-  transform: rotate(90deg);
+  color: var(--text-primary);
+  transform: translateX(1px);
 }
 
 /* 二级面板：固定定位挂到 body，避开下拉容器的 overflow 裁切 */
@@ -29607,7 +29609,7 @@ button.user-message-source:hover {
 @keyframes plus-submenu-in {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(3px);
   }
   to {
     opacity: 1;

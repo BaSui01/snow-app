@@ -13,6 +13,8 @@ pub(crate) struct UsageContext {
     pub(crate) api_profile_name: String,
     pub(crate) api_config_id: String,
     pub(crate) request_method: String,
+    /// 会话归属；空串表示该请求不属于任何会话（如文件搜索 agent）。
+    pub(crate) conversation_id: String,
     pub(crate) directory_id: String,
 }
 
@@ -23,12 +25,13 @@ impl UsageContext {
         let api_profile_name = self.api_profile_name.clone();
         let api_config_id = self.api_config_id.clone();
         let request_method = self.request_method.clone();
+        let conversation_id = self.conversation_id.clone();
         let directory_id = self.directory_id.clone();
         let result = tokio::task::spawn_blocking(move || {
             record_usage(
                 &database_path,
                 &UsageRecordInput {
-                    conversation_id: "",
+                    conversation_id: &conversation_id,
                     response_id: "",
                     model: &model,
                     api_profile_name: &api_profile_name,

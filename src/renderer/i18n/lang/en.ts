@@ -6975,9 +6975,9 @@ export const en = {
   "plugins.write.openHint":
     "Open the metadata catalog (Writable) to compare every action and its declaration state",
   "plugins.write.description":
-    "Write actions a plugin can call through api.write; sensitive ones require the same privacy declaration as reads.",
+    "Write actions panel plugins call through api.write and script plugins through snow.write (the same action set); sensitive ones require the same privacy declaration as reads.",
   "plugins.write.scopeHint":
-    "Calling this action requires declaring the \u201c{{scope}}\u201d privacy scope in plugin.json",
+    "Calling this action requires declaring the \u201c{{scope}}\u201d privacy scope in plugin.json privacy or the script's @snow-privacy",
   "plugins.write.granted": "Writable",
   "plugins.write.denied": "Not declared",
   "plugins.write.empty": "No matching write action",
@@ -6991,7 +6991,7 @@ export const en = {
   "plugins.metadata.tabMetadata": "Reading",
   "plugins.metadata.contextClear": "Show all domains",
   "plugins.metadata.description":
-    "App metadata domains a plugin can read through api.metadata (read-only). A domain tagged with a privacy scope must be declared in plugin.json before it can be read.",
+    "App metadata domains panel plugins read through api.metadata and script plugins through snow.metadata (the same read-only domain set). A domain tagged with a privacy scope must be declared in plugin.json privacy or the script's @snow-privacy before it can be read.",
   "plugins.metadata.searchPlaceholder": "Search domains, fields or parameters",
   "plugins.metadata.count": "{{matched}} / {{total}} domains",
   "plugins.metadata.empty": "No matching metadata domain",
@@ -7003,7 +7003,7 @@ export const en = {
   "plugins.metadata.granted": "Readable",
   "plugins.metadata.denied": "Not declared",
   "plugins.metadata.scopeHint":
-    "Reading this domain requires declaring the “{{scope}}” privacy scope in plugin.json",
+    "Reading this domain requires declaring the “{{scope}}” privacy scope in plugin.json privacy or the script's @snow-privacy",
   "plugins.metadata.pluginContext":
     "“{{name}}”: {{granted}} / {{total}} domains granted, the rest are denied",
   "plugins.metadata.pluginEntry": "Metadata {{granted}}/{{total}}",
@@ -7017,12 +7017,18 @@ export const en = {
   "plugins.metadata.groups.other": "Other",
   "plugins.net.tabNet": "Network",
   "plugins.net.description":
-    "External HTTP requests through api.net.fetch and direct WebSocket / HTTP connections; the plugin must declare the network privacy scope.",
+    "External HTTP requests made by panel plugins through api.net.fetch and by script plugins through snow.fetch / GM_xmlhttpRequest (all forwarded by the main process, bypassing CORS), plus direct WebSocket / HTTP connections; declare the network privacy scope in plugin.json privacy or the script's @snow-privacy.",
   "plugins.net.count": "{{matched}} / {{total}} capabilities",
   "plugins.net.badge": "Declaration required",
+  "plugins.net.runtimePanel": "Panel plugin",
+  "plugins.net.runtimeScript": "Script plugin",
   "plugins.net.fetchSummary":
     'Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB of raw bytes; responseType "text" (default) decodes body as UTF-8, while "arraybuffer" returns the raw bytes as base64 in bodyBase64 so the plugin decodes them itself (e.g. GBK / GB18030). Network failures never throw and are reported in the error field.',
   "plugins.net.empty": "No matching network capability",
+  "plugins.net.scriptFetchSummary":
+    "Cross-origin request forwarded by the main process (bypasses CORS) that returns a standard Response (status / headers / text() / json() / arrayBuffer() / blob()); sandboxed scripts get it as the global fetch, main-world scripts call it explicitly. Relative URLs and data: / blob: fall back to the native fetch; no streaming, signal or FormData; 30-second timeout.",
+  "plugins.net.gmXhrSummary":
+    "Tampermonkey-compatible GM_xmlhttpRequest forwarded by the main process (bypasses CORS, http/https only); arraybuffer / blob responses travel as base64 and are decoded on the script side; 30-second timeout.",
   "plugins.net.docHint":
     "Full reference: the built-in plugin development guide ~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md",
   "chatCommand.customCommandsDescription":

@@ -6553,9 +6553,9 @@ export const zhCN = {
   "plugins.write.openHint":
     "在「元数据清单 → 可写能力」中查看全部动作与声明状态",
   "plugins.write.description":
-    "插件可通过 api.write 调用的写操作；敏感写操作与读取一样需要隐私声明。",
+    "面板插件经 api.write、脚本插件经 snow.write 调用的写操作（同一套动作）；敏感写操作与读取一样需要隐私声明。",
   "plugins.write.scopeHint":
-    "调用该操作需要在 plugin.json 的隐私声明中声明「{{scope}}」",
+    "调用该操作需在 plugin.json 的 privacy 或脚本的 @snow-privacy 中声明「{{scope}}」",
   "plugins.write.granted": "可写",
   "plugins.write.denied": "未声明",
   "plugins.write.empty": "没有匹配的写操作",
@@ -6569,7 +6569,7 @@ export const zhCN = {
   "plugins.metadata.tabMetadata": "可读元数据",
   "plugins.metadata.contextClear": "查看全部域",
   "plugins.metadata.description":
-    "插件通过 api.metadata 以只读方式读取的应用元数据域；标注隐私域的域需要在 plugin.json 的 privacy 中声明后才能读取。",
+    "面板插件经 api.metadata、脚本插件经 snow.metadata 以只读方式读取的应用元数据域（同一套域）；标注隐私域的域需在 plugin.json 的 privacy 或脚本的 @snow-privacy 中声明后才能读取。",
   "plugins.metadata.searchPlaceholder": "搜索域、字段或参数",
   "plugins.metadata.count": "{{matched}} / {{total}} 个域",
   "plugins.metadata.empty": "没有匹配的元数据域",
@@ -6581,7 +6581,7 @@ export const zhCN = {
   "plugins.metadata.granted": "可读",
   "plugins.metadata.denied": "未声明",
   "plugins.metadata.scopeHint":
-    "读取该域需在 plugin.json 的 privacy 中声明「{{scope}}」隐私域",
+    "读取该域需在 plugin.json 的 privacy 或脚本的 @snow-privacy 中声明「{{scope}}」隐私域",
   "plugins.metadata.pluginContext":
     "「{{name}}」：{{granted}} / {{total}} 个域已授权，其余域读取会被拒绝",
   "plugins.metadata.pluginEntry": "可读元数据 {{granted}}/{{total}}",
@@ -6595,12 +6595,18 @@ export const zhCN = {
   "plugins.metadata.groups.other": "其他",
   "plugins.net.tabNet": "网络能力",
   "plugins.net.description":
-    "通过 api.net.fetch 的外部 HTTP 请求，以及插件直接发起的 WebSocket / HTTP 连接；插件须声明 network 隐私域。",
+    "面板插件经 api.net.fetch、脚本插件经 snow.fetch / GM_xmlhttpRequest 发起的外部 HTTP 请求（均由主进程转发、绕过 CORS），以及插件直接发起的 WebSocket / HTTP 连接；须在 plugin.json 的 privacy 或脚本的 @snow-privacy 中声明 network 隐私域。",
   "plugins.net.count": "{{matched}} / {{total}} 个能力",
   "plugins.net.badge": "需要声明",
+  "plugins.net.runtimePanel": "面板插件",
+  "plugins.net.runtimeScript": "脚本插件",
   "plugins.net.fetchSummary":
     '发起外部 HTTP 请求（仅 http/https）：跟随应用代理设置、无 CORS 限制、不携带 Cookie。超时默认 30 秒（上限 120 秒），响应体上限 5MB（按原始字节计）；responseType 缺省 "text"（宿主按 UTF-8 解码 body），传 "arraybuffer" 时原始字节以 base64 放在 bodyBase64、由插件自行解码（如 GBK / GB18030）。网络层失败不抛异常，以结果里的 error 字段返回。',
   "plugins.net.empty": "没有匹配的网络能力",
+  "plugins.net.scriptFetchSummary":
+    "经主进程转发的跨域请求（绕过 CORS），返回标准 Response（status / headers / text() / json() / arrayBuffer() / blob()）；沙箱档下全局 fetch 已替换为它，主世界档需显式调用。相对 URL 与 data: / blob: 回退原生 fetch；不支持流式响应 / signal / FormData，超时 30 秒。",
+  "plugins.net.gmXhrSummary":
+    "兼容油猴的 GM_xmlhttpRequest，经主进程转发（绕过 CORS，仅 http/https）；responseType 为 arraybuffer / blob 时以 base64 传回并由脚本侧解码，超时 30 秒。",
   "plugins.net.docHint":
     "完整说明见内置文档 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",
   "chatCommand.customCommandsDescription": "维护自定义指令（Prompt / Bash）",

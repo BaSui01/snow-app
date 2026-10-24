@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { ChatConversationRecord } from "../../../../../preload";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import {
   buildConversationMessages,
@@ -44,7 +45,7 @@ export const sendMessageToConversation = (
 const prepareBackgroundSession = async (
   ctx: ConversationContextValue,
   conversationId: string,
-): Promise<void> => {
+): Promise<ChatConversationRecord> => {
   const record = await window.snow.getChatConversation(conversationId);
   if (!record) {
     throw new Error(`Conversation not found: ${conversationId}`);
@@ -61,7 +62,7 @@ const prepareBackgroundSession = async (
   // 与进行中的视图加载共享同一请求，避免重复拉取并覆盖其结果。
   await ctx.historyLoadPromisesRef.current.get(conversationId);
   if (ctx.sessionsRef.current[conversationId]) {
-    return;
+    return record;
   }
 
   const [page, modes] = await Promise.all([
@@ -99,6 +100,25 @@ const prepareBackgroundSession = async (
       },
     };
   });
+  return record;
+};
+
+/**
+ * 会话已绑定且仍存在的档案名。回合本身由后端按会话绑定解析，但子代理
+ * 只继承本次发送显式携带的档案；显式带上绑定才能让整轮（含子代理）
+ * 与会话绑定一致。绑定的档案已被删除时不携带，保持回退全局激活档案。
+ */
+const resolveBoundApiProfile = async (
+  record: ChatConversationRecord,
+): Promise<string | undefined> => {
+  const bound = record.apiProfileName.trim();
+  if (!bound) {
+    return undefined;
+  }
+  const configs = await window.snow.listApiConfigs();
+  return configs.some((config) => config.profileName.trim() === bound)
+    ? bound
+    : undefined;
 };
 
 const deliverMessage = async (
@@ -110,11 +130,15 @@ const deliverMessage = async (
   if (!trimmed) {
     throw new Error("Message text must not be blank");
   }
-  await prepareBackgroundSession(ctx, conversationId);
+  const record = await prepareBackgroundSession(ctx, conversationId);
+  const apiProfile = await resolveBoundApiProfile(record);
   const wasBusy =
     ctx.sessionsRefData.current.get(conversationId)?.isSending === true;
   // 程序化发送省略 deliveryMode 时始终排队；会话空闲则直接开始新回合。
-  const options: ChatInputSendOptions = { targetSessionKey: conversationId };
+  const options: ChatInputSendOptions = {
+    targetSessionKey: conversationId,
+    ...(apiProfile ? { apiProfile } : {}),
+  };
   ctx.handleSendMessageRef.current(trimmed, options);
   return { conversationId, status: wasBusy ? "queued" : "started" };
 };

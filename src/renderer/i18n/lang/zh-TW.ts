@@ -6562,9 +6562,9 @@ export const zhTW = {
   "plugins.write.openHint":
     "在「中繼資料清單 → 可寫能力」中檢視全部動作與宣告狀態",
   "plugins.write.description":
-    "外掛可透過 api.write 呼叫的寫入操作；敏感寫入與讀取一樣需要隱私宣告。",
+    "面板外掛經 api.write、腳本外掛經 snow.write 呼叫的寫入操作（同一套動作）；敏感寫入與讀取一樣需要隱私宣告。",
   "plugins.write.scopeHint":
-    "呼叫此操作需要在 plugin.json 的隱私宣告中宣告「{{scope}}」",
+    "呼叫此操作需在 plugin.json 的 privacy 或腳本的 @snow-privacy 中宣告「{{scope}}」",
   "plugins.write.granted": "可寫",
   "plugins.write.denied": "未宣告",
   "plugins.write.empty": "沒有符合的寫入操作",
@@ -6578,7 +6578,7 @@ export const zhTW = {
   "plugins.metadata.tabMetadata": "可讀中繼資料",
   "plugins.metadata.contextClear": "檢視全部域",
   "plugins.metadata.description":
-    "外掛透過 api.metadata 以唯讀方式讀取的應用程式資料域；標示隱私網域的域需在 plugin.json 的 privacy 中宣告後才能讀取。",
+    "面板外掛經 api.metadata、腳本外掛經 snow.metadata 以唯讀方式讀取的應用程式資料域（同一套域）；標示隱私網域的域需在 plugin.json 的 privacy 或腳本的 @snow-privacy 中宣告後才能讀取。",
   "plugins.metadata.searchPlaceholder": "搜尋域、欄位或參數",
   "plugins.metadata.count": "{{matched}} / {{total}} 個域",
   "plugins.metadata.empty": "沒有符合的中繼資料域",
@@ -6590,7 +6590,7 @@ export const zhTW = {
   "plugins.metadata.granted": "可讀",
   "plugins.metadata.denied": "未宣告",
   "plugins.metadata.scopeHint":
-    "讀取該域需在 plugin.json 的 privacy 中宣告「{{scope}}」隱私域",
+    "讀取該域需在 plugin.json 的 privacy 或腳本的 @snow-privacy 中宣告「{{scope}}」隱私域",
   "plugins.metadata.pluginContext":
     "「{{name}}」：{{granted}} / {{total}} 個域已授權，其餘域讀取會被拒絕",
   "plugins.metadata.pluginEntry": "可讀中繼資料 {{granted}}/{{total}}",
@@ -6604,12 +6604,18 @@ export const zhTW = {
   "plugins.metadata.groups.other": "其他",
   "plugins.net.tabNet": "網路能力",
   "plugins.net.description":
-    "通過 api.net.fetch 的外部 HTTP 請求，以及外掛直接發起的 WebSocket / HTTP 連線；外掛須宣告 network 隱私域。",
+    "面板外掛經 api.net.fetch、腳本外掛經 snow.fetch / GM_xmlhttpRequest 發起的外部 HTTP 請求（均由主行程轉發、繞過 CORS），以及外掛直接發起的 WebSocket / HTTP 連線；須在 plugin.json 的 privacy 或腳本的 @snow-privacy 中宣告 network 隱私域。",
   "plugins.net.count": "{{matched}} / {{total}} 個能力",
   "plugins.net.badge": "需要宣告",
+  "plugins.net.runtimePanel": "面板外掛",
+  "plugins.net.runtimeScript": "腳本外掛",
   "plugins.net.fetchSummary":
     '發起外部 HTTP 請求（僅 http/https）：跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie。逾時預設 30 秒（上限 120 秒），回應主體上限 5MB（按原始位元組計）；responseType 預設 "text"（宿主以 UTF-8 解碼 body），傳 "arraybuffer" 時原始位元組以 base64 放在 bodyBase64、由外掛自行解碼（如 GBK / GB18030）。網路層失敗不拋例外，以結果中的 error 欄位回傳。',
   "plugins.net.empty": "沒有符合的網路能力",
+  "plugins.net.scriptFetchSummary":
+    "經主行程轉發的跨網域請求（繞過 CORS），回傳標準 Response（status / headers / text() / json() / arrayBuffer() / blob()）；沙箱檔下全域 fetch 已替換為它，主世界檔需明確呼叫。相對 URL 與 data: / blob: 回退原生 fetch；不支援串流回應 / signal / FormData，逾時 30 秒。",
+  "plugins.net.gmXhrSummary":
+    "相容油猴的 GM_xmlhttpRequest，經主行程轉發（繞過 CORS，僅 http/https）；responseType 為 arraybuffer / blob 時以 base64 傳回並由腳本端解碼，逾時 30 秒。",
   "plugins.net.docHint":
     "完整說明見內建文件 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",
   "chatCommand.customCommandsDescription": "維護自訂指令（Prompt / Bash）",

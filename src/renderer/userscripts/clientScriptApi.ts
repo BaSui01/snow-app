@@ -29,7 +29,8 @@ const parseJson = <T>(raw: string | null | undefined, fallback: T): T => {
   }
 };
 
-const buildScriptPluginView = (
+/** 把客户端脚本信息包装成插件视图：元数据 / 写动作引擎与清单按同一套规则授权。 */
+export const buildScriptPluginView = (
   scriptId: string,
   info: ScriptInfo,
 ): PluginView => ({

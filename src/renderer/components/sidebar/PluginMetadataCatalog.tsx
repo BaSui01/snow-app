@@ -43,6 +43,8 @@ type CatalogTab = "metadata" | "write" | "net";
 
 type NetCapabilityRow = {
   id: string;
+  /** 能力所属的扩展类型：面板插件（api.*）或脚本插件（snow.* / GM_*）。 */
+  runtime: "panel" | "script";
   summary: string;
   params: string[];
 };
@@ -105,6 +107,7 @@ export const PluginMetadataCatalog = ({
     () => [
       {
         id: "api.net.fetch",
+        runtime: "panel",
         summary: t("plugins.net.fetchSummary", {
           defaultValue:
             "Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies.",
@@ -118,9 +121,40 @@ export const PluginMetadataCatalog = ({
           "responseType",
         ],
       },
+      {
+        id: "snow.fetch",
+        runtime: "script",
+        summary: t("plugins.net.scriptFetchSummary", {
+          defaultValue:
+            "Cross-origin request forwarded by the main process (bypasses CORS) that returns a standard Response; in sandboxed scripts the global fetch is replaced by it. No streaming, signal or FormData; 30-second timeout.",
+        }),
+        params: ["input", "method", "headers", "body"],
+      },
+      {
+        id: "GM_xmlhttpRequest",
+        runtime: "script",
+        summary: t("plugins.net.gmXhrSummary", {
+          defaultValue:
+            "Tampermonkey-compatible request forwarded by the main process (bypasses CORS); arraybuffer / blob responses travel as base64 and are decoded by the shim. 30-second timeout.",
+        }),
+        params: [
+          "url",
+          "method",
+          "headers",
+          "data",
+          "responseType",
+          "onload",
+          "onerror",
+        ],
+      },
     ],
     [t],
   );
+
+  const runtimeLabel = (runtime: NetCapabilityRow["runtime"]): string =>
+    runtime === "panel"
+      ? t("plugins.net.runtimePanel", { defaultValue: "Panel plugin" })
+      : t("plugins.net.runtimeScript", { defaultValue: "Script plugin" });
 
   const grantedCount = rows.filter((row) => row.granted).length;
   const writeGrantedCount = writeRows.filter((row) => row.granted).length;
@@ -149,8 +183,8 @@ export const PluginMetadataCatalog = ({
 
   const matchedNet = keyword
     ? netRows.filter((row) =>
-        [row.id, row.summary, ...row.params].some((value) =>
-          value.toLowerCase().includes(keyword),
+        [row.id, row.summary, runtimeLabel(row.runtime), ...row.params].some(
+          (value) => value.toLowerCase().includes(keyword),
         ),
       )
     : netRows;
@@ -527,6 +561,9 @@ export const PluginMetadataCatalog = ({
                 <div className="plugin-metadata-item-head">
                   <code className="plugin-metadata-id">{row.id}</code>
                   <div className="plugin-metadata-badges">
+                    <span className="plugin-metadata-badge">
+                      {runtimeLabel(row.runtime)}
+                    </span>
                     <span className="plugin-metadata-badge public">
                       {t("plugins.net.badge", {
                         defaultValue: "Declaration required",

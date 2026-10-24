@@ -30,6 +30,10 @@ import {
   type ArtifactLabels,
 } from "./htmlArtifactRenderer";
 import { openTableExportMenu } from "./tableExport";
+import {
+  getAcceptanceReportText,
+  localizeAcceptanceBlocks,
+} from "./acceptanceRenderer";
 import { openInSystemBrowser, openLinkOpenMenu } from "./linkOpenMenu";
 import { useI18n } from "../../../../i18n";
 import { downloadImageSrc } from "../../../../utils/imageDownload";
@@ -806,12 +810,13 @@ const commitMarkdownChunks = (
     const tailText =
       findLastNonEmptyTextNodeIn(parsedTailNodes)?.nodeValue ?? "";
     if (
-      !chunks[0].html.includes('class="html-artifact-block"') &&
-      !tailNodes.some(
+      // Structured blocks can change while their final text stays identical.
+      // Never commit their new key without also committing their complete DOM.
+      ![...tailNodes, ...parsedTailNodes].some(
         (node) =>
           node instanceof HTMLElement &&
-          (node.matches(".html-artifact-block") ||
-            node.querySelector(".html-artifact-block")),
+          (node.matches(".html-artifact-block, .md-acceptance") ||
+            node.querySelector(".html-artifact-block, .md-acceptance")),
       ) &&
       tailText.startsWith(lastTailTextRef.current)
     ) {
@@ -1049,6 +1054,13 @@ export const MarkdownBlock = memo(
         lastTailTextRef,
       );
     }, [pending, content]);
+
+    useLayoutEffect(() => {
+      const node = containerRef.current;
+      if (node) {
+        localizeAcceptanceBlocks(node, (key, values) => t(key, { values }));
+      }
+    }, [version, t]);
 
     // Current props gate execution, including a stream ending without new chunks.
     useLayoutEffect(() => {
@@ -1307,6 +1319,29 @@ export const MarkdownBlock = memo(
           const wrapper = langBtn.closest(".code-block-wrapper");
           if (wrapper) {
             wrapper.classList.toggle("collapsed");
+          }
+          return;
+        }
+
+        const reportCopy = target.closest<HTMLElement>(".md-acceptance-copy");
+        if (reportCopy) {
+          const block = reportCopy.closest(".md-acceptance");
+          if (block) {
+            void navigator.clipboard
+              .writeText(getAcceptanceReportText(block))
+              .then(
+                () => {
+                  reportCopy.classList.add("copied");
+                  reportCopy.removeAttribute("title");
+                  window.setTimeout(
+                    () => reportCopy.classList.remove("copied"),
+                    2000,
+                  );
+                },
+                () => {
+                  reportCopy.title = t("markdown.acceptance.copyFailed");
+                },
+              );
           }
           return;
         }

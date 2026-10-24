@@ -800,6 +800,10 @@ export const buildConversationMessages = (
         thinkingTokenCount: record.thinkingTokenCount || undefined,
         timestamp: record.createdAt,
         status: messageStatus,
+        failureReason:
+          assistantDisposition?.kind === "error"
+            ? record.failureReason || undefined
+            : undefined,
         htmlPreviewEligible:
           record.role !== "user" && isResponseHtmlPreviewEligible(record),
         responseId: record.responseId || undefined,

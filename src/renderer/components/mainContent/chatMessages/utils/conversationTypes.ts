@@ -201,6 +201,8 @@ export type ChatConversationMessage = {
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
+  /** Redacted provider diagnostic; generated content is never an error reason. */
+  failureReason?: string;
   responseId?: string;
   model?: string;
   toolCalls?: ToolCallInfo[];

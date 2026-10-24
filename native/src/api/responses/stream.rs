@@ -53,6 +53,7 @@ pub(super) struct StreamingResponseResult {
     pub recovery_outcome: Option<StreamRecoveryOutcome>,
     /// Bounded, redacted reason of a provider failure after recovery stops.
     pub failure_reason: Option<String>,
+    pub failure: Option<crate::api::failure::ProviderFailure>,
     pub failure_stop_reason: Option<&'static str>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
@@ -354,12 +355,10 @@ impl ResponsesAttemptState {
             self.failure_reason = None;
             (Some(StreamInterruptionReason::ExplicitIncomplete), None)
         } else if self.response_status == "failed" {
-            // 失败终态：保留 failure_reason 交给调用方留痕；上游没给出可读原因时
-            // 用兜底文案，避免出现「failed 却无任何线索」的空日志。
-            if self.failure_reason.is_none() {
-                self.failure_reason =
-                    Some(super::event::ResponsesFailure::from_event(&Value::Null));
-            }
+            // Failed response fragments must never become executable tools.
+            self.tool_calls.clear();
+            self.streaming_tool_items.clear();
+            self.tool_parse_errors.clear();
             (None, None)
         } else {
             // 成功终态：清空，避免重试成功后被上一轮的失败原因污染。
@@ -414,6 +413,7 @@ pub(super) fn cancelled_stream_result(
         interruption_reason: None,
         recovery_outcome: None,
         failure_reason: None,
+        failure: None,
         failure_stop_reason: None,
         token_usage: ChatTokenUsage {
             input_tokens: 0,
@@ -450,6 +450,12 @@ pub(super) fn finalize_attempt_result(
         }
     }
 
+    if matches!(attempt_state.response_status.as_str(), "failed" | "cancelled") {
+        attempt_state.tool_calls.clear();
+        attempt_state.streaming_tool_items.clear();
+        attempt_state.tool_parse_errors.clear();
+    }
+    if attempt_state.response_status != "failed" { attempt_state.failure_reason = None; }
     let content = attempt_state.content_chunks.join("").trim().to_string();
     let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
     let tool_calls_json =
@@ -466,10 +472,8 @@ pub(super) fn finalize_attempt_result(
         status: attempt_state.response_status.clone(),
         interruption_reason,
         recovery_outcome,
-        failure_reason: attempt_state
-            .failure_reason
-            .as_ref()
-            .map(super::event::ResponsesFailure::reason),
+        failure_reason: attempt_state.failure_reason.as_ref().and_then(|failure| failure.detail.reason()),
+        failure: attempt_state.failure_reason.as_ref().map(|failure| failure.detail.clone()),
         failure_stop_reason: attempt_state.failure_stop_reason,
         token_usage: attempt_state.token_usage,
         tool_calls_json,
@@ -600,8 +604,9 @@ pub(super) async fn collect_streaming_response(
                         ));
 
                         if !should_retry(&error, attempt, retry_options) {
-                            return Err(error);
+                            return Err(Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key))));
                         }
+                        let error = Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key)));
 
                         // Emit retry status to frontend
                         on_chunk.call(
@@ -633,7 +638,7 @@ pub(super) async fn collect_streaming_response(
                             "responses",
                             "http_status",
                             attempt,
-                            endpoint,
+                            "[redacted endpoint]",
                             &error.reason,
                             retry_backoff_ms(retry_options, attempt),
                         )
@@ -651,8 +656,9 @@ pub(super) async fn collect_streaming_response(
                 }
                 Err(error) => {
                     if !should_retry(&error, attempt, retry_options) {
-                        return Err(error);
+                        return Err(Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key))));
                     }
+                    let error = Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key)));
 
                     // Emit retry status to frontend
                     on_chunk.call(
@@ -683,7 +689,7 @@ pub(super) async fn collect_streaming_response(
                         "responses",
                         send_failure_cause(&error),
                         attempt,
-                        endpoint,
+                        "[redacted endpoint]",
                         &error.reason,
                         retry_backoff_ms(retry_options, attempt),
                     )
@@ -802,6 +808,7 @@ pub(super) async fn collect_streaming_response(
         };
         let progress = attempt_state.progress(cancel_token.is_cancelled());
         let decision = decide_stream_recovery(cause, attempt, retry_options, progress);
+        let retry_error = crate::api::failure::bounded_provider_detail(&retry_error, 768, Some(api_key));
 
         match decision {
             StreamRecoveryDecision::Cancelled => {
@@ -834,7 +841,7 @@ pub(super) async fn collect_streaming_response(
                     "responses",
                     cause.interruption_reason().as_code(),
                     attempt,
-                    endpoint,
+                    "[redacted endpoint]",
                     &retry_error,
                     retry_backoff_ms(retry_options, attempt),
                 )

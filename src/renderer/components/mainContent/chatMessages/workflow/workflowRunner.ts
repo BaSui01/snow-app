@@ -40,6 +40,11 @@ import {
   runAutoCompactionGate,
 } from "../utils/autoCompaction";
 import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
+import {
+  failedModelMessage,
+  modelFailureReason,
+  settleApiCancellation,
+} from "../hooks/modelResponseFailure";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import {
   accumulateRunTokenUsage,
@@ -50,6 +55,7 @@ import {
   resetRunStreamMetrics,
 } from "../hooks/agentLoopHelpers";
 import { SUB_AGENT_MAIN_TOOL_NAMES } from "../hooks/subAgentActivation";
+import { resolveSubAgentExecutionMode } from "../hooks/subAgentExecutionMode";
 
 export type WorkflowNodeData = {
   id: string;
@@ -1848,7 +1854,12 @@ export function createWorkflowRunner(
       ctx.updateSessionMessages(conversationId, (currentMessages) =>
         currentMessages.map((currentMessage) =>
           currentMessage.id === messageId
-            ? { ...currentMessage, ...patch }
+            ? {
+                ...currentMessage,
+                ...patch,
+                failureReason:
+                  patch.status === "error" ? patch.failureReason : undefined,
+              }
             : currentMessage,
         ),
       );
@@ -1997,14 +2008,23 @@ export function createWorkflowRunner(
             chunkHandler,
             createStreamIdHandler(ctx, conversationId, isNodeCancelled),
           );
-        } catch (error) {
+        } catch {
           chunkHandler.flush();
+          const cancelled = isNodeCancelled();
           finalizeMessage(assistantMessageId, {
-            content: getErrorMessage(error),
-            status: "error",
+            status: cancelled ? "sent" : "error",
+            failureReason: undefined,
+            htmlPreviewEligible: false,
+            toolCalls: undefined,
             isRetrying: false,
           });
-          return { content: "", failed: true, error: getErrorMessage(error) };
+          return {
+            content: "",
+            failed: !isNodeForceSendAborted(),
+            error: cancelled
+              ? "Workflow node was interrupted by the user"
+              : modelFailureReason(),
+          };
         }
         chunkHandler.flush();
 
@@ -2044,6 +2064,27 @@ export function createWorkflowRunner(
           return { content: partialContent, failed: false };
         }
 
+        if (
+          isNodeCancelled() ||
+          settleApiCancellation(
+            ctx,
+            conversationId,
+            assistantMessageId,
+            response,
+          )
+        ) {
+          finalizeMessage(assistantMessageId, {
+            status: "sent",
+            isRetrying: false,
+            toolCalls: undefined,
+            htmlPreviewEligible: false,
+          });
+          return {
+            content: "",
+            failed: true,
+            error: "Workflow node was interrupted by the user",
+          };
+        }
         const disposition = resolveResponseDisposition(response);
         ctx.updateSessionMessages(conversationId, (currentMessages) =>
           settleResponseHtmlPreviewEligibility(
@@ -2054,18 +2095,17 @@ export function createWorkflowRunner(
           ),
         );
         if (disposition.kind === "error") {
-          finalizeMessage(assistantMessageId, {
-            content: response.content || "Node request failed.",
-            thinking: response.thinking || undefined,
-            status: "error",
-            responseId: response.id || undefined,
-            model: response.model || undefined,
-            isRetrying: false,
-          });
+          ctx.updateSessionMessages(conversationId, (messages) =>
+            messages.map((message) =>
+              message.id === assistantMessageId
+                ? failedModelMessage(message, response)
+                : message,
+            ),
+          );
           return {
             content: "",
             failed: true,
-            error: response.content || "Node request failed.",
+            error: modelFailureReason(response.failureReason),
           };
         }
         if (disposition.kind === "incomplete") {
@@ -2317,7 +2357,7 @@ export function createWorkflowRunner(
             continue;
           }
 
-          const toolArgs = injectSessionIdIntoToolArgs(
+          let toolArgs = injectSessionIdIntoToolArgs(
             toolCall.name,
             toolCall.arguments,
             conversationId,
@@ -2364,6 +2404,30 @@ export function createWorkflowRunner(
             // Electron interaction bridge"。节点内与主会话一致，允许
             // 激活子代理（在节点会话下运行）与 listSubAgents/continue
             // 管理工具，侧边栏以 节点 → 子代理 树形展示。
+            if (
+              toolCall.name === "sub-agents-activate" ||
+              toolCall.name === "sub-agents-continue"
+            ) {
+              const args = JSON.parse(toolArgs) as Record<string, unknown>;
+              if (
+                (await resolveSubAgentExecutionMode(args.executionMode)) ===
+                "async"
+              )
+                throw new Error(
+                  "UNSUPPORTED_EXECUTION_MODE: workflow nodes support synchronous sub-agents only",
+                );
+              if (
+                toolCall.name === "sub-agents-continue" &&
+                args.requestId === undefined
+              ) {
+                if (!toolCall.interactionId)
+                  throw new Error(
+                    "VALIDATION_ERROR: stable workflow tool identity is required",
+                  );
+                args.requestId = `continue:${toolCall.interactionId}`;
+                toolArgs = JSON.stringify(args);
+              }
+            }
             if (toolCall.name === "sub-agents-activate") {
               result = await executeSubAgentActivation(
                 toolArgs,
@@ -2538,11 +2602,11 @@ export function createWorkflowRunner(
       // 而不是停掉节点、也绝不转交主流程 handleSendMessage。直到没有新的强行
       // 发送为止；节点的最终产出由最后一轮回合决定。
       while (true) {
+        if (loopResult.failed || runHadToolError) break;
         const forceRef = ctx.sessionsRefData.current.get(conversationId);
         const forceSends = forceRef?.forceSendMessages;
         if (!forceRef) break;
         if (!forceSends || forceSends.length === 0) {
-          if (loopResult.failed || runHadToolError) break;
           if (isNodeCancelled()) {
             loopResult = {
               content: "",

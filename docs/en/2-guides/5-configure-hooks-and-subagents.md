@@ -274,7 +274,7 @@ sequenceDiagram
     Main->>Hooks: beforeSubAgentStart context
     alt Hook blocks with 2+
         Hooks-->>Main: Return block message
-    else Allowed or Hook execution error
+    else Start Hook allows activation
         Hooks-->>Main: Continue
         Main->>Sub: Self-contained systemPrompt + task + allowed tools
         Sub->>Sub: Execute and validate independently
@@ -289,13 +289,60 @@ sequenceDiagram
     end
 ```
 
-If `beforeSubAgentStart` Hook execution itself throws, the current caller continues activation. A security gate must therefore be reliable, tested, and return an explicit `2+` exit code when blocking.
+If the `beforeSubAgentStart` call throws, acceptance fails: the sub-agent is not started and no accepted receipt is returned. Normally returned Hook decisions retain the existing exit-code semantics; security gates should explicitly return `2+` to block rather than relying on an exception as a decision.
 
 ### 2.6 Sub-agent session resume and same-session communication
 
-- **Resume after restart**: sub-agent sessions survive an app restart — `sub-agents-listSubAgents` lists the current session's sub-agents (including ones already finished during this app run) with their `status`/`resumable` state, and `sub-agents-continue` reactivates a finished sub-agent with its **original configuration (model, tools, system prompt) and full conversation history**;
+- **Query after restart and explicitly continue**: with project-bound persistence, sessions and run results survive restart; nonterminal runs become `interrupted` and never resume automatically. `sub-agents-listSubAgents` lists the current parent's sub-agents and actual run states, while `sub-agents-getResult` reads an exact `runId`. `sub-agents-continue` starts a **new** run using the saved configuration and full conversation history; missing configuration fails explicitly rather than silently substituting another. Legacy sync without a project retains runtime-only records;
 - **Same-session communication**: `sub-agents-listTeammates` queries sub-agents still running in the current session, and `sub-agents-sendMessage` delivers a message to them (as a Pending message at the end of the target's current round, prefixed with the sender's identity). Parallel sub-agents can coordinate directly without routing through the main session;
 - **Session isolation**: the tools above only apply to the **current session** — `listTeammates` does not expose other sessions' sub-agents, and cross-session `sendMessage`/`continue` calls are rejected.
+
+### 2.7 Sync-compatible asynchronous runs
+
+Choose **Sub-agent execution mode** under **Settings → Sub-agent Settings → Run limits**. The default is synchronous: the parent tool waits for the final result. Asynchronous mode returns after acceptance so the parent can continue independent work. This global selection is enforced: tool arguments cannot override it, and accepted runs retain their captured mode. **Continue against a busy target still returns its queued-message receipt immediately** without changing the target's mode. Select asynchronous mode before submitting the example below. Unsupported async entry points reject explicitly instead of silently running synchronously.
+
+Model requests also trim tools by mode: sync carries activate, listSubAgents and continue by default; project-bound async adds getResult, wait and cancel. Switching back to sync retains management tools for outstanding async runs in this parent. Once they settle, wait/cancel are removed and only getResult remains for async history. Workflow nodes omit async management tools and omit unsupported activation/continue under async settings. Changes apply on the next model request without stopping accepted runs or rewriting MCP switches/permissions; the MCP settings catalog still shows registered tools. Synchronous batch parallelism and child teammate communication are unchanged.
+
+```json
+{
+  "agentId": "agent_general",
+  "summary": "Read-only project check",
+  "prompt": "Only read this project's package.json and summarize its build commands. Do not run commands or modify files.",
+  "executionMode": "async"
+}
+```
+
+Submit this to `sub-agents-activate`. Durable acceptance returns `kind: "accepted"`, `runId`, `conversationId` and `runStatus`; **acceptance is not completion**. Configuration, permission, start-Hook or persistence failures do not return accepted. Desktop parent conversations and registered detached conversation windows use the host runtime; async requires an actual project/workspace binding. Legacy sync without a project remains available. Workflow nodes remain sync-only and explicitly reject async. Runs do not continue after application exit.
+
+| Tool                       | Parameters and behavior                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sub-agents-continue`      | `{conversationId,message,executionMode?,requestId?,acceptance?}`. A busy target queues the message for its actual run, with async `kind: "message_queued"`; explicit continue of a terminal conversation creates a new run and keeps history. Unconsumed input stays with the child, never becoming parent authorization. |
+| `sub-agents-getResult`     | `{runId,offset?,limit?}`. Returns real running state or terminal outcome. Summary pages default to 16000 Unicode characters, limit is 1–64000 and offset is non-negative; follow `summaryPage.nextOffset`. Error and acceptance metadata are not truncated.                                                               |
+| `sub-agents-wait`          | `{runIds,mode?:"any" or "all",timeoutMs?}`. 1–32 unique IDs, default any/30000ms, integer timeout 0–120000. One deadline; timeout never cancels execution. Unknown or cross-parent/project IDs fail. Avoid endless polling.                                                                                               |
+| `sub-agents-cancel`        | `{runId}`. Distinguishes requested, confirmed, already_terminal and too_late. A request is not stop confirmation; finalizing wins with too_late. Existing file or external effects are not undone.                                                                                                                        |
+| `sub-agents-listSubAgents` | Retains legacy fields and adds active/latest run identity and delivery state. Legacy rows do not invent runs, outcomes or evidence.                                                                                                                                                                                       |
+
+`requestId` identifies one logical operation. When omitted, the host derives it from stable tool-call identity; UI actions generate and reuse a UUID. Retry an unknown receipt with the same ID and input; use a new ID only for an intentional new operation. Equal input replays the original run/message, different input conflicts, and busy-to-terminal changes do not duplicate dispatch.
+
+States distinguish queued (waiting for capacity), running, waiting_input (open the actual child authorization/question/failure decision), finalizing, cancelling and completed/failed/cancelled/interrupted. **Execution completion and acceptanceSatisfied are separate.** Missing acceptance is not full success, and a completed dispatch tool does not mean a completed background task.
+
+Sync and async share the existing activation/continue cards, conversation tree and run details. Sync waits for the final result; async first returns acceptance. Headers distinguish dispatch state, actual execution mode and run state; a sync final result is not labeled as mere acceptance. Compact wait/getResult/cancel cards replace wide tables of nested run and summary JSON, with parameters and results shown as on-demand field cards rather than raw JSON. Acceptance reports show item status, observations and evidence; card colors and radii follow the active page theme. An executing wait subscribes to real records scoped by parent and exact run IDs without dispatching extra waits or polling tools. Completed calls retain their observed state instead of being rewritten by later state changes. Timeout is distinct from failure or cancellation. Summaries expand and partial pages are labeled; details load on demand and reuse existing navigation and controls. Run settings use equal-width columns in wide panels and stack in narrow panels without changing persistence behavior.
+
+Async outcomes are durably settled before notification. A busy parent consumes at a complete tool barrier. An idle parent may receive an internal round only while the original delegation task is open. User stop, task close or a new user task retains old results without silently restarting the old task. Internal results are not user messages, Plan approval or new authorization. `received` means durably added to parent input, not model understanding. Sync results and observed get/wait results are deduplicated against automatic events; UI reads do not acknowledge model delivery.
+
+Restart or owner loss marks nonterminal runs interrupted, not user-cancelled, with no automatic replay. Explicit continue creates a new run; missing fixed configuration fails rather than switching providers. Deletion/archive closes admission and wakeup, stops and awaits owners, then performs physical cleanup. Failure retains the gate for an explicit retry. Archive preserves complete run data and identity; restore does not reopen historical tasks or replay execution.
+
+For diagnosis, record time and runId/eventId/interactionId and inspect the `sub-agents` system-log module to separate acceptance, execution, settlement, receipt and wakeup. Do not share API keys, cookies or full sensitive prompts. Rebuild native and restart before manual acceptance; engineering checks are not a claim of visual or end-to-end success.
+
+### 2.8 Evidence boundaries and cancellation attribution
+
+- `summary` is the final turn body, not a full transcript. Open the child conversation for intermediate per-file reports. Unicode-character pagination slices that final body only; it cannot recover earlier turns absent from it.
+- Both `wait(any)` and `wait(all)` return snapshots for every requested run. any requires at least one terminal run, all requires every run to be terminal. Result array length does not distinguish modes; a timeout never cancels execution.
+- Host acceptance checks establish that evidence IDs belong to the child execution log, not semantic relevance or business correctness. The parent must inspect real tool status and directly relevant content instead of using a successful read to support unrelated claims.
+- New cancellations may include `cancellation: {source, requestedAt}` in synchronous final outcomes, async get/wait, cancel receipts and logs. Sources distinguish `cancel_tool`, `parent_stop`, `conversation_stop`, `ui_cancel`, `deletion`, `runtime_abort` and `unspecified`. Rust captures UTC epoch milliseconds at first durable acceptance. Retries preserve attribution; already_terminal/too_late never add or replace it. Missing legacy metadata means unrecorded, not an inferred parent or user action. The public cancel tool still accepts only runId; the model cannot specify attribution.
+- message_queued proves queuing only. Run-event deliveryStatus=received proves durable incorporation into parent input only. Neither acknowledges model understanding of a queued message. Separate activate calls create independent conversations, not a same-target RUN_BUSY test.
+
+See the [cancellation attribution and evidence boundaries ADR](../4-architecture-and-development/14-subagent-cancellation-attribution-evidence-boundaries-adr.md). New metadata requires loading the new native/renderer; builds and isolated probes do not replace live restart, cross-window or deletion acceptance.
 
 ## 3. Validation and troubleshooting
 

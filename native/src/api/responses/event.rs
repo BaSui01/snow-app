@@ -4,18 +4,16 @@
 
 use std::collections::HashMap;
 
-use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use crate::api::common::{read_first_i64, truncate_utf8_safe};
+use crate::api::common::read_first_i64;
+use crate::api::failure::ProviderFailure;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
 /// Small, bounded error metadata; never retain the full error object in diagnostics.
 #[derive(Debug, Clone)]
 pub(super) struct ResponsesFailure {
-    code: Option<String>,
-    error_type: Option<String>,
-    message: String,
+    pub(super) detail: ProviderFailure,
     transport_failure: bool,
     /// 服务端声明当前 WebSocket 连接已到期（60 分钟寿命上限），需换新连接继续。
     connection_expired: bool,
@@ -176,34 +174,8 @@ impl ResponsesFailure {
                 lower.contains("aborted") || lower.contains("cancel")
             })
         });
-        let field = |key: &str, error_objects_only: bool| {
-            details.iter().find_map(|(detail, error_object)| {
-                if error_objects_only && !error_object {
-                    return None;
-                }
-                detail.get(key).and_then(|value| match value {
-                    Value::String(text) if !text.trim().is_empty() => Some(text.clone()),
-                    Value::Number(number) => Some(number.to_string()),
-                    _ => None,
-                })
-            })
-        };
-        let message = details
-            .iter()
-            .find_map(|(detail, _)| {
-                detail
-                    .as_str()
-                    .or_else(|| detail.get("message").and_then(Value::as_str))
-                    .filter(|text| !text.trim().is_empty())
-            })
-            .map(|text| bounded_provider_detail(text, 768))
-            .unwrap_or_else(|| {
-                "Responses stream failed without a readable error payload".to_string()
-            });
         Self {
-            code: field("code", false).map(|text| bounded_provider_detail(&text, 128)),
-            error_type: field("type", true).map(|text| bounded_provider_detail(&text, 128)),
-            message,
+            detail: ProviderFailure::from_event(event, None),
             transport_failure,
             connection_expired,
             throttle_reason,
@@ -212,16 +184,8 @@ impl ResponsesFailure {
     }
 
     pub(super) fn reason(&self) -> String {
-        let mut parts = vec![self.message.clone()];
-        for part in [self.code.as_ref(), self.error_type.as_ref()]
-            .into_iter()
-            .flatten()
-        {
-            if !parts.contains(part) {
-                parts.push(part.clone());
-            }
-        }
-        parts.join(" / ")
+        // Empty is a policy input only; UI fallback belongs to its dictionary.
+        self.detail.reason().unwrap_or_default()
     }
 
     pub(super) fn retry_vetoed(&self) -> bool {
@@ -258,70 +222,6 @@ impl ResponsesFailure {
 pub(super) enum ReasoningStreamMode {
     FullText,
     Summary,
-}
-fn bounded_provider_detail(value: &str, max_bytes: usize) -> String {
-    // Redact first: collapsing whitespace would erase HTTP header boundaries.
-    let redacted = redact_provider_detail(value)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if redacted.len() <= max_bytes {
-        return redacted;
-    }
-    let visible = truncate_utf8_safe(&redacted, max_bytes.saturating_sub(3));
-    format!("{visible}...")
-}
-
-fn redact_provider_detail(value: &str) -> String {
-    const PATTERNS: &[(&str, &str)] = &[
-        // Sensitive HTTP headers include the full authentication value and
-        // every cookie pair, including folded lines and unknown auth schemes.
-        // Without a trustworthy line boundary, discard the entire remainder.
-        (
-            r#"(?im)(\b(?:proxy-authorization|authorization|set-cookie|cookie)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*)[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*"#,
-            "${1}[REDACTED]",
-        ),
-        // Never echo structured request bodies or encrypted reasoning fragments.
-        (
-            r#"(?is)(\b(?:encrypted[_-]?content|encrypted[_-]?reasoning|request[_-]?body|body|payload|prompt|input|contents?)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*).*"#,
-            "${1}[REDACTED]",
-        ),
-        (r"\bsk-[A-Za-z0-9_-]{16,}\b", "[REDACTED]"),
-        (
-            r"\b(?:ya29\.[A-Za-z0-9._~-]{12,}|gAAAAA[A-Za-z0-9_-]{24,})\b",
-            "[REDACTED]",
-        ),
-        (
-            r"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
-            "[REDACTED]",
-        ),
-        (r"(?i)(https?://)[^/\s@]+:[^/\s@]+@", "${1}[REDACTED]@"),
-        (
-            r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{4,}",
-            "${1} [REDACTED]",
-        ),
-        (
-            r#"(?i)([?&](?:api[_-]?key|key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization|signature)=)[^&\s\"'<>]+"#,
-            "${1}[REDACTED]",
-        ),
-        (
-            r#"(?i)([\"']?(?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization)[\"']?\s*[:=]\s*[\"'])([^\"']*)([\"'])"#,
-            "${1}[REDACTED]${3}",
-        ),
-        (
-            r#"(?i)(\b(?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization)\b\s*[:=]\s*)[^\s,;&}\]\"'\[]+"#,
-            "${1}[REDACTED]",
-        ),
-    ];
-
-    PATTERNS
-        .iter()
-        .fold(value.to_string(), |redacted, (pattern, replacement)| {
-            Regex::new(pattern)
-                .expect("provider redaction regex")
-                .replace_all(&redacted, *replacement)
-                .into_owned()
-        })
 }
 // ---------------------------------------------------------------------------
 // SSE block parsing
@@ -381,6 +281,24 @@ pub(super) fn process_responses_sse_event_block(
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or_default();
+
+        // WS frames reach this parser only after stale-response filtering.
+        // Protocol event IDs are not response IDs; retain the known ID when absent.
+        let event_response_id = event
+            .get("response")
+            .and_then(|response| response.get("id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .or_else(|| {
+                event.get("response_id")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|id| !id.is_empty())
+            });
+        if let Some(id) = event_response_id {
+            *response_id = id.to_string();
+        }
 
         // Latch output/tool activity before terminal cleanup can erase it.
         // Reasoning alone is safe to discard for an identified transport failure.
@@ -571,8 +489,6 @@ pub(super) fn process_responses_sse_event_block(
                 }
                 .to_string();
                 if let Some(response) = event.get("response") {
-                    *response_id =
-                        read_response_string(response, "id").unwrap_or_else(|| response_id.clone());
                     *response_model = read_response_string(response, "model")
                         .unwrap_or_else(|| response_model.clone());
                     if let Some(status) =
@@ -580,7 +496,8 @@ pub(super) fn process_responses_sse_event_block(
                             matches!(status.as_str(), "completed" | "incomplete" | "failed")
                         })
                     {
-                        *response_status = status;
+                        // The explicit failure event wins over an inconsistent snapshot.
+                        if event_type != "response.failed" { *response_status = status; }
                     }
                     // Classify the complete envelope so response.error and a
                     // sibling event.error can both veto unsafe transport replay.
@@ -589,7 +506,22 @@ pub(super) fn process_responses_sse_event_block(
                             .or_else(|| Some(ResponsesFailure::from_event(&event)));
                     }
                     *token_usage = extract_token_usage(response);
-                    *completed_response = Some(response.clone());
+                    if *response_status == "failed" {
+                        // Keep only actual display output, never an error envelope.
+                        if content_chunks.is_empty() {
+                            let content = extract_output_text(response);
+                            if !content.is_empty() { content_chunks.push(content); }
+                        }
+                        if thinking_chunks.is_empty() {
+                            let thinking = extract_response_thinking(response);
+                            if !thinking.is_empty() { thinking_chunks.push(thinking); }
+                        }
+                        *completed_response = None;
+                    } else {
+                        let mut snapshot = response.clone();
+                        if let Some(object) = snapshot.as_object_mut() { object.remove("error"); }
+                        *completed_response = Some(snapshot);
+                    }
                 }
                 if *response_status == "failed" && failure_reason.is_none() {
                     *failure_reason = Some(ResponsesFailure::from_event(&event));
@@ -602,7 +534,7 @@ pub(super) fn process_responses_sse_event_block(
                 *stream_completed_normally = true;
                 *response_status = String::from("failed");
                 let failure = ResponsesFailure::from_event(&event);
-                *completed_response = Some(json!({"error": failure.reason()}));
+                *completed_response = None;
                 *failure_reason = Some(failure);
             }
             _ => {}

@@ -12,6 +12,15 @@ use super::ensure_database_file;
 use super::models::*;
 use super::services;
 
+pub fn sub_agent_run_command(command_json: &str) -> Result<String> {
+    let command: serde_json::Value = serde_json::from_str(command_json)
+        .map_err(|_| Error::from_reason("VALIDATION_ERROR: invalid sub-agent command JSON"))?;
+    let database_path = ensure_database_file()
+        .map_err(|error| Error::from_reason(format!("PERSISTENCE_ERROR: initialize run storage: {error}")))?;
+    services::chat_conversations::sub_agent_run_command(&database_path, &command)
+        .map(|result| result.to_string())
+}
+
 pub fn get_conversation_modes(
     conversation_id: &str,
 ) -> Result<services::chat_conversations::ConversationModes> {

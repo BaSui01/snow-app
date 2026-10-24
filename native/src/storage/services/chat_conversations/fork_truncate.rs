@@ -403,6 +403,23 @@ pub fn truncate_trailing_failed_exchange(
         .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
     let delete_from = delete_from.unwrap_or(failed_id);
 
+    // A model retry must never erase the durable evidence of completed tools.
+    // Fail closed before any deletion; replaying those actions is a separate,
+    // explicit user operation, not a response-retry cleanup side effect.
+    let has_tool_results: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chat_messages
+              WHERE conversation_id = ?1 AND id >= ?2 AND role = 'tool')",
+            params![conversation_id, delete_from],
+            |row| row.get(0),
+        )
+        .map_err(|error| database::database_error(database_path, "check model retry boundary", error))?;
+    if has_tool_results {
+        return Err(Error::from_reason(
+            "Model response retry cannot remove completed tool results",
+        ));
+    }
+
     truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
 
     transaction

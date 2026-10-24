@@ -23,6 +23,7 @@ import fenceRule from "markdown-it/lib/rules_block/fence.mjs";
 import { localFileUrlToPath } from "../../../../utils/localFileUrl";
 import type Token from "markdown-it/lib/token.mjs";
 import texmath from "markdown-it-texmath";
+import { renderAcceptanceBlock } from "./acceptanceRenderer";
 import {
   imageProxyUrl,
   isAbsoluteImagePath,
@@ -152,6 +153,15 @@ const trackFenceCompletion: RuleBlock = (state, startLine, endLine, silent) => {
 markdown.renderer.rules.fence = (tokens, idx, options): string => {
   const token = tokens[idx];
   const lang = token.info ? token.info.trim() : "";
+  if (/^acceptance$/i.test(lang)) {
+    const complete =
+      (token.meta as { htmlArtifactComplete?: boolean } | null)
+        ?.htmlArtifactComplete === true;
+    const receipt = complete ? renderAcceptanceBlock(token.content) : null;
+    if (receipt) return receipt + "\n";
+    const state = complete ? "invalidReport" : "incompleteReport";
+    return `<section class="md-acceptance"><div class="md-acceptance-note" data-acceptance-label="${state}"></div></section>\n`;
+  }
   if (/^(?:html|htm|text\/html)(?:\s|$)/i.test(lang)) {
     const complete =
       (token.meta as { htmlArtifactComplete?: boolean } | null)

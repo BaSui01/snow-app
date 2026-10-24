@@ -23,6 +23,7 @@ import {
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { Tooltip } from "../../common/Tooltip";
+import { isPendingSessionKey } from "../../mainContent/chatMessages/utils/conversationTypes";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
 import { openConversationInNewWindow } from "./openConversationInNewWindow";
 import {
@@ -73,8 +74,8 @@ type ChatItemProps = {
   /** 删除进行中：菜单按钮显示 loading，防止重复操作 */
   isDeleting?: boolean;
   onEnterMultiSelect?: () => void;
-  onToggleSelect?: () => void;
-  onSelect?: () => void;
+  onToggleSelect?: (event: React.MouseEvent | React.KeyboardEvent) => void;
+  onSelect?: (event: React.MouseEvent | React.KeyboardEvent) => void;
 };
 
 export function ChatItem({
@@ -280,20 +281,22 @@ export function ChatItem({
     measureTitleOverflow();
   };
 
-  const handleSelectClick = (): void => {
+  const isSelectionBlocked =
+    isRunning || isPendingSessionKey(conversation.conversationId);
+  const handleSelectClick = (
+    event: React.MouseEvent | React.KeyboardEvent,
+  ): void => {
     if (isEditing) {
       return;
     }
-    // 运行中的会话不参与多选（与无复选框的渲染保持一致）
-    if (isMultiSelectMode && !isRunning) {
-      onToggleSelect?.();
+    if (isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) {
+      // 鼠标、复选框和键盘共享资格保护，不允许选择或导航运行中的行。
+      if (!isSelectionBlocked) {
+        onToggleSelect?.(event);
+      }
       return;
     }
-    // 多选模式下运行中的会话不可点击选中，也不允许切换会话
-    if (isMultiSelectMode) {
-      return;
-    }
-    onSelect?.();
+    onSelect?.(event);
   };
 
   // 右键 == 三点按钮菜单：在光标位置弹出同一份操作菜单
@@ -359,7 +362,10 @@ export function ChatItem({
   ).length;
   const runningSubAgentCount = subAgentConversations.filter(
     (sub) =>
-      sub.subAgentStatus === "running" &&
+      (sub.subAgentStatus === "queued" ||
+        sub.subAgentStatus === "running" ||
+        sub.subAgentStatus === "finalizing" ||
+        sub.subAgentStatus === "cancelling") &&
       !subAgentAttentionRequiredIds.has(sub.conversationId),
   ).length;
 
@@ -373,6 +379,11 @@ export function ChatItem({
         showQuickActions ? " has-quick-actions" : ""
       }`}
       draggable={canDrag}
+      onMouseDown={(event) => {
+        if (event.shiftKey && !isEditing) {
+          event.preventDefault();
+        }
+      }}
       onMouseEnter={handleTitleHover}
       onMouseLeave={handleTitleLeave}
       onDragStart={canDrag ? handleDragStart : undefined}
@@ -387,20 +398,16 @@ export function ChatItem({
         }
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          if (isMultiSelectMode) {
-            onToggleSelect?.();
-          } else if (onSelect) {
-            onSelect();
-          }
+          handleSelectClick(event);
         }
       }}
     >
-      {isMultiSelectMode && !isRunning ? (
+      {isMultiSelectMode && !isSelectionBlocked ? (
         <span
           className={`chat-item-checkbox${isSelected ? " checked" : ""}`}
           onClick={(event) => {
             event.stopPropagation();
-            onToggleSelect?.();
+            handleSelectClick(event);
           }}
           role="checkbox"
           aria-checked={isSelected}
@@ -426,8 +433,8 @@ export function ChatItem({
             showDefaultIcon && hasEmoji ? " has-emoji" : ""
           }`}
           onClick={(event) => {
-            // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
             event.stopPropagation();
+            handleSelectClick(event);
           }}
         >
           {showAttentionStatus ? (
@@ -492,6 +499,14 @@ export function ChatItem({
                 data-overflow={isTitleOverflowing ? "true" : undefined}
                 onDoubleClick={(event) => {
                   event.stopPropagation();
+                  if (
+                    isMultiSelectMode ||
+                    event.shiftKey ||
+                    event.ctrlKey ||
+                    event.metaKey
+                  ) {
+                    return;
+                  }
                   handleRenameStart();
                 }}
               >

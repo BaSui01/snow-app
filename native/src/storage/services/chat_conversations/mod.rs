@@ -14,6 +14,7 @@ mod task_history;
 pub use self::task_history::*;
 mod query;
 mod sub_agent;
+mod sub_agent_runs;
 mod tombstones;
 mod workflow;
 
@@ -21,6 +22,11 @@ pub use self::fork_truncate::*;
 pub use self::messages::*;
 pub use self::query::*;
 pub use self::sub_agent::*;
+pub use self::sub_agent_runs::sub_agent_run_command;
+pub(crate) use self::sub_agent_runs::{
+    check_gate as check_sub_agent_conversation_gate, ensure_sub_agent_run_data_tables,
+    ensure_sub_agent_run_tables, guard_sub_agent_physical_delete, sub_agent_async_tool_usage,
+};
 pub(crate) use self::tombstones::{
     clear_conversation_tombstones, is_conversation_tombstoned, record_conversation_tombstones,
 };
@@ -732,8 +738,10 @@ pub fn append_tool_message(
     // `@@image:data:...@@`，一张几 MB 的生成图就是上百万 token 的文本膨胀）。
     // 入库前落盘为 `@@image:upload/...@@` 短标签：数据库与后续请求的上下文
     // 不再被 base64 撑爆，视觉负载由 payload 层构建请求时从磁盘读回。
-    let persisted_content =
-        crate::api::conversation::images::persist_inline_images_to_disk(trimmed_content, database_path)?;
+    let persisted_content = crate::api::conversation::images::persist_inline_images_to_disk(
+        trimmed_content,
+        database_path,
+    )?;
     let trimmed_content = persisted_content.trim();
 
     database::open_connection(database_path)
@@ -1236,10 +1244,7 @@ pub fn set_conversation_run_stats(
 
 /// 清零会话的累计 run 统计（回滚截断消息后调用，避免摘要回显与
 /// 截断后的消息列表不一致）。
-pub fn reset_conversation_run_stats(
-    database_path: &Path,
-    conversation_id: &str,
-) -> Result<()> {
+pub fn reset_conversation_run_stats(database_path: &Path, conversation_id: &str) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
@@ -1275,7 +1280,10 @@ mod failed_exchange_sanitize_tests {
         let content = format!("look at this @@image:data:image/png;base64,{payload}@@ end");
         let sanitized = sanitize_failed_exchange_content(&content);
 
-        assert!(!sanitized.contains("AAAA"), "base64 payload must be dropped");
+        assert!(
+            !sanitized.contains("AAAA"),
+            "base64 payload must be dropped"
+        );
         assert!(sanitized.contains("[image attachment omitted"));
         assert!(sanitized.starts_with("look at this "));
         assert!(sanitized.ends_with(" end"));
@@ -1355,7 +1363,15 @@ mod failed_exchange_sanitize_tests {
         let persist_result = (|| -> napi::Result<()> {
             database::ensure_database(&db_path)?;
             // append_tool_message 依赖会话行（外键），先创建会话。
-            super::set_conversation_modes(&db_path, "conv-tool-test", None, None, None, None, None)?;
+            super::set_conversation_modes(
+                &db_path,
+                "conv-tool-test",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )?;
             append_tool_message(&db_path, "conv-tool-test", &content)
         })();
 
@@ -1528,8 +1544,8 @@ mod failed_exchange_sanitize_tests {
             }
         };
 
-        let loaded = load_context_messages(&db_path, &conversation_id)
-            .expect("load persisted exchange");
+        let loaded =
+            load_context_messages(&db_path, &conversation_id).expect("load persisted exchange");
         std::fs::remove_dir_all(&dir).ok();
 
         assert_eq!(user_ids.len(), 1);

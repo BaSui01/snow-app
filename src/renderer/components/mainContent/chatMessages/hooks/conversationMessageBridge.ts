@@ -1,3 +1,4 @@
+import { prepareSubAgentDeletion } from "./subAgentParentInbox";
 import { useEffect, useRef } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import {
@@ -248,6 +249,7 @@ export const useConversationRemovalBridge = (
   ctx: ConversationContextValue,
   abortConversation: (conversationId: string) => void,
   handleNewChat: () => void,
+  stopConversation: (conversationId: string) => void,
 ): void => {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -255,6 +257,8 @@ export const useConversationRemovalBridge = (
   abortRef.current = abortConversation;
   const newChatRef = useRef(handleNewChat);
   newChatRef.current = handleNewChat;
+  const stopRef = useRef(stopConversation);
+  stopRef.current = stopConversation;
   useEffect(() => {
     const remover: ConversationRemover = async (
       conversationIds,
@@ -264,6 +268,11 @@ export const useConversationRemovalBridge = (
       const rootIds = options.skipPinned
         ? await excludePinnedConversations(conversationIds)
         : conversationIds;
+      // Close durable admission and await run owners before destroying any child view/state.
+      for (const rootId of rootIds)
+        await prepareSubAgentDeletion(ctxRef.current, rootId, () =>
+          stopRef.current(rootId),
+        );
       const targetIds = await collectStoredConversationTreeIds(rootIds);
       for (const targetId of targetIds) {
         abortRef.current(targetId);

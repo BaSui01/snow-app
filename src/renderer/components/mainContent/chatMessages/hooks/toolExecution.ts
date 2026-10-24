@@ -214,6 +214,27 @@ export function createToolExecutor(
     planModeRef,
   } = deps;
 
+  const subAgentArgs = (call: ToolCallInfo, argsJson: string): string => {
+    if (call.name !== "sub-agents-continue") return argsJson;
+    const parsed: unknown = JSON.parse(argsJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("VALIDATION_ERROR: invalid sub-agent arguments");
+    const args = parsed as Record<string, unknown>;
+    if (args.requestId === undefined) {
+      const identity =
+        call.interactionId ||
+        (responseId && call.callId
+          ? `${responseId}:${call.callId}`
+          : undefined);
+      if (!identity)
+        throw new Error(
+          "VALIDATION_ERROR: stable tool interaction identity is required",
+        );
+      args.requestId = `continue:${identity}`;
+    }
+    return JSON.stringify(args);
+  };
+
   // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
   // activeDirectory。实际 WorkTree 模式在每轮执行开始时由持久绑定解析。
   const projectSessionDirPath =
@@ -467,6 +488,29 @@ export function createToolExecutor(
               : effectiveKey,
           },
         );
+        if (
+          correctedCall.name === "sub-agents-activate" &&
+          !isPendingSessionKey(effectiveKey)
+        ) {
+          return executeSubAgentActivation(
+            preparedArgs,
+            effectiveKey,
+            sessionDirId ?? ctx.directoryId ?? "",
+            correctedCall.interactionId,
+            checkpointIds,
+          );
+        }
+        if (
+          SUB_AGENT_MAIN_TOOL_NAMES.has(correctedCall.name) &&
+          !isPendingSessionKey(effectiveKey)
+        ) {
+          return executeSubAgentMainTool(
+            correctedCall.name,
+            subAgentArgs(correctedCall, preparedArgs),
+            effectiveKey,
+            checkpointIds,
+          );
+        }
         return withToolWatchdog(
           window.snow.callMcpTool(
             correctedCall.name,
@@ -922,14 +966,13 @@ export function createToolExecutor(
                   parallelToolCall.interactionId,
                   checkpointIds,
                 );
-              } else if (isSubAgentContinue) {
-                // 重新激活（sub-agents-continue）与激活同语义：阻塞至子代理
-                // 本次回合结束（运行中的目标则入 Pending 队列后立即返回）。
-                // 同批次的多个 continue 因此并发运行，与并行激活完全一致；
-                // 会话隔离与内存/DB 恢复器解析都在执行器内部完成。
+              } else if (SUB_AGENT_MAIN_TOOL_NAMES.has(parallelToolCall.name)) {
+                // Every parent management tool uses the renderer executor, including
+                // readonly getResult/wait. Native callMcpTool intentionally rejects them.
+                // Keep the enclosing batch barrier and existing Hook/authorization flow.
                 parallelResult = await executeSubAgentMainTool(
                   parallelToolCall.name,
-                  parallelToolCall.arguments,
+                  subAgentArgs(parallelToolCall, parallelToolCall.arguments),
                   effectiveKey,
                   checkpointIds,
                 );
@@ -1082,7 +1125,8 @@ export function createToolExecutor(
         // PENDING 会话还没有真实会话 id，无法关联子代理（执行器内部也会
         // 拒绝），因此不进入并行预启动，交由顺序路径返回结构化错误。
         const skipPendingSubAgent =
-          (name === "sub-agents-activate" || name === "sub-agents-continue") &&
+          (name === "sub-agents-activate" ||
+            SUB_AGENT_MAIN_TOOL_NAMES.has(name)) &&
           isPendingSessionKey(effectiveKey);
         if (
           (isParallelizable || isReadonlyTool) &&
@@ -1616,7 +1660,7 @@ export function createToolExecutor(
                   // 无法关联子代理，直接拒绝。
                   result = await executeSubAgentMainTool(
                     toolCall.name,
-                    toolArgs,
+                    subAgentArgs(toolCall, toolArgs),
                     effectiveKey,
                     checkpointIds,
                   );

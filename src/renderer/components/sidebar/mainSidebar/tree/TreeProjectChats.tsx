@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo } from "react";
 import type { RefObject } from "react";
 
 import { Loader2 } from "lucide-react";
@@ -93,10 +93,20 @@ export function TreeProjectChats({
   });
 
   const selection = useChatSelection({
+    directoryId,
     conversations: list.conversations,
+    getOrderedConversationIds: () =>
+      list.conversations.map((conversation) => conversation.conversationId),
     runningConversationIds,
     surfacedConversationIds: tree.surfacedConversationIds,
   });
+
+  // 树节点切换项目后仍挂载；只清理离开的节点，保留刚激活节点的点击锚点。
+  useEffect(() => {
+    if (activeDirectoryId !== directoryId) {
+      selection.resetMultiSelect();
+    }
+  }, [activeDirectoryId, directoryId, selection.resetMultiSelect]);
 
   const actions = useConversationActions({
     activeConversationId,
@@ -246,6 +256,7 @@ export function TreeProjectChats({
         onRename={actions.handleRename}
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
+        onSelectionBlockedChange={selection.handleSelectionBlockedChange}
         onSetEmoji={actions.handleSetEmoji}
         onToggleSelect={selection.handleToggleSelect}
         onToggleTree={tree.handleToggleConversationTree}

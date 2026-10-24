@@ -1208,6 +1208,8 @@ export type ChatMessageRecord = {
   toolCorrectionsJson: string;
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
+  /** Redacted provider diagnostic, separate from generated content. */
+  failureReason?: string | null;
   /** Token usage of the API request that produced this assistant message
    *  (zero for user/tool rows and rows persisted before schema v46). */
   inputTokens: number;
@@ -2142,6 +2144,7 @@ export type AppLockTotpBinding = {
 
 export type NativeBridge = ImageGenerationNativeApi & {
   initializeAppStorage: () => Promise<AppStorageInfo>;
+  subAgentRunCommand: (commandJson: string) => Promise<string>;
 
   getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (

@@ -1,0 +1,71 @@
+.sub-agent-run-sidebar {
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.sub-agent-run-sidebar pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+  font: inherit;
+  margin: 6px 0;
+}
+.sub-agent-run-sidebar button {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sub-agent-run-sidebar summary {
+  cursor: pointer;
+}
+.sub-agent-run-sidebar :is(button, summary):focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.sub-agent-run-sidebar {
+  padding: 0 10px 6px 28px;
+}
+.sub-agent-run-sidebar summary {
+  color: var(--text-secondary);
+}
+.sub-agent-run-sidebar ul {
+  margin: 6px 0;
+  padding-inline-start: 14px;
+}
+.sub-agent-run-sidebar li {
+  margin-block: 6px;
+}
+.sub-agent-run-sidebar button {
+  text-align: start;
+}
+.sub-agent-run-sidebar [role="alert"] {
+  color: var(--accent-red-text);
+}
+.sub-agent-run-evidence {
+  min-width: 0;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.sub-agent-run-evidence summary {
+  cursor: pointer;
+}
+.sub-agent-run-evidence summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.sub-agent-run-evidence pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.sub-agent-run-sidebar ul {
+  max-height: 280px;
+  overflow: auto;
+}

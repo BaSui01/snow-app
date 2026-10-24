@@ -1,3 +1,5 @@
+import { removeConversationTrees } from "../../../mainContent/chatMessages/hooks/conversationMessageBridge";
+import { setSubAgentDeletionError } from "../../../mainContent/chatMessages/hooks/subAgentRuntimeClient";
 import { useCallback, useRef, useState } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
@@ -145,42 +147,28 @@ export function useConversationActions({
       }
       setDeletingIds(new Set([conversation.conversationId]));
       try {
-        // 用户选择不保留图片时，先级联删除图库图片（物理 + 索引），
-        // 再执行会话删除；删除失败不阻断会话删除
-        if (deleteImages) {
-          await window.snow.deleteConversationImages([
-            conversation.conversationId,
-          ]);
-        }
-
-        // Rust 侧级联删除子代理与 workflow 节点会话：收集全部待删 ID，
-        // 以便中止对应流，并在当前正打开被删会话或其子层时清空聊天区
-        const deleteTargetIds = collectConversationTreeIds(
-          conversation.conversationId,
+        setSubAgentDeletionError(conversation.conversationId, null);
+        await removeConversationTrees(
+          [conversation.conversationId],
+          async () => {
+            if (deleteImages)
+              await window.snow.deleteConversationImages([
+                conversation.conversationId,
+              ]);
+            await window.snow.deleteConversation(
+              conversation.conversationId,
+              deleteMemories,
+            );
+          },
+          { skipPinned: false },
         );
-        for (const targetId of deleteTargetIds) {
-          abortConversation(targetId);
-        }
-
-        // deleteMemories=true 时在 Rust 删除事务内把该会话（含级联子会话）
-        // 保存的项目记忆一并删除；默认保留
-        await window.snow.deleteConversation(
-          conversation.conversationId,
-          deleteMemories,
-        );
-
-        // 删除的会话不再需要保留输入草稿
-        for (const targetId of deleteTargetIds) {
-          clearInputDraft(targetId);
-        }
-
-        const activeId = activeConversationIdRef.current;
-        if (activeId && deleteTargetIds.includes(activeId)) {
-          handleNewChat();
-        }
         refreshConversations();
-      } catch {
-        // Silent fail
+      } catch (error) {
+        setSubAgentDeletionError(
+          conversation.conversationId,
+          error instanceof Error ? error.message : String(error),
+        );
+        refreshConversations();
       } finally {
         setDeletingIds(new Set());
       }
@@ -204,25 +192,18 @@ export function useConversationActions({
       const archiveId = conversation.conversationId;
       setArchivingIds(new Set([archiveId]));
       try {
-        const targetIds = collectConversationTreeIds(archiveId);
-        for (const targetId of targetIds) {
-          abortConversation(targetId);
-        }
-
-        await window.snow.archiveConversations([archiveId]);
-
-        // 归档的会话不再需要保留输入草稿
-        for (const targetId of targetIds) {
-          clearInputDraft(targetId);
-        }
-
-        const activeId = activeConversationIdRef.current;
-        if (activeId && targetIds.includes(activeId)) {
-          handleNewChat();
-        }
+        setSubAgentDeletionError(archiveId, null);
+        await removeConversationTrees(
+          [archiveId],
+          () => window.snow.archiveConversations([archiveId]),
+          { skipPinned: true },
+        );
         refreshConversations();
-      } catch {
-        // Silent fail
+      } catch (error) {
+        setSubAgentDeletionError(
+          archiveId,
+          error instanceof Error ? error.message : String(error),
+        );
         refreshConversations();
       } finally {
         setArchivingIds(new Set());
@@ -292,45 +273,28 @@ export function useConversationActions({
     setIsBatchDeleting(true);
 
     try {
-      // 用户选择不保留图片时，先级联删除所选会话引用的图库图片
-      // （物理 + 索引；会话随后被删除，无需重写消息）
-      if (batchDeleteImages && (batchImagesCount ?? 0) > 0) {
-        await window.snow.deleteConversationImages([...selectedIds]);
-      }
-
-      // 收集所有受影响会话 ID（含子代理、workflow 节点与节点子代理级联），
-      // 用于中止流/清空聊天区
-      const targetIds = new Set<string>();
-      for (const convId of selectedIds) {
-        for (const targetId of collectConversationTreeIds(convId)) {
-          targetIds.add(targetId);
-        }
-      }
-
-      for (const targetId of targetIds) {
-        abortConversation(targetId);
-      }
-
-      // 单次批量删除：native 单事务完成（选中父会话时子代理随级联删除），
-      // 避免逐条 IPC + 逐条事务（N+1）；deleteMemories=true 时在同一事务内
-      // 把这些会话保存的项目记忆一并删除
-      await window.snow.deleteConversations(
+      for (const id of selectedIds) setSubAgentDeletionError(id, null);
+      await removeConversationTrees(
         [...selectedIds],
-        batchDeleteMemories,
+        async () => {
+          if (batchDeleteImages && (batchImagesCount ?? 0) > 0)
+            await window.snow.deleteConversationImages([...selectedIds]);
+          await window.snow.deleteConversations(
+            [...selectedIds],
+            batchDeleteMemories,
+          );
+        },
+        { skipPinned: false },
       );
-
-      // 删除的会话不再需要保留输入草稿
-      for (const targetId of targetIds) {
-        clearInputDraft(targetId);
-      }
-
-      if (activeConversationId && targetIds.has(activeConversationId)) {
-        handleNewChat();
-      }
       refreshConversations();
       resetMultiSelect();
-    } catch {
-      // Silent fail
+    } catch (error) {
+      for (const id of selectedIds)
+        setSubAgentDeletionError(
+          id,
+          error instanceof Error ? error.message : String(error),
+        );
+      refreshConversations();
     } finally {
       // 删除完成后才关闭确认弹窗，期间显示 loading
       setIsBatchDeleting(false);
@@ -346,33 +310,20 @@ export function useConversationActions({
 
     setArchivingIds(new Set(selectedIds));
     try {
-      // 收集所有受影响会话 ID（含子代理、workflow 节点与节点子代理级联），
-      // 用于中止流/清空聊天区
-      const targetIds = new Set<string>();
-      for (const convId of selectedIds) {
-        for (const targetId of collectConversationTreeIds(convId)) {
-          targetIds.add(targetId);
-        }
-      }
-
-      for (const targetId of targetIds) {
-        abortConversation(targetId);
-      }
-
-      await window.snow.archiveConversations([...selectedIds]);
-
-      // 归档的会话不再需要保留输入草稿
-      for (const targetId of targetIds) {
-        clearInputDraft(targetId);
-      }
-
-      if (activeConversationId && targetIds.has(activeConversationId)) {
-        handleNewChat();
-      }
+      for (const id of selectedIds) setSubAgentDeletionError(id, null);
+      await removeConversationTrees(
+        [...selectedIds],
+        () => window.snow.archiveConversations([...selectedIds]),
+        { skipPinned: true },
+      );
       refreshConversations();
       resetMultiSelect();
-    } catch {
-      // Silent fail
+    } catch (error) {
+      for (const id of selectedIds)
+        setSubAgentDeletionError(
+          id,
+          error instanceof Error ? error.message : String(error),
+        );
       refreshConversations();
     } finally {
       setArchivingIds(new Set());

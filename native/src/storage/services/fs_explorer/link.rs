@@ -127,6 +127,9 @@ pub fn resolve_file_link(root_dir: Option<&str>, raw_path: &str) -> Option<Resol
     if raw.is_empty() || raw.len() > MAX_RAW_PATH_LEN {
         return None;
     }
+    // Match filesystem tools before deciding whether a reference is relative.
+    let expanded = crate::utils::paths::expand_home_dir(raw);
+    let raw = expanded.as_str();
 
     if Path::new(raw).is_absolute() {
         if let Some(found) = existing_entry(Path::new(raw)) {

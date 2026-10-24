@@ -20,7 +20,7 @@ const streamMarkup = (preview: string): string =>
   }</div></section>`;
 
 const errorMarkup = (error: string): string =>
-  `<div class="compaction-error" role="alert">${iconMarkup("circle-alert")}<span>${t("remote.compaction.failed")}: ${escapeHtml(error)}</span></div>`;
+  `<div class="compaction-error" role="alert">${iconMarkup("circle-alert")}<span>${escapeHtml(error)}</span></div>`;
 
 export const compactionCardHtml = (
   messageId: string,

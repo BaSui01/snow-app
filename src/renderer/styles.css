@@ -13177,21 +13177,17 @@ body.is-panel-resizing * {
   font-size: 14px;
 }
 
-.context-compaction-stream,
-.context-compaction-error {
-  width: min(100%, var(--chat-content-max));
-  margin: 0 auto;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: var(--surface-island);
-}
-
 .context-compaction-stream {
   display: flex;
+  width: min(100%, var(--chat-content-max));
   min-height: 180px;
   max-height: min(52vh, 520px);
   flex-direction: column;
   overflow: hidden;
+  margin: 0 auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island);
   box-shadow: var(--island-shadow);
 }
 
@@ -13465,13 +13461,41 @@ body.is-panel-resizing * {
   width: 76%;
 }
 
-.context-compaction-error {
+/* 压缩失败提示：沿用「上下文摘要」的横线样式（两侧细线 + 居中标签），
+   弱化呈现——警告色小字、不描边、不占高度。 */
+.context-compaction-notice {
   display: flex;
+  width: min(100%, var(--chat-content-max));
   align-items: center;
-  gap: 7px;
-  padding: 10px 12px;
-  color: var(--accent-red-text);
+  gap: 10px;
+  margin: 8px auto;
+}
+
+.context-compaction-notice-rule {
+  height: 1px;
+  flex: 1;
+  background: var(--border-color);
+}
+
+.context-compaction-notice-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--warning-color, #d29922);
   font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.context-compaction-notice-label svg {
+  flex-shrink: 0;
+}
+
+.context-compaction-notice-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-message h2,

@@ -41,6 +41,10 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
+import {
+  buildCompactionResumeMessages,
+  runAutoCompactionGate,
+} from "../utils/autoCompaction";
 import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
@@ -436,6 +440,33 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       return "Sub-agent interrupted by user";
     }
 
+    // 统一自动压缩闸门：子代理每一次「确认要发起下一次请求」的入口（首次
+    // 激活、插话续跑、旧会话恢复、内部排队、强行发送）都汇合到本循环，阈值
+    // 检查因此不再依赖各调用方自己的续跑判断。携带工具结果的请求与压缩边界
+    // 续跑由闸门内部跳过（前者在响应后的检查点、工具执行前压缩）。
+    const gateCompaction = await runAutoCompactionGate(ctx, {
+      conversationId: subConvId,
+      requestMessages: subMessages,
+      model: runtimeConfig.model,
+      // 子代理严格绑定自身 Profile，找不到时不回落全局活动档案。
+      apiProfile: runtimeConfig.apiProfile,
+      strictProfile: true,
+      subAgentToolsJson: runtimeConfig.toolsJson,
+      subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
+      thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+      responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+      resumeAfterCompaction,
+    });
+    if (gateCompaction) {
+      if (isSubCancelled()) {
+        return "Sub-agent interrupted by user";
+      }
+      return subAgentRunLoop(
+        buildCompactionResumeMessages(gateCompaction, subMessages),
+        true,
+      );
+    }
+
     // 迭代级瞬态指标归零：token / tok/s / 首字每次 sub-agent loop 重新
     // 计算。run 级指标（runTtftMs / runTokenUsage / streamStartedAt）保持
     // 整个 run 累计，不受影响。
@@ -727,107 +758,62 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       throw new Error(failureContent);
     }
 
-    // Auto-compaction for sub-agents: mirrors the main agent loop. When the
-    // resolved API profile has enableAutoCompress=true and the total token
-    // usage crosses its configured threshold, finalize the assistant
-    // message, compact the sub-conversation, and continue the sub-agent loop
-    // from the compacted context. The fixed profile name is reused for every
-    // check, while its latest non-secret settings are read so threshold edits
-    // apply without a restart.
-    //
-    // Only runs while the sub-agent loop is still alive (tool calls to
-    // process). When the sub-agent is finishing naturally (no tool calls),
-    // compaction must NOT fire even over the threshold — it would force
-    // another subAgentRunLoop iteration and wake the sub-agent back up
-    // after it completed.
-    if (
-      subToolCalls.length > 0 &&
-      subResponse.tokenUsage &&
-      !subResponseFailed
-    ) {
-      const subApiConfig = (await window.snow.listApiConfigs()).find(
-        (item) => item.profileName.trim() === runtimeConfig.apiProfile,
-      );
-      if (subApiConfig?.enableAutoCompress) {
-        // autoCompressThreshold is stored in TOKENS — compare directly (see
-        // the main loop check for why calculateAutoCompressThresholdTokens
-        // is intentionally not used here).
-        const subThresholdTokens = subApiConfig.autoCompressThreshold;
-        if (subThresholdTokens != null && subThresholdTokens > 0) {
-          const subTotalTokens =
-            subResponse.tokenUsage.inputTokens +
-            subResponse.tokenUsage.outputTokens;
-          if (subTotalTokens >= subThresholdTokens) {
-            // Finalize the assistant message that crossed the threshold so
-            // it does not linger in "sending" state. Any tool calls it
-            // emitted are abandoned by the handoff; the Rust compaction
-            // boundary plus ensure_tool_pairing keep the post-compaction
-            // context free of orphan tool entries.
-            ctx.updateSessionMessages(subConvId, (currentMessages) =>
-              currentMessages.map((currentMessage) =>
-                currentMessage.id === subAssistantMessageId
-                  ? {
-                      ...currentMessage,
-                      content:
-                        subResponse.content || currentMessage.content || "",
-                      thinking:
-                        subResponse.thinking ||
-                        currentMessage.thinking ||
-                        undefined,
-                      timestamp: formatMessageTime(),
-                      status: "sent",
-                      responseId: subResponse.id || undefined,
-                      model: subResponse.model || undefined,
-                      isRetrying: false,
-                    }
-                  : currentMessage,
-              ),
-            );
+    // 工具调用必然带来下一轮请求：这里在工具执行之前压缩，压缩交接因此覆盖
+    // 不到本轮工具调用（它们被放弃，Rust 压缩边界 + ensure_tool_pairing 保证
+    // 压缩后的上下文没有孤儿工具条目）。其余续跑入口（无工具后的插话续跑、
+    // 旧子会话恢复、内部排队、强行发送）不在这里推断，而是在循环入口由统一
+    // 闸门检查。子代理自然收尾（无工具调用且无续跑输入）时不得压缩 —— 那会
+    // 把已完成的子代理重新唤醒。
+    if (subToolCalls.length > 0 && !subResponseFailed) {
+      const subCompaction = await runAutoCompactionGate(ctx, {
+        conversationId: subConvId,
+        requestMessages: [],
+        model: runtimeConfig.model,
+        apiProfile: runtimeConfig.apiProfile,
+        strictProfile: true,
+        subAgentToolsJson: runtimeConfig.toolsJson,
+        subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
+        thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+        responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+        tokenUsage: subResponse.tokenUsage,
+        beforeCompaction: () =>
+          ctx.updateSessionMessages(subConvId, (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === subAssistantMessageId
+                ? {
+                    ...currentMessage,
+                    content:
+                      subResponse.content || currentMessage.content || "",
+                    thinking:
+                      subResponse.thinking ||
+                      currentMessage.thinking ||
+                      undefined,
+                    timestamp: formatMessageTime(),
+                    status: "sent",
+                    responseId: subResponse.id || undefined,
+                    model: subResponse.model || undefined,
+                    isRetrying: false,
+                  }
+                : currentMessage,
+            ),
+          ),
+      });
 
-            const subCompactionResult = await ctx.performCompactionRef.current(
-              subConvId,
-              runtimeConfig.model,
-              true,
-              undefined,
-              runtimeConfig.apiProfile,
-              runtimeConfig.toolsJson,
-              runtimeConfig.systemPrompt || undefined,
-              runtimeConfig.effectiveThinkingStrength,
-              runtimeConfig.effectiveResponsesFastMode,
-            );
-
-            if (subCompactionResult) {
-              if (isSubCancelled()) {
-                return "Sub-agent interrupted by user";
-              }
-
-              // performCompaction's finally resets isSending=false, but the
-              // sub-agent loop is still mid-send. Restore it so abort keeps
-              // working and the session stays locked until the loop ends.
-              const subRefAfterCompaction =
-                ctx.sessionsRefData.current.get(subConvId);
-              if (subRefAfterCompaction) {
-                subRefAfterCompaction.isSending = true;
-                subRefAfterCompaction.isAbortRequested = false;
-              }
-
-              // Continue the sub-agent loop from the compacted context. The
-              // Rust backend rebuilds context from the compaction boundary
-              // stored in the database for this sub-conversation. The first
-              // message is the handoff placeholder (already persisted as the
-              // context_compaction boundary); protectedMessages（压缩前最后
-              // 一条用户任务原文）紧随其后，由 Rust 注入并持久化，防止子
-              // 代理因摘要丢失任务/TODO 状态而忘记任务。
-              return subAgentRunLoop(
-                [
-                  { role: "user", content: subCompactionResult.content },
-                  ...(subCompactionResult.protectedMessages ?? []),
-                ],
-                true,
-              );
-            }
-          }
+      if (subCompaction) {
+        if (isSubCancelled()) {
+          return "Sub-agent interrupted by user";
         }
+
+        // Continue the sub-agent loop from the compacted context. The Rust
+        // backend rebuilds context from the compaction boundary stored in the
+        // database for this sub-conversation. The first message is the handoff
+        // placeholder (already persisted as the context_compaction boundary);
+        // protectedMessages（压缩前最后一条用户任务原文）紧随其后，由 Rust
+        // 注入并持久化，防止子代理因摘要丢失任务/TODO 状态而忘记任务。
+        return subAgentRunLoop(
+          buildCompactionResumeMessages(subCompaction, []),
+          true,
+        );
       }
     }
 

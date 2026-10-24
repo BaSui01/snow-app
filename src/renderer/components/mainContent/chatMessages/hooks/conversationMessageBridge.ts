@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
-import { buildConversationMessages } from "../utils/conversationHelpers";
+import {
+  buildConversationMessages,
+  tokenUsageFromMessageRecords,
+} from "../utils/conversationHelpers";
 import {
   CHAT_MESSAGE_PAGE_SIZE,
   type ConversationContextValue,
 } from "../utils/conversationTypes";
-import { tokenUsageFromMessageRecords } from "./useConversationManagement";
 
 export type ConversationMessageReceipt = {
   conversationId: string;

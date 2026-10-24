@@ -222,6 +222,8 @@ const ChatContentBody = ({
   // 重建，滚动相关 effect 据此重跑
   const isChatAreaRendered = !isFloating || !isFloatDismissed;
 
+  // 压缩状态（含失败提示）按会话归属过滤：压缩失败时 compactingConversationId
+  // 会保留在该会话上，让失败横线提示继续可见（isCompacting 已复位）。
   const isCompactionForActiveConversation =
     activeConversationId != null &&
     activeConversationId === compactingConversationId;

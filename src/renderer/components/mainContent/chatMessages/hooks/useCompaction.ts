@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { tGlobal } from "../../../../i18n";
 import type {
   ConversationContextValue,
   ChatConversationMessage,
@@ -39,6 +40,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       const compactionRunId = sessionRef?.runId;
       const wasSending = sessionRef?.isSending ?? false;
       let completed = false;
+      let failed = false;
       if (sessionRef) {
         sessionRef.isSending = true;
         if (!isAuto) sessionRef.isAbortRequested = false;
@@ -257,9 +259,8 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         completed = true;
         return { content, checkpointId, protectedMessages };
       } catch (error) {
-        // Log failures for BOTH auto and manual compaction. Auto-compaction
-        // errors are otherwise suppressed in the UI (isAuto), which made a
-        // failed auto-compaction look like a brief "flash" with no explanation.
+        // 自动与手动压缩的失败都要落日志 + 给出可见提示（见下方），否则失败
+        // 只表现为一闪而过的压缩流，用户无从判断压缩到底有没有执行。
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
@@ -280,13 +281,16 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           }),
           error: errorMessage,
         });
-        if (!isAuto) {
-          ctx.setCompactionError(
-            error instanceof Error
-              ? error.message
-              : "Failed to compact context",
-          );
-        }
+        // 失败提示对自动与手动压缩都要给出：否则用户无法区分「没触发压缩」
+        // 与「触发后失败」。文案在这里拼好（自带前缀），UI 与手机远控直接展示。
+        failed = true;
+        ctx.setCompactionError(
+          isAuto
+            ? tGlobal("chat.autoCompactionFailed", {
+                values: { error: errorMessage },
+              })
+            : `${tGlobal("chat.compactionFailed")}: ${errorMessage}`,
+        );
         // Compaction failed — discard the checkpoint we created at the start of
         // this attempt so it does not linger as an orphan snapshot. Rollback
         // only needs checkpoints for successfully persisted boundaries.
@@ -310,8 +314,10 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         ctx.setCompactionPreview("");
         // Only clear the marker if it still points at this conversation, so a
         // newer compaction started in another session is not prematurely hidden.
+        // 失败时保留该会话 id：失败提示要留在这个会话里继续可见（isCompacting
+        // 已复位，界面不会误认为仍在压缩）。
         ctx.setCompactingConversationId((current) =>
-          current === conversationId ? null : current,
+          current === conversationId && !failed ? null : current,
         );
 
         // Manual compaction has no live task accepting steers. Preserve all

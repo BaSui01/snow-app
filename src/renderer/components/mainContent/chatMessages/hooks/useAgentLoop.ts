@@ -33,6 +33,10 @@ import {
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
 import {
+  buildCompactionResumeMessages,
+  runAutoCompactionGate,
+} from "../utils/autoCompaction";
+import {
   settleInterruptedMessage,
   settleResponseHtmlPreviewEligibility,
 } from "../utils/messageSettlement";
@@ -807,6 +811,43 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
         }
 
+        // 统一自动压缩闸门：主循环所有「确认要发起下一次请求」的入口（新发送、
+        // 工具续跑、插话续跑、Goal 自动续跑、晚到插话、队列回合）都在这里汇合，
+        // 因此阈值检查不再依赖各分支自己的「循环是否继续」推断。
+        const gateCompaction = await runAutoCompactionGate(ctx, {
+          conversationId: effectiveKey,
+          requestMessages,
+          // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
+          // auto-compaction decision matches the API config the conversation
+          // actually runs on — never the global active profile.
+          model: capturedOptions.model,
+          apiProfile: capturedOptions.apiProfile,
+          thinkingStrength: capturedOptions.thinkingStrength,
+          responsesFastMode: capturedOptions.responsesFastMode,
+          resumeAfterCompaction,
+        });
+        if (gateCompaction) {
+          if (isRunCancelled(effectiveKey)) {
+            ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+              settleInterruptedMessage(
+                currentMessages,
+                currentAssistantMessageId,
+              ),
+            );
+            return;
+          }
+          // 复用调用方已挂上的 assistant 占位：压缩是本次请求的替代，不能再
+          // 挂一条新的占位，否则会残留一条永远停在「发送中」的消息。
+          await runAgentLoop(
+            currentAssistantMessageId,
+            buildCompactionResumeMessages(gateCompaction, requestMessages),
+            currentConversationId,
+            gateCompaction.checkpointId,
+            true,
+          );
+          return;
+        }
+
         // 迭代级瞬态指标归零：token / tok/s / 首字每次 agent loop 重新
         // 计算（放在 pause 之后，暂停期间保留上一迭代的最终显示值）。
         // run 级指标（runTtftMs / runTokenUsage / streamStartedAt）保持
@@ -1120,105 +1161,71 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             : [];
         const visibleToolCalls = toolCalls;
 
-        const loopWillContinue =
-          toolCalls.length > 0 || hasPendingSteering(ctx, effectiveKey);
-        if (
-          loopWillContinue &&
-          response.tokenUsage &&
-          !responseFailed &&
-          !isPendingSessionKey(effectiveKey)
-        ) {
-          // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
-          // auto-compaction decision matches the API config the conversation
-          // actually runs on — never the global active profile.
-          const apiConfig = await ctx.getActiveApiConfig(
-            capturedOptions.apiProfile,
-          );
-          if (apiConfig?.enableAutoCompress) {
-            // autoCompressThreshold is stored in TOKENS (resolved from the
-            // configured percent against maxContextTokens when the config is
-            // saved). Compare the live token total against it directly — do NOT
-            // run it through calculateAutoCompressThresholdTokens, which expects
-            // a percent and would clamp a token value to 100% of the context.
-            const thresholdTokens = apiConfig.autoCompressThreshold;
-            if (thresholdTokens != null && thresholdTokens > 0) {
-              const totalTokens =
-                response.tokenUsage.inputTokens +
-                response.tokenUsage.outputTokens;
-              if (totalTokens >= thresholdTokens) {
-                ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
-                  currentMessages.map((currentMessage) =>
-                    currentMessage.id === currentAssistantMessageId
-                      ? {
-                          ...currentMessage,
-                          content:
-                            response.content || currentMessage.content || "",
-                          thinking:
-                            response.thinking ||
-                            currentMessage.thinking ||
-                            undefined,
-                          timestamp: formatMessageTime(),
-                          status: "sent",
-                          responseId: response.id || undefined,
-                          model: response.model || capturedOptions.model,
-                          isRetrying: false,
-                        }
-                      : currentMessage,
-                  ),
-                );
+        // 工具调用必然带来下一轮请求：这里在工具执行之前压缩，压缩交接因此
+        // 覆盖不到本轮工具调用（它们被放弃）。其余续跑入口（插话续跑、Goal
+        // 自动续跑、晚到插话、队列回合）不在这里推断，而是在各自的请求入口
+        // 由统一闸门检查，避免用「循环是否继续」的近似条件漏掉检查。
+        if (toolCalls.length > 0 && !responseFailed) {
+          const compaction = await runAutoCompactionGate(ctx, {
+            conversationId: effectiveKey,
+            requestMessages: [],
+            // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
+            // auto-compaction decision matches the API config the conversation
+            // actually runs on — never the global active profile.
+            model: capturedOptions.model,
+            apiProfile: capturedOptions.apiProfile,
+            thinkingStrength: capturedOptions.thinkingStrength,
+            responsesFastMode: capturedOptions.responsesFastMode,
+            tokenUsage: response.tokenUsage,
+            beforeCompaction: () =>
+              ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+                currentMessages.map((currentMessage) =>
+                  currentMessage.id === currentAssistantMessageId
+                    ? {
+                        ...currentMessage,
+                        content:
+                          response.content || currentMessage.content || "",
+                        thinking:
+                          response.thinking ||
+                          currentMessage.thinking ||
+                          undefined,
+                        timestamp: formatMessageTime(),
+                        status: "sent",
+                        responseId: response.id || undefined,
+                        model: response.model || capturedOptions.model,
+                        isRetrying: false,
+                      }
+                    : currentMessage,
+                ),
+              ),
+          });
 
-                const compactionResult = await ctx.performCompactionRef.current(
-                  effectiveKey,
-                  capturedOptions.model,
-                  true,
-                  undefined,
-                  capturedOptions.apiProfile,
-                  undefined,
-                  undefined,
-                  capturedOptions.thinkingStrength,
-                  capturedOptions.responsesFastMode,
-                );
-
-                if (compactionResult) {
-                  if (isRunCancelled(effectiveKey)) {
-                    return;
-                  }
-
-                  const sessionRefAfterCompaction =
-                    ctx.sessionsRefData.current.get(effectiveKey);
-                  if (sessionRefAfterCompaction) {
-                    sessionRefAfterCompaction.isSending = true;
-                    sessionRefAfterCompaction.isAbortRequested = false;
-                  }
-
-                  const postCompactionAssistantId =
-                    createMessageId("assistant");
-                  const postCompactionAssistant: ChatConversationMessage = {
-                    id: postCompactionAssistantId,
-                    role: "assistant",
-                    content: "",
-                    timestamp: formatMessageTime(),
-                    status: "sending",
-                    model: capturedOptions.model,
-                  };
-                  ctx.updateSessionMessages(effectiveKey, (currentMessages) => [
-                    ...currentMessages,
-                    postCompactionAssistant,
-                  ]);
-                  await runAgentLoop(
-                    postCompactionAssistantId,
-                    [
-                      { role: "user", content: compactionResult.content },
-                      ...(compactionResult.protectedMessages ?? []),
-                    ],
-                    response.conversationId,
-                    compactionResult.checkpointId,
-                    true,
-                  );
-                  return;
-                }
-              }
+          if (compaction) {
+            if (isRunCancelled(effectiveKey)) {
+              return;
             }
+
+            const postCompactionAssistantId = createMessageId("assistant");
+            const postCompactionAssistant: ChatConversationMessage = {
+              id: postCompactionAssistantId,
+              role: "assistant",
+              content: "",
+              timestamp: formatMessageTime(),
+              status: "sending",
+              model: capturedOptions.model,
+            };
+            ctx.updateSessionMessages(effectiveKey, (currentMessages) => [
+              ...currentMessages,
+              postCompactionAssistant,
+            ]);
+            await runAgentLoop(
+              postCompactionAssistantId,
+              buildCompactionResumeMessages(compaction, []),
+              response.conversationId,
+              compaction.checkpointId,
+              true,
+            );
+            return;
           }
         }
 
@@ -1687,66 +1694,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // rollback can restore the working directory to this pre-AI state.
       // The checkpoint is awaited before runAgentLoop to guarantee the AI
       // cannot modify files before the snapshot is captured.
+      //
+      // 发送前的自动压缩不在这里做：runAgentLoop 入口的统一闸门同样覆盖直接
+      // 发送与 pending 消息冲刷（后者经 handleSendMessageRef 重入本函数），
+      // 且只保留一处阈值判断，压缩失败不会被同一请求边界重试两次。
       const initCheckpointAndRun = async (): Promise<void> => {
-        // Pre-send auto-compaction: if the existing context already exceeds
-        // the configured threshold, compact first so the new user message is
-        // sent against a fresh, summarized context. This applies both to
-        // direct user sends and to pending-message flushes (which re-enter
-        // handleSendMessage via handleSendMessageRef).
-        if (!isPendingSessionKey(sessionKey)) {
-          // Use the conversation-scoped profile (capturedOptions.apiProfile) so the
-          // auto-compaction decision matches the API config the conversation
-          // actually runs on — never the global active profile.
-          const apiConfig = await ctx.getActiveApiConfig(
-            capturedOptions.apiProfile,
-          );
-          if (apiConfig?.enableAutoCompress) {
-            // autoCompressThreshold is stored in TOKENS — compare directly (see
-            // the in-loop check for why calculateAutoCompressThresholdTokens is
-            // intentionally not used here).
-            const thresholdTokens = apiConfig.autoCompressThreshold;
-            if (thresholdTokens != null && thresholdTokens > 0) {
-              const currentTokenUsage =
-                ctx.sessionsRef.current?.[sessionKey]?.tokenUsage ?? null;
-              if (currentTokenUsage) {
-                const totalTokens =
-                  currentTokenUsage.inputTokens +
-                  currentTokenUsage.outputTokens;
-                if (totalTokens >= thresholdTokens) {
-                  await ctx.performCompactionRef.current(
-                    sessionKey,
-                    capturedOptions.model,
-                    true,
-                    undefined,
-                    capturedOptions.apiProfile,
-                    undefined,
-                    undefined,
-                    capturedOptions.thinkingStrength,
-                    capturedOptions.responsesFastMode,
-                  );
-
-                  // performCompaction resets sessionRef.isSending to false in
-                  // its finally block, but we are still mid-send — restore it
-                  // so the outer handleSendMessage flow keeps the session
-                  // locked until it finishes.
-                  const sessionRefAfterCompaction =
-                    ctx.sessionsRefData.current.get(sessionKey);
-                  if (sessionRefAfterCompaction) {
-                    sessionRefAfterCompaction.isSending = true;
-                    sessionRefAfterCompaction.isAbortRequested = false;
-                  }
-
-                  // If the user aborted during compaction, stop here
-                  // regardless of whether compaction succeeded.
-                  if (isRunCancelled(sessionKey)) {
-                    return;
-                  }
-                }
-              }
-            }
-          }
-        }
-
         let checkpointId: string | undefined;
         // checkpoint 根目录跟随持久 WorkTree 绑定；绑定缺失/失效时 fail-closed。
         const projectSessionDirPath =

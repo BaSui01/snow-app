@@ -4465,6 +4465,7 @@ export const zhTW = {
   "chatCommand.close": "關閉",
   "chat.compactionGenerating": "正在產生上下文交接文件",
   "chat.compactionFailed": "上下文壓縮失敗",
+  "chat.autoCompactionFailed": "自動壓縮失敗，已依原上下文繼續（{{error}}）",
   "chat.compactionSummary": "上下文摘要",
   "chat.compactionExpand": "查看摘要",
   "chat.compactionCollapse": "收起摘要",

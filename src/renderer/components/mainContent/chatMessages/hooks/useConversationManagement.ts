@@ -14,6 +14,7 @@ import {
   deleteCheckpoints,
   directoryIdToPath,
   killRunningToolExecutions,
+  tokenUsageFromMessageRecords,
 } from "../utils/conversationHelpers";
 import { settleInterruptedMessages } from "../utils/messageSettlement";
 import { extractFileTrackingFromRecords } from "./fileChangeTracking";
@@ -35,32 +36,6 @@ import {
   getActiveWorkflowNodeIds,
   isActiveWorkflowNodeSession,
 } from "../workflow/workflowRunner";
-
-export const tokenUsageFromMessageRecords = (
-  records: {
-    role: string;
-    status: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheCreationInputTokens: number;
-    cacheReadInputTokens: number;
-  }[],
-): TokenUsage | null => {
-  const lastContextSnapshot = records.findLast(
-    (record) =>
-      record.role === "assistant" || record.status === "context_compaction",
-  );
-  if (!lastContextSnapshot) {
-    return null;
-  }
-  const usage: TokenUsage = {
-    inputTokens: lastContextSnapshot.inputTokens,
-    outputTokens: lastContextSnapshot.outputTokens,
-    cacheCreationInputTokens: lastContextSnapshot.cacheCreationInputTokens,
-    cacheReadInputTokens: lastContextSnapshot.cacheReadInputTokens,
-  };
-  return usage.inputTokens + usage.outputTokens > 0 ? usage : null;
-};
 
 /** 会话被选中（切换会话）时派发的全局事件：主视图应回到聊天界面。 */
 export const CONVERSATION_SELECTED_EVENT = "app:conversation-selected";

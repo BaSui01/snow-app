@@ -35,6 +35,10 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { resolveResponseDisposition } from "../utils/responseDisposition";
+import {
+  buildCompactionResumeMessages,
+  runAutoCompactionGate,
+} from "../utils/autoCompaction";
 import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import {
@@ -1918,6 +1922,37 @@ export function createWorkflowRunner(
           };
         }
 
+        // 统一自动压缩闸门：节点每一次「确认要发起下一次请求」的入口（首轮、
+        // 续跑复用旧会话、内部排队、强行发送、插话续跑）都汇合到本循环，阈值
+        // 检查因此不再依赖各调用方自己的续跑判断。携带工具结果的请求与压缩
+        // 边界续跑由闸门内部跳过（前者在响应后的检查点、工具执行前压缩）。
+        const gateCompaction = await runAutoCompactionGate(ctx, {
+          conversationId,
+          requestMessages,
+          model: effectiveModel || undefined,
+          apiProfile: effectiveApiProfile || undefined,
+          thinkingStrength,
+          responsesFastMode,
+          resumeAfterCompaction,
+        });
+        if (gateCompaction) {
+          if (isNodeCancelled()) {
+            if (isNodeForceSendAborted()) {
+              return { content: "", failed: false };
+            }
+            return {
+              content: "",
+              failed: true,
+              error: "Workflow node was interrupted by the user",
+            };
+          }
+          // 从压缩边界续跑：handoff 占位 + 压缩前任务原文 + 本次待发送消息。
+          return runLoop(
+            buildCompactionResumeMessages(gateCompaction, requestMessages),
+            true,
+          );
+        }
+
         resetIterationStreamMetrics(ctx, conversationId);
         const assistantMessageId = createMessageId("assistant");
         ctx.updateSessionMessages(conversationId, (currentMessages) => [
@@ -2066,75 +2101,45 @@ export function createWorkflowRunner(
 
         const toolCalls = parseToolCalls(response.toolCallsJson);
 
-        // 自动压缩（与主流程/子代理同构）：回合仍在推进且总 token 达到
-        // 节点生效配置的阈值时压缩会话，再从压缩边界续跑；节点自然收尾
-        // 时不触发，避免唤醒已完成的节点。
-        const loopWillContinue =
-          toolCalls.length > 0 || hasPendingSteering(ctx, conversationId);
-        if (loopWillContinue && response.tokenUsage) {
-          const apiConfig = await ctx.getActiveApiConfig(
-            effectiveApiProfile || undefined,
-          );
-          if (apiConfig?.enableAutoCompress) {
-            const thresholdTokens = apiConfig.autoCompressThreshold;
-            if (thresholdTokens != null && thresholdTokens > 0) {
-              const totalTokens =
-                response.tokenUsage.inputTokens +
-                response.tokenUsage.outputTokens;
-              if (totalTokens >= thresholdTokens) {
-                // 固化跨阈值轮次的消息，其工具调用被压缩交接放弃。
-                finalizeMessage(assistantMessageId, {
-                  content: response.content || "",
-                  thinking: response.thinking || undefined,
-                  status: "sent",
-                  responseId: response.id || undefined,
-                  model: response.model || undefined,
-                  isRetrying: false,
-                });
+        // 工具调用必然带来下一轮请求：这里在工具执行之前压缩，压缩交接因此
+        // 覆盖不到本轮工具调用（它们被放弃）。其余续跑入口（晚到插话、内部
+        // 排队、强行发送）不在这里推断，而是在循环入口由统一闸门检查；节点
+        // 自然收尾时不触发，避免唤醒已完成的节点。
+        if (toolCalls.length > 0) {
+          const compaction = await runAutoCompactionGate(ctx, {
+            conversationId,
+            requestMessages: [],
+            model: effectiveModel || undefined,
+            apiProfile: effectiveApiProfile || undefined,
+            thinkingStrength,
+            responsesFastMode,
+            tokenUsage: response.tokenUsage,
+            // 固化跨阈值轮次的消息，其工具调用被压缩交接放弃。
+            beforeCompaction: () =>
+              finalizeMessage(assistantMessageId, {
+                content: response.content || "",
+                thinking: response.thinking || undefined,
+                status: "sent",
+                responseId: response.id || undefined,
+                model: response.model || undefined,
+                isRetrying: false,
+              }),
+          });
 
-                const compactionResult = await ctx.performCompactionRef.current(
-                  conversationId,
-                  effectiveModel || undefined,
-                  true,
-                  undefined,
-                  effectiveApiProfile || undefined,
-                  undefined,
-                  undefined,
-                  thinkingStrength,
-                  responsesFastMode,
-                );
-
-                if (compactionResult) {
-                  if (isNodeCancelled()) {
-                    if (isNodeForceSendAborted()) {
-                      return { content: "", failed: false };
-                    }
-                    return {
-                      content: "",
-                      failed: true,
-                      error: "Workflow node was interrupted by the user",
-                    };
-                  }
-
-                  // performCompaction 的 finally 复位了 isSending，恢复执行态。
-                  const nodeRefAfterCompaction =
-                    ctx.sessionsRefData.current.get(conversationId);
-                  if (nodeRefAfterCompaction) {
-                    nodeRefAfterCompaction.isSending = true;
-                    nodeRefAfterCompaction.isAbortRequested = false;
-                  }
-
-                  // 从压缩边界续跑：占位 + 压缩前最后的节点任务原文。
-                  return runLoop(
-                    [
-                      { role: "user", content: compactionResult.content },
-                      ...(compactionResult.protectedMessages ?? []),
-                    ],
-                    true,
-                  );
-                }
+          if (compaction) {
+            if (isNodeCancelled()) {
+              if (isNodeForceSendAborted()) {
+                return { content: "", failed: false };
               }
+              return {
+                content: "",
+                failed: true,
+                error: "Workflow node was interrupted by the user",
+              };
             }
+
+            // 从压缩边界续跑：占位 + 压缩前最后的节点任务原文。
+            return runLoop(buildCompactionResumeMessages(compaction, []), true);
           }
         }
 

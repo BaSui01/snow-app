@@ -4517,6 +4517,7 @@ export const zhCN = {
   "chatCommand.close": "关闭",
   "chat.compactionGenerating": "正在生成上下文交接文档",
   "chat.compactionFailed": "上下文压缩失败",
+  "chat.autoCompactionFailed": "自动压缩失败，已按原上下文继续（{{error}}）",
   "chat.compactionSummary": "上下文摘要",
   "chat.compactionExpand": "查看摘要",
   "chat.compactionCollapse": "收起摘要",

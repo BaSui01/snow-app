@@ -4820,6 +4820,8 @@ export const en = {
   "chatCommand.close": "close",
   "chat.compactionGenerating": "Generating context handoff",
   "chat.compactionFailed": "Context compaction failed",
+  "chat.autoCompactionFailed":
+    "Auto-compaction failed — continuing with the existing context ({{error}})",
   "chat.compactionSummary": "Context summary",
   "chat.compactionExpand": "View summary",
   "chat.compactionCollapse": "Hide summary",

@@ -5,6 +5,7 @@ import type {
   ToolCorrectionAttemptStatus,
   ToolCorrectionState,
   ToolCorrectionStatus,
+  TokenUsage,
 } from "./conversationTypes";
 import type { ChatMessageRecord } from "../../../../../preload";
 import { getActiveLocale, tGlobal } from "../../../../i18n";
@@ -19,6 +20,38 @@ export const deleteCheckpoints = (checkpointIds: string[]): void => {
       // Checkpoint cleanup is best effort.
     });
   }
+};
+
+/**
+ * 从持久化消息记录里还原「上下文 token 快照」：最后一条 assistant（或压缩
+ * 边界）行记录了产生它的那次请求用量，等价于当前的上下文规模。用于会话
+ * 重新加载 / 回滚后恢复显示与自动压缩判断（schema v46+ 每条 assistant 行都
+ * 持久化了该次请求用量）；查不到（旧数据全为 0）返回 null。
+ */
+export const tokenUsageFromMessageRecords = (
+  records: {
+    role: string;
+    status: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationInputTokens: number;
+    cacheReadInputTokens: number;
+  }[],
+): TokenUsage | null => {
+  const lastContextSnapshot = records.findLast(
+    (record) =>
+      record.role === "assistant" || record.status === "context_compaction",
+  );
+  if (!lastContextSnapshot) {
+    return null;
+  }
+  const usage: TokenUsage = {
+    inputTokens: lastContextSnapshot.inputTokens,
+    outputTokens: lastContextSnapshot.outputTokens,
+    cacheCreationInputTokens: lastContextSnapshot.cacheCreationInputTokens,
+    cacheReadInputTokens: lastContextSnapshot.cacheReadInputTokens,
+  };
+  return usage.inputTokens + usage.outputTokens > 0 ? usage : null;
 };
 
 /**

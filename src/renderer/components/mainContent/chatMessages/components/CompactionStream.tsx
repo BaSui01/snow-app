@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { AlertCircle, Minimize2 } from "lucide-react";
+import { Minimize2, TriangleAlert } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { MarkdownBlock } from "./markdownRenderer";
 
@@ -61,11 +61,20 @@ export const CompactionStream = ({
         </section>
       ) : null}
       {compactionError ? (
-        <div className="context-compaction-error" role="alert">
-          <AlertCircle size={14} />
-          <span>
-            {t("chat.compactionFailed")}: {compactionError}
+        // 压缩失败提示：与「上下文摘要」同一条横线样式，弱化呈现（警告色 +
+        // 小字 + 两侧细线），不打断阅读；文案由 performCompaction 组装。
+        <div className="context-compaction-notice" role="alert">
+          <span className="context-compaction-notice-rule" aria-hidden="true" />
+          <span
+            className="context-compaction-notice-label"
+            title={compactionError}
+          >
+            <TriangleAlert size={13} strokeWidth={1.8} aria-hidden="true" />
+            <span className="context-compaction-notice-text">
+              {compactionError}
+            </span>
           </span>
+          <span className="context-compaction-notice-rule" aria-hidden="true" />
         </div>
       ) : null}
     </>

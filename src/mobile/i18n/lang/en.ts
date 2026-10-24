@@ -61,7 +61,6 @@ export const en: Record<string, string> = {
   "remote.timeline.loadEarlier": "Load earlier messages",
   "remote.timeline.loadingEarlier": "Loading earlier messages…",
   "remote.compaction.generating": "Compacting context…",
-  "remote.compaction.failed": "Context compaction failed",
   "remote.compaction.summary": "Context summary",
   "remote.compaction.compacted":
     "Context compacted — later AI requests ignore messages before the separator",

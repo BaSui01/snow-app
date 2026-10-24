@@ -17,6 +17,7 @@ import {
   getErrorMessage,
   killRunningToolExecutions,
   resolveConversationWorkspacePath,
+  tokenUsageFromMessageRecords,
 } from "../utils/conversationHelpers";
 import {
   collectWorkflowFlowIdsFromMessages,
@@ -24,7 +25,6 @@ import {
   resolveWorkflowFlowImpact,
 } from "../utils/rollbackChain";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
-import { tokenUsageFromMessageRecords } from "./useConversationManagement";
 
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。

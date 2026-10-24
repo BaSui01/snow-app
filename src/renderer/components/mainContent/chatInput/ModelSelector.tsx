@@ -31,7 +31,8 @@ import {
   orderApiConfigsByName,
   useApiConfigReorder,
 } from "../../sidebar/apiSettings/apiConfigReorder";
-import type { ApiConfigRecord } from "../../../../preload";
+import { groupModelsByBrand, type ModelGroup } from "../../common/modelGroups";
+import type { ApiConfigRecord, Model } from "../../../../preload";
 
 type ModelSelectorProps = Pick<
   ChatInputState,
@@ -80,6 +81,10 @@ type ModelSelectorProps = Pick<
     onNavigateToView?: (view: MainContentView) => void;
   };
 
+/** 模型列表的可导航行：分组标题行 + 已展开分组的模型行。 */
+type ModelListRow =
+  { type: "group"; group: ModelGroup } | { type: "model"; model: Model };
+
 export const ModelSelector = ({
   apiConfigs,
   selectedApiProfile,
@@ -124,8 +129,13 @@ export const ModelSelector = ({
   const { t } = useI18n();
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [apiProfileSearchQuery, setApiProfileSearchQuery] = useState("");
-  // 键盘导航高亮索引（-1 = 未高亮）
-  const [modelActiveIndex, setModelActiveIndex] = useState(-1);
+  // 模型列表键盘高亮行：null 表示跟随选中模型所在行（由列表结构推导），交互后固定为具体行索引
+  const [modelActiveRowIndex, setModelActiveRowIndex] = useState<number | null>(
+    null,
+  );
+  // 手动展开的模型分组键；null 表示未被用户改动，回到默认（只展开选中模型所在分组）
+  const [expandedModelGroups, setExpandedModelGroups] =
+    useState<Set<string> | null>(null);
   const [apiProfileActiveIndex, setApiProfileActiveIndex] = useState(-1);
   const modelListRef = useRef<HTMLDivElement | null>(null);
   const apiProfileListRef = useRef<HTMLDivElement | null>(null);
@@ -177,7 +187,7 @@ export const ModelSelector = ({
   useEffect(() => {
     if (menuHidden || displayView !== "model") {
       setModelSearchQuery("");
-      setModelActiveIndex(-1);
+      setModelActiveRowIndex(null);
     }
     if (menuHidden || displayView !== "apiProfile") {
       setApiProfileSearchQuery("");
@@ -185,14 +195,18 @@ export const ModelSelector = ({
     }
   }, [menuHidden, displayView]);
 
-  // 进入模型/渠道视图时，把键盘高亮定位到当前选中项
+  // 进入模型视图、模型列表刷新或切换选中模型时，高亮回到选中模型所在行
   useEffect(() => {
     if (!isModelMenuOpen || modelMenuView !== "model" || isManualMode) {
       return;
     }
-    const index = models.findIndex((model) => model.id === selectedModel);
-    setModelActiveIndex(index >= 0 ? index : 0);
+    setModelActiveRowIndex(null);
   }, [isModelMenuOpen, modelMenuView, isManualMode, models, selectedModel]);
+
+  // 打开模型视图时回到默认展开状态：只展开选中模型所在分组
+  useEffect(() => {
+    setExpandedModelGroups(null);
+  }, [isModelMenuOpen, modelMenuView, isManualMode]);
 
   // 进入渠道视图时把键盘高亮定位到当前选中项；
   // 视图已打开时列表变化（如拖拽排序）不再打断用户当前的高亮位置。
@@ -212,7 +226,8 @@ export const ModelSelector = ({
     setApiProfileActiveIndex(index >= 0 ? index : 0);
   }, [isModelMenuOpen, modelMenuView, effectiveApiConfigs, selectedApiProfile]);
 
-  // 键盘导航：↑↓/Home/End 移动高亮，Enter 选中高亮项
+  // 键盘导航：↑↓/Home/End 在可见行（分组标题 + 已展开分组的模型）间移动高亮，
+  // Enter 选中高亮项（分组标题为展开/收起），←/→ 收起/展开分组
   const handleDropdownKeyDown = (
     event: React.KeyboardEvent<HTMLDivElement>,
   ): void => {
@@ -225,29 +240,36 @@ export const ModelSelector = ({
       return;
     }
 
-    const list = isModelList ? filteredModels : filteredApiConfigs;
+    const rowCount = isModelList ? modelRows.length : filteredApiConfigs.length;
     const activeIndex = isModelList ? modelActiveIndex : apiProfileActiveIndex;
-    const setActiveIndex = isModelList
-      ? setModelActiveIndex
-      : setApiProfileActiveIndex;
-    if (list.length === 0 || (isModelList && isLoadingModels)) {
+    if (rowCount === 0 || (isModelList && isLoadingModels)) {
       return;
     }
 
+    const setActiveIndex = (index: number): void => {
+      if (isModelList) {
+        setModelActiveRowIndex(index);
+      } else {
+        setApiProfileActiveIndex(index);
+      }
+    };
+
     // 焦点在返回/刷新/手动输入等操作按钮上时，Enter 交给原生按钮行为
     const isActionButton = !!(event.target as HTMLElement).closest(
-      ".model-menu-back, .model-dropdown-action, .model-dropdown-retry, .model-dropdown-edit-btn, .model-dropdown-pin-btn",
+      ".model-menu-back, .model-dropdown-action, .model-dropdown-retry, .model-dropdown-edit-btn, .model-dropdown-pin-btn, .model-dropdown-group",
     );
 
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setActiveIndex((index) => (index + 1) % list.length);
+        setActiveIndex(activeIndex < 0 ? 0 : (activeIndex + 1) % rowCount);
         break;
       case "ArrowUp":
         event.preventDefault();
-        setActiveIndex((index) =>
-          index < 0 ? list.length - 1 : (index - 1 + list.length) % list.length,
+        setActiveIndex(
+          activeIndex < 0
+            ? rowCount - 1
+            : (activeIndex - 1 + rowCount) % rowCount,
         );
         break;
       case "Home":
@@ -256,25 +278,45 @@ export const ModelSelector = ({
         break;
       case "End":
         event.preventDefault();
-        setActiveIndex(list.length - 1);
+        setActiveIndex(rowCount - 1);
         break;
+      case "ArrowLeft":
+      case "ArrowRight": {
+        // 搜索框内的左右键用于移动光标
+        if (!isModelList || event.target instanceof HTMLInputElement) {
+          return;
+        }
+        const row = modelRows[activeIndex];
+        if (!row || row.type !== "group") {
+          return;
+        }
+        event.preventDefault();
+        setModelGroupExpanded(row.group.key, event.key === "ArrowRight");
+        break;
+      }
       case "Enter": {
         if (isActionButton) {
           return;
         }
         const index = activeIndex >= 0 ? activeIndex : 0;
-        const item = list[index];
+        event.preventDefault();
+        if (isModelList) {
+          const row = modelRows[index];
+          if (!row) {
+            return;
+          }
+          if (row.type === "group") {
+            toggleModelGroup(row.group.key);
+          } else {
+            void handleSelectModel(row.model.id);
+          }
+          break;
+        }
+        const item = filteredApiConfigs[index];
         if (!item) {
           return;
         }
-        event.preventDefault();
-        if (isModelList) {
-          void handleSelectModel(item.id);
-        } else {
-          void handleSelectApiProfile(
-            "profileName" in item ? item.profileName : "",
-          );
-        }
+        void handleSelectApiProfile(item.profileName);
         break;
       }
     }
@@ -291,6 +333,79 @@ export const ModelSelector = ({
         model.ownedBy.toLowerCase().includes(query),
     );
   }, [models, modelSearchQuery]);
+
+  // 模型按品牌分组：只有多个品牌时才折叠展示，单品牌保持原有平铺列表
+  const modelGroups = useMemo(
+    () => groupModelsByBrand(filteredModels),
+    [filteredModels],
+  );
+  const isGroupedModels = modelGroups.length > 1;
+  const isSearchingModels = modelSearchQuery.trim().length > 0;
+
+  // 默认展开选中模型所在分组（无选中项时退回首个分组）
+  const defaultExpandedGroupKeys = useMemo(() => {
+    const selectedGroup = modelGroups.find((group) =>
+      group.models.some((model) => model.id === selectedModel),
+    );
+    const key = selectedGroup?.key ?? modelGroups[0]?.key;
+    return new Set<string>(key ? [key] : []);
+  }, [modelGroups, selectedModel]);
+  const expandedModelGroupKeys =
+    expandedModelGroups ?? defaultExpandedGroupKeys;
+
+  const modelRows = useMemo<ModelListRow[]>(() => {
+    if (!isGroupedModels) {
+      return filteredModels.map((model) => ({ type: "model", model }));
+    }
+    const rows: ModelListRow[] = [];
+    for (const group of modelGroups) {
+      rows.push({ type: "group", group });
+      if (expandedModelGroupKeys.has(group.key)) {
+        for (const model of group.models) {
+          rows.push({ type: "model", model });
+        }
+      }
+    }
+    return rows;
+  }, [filteredModels, modelGroups, isGroupedModels, expandedModelGroupKeys]);
+
+  // 未交互时高亮跟随选中模型所在行，交互后固定为具体行
+  const defaultModelActiveRowIndex = useMemo(() => {
+    const selectedIndex = modelRows.findIndex(
+      (row) => row.type === "model" && row.model.id === selectedModel,
+    );
+    if (selectedIndex >= 0) {
+      return selectedIndex;
+    }
+    const firstModelIndex = modelRows.findIndex((row) => row.type === "model");
+    return firstModelIndex >= 0 ? firstModelIndex : 0;
+  }, [modelRows, selectedModel]);
+  const modelActiveIndex = modelActiveRowIndex ?? defaultModelActiveRowIndex;
+
+  // 搜索时展开所有分组保证匹配结果可见；退出搜索回到默认展开状态
+  useEffect(() => {
+    if (!isSearchingModels) {
+      setExpandedModelGroups(null);
+      return;
+    }
+    setExpandedModelGroups(new Set(modelGroups.map((group) => group.key)));
+  }, [isSearchingModels, modelGroups]);
+
+  const setModelGroupExpanded = (key: string, expanded: boolean): void => {
+    setExpandedModelGroups((previous) => {
+      const next = new Set(previous ?? defaultExpandedGroupKeys);
+      if (expanded) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  };
+
+  const toggleModelGroup = (key: string): void => {
+    setModelGroupExpanded(key, !expandedModelGroupKeys.has(key));
+  };
 
   const filteredApiConfigs = useMemo(() => {
     const query = apiProfileSearchQuery.trim().toLowerCase();
@@ -355,14 +470,14 @@ export const ModelSelector = ({
     }
   };
 
-  // 过滤结果变化时收敛索引，避免越界
+  // 可见行变化时收敛索引，避免越界
   useEffect(() => {
-    setModelActiveIndex((index) =>
-      filteredModels.length === 0
-        ? -1
-        : Math.min(index, filteredModels.length - 1),
+    setModelActiveRowIndex((index) =>
+      index === null || modelRows.length === 0
+        ? index
+        : Math.min(index, modelRows.length - 1),
     );
-  }, [filteredModels]);
+  }, [modelRows]);
 
   useEffect(() => {
     setApiProfileActiveIndex((index) =>
@@ -387,10 +502,11 @@ export const ModelSelector = ({
       items?.[apiProfileActiveIndex]?.scrollIntoView({ block: "nearest" });
     }
   }, [
+    isModelMenuOpen,
     modelActiveIndex,
     apiProfileActiveIndex,
     modelMenuView,
-    filteredModels,
+    modelRows,
     filteredApiConfigs,
   ]);
 
@@ -871,28 +987,67 @@ export const ModelSelector = ({
                           {labels.noMatchingModels}
                         </div>
                       )}
-                      {filteredModels.map((model, index) => (
-                        <button
-                          key={model.id}
-                          className={`model-dropdown-item ${
-                            selectedModel === model.id ? "active" : ""
-                          } ${modelActiveIndex === index ? "highlighted" : ""}`}
-                          onClick={() => void handleSelectModel(model.id)}
-                          onMouseEnter={() => setModelActiveIndex(index)}
-                          type="button"
-                          title={model.id}
-                        >
-                          <span className="model-dropdown-item-name with-icon">
-                            <ModelBrandIcon model={model.id} size={16} />
-                            <span className="model-dropdown-item-name-text">
-                              {model.id}
+                      {modelRows.map((row, index) =>
+                        row.type === "group" ? (
+                          <button
+                            key={`group-${row.group.key}`}
+                            aria-expanded={expandedModelGroupKeys.has(
+                              row.group.key,
+                            )}
+                            className={`model-dropdown-item model-dropdown-group${
+                              modelActiveIndex === index ? " highlighted" : ""
+                            }`}
+                            onClick={() => toggleModelGroup(row.group.key)}
+                            onMouseEnter={() => setModelActiveRowIndex(index)}
+                            type="button"
+                          >
+                            <span className="model-dropdown-item-name with-icon">
+                              <ModelBrandIcon
+                                model={row.group.iconModel}
+                                size={14}
+                              />
+                              <span className="model-dropdown-item-name-text">
+                                {row.group.label || labels.otherModels}
+                              </span>
                             </span>
-                          </span>
-                          {selectedModel === model.id && (
-                            <Check size={14} className="model-dropdown-check" />
-                          )}
-                        </button>
-                      ))}
+                            <span className="model-dropdown-group-meta">
+                              <span>{row.group.models.length}</span>
+                              <ChevronDown
+                                size={12}
+                                className="model-dropdown-group-chevron"
+                              />
+                            </span>
+                          </button>
+                        ) : (
+                          <button
+                            key={row.model.id}
+                            className={`model-dropdown-item${
+                              isGroupedModels ? " model-dropdown-model" : ""
+                            } ${
+                              selectedModel === row.model.id ? "active" : ""
+                            } ${
+                              modelActiveIndex === index ? "highlighted" : ""
+                            }`}
+                            onClick={() => void handleSelectModel(row.model.id)}
+                            onMouseEnter={() => setModelActiveRowIndex(index)}
+                            type="button"
+                            title={row.model.id}
+                          >
+                            <span className="model-dropdown-item-name with-icon">
+                              <ModelBrandIcon model={row.model.id} size={16} />
+                              <span className="model-dropdown-item-name-text">
+                                {row.model.id}
+                              </span>
+                            </span>
+                            {selectedModel === row.model.id && (
+                              <Check
+                                size={14}
+                                className="model-dropdown-check"
+                              />
+                            )}
+                          </button>
+                        ),
+                      )}
                     </>
                   )}
                 </div>

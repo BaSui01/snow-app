@@ -878,6 +878,7 @@ export const zhTW = {
   "chat.noModelsFound": "未找到模型",
   "chat.searchModels": "搜尋模型",
   "chat.noMatchingModels": "無符合的模型",
+  "chat.otherModels": "其他",
   "chat.searchApiProfiles": "搜尋 API 提供商",
   "chat.noMatchingApiProfiles": "無符合的提供商",
   "chat.loadModelsError": "載入模型失敗",

@@ -222,6 +222,7 @@ export type ChatInputLabels = {
   noModelsFound: string;
   searchModels: string;
   noMatchingModels: string;
+  otherModels: string;
   searchApiProfiles: string;
   noMatchingApiProfiles: string;
   cancel: string;

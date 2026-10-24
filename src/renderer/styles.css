@@ -7486,6 +7486,45 @@ body.is-panel-resizing * {
   font-weight: 600;
 }
 
+/* 分组标题行：更小的字号与次要色，与模型行区分 */
+.api-model-combobox-group {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.api-model-combobox-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-model-combobox-group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.api-model-combobox-group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.api-model-combobox-group[aria-expanded="false"]
+  .api-model-combobox-group-chevron {
+  transform: rotate(-90deg);
+}
+
+/* 分组内的模型行缩进一级，体现层级 */
+.api-model-combobox-model {
+  padding-left: 12px;
+}
+
 .api-model-combobox .api-model-combobox-option-name {
   min-width: 0;
   overflow: hidden;
@@ -31181,6 +31220,38 @@ button.user-message-source:hover {
   min-width: 0;
 }
 
+/* 模型分组标题行：更小的字号与次要色，与模型行区分 */
+.model-dropdown-group {
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.model-dropdown-group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.model-dropdown-group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.model-dropdown-group[aria-expanded="false"] .model-dropdown-group-chevron {
+  transform: rotate(-90deg);
+}
+
+/* 分组内的模型行缩进一级，体现层级 */
+.model-dropdown-model {
+  padding-left: 12px;
+}
+
 .thinking-option-icon {
   flex-shrink: 0;
   color: var(--text-secondary);
@@ -53721,10 +53792,11 @@ pre.file-viewer-code {
   flex: none;
 }
 
-/* 未匹配到品牌 logo 时的默认占位 */
+/* 未匹配到品牌 logo 时的默认占位（“其他”模型）：背景用主题强调色的半透明叠色做差异色，
+   浅色/深色主题下都能与品牌彩色 logo 区分开，同时不抢眼 */
 .model-brand-icon-fallback {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
+  color: var(--text-secondary);
   pointer-events: none;
   user-select: none;
 }

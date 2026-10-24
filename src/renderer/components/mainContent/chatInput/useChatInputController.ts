@@ -196,6 +196,9 @@ export const useChatInputController = ({
       noMatchingModels: t("chat.noMatchingModels", {
         defaultValue: "No matching models",
       }),
+      otherModels: t("chat.otherModels", {
+        defaultValue: "Other",
+      }),
       searchApiProfiles: t("chat.searchApiProfiles", {
         defaultValue: "Search providers",
       }),

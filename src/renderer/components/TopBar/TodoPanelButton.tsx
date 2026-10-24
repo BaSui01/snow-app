@@ -152,7 +152,11 @@ export const TodoPanelButton = ({
     };
   }, [conversationId, panelSessionId]);
 
-  const sessionId = panelSessionId ?? fallbackSessionId;
+  // TODO 的隔离键是真实会话 ID：会话尚未创建（新会话/pending）时，即便消息里
+  // 残留待办结果也不能发起读写，否则后端会以“需要活动会话”拒绝。
+  const sessionId = conversationId
+    ? (panelSessionId ?? fallbackSessionId)
+    : null;
   // Priority: user-initiated localTodos > panelTodos (from loaded messages)
   // > fallbackTodos (from backend query). When sessionId exists, localTodos
   // takes precedence so user operations are reflected immediately.

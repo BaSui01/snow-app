@@ -99,9 +99,7 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
-    let mut conversation_ids = super::guard_sub_agent_physical_delete(
-        &transaction, &[conversation_id.to_string()],
-    )?;
+    let mut conversation_ids = vec![conversation_id.to_string()];
     let child_ids = {
         let mut statement = transaction
             .prepare(
@@ -175,9 +173,6 @@ pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_m
         };
         conversation_ids.extend(node_sub_agent_ids);
     }
-
-    let mut seen_targets = HashSet::new();
-    conversation_ids.retain(|id| seen_targets.insert(id.clone()));
 
     // 删除前收集消息中内联图片标签路径（`@@image:upload/...@@`），
     // 供提交后清理不再被任何消息引用的孤儿文件
@@ -345,7 +340,7 @@ pub fn delete_conversations(
         .map_err(|error| database::database_error(database_path, "delete conversations", error))?;
 
     // 一次查出所有直接子代理会话 id（覆盖全部选中父会话）
-    let mut all_target_ids = super::guard_sub_agent_physical_delete(&transaction, &unique_ids)?;
+    let mut all_target_ids = unique_ids.clone();
     {
         let placeholders = in_clause_placeholders(unique_ids.len());
         let mut statement = transaction
@@ -871,9 +866,7 @@ pub fn list_chat_messages(
                         retry_attempts,
                         retry_error,
                         created_at,
-                        tool_corrections_json,
-                        CASE WHEN role = 'assistant' AND status IN ('failed', 'error')
-                             THEN raw_json ELSE '{}' END
+                        tool_corrections_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                   ORDER BY id ASC",
@@ -902,9 +895,6 @@ pub fn list_chat_messages(
                     retry_error: row.get(18)?,
                     created_at: row.get(19)?,
                     tool_corrections_json: row.get(20)?,
-                    failure_reason: crate::api::failure::failure_reason_from_raw(
-                        &row.get::<_, String>(21)?,
-                    ),
                 })
             })?;
 
@@ -1014,9 +1004,7 @@ pub fn list_chat_messages_paginated(
                         retry_attempts,
                         retry_error,
                         created_at,
-                        tool_corrections_json,
-                        CASE WHEN role = 'assistant' AND status IN ('failed', 'error')
-                             THEN raw_json ELSE '{}' END
+                        tool_corrections_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND (?2 = '' OR id < ?2)
@@ -1049,9 +1037,6 @@ pub fn list_chat_messages_paginated(
                         retry_error: row.get(18)?,
                         created_at: row.get(19)?,
                         tool_corrections_json: row.get(20)?,
-                        failure_reason: crate::api::failure::failure_reason_from_raw(
-                            &row.get::<_, String>(21)?,
-                        ),
                     })
                 },
             )?;

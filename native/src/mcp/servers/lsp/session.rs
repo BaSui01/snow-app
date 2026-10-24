@@ -953,70 +953,25 @@ impl ServerSession {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
-    /// 优雅关闭：shutdown → exit → 等待退出（≤3s）→ 必要时 kill → 清理 mainloop。
+    /// 优雅关闭：shutdown → 等待退出（≤3s）→ kill 兜底。
     pub async fn shutdown(&mut self) {
         self.dead = true;
-        let pid = self.child.id();
-        let shutdown_timeout = Duration::from_secs(3);
-        // 仅记录错误类别，不输出服务器错误消息中可能夹带的源码或敏感数据。
-        let error_kind = |error: &async_lsp::Error| match error {
-            async_lsp::Error::ServiceStopped => "service stopped",
-            async_lsp::Error::Deserialize(_) => "invalid response",
-            async_lsp::Error::Response(_) => "server error response",
-            async_lsp::Error::Protocol(_) => "protocol error",
-            async_lsp::Error::Io(_) => "transport I/O error",
-            async_lsp::Error::Eof => "transport EOF",
-            async_lsp::Error::Routing(_) => "routing error",
-            _ => "unknown error",
-        };
-        match tokio::time::timeout(shutdown_timeout, self.socket.shutdown(())).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                eprintln!("[lsp:{}] shutdown request failed (pid {pid:?}): {}", self.lang, error_kind(&error));
-            }
-            Err(_) => {
-                eprintln!("[lsp:{}] shutdown request timed out after 3s (pid {pid:?})", self.lang);
-            }
-        }
-        if let Err(error) = self.socket.exit(()) {
-            eprintln!("[lsp:{}] exit notification failed (pid {pid:?}): {}", self.lang, error_kind(&error));
-        }
-
-        // exit 仅入队；保留 mainloop 驱动管道写入，直到进程退出或等待失败。
-        let force_kill = match tokio::time::timeout(shutdown_timeout, self.child.wait()).await {
-            Ok(Ok(_)) => false,
-            Ok(Err(error)) => {
-                eprintln!("[lsp:{}] process wait failed; forcing termination (pid {pid:?}): {error}", self.lang);
-                true
-            }
-            Err(_) => {
-                eprintln!("[lsp:{}] process exit timed out after 3s; forcing termination (pid {pid:?})", self.lang);
-                true
-            }
-        };
-        if force_kill {
-            // start_kill 不等待回收；单独为 wait 设上限，避免 kill().await 无界等待。
-            if let Err(error) = self.child.start_kill() {
-                eprintln!("[lsp:{}] forced termination failed (pid {pid:?}): {error}", self.lang);
-            }
-            match tokio::time::timeout(shutdown_timeout, self.child.wait()).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => {
-                    eprintln!("[lsp:{}] wait after forced termination failed (pid {pid:?}): {error}", self.lang);
-                }
-                Err(_) => {
-                    eprintln!("[lsp:{}] wait after forced termination timed out after 3s (pid {pid:?})", self.lang);
-                }
-            }
-        }
-
-        // 进程关闭处理结束后才中止消息循环，并等待其释放管道；进程树 guard 保持兜底。
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.socket.shutdown(())).await;
+        let _ = self.socket.exit(());
         self.mainloop_task.abort();
-        if let Err(error) = (&mut self.mainloop_task).await {
-            if !error.is_cancelled() {
-                eprintln!("[lsp:{}] mainloop cleanup failed (pid {pid:?}, panicked={})", self.lang, error.is_panic());
+        // 等待进程退出（≤3s），超时 kill。
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                let _ = self.child.kill().await;
+                break;
             }
+            if let Ok(Some(_)) = self.child.try_wait() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
+        let _ = self.child.kill().await;
     }
 }
 

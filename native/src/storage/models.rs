@@ -826,8 +826,6 @@ pub struct ChatMessageRecord {
     pub tool_corrections_json: String,
     pub interruption_reason: Option<String>,
     pub recovery_outcome: Option<String>,
-    /// Redacted, bounded provider diagnostic, separate from generated content.
-    pub failure_reason: Option<String>,
     /// Token usage of the API request that produced this assistant message
     /// (zero for user/tool rows and rows persisted before v46).
     pub input_tokens: i64,

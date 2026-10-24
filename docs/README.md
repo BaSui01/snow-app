@@ -53,18 +53,6 @@
 
 ## 文档覆盖与维护 / Coverage & Maintenance
 
-- [归档与删除门禁解耦 ADR](zh-CN/4-架构与开发/15-归档与删除门禁解耦ADR.md) / [Archive and deletion-gate separation ADR](en/4-architecture-and-development/15-archive-deletion-gate-separation-adr.md)：归档直接搬移终态会话，永久删除保护不变 / Move settled conversations without entering the deletion lifecycle.
-
-- [子代理取消归因与验收边界 ADR](zh-CN/4-架构与开发/14-子代理取消归因与验收边界ADR.md) / [Sub-agent cancellation attribution and evidence boundaries ADR](en/4-architecture-and-development/14-subagent-cancellation-attribution-evidence-boundaries-adr.md)：首次取消受理来源、摘要与验收证据边界 / First accepted cancellation attribution, summary and acceptance evidence boundaries.
-
-- [响应失败诊断与安全恢复 ADR](zh-CN/4-架构与开发/13-响应失败诊断与安全恢复ADR.md) / [Response failure diagnostics and safe recovery ADR](en/4-architecture-and-development/13-response-failure-diagnostics-safe-recovery-adr.md)：安全失败原因、正文分离与模型/工具重放边界 / Safe failure metadata, separate body rendering and model/tool replay boundaries.
-
-- [子代理工具失败恢复与诊断 ADR](zh-CN/4-架构与开发/12-子代理工具失败恢复与诊断ADR.md) / [Sub-agent tool recovery and diagnostics ADR](en/4-architecture-and-development/12-subagent-tool-recovery-diagnostics-adr.md)：读取错误有界恢复、IPC 订阅复用与预览更新配置 / Bounded read-error recovery, multiplexed IPC subscriptions and preview update configuration.
-
-- [运行时作用域与读取关闭修复 ADR](zh-CN/4-架构与开发/11-运行时作用域与读取关闭修复ADR.md) / [Runtime scope, read and shutdown repair ADR](en/4-architecture-and-development/11-runtime-scope-read-shutdown-repair-adr.md)：失效作用域退役、准确只读快照与 LSP 优雅关闭 / Stale scope retirement, exact read snapshots and graceful LSP shutdown.
-
-- [子代理消息标识与执行方式 ADR](zh-CN/4-架构与开发/10-子代理结果消息标识ADR.md) / [Sub-agent message identity and execution policy ADR](en/4-architecture-and-development/10-subagent-result-message-identity-adr.md)：结果消息标识、同步／异步强制设置与会话 UI 复用 / Result message IDs, enforced execution mode and conversation UI reuse.
-
 - [会话文件产物 ADR / Chat file artifacts ADR](adr/2026-10-16-chat-file-artifacts.md)：真实文件读取、默认沙箱预览与同轮跨消息去重 / Real file reads, default sandbox preview and cross-message deduplication within a run.
 
 - [HTML 动态预览 ADR / HTML artifact preview ADR](adr/2026-10-16-html-artifact-preview.md)：AI 正文默认预览、显式执行边界、流式生命周期与共享布局内嵌，沙箱和 CSP 不放宽 / Default assistant-body previews, explicit-only surfaces, streaming lifecycle and embedded shared layouts, with sandbox and CSP unchanged.

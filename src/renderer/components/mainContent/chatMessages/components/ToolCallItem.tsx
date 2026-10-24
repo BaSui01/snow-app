@@ -17,6 +17,7 @@ import {
   FindToolCall,
   SubAgentToolCall,
   SubAgentMessageToolCall,
+  SubAgentContinueToolCall,
   SubAgentListToolCall,
   CodebaseToolCall,
   LspToolCall,
@@ -38,7 +39,6 @@ import {
   ToolCorrectionTree,
 } from "../toolCalls";
 import { PluginToolCall } from "./PluginToolCall";
-import { SubAgentRunToolCall } from "../toolCalls/SubAgentRunToolCall";
 import { ToolRejectionNotice } from "../toolCalls/shared/ToolRejectionNotice";
 import { parseToolRejection } from "../toolCalls/shared/toolRejection";
 
@@ -130,29 +130,17 @@ const renderToolCall = ({
     return <FindToolCall toolCall={toolCall} />;
   }
 
-  if (
-    toolCall.name === "sub-agents-activate" ||
-    toolCall.name === "sub-agents-continue"
-  ) {
+  if (toolCall.name === "sub-agents-activate") {
     return (
-      <SubAgentToolCall
-        toolCall={toolCall}
-        parentConversationId={conversationId}
-        hookExecutions={hookExecutions}
-        mode={toolCall.name === "sub-agents-continue" ? "continue" : "activate"}
-      />
+      <SubAgentToolCall toolCall={toolCall} hookExecutions={hookExecutions} />
     );
   }
 
-  if (
-    toolCall.name === "sub-agents-getResult" ||
-    toolCall.name === "sub-agents-wait" ||
-    toolCall.name === "sub-agents-cancel"
-  ) {
+  if (toolCall.name === "sub-agents-continue") {
     return (
-      <SubAgentRunToolCall
+      <SubAgentContinueToolCall
         toolCall={toolCall}
-        conversationId={conversationId}
+        hookExecutions={hookExecutions}
       />
     );
   }

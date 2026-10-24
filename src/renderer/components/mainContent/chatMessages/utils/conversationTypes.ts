@@ -194,8 +194,6 @@ export type ChatConversationMessage = {
    *  "thinking" state of the thinking block; never persisted. */
   isThinkingActive?: boolean;
   timestamp: string;
-  /** Runtime-only provenance for sub-agent activity; display timestamps are not run boundaries. */
-  subAgentRunId?: string;
   status?: "sending" | "sent" | "incomplete" | "error";
   /** 自动执行资格独立于展示状态；仅真实成功终态授予，取消后不可恢复。
    *  不单独持久化，历史加载从原始响应 status 重新计算。 */
@@ -203,8 +201,6 @@ export type ChatConversationMessage = {
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
-  /** Redacted provider diagnostic; generated content is never an error reason. */
-  failureReason?: string;
   responseId?: string;
   model?: string;
   toolCalls?: ToolCallInfo[];

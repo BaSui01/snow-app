@@ -11,8 +11,6 @@ import {
 } from "../../ssh/remoteWorkspaceCommand";
 import { snowLog } from "../../../utils/snowLogger";
 import { safeSend } from "../../utils/safeSend";
-import { getMainWindow } from "../../app/mainWindow";
-import { getDetachedConversationIds } from "../../app/detachedPanelWindow";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
 
@@ -218,27 +216,6 @@ export const registerChatHandlers = (native: NativeBridge): void => {
           normalizedRequest.directoryId,
           native,
         );
-        if (
-          event.sender === getMainWindow()?.webContents &&
-          normalizedRequest.conversationId
-        ) {
-          const conversation = await native.getChatConversation(
-            normalizedRequest.conversationId,
-          );
-          // Child runs retain their captured execution owner. Only parent sends
-          // are subject to existing detached conversation ownership. Recheck after
-          // every await, immediately before the actual native request dispatch.
-          if (
-            !conversation?.parentConversationId &&
-            getDetachedConversationIds().includes(
-              normalizedRequest.conversationId,
-            )
-          ) {
-            throw new Error(
-              "OWNER_MISMATCH: parent model requests belong to the detached window",
-            );
-          }
-        }
         return await native.createResponseStream(
           {
             ...normalizedRequest,

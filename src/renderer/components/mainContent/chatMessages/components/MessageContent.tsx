@@ -150,7 +150,6 @@ export const MessageContent = memo(
           retryBackoffMs={message.retryBackoffMs}
           retryBackoffStartedAt={message.retryBackoffStartedAt}
           isError={message.status === "error"}
-          failureReason={message.failureReason}
           htmlPreviewEligible={message.htmlPreviewEligible}
           summary={message.content}
           timestamp={message.timestamp}

@@ -33,16 +33,6 @@ export const initializeApplicationServices = async (
     // 数据库已可用：立即解除门控。渲染进程的首次数据请求（项目列表、
     // 会话列表等）从此各自返回，不再被后续启动整理动作拖到同一时刻
     // 一起完成；与数据库无关的 git / 文件请求更是不受门控影响。
-    const recoveredSubAgentRuns = await native.subAgentRunCommand(
-      JSON.stringify({ op: "recover" }),
-    );
-    snowLog.info({
-      module: "sub-agents",
-      func: "startup_recovery",
-      message: "Sub-agent recovery completed before admission",
-      context: recoveredSubAgentRuns,
-    });
-    const cancelledSubAgentCount = await native.cancelRunningSubAgentSessions();
     markStorageReady();
     if (recoveredImageTaskCount > 0) {
       snowLog.warn({
@@ -88,7 +78,7 @@ export const initializeApplicationServices = async (
         error: error instanceof Error ? error.message : String(error),
       });
     }
-
+    const cancelledSubAgentCount = await native.cancelRunningSubAgentSessions();
     await ensureDefaultWorkspaceDirectory(native);
     // 每次启动强制关闭请求日志，避免用户忘记手动关闭导致大量日志写入损伤硬盘。
     await native.setRequestLogging(false);
@@ -97,13 +87,12 @@ export const initializeApplicationServices = async (
     startAppLogRetention(native);
     if (cancelledSubAgentCount > 0) {
       console.info(
-        `Recovered ${cancelledSubAgentCount} interrupted sub-agent session(s)`,
+        `Cancelled ${cancelledSubAgentCount} interrupted sub-agent session(s)`,
       );
       snowLog.warn({
         module: "app/storage",
         func: "initializeApplicationServices",
-        message:
-          "Recovered interrupted legacy sub-agent sessions before admission",
+        message: "Cancelled interrupted sub-agent sessions from previous run",
         context: `count=${cancelledSubAgentCount}`,
       });
     }

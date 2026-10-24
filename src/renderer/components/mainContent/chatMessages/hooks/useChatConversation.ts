@@ -1,7 +1,3 @@
-import {
-  revokeSubAgentParentOwnership,
-  useSubAgentParentInbox,
-} from "./subAgentParentInbox";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BackgroundRunResult,
@@ -916,15 +912,6 @@ export const useChatConversation = (
   // Subscribe only after the sender ref is installed; idle notifications must
   // never be claimed while handleSendMessageRef still contains its initial noop.
   useImageGenerationRuntime(ctx);
-  useSubAgentParentInbox(
-    ctx,
-    {
-      requestToolAuthorizations: toolAuthApi.requestToolAuthorizations,
-      planApprovedSessionKeysRef: ctx.planApprovedSessionKeysRef,
-    },
-    true,
-    isDetachedWindow,
-  );
   // 插件会话编排的投递通道：向任意主会话投递用户消息（见 conversationMessageBridge）。
   useConversationMessageBridge(ctx);
 
@@ -945,7 +932,6 @@ export const useChatConversation = (
     ctx,
     conversationManagementApi.abortConversation,
     conversationManagementApi.handleNewChat,
-    conversationManagementApi.handleAbort,
   );
 
   // --- 独立窗口归属 ---
@@ -1015,9 +1001,6 @@ export const useChatConversation = (
       const next = new Set(conversationIds);
       const previous = detachedOwnedIdsRef.current;
       detachedOwnedIdsRef.current = next;
-      // Cancel this renderer's in-flight parent wakes before any view/cache work.
-      // Persisted input and child execution owners remain untouched.
-      for (const id of next) revokeSubAgentParentOwnership(id);
       const changedIds = [
         ...conversationIds.filter((id) => !previous.has(id)),
         ...[...previous].filter((id) => !next.has(id)),

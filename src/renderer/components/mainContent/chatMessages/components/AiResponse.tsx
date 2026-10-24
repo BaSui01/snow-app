@@ -99,7 +99,6 @@ export const AiResponse = memo(
     retryBackoffMs,
     retryBackoffStartedAt,
     isError = false,
-    failureReason,
     incompleteVariant,
     interruptionReason,
     recoveryOutcome,
@@ -263,13 +262,19 @@ export const AiResponse = memo(
             />
           ) : null}
 
-          {/* 2. Body / Summary — 正文与失败原因独立，切换原始 Markdown 不隐藏错误。 */}
-          {isError ? (
+          {/* 2. Body / Summary — 错误消息以异常卡片呈现，而非渲染原始文本 */}
+          {isError && !showRawMarkdown ? (
             <AiErrorNotice
-              message={failureReason?.trim() || t("chat.error.missingReason")}
+              message={
+                normalizedSummary ||
+                // 错误终态但没有可展示文本（例如 failed 且零载荷）：给一句兜底
+                // 说明，避免渲染一张只有「错误」标题的空卡片。
+                t("chat.responseFailedFallback", {
+                  defaultValue: "The request failed. Please try again.",
+                })
+              }
             />
-          ) : null}
-          {normalizedSummary ? (
+          ) : normalizedSummary ? (
             showRawMarkdown ? (
               <pre className="ai-message-raw">{normalizedSummary}</pre>
             ) : (

@@ -360,7 +360,6 @@ export const applyStreamChunkToMessage = (
 
     return {
       ...currentMessage,
-      failureReason: undefined,
       content: "",
       thinking: undefined,
       isThinkingActive: false,
@@ -413,7 +412,6 @@ export const applyStreamChunkToMessage = (
 
   return {
     ...ordinaryStreamingMessage,
-    failureReason: undefined,
     content: nextContent,
     thinking: nextThinking || undefined,
     thinkingDurationMs: nextThinkingDurationMs || undefined,

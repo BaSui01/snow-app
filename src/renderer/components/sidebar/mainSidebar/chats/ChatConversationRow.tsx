@@ -1,22 +1,7 @@
-import {
-  Fragment,
-  memo,
-  useCallback,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
-import { useI18n } from "../../../../i18n";
-import { isSubAgentTerminal } from "../../../../../shared/subAgentRuns";
-import {
-  useSubAgentDeletionStatus,
-  useSubAgentRuns,
-} from "../../../mainContent/chatMessages/hooks/subAgentRuntimeClient";
-import "../../../mainContent/chatMessages/components/SubAgentRunDetails.css";
+import { Fragment, memo, useCallback } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import { ChatItem } from "../ChatItem";
-import { ChatDeleteConfirmDialog } from "../ChatDeleteConfirmDialog";
 import type { ExportFormat } from "../ChatItemMenu";
 import { LazyCollapse } from "../LazyCollapse";
 import { SubAgentListPanel } from "../SubAgentListPanel";
@@ -54,11 +39,7 @@ type ChatConversationRowProps = {
     conversationId: string,
     directoryId: string,
   ) => void;
-  onToggleSelect: (
-    conversationId: string,
-    modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
-  ) => boolean;
-  onSelectionBlockedChange: (conversationId: string, blocked: boolean) => void;
+  onToggleSelect: (conversationId: string) => void;
   onEnterMultiSelect?: () => void;
   onToggleTree: (conversationId: string) => void;
   onToggleWorkflowNode: (conversationId: string) => void;
@@ -107,7 +88,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onSelectConversation,
   onSelectChildConversation,
   onToggleSelect,
-  onSelectionBlockedChange,
   onEnterMultiSelect,
   onToggleTree,
   onToggleWorkflowNode,
@@ -120,61 +100,16 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onFork,
   onArchive,
 }: ChatConversationRowProps): React.JSX.Element {
-  const { t } = useI18n();
   const conversationId = conversation.conversationId;
-  const { runs, error: runsError } = useSubAgentRuns(
-    isPendingSessionKey(conversationId) ? undefined : conversationId,
-  );
-  const deletion = useSubAgentDeletionStatus(
-    isPendingSessionKey(conversationId) ? undefined : conversationId,
-    isPendingSessionKey(conversationId) ? undefined : conversationId,
-  );
-  const deletionPending = isDeleting || deletion.deleting;
-  const [retryDeleteCounts, setRetryDeleteCounts] = useState<{
-    images: number;
-    memories: number;
-  } | null>(null);
-  const [retryDeleteLoading, setRetryDeleteLoading] = useState(false);
-  const [retryDeleteError, setRetryDeleteError] = useState<string | null>(null);
-  const [deleteImages, setDeleteImages] = useState(false);
-  const [deleteMemories, setDeleteMemories] = useState(false);
-  // Reuse the existing conversation tree; undelivered results do not request user input.
-  const activeRuns = runs.filter((run) => !isSubAgentTerminal(run.status));
-  const hasActiveRuns = activeRuns.length > 0;
-  useLayoutEffect(() => {
-    onSelectionBlockedChange(conversationId, hasActiveRuns);
-    return () => {
-      onSelectionBlockedChange(conversationId, false);
-    };
-  }, [conversationId, hasActiveRuns, onSelectionBlockedChange]);
-  const needsAttention = runs.some((run) => run.status === "waiting_input");
-  const runAttentionIds = useMemo(
-    () =>
-      new Set([
-        ...attentionRequiredConversationIds,
-        ...runs
-          .filter((run) => run.status === "waiting_input")
-          .map((run) => run.conversationId),
-      ]),
-    [attentionRequiredConversationIds, runs],
-  );
   const isWorkflow = workflowNodeConversations.length > 0;
   const hasTreeChildren = isWorkflow || subAgentConversations.length > 0;
 
-  const handleSelect = useCallback(
-    (event: React.MouseEvent | React.KeyboardEvent): void => {
-      if (!onToggleSelect(conversationId, event)) {
-        onSelectConversation(conversation);
-      }
-    },
-    [conversation, conversationId, onSelectConversation, onToggleSelect],
-  );
-  const handleToggleSelect = useCallback(
-    (event: React.MouseEvent | React.KeyboardEvent): void => {
-      onToggleSelect(conversationId, event);
-    },
-    [conversationId, onToggleSelect],
-  );
+  const handleSelect = useCallback((): void => {
+    onSelectConversation(conversation);
+  }, [conversation, onSelectConversation]);
+  const handleToggleSelect = useCallback((): void => {
+    onToggleSelect(conversationId);
+  }, [conversationId, onToggleSelect]);
   const handleToggleTree = useCallback((): void => {
     onToggleTree(conversationId);
   }, [conversationId, onToggleTree]);
@@ -198,30 +133,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
       onDelete(conversation, deleteImages, deleteMemories),
     [conversation, onDelete],
   );
-  const openRetryDelete = async (): Promise<void> => {
-    setRetryDeleteLoading(true);
-    setRetryDeleteError(null);
-    try {
-      const [images, memories] = await Promise.all([
-        window.snow.countConversationImages([conversationId]),
-        window.snow.countProjectMemoriesByConversations([conversationId]),
-      ]);
-      setDeleteImages(false);
-      setDeleteMemories(false);
-      setRetryDeleteCounts({ images, memories });
-    } catch (error) {
-      setRetryDeleteError(
-        error instanceof Error ? error.message : String(error),
-      );
-    } finally {
-      setRetryDeleteLoading(false);
-    }
-  };
-  const confirmRetryDelete = (): void => {
-    // Closing the confirmation only submits the existing action, never reports success.
-    setRetryDeleteCounts(null);
-    handleDelete(deleteImages, deleteMemories);
-  };
   const handleExport = useCallback(
     (format: ExportFormat): void => onExport(conversation, format),
     [conversation, onExport],
@@ -245,31 +156,19 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         conversation={conversation}
         isDraggable={!isPendingSessionKey(conversationId)}
         isActive={isActive}
-        isAttentionRequired={
-          needsAttention ||
-          !!deletion.error ||
-          !!retryDeleteError ||
-          !!runsError ||
-          attentionRequiredConversationIds.has(conversationId)
-        }
+        isAttentionRequired={attentionRequiredConversationIds.has(
+          conversationId,
+        )}
         isStreaming={streamingConversationIds.has(conversationId)}
         isPaused={pausedConversationIds.has(conversationId)}
-        isCompleted={
-          activeRuns.length === 0 &&
-          !needsAttention &&
-          !runsError &&
-          !deletionPending &&
-          !deletion.error &&
-          completedConversationIds.has(conversationId)
-        }
+        isCompleted={completedConversationIds.has(conversationId)}
         isRunning={
-          activeRuns.length > 0 ||
           runningConversationIds.has(conversationId) ||
           surfacedConversationIds.has(conversationId)
         }
         showPinBadge={showPinBadge}
         subAgentConversations={subAgentConversations}
-        subAgentAttentionRequiredIds={runAttentionIds}
+        subAgentAttentionRequiredIds={attentionRequiredConversationIds}
         isWorkflow={isWorkflow}
         isTreeExpanded={isTreeExpanded}
         onToggleTree={handleToggleTree}
@@ -287,76 +186,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         isDeleting={isDeleting}
         onArchive={conversation.status === "pin" ? undefined : handleArchive}
         onSelect={handleSelect}
-      />
-      {runsError || deletionPending || deletion.error || retryDeleteError ? (
-        <div className="sub-agent-run-sidebar">
-          {deletionPending ? (
-            <p role="status">{t("subAgentRun.sidebar.deleting")}</p>
-          ) : null}
-          {deletion.deleting ? (
-            <p role="status">
-              {t(
-                deletion.ready
-                  ? "subAgentRun.sidebar.readyToDelete"
-                  : "subAgentRun.sidebar.waitingOwner",
-              )}
-            </p>
-          ) : null}
-          {deletion.error ? (
-            <details open>
-              <summary>{t("subAgentRun.sidebar.deletionError")}</summary>
-              <pre role="alert">{deletion.error}</pre>
-            </details>
-          ) : null}
-          {deletion.deleting || deletion.error ? (
-            <div>
-              <button type="button" onClick={() => void deletion.refresh()}>
-                {t("subAgentRun.sidebar.refreshDeletion")}
-              </button>
-              {deletion.deleting ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={isDeleting || retryDeleteLoading}
-                    onClick={() => void openRetryDelete()}
-                  >
-                    {t("subAgentRun.sidebar.retryDelete")}
-                  </button>
-                  <p>{t("subAgentRun.sidebar.retryDeleteHint")}</p>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-          {retryDeleteLoading ? (
-            <p role="status">{t("subAgentRun.sidebar.loadingDeleteOptions")}</p>
-          ) : null}
-          {retryDeleteError ? (
-            <details open>
-              <summary>{t("subAgentRun.sidebar.deleteOptionsError")}</summary>
-              <pre role="alert">{retryDeleteError}</pre>
-            </details>
-          ) : null}
-          {runsError ? (
-            <details>
-              <summary>{t("subAgentRun.queryFailed")}</summary>
-              <pre role="alert">{runsError}</pre>
-            </details>
-          ) : null}
-        </div>
-      ) : null}
-      <ChatDeleteConfirmDialog
-        open={retryDeleteCounts !== null}
-        conversationCount={1}
-        isBatch={false}
-        imagesCount={retryDeleteCounts?.images ?? null}
-        memoriesCount={retryDeleteCounts?.memories ?? null}
-        deleteImages={deleteImages}
-        deleteMemories={deleteMemories}
-        onDeleteImagesChange={setDeleteImages}
-        onDeleteMemoriesChange={setDeleteMemories}
-        isConfirming={isDeleting}
-        onCancel={() => setRetryDeleteCounts(null)}
-        onConfirm={confirmRetryDelete}
       />
       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
           完全不继承父级会话项的背景色。
@@ -382,7 +211,9 @@ export const ChatConversationRow = memo(function ChatConversationRow({
             {subAgentConversations.length > 0 ? (
               <SubAgentListPanel
                 conversations={subAgentConversations}
-                attentionRequiredConversationIds={runAttentionIds}
+                attentionRequiredConversationIds={
+                  attentionRequiredConversationIds
+                }
                 onSelect={handleSelectChild}
               />
             ) : null}

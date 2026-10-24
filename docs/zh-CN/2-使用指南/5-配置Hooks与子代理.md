@@ -274,7 +274,7 @@ sequenceDiagram
     Main->>Hooks: beforeSubAgentStart 上下文
     alt Hook 以 2+ 阻断
         Hooks-->>Main: 返回阻断消息
-    else 启动 Hook 正常允许
+    else 允许或 Hook 执行异常
         Hooks-->>Main: 继续
         Main->>Sub: 自包含 systemPrompt + 用户任务 + 允许工具
         Sub->>Sub: 独立执行与验证
@@ -289,60 +289,13 @@ sequenceDiagram
     end
 ```
 
-注意：`beforeSubAgentStart` 调用抛出异常时，受理失败，不会继续启动子代理，也不会返回 accepted。正常返回的 Hook 决策仍按现有退出码语义处理；安全阻断应明确返回 `2+`，不要依赖异常代替决策。
+注意：`beforeSubAgentStart` Hook 执行自身发生异常时，当前调用方会继续激活子代理；因此安全阻断脚本必须可靠、可测试，并用明确的 `2+` 退出码返回阻断。
 
 ### 2.6 子代理会话恢复与同会话通信
 
-- **重启后查询与显式继续**：有项目持久绑定时，会话及运行结果在重启后保留；未终态运行变为 `interrupted`，不会自动续跑。`sub-agents-listSubAgents` 列出当前父会话的子代理与实际运行状态，`sub-agents-getResult` 按 `runId` 查询结果；`sub-agents-continue` 根据保存的配置与完整会话历史启动**新的**运行，原配置缺失时明确失败，不静默替换。无项目旧同步路径仍是运行期记录；
+- **重启后恢复**：子代理会话在应用重启后仍可恢复——`sub-agents-listSubAgents` 列出当前会话的子代理（含本次运行期间已结束的）及其 `status`/`resumable` 状态；`sub-agents-continue` 对已结束的子代理按**原配置（模型、工具、系统提示词）与完整会话历史**重新激活继续执行；
 - **同会话通信**：`sub-agents-listTeammates` 查询当前会话中仍在运行的子代理，`sub-agents-sendMessage` 向其投递消息（以 Pending 消息在对方当前轮次结束时送达，并带发送者身份前缀）；并行子代理之间可直接协作，无需经主会话中转；
 - **会话隔离**：以上工具只对**当前会话**生效——`listTeammates` 不暴露其他会话的子代理，`sendMessage`/`continue` 跨会话调用会被拒绝。
-
-### 2.7 同步兼容的异步运行
-
-在「设置 → 子代理设置 → 运行限制」选择「子代理执行方式」：**默认为同步**，父工具等待最终结果；选择异步后，父工具只等待受理回执即可继续无依赖工作。该选择全局生效，是强制执行方式：工具入参 `executionMode` 不能覆盖它，不影响已经受理的运行。**忙碌目标的 continue 仍立即返回消息排队回执**，不改变目标原运行方式。以下异步示例需先在设置页选择异步；不支持异步的入口明确拒绝，不静默改成同步。
-
-模型请求也随设置精简工具：同步默认只携带 activate、listSubAgents、continue，异步且有项目绑定时才增加 getResult、wait、cancel。切回同步后，当前父会话仍有异步任务时保留必要管理工具；任务全部结束后收回 wait/cancel，仅为已有异步历史保留 getResult。工作流节点不暴露异步管理工具，异步设置下也不暴露无法执行的激活／继续入口。设置从下一次模型请求生效，不强停已有任务，不更改用户的 MCP 开关或授权；MCP 设置目录仍可显示完整注册工具。同步批量并行与子代理队友通信不受影响。
-
-```json
-{
-  "agentId": "agent_general",
-  "summary": "只读目录检查",
-  "prompt": "只读取当前项目的 package.json，概括构建命令；不要运行命令或修改文件。",
-  "executionMode": "async"
-}
-```
-
-使用 `sub-agents-activate` 提交上例。成功受理返回 `kind: "accepted"`、`runId`、`conversationId`、`runStatus`，**不表示完成**。配置、权限、启动 Hook 和持久受理失败不会返回 accepted。桌面主会话及已登记的独立会话窗口复用宿主运行机制；异步需实际项目/工作区绑定。无项目旧同步路径保留 legacy 行为；工作流节点只支持同步，异步请求明确拒绝。应用退出后不继续运行。
-
-| 工具                       | 参数与语义                                                                                                                                                                                                       |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sub-agents-continue`      | `{conversationId,message,executionMode?,requestId?,acceptance?}`；忙碌时只把消息排入当前 run，async 回 `kind: "message_queued"`；终态时显式继续创建新 run 并保留历史。未消费消息留在原子会话，不转成父代理授权。 |
-| `sub-agents-getResult`     | `{runId,offset?,limit?}`；运行中返回真实状态，终态返回 outcome。摘要默认每页 16000 个 Unicode 字符，limit 为 1–64000，offset 非负；`summaryPage.nextOffset` 可继续取回，错误/验收元数据不截断。                  |
-| `sub-agents-wait`          | `{runIds,mode?:"any"或"all",timeoutMs?}`；1–32 个唯一 ID，默认 any/30000ms，timeoutMs 为 0–120000 整数。统一截止时间，超时不取消原运行；未知或跨父会话/项目 ID 报错。不要无止境轮询。                            |
-| `sub-agents-cancel`        | `{runId}`；区分 requested、confirmed、already_terminal、too_late。请求不等于确认停止；finalizing 赢得竞争时 too_late；不撤销已发生的文件或外部副作用。                                                           |
-| `sub-agents-listSubAgents` | 保留原字段，增量给出 active/latest run 身份与投递状态；旧记录不伪造 run、结果或验收证据。                                                                                                                        |
-
-`requestId` 标识一次逻辑操作：模型未传时宿主从稳定工具调用身份派生；UI 为同一次操作生成并复用 UUID。回执未知后的重试必须复用原 ID 和原输入；有意再次执行才用新 ID。相同输入回原 run/消息，不同输入明确冲突；不会因目标从忙碌变终态而重复派发。
-
-状态依次区分 queued（等名额）、running、waiting_input（去实际子会话处理授权/提问/失败决策）、finalizing、cancelling，以及 completed/failed/cancelled/interrupted。**completed 和 acceptanceSatisfied 分开**；验收缺项不是全部成功。卡片中的“派发工具完成”也不是后台任务完成。
-
-同步与异步共用原有激活／继续卡片、会话树与运行详情；同步等待最终结果，异步先返回受理回执。卡片头部区分派发状态、实际执行方式和运行状态，不把同步最终结果误标为仅受理。wait/getResult/cancel 使用紧凑状态卡片，不再将嵌套 run 和摘要 JSON 展成横向表格；参数与结果以按需展开的字段卡片展示，不提供原始 JSON 视图；验收报告按状态、观察和证据分项呈现，卡片颜色与圆角跟随当前页面主题。等待执行期间按原父会话和精确 runId 订阅真实运行记录，不额外派发等待或轮询工具；等待结束后保留此次观测状态，不用后来的运行状态改写旧回执。等待超时单独标识，不标为取消或失败。结果摘要可展开，分页未完整时明确标识；运行详情按需读取并复用原有导航与控制。运行设置在宽面板为等宽双栏，窄面板自动单栏，不改变保存语义。
-
-异步结果先持久结算再通知：父忙时在完整工具屏障后消费；父闲且原委派任务开放时可启动内部处理回合；用户停止、关闭任务或开始新用户任务后，旧结果保留但不隐式续跑原任务。内部结果不是新用户消息，也不是 Plan 审批或新授权。`received` 仅表示已持久加入父输入，不声称模型理解。同步最终回包及已观察的 get/wait 与自动通知按事件身份去重，UI 查询不确认模型接收。
-
-重启或执行 owner 丢失时非终态 run 标为 interrupted，不冒充用户取消，不自动重放；显式继续生成新 run，固定配置缺失则失败、不换供应商。删除/归档先关闭新受理与唤醒，停止并等待 owner，再物理清理；失败保留门禁，显式重试，不假称删除成功。归档保留完整 run 结果与身份，恢复不重新开放历史任务或重放运行。
-
-定位时记录时间及 `runId`/`eventId`/`interactionId`，在系统日志中查 `sub-agents` 模块，区分受理、执行、结算、接收和唤醒阶段。不要粘贴 API key、Cookie、完整敏感 prompt。界面/实际端到端效果需在新 native 构建并重启后验收，工程检查不等同手测通过。
-
-### 2.8 结果证据与取消归因
-
-- `summary` 是子代理末轮最终正文，不是完整会话转录；工具调用间的逐项报告应在子会话查看。分页只对最终正文按 Unicode 字符切片，不能取回未被最终正文包含的历史。
-- `wait(any)` 和 `wait(all)` 都返回所有请求 run 的状态快照；前者至少一个终态便可满足，后者须全部终态。不能按 `results` 数量判断 any/all，超时不取消运行。
-- 验收清单的宿主校验保证证据 ID 来自该子会话日志，不保证证据与条目的语义相关性或业务事实正确。主控仍需核对真实工具状态与直接相关内容，不把读取成功用于背书未验证条目。
-- 新取消记录可含 `cancellation: {source, requestedAt}`，同步最终 outcome、异步 get/wait、取消回执和日志保留该字段。source 区分 `cancel_tool`、`parent_stop`、`conversation_stop`、`ui_cancel`、`deletion`、`runtime_abort`、`unspecified`；时间由持久层在首次受理时记录为 UTC epoch milliseconds。后续重试保留首次归因，`already_terminal`/`too_late` 不新增或覆盖来源。旧记录缺失字段表示未记录，不能根据中断文案推断为父停止或用户操作。公共 cancel 工具仍只传 runId，不接受模型指定来源。
-- `message_queued` 只证明入队；结果事件的 `deliveryStatus: received` 只证明持久合入父输入，两者不是补充消息的模型理解回执。两个 activate 创建独立子会话，不是同目标 RUN_BUSY 测试。
-
-详见 [取消归因与验收边界 ADR](../4-架构与开发/14-子代理取消归因与验收边界ADR.md)。新元数据需应用加载新 native/renderer 后生效，构建与隔离探针不能替代重启、跨窗口或删除的真实端到端验证。
 
 ## 3. 验证与排错
 

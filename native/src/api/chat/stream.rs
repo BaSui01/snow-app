@@ -34,7 +34,6 @@ pub(super) struct ChatCompletionStreamResult {
     pub status: String,
     pub interruption_reason: Option<StreamInterruptionReason>,
     pub recovery_outcome: Option<StreamRecoveryOutcome>,
-    pub failure: Option<crate::api::failure::ProviderFailure>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
     pub tool_parse_errors: Vec<String>,
@@ -89,7 +88,6 @@ pub(super) async fn collect_chat_completions_stream(
     let mut stream_finished: bool;
     let mut interruption_reason: Option<StreamInterruptionReason>;
     let mut recovery_outcome: Option<StreamRecoveryOutcome>;
-    let mut failure: Option<crate::api::failure::ProviderFailure>;
 
     macro_rules! retry_empty_attempt {
         () => {{
@@ -121,7 +119,7 @@ pub(super) async fn collect_chat_completions_stream(
                 "chat",
                 "empty_response",
                 attempt,
-                "[redacted endpoint]",
+                endpoint,
                 EMPTY_RESPONSE_RETRY_ERROR,
                 retry_backoff_ms(retry_options, attempt),
             )
@@ -144,7 +142,6 @@ pub(super) async fn collect_chat_completions_stream(
                     status: String::from("cancelled"),
                     interruption_reason: None,
                     recovery_outcome: None,
-                    failure: None,
                     token_usage: ChatTokenUsage::default(),
                     tool_calls_json: "[]".to_string(),
                     tool_parse_errors: Vec::new(),
@@ -171,7 +168,6 @@ pub(super) async fn collect_chat_completions_stream(
                         status: String::from("cancelled"),
                         interruption_reason: None,
                         recovery_outcome: None,
-                        failure: None,
                         token_usage: ChatTokenUsage::default(),
                         tool_calls_json: "[]".to_string(),
                         tool_parse_errors: Vec::new(),
@@ -201,9 +197,8 @@ pub(super) async fn collect_chat_completions_stream(
                         ));
 
                         if !should_retry(&error, attempt, retry_options) {
-                            return Err(Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key))));
+                            return Err(error);
                         }
-                        let error = Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key)));
 
                         // Emit retry status to frontend
                         on_chunk.call(
@@ -235,7 +230,7 @@ pub(super) async fn collect_chat_completions_stream(
                             "chat",
                             "http_status",
                             attempt,
-                            "[redacted endpoint]",
+                            endpoint,
                             &error.reason,
                             retry_backoff_ms(retry_options, attempt),
                         )
@@ -253,9 +248,8 @@ pub(super) async fn collect_chat_completions_stream(
                 }
                 Err(error) => {
                     if !should_retry(&error, attempt, retry_options) {
-                        return Err(Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key))));
+                        return Err(error);
                     }
-                    let error = Error::from_reason(crate::api::failure::bounded_provider_detail(&error.reason, 768, Some(api_key)));
 
                     // Emit retry status to frontend
                     on_chunk.call(
@@ -286,7 +280,7 @@ pub(super) async fn collect_chat_completions_stream(
                         "chat",
                         send_failure_cause(&error),
                         attempt,
-                        "[redacted endpoint]",
+                        endpoint,
                         &error.reason,
                         retry_backoff_ms(retry_options, attempt),
                     )
@@ -320,7 +314,6 @@ pub(super) async fn collect_chat_completions_stream(
         finish_reason_seen = false;
         interruption_reason = None;
         recovery_outcome = None;
-        failure = None;
 
         let mut stream = request_proxy::wrap_response_stream("chat", response.bytes_stream());
 
@@ -342,8 +335,6 @@ pub(super) async fn collect_chat_completions_stream(
                     &mut tool_args_delta,
                     &mut stream_finished,
                     &mut finish_reason_seen,
-                    &mut failure,
-                    api_key,
                 );
                 let content_delta = content_chunks[content_start_index..].join("");
                 let thinking_delta = thinking_chunks[thinking_start_index..].join("");
@@ -398,13 +389,6 @@ pub(super) async fn collect_chat_completions_stream(
             break 'attempt_loop;
         }
 
-        if response_status == "failed" {
-            // A provider error is not an empty completion and never replays tools.
-            tool_calls.clear();
-            tool_call_positions_by_index.clear();
-            break 'attempt_loop;
-        }
-
         let (cause, retry_error) = match stream_end {
             SseStreamEnd::ProviderTerminal => {
                 debug_assert!(stream_finished);
@@ -452,7 +436,6 @@ pub(super) async fn collect_chat_completions_stream(
             user_cancelled: cancel_token.is_cancelled(),
         };
         let decision = decide_stream_recovery(cause, attempt, retry_options, progress);
-        let retry_error = crate::api::failure::bounded_provider_detail(&retry_error, 768, Some(api_key));
 
         match decision {
             StreamRecoveryDecision::Cancelled => {
@@ -517,7 +500,7 @@ pub(super) async fn collect_chat_completions_stream(
                     "chat",
                     cause.interruption_reason().as_code(),
                     attempt,
-                    "[redacted endpoint]",
+                    endpoint,
                     &retry_error,
                     retry_backoff_ms(retry_options, attempt),
                 )
@@ -555,11 +538,6 @@ pub(super) async fn collect_chat_completions_stream(
         }
     }
 
-    if response_status != "failed" { failure = None; }
-    if matches!(response_status.as_str(), "failed" | "cancelled") {
-        tool_calls.clear();
-        tool_call_positions_by_index.clear();
-    }
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
@@ -597,7 +575,6 @@ pub(super) async fn collect_chat_completions_stream(
         status: response_status,
         interruption_reason,
         recovery_outcome,
-        failure,
         token_usage,
         tool_calls_json,
         tool_parse_errors,

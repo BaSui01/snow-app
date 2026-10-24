@@ -719,17 +719,13 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [],
   );
 
-  // Preparation never publishes a pending authorization. Only the returned
-  // confirmation function may do so, after the caller enters its waiting state.
-  const prepareToolAuthorization = useCallback(
+  const requestToolAuthorization = useCallback(
     (
       toolCall: ToolCallInfo,
       index: number,
       conversationId: string,
       projectId?: string,
-    ): Promise<
-      ToolAuthorizationDecision | (() => Promise<ToolAuthorizationDecision>)
-    > => {
+    ): Promise<ToolAuthorizationDecision> => {
       if (
         toolCall.name === "user-interaction-askUserQuestion" ||
         toolCall.name === "sub-agents-listTeammates" ||
@@ -750,9 +746,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       // Sensitive command check: even in YOLO mode, bash commands that match
       // the current project's merged rules must be confirmed.
       const checkSensitiveBash = async (): Promise<
-        | ToolAuthorizationDecision
-        | (() => Promise<ToolAuthorizationDecision>)
-        | "needs-dialog"
+        ToolAuthorizationDecision | "needs-dialog"
       > => {
         if (toolCall.name !== "bash-terminal-execute") {
           return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
@@ -885,48 +879,25 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                 : {}),
             };
 
-            return () => {
-              if (
-                ctx.sessionsRefData.current.get(conversationId)
-                  ?.isAbortRequested
-              ) {
-                return Promise.resolve({
-                  status: "rejected",
-                  reason: "Tool execution interrupted",
-                });
-              }
+            // 通知系统：敏感命令被拦截，需要用户确认
+            ctx.notifySensitiveCommandIntercepted({
+              conversationId,
+              directoryId:
+                projectId ??
+                ctx.sessionsRefData.current.get(conversationId)?.directoryId,
+              toolName: toolCall.name,
+            });
 
-              // Notify only when confirmation actually starts, outside the
-              // sensitive-check catch so waiting failures cannot auto-approve.
-              ctx.notifySensitiveCommandIntercepted({
-                conversationId,
-                directoryId:
-                  projectId ??
-                  ctx.sessionsRefData.current.get(conversationId)?.directoryId,
-                toolName: toolCall.name,
+            return new Promise<ToolAuthorizationDecision>((resolve) => {
+              ctx.pendingToolAuthorizationRef.current.set(authorizationId, {
+                toolCall: pendingToolCall,
+                resolve,
               });
-
-              return new Promise<ToolAuthorizationDecision>((resolve) => {
-                if (
-                  ctx.sessionsRefData.current.get(conversationId)
-                    ?.isAbortRequested
-                ) {
-                  resolve({
-                    status: "rejected",
-                    reason: "Tool execution interrupted",
-                  });
-                  return;
-                }
-                ctx.pendingToolAuthorizationRef.current.set(authorizationId, {
-                  toolCall: pendingToolCall,
-                  resolve,
-                });
-                ctx.setPendingToolAuthorizations((current) => [
-                  ...current,
-                  pendingToolCall,
-                ]);
-              });
-            };
+              ctx.setPendingToolAuthorizations((current) => [
+                ...current,
+                pendingToolCall,
+              ]);
+            });
           }
         } catch {
           // If the check fails, fall through to normal authorization flow.
@@ -950,26 +921,16 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           authorizationConversationId: conversationId,
         };
 
-        return () =>
-          new Promise<ToolAuthorizationDecision>((resolve) => {
-            if (
-              ctx.sessionsRefData.current.get(conversationId)?.isAbortRequested
-            ) {
-              resolve({
-                status: "rejected",
-                reason: "Tool execution interrupted",
-              });
-              return;
-            }
-            ctx.pendingToolAuthorizationRef.current.set(authorizationId, {
-              toolCall: pendingToolCall,
-              resolve,
-            });
-            ctx.setPendingToolAuthorizations((current) => [
-              ...current,
-              pendingToolCall,
-            ]);
+        return new Promise<ToolAuthorizationDecision>((resolve) => {
+          ctx.pendingToolAuthorizationRef.current.set(authorizationId, {
+            toolCall: pendingToolCall,
+            resolve,
           });
+          ctx.setPendingToolAuthorizations((current) => [
+            ...current,
+            pendingToolCall,
+          ]);
+        });
       });
     },
     [
@@ -984,36 +945,11 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     ],
   );
 
-  // Keep the single-tool API eager; batch callers use preparation directly.
-  const requestToolAuthorization = useCallback(
-    async (
-      toolCall: ToolCallInfo,
-      index: number,
-      conversationId: string,
-      projectId?: string,
-    ): Promise<ToolAuthorizationDecision> => {
-      const prepared = await prepareToolAuthorization(
-        toolCall,
-        index,
-        conversationId,
-        projectId,
-      );
-      if (ctx.sessionsRefData.current.get(conversationId)?.isAbortRequested) {
-        return { status: "rejected", reason: "Tool execution interrupted" };
-      }
-      return typeof prepared === "function" ? prepared() : prepared;
-    },
-    [prepareToolAuthorization, ctx.sessionsRefData],
-  );
-
   const requestToolAuthorizations = useCallback(
     async (
       toolCalls: ToolCallInfo[],
       conversationId: string,
       projectId?: string,
-      waitForConfirmation?: (
-        confirm: () => Promise<ToolAuthorizationDecision[]>,
-      ) => Promise<ToolAuthorizationDecision[]>,
     ): Promise<ToolAuthorizationDecision[]> => {
       // Read the persisted app setting once per tool batch so recent YOLO
       // changes take effect without querying SQLite for every tool.
@@ -1024,15 +960,24 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         // Keep the last known in-memory state if the read fails.
       }
 
-      // Preserve YOLO's toolConfirmation bypass, but still prepare sensitive
-      // commands: they may require a dialog even with YOLO enabled.
+      // YOLO has no authorization dialog, so toolConfirmation does not run.
       // beforeToolCall remains the pre-execution policy gate in both modes.
-      const skipToolConfirmation = ctx.yoloModeRef.current;
+      if (ctx.yoloModeRef.current) {
+        return Promise.all(
+          toolCalls.map((toolCall, index) =>
+            requestToolAuthorization(
+              toolCall,
+              index,
+              conversationId,
+              projectId,
+            ),
+          ),
+        );
+      }
 
       // Non-YOLO flow: execute toolConfirmation before showing authorization.
       const hookDecisions = await Promise.all(
         toolCalls.map(async (toolCall) => {
-          if (skipToolConfirmation) return null;
           try {
             const toolConfirmContext = JSON.stringify({
               toolName: toolCall.name,
@@ -1065,13 +1010,13 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }),
       );
 
-      const prepared = await Promise.all(
+      return Promise.all(
         toolCalls.map((toolCall, index) => {
           const hookDecision = hookDecisions[index];
           if (hookDecision) {
             return Promise.resolve(hookDecision);
           }
-          return prepareToolAuthorization(
+          return requestToolAuthorization(
             toolCall,
             index,
             conversationId,
@@ -1079,37 +1024,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           );
         }),
       );
-      if (ctx.sessionsRefData.current.get(conversationId)?.isAbortRequested) {
-        return toolCalls.map(() => ({
-          status: "rejected",
-          reason: "Tool execution interrupted",
-        }));
-      }
-
-      // Publish all cards together and preserve tool order. The wrapper spans
-      // the entire batch, so the slot is reacquired only after every decision.
-      const confirm = () =>
-        Promise.all(
-          prepared.map((decision) =>
-            typeof decision === "function" ? decision() : decision,
-          ),
-        );
-      if (
-        waitForConfirmation &&
-        prepared.some((decision) => typeof decision === "function")
-      ) {
-        // Intentionally outside all preparation catches: cancellation and
-        // persistence failures must propagate, never fall back to approval.
-        return waitForConfirmation(confirm);
-      }
-      return confirm();
     },
-    [
-      applyYoloMode,
-      prepareToolAuthorization,
-      ctx.directoryPath,
-      ctx.sessionsRefData,
-    ],
+    [applyYoloMode, requestToolAuthorization, ctx.directoryPath],
   );
 
   const approveToolAuthorizationAlways = useCallback(

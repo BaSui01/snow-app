@@ -48,15 +48,7 @@ const UNIQUE_PATH_PREFIX_COLUMNS: &[(&str, &str)] = &[
 const CHECKPOINT_MANIFEST_FILE: &str = "manifest.json";
 
 // 由迁移逻辑单独处理的表：目录注册表自身与项目向量表配套的嵌入会话表。
-const SELF_MANAGED_PROJECT_TABLES: &[&str] = &[
-    "workspace_directories",
-    "codebase_embed_sessions",
-    // Composite run/task identities are migrated together, with deferred FK
-    // validation at commit; the generic project-column loop must not move them.
-    "sub_agent_runs",
-    "sub_agent_parent_tasks",
-    "sub_agent_run_requests",
-];
+const SELF_MANAGED_PROJECT_TABLES: &[&str] = &["workspace_directories", "codebase_embed_sessions"];
 
 struct MoveCounts {
     conversations: i32,
@@ -199,7 +191,11 @@ fn move_setting_key(
     Ok(true)
 }
 
-fn move_setting_keys(connection: &Connection, from_id: &str, to_id: &str) -> rusqlite::Result<i32> {
+fn move_setting_keys(
+    connection: &Connection,
+    from_id: &str,
+    to_id: &str,
+) -> rusqlite::Result<i32> {
     let mut moved = 0;
 
     for prefix in PLAIN_SETTING_KEY_PREFIXES {
@@ -515,121 +511,23 @@ fn count_move(connection: &Connection, from_id: &str) -> rusqlite::Result<MoveCo
         memories: count_rows(connection, "project_memories", "directory_id", from_id)?,
         memos: count_rows(connection, "memos", "directory_id", from_id)?,
         scheduled_tasks: count_rows(connection, "scheduled_tasks", "directory_id", from_id)?,
-        collections_touched: count_rows(connection, "collection_members", "directory_id", from_id)?,
+        collections_touched: count_rows(
+            connection,
+            "collection_members",
+            "directory_id",
+            from_id,
+        )?,
         settings_keys_moved: count_setting_keys(connection, from_id)?,
         paths_rewritten: count_paths(connection, from_path)?,
         codebase_reindex_required: true,
     })
 }
 
-fn move_sub_agent_run_identities(
+fn apply_move(
     connection: &Connection,
     from_id: &str,
     to_id: &str,
-) -> rusqlite::Result<()> {
-    let busy: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sub_agent_runs WHERE project_id IN (?1,?2)
-          AND status IN ('queued','running','waiting_input','finalizing','cancelling'))",
-        params![from_id, to_id],
-        |row| row.get(0),
-    )?;
-    if busy {
-        return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
-            Error::from_reason("RUN_BUSY: source or target project has an active sub-agent run"),
-        )));
-    }
-    // Preserve the composite task FK throughout the existing Immediate write
-    // transaction. Deferral is scoped to this transaction; commit still checks
-    // every FK, and failure rolls back the project move instead of losing runs.
-    connection.pragma_update(None, "defer_foreign_keys", true)?;
-    let records = {
-        let mut statement = connection
-            .prepare("SELECT run_id,record_json,version FROM sub_agent_runs WHERE project_id=?1")?;
-        let records = statement
-            .query_map([from_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        records
-    };
-    let old_path = directory_path_from_id(from_id);
-    let new_path = directory_path_from_id(to_id);
-    for (run_id, raw, version) in records {
-        let mut record: Value = serde_json::from_str(&raw).map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(
-                1,
-                rusqlite::types::Type::Text,
-                Box::new(error),
-            )
-        })?;
-        let object = record
-            .as_object_mut()
-            .ok_or(rusqlite::Error::InvalidQuery)?;
-        if object.get("projectId").and_then(Value::as_str) != Some(from_id)
-            || object.get("version").and_then(Value::as_i64) != Some(version)
-        {
-            return Err(rusqlite::Error::InvalidQuery);
-        }
-        object.insert("projectId".to_string(), Value::String(to_id.to_string()));
-        object.insert("version".to_string(), Value::from(version + 1));
-        let snapshot = object
-            .get_mut("snapshot")
-            .and_then(Value::as_object_mut)
-            .ok_or(rusqlite::Error::InvalidQuery)?;
-        let workspace = snapshot
-            .get("workspacePath")
-            .and_then(Value::as_str)
-            .ok_or(rusqlite::Error::InvalidQuery)?;
-        // A valid persisted binding also wins when worktreeMode=false. Rewrite
-        // only paths owned by the moved project, not an external binding path.
-        let moved_workspace = if workspace == old_path {
-            Some(new_path.to_string())
-        } else {
-            workspace
-                .strip_prefix(old_path)
-                .filter(|suffix| suffix.starts_with('/') || suffix.starts_with('\\'))
-                .map(|suffix| format!("{new_path}{suffix}"))
-        };
-        if let Some(path) = moved_workspace {
-            snapshot.insert("workspacePath".to_string(), Value::String(path));
-        }
-        // Only structured host identity is changed; summary, outcome, acceptance,
-        // prompt-bearing content and toolsJson are deliberately not traversed.
-        let changed = connection.execute(
-            "UPDATE sub_agent_runs SET project_id=?1,record_json=?2,version=?3
-             WHERE run_id=?4 AND project_id=?5 AND version=?6",
-            params![
-                to_id,
-                record.to_string(),
-                version + 1,
-                run_id,
-                from_id,
-                version
-            ],
-        )?;
-        if changed != 1 {
-            return Err(rusqlite::Error::InvalidQuery);
-        }
-    }
-    connection.execute(
-        "UPDATE sub_agent_parent_tasks SET project_id=?1 WHERE project_id=?2",
-        params![to_id, from_id],
-    )?;
-    connection.execute(
-        "UPDATE sub_agent_run_requests SET project_id=?1 WHERE project_id=?2",
-        params![to_id, from_id],
-    )?;
-    // Stable ids, requestInput hashes, receipts, events and queued messages are
-    // untouched. This helper is also used by undo in the same transaction.
-    Ok(())
-}
-
-fn apply_move(connection: &Connection, from_id: &str, to_id: &str) -> rusqlite::Result<MoveCounts> {
-    move_sub_agent_run_identities(connection, from_id, to_id)?;
+) -> rusqlite::Result<MoveCounts> {
     let counts = count_move(connection, from_id)?;
 
     connection.execute(
@@ -679,14 +577,13 @@ fn apply_move(connection: &Connection, from_id: &str, to_id: &str) -> rusqlite::
 fn warn_unregistered_project_key_tables(connection: &Connection) {
     let registered: Vec<&str> = KEYED_COLUMNS.iter().map(|(table, _)| *table).collect();
 
-    let tables: Vec<String> =
-        match connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'") {
-            Ok(mut statement) => match statement.query_map([], |row| row.get::<_, String>(0)) {
-                Ok(rows) => rows.flatten().collect(),
-                Err(_) => return,
-            },
+    let tables: Vec<String> = match connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'") {
+        Ok(mut statement) => match statement.query_map([], |row| row.get::<_, String>(0)) {
+            Ok(rows) => rows.flatten().collect(),
             Err(_) => return,
-        };
+        },
+        Err(_) => return,
+    };
 
     for table in tables {
         if registered.contains(&table.as_str())
@@ -697,8 +594,7 @@ fn warn_unregistered_project_key_tables(connection: &Connection) {
             continue;
         }
 
-        let columns: Vec<String> = match connection.prepare(&format!("PRAGMA table_info({table})"))
-        {
+        let columns: Vec<String> = match connection.prepare(&format!("PRAGMA table_info({table})")) {
             Ok(mut statement) => match statement.query_map([], |row| row.get::<_, String>(1)) {
                 Ok(rows) => rows.flatten().collect(),
                 Err(_) => continue,
@@ -736,16 +632,7 @@ fn run_in_transaction<T>(
             action,
         )
     })
-    .map_err(|error| {
-        if let rusqlite::Error::ToSqlConversionFailure(ref inner) = error {
-            if let Some(run_error) = inner.downcast_ref::<Error>() {
-                if run_error.reason.starts_with("RUN_BUSY:") {
-                    return Error::from_reason(run_error.reason.clone());
-                }
-            }
-        }
-        database::database_error(database_path, action, error)
-    })
+    .map_err(|error| database::database_error(database_path, action, error))
 }
 
 fn load_directory_row(
@@ -810,12 +697,6 @@ fn update_archive_database(from_id: &str, to_id: &str) -> (bool, i32) {
 
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut updated = 0i32;
-
-        // Pre-v5 archives have no run records. If present, move all structured
-        // run/task/request identities in this same cold-database transaction.
-        if table_exists(&transaction, "sub_agent_runs")? {
-            move_sub_agent_run_identities(&transaction, from_id, to_id)?;
-        }
 
         for table in ARCHIVE_TABLES {
             if !table_exists(&transaction, table)? {
@@ -968,8 +849,8 @@ pub fn relink_workspace_directory(
 
     let merged = existing_target.is_some();
     let new_basename = path_basename(&normalized_path);
-    let derived_name =
-        source.name.trim().is_empty() || source.name.trim() == path_basename(&source.path);
+    let derived_name = source.name.trim().is_empty()
+        || source.name.trim() == path_basename(&source.path);
     let keep_name = if merged {
         existing_target
             .as_ref()
@@ -1040,13 +921,7 @@ pub fn relink_workspace_directory(
                             sort_order = MIN(sort_order, ?4),
                             updated_at = datetime('now', 'localtime')
                       WHERE directory_id = ?5",
-                    params![
-                        STATE_OK,
-                        identity,
-                        normalized_path,
-                        source.sort_order,
-                        new_id
-                    ],
+                    params![STATE_OK, identity, normalized_path, source.sort_order, new_id],
                 )?;
 
                 connection.execute(
@@ -1141,31 +1016,28 @@ pub fn undo_workspace_directory_relink(
         ));
     }
 
-    let audit: Option<(String, String, String, String, bool)> =
-        database::open_connection(database_path)
-            .and_then(|connection| {
-                connection
-                    .query_row(
-                        "SELECT old_directory_id, new_directory_id, old_path, new_path, undone_at
+    let audit: Option<(String, String, String, String, bool)> = database::open_connection(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT old_directory_id, new_directory_id, old_path, new_path, undone_at
                        FROM workspace_directory_relinks
                       WHERE id = ?1",
-                        [normalized_relink_id],
-                        |row| {
-                            let undone_at: Option<String> = row.get(4)?;
-                            Ok((
-                                row.get(0)?,
-                                row.get(1)?,
-                                row.get(2)?,
-                                row.get(3)?,
-                                undone_at.is_some(),
-                            ))
-                        },
-                    )
-                    .optional()
-            })
-            .map_err(|error| {
-                database::database_error(database_path, "read workspace relink", error)
-            })?;
+                    [normalized_relink_id],
+                    |row| {
+                        let undone_at: Option<String> = row.get(4)?;
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            undone_at.is_some(),
+                        ))
+                    },
+                )
+                .optional()
+        })
+        .map_err(|error| database::database_error(database_path, "read workspace relink", error))?;
 
     let Some((old_id, new_id, old_path, new_path, is_undone)) = audit else {
         return Err(Error::from_reason(format!(
@@ -1221,14 +1093,11 @@ pub fn undo_workspace_directory_relink(
         String::new()
     };
 
-    let counts = run_in_transaction(
-        database_path,
-        "undo workspace directory relink",
-        |connection| {
-            let counts = apply_move(connection, &new_id, &old_id)?;
+    let counts = run_in_transaction(database_path, "undo workspace directory relink", |connection| {
+        let counts = apply_move(connection, &new_id, &old_id)?;
 
-            connection.execute(
-                "UPDATE workspace_directories
+        connection.execute(
+            "UPDATE workspace_directories
                 SET directory_id = ?1,
                     path = ?2,
                     path_state = ?3,
@@ -1237,30 +1106,29 @@ pub fn undo_workspace_directory_relink(
                     fs_identity = ?5,
                     updated_at = datetime('now', 'localtime')
               WHERE directory_id = ?6",
-                params![
-                    old_id,
-                    restored_path,
-                    state,
-                    if restored_exists {
-                        restored_path.clone()
-                    } else {
-                        source.path.clone()
-                    },
-                    restored_identity,
-                    new_id
-                ],
-            )?;
+            params![
+                old_id,
+                restored_path,
+                state,
+                if restored_exists {
+                    restored_path.clone()
+                } else {
+                    source.path.clone()
+                },
+                restored_identity,
+                new_id
+            ],
+        )?;
 
-            connection.execute(
-                "UPDATE workspace_directory_relinks
+        connection.execute(
+            "UPDATE workspace_directory_relinks
                 SET undone_at = datetime('now', 'localtime')
               WHERE id = ?1",
-                [normalized_relink_id],
-            )?;
+            [normalized_relink_id],
+        )?;
 
-            Ok(counts)
-        },
-    )?;
+        Ok(counts)
+    })?;
 
     let (archive_updated, archived_conversations) = update_archive_database(&new_id, &old_id);
     let checkpoint_paths = database::open_connection(database_path)

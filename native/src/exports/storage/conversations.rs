@@ -272,13 +272,6 @@ pub async fn preview_conversation_attachment(conversation_id: String) -> napi::R
     .map_err(map_spawn_error)?
 }
 
-#[napi(js_name = "subAgentRunCommand")]
-pub async fn sub_agent_run_command(command_json: String) -> napi::Result<String> {
-    tokio::task::spawn_blocking(move || crate::storage::sub_agent_run_command(&command_json))
-        .await
-        .map_err(map_spawn_error)?
-}
-
 #[napi]
 pub async fn list_sub_agent_conversations(
     parent_conversation_id: String,

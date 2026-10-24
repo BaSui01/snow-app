@@ -22,7 +22,6 @@ import {
   SubAgentEditorActions,
 } from "./subAgent/SubAgentEditor";
 import { SubAgentList } from "./subAgent/SubAgentList";
-import { SubAgentExecutionModeControl } from "./subAgent/SubAgentExecutionModeControl";
 import { SubAgentSummary } from "./subAgent/SubAgentSummary";
 import {
   createDraftFromItem,
@@ -443,18 +442,15 @@ export function SubAgentSettingsPanel({
             })}
           </span>
         </div>
-        <div className="api-settings-form-grid api-settings-form-grid-responsive">
-          <SubAgentExecutionModeControl
-            onStatus={setStatus}
-            onError={setError}
-          />
-          <label className="api-settings-field">
+        <div className="api-settings-form-body">
+          <label className="sub-agent-concurrency-row">
             <span>
               {t("settings.subAgentConcurrencyLabel", {
                 defaultValue: "Max concurrent sub-agents",
               })}
             </span>
             <input
+              className="settings-number-input"
               type="number"
               min={SUB_AGENT_MAX_CONCURRENCY_MIN}
               max={SUB_AGENT_MAX_CONCURRENCY_MAX}

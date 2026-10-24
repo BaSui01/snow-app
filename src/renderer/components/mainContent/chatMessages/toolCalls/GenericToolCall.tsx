@@ -1,21 +1,37 @@
 import { useMemo, useState } from "react";
-import { AlertCircle, Check, Copy } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  Copy,
+  FileCode,
+  FileText,
+  Layers,
+  ListTree,
+  Table2,
+} from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
-import { getToolCategory } from "./shared/ToolNameBadge";
-import { ToolResultView } from "./shared/ToolResultView";
+import { localizeToolError } from "./shared/toolErrorDisplay";
+import { getToolCategory, type ToolCategory } from "./shared/ToolNameBadge";
+import { JsonTreeView } from "./shared/JsonTreeView";
 import { DataTableViewer } from "./shared/DataTableViewer";
 
 type GenericToolCallProps = {
   toolCall: ToolCallInfo;
 };
 
+type ViewMode = "table" | "tree" | "raw" | "markdown";
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const asString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+
 const parseJsonSafe = (raw: string | undefined): unknown => {
-  if (raw === undefined || raw === "") return undefined;
+  if (!raw || raw.trim() === "") return undefined;
   try {
     return JSON.parse(raw);
   } catch {
@@ -29,69 +45,33 @@ const truncate = (value: string, max = 56): string =>
 const getFileName = (filePath: string): string =>
   filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
 
-const extractGenericSummary = (
-  args: Record<string, unknown>,
-): { label?: string; fullPath?: string } => {
-  for (const key of ["filePath", "path", "file", "fileName"]) {
-    const value = args[key];
-    if (typeof value === "string" && value.trim()) {
-      return { label: getFileName(value.trim()), fullPath: value.trim() };
-    }
-  }
-
-  for (const key of [
-    "query",
-    "command",
-    "url",
-    "name",
-    "service",
-    "keyword",
-    "task_id",
-    "taskId",
-    "trace_id",
-    "traceId",
-    "category",
-    "sql",
-  ]) {
-    const value = args[key];
-    if (typeof value === "string" && value.trim()) {
-      return { label: truncate(value.trim()) };
-    }
-  }
-
-  return {};
+/** 解码转义字符 */
+const decodeEscaped = (text: string): string => {
+  if (text.includes("\n") || !text.includes("\\n")) return text;
+  return text
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t");
 };
 
-type Translate = ReturnType<typeof useI18n>["t"];
-type TableData = { columns: string[]; rows: unknown[][] };
+/**
+ * 结构化表格提取（支持对象数组、二维数组、包装数组或 Markdown 表格）
+ */
+const extractTableData = (
+  value: unknown,
+): { columns: string[]; rows: unknown[][] } | null => {
+  if (!value) return null;
 
-/** Only the optional preview unwraps MCP payloads; full details retain the envelope. */
-const getPreviewPayload = (value: unknown): unknown => {
-  if (!isRecord(value)) return value;
-  const payload = isRecord(value.result) ? value.result : value;
-  if (!Array.isArray(payload.content)) return payload;
-  const text = payload.content
-    .filter(
-      (block) =>
-        isRecord(block) &&
-        block.type === "text" &&
-        typeof block.text === "string",
-    )
-    .map((block) => (block as Record<string, unknown>).text as string)
-    .join("\n");
-  if (text.length > 256 * 1024 && /^\s*[\[{]/.test(text)) return undefined;
-  return text ? parseJsonSafe(text) : payload;
-};
+  // 1. 如果本身是对象数组 [ {...}, {...} ]
+  if (Array.isArray(value) && value.length > 0 && isRecord(value[0])) {
+    const columns = Object.keys(value[0]);
+    const rows = value.map((row) =>
+      isRecord(row) ? columns.map((col) => row[col]) : [row],
+    );
+    return { columns, rows };
+  }
 
-/** Complex cells stay in the complete structured view, never JSON source in a table. */
-const isScalarCell = (value: unknown): boolean =>
-  value === null ||
-  value === undefined ||
-  (typeof value === "string" && !/^\s*[\[{]/.test(value)) ||
-  typeof value === "number" ||
-  typeof value === "boolean";
-
-const extractTableData = (value: unknown, t: Translate): TableData | null => {
+  // 2. 如果包含常见包装字段
   if (isRecord(value)) {
     for (const key of [
       "rows",
@@ -102,227 +82,562 @@ const extractTableData = (value: unknown, t: Translate): TableData | null => {
       "results",
       "candidates",
     ]) {
-      if (Array.isArray(value[key]) && value[key].length > 0) {
-        const table = extractTableData(value[key], t);
-        if (table) return table;
+      const arr = value[key];
+      if (Array.isArray(arr) && arr.length > 0) {
+        if (isRecord(arr[0])) {
+          const columns = Object.keys(arr[0]);
+          const rows = arr.map((row) =>
+            isRecord(row) ? columns.map((col) => row[col]) : [row],
+          );
+          return { columns, rows };
+        }
       }
     }
-    return null;
   }
-  if (Array.isArray(value) && value.length > 0) {
-    if (value.every(isRecord)) {
-      if (!value.every((row) => Object.values(row).every(isScalarCell)))
-        return null;
-      const columns = [...new Set(value.flatMap((row) => Object.keys(row)))];
-      if (columns.length === 0) return null;
-      return {
-        columns,
-        rows: value.map((row) =>
-          columns.map((column) =>
-            Object.prototype.hasOwnProperty.call(row, column)
-              ? row[column]
-              : undefined,
-          ),
-        ),
-      };
-    }
-    if (value.every(Array.isArray)) {
-      if (!value.every((row) => row.every(isScalarCell))) return null;
-      const width = value.reduce((max, row) => Math.max(max, row.length), 0);
-      if (width === 0) return null;
-      return {
-        columns: Array.from({ length: width }, (_, index) =>
-          t("toolResults.column", { values: { index: index + 1 } }),
-        ),
-        rows: value,
-      };
-    }
-  }
-  if (typeof value === "string" && isScalarCell(value) && value.includes("|")) {
-    const lines = value.split("\n").map((line) => line.trim());
-    const headerIndex = lines.findIndex(
-      (line, index) =>
-        line.startsWith("|") &&
-        line.endsWith("|") &&
-        /^\|[\s\-:|]+\|$/.test(lines[index + 1] ?? ""),
-    );
-    if (headerIndex >= 0) {
-      const splitRow = (line: string) =>
-        line
+
+  // 3. Markdown 表格字符串解析
+  if (
+    typeof value === "string" &&
+    value.includes("|") &&
+    value.includes("\n")
+  ) {
+    const lines = value
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("|") && l.endsWith("|"));
+    if (lines.length >= 2) {
+      const splitRow = (l: string) =>
+        l
           .slice(1, -1)
           .split("|")
-          .map((cell) => cell.trim());
-      const rows: string[][] = [];
-      for (const line of lines.slice(headerIndex + 2)) {
-        if (!line.startsWith("|") || !line.endsWith("|")) break;
-        rows.push(splitRow(line));
+          .map((c) => c.trim());
+      const header = splitRow(lines[0]);
+      const bodyLines = lines
+        .slice(1)
+        .filter((l) => !/^\|[\s\-:|]+\|$/.test(l));
+      if (header.length > 0) {
+        const rows = bodyLines.map(splitRow);
+        return { columns: header, rows };
       }
-      if (!rows.every((row) => row.every(isScalarCell))) return null;
-      return { columns: splitRow(lines[headerIndex]), rows };
     }
   }
+
   return null;
 };
 
-const extractDocumentText = (value: unknown): string | null => {
-  if (typeof value === "string" && isScalarCell(value) && value.length > 80)
-    return value;
-  if (isRecord(value)) {
-    for (const key of [
-      "markdown",
-      "content",
-      "text",
-      "body",
-      "summary",
-      "description",
-    ]) {
-      const text = value[key];
-      if (typeof text === "string" && isScalarCell(text) && text.length > 80)
-        return text;
+/**
+ * 从外部工具中提取关键参数摘要
+ */
+const extractGenericSummary = (
+  args: Record<string, unknown> | null,
+): { label?: string; fullPath?: string } => {
+  if (!args) return {};
+
+  // 文件路径优先
+  for (const k of ["filePath", "path", "file", "fileName"]) {
+    const v = args[k];
+    if (typeof v === "string" && v.trim()) {
+      return { label: getFileName(v.trim()), fullPath: v.trim() };
     }
   }
-  return null;
+
+  // 服务与关键字（遥测/日志/监控常用）
+  const service = asString(args.service);
+  const keyword = asString(args.keyword);
+  const category = asString(args.category);
+  const taskId = asString(args.task_id ?? args.taskId);
+  const traceId = asString(args.trace_id ?? args.traceId);
+
+  if (service && keyword) {
+    return { label: `${service} · "${keyword}"` };
+  }
+  if (service) {
+    return { label: `service: ${service}` };
+  }
+  if (keyword) {
+    return { label: `"${keyword}"` };
+  }
+  if (taskId) {
+    return { label: `task: ${truncate(taskId, 16)}` };
+  }
+  if (traceId) {
+    return { label: `trace: ${truncate(traceId, 16)}` };
+  }
+  if (category) {
+    return { label: `category: ${category}` };
+  }
+
+  // URL / 检索 / SQL
+  const url = asString(args.url);
+  if (url) return { label: truncate(url, 40) };
+
+  const sql = asString(args.sql);
+  if (sql) return { label: truncate(sql.replace(/\s+/g, " "), 40) };
+
+  const query = asString(args.query);
+  if (query) return { label: `"${truncate(query, 32)}"` };
+
+  const command = asString(args.command);
+  if (command) return { label: truncate(command, 32) };
+
+  const name = asString(args.name);
+  if (name) return { label: name };
+
+  return {};
 };
 
-const ResultPreview = ({
-  value,
-}: {
-  value: unknown;
-}): React.JSX.Element | null => {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const payload = useMemo(() => getPreviewPayload(value), [value]);
-  const table = useMemo(() => extractTableData(payload, t), [payload, t]);
-  const documentText = useMemo(
-    () => (table ? null : extractDocumentText(payload)),
-    [payload, table],
+/** 流式未闭合 JSON 兜底提前提取常见参数摘要 */
+const extractStreamingGenericSummary = (
+  args: string,
+): { label?: string; fullPath?: string } => {
+  if (!args) return {};
+  const fileMatch = args.match(
+    /"(?:filePath|path|file|fileName)"\s*:\s*"([^"]+)"/,
   );
-  if (!table && !documentText) return null;
-
-  return (
-    <details
-      className="tool-result-preview"
-      onToggle={(event) => {
-        if (event.target === event.currentTarget)
-          setExpanded(event.currentTarget.open);
-      }}
-    >
-      <summary className="tool-result-summary">
-        {t(table ? "toolResults.tablePreview" : "toolResults.documentPreview")}
-      </summary>
-      {expanded ? (
-        <div className="tool-result-preview-content">
-          {table ? (
-            <DataTableViewer
-              columns={table.columns}
-              rows={table.rows}
-              maxInitialRows={40}
-              className="tool-result-table-preview"
-            />
-          ) : (
-            <div className="tool-result-document-preview">{documentText}</div>
-          )}
-        </div>
-      ) : null}
-    </details>
-  );
+  if (fileMatch) {
+    const p = fileMatch[1].replace(/\\/g, "/");
+    return { label: getFileName(p), fullPath: p };
+  }
+  const queryMatch = args.match(/"query"\s*:\s*"([^"]+)"/);
+  if (queryMatch) return { label: `"${truncate(queryMatch[1], 32)}"` };
+  const cmdMatch = args.match(/"command"\s*:\s*"([^"]+)"/);
+  if (cmdMatch) return { label: truncate(cmdMatch[1], 32) };
+  const urlMatch = args.match(/"url"\s*:\s*"([^"]+)"/);
+  if (urlMatch) return { label: truncate(urlMatch[1], 40) };
+  const serviceMatch = args.match(/"service"\s*:\s*"([^"]+)"/);
+  if (serviceMatch) return { label: `service: ${serviceMatch[1]}` };
+  return {};
 };
 
-const CopyResultButton = ({ value }: { value: string }): React.JSX.Element => {
-  const { t } = useI18n();
-  const [outcome, setOutcome] = useState<"idle" | "copied" | "error">("idle");
-  const label = t(
-    outcome === "copied"
-      ? "toolResults.copied"
-      : outcome === "error"
-        ? "toolResults.copyFailed"
-        : "toolResults.copy",
-  );
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setOutcome("copied");
-    } catch {
-      setOutcome("error");
+/**
+ * 解包标准 MCP 响应包层 (如 content: [{ type: "text", text: "..." }])
+ * 若内层 text 为 JSON 字符串则进一步嗅探解析为结构化对象，否则返回合并文本
+ */
+const unwrapMcpPayload = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+
+  let current: Record<string, unknown> = value;
+  if (isRecord(current.result)) {
+    current = current.result;
+  }
+
+  if (Array.isArray(current.content)) {
+    const textBlocks = current.content
+      .filter(
+        (b): b is Record<string, unknown> =>
+          isRecord(b) && b.type === "text" && typeof b.text === "string",
+      )
+      .map((b) => b.text as string);
+
+    if (textBlocks.length > 0) {
+      const combined = textBlocks.join("\n");
+      try {
+        const innerJson = JSON.parse(combined);
+        if (typeof innerJson === "object" && innerJson !== null) {
+          return innerJson;
+        }
+      } catch {
+        return combined;
+      }
+      return combined;
     }
-  };
-  return (
-    <button
-      type="button"
-      className={`tool-result-button tool-result-copy${outcome === "error" ? " tool-result-copy-error" : ""}`}
-      onClick={copy}
-      title={label}
-    >
-      {outcome === "copied" ? (
-        <Check size={12} aria-hidden="true" />
-      ) : outcome === "error" ? (
-        <AlertCircle size={12} aria-hidden="true" />
-      ) : (
-        <Copy size={12} aria-hidden="true" />
-      )}
-      <span aria-live="polite">{label}</span>
-    </button>
-  );
+  }
+
+  return value;
 };
 
 export const GenericToolCall = ({
   toolCall,
 }: GenericToolCallProps): React.JSX.Element => {
   const { t } = useI18n();
-  const parsedArgs = useMemo(
-    () => parseJsonSafe(toolCall.arguments),
-    [toolCall.arguments],
-  );
+  const [copied, setCopied] = useState(false);
+
+  const parsedArgs = useMemo(() => {
+    const res = parseJsonSafe(toolCall.arguments);
+    return isRecord(res) ? res : null;
+  }, [toolCall.arguments]);
+
   const parsedResult = useMemo(
-    () => parseJsonSafe(toolCall.result),
+    () => unwrapMcpPayload(parseJsonSafe(toolCall.result)),
     [toolCall.result],
   );
-  const { label, fullPath } = useMemo(
-    () => (isRecord(parsedArgs) ? extractGenericSummary(parsedArgs) : {}),
-    [parsedArgs],
-  );
-  const category = useMemo(
+
+  // 表格探测
+  const tableData = useMemo(() => {
+    return extractTableData(parsedResult);
+  }, [parsedResult]);
+
+  // Markdown 长文本探测
+  const markdownText = useMemo(() => {
+    if (typeof parsedResult === "string" && parsedResult.length > 80) {
+      return decodeEscaped(parsedResult);
+    }
+    if (isRecord(parsedResult)) {
+      for (const k of [
+        "markdown",
+        "content",
+        "text",
+        "body",
+        "summary",
+        "description",
+      ]) {
+        const v = parsedResult[k];
+        if (typeof v === "string" && v.length > 80) {
+          return decodeEscaped(v);
+        }
+      }
+    }
+    return null;
+  }, [parsedResult]);
+
+  // 默认视图模式：有表格优选 table，有 Markdown 优选 markdown，否则 tree
+  const defaultMode: ViewMode = tableData
+    ? "table"
+    : markdownText
+      ? "markdown"
+      : isRecord(parsedResult) || Array.isArray(parsedResult)
+        ? "tree"
+        : "raw";
+
+  const [userMode, setUserMode] = useState<ViewMode | null>(null);
+  const mode: ViewMode = userMode ?? defaultMode;
+
+  // 类别与图标
+  const category: ToolCategory = useMemo(
     () => getToolCategory(toolCall.name),
     [toolCall.name],
   );
-  const hasArguments =
-    toolCall.arguments !== undefined && toolCall.arguments !== "";
-  const hasResult = toolCall.result !== undefined && toolCall.result !== "";
+
+  // 参数摘要
+  const { label: argsLabel, fullPath } = useMemo(() => {
+    if (parsedArgs) return extractGenericSummary(parsedArgs);
+    return extractStreamingGenericSummary(toolCall.arguments);
+  }, [parsedArgs, toolCall.arguments]);
+
+  // 状态与结果判定
+  const hasError = useMemo(() => {
+    if (toolCall.status === "error") return true;
+    if (isRecord(parsedResult) && typeof parsedResult.error === "string")
+      return true;
+    return false;
+  }, [toolCall.status, parsedResult]);
+
+  const effectiveStatus = hasError ? "error" : toolCall.status;
+
+  // Header 胶囊元数据 Pills（对标函数调用关系等现代化卡片）
+  const metaPills = useMemo(() => {
+    if (toolCall.status === "running") return null;
+
+    if (hasError) {
+      const rawErrorCode =
+        isRecord(parsedResult) && typeof parsedResult.error === "string"
+          ? parsedResult.error
+          : undefined;
+      // 内部错误码（如重复读取保护）在展示层本地化，工具结果 JSON 原文保持英文。
+      const errMsg = rawErrorCode
+        ? localizeToolError(t, rawErrorCode)
+        : t("toolCall.common.error", { defaultValue: "执行异常" });
+      // 拒绝场景由卡片下方的拒绝提示条统一说明，这里不再重复出徽标。
+      if (!errMsg) {
+        return null;
+      }
+      return (
+        <span
+          className="tool-call-codelens-count tool-call-codelens-count-error"
+          title={errMsg}
+        >
+          <AlertCircle size={10} aria-hidden="true" />
+          {truncate(errMsg, 24)}
+        </span>
+      );
+    }
+
+    if (!parsedResult) return null;
+
+    // 1. 如果是遥测/诊断结果（包含 activeErrors, errors, issues 等）
+    if (isRecord(parsedResult)) {
+      const errCount =
+        typeof parsedResult.activeErrors === "number"
+          ? parsedResult.activeErrors
+          : Array.isArray(parsedResult.errors)
+            ? parsedResult.errors.length
+            : Array.isArray(parsedResult.diagnose)
+              ? parsedResult.diagnose.length
+              : undefined;
+
+      if (errCount !== undefined) {
+        return (
+          <span
+            className={`tool-call-codelens-count ${
+              errCount > 0
+                ? "tool-call-codelens-count-error"
+                : "tool-call-codelens-count-ok"
+            }`}
+          >
+            {errCount === 0 ? (
+              <CheckCircle2 size={10} aria-hidden="true" />
+            ) : (
+              <AlertCircle size={10} aria-hidden="true" />
+            )}
+            {errCount === 0
+              ? t("toolCall.generic.noErrors", { defaultValue: "0 活跃故障" })
+              : t("toolCall.generic.errorCount", {
+                  values: { count: errCount },
+                  defaultValue: `${errCount} 个异常`,
+                })}
+          </span>
+        );
+      }
+    }
+
+    // 2. 如果解析到了表格
+    if (tableData) {
+      return (
+        <span className="tool-call-codelens-count tool-call-codelens-count-info">
+          <Table2 size={10} aria-hidden="true" />
+          {t("toolCall.generic.rowCount", {
+            values: { count: tableData.rows.length },
+            defaultValue: `${tableData.rows.length} 行`,
+          })}
+        </span>
+      );
+    }
+
+    // 3. 数组项计数
+    if (Array.isArray(parsedResult)) {
+      return (
+        <span className="tool-call-codelens-count tool-call-codelens-count-info">
+          <Layers size={10} aria-hidden="true" />
+          {t("toolCall.generic.itemCount", {
+            values: { count: parsedResult.length },
+            defaultValue: `${parsedResult.length} 条记录`,
+          })}
+        </span>
+      );
+    }
+
+    // 4. 包含特定 status
+    if (isRecord(parsedResult) && typeof parsedResult.status === "string") {
+      const s = parsedResult.status;
+      return (
+        <span className="tool-call-codelens-count tool-call-codelens-count-ok">
+          <CheckCircle2 size={10} aria-hidden="true" />
+          {s}
+        </span>
+      );
+    }
+
+    // 5. 字符数统计
+    if (markdownText) {
+      return (
+        <span className="tool-call-codelens-count tool-call-codelens-count-muted">
+          <FileText size={10} aria-hidden="true" />
+          {t("toolCall.common.charCount", {
+            values: { count: markdownText.length.toLocaleString() },
+            defaultValue: `${markdownText.length} 字符`,
+          })}
+        </span>
+      );
+    }
+
+    // 6. 启发式：HTTP / API 状态码检测
+    if (isRecord(parsedResult)) {
+      const statusNum =
+        typeof parsedResult.status === "number"
+          ? parsedResult.status
+          : typeof parsedResult.statusCode === "number"
+            ? parsedResult.statusCode
+            : undefined;
+      if (statusNum !== undefined) {
+        const isOk = statusNum >= 200 && statusNum < 300;
+        return (
+          <span
+            className={`tool-call-codelens-count ${
+              isOk
+                ? "tool-call-codelens-count-ok"
+                : "tool-call-codelens-count-error"
+            }`}
+          >
+            {isOk ? (
+              <CheckCircle2 size={10} aria-hidden="true" />
+            ) : (
+              <AlertCircle size={10} aria-hidden="true" />
+            )}
+            {`HTTP ${statusNum}`}
+          </span>
+        );
+      }
+    }
+
+    if (toolCall.fromCache) {
+      return (
+        <span
+          className="tool-call-cache-badge"
+          title={t("toolCall.common.fromCacheHint", {
+            defaultValue: "已复用此前相同调用的读取结果，未重复读取物理文件",
+          })}
+        >
+          {t("toolCall.common.fromCache", { defaultValue: "已复用" })}
+        </span>
+      );
+    }
+
+    return null;
+  }, [
+    toolCall.status,
+    toolCall.fromCache,
+    hasError,
+    parsedResult,
+    tableData,
+    markdownText,
+    t,
+  ]);
+
+  const handleCopyResult = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text =
+      typeof parsedResult === "string"
+        ? parsedResult
+        : JSON.stringify(parsedResult, null, 2);
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const hasBody = Boolean(toolCall.arguments || toolCall.result);
 
   return (
     <ToolCallNode
       toolName={toolCall.name}
       category={category}
-      status={toolCall.status}
-      displayName={label}
-      displayNameTitle={fullPath || label}
+      status={effectiveStatus}
+      displayName={argsLabel}
+      displayNameTitle={fullPath || toolCall.arguments}
       displayNameDataPath={fullPath}
+      meta={metaPills}
       lazyBody
     >
-      {hasArguments || hasResult ? (
-        <div className="tool-result-sections">
-          {hasArguments ? (
-            <section className="tool-result-section">
-              <h4 className="tool-result-section-label">
-                {t("toolResults.arguments")}
-              </h4>
-              <ToolResultView value={parsedArgs} />
-            </section>
+      {hasBody ? (
+        <div className="tool-call-generic-body">
+          {/* 参数区域 */}
+          {parsedArgs && Object.keys(parsedArgs).length > 0 ? (
+            <div className="tool-call-generic-section">
+              <span className="tool-call-section-label">
+                {t("toolCall.common.arguments")}
+              </span>
+              <pre className="tool-call-section-pre tool-call-generic-pre">
+                {JSON.stringify(parsedArgs, null, 2)}
+              </pre>
+            </div>
           ) : null}
-          {hasResult ? (
-            <section className="tool-result-section">
-              <div className="tool-result-toolbar">
-                <h4 className="tool-result-section-label">
-                  {t("toolResults.result")}
-                </h4>
-                <CopyResultButton
-                  key={toolCall.result}
-                  value={toolCall.result!}
-                />
+
+          {/* 结果区域 */}
+          {toolCall.result ? (
+            <div className="tool-call-generic-section">
+              <div className="tool-call-generic-toolbar">
+                <span className="tool-call-section-label">
+                  {t("toolCall.common.result")}
+                </span>
+
+                <div className="tool-call-generic-view-tabs">
+                  {tableData && (
+                    <button
+                      type="button"
+                      className={`tool-call-generic-tab ${mode === "table" ? "active" : ""}`}
+                      onClick={() => setUserMode("table")}
+                    >
+                      <Table2 size={11} aria-hidden="true" />
+                      {t("toolCall.generic.table", { defaultValue: "表格" })}
+                    </button>
+                  )}
+                  {markdownText && (
+                    <button
+                      type="button"
+                      className={`tool-call-generic-tab ${mode === "markdown" ? "active" : ""}`}
+                      onClick={() => setUserMode("markdown")}
+                    >
+                      <FileText size={11} aria-hidden="true" />
+                      {t("toolCall.generic.markdown", { defaultValue: "文档" })}
+                    </button>
+                  )}
+                  {(isRecord(parsedResult) || Array.isArray(parsedResult)) && (
+                    <button
+                      type="button"
+                      className={`tool-call-generic-tab ${mode === "tree" ? "active" : ""}`}
+                      onClick={() => setUserMode("tree")}
+                    >
+                      <ListTree size={11} aria-hidden="true" />
+                      {t("toolCall.generic.tree", { defaultValue: "JSON 树" })}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={`tool-call-generic-tab ${mode === "raw" ? "active" : ""}`}
+                    onClick={() => setUserMode("raw")}
+                  >
+                    <FileCode size={11} aria-hidden="true" />
+                    {t("toolCall.generic.raw", { defaultValue: "原始" })}
+                  </button>
+                </div>
+
+                <div className="tool-call-generic-actions">
+                  <button
+                    type="button"
+                    className="tool-call-lsp-copy-btn"
+                    onClick={handleCopyResult}
+                    title={
+                      copied
+                        ? t("toolCall.generic.copied", {
+                            defaultValue: "已复制",
+                          })
+                        : t("toolCall.generic.copy", {
+                            defaultValue: "复制结果",
+                          })
+                    }
+                  >
+                    {copied ? (
+                      <Check size={12} className="copy-ok" />
+                    ) : (
+                      <Copy size={12} />
+                    )}
+                  </button>
+                </div>
               </div>
-              <ResultPreview value={parsedResult} />
-              <ToolResultView value={parsedResult} />
-            </section>
+
+              {/* 渲染对应视图 */}
+              <div className="tool-call-generic-content">
+                {mode === "table" && tableData ? (
+                  <div className="tool-call-generic-table-wrapper">
+                    <DataTableViewer
+                      columns={tableData.columns}
+                      rows={tableData.rows}
+                      maxInitialRows={50}
+                    />
+                  </div>
+                ) : mode === "markdown" && markdownText ? (
+                  <div className="tool-call-generic-markdown">
+                    {markdownText.split("\n\n").map((paragraph, pIdx) => (
+                      <p key={pIdx}>{paragraph}</p>
+                    ))}
+                  </div>
+                ) : mode === "tree" &&
+                  (isRecord(parsedResult) || Array.isArray(parsedResult)) ? (
+                  <div className="tool-call-generic-tree-wrapper">
+                    <JsonTreeView
+                      data={parsedResult}
+                      defaultExpandDepth={2}
+                      longStringThreshold={120}
+                    />
+                  </div>
+                ) : (
+                  <pre className="tool-call-section-pre tool-call-generic-pre">
+                    {typeof parsedResult === "string"
+                      ? decodeEscaped(parsedResult)
+                      : JSON.stringify(parsedResult, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}

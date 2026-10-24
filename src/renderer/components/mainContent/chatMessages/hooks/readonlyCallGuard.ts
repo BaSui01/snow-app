@@ -95,8 +95,7 @@ export const resolveToAbsolutePath = (
 ): string => {
   if (!filePath) return "";
   const normalized = filePath.replace(/\\/g, "/");
-  // Preserve home-relative paths for the native resolver; never join them to a workspace.
-  if (/^(?:[a-zA-Z]:\/|\/|~(?:\/|$))/.test(normalized)) {
+  if (/^(?:[a-zA-Z]:\/|\/)/.test(normalized)) {
     return normalized;
   }
   if (!workspacePath) return normalized;
@@ -415,14 +414,17 @@ export class ReadonlyCallGuard {
 
         // 1. 文件系统内容与尺寸检测
         const currentFile = await this.captureFileSnapshot(absPath);
-        if (!prior.fileSnapshot || !currentFile) return true;
-        if (
-          prior.fileSnapshot.exists !== currentFile.exists ||
-          prior.fileSnapshot.size !== currentFile.size ||
-          prior.fileSnapshot.contentLength !== currentFile.contentLength ||
-          prior.fileSnapshot.preview !== currentFile.preview
-        ) {
-          return true;
+        if (!prior.fileSnapshot && currentFile) return true;
+        if (prior.fileSnapshot && !currentFile) return true;
+        if (prior.fileSnapshot && currentFile) {
+          if (
+            prior.fileSnapshot.exists !== currentFile.exists ||
+            prior.fileSnapshot.size !== currentFile.size ||
+            prior.fileSnapshot.contentLength !== currentFile.contentLength ||
+            prior.fileSnapshot.preview !== currentFile.preview
+          ) {
+            return true;
+          }
         }
 
         // 2. 目标文件所属 Git 仓库状态检测
@@ -545,34 +547,18 @@ export class ReadonlyCallGuard {
     absPath: string,
   ): Promise<FileSnapshot | null> {
     try {
-      // An exact lookup (no project suffix search) shares native home expansion.
-      const entry = await window.snow.resolveFileLink(null, absPath);
-      if (!entry) return null;
-      if (entry.isDirectory) {
-        const entries = await window.snow.readDirectoryEntries(entry.path);
-        const listing = JSON.stringify(
-          entries
-            .map((item) => `${item.name}${item.isDirectory ? "/" : ""}`)
-            .sort(),
-        );
-        return {
-          exists: true,
-          size: entries.length,
-          contentLength: listing.length,
-          preview: `directory:${listing}`,
-        };
+      const result = await window.snow?.readFileContent(absPath);
+      if (!result) {
+        return { exists: false, size: 0, contentLength: 0, preview: "" };
       }
-      const result = await window.snow.readFileContent(entry.path);
       return {
         exists: true,
-        size: result.size,
-        contentLength: result.content.length,
-        // Compare the entire content, including same-size changes beyond the first 128 chars.
-        preview: `file:${result.content}`,
+        size: result.size ?? 0,
+        contentLength: result.content?.length ?? 0,
+        preview: (result.content || "").slice(0, 128),
       };
     } catch {
-      // Unavailable is not a verified missing/unchanged target.
-      return null;
+      return { exists: false, size: 0, contentLength: 0, preview: "" };
     }
   }
 

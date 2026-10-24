@@ -31,12 +31,9 @@ export function writeLog(level: LogLevel, entry: LogEntry): void {
     error: entry.error,
     source: "main",
   };
-  const task = Promise.resolve()
-    .then(() => native.writeAppLog(input))
-    .catch(() => {
-      // Both synchronous native throws and asynchronous rejections are
-      // diagnostic failures, never failures of an already-committed operation.
-    });
+  const task = native.writeAppLog(input).catch(() => {
+    // Logging failures must not break application functionality.
+  });
   pendingWrites.add(task);
   const settle = (): void => {
     pendingWrites.delete(task);

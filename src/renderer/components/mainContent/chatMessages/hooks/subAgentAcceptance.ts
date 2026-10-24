@@ -6,8 +6,8 @@
  *
  * 约定：
  * - 清单与证据日志是「本次应用运行期」的运行时状态，按子代理会话 id 注册；
- *   重启后仅从宿主已验证的持久回执恢复；旧历史无回执时不补造证据。
- * - 证据 id 由宿主分配（ev- 前缀唯一 id）并写进子代理看到的工具结果；子代理只能引用
+ *   应用重启后不恢复（continue 可重新附带清单）。
+ * - 证据 id 由宿主分配（ev-N）并写进子代理看到的工具结果；子代理只能引用
  *   它实际看到的 id。主控拿到的回执只带精简预览，不复制完整工具结果。
  * - 未附带清单的任务完全保持原有行为（无证据标记、无回执字段）。
  */
@@ -19,26 +19,65 @@ const SUB_AGENT_ACCEPTANCE_STATUSES = [
   "unverified",
 ] as const;
 
-import type {
-  SubAgentAcceptanceStatus,
-  SubAgentAcceptanceCriterion,
-  SubAgentAcceptanceReasonCode,
-  SubAgentAcceptanceEvidenceStatus,
-  SubAgentAcceptanceEvidenceRef,
-  SubAgentAcceptanceItemReceipt,
-  SubAgentAcceptanceReportState,
-  SubAgentAcceptanceSnapshot,
-} from "../../../../../shared/subAgentRuns";
-export type {
-  SubAgentAcceptanceStatus,
-  SubAgentAcceptanceCriterion,
-  SubAgentAcceptanceReasonCode,
-  SubAgentAcceptanceEvidenceStatus,
-  SubAgentAcceptanceEvidenceRef,
-  SubAgentAcceptanceItemReceipt,
-  SubAgentAcceptanceReportState,
-  SubAgentAcceptanceSnapshot,
-} from "../../../../../shared/subAgentRuns";
+export type SubAgentAcceptanceStatus =
+  (typeof SUB_AGENT_ACCEPTANCE_STATUSES)[number];
+
+export type SubAgentAcceptanceCriterion = {
+  id: string;
+  description: string;
+  /** 默认 true；非必需项不满足时不影响整体验收结论。 */
+  required: boolean;
+};
+
+/** 宿主生成的降级原因：UI 可按 code 本地化，模型侧按 reason 阅读。 */
+export type SubAgentAcceptanceReasonCode = "not_reported" | "no_valid_evidence";
+
+export type SubAgentAcceptanceEvidenceStatus =
+  "completed" | "error" | "rejected";
+
+export type SubAgentAcceptanceEvidenceRef = {
+  id: string;
+  toolName: string;
+  callId: string;
+  status: SubAgentAcceptanceEvidenceStatus;
+  /** 截断后的结果预览；不向主控复制完整工具结果。 */
+  preview: string;
+};
+
+export type SubAgentAcceptanceItemReceipt = {
+  id: string;
+  description: string;
+  required: boolean;
+  status: SubAgentAcceptanceStatus;
+  observation: string;
+  reason: string;
+  reasonCode: SubAgentAcceptanceReasonCode | null;
+  evidence: SubAgentAcceptanceEvidenceRef[];
+  /** 回执里引用了但宿主执行记录中不存在的证据 id（不会被采信）。 */
+  invalidEvidenceIds: string[];
+  /** 最近一轮回执是否覆盖该项；false 表示沿用之前记录的状态。 */
+  confirmedInLatestReport: boolean;
+  updatedAt: number;
+};
+
+export type SubAgentAcceptanceReportState = "none" | "invalid" | "received";
+
+export type SubAgentAcceptanceSnapshot = {
+  items: SubAgentAcceptanceItemReceipt[];
+  counts: {
+    total: number;
+    completed: number;
+    incomplete: number;
+    blocked: number;
+    unverified: number;
+  };
+  /** 所有 required 项均为 completed 且至少引用一条有效证据。 */
+  satisfied: boolean;
+  reportState: SubAgentAcceptanceReportState;
+  /** 回执里出现、但不在清单中的验收项 id（已忽略）。 */
+  ignoredReportIds: string[];
+  updatedAt: number | null;
+};
 
 const MAX_ACCEPTANCE_ITEMS = 20;
 const MAX_ACCEPTANCE_ID_LENGTH = 64;
@@ -94,6 +133,7 @@ type AcceptanceTracker = {
   criteria: SubAgentAcceptanceCriterion[];
   items: Map<string, AcceptanceItemState>;
   evidence: Map<string, SubAgentAcceptanceEvidenceRef>;
+  evidenceSeq: number;
   reportState: SubAgentAcceptanceReportState;
   ignoredReportIds: string[];
   updatedAt: number | null;
@@ -178,6 +218,7 @@ export const initializeSubAgentAcceptance = (
     criteria: criteria.map((criterion) => ({ ...criterion })),
     items: new Map(),
     evidence: new Map(),
+    evidenceSeq: 0,
     reportState: "none",
     ignoredReportIds: [],
     updatedAt: null,
@@ -248,8 +289,8 @@ export const recordSubAgentEvidence = (
   const tracker = trackers.get(conversationId);
   if (!tracker || tracker.criteria.length === 0) return null;
 
-  // Evidence IDs must not be reused after restoring only referenced receipts.
-  const id = `ev-${crypto.randomUUID()}`;
+  tracker.evidenceSeq += 1;
+  const id = `ev-${tracker.evidenceSeq}`;
   tracker.evidence.set(id, {
     id,
     toolName: input.toolName,
@@ -607,87 +648,4 @@ export const parseSubAgentAcceptanceSnapshot = (
       : [],
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : null,
   };
-};
-
-/** Restore only a host-validated durable receipt, never a model's self-report. */
-export const restoreSubAgentAcceptanceSnapshot = (
-  conversationId: string,
-  snapshot: SubAgentAcceptanceSnapshot,
-): void => {
-  if (trackers.has(conversationId)) return;
-  const tracker: AcceptanceTracker = {
-    criteria: snapshot.items.map(({ id, description, required }) => ({
-      id,
-      description,
-      required,
-    })),
-    items: new Map(),
-    evidence: new Map(),
-    reportState: snapshot.reportState,
-    ignoredReportIds: [...snapshot.ignoredReportIds],
-    updatedAt: snapshot.updatedAt,
-  };
-  for (const item of snapshot.items) {
-    tracker.items.set(item.id, {
-      status: item.status,
-      observation: item.observation,
-      reason: item.reason,
-      reasonCode: item.reasonCode,
-      evidenceRefs: item.evidence.map((evidence) => ({ ...evidence })),
-      invalidEvidenceIds: [...item.invalidEvidenceIds],
-      confirmedInLatestReport: item.confirmedInLatestReport,
-      updatedAt: item.updatedAt,
-    });
-    for (const evidence of item.evidence) {
-      tracker.evidence.set(evidence.id, { ...evidence });
-    }
-  }
-  trackers.set(conversationId, tracker);
-};
-
-/** Merge a durable host receipt when its message is actually consumed by its run. */
-export const mergeSubAgentAcceptanceSnapshot = (
-  conversationId: string,
-  snapshot: SubAgentAcceptanceSnapshot,
-): void => {
-  const tracker = trackers.get(conversationId);
-  if (!tracker) {
-    restoreSubAgentAcceptanceSnapshot(conversationId, snapshot);
-    return;
-  }
-  const knownIds = new Set(tracker.criteria.map((criterion) => criterion.id));
-  const errors = mergeSubAgentAcceptanceCriteria(
-    conversationId,
-    snapshot.items
-      .filter((item) => !knownIds.has(item.id))
-      .map(({ id, description, required }) => ({ id, description, required })),
-  );
-  if (errors.length) throw new Error(`VALIDATION_ERROR: ${errors.join("; ")}`);
-  for (const item of snapshot.items) {
-    const current = tracker.items.get(item.id);
-    if (!current || item.updatedAt > current.updatedAt) {
-      tracker.items.set(item.id, {
-        status: item.status,
-        observation: item.observation,
-        reason: item.reason,
-        reasonCode: item.reasonCode,
-        evidenceRefs: item.evidence.map((evidence) => ({ ...evidence })),
-        invalidEvidenceIds: [...item.invalidEvidenceIds],
-        confirmedInLatestReport: item.confirmedInLatestReport,
-        updatedAt: item.updatedAt,
-      });
-    }
-    for (const evidence of item.evidence)
-      tracker.evidence.set(evidence.id, { ...evidence });
-  }
-  if (
-    snapshot.updatedAt !== null &&
-    (tracker.updatedAt === null || snapshot.updatedAt > tracker.updatedAt)
-  ) {
-    tracker.updatedAt = snapshot.updatedAt;
-    tracker.reportState = snapshot.reportState;
-  }
-  tracker.ignoredReportIds = Array.from(
-    new Set([...tracker.ignoredReportIds, ...snapshot.ignoredReportIds]),
-  );
 };

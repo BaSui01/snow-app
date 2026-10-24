@@ -31,6 +31,9 @@ const ensureLoaded = (): Promise<void> => {
         if (value != null && value.trim()) {
           maxConcurrency = clampSubAgentMaxConcurrency(value);
         }
+      })
+      .catch(() => {
+        // 读取失败沿用默认值
       });
   }
   return loading;
@@ -61,22 +64,6 @@ export const saveSubAgentMaxConcurrency = async (
 // ---------------------------------------------------------------------------
 
 const listeners = new Set<() => void>();
-const ownerConversations = new Map<string, string>();
-export const registerSubAgentRunControl = (
-  ownerId: string,
-  conversationId: string,
-): void => {
-  ownerConversations.set(ownerId, conversationId);
-};
-export const unregisterSubAgentRunControl = (ownerId: string): void => {
-  ownerConversations.delete(ownerId);
-};
-const uiKey = (ownerId: string): string =>
-  ownerConversations.get(ownerId) ?? ownerId;
-const ownerKey = (key: string): string =>
-  Array.from(ownerConversations).find(
-    ([, conversationId]) => conversationId === key,
-  )?.[0] ?? key;
 let queuedSnapshot: ReadonlySet<string> = new Set();
 let pendingDecisionSnapshot: ReadonlySet<string> = new Set();
 
@@ -85,36 +72,24 @@ const subscribe = (listener: () => void): (() => void) => {
   return () => listeners.delete(listener);
 };
 const emit = (): void => {
-  queuedSnapshot = new Set(
-    slotWaiters.flatMap((waiter) => [waiter.key, uiKey(waiter.key)]),
-  );
-  pendingDecisionSnapshot = new Set(
-    Array.from(decisionResolvers.keys()).flatMap((key) => [key, uiKey(key)]),
-  );
+  queuedSnapshot = new Set(slotWaiters.map((waiter) => waiter.key));
+  pendingDecisionSnapshot = new Set(decisionResolvers.keys());
   listeners.forEach((listener) => listener());
 };
 
 // ---------------------------------------------------------------------------
-// 并发信号量（key = run owner id）
+// 并发信号量（key = 子代理会话 id）
 // ---------------------------------------------------------------------------
 
 const slotHolders = new Set<string>();
-const slotWaiters: {
-  key: string;
-  resolve: (acquired: boolean) => void;
-  isCancelled?: () => boolean;
-}[] = [];
+const slotWaiters: { key: string; resolve: (acquired: boolean) => void }[] = [];
 
 function pumpSlots(): void {
   let changed = false;
   while (slotWaiters.length > 0 && slotHolders.size < maxConcurrency) {
     const waiter = slotWaiters.shift()!;
-    if (waiter.isCancelled?.()) {
-      waiter.resolve(false);
-    } else {
-      slotHolders.add(waiter.key);
-      waiter.resolve(true);
-    }
+    slotHolders.add(waiter.key);
+    waiter.resolve(true);
     changed = true;
   }
   if (changed) emit();
@@ -133,10 +108,7 @@ export const acquireSubAgentSlot = async (
     return true;
   }
   return new Promise<boolean>((resolve) => {
-    if (slotWaiters.some((waiter) => waiter.key === key)) {
-      throw new Error(`RUN_BUSY: duplicate slot acquisition for ${key}`);
-    }
-    slotWaiters.push({ key, resolve, isCancelled });
+    slotWaiters.push({ key, resolve });
     emit();
   });
 };
@@ -171,7 +143,6 @@ export const resolveSubAgentFailureDecision = (
   key: string,
   decision: SubAgentFailureDecision,
 ): void => {
-  key = ownerKey(key);
   const resolve = decisionResolvers.get(key);
   if (!resolve) return;
   decisionResolvers.delete(key);
@@ -181,7 +152,6 @@ export const resolveSubAgentFailureDecision = (
 
 /** 中止时唤醒该子代理的排队与待决策等待。 */
 export const cancelSubAgentRunWaits = (key: string): void => {
-  key = ownerKey(key);
   const index = slotWaiters.findIndex((waiter) => waiter.key === key);
   if (index >= 0) {
     const [waiter] = slotWaiters.splice(index, 1);

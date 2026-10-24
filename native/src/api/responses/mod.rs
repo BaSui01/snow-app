@@ -26,12 +26,13 @@ use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
     prepare_context_request, resolve_request_tools_optional, ConversationContextRequest,
 };
+use crate::api::responses::stream::RESPONSES_FAILED_NO_REASON;
 use crate::api::retry::{
     classify_final_stream_warning, resolve_empty_response_terminal,
     resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition, RetryOptions,
 };
 use crate::storage::services::app_logs::{
-    log_api_warning, maybe_log_api_request_for_conversation,
+    log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
     maybe_log_api_response_for_conversation,
 };
 use crate::storage::services::chat_conversations::{
@@ -429,8 +430,7 @@ async fn create_response_async(
 
     // WebSocket 传输复用同一份 payload、事件解析与恢复策略，只是把 SSE 长连接
     // 换成 WebSocket 连接（snowcfg.responsesWebSocket），因此不需要 reqwest 客户端。
-    let streamed_response = crate::api::failure::with_api_key(api_key, async {
-    if responses_web_socket_enabled(&api_config.config_json) {
+    let streamed_response = if responses_web_socket_enabled(&api_config.config_json) {
         ws::collect_streaming_response_ws(
             database_path.clone(),
             &endpoint,
@@ -462,14 +462,27 @@ async fn create_response_async(
             stream_idle_timeout_sec,
         )
         .await
-    }
-    }).await;
+    };
     let streamed_response = match streamed_response {
         Ok(result) => result,
         Err(error) => {
-            let failure = crate::api::failure::ProviderFailure::from_message(&error.reason, Some(api_key));
-            // The conversation boundary logs once its final persisted ID exists.
-            return Err(Error::from_reason(failure.reason().unwrap_or_default()));
+            maybe_log_api_response_for_conversation(
+                database_path.clone(),
+                "responses".to_string(),
+                endpoint.clone(),
+                serde_json::json!({"error": error.reason}).to_string(),
+                prepared_request.conversation_id.clone(),
+                api_key.to_string(),
+            )
+            .await;
+            log_api_error(
+                &database_path,
+                "create_response_stream_with_context",
+                "Responses API call failed",
+                &error.reason,
+            )
+            .await;
+            return Err(error);
         }
     };
     let response_body_json = serde_json::json!({
@@ -487,12 +500,7 @@ async fn create_response_async(
         database_path.clone(),
         "responses".to_string(),
         endpoint.clone(),
-        if streamed_response.status == "failed" {
-            streamed_response.failure.as_ref().map(|failure| failure.raw_json())
-                .unwrap_or_else(|| "{}".to_string())
-        } else {
-            serde_json::to_string(&response_body_json).unwrap_or_default()
-        },
+        serde_json::to_string(&response_body_json).unwrap_or_default(),
         prepared_request.conversation_id.clone(),
         api_key.to_string(),
     )
@@ -500,8 +508,7 @@ async fn create_response_async(
 
     // See chat/mod.rs: assistant raw_events are not needed for replay, so we
     // skip serializing the full SSE chunk array to avoid DB bloat.
-    let raw_response_json = streamed_response.failure.as_ref()
-        .map(|failure| failure.raw_json()).unwrap_or_else(|| "{}".to_string());
+    let raw_response_json = "{}";
     let transport_interruption_reason = streamed_response
         .interruption_reason
         .filter(|reason| reason.is_transport());
@@ -585,6 +592,35 @@ async fn create_response_async(
         FinalStreamWarningDisposition::None => {}
     }
 
+    // Failures have their own diagnostic, including the actual recovery stop
+    // reason and shared retry-probe count; never describe them as empty output.
+    if streamed_response.status == "failed" {
+        let failure_reason = streamed_response
+            .failure_reason
+            .as_deref()
+            .unwrap_or(RESPONSES_FAILED_NO_REASON);
+        log_api_warning(
+            &database_path,
+            "create_response_stream_with_context",
+            "AI response stream failed",
+            &format!(
+                "provider=openai, request_method=responses, reason={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}, stop_reason={}, outcome={}, retry_attempts={}",
+                failure_reason,
+                model,
+                streamed_response.status,
+                prepared_request.conversation_id,
+                streamed_response.id,
+                streamed_response.content.chars().count(),
+                streamed_response.thinking.chars().count(),
+                streamed_response.total_duration_ms,
+                streamed_response.failure_stop_reason.unwrap_or("unknown"),
+                recovery_outcome.as_deref().unwrap_or(""),
+                retry_probe.attempts(),
+            ),
+        )
+        .await;
+    }
+
     let persisted_user_message_ids = if !skip_context {
         store_chat_exchange(
             &database_path,
@@ -616,20 +652,6 @@ async fn create_response_async(
     } else {
         Vec::new()
     };
-
-    if streamed_response.status == "failed" {
-        crate::api::failure::log_stream_failure(
-            &database_path, &prepared_request.conversation_id, &streamed_response.id,
-            "responses", &streamed_response.status, streamed_response.failure.as_ref(),
-            serde_json::json!({
-                "content_chars": streamed_response.content.chars().count(),
-                "thinking_chars": streamed_response.thinking.chars().count(),
-                "duration_ms": streamed_response.total_duration_ms,
-                "retry_attempts": retry_probe.attempts(),
-                "stop_reason": streamed_response.failure_stop_reason,
-            }),
-        ).await;
-    }
 
     Ok(ResponsesApiResult {
         id: streamed_response.id,

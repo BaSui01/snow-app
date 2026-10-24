@@ -104,8 +104,6 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     "todo-todo-manage",
     "memory-search",
     "memory-list",
-    "sub-agents-getResult",
-    "sub-agents-wait",
     "computer-use-screen-info",
     "html-render",
 ];

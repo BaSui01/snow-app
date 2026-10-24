@@ -8,7 +8,6 @@ export type * from "./workspace";
 export type * from "./ssh";
 export type * from "./git";
 export type * from "./chat";
-export type * from "../../shared/subAgentRuns";
 export type * from "./checkpoint";
 export type * from "./memo";
 export type * from "./diffComment";

@@ -20,22 +20,18 @@ function renderStatusIcon(
   status: string,
   isAttentionRequired: boolean,
 ): React.ReactNode {
-  if (isAttentionRequired || status === "waiting_input") {
+  if (isAttentionRequired) {
     return <CircleAlert size={11} className="sub-agent-attention" />;
   }
-  if (
-    status === "running" ||
-    status === "finalizing" ||
-    status === "cancelling"
-  ) {
+  if (status === "running") {
     return <Loader2 size={11} className="spin sub-agent-status-running" />;
   }
   const statusClass =
     status === "completed"
       ? "sub-agent-status-completed"
-      : status === "failed" || status === "interrupted"
+      : status === "failed"
         ? "sub-agent-status-failed"
-        : status === "pending" || status === "queued"
+        : status === "pending"
           ? "sub-agent-status-pending"
           : "";
   return <Bot size={11} className={statusClass} />;
@@ -75,9 +71,8 @@ export function SubAgentListPanel({
     <div className="sub-agent-list-panel">
       {conversations.map((subAgent) => {
         const isAttentionRequired =
-          subAgent.subAgentStatus === "waiting_input" ||
-          (attentionRequiredConversationIds?.has(subAgent.conversationId) ??
-            false);
+          attentionRequiredConversationIds?.has(subAgent.conversationId) ??
+          false;
         const summaryLabel = subAgent.summary || subAgent.title;
         const agentLabel = subAgent.subAgentName;
         return (

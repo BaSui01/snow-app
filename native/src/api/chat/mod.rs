@@ -31,7 +31,7 @@ use crate::api::retry::{
     RetryOptions,
 };
 use crate::storage::services::app_logs::{
-    log_api_warning, maybe_log_api_request_for_conversation,
+    log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
     maybe_log_api_response_for_conversation,
 };
 use crate::storage::services::chat_conversations::{
@@ -235,9 +235,23 @@ async fn create_chat_completion_response_async(
     {
         Ok(result) => result,
         Err(error) => {
-            let failure = crate::api::failure::ProviderFailure::from_message(&error.reason, Some(api_key));
-            // The conversation boundary logs once its final persisted ID exists.
-            return Err(Error::from_reason(failure.reason().unwrap_or_default()));
+            maybe_log_api_response_for_conversation(
+                database_path.clone(),
+                "chat".to_string(),
+                endpoint.clone(),
+                serde_json::json!({"error": error.reason}).to_string(),
+                prepared_request.conversation_id.clone(),
+                api_key.to_string(),
+            )
+            .await;
+            log_api_error(
+                &database_path,
+                "create_chat_completion_response_stream",
+                "Chat completions API call failed",
+                &error.reason,
+            )
+            .await;
+            return Err(error);
         }
     };
     let response_body_json = serde_json::json!({
@@ -257,12 +271,7 @@ async fn create_chat_completion_response_async(
         database_path.clone(),
         "chat".to_string(),
         endpoint.clone(),
-        if streamed_response.status == "failed" {
-            streamed_response.failure.as_ref().map(|failure| failure.raw_json())
-                .unwrap_or_else(|| "{}".to_string())
-        } else {
-            serde_json::to_string(&response_body_json).unwrap_or_default()
-        },
+        serde_json::to_string(&response_body_json).unwrap_or_default(),
         prepared_request.conversation_id.clone(),
         api_key.to_string(),
     )
@@ -276,9 +285,7 @@ async fn create_chat_completion_response_async(
     // entire chunk stream for assistant messages wasted ~90% of the database
     // space (each token produced a chunk repeating id/model/fingerprint), so we
     // now store "{}" instead.
-    let failure_reason = streamed_response.failure.as_ref().and_then(|failure| failure.reason());
-    let raw_response_json = streamed_response.failure.as_ref()
-        .map(|failure| failure.raw_json()).unwrap_or_else(|| "{}".to_string());
+    let raw_response_json = "{}";
     let transport_interruption_reason = streamed_response
         .interruption_reason
         .filter(|reason| reason.is_transport());
@@ -288,16 +295,12 @@ async fn create_chat_completion_response_async(
         || streamed_response.tool_calls_json != "[]";
     // 空响应重试预算耗尽：把「正常收尾但零载荷」显式标记为 empty_response /
     // retry_exhausted，避免落库后与正常完成同形（前端与日志都无从分辨）。
-    let (terminal_reason, terminal_outcome) = if streamed_response.status == "failed" {
-        (streamed_response.interruption_reason, streamed_response.recovery_outcome)
-    } else {
-        resolve_empty_response_terminal(
-            &streamed_response.status,
-            streamed_response.interruption_reason,
-            streamed_response.recovery_outcome,
-            has_response_payload,
-        )
-    };
+    let (terminal_reason, terminal_outcome) = resolve_empty_response_terminal(
+        &streamed_response.status,
+        streamed_response.interruption_reason,
+        streamed_response.recovery_outcome,
+        has_response_payload,
+    );
     let interruption_reason = terminal_reason.map(|reason| reason.as_code().to_string());
     let recovery_outcome = terminal_outcome.map(|outcome| outcome.as_code().to_string());
 
@@ -313,16 +316,11 @@ async fn create_chat_completion_response_async(
         }
     }
 
-    let final_warning = if streamed_response.status == "failed" {
-        FinalStreamWarningDisposition::None
-    } else {
-        classify_final_stream_warning(
-            &streamed_response.status,
-            streamed_response.interruption_reason,
-            has_response_payload,
-        )
-    };
-    match final_warning {
+    match classify_final_stream_warning(
+        &streamed_response.status,
+        streamed_response.interruption_reason,
+        has_response_payload,
+    ) {
         FinalStreamWarningDisposition::TransportInterrupted(reason) => {
             log_api_warning(
                 &database_path,
@@ -390,19 +388,6 @@ async fn create_chat_completion_response_async(
         Vec::new()
     };
 
-    if streamed_response.status == "failed" {
-        crate::api::failure::log_stream_failure(
-            &database_path, &prepared_request.conversation_id, &streamed_response.id,
-            "chat", &streamed_response.status, streamed_response.failure.as_ref(),
-            serde_json::json!({
-                "content_chars": streamed_response.content.chars().count(),
-                "thinking_chars": streamed_response.thinking.chars().count(),
-                "duration_ms": streamed_response.total_duration_ms,
-                "retry_attempts": retry_probe.attempts(),
-            }),
-        ).await;
-    }
-
     Ok(ResponsesApiResult {
         id: streamed_response.id,
         conversation_id: prepared_request.conversation_id,
@@ -415,7 +400,7 @@ async fn create_chat_completion_response_async(
         status: streamed_response.status,
         interruption_reason,
         recovery_outcome,
-        failure_reason,
+        failure_reason: None,
         tool_calls_json: streamed_response.tool_calls_json,
         token_usage: TokenUsage {
             input_tokens: streamed_response.token_usage.input_tokens,

@@ -10,7 +10,6 @@ pub mod config;
 pub mod conversation;
 pub mod embedding;
 pub mod ephemeral;
-pub(crate) mod failure;
 pub mod prompt_optimization;
 pub mod prompt_context;
 pub mod file_search_agent;

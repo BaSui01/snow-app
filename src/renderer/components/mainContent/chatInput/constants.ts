@@ -29,6 +29,7 @@ export const THINKING_OPTIONS_BY_METHOD: Record<
     { value: "low", label: "Low", icon: Gauge },
     { value: "medium", label: "Medium", icon: Activity },
     { value: "high", label: "High", icon: BrainCircuit },
+    { value: "xhigh", label: "Extra High", icon: ChevronsUp },
     { value: "max", label: "Max", icon: Rocket },
   ],
   gemini: [

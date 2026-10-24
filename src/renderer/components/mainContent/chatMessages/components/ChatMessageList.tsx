@@ -481,6 +481,29 @@ export const ChatMessageList = ({
       return <div className="chat-message-hidden" key={message.id} />;
     }
 
+    // 新一轮回复刚挂上、尚未收到任何内容的 assistant 占位：真实渲染只是
+    // 一个零高度节点，却会占用轨道的 flex gap，把下方指示槽提前顶下一截。
+    // 收到首个内容前同样以隐藏占位渲染，内容到达后再挂载真实消息。
+    const isEmptyPendingAssistant =
+      message.role === "assistant" &&
+      message.status === "sending" &&
+      !message.content &&
+      !message.thinking &&
+      !message.isRetrying &&
+      !message.toolCalls?.length &&
+      !message.hookExecutions?.length &&
+      !artifactsByOwner.has(message.id) &&
+      !(
+        message.id === lastAssistantMessageId &&
+        pendingToolAuthorizations.some(
+          (toolCall) =>
+            toolCall.authorizationConversationId === activeConversationId,
+        )
+      );
+    if (isEmptyPendingAssistant) {
+      return <div className="chat-message-hidden" key={message.id} />;
+    }
+
     const className = `chat-message-group ${
       message.status ? `is-${message.status}` : ""
     }`.trim();

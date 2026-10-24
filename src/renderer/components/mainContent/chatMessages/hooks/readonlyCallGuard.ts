@@ -547,6 +547,16 @@ export class ReadonlyCallGuard {
     absPath: string,
   ): Promise<FileSnapshot | null> {
     try {
+      // 先确认条目类型：不存在的路径没有内容可快照；目录同样没有「文件内容」，
+      // 若直接交给 readFileContent 会被拒绝，主进程还会打印 handler 报错噪音。
+      const entry = await window.snow?.resolveFileLink(null, absPath);
+      if (!entry) {
+        return { exists: false, size: 0, contentLength: 0, preview: "" };
+      }
+      if (entry.isDirectory) {
+        return null;
+      }
+
       const result = await window.snow?.readFileContent(absPath);
       if (!result) {
         return { exists: false, size: 0, contentLength: 0, preview: "" };

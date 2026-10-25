@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   CircleArrowUp,
   Database,
   Download,
@@ -21,8 +22,8 @@ import { resolveLocalized } from "../../plugins/manifest";
 import {
   hasMarketUpdate,
   isMarketEntryTooNew,
-  type MarketCategory,
   type MarketPluginEntry,
+  type MarketTab,
 } from "../../plugins/market";
 import {
   findMarketEntry,
@@ -88,7 +89,7 @@ export const PluginsPanel = ({
   const [listTab, setListTab] = useState<"plugins" | "oauth" | "scripts">(
     "plugins",
   );
-  const [marketCategory, setMarketCategory] = useState<MarketCategory>(
+  const [marketCategory, setMarketCategory] = useState<MarketTab>(
     initialNavigation?.category ?? "panel",
   );
   const [privacyTarget, setPrivacyTarget] =
@@ -122,13 +123,13 @@ export const PluginsPanel = ({
     clearPluginsPanelNavigation();
   }, []);
 
-  // OAuth 插件单独成组（声明了 oauth.entry）。
+  // OAuth 插件单独成组（清单声明 kind: oauth，或存在 oauth.entry）。
   const panelPlugins = useMemo(
-    () => state.plugins.filter((plugin) => !plugin.oauthEntry),
+    () => state.plugins.filter((plugin) => plugin.kind !== "oauth"),
     [state.plugins],
   );
   const oauthPlugins = useMemo(
-    () => state.plugins.filter((plugin) => Boolean(plugin.oauthEntry)),
+    () => state.plugins.filter((plugin) => plugin.kind === "oauth"),
     [state.plugins],
   );
   const visiblePlugins = listTab === "oauth" ? oauthPlugins : panelPlugins;
@@ -170,7 +171,7 @@ export const PluginsPanel = ({
   );
   const totalUpdateCount = updatablePlugins.length + updatableScriptCount;
   const oauthUpdateCount = updatablePlugins.filter(
-    (target) => target.plugin.oauthEntry,
+    (target) => target.plugin.kind === "oauth",
   ).length;
   const panelUpdateCount = updatablePlugins.length - oauthUpdateCount;
 
@@ -583,6 +584,7 @@ export const PluginsPanel = ({
                       </button>
                     )}
                     <button
+                      aria-expanded={createBoxOpen}
                       className={`plugins-toolbar-btn${
                         createBoxOpen ? " active" : ""
                       }`}
@@ -595,6 +597,11 @@ export const PluginsPanel = ({
                           defaultValue: "Generate with AI",
                         })}
                       </span>
+                      <ChevronDown
+                        className="plugins-create-toggle-chevron"
+                        size={14}
+                        strokeWidth={2}
+                      />
                     </button>
                   </div>
 

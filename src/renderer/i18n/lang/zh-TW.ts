@@ -6399,6 +6399,44 @@ export const zhTW = {
   "plugins.market.requiresApp": "需要應用程式 v{{version}} 以上",
   "plugins.market.networkUndeclared":
     "此外掛未宣告網路存取權限。應用程式不會阻止它對外連線，安裝前請確認來源可信。",
+  "plugins.market.badgeOfficial": "官方市場",
+  "plugins.market.badgeOfficialHint":
+    "來自官方外掛商店 snow-plugin-store：索引條目與封存檔雜湊均已校驗；收錄不等於安全背書，安裝前請核對隱私宣告。",
+  "plugins.market.badgeVerified": "官方認證",
+  "plugins.market.badgeVerifiedHint":
+    "已由維護者人工審核並合併進官方外掛商店 snow-plugin-store；安裝前仍建議核對隱私宣告。",
+  "plugins.market.tabCommunity": "社群外掛",
+  "plugins.market.tabCommunityHint":
+    "GitHub 上標記 snow-plugins 主題的第三方外掛倉庫：作者自行發布，未提交到官方外掛市場，未經審核。",
+  "plugins.market.communitySearchPlaceholder": "搜尋社群倉庫…",
+  "plugins.market.communitySearch": "搜尋",
+  "plugins.market.communitySummary":
+    "{{total}} 個社群倉庫 · 已安裝 {{installed}}",
+  "plugins.market.communityNotice":
+    "社群外掛由第三方作者在 GitHub 自行發布（倉庫需標記 {{topic}} 主題），未提交到官方外掛市場、也未經審核；安裝前請自行審查原始碼與隱私宣告。倉庫根目錄有 plugin.json 時以面板外掛安裝，否則自動偵測 .user.js 使用者腳本（多個時勾選安裝）。",
+  "plugins.market.communityLimited":
+    "GitHub 介面限流或網路異常，目前顯示快取結果：{{reason}}",
+  "plugins.market.communityLoadError": "社群外掛檢索失敗",
+  "plugins.market.communityEmpty": "沒有檢索到社群外掛",
+  "plugins.market.communityEmptyHint":
+    "替 GitHub 倉庫加上 {{topic}} 主題後即可出現在這裡。",
+  "plugins.market.communityBadge": "社群外掛",
+  "plugins.market.communityBadgeHint":
+    "社群外掛：第三方作者發布，未發布到官方外掛市場，未經審核。",
+  "plugins.market.communityInMarket": "官方市場已有",
+  "plugins.market.communityInMarketHint":
+    "該倉庫也收錄在官方外掛市場；從官方分頁安裝會校驗封存檔 SHA-256。",
+  "plugins.market.communityArchived": "已封存",
+  "plugins.market.communityArchivedHint": "倉庫已封存，無法安裝。",
+  "plugins.market.communityConfirmTitle": "安裝社群外掛",
+  "plugins.market.communitySelectTitle": "選擇要安裝的腳本",
+  "plugins.market.communitySelectHint":
+    "該倉庫沒有 plugin.json，但包含 {{count}} 個使用者腳本（來自預設分支最新提交）。勾選要安裝的項目：",
+  "plugins.market.communityInstallSelected": "安裝選取項目（{{count}}）",
+  "plugins.market.communityScriptInstalled": "已安裝 · 將覆寫",
+  "plugins.market.communityInstallWarning":
+    "社群外掛未經官方審核：應用程式會下載該倉庫預設分支的最新提交原樣安裝，無法校驗 SHA-256。請確認來源可信。",
+  "plugins.market.communityPushedAt": "最近提交 {{time}}",
   "plugins.tabScripts": "腳本外掛",
   "plugins.tabOAuth": "OAuth 外掛",
   "plugins.oauthEmpty": "尚未安裝任何 OAuth 外掛",
@@ -6406,7 +6444,7 @@ export const zhTW = {
   "plugins.tabPluginsHint":
     "面板外掛即在右側面板以標籤頁開啟的外掛：入口是頂欄加號選單的「外掛」分組與右側面板標籤列。部分還提供輸入工具列按鈕、訊息頁尾或工具呼叫卡片。",
   "plugins.tabOAuthHint":
-    "宣告了 oauth.entry 的外掛：登入第三方帳號後註冊為一個 API 設定檔。入口在 API 設定 → OAuth 登入。",
+    "宣告了 kind: oauth 與 oauth.entry 的外掛：登入第三方帳號後註冊為一個 API 設定檔。入口在 API 設定 → OAuth 登入。",
   "plugins.tabScriptsHint":
     "注入網頁的使用者腳本：輸入框按鈕、右鍵選單以及頁面層級輔助功能。",
   "plugins.tabPlugins": "面板外掛",

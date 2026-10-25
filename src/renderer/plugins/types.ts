@@ -4,6 +4,9 @@ export type { PluginRecord };
 
 export type PluginRenderMode = "esm" | "iframe";
 
+/** 插件类型：`plugin` 面板插件 / `oauth` OAuth 登录插件。 */
+export type PluginKind = "plugin" | "oauth";
+
 export type PluginLocalizedMap = Record<string, string>;
 
 /** 插件可声明的敏感数据域（privacy 声明中的取值）。 */
@@ -98,6 +101,8 @@ export type PluginView = {
   entry: string;
   /** plugin.json 的 oauth.entry；非空即 OAuth 登录插件。 */
   oauthEntry: string;
+  /** plugin.json 声明的类型；未声明时按 oauth.entry 推导。 */
+  kind: PluginKind;
   panels: PluginPanelDefinition[];
   messageFooters: PluginMessageFooterDefinition[];
   toolCallRenderers: PluginToolCallRendererDefinition[];

@@ -6390,6 +6390,44 @@ export const zhCN = {
   "plugins.market.requiresApp": "需要应用 v{{version}} 及以上",
   "plugins.market.networkUndeclared":
     "该插件未声明网络访问权限。应用不会阻止它对外联网，安装前请确认来源可信。",
+  "plugins.market.badgeOfficial": "官方市场",
+  "plugins.market.badgeOfficialHint":
+    "来自官方插件商店 snow-plugin-store：索引条目与归档哈希均已校验；收录不等于安全背书，安装前请核对隐私声明。",
+  "plugins.market.badgeVerified": "官方认证",
+  "plugins.market.badgeVerifiedHint":
+    "已由维护者人工审核并合并进官方插件商店 snow-plugin-store；安装前仍建议核对隐私声明。",
+  "plugins.market.tabCommunity": "社区插件",
+  "plugins.market.tabCommunityHint":
+    "GitHub 上打了 snow-plugins 主题的第三方插件仓库：作者自行发布，未提交到官方插件市场，未经审核。",
+  "plugins.market.communitySearchPlaceholder": "搜索社区仓库…",
+  "plugins.market.communitySearch": "搜索",
+  "plugins.market.communitySummary":
+    "{{total}} 个社区仓库 · 已安装 {{installed}}",
+  "plugins.market.communityNotice":
+    "社区插件由第三方作者在 GitHub 自行发布（仓库需打上 {{topic}} 主题），未提交到官方插件市场、也未经审核；安装前请自行审查源码与隐私声明。仓库根目录有 plugin.json 时按面板插件安装，否则自动探测 .user.js 用户脚本（多个时勾选安装）。",
+  "plugins.market.communityLimited":
+    "GitHub 接口限流或网络异常，当前展示缓存结果：{{reason}}",
+  "plugins.market.communityLoadError": "社区插件检索失败",
+  "plugins.market.communityEmpty": "没有检索到社区插件",
+  "plugins.market.communityEmptyHint":
+    "给 GitHub 仓库加上 {{topic}} 主题后即可出现在这里。",
+  "plugins.market.communityBadge": "社区插件",
+  "plugins.market.communityBadgeHint":
+    "社区插件：第三方作者发布，未发布到官方插件市场，未经审核。",
+  "plugins.market.communityInMarket": "官方市场已有",
+  "plugins.market.communityInMarketHint":
+    "该仓库也收录在官方插件市场；从官方标签页安装会校验归档 SHA-256。",
+  "plugins.market.communityArchived": "已归档",
+  "plugins.market.communityArchivedHint": "仓库已归档，无法安装。",
+  "plugins.market.communityConfirmTitle": "安装社区插件",
+  "plugins.market.communitySelectTitle": "选择要安装的脚本",
+  "plugins.market.communitySelectHint":
+    "该仓库没有 plugin.json，但包含 {{count}} 个用户脚本（来自默认分支最新提交）。勾选要安装的项：",
+  "plugins.market.communityInstallSelected": "安装选中项（{{count}}）",
+  "plugins.market.communityScriptInstalled": "已安装 · 将覆盖",
+  "plugins.market.communityInstallWarning":
+    "社区插件未经官方审核：应用会下载该仓库默认分支的最新提交原样安装，无法校验 SHA-256。请确认来源可信。",
+  "plugins.market.communityPushedAt": "最近提交 {{time}}",
   "plugins.tabScripts": "脚本插件",
   "plugins.tabOAuth": "OAuth 插件",
   "plugins.oauthEmpty": "还没有安装 OAuth 插件",
@@ -6397,7 +6435,7 @@ export const zhCN = {
   "plugins.tabPluginsHint":
     "面板插件即在右侧面板以标签页打开的插件：入口是顶栏加号菜单的「插件」分组与右侧面板标签栏。部分还提供输入工具栏按钮、消息页脚或工具调用卡片。",
   "plugins.tabOAuthHint":
-    "声明了 oauth.entry 的插件：登录第三方账号后注册为一个 API 档案。入口在 API 设置 → OAuth 登录。",
+    "声明了 kind: oauth 与 oauth.entry 的插件：登录第三方账号后注册为一个 API 档案。入口在 API 设置 → OAuth 登录。",
   "plugins.tabScriptsHint":
     "注入网页的用户脚本：输入框按钮、右键菜单以及页面级辅助功能。",
   "plugins.tabPlugins": "面板插件",

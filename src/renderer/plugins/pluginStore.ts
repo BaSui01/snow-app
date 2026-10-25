@@ -2,7 +2,12 @@ import { useSyncExternalStore } from "react";
 
 import type { PluginRecord } from "../../preload/types/plugins";
 import { clientScriptStore } from "../userscripts/clientScriptStore";
-import { buildMarketDownloadUrl, type MarketPluginEntry } from "./market";
+import {
+  buildMarketDownloadUrl,
+  parseCommunityResolve,
+  type CommunityResolveResult,
+  type MarketPluginEntry,
+} from "./market";
 import { parsePluginRecord } from "./manifest";
 import { runtimeSnapshot } from "./runtimeSnapshot";
 import type { PluginView } from "./types";
@@ -107,6 +112,7 @@ export const pluginStore = {
         scriptId: entry.id,
         downloadUrl,
         sha256: entry.sha256,
+        sourceUrl: entry.repo,
       });
       await window.snow.reapplyClientScripts().catch(() => undefined);
       await clientScriptStore.refresh();
@@ -119,6 +125,33 @@ export const pluginStore = {
       sourceUrl: entry.repo,
     });
     await pluginStore.refresh();
+  },
+  /**
+   * 解析并安装社区仓库：Rust 侧通过 commits atom 订阅源解析默认分支最新提交
+   * 并下载该提交的快照（不调用 GitHub API，无需 token）后按内容判定——面板
+   * 插件与单个用户脚本直接安装，多个用户脚本返回候选清单，由界面勾选后再带
+   * token 调用一次。没有市场索引锁定的 SHA256，安装前需由界面提示用户确认
+   * 来源可信。
+   */
+  async resolveFromCommunity(
+    repo: string,
+    branch: string,
+    options?: { token?: string; selection?: string[] },
+  ): Promise<CommunityResolveResult> {
+    const text = await window.snow.resolvePluginCommunitySource({
+      repo,
+      branch,
+      token: options?.token,
+      selection: options?.selection,
+    });
+    const result = parseCommunityResolve(text);
+    if (result.outcome === "plugin") {
+      await pluginStore.refresh();
+    } else if (result.outcome === "scripts") {
+      await window.snow.reapplyClientScripts().catch(() => undefined);
+      await clientScriptStore.refresh();
+    }
+    return result;
   },
   async rescan(pluginId: string): Promise<void> {
     await window.snow.rescanPlugin(pluginId);

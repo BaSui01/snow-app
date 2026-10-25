@@ -42,8 +42,27 @@ export const pluginsApi = {
     scriptId: string;
     downloadUrl: string;
     sha256: string;
+    sourceUrl: string;
   }): Promise<UserscriptRecord> =>
     ipcRenderer.invoke("plugins:market-install-script", payload),
+  /** 检索 GitHub 社区插件仓库（snow-plugins 主题；Rust 侧带限流回退与缓存）。 */
+  fetchPluginCommunity: (
+    query: string,
+    forceRefresh?: boolean,
+  ): Promise<string> =>
+    ipcRenderer.invoke("plugins:community-list", query, forceRefresh === true),
+  /**
+   * 解析并安装社区来源：Rust 侧下载默认分支最新提交的快照后按内容判定
+   * （面板插件 / 单个用户脚本直接安装，多个用户脚本返回候选清单）。
+   * 返回 JSON 结果，由渲染层 `parseCommunityResolve` 解析。
+   */
+  resolvePluginCommunitySource: (payload: {
+    repo: string;
+    branch?: string;
+    token?: string;
+    selection?: string[];
+  }): Promise<string> =>
+    ipcRenderer.invoke("plugins:community-resolve", payload),
   /** 重新读取插件目录中的 plugin.json 并刷新元数据。 */
   rescanPlugin: (pluginId: string): Promise<PluginRecord> =>
     ipcRenderer.invoke("plugins:rescan", pluginId),

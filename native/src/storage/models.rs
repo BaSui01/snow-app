@@ -453,6 +453,8 @@ pub struct UserscriptRecord {
     pub privacy: Vec<String>,
     /// 脚本文件在磁盘上的绝对路径（~/.snowapp/browser-script/{script_id}.user.js）。
     pub file_path: String,
+    /// 来源仓库地址（插件市场 / 社区通道安装时记录，本地创建为空）。
+    pub source_repo: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1054,6 +1056,8 @@ pub struct PluginRecord {
     pub license: String,
     pub icon: String,
     pub render_mode: String,
+    /// 插件类型：`plugin`（面板插件）| `oauth`（OAuth 登录插件）。
+    pub kind: String,
     pub entry: String,
     pub enabled: bool,
     pub install_path: String,

@@ -37,6 +37,22 @@ const MIME_TYPES: Record<string, string> = {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
+/** 读取社区安装结果类型（仅用于决定广播哪个变更事件，解析失败按无副作用处理）。 */
+const readCommunityOutcome = (text: string): string => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed !== null && typeof parsed === "object") {
+      const outcome = (parsed as { outcome?: unknown }).outcome;
+      if (typeof outcome === "string") {
+        return outcome;
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
+};
+
 const mimeTypeFor = (relativePath: string): string =>
   MIME_TYPES[extname(relativePath).toLowerCase()] ?? "application/octet-stream";
 
@@ -159,10 +175,11 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
       if (payload === null || typeof payload !== "object") {
         throw new Error("Invalid userscript market install payload");
       }
-      const { scriptId, downloadUrl, sha256 } = payload as {
+      const { scriptId, downloadUrl, sha256, sourceUrl } = payload as {
         scriptId?: unknown;
         downloadUrl?: unknown;
         sha256?: unknown;
+        sourceUrl?: unknown;
       };
       if (!isNonEmptyString(scriptId)) {
         throw new Error("Userscript id is required");
@@ -176,14 +193,78 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
       if (!isNonEmptyString(sha256) || !/^[0-9a-f]{64}$/i.test(sha256.trim())) {
         throw new Error("Userscript SHA256 is invalid");
       }
+      if (
+        !isNonEmptyString(sourceUrl) ||
+        !/^https:\/\//i.test(sourceUrl.trim())
+      ) {
+        throw new Error("Userscript source URL must use https");
+      }
       const record = await native.installScriptFromMarket(
         scriptId.trim(),
         downloadUrl.trim(),
         sha256.trim().toLowerCase(),
+        sourceUrl.trim(),
       );
       refreshUserscriptSyncStore(native);
       safeSend(event.sender, "userscripts:changed");
       return record;
+    },
+  );
+
+  ipcMain.handle(
+    "plugins:community-list",
+    (_event, query: unknown, forceRefresh: unknown): Promise<string> =>
+      native.fetchPluginCommunity(
+        typeof query === "string" ? query : "",
+        forceRefresh === true,
+      ),
+  );
+
+  ipcMain.handle(
+    "plugins:community-resolve",
+    async (event, payload: unknown): Promise<string> => {
+      if (payload === null || typeof payload !== "object") {
+        throw new Error("Invalid community plugin payload");
+      }
+      const { repo, branch, token, selection } = payload as {
+        repo?: unknown;
+        branch?: unknown;
+        token?: unknown;
+        selection?: unknown;
+      };
+      if (!isNonEmptyString(repo)) {
+        throw new Error(
+          "Community plugin source must be a GitHub repository URL",
+        );
+      }
+      const normalized = repo
+        .trim()
+        .replace(/\.git$/i, "")
+        .replace(/\/+$/, "");
+      if (!/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/i.test(normalized)) {
+        throw new Error(
+          "Community plugin source must be a GitHub repository URL",
+        );
+      }
+      const selectionPaths = Array.isArray(selection)
+        ? selection.filter((item): item is string => typeof item === "string")
+        : [];
+      const text = await native.resolvePluginCommunitySource(
+        normalized,
+        isNonEmptyString(branch) ? branch.trim() : "",
+        isNonEmptyString(token) ? token.trim() : "",
+        JSON.stringify(selectionPaths),
+      );
+      // 按结果类型广播对应的变更事件（面板插件 → 插件列表；用户脚本 → 脚本列表）。
+      const outcome = readCommunityOutcome(text);
+      if (outcome === "plugin") {
+        await syncOAuthPlugins();
+        safeSend(event.sender, "plugins:changed");
+      } else if (outcome === "scripts") {
+        refreshUserscriptSyncStore(native);
+        safeSend(event.sender, "userscripts:changed");
+      }
+      return text;
     },
   );
 

@@ -368,40 +368,45 @@ const readOAuthEntry = (record: PluginRecord): string => {
   return typeof entry === "string" ? entry.trim() : "";
 };
 
-export const parsePluginRecord = (record: PluginRecord): PluginView => ({
-  pluginId: record.pluginId,
-  name: normalizeLocalizedMap(parseJson(record.name, {})),
-  description: normalizeLocalizedMap(parseJson(record.description, {})),
-  version: record.version,
-  author: record.author,
-  homepage: record.homepage,
-  license: record.license,
-  icon: record.icon,
-  renderMode: (record.renderMode === "iframe"
-    ? "iframe"
-    : "esm") as PluginRenderMode,
-  entry: record.entry,
-  oauthEntry: readOAuthEntry(record),
-  panels: panelsWithSettings(record),
-  messageFooters: normalizeMessageFooters(record),
-  toolCallRenderers: normalizeToolCallRenderers(record),
-  locales: parseJson(record.locales, {}),
-  styles: parseJson<string[]>(record.styles, []).filter(
-    (item): item is string =>
-      typeof item === "string" && item.trim().length > 0,
-  ),
-  privacy: Array.isArray(record.privacy)
-    ? record.privacy.filter(isSensitiveScope)
-    : [],
-  privacyNote: record.privacyNote,
-  minAppVersion: record.minAppVersion,
-  enabled: record.enabled,
-  installPath: record.installPath,
-  sourcePath: record.sourcePath,
-  sortOrder: record.sortOrder,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-});
+export const parsePluginRecord = (record: PluginRecord): PluginView => {
+  const oauthEntry = readOAuthEntry(record);
+  return {
+    pluginId: record.pluginId,
+    name: normalizeLocalizedMap(parseJson(record.name, {})),
+    description: normalizeLocalizedMap(parseJson(record.description, {})),
+    version: record.version,
+    author: record.author,
+    homepage: record.homepage,
+    license: record.license,
+    icon: record.icon,
+    renderMode: (record.renderMode === "iframe"
+      ? "iframe"
+      : "esm") as PluginRenderMode,
+    entry: record.entry,
+    oauthEntry,
+    // 清单声明的类型为准；缺省（旧记录）时按 oauth.entry 推导。
+    kind: record.kind === "oauth" || Boolean(oauthEntry) ? "oauth" : "plugin",
+    panels: panelsWithSettings(record),
+    messageFooters: normalizeMessageFooters(record),
+    toolCallRenderers: normalizeToolCallRenderers(record),
+    locales: parseJson(record.locales, {}),
+    styles: parseJson<string[]>(record.styles, []).filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    ),
+    privacy: Array.isArray(record.privacy)
+      ? record.privacy.filter(isSensitiveScope)
+      : [],
+    privacyNote: record.privacyNote,
+    minAppVersion: record.minAppVersion,
+    enabled: record.enabled,
+    installPath: record.installPath,
+    sourcePath: record.sourcePath,
+    sortOrder: record.sortOrder,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+};
 
 /** 插件图标：lucide:IconName / 相对路径 / 内联或远程 URL。 */
 export const resolvePluginIcon = (

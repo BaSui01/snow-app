@@ -3619,12 +3619,25 @@ export type NativeBridge = ImageGenerationNativeApi & {
     sha256: string,
     sourceUrl: string,
   ) => Promise<PluginRecord>;
-  /** 从插件市场下载并安装（或更新）用户脚本（.user.js 下载 + SHA256 校验） */
+  /** 从插件市场下载并安装（或更新）用户脚本（.user.js 下载 + SHA256 校验 + 来源仓库） */
   installScriptFromMarket: (
     scriptId: string,
     downloadUrl: string,
     sha256: string,
+    sourceUrl: string,
   ) => Promise<UserscriptRecord>;
+  /** 检索 GitHub 上打了 snow-plugins 主题的社区插件仓库（Rust 侧带限流回退与缓存） */
+  fetchPluginCommunity: (
+    query: string,
+    forceRefresh?: boolean,
+  ) => Promise<string>;
+  /** 解析并安装社区来源（atom 订阅源解析提交 + codeload 快照，无需 token，返回 JSON 结果） */
+  resolvePluginCommunitySource: (
+    repo: string,
+    branch: string,
+    token: string,
+    selectionJson: string,
+  ) => Promise<string>;
   /** 重新读取插件目录中的 plugin.json 并刷新元数据 */
   rescanPlugin: (pluginId: string) => Promise<PluginRecord>;
   /** 启用/禁用插件 */
@@ -3810,6 +3823,8 @@ export type PluginRecord = {
   license: string;
   icon: string;
   renderMode: string;
+  /** "plugin"（面板插件）| "oauth"（OAuth 登录插件） */
+  kind: string;
   entry: string;
   enabled: boolean;
   installPath: string;

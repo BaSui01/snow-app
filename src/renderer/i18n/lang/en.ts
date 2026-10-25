@@ -6799,6 +6799,45 @@ export const en = {
   "plugins.market.requiresApp": "Requires app v{{version}} or newer",
   "plugins.market.networkUndeclared":
     "This plugin does not declare network access. The app will not block its outbound connections; make sure the source is trusted before installing.",
+  "plugins.market.badgeOfficial": "Official store",
+  "plugins.market.badgeOfficialHint":
+    "Listed in the official plugin store snow-plugin-store: the index entry and its archive hash were validated. Listing is not a security endorsement — review the privacy declarations before installing.",
+  "plugins.market.badgeVerified": "Verified",
+  "plugins.market.badgeVerifiedHint":
+    "Merged into the official plugin store snow-plugin-store after a manual review by the maintainers. Review the privacy declarations before installing.",
+  "plugins.market.tabCommunity": "Community plugins",
+  "plugins.market.tabCommunityHint":
+    "Third-party plugin repositories on GitHub that carry the snow-plugins topic: published by their authors, not submitted to the official plugin market and not reviewed.",
+  "plugins.market.communitySearchPlaceholder": "Search community repos…",
+  "plugins.market.communitySearch": "Search",
+  "plugins.market.communitySummary":
+    "{{total}} community repos · {{installed}} installed",
+  "plugins.market.communityNotice":
+    "Community plugins are published by third-party authors on GitHub (their repository carries the {{topic}} topic). They are not submitted to the official plugin market and are not reviewed — read the source and the privacy declarations before installing. A plugin.json at the repository root installs as a panel plugin; otherwise the app detects .user.js userscripts and lets you pick which ones to install.",
+  "plugins.market.communityLimited":
+    "GitHub is rate limiting or unreachable; showing the cached result: {{reason}}",
+  "plugins.market.communityLoadError": "Failed to search community plugins",
+  "plugins.market.communityEmpty": "No community plugins found",
+  "plugins.market.communityEmptyHint":
+    "Add the {{topic}} topic to a GitHub repository to list it here.",
+  "plugins.market.communityBadge": "Community",
+  "plugins.market.communityBadgeHint":
+    "Community plugin: published by a third-party author, not published to the official plugin market and not reviewed.",
+  "plugins.market.communityInMarket": "In official market",
+  "plugins.market.communityInMarketHint":
+    "This repository is also listed in the official plugin market; installing from there verifies the archive SHA-256.",
+  "plugins.market.communityArchived": "Archived",
+  "plugins.market.communityArchivedHint":
+    "This repository is archived and cannot be installed",
+  "plugins.market.communityConfirmTitle": "Install community plugin",
+  "plugins.market.communitySelectTitle": "Choose scripts to install",
+  "plugins.market.communitySelectHint":
+    "This repository has no plugin.json but ships {{count}} userscripts from its latest commit. Pick the ones to install:",
+  "plugins.market.communityInstallSelected": "Install selected ({{count}})",
+  "plugins.market.communityScriptInstalled": "Installed · will be replaced",
+  "plugins.market.communityInstallWarning":
+    "Community plugins are not reviewed: the app installs the latest commit of the repository default branch as-is, with no SHA-256 verification. Continue only if you trust this source.",
+  "plugins.market.communityPushedAt": "Last push {{time}}",
   "plugins.tabScripts": "Script plugins",
   "plugins.tabOAuth": "OAuth plugins",
   "plugins.oauthEmpty": "No OAuth plugins installed yet",
@@ -6806,7 +6845,7 @@ export const en = {
   "plugins.tabPluginsHint":
     "Panel plugins open as tabs in the right panel: enter from the plus menu in the top bar (Plugins group) or the right panel tab bar. Some also add an input toolbar button, message footers or tool call cards.",
   "plugins.tabOAuthHint":
-    "Plugins that declare oauth.entry: they sign in to a third-party account and register it as an API profile. Enter from API settings > OAuth sign-in.",
+    "Plugins that declare kind: oauth together with oauth.entry: they sign in to a third-party account and register it as an API profile. Enter from API settings > OAuth sign-in.",
   "plugins.tabScriptsHint":
     "Userscripts injected into web pages: chat input buttons, context menus and page-level helpers.",
   "plugins.tabPlugins": "Panel plugins",

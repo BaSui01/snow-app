@@ -36,6 +36,8 @@ struct PluginManifest {
     privacy: Vec<String>,
     privacy_note: String,
     min_app_version: String,
+    /// plugin.json 的 kind：`oauth` = OAuth 登录插件，`plugin` = 面板插件（缺省）。
+    kind: String,
     /// plugin.json 的 oauth.entry：主进程加载的 OAuth 登录模块。
     oauth_entry: String,
 }
@@ -232,6 +234,42 @@ fn is_valid_plugin_id(value: &str) -> bool {
         && !value.starts_with('.')
 }
 
+/// 读取 `oauth.entry`：主进程加载的 OAuth 登录模块路径。
+fn read_oauth_entry(object: &Map<String, Value>) -> String {
+    object
+        .get("oauth")
+        .and_then(|oauth| oauth.get("entry"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// 插件类型：显式声明 `kind: "oauth"`，或存在 `oauth.entry` 时为 OAuth 插件；
+/// 其余（含未声明）为面板插件 `plugin`，历史插件行为不变。
+fn resolve_manifest_kind(object: &Map<String, Value>, oauth_entry: &str) -> String {
+    let declared = object
+        .get("kind")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .map(|value| value.to_ascii_lowercase());
+    if declared.as_deref() == Some("oauth") || !oauth_entry.is_empty() {
+        "oauth".to_string()
+    } else {
+        "plugin".to_string()
+    }
+}
+
+/// 声明 `kind: "oauth"` 的插件必须提供 `oauth.entry`，否则类型与能力不一致。
+fn ensure_manifest_kind_consistent(manifest: &PluginManifest) -> Result<()> {
+    if manifest.kind == "oauth" && manifest.oauth_entry.is_empty() {
+        return Err(Error::from_reason(
+            "Plugin kind 'oauth' requires an 'oauth.entry' module".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn parse_manifest(raw: &str) -> Result<PluginManifest> {
     let parsed: Value = serde_json::from_str(raw)
         .map_err(|error| Error::from_reason(format!("Invalid {MANIFEST_FILE_NAME}: {error}")))?;
@@ -277,6 +315,8 @@ fn parse_manifest(raw: &str) -> Result<PluginManifest> {
         .unwrap_or_default()
         .to_string();
     let privacy = parse_privacy(object.get("privacy").or_else(|| object.get("permissions")));
+    let oauth_entry = read_oauth_entry(object);
+    let kind = resolve_manifest_kind(object, &oauth_entry);
 
     Ok(PluginManifest {
         id,
@@ -326,13 +366,8 @@ fn parse_manifest(raw: &str) -> Result<PluginManifest> {
             .map(str::trim)
             .unwrap_or_default()
             .to_string(),
-        oauth_entry: object
-            .get("oauth")
-            .and_then(|oauth| oauth.get("entry"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_string(),
+        kind,
+        oauth_entry,
     })
 }
 
@@ -573,6 +608,7 @@ fn install_plugin_internal(
         copy_dir_recursive(&source, &target, &mut copied)?;
     }
 
+    ensure_manifest_kind_consistent(&manifest)?;
     let entry_path = resolve_plugin_path(&target, &manifest.entry)?;
     if manifest.oauth_entry.is_empty() {
         if !entry_path.is_file() {
@@ -649,6 +685,7 @@ pub fn rescan_plugin(database_path: &Path, plugin_id: &str) -> Result<PluginReco
             manifest.id, plugin_id
         )));
     }
+    ensure_manifest_kind_consistent(&manifest)?;
 
     database::with_write_lock(|| -> Result<()> {
         let connection = database::open_connection(database_path)
@@ -902,11 +939,17 @@ fn query_plugin_record(connection: &Connection, plugin_id: &str) -> rusqlite::Re
     // panels_json is an installation-time projection. Re-normalize the registered
     // raw manifest so host upgrades expose newly supported declarative fields
     // without requiring a rescan or mutating the plugin registration.
-    let panels_json = parse_manifest(&manifest_json)
+    let parsed_manifest = parse_manifest(&manifest_json)
         .ok()
-        .filter(|manifest| manifest.id == plugin_id)
+        .filter(|manifest| manifest.id == plugin_id);
+    let panels_json = parsed_manifest
+        .as_ref()
         .map(|manifest| manifest.panels.to_string())
         .unwrap_or(panels_json);
+    // 类型同样以注册时的原始清单为准；清单损坏时保守回退面板插件。
+    let kind = parsed_manifest
+        .map(|manifest| manifest.kind)
+        .unwrap_or_else(|| "plugin".to_string());
 
     Ok(Some(PluginRecord {
         plugin_id,
@@ -918,6 +961,7 @@ fn query_plugin_record(connection: &Connection, plugin_id: &str) -> rusqlite::Re
         license,
         icon,
         render_mode,
+        kind,
         entry,
         enabled,
         install_path,

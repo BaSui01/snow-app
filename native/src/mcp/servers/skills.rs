@@ -313,7 +313,7 @@ where
         .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to {operation_name}: {error}"),
+                format!("HOST_OPERATION_FAILED: Failed to {operation_name}: {error}"),
             )
         })?
 }

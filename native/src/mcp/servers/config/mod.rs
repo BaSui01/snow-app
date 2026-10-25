@@ -808,7 +808,7 @@ impl ConfigService {
             .map_err(|error| {
                 Error::new(
                     Status::GenericFailure,
-                    format!("Config service task failed: {error}"),
+                    format!("HOST_OPERATION_FAILED: Config service task failed: {error}"),
                 )
             })??
         };
@@ -1842,7 +1842,11 @@ impl ConfigService {
             return self.set_db_api_profile(key_name, &value);
         }
         if scope_name == SCOPE_USERSCRIPTS {
-            return userscripts_scope::set_userscript(db_path_or_error(&self.db_path)?, key_name, &value);
+            return userscripts_scope::set_userscript(
+                db_path_or_error(&self.db_path)?,
+                key_name,
+                &value,
+            );
         }
         if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
             return self.set_db_custom_header_scheme(key_name, &value);
@@ -2017,7 +2021,10 @@ impl ConfigService {
             return self.delete_db_api_profile(key_name);
         }
         if scope_name == SCOPE_USERSCRIPTS {
-            return userscripts_scope::delete_userscript(db_path_or_error(&self.db_path)?, key_name);
+            return userscripts_scope::delete_userscript(
+                db_path_or_error(&self.db_path)?,
+                key_name,
+            );
         }
         if scope_name == SCOPE_CUSTOM_HEADER_SCHEMES {
             return self.delete_db_custom_header_scheme(key_name);
@@ -2553,7 +2560,7 @@ impl ConfigService {
         \
 KEY RULES: (1) toolsJson is REQUIRED and must list at least one read tool (e.g. filesystem-read); an explicit toolsJson tool-name list additionally REQUIRES projectId (the agent becomes project-scoped); (2) toolsJson accepts a JSON string or an array of tool names that must exist in the project; explicitly listed tools stay available to the sub-agent even when the project disables them for the main conversation (the global tool blacklist and Lite mode still apply); the wildcard [\"*\"] is reserved for the built-in agent_general and reserved main-conversation tools (sub-agents-listSubAgents, sub-agents-continue, app-control-requestApproval, app-control-conversation, workflow-*) are rejected; (3) empty configProfile inherits the parent conversation's effective API profile and model at activation; a fixed configProfile uses model when provided, otherwise that profile's advancedModel; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
 \
-Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
+        Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
     }
 
@@ -2826,7 +2833,7 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (e
         \
 KEY RULES: (1) hookType whitelist: onUserMessage, beforeToolCall, toolConfirmation, afterToolCall, onSubAgentComplete, beforeSubAgentStart, beforeCompress, onSessionStart, onStop; (2) command actions exit codes: 0 = pass (stdout injected as [Hook Context]), 1 = soft warning (a stdout of {\"decision\":{\"message\":\"...\"}} triggers the user decision UI), 2+ = abort; (3) prompt actions only for onSubAgentComplete/onStop, context actions only for onSessionStart/onUserMessage/beforeSubAgentStart; (4) pass projectId for a project-scoped hook (overrides the same-type global hook).
 \
-Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
+        Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
     }
 
@@ -2990,8 +2997,8 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (e
             "items": items,
             "count": items.len(),
             "guidance": "API PROFILES - config-set scope=apiProfiles key=<profileName> value={...} creates or updates a profile in the app database (same as the UI; takes effect immediately).\n\
-KEY RULES: (1) an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key — create a keyless profile first (value={baseUrl, advancedModel, basicModel}), then ask the user for the key and fill it in with value={apiKey}; (2) switch the active profile with value={isActive:true} (the DB is the runtime source of truth and applies to NEW conversations - existing conversations keep the profile they bound at creation, and sub-agent sessions are strictly bound); unlike scope=app activeProfile which is only the CLI compatibility layer; (3) omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically; (4) delete requires confirmed:true after askUserQuestion; (5) apiKey/visionApiKey are always masked in responses.\n\
-Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en: en/2-guides/3-configure-api-keys.md)",
+        KEY RULES: (1) an empty or omitted apiKey/visionApiKey ALWAYS keeps the existing key — create a keyless profile first (value={baseUrl, advancedModel, basicModel}), then ask the user for the key and fill it in with value={apiKey}; (2) switch the active profile with value={isActive:true} (the DB is the runtime source of truth and applies to NEW conversations - existing conversations keep the profile they bound at creation, and sub-agent sessions are strictly bound); unlike scope=app activeProfile which is only the CLI compatibility layer; (3) omitted fields keep current values for existing profiles and use defaults for new ones; configJson is generated automatically; (4) delete requires confirmed:true after askUserQuestion; (5) apiKey/visionApiKey are always masked in responses.\n\
+        Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (en: en/2-guides/3-configure-api-keys.md)",
         }))
     }
 
@@ -3072,9 +3079,7 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
                     return None;
                 }
                 if let Some(number) = field.as_i64() {
-                    return Some(
-                        number.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,
-                    );
+                    return Some(number.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32);
                 }
                 if let Some(number) = field.as_u64() {
                     return Some(number.min(i32::MAX as u64) as i32);
@@ -3319,11 +3324,7 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
         }
     }
 
-    fn get_tool_approval(
-        &self,
-        key_name: &str,
-        project_id: Option<String>,
-    ) -> napi::Result<Value> {
+    fn get_tool_approval(&self, key_name: &str, project_id: Option<String>) -> napi::Result<Value> {
         if key_name != TOOL_APPROVAL_KEY {
             return Err(Error::new(
                 Status::InvalidArg,
@@ -3370,14 +3371,18 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
             ));
         }
         let Some(project_id) = project_id else {
-            return Err(Error::new(Status::InvalidArg, GLOBAL_TOOL_APPROVAL_NOTE.to_string()));
+            return Err(Error::new(
+                Status::InvalidArg,
+                GLOBAL_TOOL_APPROVAL_NOTE.to_string(),
+            ));
         };
         let db_path = db_path_or_error(&self.db_path)?;
-        let current = crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
-            db_path,
-            &project_id,
-        )?
-        .approved_tool_names;
+        let current =
+            crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
+                db_path,
+                &project_id,
+            )?
+            .approved_tool_names;
 
         let (full, add, remove) = parse_tool_approval_value(value)?;
         let mut all = current.clone();
@@ -3447,14 +3452,18 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
             ));
         }
         let Some(project_id) = project_id else {
-            return Err(Error::new(Status::InvalidArg, GLOBAL_TOOL_APPROVAL_NOTE.to_string()));
+            return Err(Error::new(
+                Status::InvalidArg,
+                GLOBAL_TOOL_APPROVAL_NOTE.to_string(),
+            ));
         };
         let db_path = db_path_or_error(&self.db_path)?;
-        let current = crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
-            db_path,
-            &project_id,
-        )?
-        .approved_tool_names;
+        let current =
+            crate::storage::services::system_settings::get_tool_approval_project_scope_settings(
+                db_path,
+                &project_id,
+            )?
+            .approved_tool_names;
 
         if current.is_empty() {
             return Ok(json!({
@@ -3858,7 +3867,7 @@ fn require_delete_confirmation(args: &Value) -> napi::Result<()> {
     Err(Error::new(
         Status::InvalidArg,
         format!(
-            "config-delete is destructive and requires explicit user confirmation.\n\
+            "PERMISSION_DENIED: config-delete is destructive and requires explicit user confirmation.\n\
              MANDATORY: before calling this tool, call the `askUserQuestion` tool from the\n\
              `user-interaction` server to show the user exactly which config will be deleted\n\
              (scope=`{scope_name}`, key=`{key_name}`{project_suffix}) and its impact, and wait\n\

@@ -7,8 +7,7 @@ use napi::bindgen_prelude::*;
 use super::super::builtin::{get_builtin_servers_with_tools, get_builtin_tools};
 use super::super::servers::skills::SkillsService;
 use super::super::servers::sub_agents::{
-    is_sub_agent_reserved_tool, sub_agent_comms_tools, SUB_AGENT_COMMS_TOOL_FULL_NAMES,
-    SUB_AGENT_MAIN_TOOL_FULL_NAMES,
+    is_sub_agent_reserved_tool, SUB_AGENT_COMMS_TOOL_FULL_NAMES, SUB_AGENT_MAIN_TOOL_FULL_NAMES,
 };
 use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProjectScopeSettings};
 
@@ -39,6 +38,7 @@ pub async fn collect_all_mcp_tools_for_workspace(
         None,
         analysis_root,
         false,
+        false,
     )
     .await?;
     apply_semantic_routing(&mut tools);
@@ -59,6 +59,7 @@ async fn collect_mcp_tools(
     allowed_names: Option<&std::collections::HashSet<String>>,
     analysis_root: Option<&Path>,
     project_override: bool,
+    explicit_child_comms: bool,
 ) -> Result<Vec<McpTool>> {
     let project_override = project_override && allowed_names.is_some();
     let scope = load_project_scope(project_id).await?;
@@ -135,10 +136,11 @@ async fn collect_mcp_tools(
             if lite_mode && LITE_MODE_DISABLED_SERVER_IDS.contains(&tool.server_id.as_str()) {
                 return false;
             }
-            // Sub-agent teammate communication tools are only exposed inside
-            // sub-agent contexts (collect_allowed_mcp_tools appends them);
-            // the main conversation never sees them.
-            if SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool.full_name().as_str()) {
+            // Communication requires an explicit runtime token, even for '*'.
+            // Configuration permission alone never grants per-run collaboration.
+            if SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool.full_name().as_str())
+                && !explicit_child_comms
+            {
                 return false;
             }
             // Exclude codebase search tool unless the project has codebase
@@ -158,7 +160,12 @@ async fn collect_mcp_tools(
             if tool.server_id == "lsp" && !lsp_available_tools.contains(&tool.full_name()) {
                 return false;
             }
-            tool_visible(tool, global_scope.as_ref(), scope.as_ref(), project_override)
+            tool_visible(
+                tool,
+                global_scope.as_ref(),
+                scope.as_ref(),
+                project_override,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -259,9 +266,13 @@ pub async fn collect_allowed_mcp_tools_for_workspace(
     tools_json: &str,
     allow_wildcard: bool,
 ) -> Result<Vec<McpTool>> {
-    let (tools, unavailable) =
-        collect_allowed_mcp_tools_with_report(project_id, analysis_root, tools_json, allow_wildcard)
-            .await?;
+    let (tools, unavailable) = collect_allowed_mcp_tools_with_report(
+        project_id,
+        analysis_root,
+        tools_json,
+        allow_wildcard,
+    )
+    .await?;
     if !unavailable.is_empty() {
         eprintln!(
             "Sub-agent configured tools are unavailable (skipped): {}",
@@ -303,15 +314,12 @@ pub(crate) async fn collect_allowed_mcp_tools_with_report(
         },
         analysis_root,
         !wildcard_enabled,
+        configured_names.contains("sub-agents-sendMessage"),
     )
     .await?;
     if wildcard_enabled {
-        // Every sub-agent carries the teammate communication tools by default,
-        // even with the wildcard configuration. Reserved tools (main-session
-        // management, Plan/WorkFlow, conversation orchestration) stay hidden.
         let mut result = all_tools;
         result.retain(|tool| !is_sub_agent_reserved_tool(&tool.full_name()));
-        result.extend(sub_agent_comms_tools());
         apply_semantic_routing(&mut result);
         return Ok((result, Vec::new()));
     }
@@ -331,10 +339,7 @@ pub(crate) async fn collect_allowed_mcp_tools_with_report(
         .collect::<std::collections::HashSet<_>>();
     let mut unavailable_names = configured_names
         .iter()
-        .filter(|name| {
-            !available_names.contains(*name)
-                && !SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&name.as_str())
-        })
+        .filter(|name| !available_names.contains(*name))
         .cloned()
         .collect::<Vec<_>>();
     unavailable_names.sort();
@@ -344,9 +349,7 @@ pub(crate) async fn collect_allowed_mcp_tools_with_report(
         diagnose_unavailable_tools(project_id, unavailable_names).await
     };
 
-    // Teammate communication tools are always available to every sub-agent,
-    // regardless of its configured tool whitelist.
-    result.extend(sub_agent_comms_tools());
+    // No implicit communication tools: runtime whitelist is authoritative.
     apply_semantic_routing(&mut result);
     Ok((result, unavailable))
 }
@@ -431,9 +434,7 @@ pub async fn diagnose_sub_agent_tools(
 }
 
 /// Parse a JSON array of tool full names into a trimmed, non-empty set.
-fn parse_configured_tool_names(
-    tools_json: &str,
-) -> Result<std::collections::HashSet<String>> {
+fn parse_configured_tool_names(tools_json: &str) -> Result<std::collections::HashSet<String>> {
     let names = serde_json::from_str::<Vec<String>>(tools_json).map_err(|error| {
         Error::new(
             Status::InvalidArg,
@@ -470,6 +471,7 @@ pub async fn collect_restricted_mcp_tools_for_workspace(
         false,
         Some(&configured_names),
         analysis_root,
+        false,
         false,
     )
     .await?;

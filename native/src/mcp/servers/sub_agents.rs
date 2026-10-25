@@ -5,35 +5,28 @@ use super::super::service::McpService;
 use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "sub-agents";
-const TOOL_NAME: &str = "activate";
-const TOOL_LIST_TEAMMATES: &str = "listTeammates";
-const TOOL_SEND_MESSAGE: &str = "sendMessage";
-const TOOL_LIST_SUB_AGENTS: &str = "listSubAgents";
-const TOOL_CONTINUE: &str = "continue";
 
-/// 所有子代理默认携带的队友通信工具全名（查询在线队友 / 向队友发消息）。
-/// 仅子代理上下文可见：collect_all_mcp_tools（主会话工具集）不包含它们，
-/// collect_allowed_mcp_tools 无条件追加，因此无需用户配置。
-pub const SUB_AGENT_COMMS_TOOL_FULL_NAMES: &[&str] = &[
-    "sub-agents-listTeammates",
-    "sub-agents-sendMessage",
-];
+/// Only explicitly authorized child communication; never implicitly delegated.
+pub const SUB_AGENT_COMMS_TOOL_FULL_NAMES: &[&str] = &["sub-agents-sendMessage"];
 
-/// 主会话（父 agent）专用的子代理管理工具全名（查询当前会话子代理 /
-/// 向子代理继续发送消息并重新激活）。仅主会话工具集可见：
-/// collect_all_mcp_tools 正常包含它们，collect_allowed_mcp_tools（子代理
-/// 工具集）显式过滤，因此子代理永远不会看到这两个工具 —— 重新激活
-/// 是父会话的职权，会话隔离由渲染进程执行时强制校验。
+/// Parent-only management capabilities. Retired names stay reserved below.
 pub const SUB_AGENT_MAIN_TOOL_FULL_NAMES: &[&str] = &[
-    "sub-agents-listSubAgents",
+    "sub-agents-activate",
     "sub-agents-continue",
+    "sub-agents-getResult",
+    "sub-agents-cancel",
 ];
 
-/// 子代理永远不会获得的工具（唯一来源）：主会话管理工具 + Plan Mode /
-/// WorkFlow 专属工具 + 会话编排。保存校验、收集与执行三处共用。
+/// One source for save, collection and execution restrictions. Retired names
+/// cannot be resurrected through old configurations or the built-in wildcard.
 pub const SUB_AGENT_RESERVED_TOOL_FULL_NAMES: &[&str] = &[
+    "sub-agents-activate",
     "sub-agents-listSubAgents",
+    "sub-agents-listTeammates",
     "sub-agents-continue",
+    "sub-agents-getResult",
+    "sub-agents-wait",
+    "sub-agents-cancel",
     "app-control-requestApproval",
     "app-control-conversation",
     "workflow-workflow-generate",
@@ -44,43 +37,36 @@ pub fn is_sub_agent_reserved_tool(full_name: &str) -> bool {
     SUB_AGENT_RESERVED_TOOL_FULL_NAMES.contains(&full_name)
 }
 
-/// 子代理默认携带的两个通信工具定义。执行由渲染进程完成（子代理运行时状态
-/// 与 Pending 队列都在渲染进程），Rust 侧 execute 返回桥接错误。
 pub fn sub_agent_comms_tools() -> Vec<McpTool> {
-    vec![
-        McpTool {
-            server_id: SERVER_ID.to_string(),
-            name: TOOL_LIST_TEAMMATES.to_string(),
-            description: "Query the sub-agents currently online (running) in the SAME conversation session. Returns their conversationId, agentId and agentName. Only teammates of the same session are visible - sub-agents from other conversations are never exposed. Use the returned conversationId with sub-agents-sendMessage to talk to a teammate."
-                .to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {},
-                "additionalProperties": false
-            }),
-        },
-        McpTool {
-            server_id: SERVER_ID.to_string(),
-            name: TOOL_SEND_MESSAGE.to_string(),
-            description: "Send a message to a teammate sub-agent that is still running in the SAME conversation session (identified via sub-agents-listTeammates). The message is delivered as a Pending message: the target receives it automatically at the end of its current round, when it is ready to continue. The queued message is prefixed with the sender's identity so the target always knows where the message came from. Messages to sub-agents of other conversations are rejected (session isolation)."
-                .to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "conversationId": {
-                        "type": "string",
-                        "description": "The target teammate sub-agent conversationId, as returned by sub-agents-listTeammates."
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "The message content to send. It will be queued and delivered to the target at its next round boundary."
-                    }
-                },
-                "required": ["conversationId", "message"],
-                "additionalProperties": false
-            }),
-        },
-    ]
+    vec![McpTool {
+        server_id: SERVER_ID.into(),
+        name: "sendMessage".into(),
+        description: "Queue a message to an explicitly authorized collaborator using the exact recipientRunId supplied by the host collaborator ledger. Do not infer identities from prose or reuse a previous run. The host validates same project, parent, task and nonempty collaborationGroup and current configuration permission. A queued receipt is not delivery or understanding; terminal/finalizing/cancelling runs reject new messages. This capability never resumes or starts a run.".into(),
+        input_schema: json!({"type":"object","properties":{
+            "recipientRunId":{"type":"string","minLength":1,"description":"Exact current collaborator run identity supplied by the host."},
+            "message":{"type":"string","minLength":1},
+            "requestId":{"type":"string","minLength":1,"maxLength":160,"description":"Stable logical send identity; reuse after an unknown receipt. The host derives one when omitted."}
+        },"required":["recipientRunId","message"],"additionalProperties":false}),
+    }]
+}
+
+fn acceptance_schema() -> Value {
+    json!({"type":"array","maxItems":20,
+        "description":"Optional acceptance criteria. The child reports every item in a fenced acceptance JSON block with evidence IDs from actual tool results. Host validation proves execution-log provenance, not relevance or business correctness; the parent verifies supporting results.",
+        "items":{"type":"object","properties":{
+            "id":{"type":"string","description":"Stable short criterion identity."},
+            "description":{"type":"string","description":"What must actually be true."},
+            "required":{"type":"boolean","description":"Defaults to true."}
+        },"required":["id","description"],"additionalProperties":false}})
+}
+
+fn operation_properties() -> Value {
+    json!({
+
+        "requestId":{"type":"string","minLength":1,"maxLength":160,"description":"Stable logical operation identity. Host-derived when omitted; reuse after an unknown receipt, use a new identity only for an intentional new operation."},
+        "collaborationGroup":{"type":"string","minLength":1,"maxLength":80,"description":"Explicit collaboration authorization for THIS new run, intersected with configured communication permission. Omission grants no peer communication and never inherits an old group. Use the same group only for collaborators in this parent task."},
+        "acceptance":acceptance_schema()
+    })
 }
 
 pub struct SubAgentsService;
@@ -97,141 +83,43 @@ impl McpService for SubAgentsService {
     }
 
     fn tools(&self) -> Vec<McpTool> {
-        vec![
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_NAME.to_string(),
-                description: "Activate a sub-agent to handle a complex task independently. The sub-agent runs its own AI loop with a restricted tool set and returns a final summary. Use this when a task requires focused, multi-step execution that benefits from isolation. The sub-agent has NO access to the main conversation history - all context must be provided in the prompt. SUMMARY: the required summary field is a short label for THIS activation - it becomes the sub-agent conversation's title and summary (shown in the sidebar sub-agent list), so make it specific enough to tell parallel siblings apart. PARALLEL ACTIVATION: ONE call activates ONE sub-agent; to run several sub-agents side by side, call this tool MULTIPLE TIMES in the SAME batch - one call per sub-agent, each with its own fully self-contained prompt. Sub-agents activated in one batch start concurrently, so do NOT wait for one activation to finish before starting the next independent one. OPTIONAL ACCEPTANCE CHECKLIST: pass acceptance [{ id, description, required? }] when the task has must-happen steps that a natural-language summary could hide (a submitted form, a verified total, a written file). The sub-agent must then end with a fenced acceptance JSON block reporting every item with a status and evidence ids from its real tool results; the host validates those ids against the execution log, downgrades completed without valid evidence to unverified, and returns an acceptance receipt with per-item status. Omit it for tasks that only need the natural-language summary."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "agentId": {
-                            "type": "string",
-                            "description": "The sub-agent configuration identifier, chosen from the available sub-agents listed in the system prompt's Sub-Agents section (query config-list scope=subAgents if uncertain). The built-in 'agent_general' is a generic fallback - prefer a task-specific agent when one is configured."
-                        },
-                        "prompt": {
-                            "type": "string",
-                            "description": "Complete task description with all required context, file paths, requirements, and constraints. The sub-agent has no access to the main conversation history."
-                        },
-                        "summary": {
-                            "type": "string",
-                            "description": "Short one-line summary of this activation (a few words to one sentence), written in the same language as the user's request. It becomes the sub-agent conversation's title and summary, and is what the user sees in the sidebar sub-agent list - keep several parallel sub-agents clearly distinguishable (e.g. 'Fix sidebar layout', 'Research Electron IPC')."
-                        },
-                        "acceptance": {
-                            "type": "array",
-                            "description": "Optional acceptance checklist for this delegated task. The sub-agent must report every item with a status and evidence ids taken from its real tool results; the host validates those ids against the execution log, downgrades `completed` without valid evidence to `unverified`, and returns an acceptance receipt with per-item status. Omit it for tasks that only need the natural-language summary.",
-                            "maxItems": 20,
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {
-                                        "type": "string",
-                                        "description": "Stable short id (letters, digits, dot, underscore, colon or dash) cited back in the receipt."
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "What must actually be true for this item to count as done."
-                                    },
-                                    "required": {
-                                        "type": "boolean",
-                                        "description": "Defaults to true. Optional items are reported but never block acceptance."
-                                    }
-                                },
-                                "required": ["id", "description"],
-                                "additionalProperties": false
-                            }
-                        }
-                    },
-                    "required": ["agentId", "summary", "prompt"]
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_LIST_SUB_AGENTS.to_string(),
-                description: "List the sub-agents of the CURRENT conversation session, including finished ones (only those activated during this app run are listed). Returns conversationId, agentId, agentName, status (running/completed/failed/cancelled), resumable, and the acceptance snapshot (per-item status, evidence, satisfied) for each. Only sub-agents belonging to the current conversation are returned (session isolation). Use sub-agents-continue with a returned conversationId to resume a finished sub-agent - to reactivate several sub-agents at once, call sub-agents-continue MULTIPLE TIMES in the same batch (those calls run in parallel). An acceptance checklist and its evidence log are runtime state of this app run; after a restart pass the checklist again on continue."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": false
-                }),
-            },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_CONTINUE.to_string(),
-                description: "Send a message to a sub-agent of the CURRENT conversation session and resume it: if the target has finished it is reactivated and keeps its original configuration (model, tools, system prompt) and full conversation history; if it is still running the message is queued as a Pending message delivered at the end of its current round. The queued message is prefixed with the sender's identity. Only sub-agents belonging to the current conversation can be resumed - sub-agents of other conversations are rejected (session isolation). PARALLEL RESUME: ONE call resumes ONE sub-agent; to reactivate several sub-agents, call this tool MULTIPLE TIMES in the SAME batch - one call per conversationId. A batch of continue calls runs concurrently (exactly like a batch of sub-agents-activate calls), so do NOT resume them one by one. ACCEPTANCE: pass acceptance [{ id, description, required? }] to add checklist items or refine their wording for this sub-agent; already recorded per-item status is preserved, and the resumed run updates the same acceptance receipt. Omitting acceptance keeps the current checklist; tasks without a checklist behave exactly as before."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "conversationId": {
-                            "type": "string",
-                            "description": "The target sub-agent conversationId, as returned by sub-agents-listSubAgents."
-                        },
-                        "message": {
-                            "type": "string",
-                            "description": "The message content to send. It resumes the sub-agent, or is queued for delivery at the end of its current round when the target is still running."
-                        },
-                        "acceptance": {
-                            "type": "array",
-                            "description": "Optional checklist additions or wording refinements for this sub-agent. Existing item ids keep their recorded status; new ids are appended. After the resumed run the sub-agent reports again and the same acceptance record is updated.",
-                            "maxItems": 20,
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {
-                                        "type": "string",
-                                        "description": "Stable short id (letters, digits, dot, underscore, colon or dash); reuse an existing id to refine its wording."
-                                    },
-                                    "description": {
-                                        "type": "string",
-                                        "description": "What must actually be true for this item to count as done."
-                                    },
-                                    "required": {
-                                        "type": "boolean",
-                                        "description": "Defaults to true. Optional items are reported but never block acceptance."
-                                    }
-                                },
-                                "required": ["id", "description"],
-                                "additionalProperties": false
-                            }
-                        }
-                    },
-                    "required": ["conversationId", "message"],
-                    "additionalProperties": false
-                }),
-            },
-        ]
+        let mut activate = operation_properties();
+        activate["agentId"] = json!({"type":"string","description":"Configured sub-agent identity from the available agent list. Prefer the matching specialist over the built-in generic fallback."});
+        activate["prompt"] = json!({"type":"string","description":"Fully self-contained task, paths, frozen contracts, permitted files/tools, constraints and verification responsibilities. The child cannot access parent history."});
+        activate["summary"] = json!({"type":"string","description":"Short specific task label in the user's language, used as the child conversation title."});
+        let mut continuation = operation_properties();
+        continuation["conversationId"] = json!({"type":"string","minLength":1,"description":"Exact child conversation identity supplied by the host child-run ledger or a previous activation receipt."});
+        continuation["message"] = json!({"type":"string","minLength":1,"description":"Explicit follow-up task or message for this child."});
+        let mut tools = vec![
+            McpTool { server_id: SERVER_ID.into(), name: "activate".into(),
+                description: "Delegate one independent task to one sub-agent with restricted tools and a self-contained prompt. For independent parallel work issue separate calls in the same batch. Children cannot recursively delegate. Final summaries contain final-turn text, not a full transcript; open the child conversation for intermediate reports. Optional acceptance evidence needs parent review. Read the actual receipt: accepted means durable acceptance, not completion; the host delivers eligible completion events without polling.".into(),
+                input_schema: json!({"type":"object","properties":activate,"required":["agentId","summary","prompt"],"additionalProperties":false}) },
+            McpTool { server_id: SERVER_ID.into(), name: "continue".into(),
+                description: "Parent-only explicit follow-up to an existing child in this conversation. A busy target only queues a message for its current run; a terminal child starts a new run only for this explicit request. Old ledger/task information is not permission to resume. Original configuration and conversation history are retained, but collaboration requires a new explicit collaborationGroup. Optional acceptance refines/adds criteria while preserving recorded item statuses. For independent follow-ups issue separate calls in the same batch. Trust actual receipt kind/executionMode rather than current settings; queued is not delivered or understood.".into(),
+                input_schema: json!({"type":"object","properties":continuation,"required":["conversationId","message"],"additionalProperties":false}) },
+            McpTool { server_id: SERVER_ID.into(), name: "getResult".into(),
+                description: "Read an immutable terminal result or another summary page using an exact runId from the host ledger/receipt. Not a progress query. Terminal errors, acceptance and delivery metadata remain present; summary is final-turn text, not the full transcript. Evidence IDs establish provenance, not semantic correctness. UI/read queries do not acknowledge model delivery or reopen old tasks. The host delivers eligible completion events automatically; no polling or waiting is required.".into(),
+                input_schema: json!({"type":"object","properties":{
+                    "runId":{"type":"string","minLength":1},"offset":{"type":"integer","minimum":0},
+                    "limit":{"type":"integer","minimum":1,"maximum":64000,"default":16000}},"required":["runId"],"additionalProperties":false}) },
+            McpTool { server_id: SERVER_ID.into(), name: "cancel".into(),
+                description: "Request cancellation of an actually cancellable run using its exact runId. requested is not confirmation of stopped execution; confirmed means cancelled, already_terminal preserves the result, too_late means finalizing won. The first accepted cancellation source/time is retained; historical missing attribution is unknown. Never claim that cancellation undoes files or external effects.".into(),
+                input_schema: json!({"type":"object","properties":{"runId":{"type":"string","minLength":1}},"required":["runId"],"additionalProperties":false}) },
+        ];
+        tools.extend(sub_agent_comms_tools());
+        tools
     }
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            TOOL_NAME => Err(Error::new(
+            "activate" | "continue" | "cancel" | "getResult" | "sendMessage" => Err(Error::new(
                 Status::GenericFailure,
-                "sub-agents activate must be executed through the asynchronous Electron interaction bridge"
-                    .to_string(),
+                format!("sub-agents {tool_name} requires the authorized Electron runtime bridge"),
             )),
-            TOOL_LIST_TEAMMATES | TOOL_SEND_MESSAGE => Err(Error::new(
+            _ => Err(Error::new(
                 Status::GenericFailure,
-                format!(
-                    "sub-agents {tool_name} must be executed through the sub-agent runtime in the renderer process (session isolation and the Pending message queue live there)"
-                ),
+                format!("Unknown sub-agents tool: {tool_name}"),
             )),
-            TOOL_LIST_SUB_AGENTS | TOOL_CONTINUE => Err(Error::new(
-                Status::GenericFailure,
-                format!(
-                    "sub-agents {tool_name} must be executed through the sub-agent runtime in the renderer process (session isolation and the resume state live there)"
-                ),
-            )),
-            _ => Err(unknown_tool_error(tool_name)),
         }
     }
-}
-
-fn unknown_tool_error(tool_name: &str) -> napi::Error {
-    Error::new(
-        Status::GenericFailure,
-        format!("Unknown sub-agents tool: {tool_name}"),
-    )
 }

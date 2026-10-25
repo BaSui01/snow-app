@@ -9,6 +9,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
+import "./themes/context-menu.css";
 import "./themes/tokens.css";
 import "./themes/hljs.css";
 import "./themes/theme-settings.css";
@@ -34,6 +35,7 @@ import {
 } from "./components/KeyboardShortcutsProvider";
 import { openNewChatInNewWindow } from "./components/sidebar/mainSidebar/openConversationInNewWindow";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
+import { GlobalEditContextMenu } from "./components/common/GlobalEditContextMenu";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { DetachedPanelTitleBar } from "./components/DetachedPanelTitleBar";
 import { RightPanel } from "./components/RightPanel";
@@ -245,6 +247,7 @@ if (container) {
         <KeyboardShortcutsProvider>
           <DetachedPanelWindowApp />
         </KeyboardShortcutsProvider>
+        <GlobalEditContextMenu />
       </I18nProvider>
     </React.StrictMode>,
   );

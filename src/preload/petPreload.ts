@@ -10,8 +10,11 @@
  * - sendChat / abortChat / onChatChunk / onChatTool: 宠物聊天（btw 式旁路会话）
  * - dragStart / dragMove / dragEnd: 渲染层自绘窗口拖拽
  *   （不再使用 CSS app-region，否则 Windows 上双击被系统标题栏吞掉）
+ * - hasClipboardContent / runEditCommand: 输入框统一右键菜单所需的编辑命令
+ *   （与主窗口 window.snow 同名同语义，主进程侧共用同一组 IPC 通道）
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { SnowEditCommand } from "./modules/systemApi";
 import type {
   PetActivityState,
   PetChatChunkPayload,
@@ -117,6 +120,12 @@ const petBridge = {
       ipcRenderer.removeListener("pets:activity-changed", handler);
     };
   },
+  /** 剪贴板是否还有可粘贴的内容：编辑区右键菜单据此自动禁用「粘贴」。 */
+  hasClipboardContent: (): Promise<boolean> =>
+    ipcRenderer.invoke("clipboard:has-content"),
+  /** 执行编辑命令（剪切 / 复制 / 粘贴 / 全选），由主进程作用于本窗口。 */
+  runEditCommand: (command: SnowEditCommand): Promise<void> =>
+    ipcRenderer.invoke("edit:command", command),
   onDragStateChanged: (
     callback: (state: "running-right" | "running-left" | null) => void,
   ): (() => void) => {

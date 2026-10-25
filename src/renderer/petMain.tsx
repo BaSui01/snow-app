@@ -24,6 +24,14 @@ import {
   type PetPalette,
 } from "./components/pet/petPalette";
 import { usePetChat } from "./components/pet/usePetChat";
+import { I18nProvider } from "./i18n";
+import {
+  GlobalEditContextMenu,
+  resolveEditableTarget,
+} from "./components/common/GlobalEditContextMenu";
+// 宠物窗口不引 styles.css：统一右键菜单与它依赖的配色令牌单独引入。
+import "./themes/tokens.css";
+import "./themes/context-menu.css";
 import "./pet.css";
 
 /** 超过该位移视为拖拽而非点击（像素）。 */
@@ -99,7 +107,16 @@ function PetWindowApp(): React.JSX.Element | null {
 
   // 右键：阻止页面默认右键行为，菜单本体由主进程构建并弹出
   // （Windows 上拖拽区域的右键由主进程 system-context-menu 兜底）。
+  // 输入框 / 编辑区例外：交给全窗口统一的编辑右键菜单（GlobalEditContextMenu）。
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (
+      resolveEditableTarget(event.target, {
+        x: event.clientX,
+        y: event.clientY,
+      })
+    ) {
+      return;
+    }
     event.preventDefault();
     window.petBridge?.showContextMenu();
   };
@@ -245,5 +262,10 @@ function PetWindowApp(): React.JSX.Element | null {
 
 const container = document.getElementById("pet-root");
 if (container) {
-  createRoot(container).render(<PetWindowApp />);
+  createRoot(container).render(
+    <I18nProvider>
+      <PetWindowApp />
+      <GlobalEditContextMenu />
+    </I18nProvider>,
+  );
 }

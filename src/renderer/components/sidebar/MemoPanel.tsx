@@ -17,10 +17,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useEscapeClose } from "../../hooks/useEscapeClose";
 import { useSplitResize } from "../../hooks/useSplitResize";
-import { useEditContextMenu } from "../../hooks/useEditContextMenu";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
-import { EditContextMenu } from "../common/EditContextMenu";
 import { CustomSelect } from "../common/CustomSelect";
 import { HighlightedText } from "../common/HighlightedText";
 import { useChatConversationContext } from "../mainContent/chatMessages";
@@ -276,14 +274,6 @@ export function MemoPanel({
   // persist the last-typed content instead of an empty string that would wipe
   // the database row.
   const editorHtmlRef = useRef("");
-
-  // 备忘编辑器与搜索框共用的右键菜单（剪切/复制/粘贴/全选）。
-  const {
-    editMenu,
-    openEditMenu: handleEditContextMenu,
-    runEditCommand: handleEditCommand,
-    closeEditMenu,
-  } = useEditContextMenu();
 
   const closeMention = useCallback(() => {
     setIsMentionOpen(false);
@@ -1284,7 +1274,6 @@ export function MemoPanel({
             onKeyDown={handleEditorKeyDown}
             onKeyUp={captureEditorRange}
             onMouseUp={captureEditorRange}
-            onContextMenu={handleEditContextMenu}
             onPaste={handleEditorPaste}
             ref={editorRef}
             role="textbox"
@@ -1441,7 +1430,6 @@ export function MemoPanel({
                   setSearchKeyword(searchInput.trim());
                 }
               }}
-              onContextMenu={handleEditContextMenu}
               placeholder={t("memo.searchPlaceholder", {
                 defaultValue: "Search memos",
               })}
@@ -1571,13 +1559,6 @@ export function MemoPanel({
         title={t("memo.delete", { defaultValue: "Delete" })}
         variant="danger"
       />
-      {editMenu && (
-        <EditContextMenu
-          menu={editMenu}
-          onCommand={handleEditCommand}
-          onClose={closeEditMenu}
-        />
-      )}
     </div>
   );
 }

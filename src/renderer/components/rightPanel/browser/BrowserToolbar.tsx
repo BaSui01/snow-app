@@ -9,7 +9,6 @@ import {
   MousePointer2,
   RotateCw,
 } from "lucide-react";
-import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { Tooltip } from "../../common/Tooltip";
 import type {
   BrowserBookmark,
@@ -203,67 +202,6 @@ export const BrowserToolbar = ({
   const activeDownloadCount = downloads.filter(
     (item) => item.state === "progressing",
   ).length;
-  // 地址输入框右键菜单（剪切/复制/粘贴/全选）：
-  // 主进程已 Menu.setApplicationMenu(null)，Electron 不再提供原生编辑菜单，需自建。
-  const addressInputRef = useRef<HTMLInputElement>(null);
-  const [addressMenu, setAddressMenu] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-
-  const handleAddressContextMenu = (
-    e: React.MouseEvent<HTMLInputElement>,
-  ): void => {
-    e.preventDefault();
-    e.stopPropagation();
-    addressInputRef.current?.focus();
-    setAddressMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const runAddressCommand = (
-    command: "cut" | "copy" | "paste" | "selectAll",
-  ): void => {
-    const input = addressInputRef.current;
-    setAddressMenu(null);
-    if (!input) {
-      return;
-    }
-    // 点击菜单项会夺走焦点，执行前必须重新聚焦输入框。
-    input.focus();
-    if (command === "selectAll") {
-      input.select();
-      return;
-    }
-    const start = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    if (command === "cut") {
-      // 无选区时剪切无意义（对齐原生行为，菜单项已置灰）
-      if (start !== end) {
-        document.execCommand("cut");
-      }
-      return;
-    }
-    if (command === "copy") {
-      // 有选区复制选区，否则复制全文
-      const text = start !== end ? input.value.slice(start, end) : input.value;
-      if (!text) {
-        return;
-      }
-      navigator.clipboard.writeText(text).catch(() => {
-        if (start !== end) {
-          document.execCommand("copy");
-        }
-      });
-      return;
-    }
-    document.execCommand("paste");
-  };
-
-  const hasAddressSelection = (() => {
-    const input = addressInputRef.current;
-    return !!input && (input.selectionStart ?? 0) !== (input.selectionEnd ?? 0);
-  })();
-
   // ---- 地址栏补全：历史记录 + 书签建议 ----
   const addressBarRef = useRef<HTMLDivElement>(null);
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
@@ -444,31 +382,6 @@ export const BrowserToolbar = ({
     onAddressKeyDown(e);
   };
 
-  const addressMenuItems: ContextMenuItem[] = [
-    {
-      id: "cut",
-      label: t("browser.cut"),
-      disabled: !hasAddressSelection,
-      onClick: () => runAddressCommand("cut"),
-    },
-    {
-      id: "copy",
-      label: t("browser.copy"),
-      onClick: () => runAddressCommand("copy"),
-    },
-    {
-      id: "paste",
-      label: t("browser.paste"),
-      onClick: () => runAddressCommand("paste"),
-    },
-    {
-      id: "selectAll",
-      label: t("browser.selectAll"),
-      separator: true,
-      onClick: () => runAddressCommand("selectAll"),
-    },
-  ];
-
   return (
     <div className="browser-toolbar">
       <Tooltip
@@ -523,7 +436,6 @@ export const BrowserToolbar = ({
           className="browser-address-icon"
         />
         <input
-          ref={addressInputRef}
           type="text"
           className="browser-address-input"
           value={addressInput}
@@ -531,7 +443,6 @@ export const BrowserToolbar = ({
           onKeyDown={handleAddressKeyDown}
           onFocus={handleAddressFocus}
           onBlur={closeSuggestions}
-          onContextMenu={handleAddressContextMenu}
           placeholder={t("browser.addressPlaceholder")}
           spellCheck={false}
           role="combobox"
@@ -676,14 +587,6 @@ export const BrowserToolbar = ({
           onShowInFolder={onDownloadShowInFolder}
           onCancel={onDownloadCancel}
           onClose={() => setDownloadsOpen(false)}
-        />
-      )}
-      {addressMenu && (
-        <ContextMenu
-          x={addressMenu.x}
-          y={addressMenu.y}
-          items={addressMenuItems}
-          onClose={() => setAddressMenu(null)}
         />
       )}
     </div>

@@ -8,9 +8,11 @@ import {
   isChunkLoadError,
   requestChunkRecoveryReload,
 } from "./components/common/AppErrorBoundary";
+import { GlobalEditContextMenu } from "./components/common/GlobalEditContextMenu";
 import { writeRendererLog } from "./utils/rendererLog";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
+import "./themes/context-menu.css";
 import "./themes/tokens.css";
 import "./themes/hljs.css";
 import "./themes/theme-settings.css";
@@ -76,6 +78,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <AppErrorBoundary>
         <App />
       </AppErrorBoundary>
+      <GlobalEditContextMenu />
     </I18nProvider>
   </React.StrictMode>,
 );

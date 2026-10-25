@@ -13,17 +13,16 @@ Snow App 的 Hooks 和子代理配置存储在应用 SQLite 数据库中，与�
 
 ### 1.2 Hook 类型
 
-| `hookType`            | 触发时机                         | 允许的 action        |
-| --------------------- | -------------------------------- | -------------------- |
-| `onUserMessage`       | 用户消息进入 AI 前               | `command`、`context` |
-| `beforeToolCall`      | 工具调用前                       | `command`            |
-| `toolConfirmation`    | 工具进入确认流程时               | `command`            |
-| `afterToolCall`       | 工具调用完成后                   | `command`            |
-| `onSubAgentComplete`  | 子代理完成后                     | `command`、`prompt`  |
-| `beforeSubAgentStart` | 子代理启动前                     | `command`、`context` |
-| `beforeCompress`      | 上下文压缩前                     | `command`            |
-| `onSessionStart`      | 打开已有会话时；fire-and-forget  | `command`、`context` |
-| `onStop`              | 会话停止/清理时；fire-and-forget | `command`、`prompt`  |
+| `hookType`             | 触发时机                                                                                                  | 允许的 action        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- | -------------------- |
+| `onUserMessage`        | 用户消息进入 AI 前                                                                                        | `command`、`context` |
+| `beforeToolCall`       | 工具                                                                                                      | 参数与语义           |
+| ---                    | ---                                                                                                       |
+| sub-agents-activate    | 新委派；可选 collaborationGroup 表示本次明确协作意图，仍受角色配置工具权限约束。                          |
+| sub-agents-continue    | 向可接收的准确活动代际补充要求，或向终态子会话显式创建新 run；不改变旧 run 模式。收尾／取消中拒绝新消息。 |
+| sub-agents-cancel      | 按 runId 请求取消，区分 requested、confirmed、already_terminal、too_late，不撤销已有外部副作用。          |
+| sub-agents-getResult   | 按 runId/offset/limit 读取终态结果及分页；不得作为等待或进度轮询。完整持久摘要保留。                      |
+| sub-agents-sendMessage | 仅授权子代理向宿主提供的 recipientRunId 发消息；使用 requestId 去重，不能触发新 run 或跨任务改投。        |
 
 > `prompt` 是合法配置类型，但当前 native executor 不发起模型调用，而是返回“不支持”的失败记录。不要依赖 `prompt` action 实现生产自动化；优先使用可验证的 `command`，或在允许的触发点使用 `context`。`beforeSubAgentStart` 的 context 目前会被记录，但调用方不会把它追加到子代理 prompt。
 
@@ -274,7 +273,7 @@ sequenceDiagram
     Main->>Hooks: beforeSubAgentStart 上下文
     alt Hook 以 2+ 阻断
         Hooks-->>Main: 返回阻断消息
-    else 允许或 Hook 执行异常
+    else 启动 Hook 正常允许
         Hooks-->>Main: 继续
         Main->>Sub: 自包含 systemPrompt + 用户任务 + 允许工具
         Sub->>Sub: 独立执行与验证
@@ -289,13 +288,60 @@ sequenceDiagram
     end
 ```
 
-注意：`beforeSubAgentStart` Hook 执行自身发生异常时，当前调用方会继续激活子代理；因此安全阻断脚本必须可靠、可测试，并用明确的 `2+` 退出码返回阻断。
+注意：`beforeSubAgentStart` 调用抛出异常时，受理失败，不会继续启动子代理，也不会返回 accepted。正常返回的 Hook 决策仍按现有退出码语义处理；安全阻断应明确返回 `2+`，不要依赖异常代替决策。
 
 ### 2.6 子代理会话恢复与同会话通信
 
-- **重启后恢复**：子代理会话在应用重启后仍可恢复——`sub-agents-listSubAgents` 列出当前会话的子代理（含本次运行期间已结束的）及其 `status`/`resumable` 状态；`sub-agents-continue` 对已结束的子代理按**原配置（模型、工具、系统提示词）与完整会话历史**重新激活继续执行；
-- **同会话通信**：`sub-agents-listTeammates` 查询当前会话中仍在运行的子代理，`sub-agents-sendMessage` 向其投递消息（以 Pending 消息在对方当前轮次结束时送达，并带发送者身份前缀）；并行子代理之间可直接协作，无需经主会话中转；
-- **会话隔离**：以上工具只对**当前会话**生效——`listTeammates` 不暴露其他会话的子代理，`sendMessage`/`continue` 跨会话调用会被拒绝。
+- **恢复与显式继续**：宿主从持久事实重建有界身份账本，提供真实 conversationId/runId、任务、状态、模式和结果定位，不要求模型调用列表工具。重启后非终态运行变为 interrupted，不自动重放；显式 continue 才建立新 run，旧结果不产生新授权。续跑必须具有持久化 run/snapshot；无项目旧同步路径已停止支持。
+- **按需协作**：普通子代理不自动携带通信工具。配置允许 sendMessage（或内置通配符），并在本次委派明确指定 collaborationGroup 后，才提供同一有效任务和组的协作者 runId。发送按 recipientRunId 寻址，不按代理名或子会话的最新代际猜测，不依赖 listTeammates。
+- **消息与隔离**：消息复用持久队列并按请求身份去重；同项目、父会话、parentTaskId、组和双方 run 均需校验。收尾／取消／终态不再接受新消息；queued 只表示入队，终止未消费会明确保留为 undelivered，不自动改投下一代。
+
+### 2.7 当前持久化运行：同步与异步
+
+在「设置 → 子代理设置 → 运行限制」选择执行方式。默认为同步：父工具等到终态后返回统一的 result 回包；异步只等待 accepted 回执。模式由宿主捕获，不再提供模型侧 executionMode 兼容参数。忙碌目标的 continue 返回 message_queued，不改变该 run 的模式。
+
+两种模式只支持实际项目／工作区绑定的普通桌面主会话及已登记的独立会话窗口，共享 accept、transition、settle 和结果分页。无项目、Workflow 非持久化子代理执行不再支持；旧子会话缺少 run/snapshot 时明确拒绝续跑，不从旧消息或当前配置重建执行。应用退出后不继续运行。
+
+公开工具仅有以下五个；wait、listSubAgents、listTeammates 不再注册或专用解析，旧工具记录保留原文通用展示，不删除历史数据。
+
+| 工具                   | 参数与语义                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| sub-agents-activate    | agentId、summary、prompt；可选 requestId、acceptance、collaborationGroup。新运行只有显式协作组与配置权限取交集后才允许通信。                            |
+| sub-agents-continue    | conversationId、message；可选 requestId、acceptance、collaborationGroup。活动目标仅给准确代际排队，终态目标显式创建新 run；finalizing/cancelling 拒收。 |
+| sub-agents-getResult   | runId、offset、limit；只读终态正文／分页，不查进度。默认16000个 Unicode 字符，limit 为1–64000。                                                         |
+| sub-agents-cancel      | runId；区分 requested、confirmed、already_terminal、too_late，不撤销已发生的文件或外部副作用。                                                          |
+| sub-agents-sendMessage | recipientRunId、message、可选 requestId；地址来自宿主当前授权协作者账本，不接受旧 conversationId 别名。                                                 |
+
+先在设置选择异步，再向 activate 提交：
+
+```json
+{
+  "agentId": "agent_general",
+  "summary": "只读项目检查",
+  "prompt": "只读取当前项目的 package.json，概括构建命令；不运行命令或修改文件。"
+}
+```
+
+accepted/message_queued 不表示完成、消费或理解。当前回执必须包含实际 executionMode；同步终态与 getResult 统一使用 result.run.outcome，不再返回旧扁平 summary 外壳。错误、验收、取消来源与未消费消息保留在 outcome，结果分页不会裁掉这些元数据。
+
+requestId 标识一次逻辑操作。未知回执重试必须复用原 ID 和业务输入；设置切换不改变已受理模式，也不导致重复派发。新操作才使用新 ID。当前全局／项目配置优先级不变。
+
+父忙时在完整工具屏障后接纳结果，父闲且原任务仍开放时由宿主调度内部续轮。停止、关闭或新用户任务不会复活旧任务。内部结果不是新用户授权或 Plan 审批；UI 查询不接纳事件或确认唤醒。同步结果与已观察的 getResult 按准确事件身份去重，内部事件等待仍保留，但不暴露为公开 wait。
+
+重启或 owner 丢失将非终态 run 标为 interrupted，不冒充用户取消、不自动重放。归档保留完整运行身份，恢复不重开旧任务。删除／回滚仍须通过门禁、取消与 owner drain；准备阶段可撤销的回滚一旦开始文件恢复，就必须显式恢复／重试。
+
+全局容量由 native 同事务核对，不再使用旧 renderer semaphore。默认预算为128次模型请求与30分钟活跃执行，授权／用户输入／暂停等待不计入；耗尽是失败。取消不承诺撤销已发生的外部副作用。冷热分离时若关联 peer 端点不在同库，须恢复相关归档后重试，不静默丢失效果。
+
+排障请记录时间和 runId/eventId/interactionId，查 sub-agents 日志中的受理、执行、结算、接收和唤醒阶段。不要分享凭据或完整敏感 prompt。源码构建通过不代表当前冻结 preview 已加载新代码。
+
+### 2.8 结果证据与取消归因
+
+- `summary` 是子代理末轮最终正文，不是完整会话转录；工具调用间的逐项报告应在子会话查看。分页只对最终正文按 Unicode 字符切片，不能取回未被最终正文包含的历史。
+- 验收清单的宿主校验保证证据 ID 来自该子会话日志，不保证证据与条目的语义相关性或业务事实正确。主控仍需核对真实工具状态与直接相关内容，不把读取成功用于背书未验证条目。
+- 新取消记录可含 `cancellation: {source, requestedAt}`，同步最终 outcome、异步 getResult、取消回执和日志保留该字段。source 区分 `cancel_tool`、`parent_stop`、`conversation_stop`、`ui_cancel`、`deletion`、`runtime_abort`、`unspecified`；时间由持久层在首次受理时记录为 UTC epoch milliseconds。后续重试保留首次归因，`already_terminal`/`too_late` 不新增或覆盖来源。旧记录缺失字段表示未记录，不能根据中断文案推断为父停止或用户操作。公共 cancel 工具仍只传 runId，不接受模型指定来源。
+- `message_queued` 只证明入队；结果事件的 `deliveryStatus: received` 只证明持久合入父输入，两者不是补充消息的模型理解回执。两个 activate 创建独立子会话，不是同目标 RUN_BUSY 测试。
+
+新元数据需应用加载新 native/renderer 后生效，构建与隔离探针不能替代重启、跨窗口或删除的真实端到端验证。
 
 ## 3. 验证与排错
 

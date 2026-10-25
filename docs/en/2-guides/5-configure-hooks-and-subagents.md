@@ -274,7 +274,7 @@ sequenceDiagram
     Main->>Hooks: beforeSubAgentStart context
     alt Hook blocks with 2+
         Hooks-->>Main: Return block message
-    else Allowed or Hook execution error
+    else Start Hook allows activation
         Hooks-->>Main: Continue
         Main->>Sub: Self-contained systemPrompt + task + allowed tools
         Sub->>Sub: Execute and validate independently
@@ -289,13 +289,60 @@ sequenceDiagram
     end
 ```
 
-If `beforeSubAgentStart` Hook execution itself throws, the current caller continues activation. A security gate must therefore be reliable, tested, and return an explicit `2+` exit code when blocking.
+If the `beforeSubAgentStart` call throws, acceptance fails: the sub-agent is not started and no accepted receipt is returned. Normally returned Hook decisions retain the existing exit-code semantics; security gates should explicitly return `2+` to block rather than relying on an exception as a decision.
 
 ### 2.6 Sub-agent session resume and same-session communication
 
-- **Resume after restart**: sub-agent sessions survive an app restart — `sub-agents-listSubAgents` lists the current session's sub-agents (including ones already finished during this app run) with their `status`/`resumable` state, and `sub-agents-continue` reactivates a finished sub-agent with its **original configuration (model, tools, system prompt) and full conversation history**;
-- **Same-session communication**: `sub-agents-listTeammates` queries sub-agents still running in the current session, and `sub-agents-sendMessage` delivers a message to them (as a Pending message at the end of the target's current round, prefixed with the sender's identity). Parallel sub-agents can coordinate directly without routing through the main session;
-- **Session isolation**: the tools above only apply to the **current session** — `listTeammates` does not expose other sessions' sub-agents, and cross-session `sendMessage`/`continue` calls are rejected.
+- **Recovery and explicit continuation**: the host rebuilds a bounded factual identity ledger with conversation/run/task, state, mode and result locations, without a model list call. Restart marks nonterminal runs interrupted and never replays them. Explicit continue creates a new run; historical facts grant no new authority. A persisted run/snapshot is required for continuation.
+- **Opt-in collaboration**: children do not carry communication tools by default. Configured sendMessage capability (or the built-in wildcard) must intersect an explicit collaborationGroup on this delegation. The host supplies authorized same-task/group recipientRunIds, not discovery through listTeammates or a guessed latest generation.
+- **Messages and isolation**: reuse durable message storage and idempotent requests, checking project, parent, task, group and exact sender/recipient runs. Finalizing/cancelling/terminal runs reject new messages. Queued is not understood; termination reports unconsumed input as undelivered without silently forwarding it to a replacement run.
+
+### 2.7 Current durable execution: sync and async
+
+Choose execution mode under Settings → Sub-agent Settings → Run limits. Sync waits for a terminal result envelope; async returns an accepted receipt. The host captures mode from settings; there is no model-facing executionMode compatibility argument. Continue against an active target returns message_queued without changing that run's mode.
+
+Both modes require a project/workspace-bound ordinary desktop parent or registered detached conversation window. They share acceptance, transitions, settlement and paging. Unbound and Workflow nondurable sub-agent execution is unsupported. Old child conversations without a run/snapshot cannot resume or reconstruct execution from old messages/current settings. Runs do not continue after application exit.
+
+Only five public tools remain. wait, listSubAgents and listTeammates have no registration or specialized parsing. Old tool records retain generic raw display; historical data is not deleted.
+
+| Tool                   | Parameters and behavior                                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| sub-agents-activate    | agentId, summary, prompt; optional requestId, acceptance and collaborationGroup. Communication requires the intersection of this explicit grant and configured capability.                                  |
+| sub-agents-continue    | conversationId, message; optional requestId, acceptance and collaborationGroup. Queue only to an exact active generation or explicitly start a terminal continuation; reject finalizing/cancelling targets. |
+| sub-agents-getResult   | runId, offset and limit; read terminal content/pages, never progress. Default16000 Unicode characters, limit1–64000.                                                                                        |
+| sub-agents-cancel      | runId; preserve requested/confirmed/already_terminal/too_late and existing external effects.                                                                                                                |
+| sub-agents-sendMessage | recipientRunId, message, optional requestId. Use current host-authorized collaborator identities, not the old conversationId alias.                                                                         |
+
+Select async in settings before submitting this activate request:
+
+```json
+{
+  "agentId": "agent_general",
+  "summary": "Read-only project check",
+  "prompt": "Only read this project's package.json and summarize its build commands. Do not run commands or modify files."
+}
+```
+
+accepted/message_queued does not prove completion, consumption or understanding. Current receipts require the actual executionMode. Sync terminal results and getResult use result.run.outcome, not the old flattened summary envelope. Errors, acceptance, cancellation attribution and unconsumed input remain in outcome and survive summary pagination.
+
+requestId identifies one logical operation. Unknown-receipt retries reuse the same ID and business input; settings changes do not reinterpret admitted mode or duplicate dispatch. Use a new ID only for a new operation. Current global/project configuration precedence remains unchanged.
+
+A busy parent admits results at a complete tool boundary. An idle parent may receive an internal round only while the original task is open. Stop, close or new user input never revives an old task. Internal results are not user authorization or Plan approval; UI reads do not receive events or acknowledge wakes. Sync and observed getResult deduplicate by exact event identity. Internal event-based sync waiting remains, but no public wait tool exists.
+
+Restart/owner loss marks nonterminal runs interrupted, not user-cancelled, with no replay. Archive retains complete identities without reopening tasks. Delete/rollback retain admission gates, cancellation and owner drain. After filesystem restoration begins, rollback requires explicit recovery/retry rather than a no-effects claim.
+
+Native serializes global capacity in one transaction, without the old renderer semaphore. Default budgets are128 model requests and30 active minutes, excluding authorization/input/pause waits. Exhaustion is failure. Cancellation does not undo prior external effects. Cross-database peer endpoints require restoring related archives before retrying, never silently omitting effects.
+
+For diagnosis record time and runId/eventId/interactionId, then inspect sub-agents acceptance/execution/settlement/receipt/wakeup logs. Do not share secrets or full sensitive prompts. A successful build does not mean the frozen preview loaded these sources.
+
+### 2.8 Evidence boundaries and cancellation attribution
+
+- `summary` is the final turn body, not a full transcript. Open the child conversation for intermediate per-file reports. Unicode-character pagination slices that final body only; it cannot recover earlier turns absent from it.
+- Host acceptance checks establish that evidence IDs belong to the child execution log, not semantic relevance or business correctness. The parent must inspect real tool status and directly relevant content instead of using a successful read to support unrelated claims.
+- New cancellations may include `cancellation: {source, requestedAt}` in synchronous final outcomes, async getResult, cancel receipts and logs. Sources distinguish `cancel_tool`, `parent_stop`, `conversation_stop`, `ui_cancel`, `deletion`, `runtime_abort` and `unspecified`. Rust captures UTC epoch milliseconds at first durable acceptance. Retries preserve attribution; already_terminal/too_late never add or replace it. Missing legacy metadata means unrecorded, not an inferred parent or user action. The public cancel tool still accepts only runId; the model cannot specify attribution.
+- message_queued proves queuing only. Run-event deliveryStatus=received proves durable incorporation into parent input only. Neither acknowledges model understanding of a queued message. Separate activate calls create independent conversations, not a same-target RUN_BUSY test.
+
+New metadata requires loading the new native/renderer; builds and isolated probes do not replace live restart, cross-window or deletion acceptance.
 
 ## 3. Validation and troubleshooting
 

@@ -93,7 +93,13 @@ pub fn set_custom_dir(database_path: &Path, kind: &StorageLocationKind, dir: &st
         kind.dir_setting_name(),
         kind.dir_setting_code(),
         dir.trim(),
-    )
+    )?;
+    if *kind == StorageLocationKind::Checkpoint {
+        // 检查点模块按绝对路径缓存对象与目录解析结果，根目录切换后立即失效，
+        // 否则迁移提交后仍会解析到旧根目录（已被清理）。
+        super::checkpoint::clear_path_caches();
+    }
+    Ok(())
 }
 
 /// 存储位置根目录：优先读取用户自定义路径（system_settings 中保存），

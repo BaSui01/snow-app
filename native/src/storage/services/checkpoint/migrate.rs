@@ -10,8 +10,8 @@ use std::path::Path;
 
 use napi::bindgen_prelude::*;
 
-use super::paths::{checkpoint_date_dir, clear_checkpoint_dir_cache};
-use super::{checkpoint_root, clear_object_path_cache, object_shard, OBJECT_DIR_NAME};
+use super::paths::checkpoint_date_dir;
+use super::{checkpoint_root, clear_path_caches, object_shard, OBJECT_DIR_NAME};
 
 /// 整理旧布局，返回搬移的条目数（检查点目录 + 对象文件）。
 pub fn migrate_checkpoint_layout() -> Result<u64> {
@@ -20,8 +20,7 @@ pub fn migrate_checkpoint_layout() -> Result<u64> {
     moved += migrate_objects(&root);
     if moved > 0 {
         // 迁移后缓存的旧路径已失效，必须清空。
-        clear_checkpoint_dir_cache();
-        clear_object_path_cache();
+        clear_path_caches();
     }
     Ok(moved)
 }

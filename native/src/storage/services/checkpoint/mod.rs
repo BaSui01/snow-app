@@ -932,8 +932,10 @@ pub(crate) fn object_path(object_id: &str) -> Result<PathBuf> {
     Ok(resolved)
 }
 
-/// 清空对象路径解析缓存（布局迁移后调用）。
-fn clear_object_path_cache() {
+/// 清空对象与检查点目录的路径解析缓存。两者缓存的都是绝对路径，
+/// 布局迁移或检查点根目录切换（存储位置迁移 / 直接改目录）后必须调用。
+pub(crate) fn clear_path_caches() {
+    paths::clear_checkpoint_dir_cache();
     object_path_cache().clear();
 }
 
@@ -948,6 +950,29 @@ fn object_write_dir(object_id: &str) -> Result<PathBuf> {
         ))
     })?;
     Ok(directory)
+}
+
+/// 去掉文件的只读属性：Windows 清除只读位，Unix 仅补上属主写权限。
+fn ensure_owner_writable(path: &Path) -> std::io::Result<()> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = permissions.mode();
+        if mode & 0o200 != 0 {
+            return Ok(());
+        }
+        permissions.set_mode(mode | 0o200);
+    }
+    #[cfg(not(unix))]
+    {
+        if !permissions.readonly() {
+            return Ok(());
+        }
+        #[allow(clippy::permissions_set_readonly_false)]
+        permissions.set_readonly(false);
+    }
+    fs::set_permissions(path, permissions)
 }
 
 /// Publish the file's content into the content-addressed object store.
@@ -967,6 +992,16 @@ fn store_object(path: &Path) -> Result<String> {
             temporary.display()
         ))
     })?;
+    // fs::copy 会连同源文件属性（含 Windows 只读位）一起复制。对象按内容寻址，
+    // 不应继承源文件属性：只读对象会让并发发布覆盖、迁移复制与回滚恢复被拒绝访问，
+    // 且会把只读属性带给内容相同的其他文件。
+    if let Err(error) = ensure_owner_writable(&temporary) {
+        let _ = fs::remove_file(&temporary);
+        return Err(Error::from_reason(format!(
+            "Failed to prepare checkpoint object '{}': {error}",
+            temporary.display()
+        )));
+    }
     if final_path.exists() {
         let _ = fs::remove_file(&temporary);
     } else if let Err(error) = fs::rename(&temporary, &final_path) {

@@ -28,8 +28,7 @@ export const ChatInput = ({
   loadOlderMessages,
   pendingMessages = [],
   pendingMessageModes,
-  pendingMessageSources,
-  onOpenPendingSource,
+
   onWithdrawPendingMessage,
   onSendPendingMessageNow,
   onCompactConversation,
@@ -101,8 +100,7 @@ export const ChatInput = ({
       loadOlderMessages={loadOlderMessages}
       pendingMessages={pendingMessages}
       pendingMessageModes={pendingMessageModes}
-      pendingMessageSources={pendingMessageSources}
-      onOpenPendingSource={onOpenPendingSource}
+
       onWithdrawPendingMessage={onWithdrawPendingMessage}
       onSendPendingMessageNow={onSendPendingMessageNow}
       onCompactConversation={onCompactConversation}

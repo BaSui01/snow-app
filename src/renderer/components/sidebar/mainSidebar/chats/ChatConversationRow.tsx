@@ -1,4 +1,6 @@
-import { Fragment, memo, useCallback } from "react";
+import { Fragment, memo, useCallback, useLayoutEffect, useMemo } from "react";
+import { isSubAgentTerminal } from "../../../../../shared/subAgentRuns";
+import { useSubAgentRuns } from "../../../mainContent/chatMessages/hooks/subAgentRuntimeClient";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import { ChatItem } from "../ChatItem";
@@ -39,7 +41,11 @@ type ChatConversationRowProps = {
     conversationId: string,
     directoryId: string,
   ) => void;
-  onToggleSelect: (conversationId: string) => void;
+  onToggleSelect: (
+    conversationId: string,
+    modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) => boolean;
+  onSelectionBlockedChange: (conversationId: string, blocked: boolean) => void;
   onEnterMultiSelect?: () => void;
   onToggleTree: (conversationId: string) => void;
   onToggleWorkflowNode: (conversationId: string) => void;
@@ -88,6 +94,7 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onSelectConversation,
   onSelectChildConversation,
   onToggleSelect,
+  onSelectionBlockedChange,
   onEnterMultiSelect,
   onToggleTree,
   onToggleWorkflowNode,
@@ -101,15 +108,46 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onArchive,
 }: ChatConversationRowProps): React.JSX.Element {
   const conversationId = conversation.conversationId;
+  const { runs } = useSubAgentRuns(
+    isPendingSessionKey(conversationId) ? undefined : conversationId,
+  );
+  // Reuse the existing conversation tree; undelivered results do not request user input.
+  const activeRuns = runs.filter((run) => !isSubAgentTerminal(run.status));
+  const hasActiveRuns = activeRuns.length > 0;
+  useLayoutEffect(() => {
+    onSelectionBlockedChange(conversationId, hasActiveRuns);
+    return () => {
+      onSelectionBlockedChange(conversationId, false);
+    };
+  }, [conversationId, hasActiveRuns, onSelectionBlockedChange]);
+  const needsAttention = runs.some((run) => run.status === "waiting_input");
+  const runAttentionIds = useMemo(
+    () =>
+      new Set([
+        ...attentionRequiredConversationIds,
+        ...runs
+          .filter((run) => run.status === "waiting_input")
+          .map((run) => run.conversationId),
+      ]),
+    [attentionRequiredConversationIds, runs],
+  );
   const isWorkflow = workflowNodeConversations.length > 0;
   const hasTreeChildren = isWorkflow || subAgentConversations.length > 0;
 
-  const handleSelect = useCallback((): void => {
-    onSelectConversation(conversation);
-  }, [conversation, onSelectConversation]);
-  const handleToggleSelect = useCallback((): void => {
-    onToggleSelect(conversationId);
-  }, [conversationId, onToggleSelect]);
+  const handleSelect = useCallback(
+    (event: React.MouseEvent | React.KeyboardEvent): void => {
+      if (!onToggleSelect(conversationId, event)) {
+        onSelectConversation(conversation);
+      }
+    },
+    [conversation, conversationId, onSelectConversation, onToggleSelect],
+  );
+  const handleToggleSelect = useCallback(
+    (event: React.MouseEvent | React.KeyboardEvent): void => {
+      onToggleSelect(conversationId, event);
+    },
+    [conversationId, onToggleSelect],
+  );
   const handleToggleTree = useCallback((): void => {
     onToggleTree(conversationId);
   }, [conversationId, onToggleTree]);
@@ -156,19 +194,24 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         conversation={conversation}
         isDraggable={!isPendingSessionKey(conversationId)}
         isActive={isActive}
-        isAttentionRequired={attentionRequiredConversationIds.has(
-          conversationId,
-        )}
+        isAttentionRequired={
+          needsAttention || attentionRequiredConversationIds.has(conversationId)
+        }
         isStreaming={streamingConversationIds.has(conversationId)}
         isPaused={pausedConversationIds.has(conversationId)}
-        isCompleted={completedConversationIds.has(conversationId)}
+        isCompleted={
+          activeRuns.length === 0 &&
+          !needsAttention &&
+          completedConversationIds.has(conversationId)
+        }
         isRunning={
+          activeRuns.length > 0 ||
           runningConversationIds.has(conversationId) ||
           surfacedConversationIds.has(conversationId)
         }
         showPinBadge={showPinBadge}
         subAgentConversations={subAgentConversations}
-        subAgentAttentionRequiredIds={attentionRequiredConversationIds}
+        subAgentAttentionRequiredIds={runAttentionIds}
         isWorkflow={isWorkflow}
         isTreeExpanded={isTreeExpanded}
         onToggleTree={handleToggleTree}
@@ -211,9 +254,7 @@ export const ChatConversationRow = memo(function ChatConversationRow({
             {subAgentConversations.length > 0 ? (
               <SubAgentListPanel
                 conversations={subAgentConversations}
-                attentionRequiredConversationIds={
-                  attentionRequiredConversationIds
-                }
+                attentionRequiredConversationIds={runAttentionIds}
                 onSelect={handleSelectChild}
               />
             ) : null}

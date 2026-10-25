@@ -123,7 +123,16 @@ export function ChatsSection({
   });
 
   const selection = useChatSelection({
+    directoryId,
     conversations: list.conversations,
+    getOrderedConversationIds: () =>
+      timeGroups
+        .filter((group) => layout.collapsedGroupKeys[group.key] !== true)
+        .flatMap((group) =>
+          group.conversations.map(
+            (conversation) => conversation.conversationId,
+          ),
+        ),
     runningConversationIds,
     surfacedConversationIds: tree.surfacedConversationIds,
   });
@@ -327,6 +336,7 @@ export function ChatsSection({
         onRename={actions.handleRename}
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
+        onSelectionBlockedChange={selection.handleSelectionBlockedChange}
         onSetEmoji={actions.handleSetEmoji}
         onToggleSelect={selection.handleToggleSelect}
         onToggleTree={tree.handleToggleConversationTree}

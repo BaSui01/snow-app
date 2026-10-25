@@ -31,6 +31,14 @@ export function useConversationTree({
   runningConversationIds,
 }: UseConversationTreeOptions) {
   const [subAgentMap, setSubAgentMap] = useState<SubAgentMap>({});
+  const [runTreeVersion, setRunTreeVersion] = useState(0);
+  useEffect(
+    () =>
+      window.snow.onSubAgentRunsChanged(() => {
+        setRunTreeVersion((version) => version + 1);
+      }),
+    [],
+  );
   // Workflow 主会话 -> 其 workflow 节点会话（树形子层）
   const [workflowNodeMap, setWorkflowNodeMap] = useState<SubAgentMap>({});
   const [expandedSubAgentConversationIds, setExpandedSubAgentConversationIds] =
@@ -57,14 +65,20 @@ export function useConversationTree({
   // 含待确认子代理的父会话也视为需关注：与运行中会话一样置顶排序，
   // 保证会话较多时用户不会漏掉被暂停等待确认的子代理
   const surfacedConversationIds = useMemo(() => {
-    if (attentionRequiredConversationIds.size === 0) {
-      return runningConversationIds;
-    }
     const next = new Set(runningConversationIds);
+    const activeStatuses = new Set([
+      "queued",
+      "running",
+      "waiting_input",
+      "finalizing",
+      "cancelling",
+    ]);
     for (const [parentId, subs] of Object.entries(subAgentMap)) {
       if (
-        subs.some((sub) =>
-          attentionRequiredConversationIds.has(sub.conversationId),
+        subs.some(
+          (sub) =>
+            attentionRequiredConversationIds.has(sub.conversationId) ||
+            activeStatuses.has(sub.subAgentStatus),
         )
       ) {
         // 子代理挂在 workflow 节点会话下时，需要继续提升到
@@ -199,6 +213,7 @@ export function useConversationTree({
     workflowNodeIdsKey,
     conversationListVersion,
     conversationTreeVersion,
+    runTreeVersion,
     conversationsRef,
   ]);
 

@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { EditContextMenu } from "../common/EditContextMenu";
 import { CustomSelect } from "../common/CustomSelect";
 import { HighlightedText } from "../common/HighlightedText";
 import type {
@@ -31,6 +32,7 @@ import type {
   ConversationNavigationTarget,
 } from "../../hooks/useConversationNavigation";
 import { useSplitResize } from "../../hooks/useSplitResize";
+import { useEditContextMenu } from "../../hooks/useEditContextMenu";
 import {
   consumeProjectMemorySearchSeed,
   OPEN_PROJECT_MEMORY_PANEL_EVENT,
@@ -298,6 +300,14 @@ export function ProjectMemoryPanel({
   const requestIdRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const listScrollRef = useRef<HTMLDivElement>(null);
+
+  // 搜索框与编辑表单（标题/内容/标签）共用的右键菜单（剪切/复制/粘贴/全选）。
+  const {
+    editMenu,
+    openEditMenu: handleEditContextMenu,
+    runEditCommand: handleEditCommand,
+    closeEditMenu,
+  } = useEditContextMenu();
   /** 已解析过的来源会话 ID：滚动加载只补查新增条目，避免重复批量查询。 */
   const resolvedSourceIdsRef = useRef<Set<string>>(new Set());
   // 列表数据所属的「查询范围」（项目 + 状态筛选 + 类型筛选 + 关键词）：
@@ -844,6 +854,7 @@ export function ProjectMemoryPanel({
               setActiveQuery("");
             }
           }}
+          onContextMenu={handleEditContextMenu}
           placeholder={t("memory.searchPlaceholder", {
             defaultValue: "Search memories",
           })}
@@ -1169,6 +1180,7 @@ export function ProjectMemoryPanel({
           onChange={(event) =>
             setDraft((prev) => ({ ...prev, title: event.target.value }))
           }
+          onContextMenu={handleEditContextMenu}
           placeholder={t("memory.titlePlaceholder", {
             defaultValue: "Title (dedup key)",
           })}
@@ -1251,6 +1263,7 @@ export function ProjectMemoryPanel({
           onChange={(event) =>
             setDraft((prev) => ({ ...prev, content: event.target.value }))
           }
+          onContextMenu={handleEditContextMenu}
           placeholder={t("memory.contentPlaceholder", {
             defaultValue: "Details (paths, commands, reasons...)",
           })}
@@ -1262,6 +1275,7 @@ export function ProjectMemoryPanel({
           onChange={(event) =>
             setDraft((prev) => ({ ...prev, tags: event.target.value }))
           }
+          onContextMenu={handleEditContextMenu}
           placeholder={t("memory.tagsPlaceholder", {
             defaultValue: "Tags (comma separated)",
           })}
@@ -1352,6 +1366,13 @@ export function ProjectMemoryPanel({
         title={t("memory.deleteTitle", { defaultValue: "Delete memory" })}
         variant="danger"
       />
+      {editMenu && (
+        <EditContextMenu
+          menu={editMenu}
+          onCommand={handleEditCommand}
+          onClose={closeEditMenu}
+        />
+      )}
     </div>
   );
 }

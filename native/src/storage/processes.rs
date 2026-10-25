@@ -27,6 +27,10 @@ struct ProcessSample {
     cpu_time_ms: u64,
     memory_bytes: i64,
     thread_count: u32,
+    /// 进程创建时间（平台原生单位，仅用于同一次快照内比较先后）。
+    /// Windows 为 FILETIME；取不到句柄时为 None。其它平台的 ppid 始终指向
+    /// 存活父进程（孤儿会被 init / launchd 收养），无需该字段，恒为 None。
+    start_time: Option<u64>,
 }
 
 /// 上次采样的基线：用于把累计 CPU 时间换算成瞬时占用百分比。
@@ -130,7 +134,8 @@ fn cpu_percent_since(
 ///
 /// 采用「反复扩展」而不是递归：先用 parent → children 建邻接表，再从根做一次
 /// 广度优先，天然免疫进程表里的环（理论上不存在，但 pid 复用时可能构造出异常
-/// 关系，visited 集合保证不会死循环）。
+/// 关系，visited 集合保证不会死循环）。每条父子边还要经过 [`is_child_of`]
+/// 校验，排除 pid 复用造成的伪父子关系。
 fn collect_tree(all: &[ProcessSample], root_pid: u32) -> Vec<ProcessSample> {
     let mut children: HashMap<u32, Vec<usize>> = HashMap::new();
     let mut root_index: Option<usize> = None;
@@ -150,25 +155,43 @@ fn collect_tree(all: &[ProcessSample], root_pid: u32) -> Vec<ProcessSample> {
     let mut queue: Vec<usize> = vec![root_index];
     let mut result: Vec<ProcessSample> = Vec::new();
     while let Some(index) = queue.pop() {
+        let parent = &all[index];
         result.push(ProcessSample {
-            pid: all[index].pid,
-            parent_pid: all[index].parent_pid,
-            name: all[index].name.clone(),
-            exe_path: all[index].exe_path.clone(),
-            cpu_time_ms: all[index].cpu_time_ms,
-            memory_bytes: all[index].memory_bytes,
-            thread_count: all[index].thread_count,
+            pid: parent.pid,
+            parent_pid: parent.parent_pid,
+            name: parent.name.clone(),
+            exe_path: parent.exe_path.clone(),
+            cpu_time_ms: parent.cpu_time_ms,
+            memory_bytes: parent.memory_bytes,
+            thread_count: parent.thread_count,
+            start_time: parent.start_time,
         });
-        if let Some(descendants) = children.get(&all[index].pid) {
+        if let Some(descendants) = children.get(&parent.pid) {
             for &child_index in descendants {
-                let child_pid = all[child_index].pid;
-                if visited.insert(child_pid) {
+                let child = &all[child_index];
+                if is_child_of(parent, child) && visited.insert(child.pid) {
                     queue.push(child_index);
                 }
             }
         }
     }
     result
+}
+
+/// 校验 `child` 是否真是 `parent` 派生的进程。
+///
+/// Windows 的 `th32ParentProcessID` 只是创建时记下的父 PID：父进程退出后该 PID
+/// 会被系统复用，孤儿进程（explorer.exe、各类常驻程序等）的 ppid 可能恰好等于
+/// 本应用某个进程的 PID，整棵无关子树就会被误并入任务管理器，表现为应用占用
+/// 数十 GB 内存。真实子进程一定不早于父进程创建，据此剔除伪父子关系；任一侧
+/// 取不到创建时间时无法证明归属，按非子进程处理。其它平台不提供创建时间
+/// （ppid 始终指向存活父进程），直接信任 ppid。
+fn is_child_of(parent: &ProcessSample, child: &ProcessSample) -> bool {
+    match (parent.start_time, child.start_time) {
+        (Some(parent_start), Some(child_start)) => child_start >= parent_start,
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 // ============================================================================
@@ -244,6 +267,7 @@ fn collect_processes() -> Result<Vec<ProcessSample>> {
                 // 进程树结构（内存 / CPU 记 0）；线程数可直接取进程快照字段。
                 let mut cpu_time_ms = 0u64;
                 let mut memory_bytes = 0i64;
+                let mut start_time: Option<u64> = None;
                 let mut exe_path = String::new();
                 let thread_count = entry.cntThreads;
                 if pid != 0 {
@@ -266,6 +290,7 @@ fn collect_processes() -> Result<Vec<ProcessSample>> {
                             let total_100ns = filetime_to_u64(kernel)
                                 .saturating_add(filetime_to_u64(user));
                             cpu_time_ms = total_100ns / 10_000;
+                            start_time = Some(filetime_to_u64(creation));
                         }
                         let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
                         counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
@@ -284,6 +309,7 @@ fn collect_processes() -> Result<Vec<ProcessSample>> {
                     cpu_time_ms,
                     memory_bytes,
                     thread_count,
+                    start_time,
                 });
 
                 if Process32NextW(snapshot, &mut entry) == 0 {
@@ -535,6 +561,7 @@ fn collect_processes() -> Result<Vec<ProcessSample>> {
             cpu_time_ms,
             memory_bytes,
             thread_count,
+            start_time: None,
         });
     }
     Ok(samples)
@@ -571,6 +598,7 @@ fn collect_processes() -> Result<Vec<ProcessSample>> {
             cpu_time_ms: stat.cpu_time_ms,
             memory_bytes: stat.memory_bytes,
             thread_count: stat.thread_count,
+            start_time: None,
         });
     }
     Ok(samples)

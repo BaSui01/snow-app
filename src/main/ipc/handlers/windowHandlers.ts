@@ -515,6 +515,45 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     clipboard.writeText(text);
   });
 
+  // 剪贴板是否还有可粘贴的内容：编辑区右键菜单据此自动禁用「粘贴」。
+  // 只查文本不够——剪贴板里可能只有图片/文件（readText 为空但可粘贴）。
+  ipcMain.handle("clipboard:has-content", () => {
+    if (clipboard.availableFormats().length > 0) {
+      return true;
+    }
+    return !clipboard.readImage().isEmpty();
+  });
+
+  // ===== Editing commands (custom context menu) =====
+  // 应用已 Menu.setApplicationMenu(null)，Electron 不再提供原生编辑菜单；
+  // 渲染进程的 document.execCommand("paste") 受剪贴板读取权限限制不可用，
+  // 因此自建菜单统一走主进程的真实编辑命令（会正常派发 copy/cut/paste 事件，
+  // 编辑区既有的事件处理逻辑照常生效）。
+  ipcMain.handle("edit:command", (event, command: unknown) => {
+    if (
+      command !== "cut" &&
+      command !== "copy" &&
+      command !== "paste" &&
+      command !== "selectAll"
+    ) {
+      throw new Error("Unsupported edit command");
+    }
+    const contents = event.sender;
+    if (command === "cut") {
+      contents.cut();
+      return;
+    }
+    if (command === "copy") {
+      contents.copy();
+      return;
+    }
+    if (command === "paste") {
+      contents.paste();
+      return;
+    }
+    contents.selectAll();
+  });
+
   // ===== Shell (file manager reveal) =====
   // 在系统文件管理器中显示文件（Windows 资源管理器 / macOS Finder / Linux
   // 文件管理器），文件会高亮选中；传入目录时直接打开该目录。

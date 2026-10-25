@@ -373,6 +373,9 @@ export type ChatTextPayload = {
   source?: string;
 };
 
+/** 自建右键菜单可执行的编辑命令（由主进程 WebContents 真实执行）。 */
+export type SnowEditCommand = "cut" | "copy" | "paste" | "selectAll";
+
 type ChatTextInsertSubscriber = (payload: ChatTextPayload) => void;
 
 const chatTextInsertSubscribers = new Set<ChatTextInsertSubscriber>();
@@ -1569,6 +1572,12 @@ export const windowApi = {
     ipcRenderer.invoke("clipboard:read-text"),
   writeClipboardText: (text: string): Promise<void> =>
     ipcRenderer.invoke("clipboard:write-text", text),
+  /** 剪贴板是否有可粘贴的内容（文本、图片或文件）：右键菜单「粘贴」的禁用依据。 */
+  hasClipboardContent: (): Promise<boolean> =>
+    ipcRenderer.invoke("clipboard:has-content"),
+  /** 执行编辑命令（剪切/复制/粘贴/全选）：主进程派发真实编辑命令。 */
+  runEditCommand: (command: SnowEditCommand): Promise<void> =>
+    ipcRenderer.invoke("edit:command", command),
   /** 在系统文件管理器中显示指定路径（文件高亮选中，目录直接打开）。 */
   showItemInFolder: (path: string): Promise<void> =>
     ipcRenderer.invoke("shell:show-item-in-folder", path),

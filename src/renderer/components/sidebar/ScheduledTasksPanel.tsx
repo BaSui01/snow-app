@@ -25,6 +25,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useEscapeClose } from "../../hooks/useEscapeClose";
+import { useEditContextMenu } from "../../hooks/useEditContextMenu";
 import { useI18n } from "../../i18n";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { useSplitResize } from "../../hooks/useSplitResize";
@@ -51,6 +52,7 @@ import {
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { CustomSelect } from "../common/CustomSelect";
+import { EditContextMenu } from "../common/EditContextMenu";
 import { THINKING_OPTIONS_BY_METHOD } from "../mainContent/chatInput/constants";
 import {
   buildSegmentsHtml,
@@ -374,6 +376,14 @@ export function ScheduledTasksPanel({
   const mentionStartOffsetRef = useRef<number>(-1);
   const promptDraggingRef = useRef(false);
   const thinkingMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // 提示词编辑器 / 任务名称 / 预脚本共用的右键菜单（剪切/复制/粘贴/全选）。
+  const {
+    editMenu,
+    openEditMenu: handleEditContextMenu,
+    runEditCommand: handleEditCommand,
+    closeEditMenu,
+  } = useEditContextMenu();
 
   const globalTasks = useMemo(
     () => tasks.filter((task) => task.directoryId === ""),
@@ -2366,6 +2376,7 @@ export function ScheduledTasksPanel({
               <textarea
                 className="scheduled-tasks-script-textarea"
                 onChange={(event) => setPreScript(event.target.value)}
+                onContextMenu={handleEditContextMenu}
                 placeholder={t("scheduledTask.preScriptPlaceholder", {
                   defaultValue: "e.g. git diff --quiet || exit 1",
                 })}
@@ -2469,6 +2480,7 @@ export function ScheduledTasksPanel({
               <span>{t("scheduledTask.name", { defaultValue: "Name" })}</span>
               <input
                 onChange={(event) => setName(event.target.value)}
+                onContextMenu={handleEditContextMenu}
                 placeholder={t("scheduledTask.namePlaceholder", {
                   defaultValue: "e.g. Daily code review reminder",
                 })}
@@ -2512,6 +2524,7 @@ export function ScheduledTasksPanel({
                       "Prompt sent to the AI Loop on each run. The task has access to all tools.",
                   })}
                   onClick={handlePromptClick}
+                  onContextMenu={handleEditContextMenu}
                   onDragLeave={handlePromptDragLeave}
                   onDragOver={handlePromptDragOver}
                   onDrop={handlePromptDrop}
@@ -3048,6 +3061,13 @@ export function ScheduledTasksPanel({
         })}
         variant="danger"
       />
+      {editMenu && (
+        <EditContextMenu
+          menu={editMenu}
+          onCommand={handleEditCommand}
+          onClose={closeEditMenu}
+        />
+      )}
     </div>
   );
 }

@@ -1,14 +1,17 @@
 import {
   AppWindow,
+  BookOpen,
   ChevronDown,
   CircleArrowUp,
   CircleHelp,
   Download,
   Ellipsis,
+  Keyboard,
   LoaderCircle,
+  ScrollText,
   Settings,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { AnimatedMemoIcon } from "../icons/AnimatedMemoIcon";
@@ -39,6 +42,7 @@ import {
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
 import { useShortcutLabel } from "../../hooks/useShortcutLabel";
+import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { ShortcutHint } from "../ShortcutHint";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
@@ -56,6 +60,7 @@ import {
 } from "../mainContent/team/useTeamData";
 import { useCrossProjectNotifications } from "./mainSidebar/useCrossProjectNotifications";
 import { GlobalSearchModal } from "./GlobalSearchModal";
+import { requestGeneralSettingsTab } from "./generalSettingsNavigation";
 import { MEMOS_CHANGED_EVENT } from "./memoEvents";
 import { OPEN_PROJECT_MEMORY_PANEL_EVENT } from "./projectMemoryNavigation";
 import { UpdateDialog, OPEN_UPDATE_DIALOG_EVENT } from "./UpdateDialog";
@@ -348,6 +353,69 @@ export function MainSidebarContent({
       },
     );
   }, [activeDirectoryId, activeMainView, onSelectMainView, prefillComposer, t]);
+
+  // 「使用指南」浮层菜单：菜单挂在页脚（页脚行 overflow: hidden 会裁掉绝对定位子元素），
+  // 按钮与菜单分处两处，点击外部判定同时排除二者。
+  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
+  const helpMenuRef = useRef<HTMLDivElement>(null);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+  const { registerScopedHandler } = useKeyboardShortcutsSettings();
+
+  useEffect(() => {
+    if (!isHelpMenuOpen) {
+      return undefined;
+    }
+    const handlePointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (
+        helpMenuRef.current?.contains(target) ||
+        helpButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setIsHelpMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isHelpMenuOpen]);
+
+  // 菜单打开期间接管 cancelSession（默认 ESC）：只关闭菜单，
+  // 绝不冒泡到全局「中断会话」处理器误停 AI 会话。
+  useEffect(() => {
+    if (!isHelpMenuOpen) {
+      return undefined;
+    }
+    return registerScopedHandler(
+      "cancelSession",
+      () => setIsHelpMenuOpen(false),
+      () => true,
+    );
+  }, [isHelpMenuOpen, registerScopedHandler]);
+
+  /** 打开使用指南（原有行为），并收起菜单。 */
+  const handleOpenUserGuideFromMenu = useCallback((): void => {
+    setIsHelpMenuOpen(false);
+    handleOpenUserGuide();
+  }, [handleOpenUserGuide]);
+
+  /** 打开快捷键帮助浮层（与 mod+/ 快捷键同一事件）。 */
+  const handleOpenShortcutHelp = useCallback((): void => {
+    setIsHelpMenuOpen(false);
+    shortcutEvents.emit("show-shortcut-help");
+  }, []);
+
+  /** 打开更新日志：切到设置内容页的「通用设置 - 更新日志」tab。 */
+  const handleOpenChangelog = useCallback((): void => {
+    setIsHelpMenuOpen(false);
+    requestGeneralSettingsTab("changelog");
+    onSelectMainView("general-settings");
+    onSwitchContent("settings");
+  }, [onSelectMainView, onSwitchContent]);
 
   // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索面板，Ctrl/Cmd+B 切换备忘录页面。
   // 快捷键引擎通过 shortcutEvents 总线触发，页面切换状态由父级持有。
@@ -806,17 +874,66 @@ export function MainSidebarContent({
             placement="top"
           >
             <button
+              ref={helpButtonRef}
               aria-label={t("sidebar.userGuide", {
                 defaultValue: "User guide",
               })}
+              aria-expanded={isHelpMenuOpen}
+              aria-haspopup="menu"
               className="nav-item sidebar-user-guide-btn"
-              onClick={handleOpenUserGuide}
+              onClick={() => setIsHelpMenuOpen((prev) => !prev)}
               type="button"
             >
               <CircleHelp size={18} strokeWidth={1.8} />
             </button>
           </Tooltip>
         </div>
+        {/* 使用指南浮层菜单：用户指南 / 快捷键指南 / 更新日志 */}
+        {isHelpMenuOpen && (
+          <div
+            ref={helpMenuRef}
+            className="sidebar-help-menu"
+            role="menu"
+            aria-label={t("sidebar.userGuide", { defaultValue: "User guide" })}
+          >
+            <button
+              className="sidebar-help-menu-item"
+              role="menuitem"
+              onClick={handleOpenUserGuideFromMenu}
+              type="button"
+            >
+              <BookOpen size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span className="sidebar-help-menu-label">
+                {t("sidebar.userGuide", { defaultValue: "User guide" })}
+              </span>
+            </button>
+            <button
+              className="sidebar-help-menu-item"
+              role="menuitem"
+              onClick={handleOpenShortcutHelp}
+              type="button"
+            >
+              <Keyboard size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span className="sidebar-help-menu-label">
+                {t("sidebar.shortcutGuide", {
+                  defaultValue: "Keyboard shortcuts",
+                })}
+              </span>
+              <ShortcutHint action="showShortcutHelp" />
+            </button>
+            <button
+              className="sidebar-help-menu-item"
+              role="menuitem"
+              onClick={handleOpenChangelog}
+              type="button"
+            >
+              <ScrollText size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span className="sidebar-help-menu-label">
+                {t("settings.changelogTab", { defaultValue: "Changelog" })}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
       <GlobalSearchModal
         open={isSearchOpen}

@@ -863,7 +863,7 @@ export const TopBar = ({
   const rightCardActions = (
     <div className="top-bar-right-actions">
       <div className="snow-client-slot" data-snow-slot="topbar.actions" />
-      {!hasCustomFrame && (
+      {!hasCustomFrame && !isRightPanelCollapsed && (
         <PlusMenuButton
           items={plusMenuItems}
           onAction={handlePlusMenuAction}
@@ -880,6 +880,15 @@ export const TopBar = ({
         >
           <RightPanelToggleIcon size={16} strokeWidth={1.8} />
         </button>
+      )}
+      {/* 右面板收起时面板内的 Plus 菜单不可见：在「展开面板」按钮右侧补一个
+          Plus 菜单，选中一项即新建对应 tab 并展开面板。 */}
+      {isRightPanelCollapsed && !isRightPanelFullscreen && (
+        <PlusMenuButton
+          items={plusMenuItems}
+          onAction={handlePlusMenuAction}
+          onOpenChange={setIsPlusMenuOpen}
+        />
       )}
       {!hasCustomFrame && (
         <button

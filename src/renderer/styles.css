@@ -1025,8 +1025,7 @@ body.is-panel-resizing * {
   max-width: 310px;
 }
 
-.app-shell.right-panel-collapsed .right-panel-fullscreen-btn,
-.app-shell.right-panel-collapsed .top-bar-plus-menu {
+.app-shell.right-panel-collapsed .right-panel-fullscreen-btn {
   display: none;
 }
 
@@ -9344,6 +9343,8 @@ body.is-panel-resizing * {
 
 /* Sidebar Footer */
 .sidebar-footer {
+  /* 使用指南浮层菜单的定位锚点（页脚行 overflow: hidden，菜单不能挂在行内） */
+  position: relative;
   margin-top: auto;
   padding: 8px 12px 12px;
 }
@@ -9375,6 +9376,72 @@ body.is-panel-resizing * {
 
 .sidebar-user-guide-btn {
   padding: 6px;
+}
+
+/* 使用指南浮层菜单：向上弹出并右对齐使用指南按钮。
+   bottom 以页脚为锚点：页脚上内边距 8px，减掉后正好对齐页脚行顶边。 */
+.sidebar-help-menu {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 8px);
+  z-index: 60;
+  display: flex;
+  min-width: 168px;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.sidebar-help-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.sidebar-help-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-help-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sidebar-help-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 快捷键提示靠右，与菜单文字分列两端 */
+.sidebar-help-menu-item .shortcut-hint {
+  margin-left: auto;
+}
+
+/* 菜单打开期间不再弹出按钮的悬浮提示，避免与菜单重叠 */
+.sidebar-footer:has(.sidebar-help-menu)
+  .tooltip-wrapper:has(.sidebar-user-guide-btn) {
+  --tooltip-suppressed: 1;
 }
 
 .sidebar-version-badge {
@@ -45567,6 +45634,41 @@ body.ctrl-held [data-path] {
 }
 .terminal-container .xterm-screen {
   padding: 0;
+}
+
+/* xterm v6 的滚动条由库内自绘（VS Code 派生），默认 14px 宽、无圆角，与全站
+   `::-webkit-scrollbar`（10px 轨道 + 6px 圆角滑块）风格不一致。这里按全站口径
+   收窄，并复用同一组 --scrollbar-thumb* 变量；轨道保持透明与全站一致。
+   尺寸是 xterm 写在内联样式上的（width/left），必须用 !important 覆盖。 */
+.terminal-container .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 10px !important;
+}
+
+.terminal-container
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider {
+  left: 2px !important;
+  width: 6px !important;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+}
+
+.terminal-container
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.terminal-container
+  .xterm
+  .xterm-scrollable-element
+  > .scrollbar.vertical
+  > .slider.active {
+  background: var(--scrollbar-thumb-active);
 }
 
 /* ===== Browser Panel ===== */

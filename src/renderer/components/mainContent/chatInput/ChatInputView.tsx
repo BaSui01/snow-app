@@ -41,6 +41,8 @@ import {
   markHelpGuideUsed,
 } from "../../../constants/helpGuide";
 import { HelpSkillDisabledDialog } from "../../common/HelpSkillDisabledDialog";
+import { EditContextMenu } from "../../common/EditContextMenu";
+import { useEditContextMenu } from "../../../hooks/useEditContextMenu";
 import {
   applyCustomCommandArguments,
   type EffectiveCustomCommand,
@@ -689,6 +691,13 @@ export const ChatInputView = ({
     handleDragOver,
     handleDragLeave,
   } = contentEditableInteractions;
+  // 编辑区右键菜单：剪切/复制/粘贴/全选（网页引用 chip 的菜单优先接管）。
+  const {
+    editMenu: inputEditMenu,
+    openEditMenu: handleInputContextMenu,
+    runEditCommand: handleInputEditCommand,
+    closeEditMenu: closeInputEditMenu,
+  } = useEditContextMenu();
   const { prediction: replyPrediction, consumePrediction } = useReplyPrediction(
     {
       conversationId: activeConversationId ?? null,
@@ -969,7 +978,11 @@ export const ChatInputView = ({
               scheduleHideChipDetails();
               scheduleHideConversationPreview();
             }}
-            onContextMenu={handleWebChipContextMenu}
+            onContextMenu={(event) => {
+              // 网页引用 chip 的菜单优先，其余位置弹出编辑菜单。
+              handleWebChipContextMenu(event);
+              handleInputContextMenu(event);
+            }}
             onClick={(event) => {
               handleChipRemove(event);
               handleTextSnippetClick(event);
@@ -1114,6 +1127,13 @@ export const ChatInputView = ({
             handleSelectResponsesFastMode={handleSelectResponsesFastMode}
           />
         </div>
+        {inputEditMenu && (
+          <EditContextMenu
+            menu={inputEditMenu}
+            onCommand={handleInputEditCommand}
+            onClose={closeInputEditMenu}
+          />
+        )}
       </div>
       <HelpSkillDisabledDialog
         open={isHelpSkillDialogOpen}

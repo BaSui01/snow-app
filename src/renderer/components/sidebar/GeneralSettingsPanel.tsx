@@ -35,6 +35,11 @@ import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { AppLockSettingsSection } from "./AppLockSettingsSection";
 import { ChangelogSection } from "./ChangelogSection";
+import {
+  OPEN_GENERAL_SETTINGS_TAB_EVENT,
+  consumeGeneralSettingsTab,
+  type GeneralSettingsTab,
+} from "./generalSettingsNavigation";
 import { OrphanProjectCleanupSection } from "./OrphanProjectCleanupSection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { useBusySendBehavior } from "../../constants/busySendBehavior";
@@ -262,9 +267,6 @@ type ImageLibraryMigrationState = {
   total: number;
 };
 
-type GeneralSettingsTab =
-  "general" | "storage" | "privacy" | "about" | "changelog";
-
 /** 取文件路径的父目录（跨平台字符串处理，避免在渲染层引入 node:path）。 */
 const parentDirOf = (filePath: string): string =>
   filePath.replace(/[\\\\/][^\\\\/]*$/, "") || filePath;
@@ -287,13 +289,34 @@ const formatBytes = (bytes: number): string => {
 
 export function GeneralSettingsPanel(): React.JSX.Element {
   const { locale, setLocale, supportedLocales, t } = useI18n();
-  const [activeTab, setActiveTab] = useState<GeneralSettingsTab>("general");
+  // 初始 tab 取走外部（侧栏「更新日志」等入口）暂存的目标 tab
+  const [activeTab, setActiveTab] = useState<GeneralSettingsTab>(
+    () => consumeGeneralSettingsTab() ?? "general",
+  );
   const [appVersion, setAppVersion] = useState<string>("");
   const [isChecking, setIsChecking] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
     INITIAL_UPDATE_STATUS,
   );
   const [checkHint, setCheckHint] = useState<CheckHint>(null);
+
+  // 面板已挂载时由事件切换 tab（侧栏「更新日志」等入口直达指定页）；
+  // 事件已送达即取走暂存值，避免面板重新挂载时被旧请求带回该 tab。
+  useEffect(() => {
+    const handler = (event: Event): void => {
+      const detail = (event as CustomEvent<{ tab?: GeneralSettingsTab }>)
+        .detail;
+      consumeGeneralSettingsTab();
+      if (detail?.tab) {
+        setActiveTab(detail.tab);
+      }
+    };
+
+    window.addEventListener(OPEN_GENERAL_SETTINGS_TAB_EVENT, handler);
+    return () => {
+      window.removeEventListener(OPEN_GENERAL_SETTINGS_TAB_EVENT, handler);
+    };
+  }, []);
 
   // 存储位置
   const [locations, setLocations] = useState<StorageLocations | null>(null);

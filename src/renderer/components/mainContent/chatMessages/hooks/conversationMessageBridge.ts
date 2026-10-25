@@ -1,5 +1,8 @@
+import {
+  prepareSubAgentArchive,
+  prepareSubAgentDeletion,
+} from "./subAgentParentInbox";
 import { useEffect, useRef } from "react";
-import type { ChatConversationRecord } from "../../../../../preload";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import {
   buildConversationMessages,
@@ -45,7 +48,7 @@ export const sendMessageToConversation = (
 const prepareBackgroundSession = async (
   ctx: ConversationContextValue,
   conversationId: string,
-): Promise<ChatConversationRecord> => {
+): Promise<void> => {
   const record = await window.snow.getChatConversation(conversationId);
   if (!record) {
     throw new Error(`Conversation not found: ${conversationId}`);
@@ -62,7 +65,7 @@ const prepareBackgroundSession = async (
   // 与进行中的视图加载共享同一请求，避免重复拉取并覆盖其结果。
   await ctx.historyLoadPromisesRef.current.get(conversationId);
   if (ctx.sessionsRef.current[conversationId]) {
-    return record;
+    return;
   }
 
   const [page, modes] = await Promise.all([
@@ -100,25 +103,6 @@ const prepareBackgroundSession = async (
       },
     };
   });
-  return record;
-};
-
-/**
- * 会话已绑定且仍存在的档案名。回合本身由后端按会话绑定解析，但子代理
- * 只继承本次发送显式携带的档案；显式带上绑定才能让整轮（含子代理）
- * 与会话绑定一致。绑定的档案已被删除时不携带，保持回退全局激活档案。
- */
-const resolveBoundApiProfile = async (
-  record: ChatConversationRecord,
-): Promise<string | undefined> => {
-  const bound = record.apiProfileName.trim();
-  if (!bound) {
-    return undefined;
-  }
-  const configs = await window.snow.listApiConfigs();
-  return configs.some((config) => config.profileName.trim() === bound)
-    ? bound
-    : undefined;
 };
 
 const deliverMessage = async (
@@ -130,15 +114,11 @@ const deliverMessage = async (
   if (!trimmed) {
     throw new Error("Message text must not be blank");
   }
-  const record = await prepareBackgroundSession(ctx, conversationId);
-  const apiProfile = await resolveBoundApiProfile(record);
+  await prepareBackgroundSession(ctx, conversationId);
   const wasBusy =
     ctx.sessionsRefData.current.get(conversationId)?.isSending === true;
   // 程序化发送省略 deliveryMode 时始终排队；会话空闲则直接开始新回合。
-  const options: ChatInputSendOptions = {
-    targetSessionKey: conversationId,
-    ...(apiProfile ? { apiProfile } : {}),
-  };
+  const options: ChatInputSendOptions = { targetSessionKey: conversationId };
   ctx.handleSendMessageRef.current(trimmed, options);
   return { conversationId, status: wasBusy ? "queued" : "started" };
 };
@@ -272,6 +252,7 @@ export const useConversationRemovalBridge = (
   ctx: ConversationContextValue,
   abortConversation: (conversationId: string) => void,
   handleNewChat: () => void,
+  stopConversation: (conversationId: string) => void,
 ): void => {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
@@ -279,6 +260,8 @@ export const useConversationRemovalBridge = (
   abortRef.current = abortConversation;
   const newChatRef = useRef(handleNewChat);
   newChatRef.current = handleNewChat;
+  const stopRef = useRef(stopConversation);
+  stopRef.current = stopConversation;
   useEffect(() => {
     const remover: ConversationRemover = async (
       conversationIds,
@@ -288,6 +271,16 @@ export const useConversationRemovalBridge = (
       const rootIds = options.skipPinned
         ? await excludePinnedConversations(conversationIds)
         : conversationIds;
+      // Archive moves settled data; only permanent deletion closes durable admission.
+      for (const rootId of rootIds) {
+        if (options.skipPinned) {
+          await prepareSubAgentArchive(rootId, () => stopRef.current(rootId));
+        } else {
+          await prepareSubAgentDeletion(ctxRef.current, rootId, () =>
+            stopRef.current(rootId),
+          );
+        }
+      }
       const targetIds = await collectStoredConversationTreeIds(rootIds);
       for (const targetId of targetIds) {
         abortRef.current(targetId);

@@ -6,9 +6,9 @@ import {
 import type {
   ChatConversationMessage,
   ConversationContextValue,
-  SubAgentSessionEvent,
   ToolAuthorizationDecision,
   ToolCallInfo,
+  PendingQueueItem,
 } from "../utils/conversationTypes";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import {
@@ -18,15 +18,14 @@ import {
   takeNextQueuedMessage,
   takePendingSteering,
 } from "../utils/pendingInputs";
-import {
-  createSubAgentMessageId,
-  registerSubAgentMessage,
-} from "./subAgentMessageStatus";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
-import type {
-  ChatConversationRecord,
-  SubAgentUnavailableTool,
-} from "../../../../../preload";
+import {
+  settledResult,
+  awaitSettledSubAgentResult,
+  runError,
+  toolFailure,
+} from "./subAgentRunResults";
+import { recordSkippedSubAgentTools } from "./subAgentSkippedTools";
 import {
   createMessageId,
   deleteCheckpoints,
@@ -46,21 +45,20 @@ import {
   runAutoCompactionGate,
 } from "../utils/autoCompaction";
 import { settleResponseHtmlPreviewEligibility } from "../utils/messageSettlement";
+import {
+  failedModelMessage,
+  hasModelRetryToolCalls,
+  modelFailureReason,
+  modelRetryToolCallsRejectedReason,
+  modelRetryToolsBlockedReason,
+  settleApiCancellation,
+} from "./modelResponseFailure";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
   extractFileChangesFromTool,
   extractFileChangeCoverageFromTool,
 } from "./fileChangeTracking";
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
-import {
-  appendToolCorrectionNote,
-  type ToolCorrectionSuccess,
-} from "./toolCorrection";
-import {
-  applyToolCorrectionToCall,
-  correctFailedToolCall,
-  createToolDefinitionLookup,
-} from "./toolCorrectionRunner";
 import type { SubAgentRuntimeConfig } from "./subAgentRuntimeConfig";
 import {
   buildUnavailableToolsPrompt,
@@ -78,17 +76,61 @@ import {
   parseSubAgentAcceptanceReport,
   peekSubAgentAcceptanceSnapshot,
   recordSubAgentEvidence,
+  restoreSubAgentAcceptanceSnapshot,
+  mergeSubAgentAcceptanceSnapshot,
 } from "./subAgentAcceptance";
 import type {
   SubAgentAcceptanceEvidenceStatus,
   SubAgentAcceptanceSnapshot,
 } from "./subAgentAcceptance";
-import { getResponsesFastModeFromConfig } from "../../chatInput/configThinking";
 import {
-  acquireSubAgentSlot,
   awaitSubAgentFailureDecision,
-  releaseSubAgentSlot,
+  cancelSubAgentRunWaits,
+  registerSubAgentRunControl,
+  unregisterSubAgentRunControl,
 } from "./subAgentRunControl";
+import { loadSubAgentExecutionMode } from "./subAgentExecutionMode";
+import {
+  activeConversationRun,
+  collaborationToolsJson,
+  executePeerMessage,
+  parseCollaborationGroup,
+} from "./subAgentCollaboration";
+import {
+  createSubAgentBudget,
+  loadSubAgentBudgetLimits,
+} from "./subAgentBudget";
+import { waitForSubAgentCapacity } from "./subAgentCapacity";
+import { logSubAgentDiagnostic } from "./subAgentDiagnostics";
+import {
+  isSubAgentEmptyTextRead,
+  withSubAgentTerminalFailureOutput,
+} from "./subAgentToolFailure";
+import { detectToolFailure } from "./toolCorrection";
+import { validateToolCall } from "../utils/conversationHelpers";
+import type {
+  SubAgentAccepted,
+  SubAgentLogicalInput,
+  SubAgentMessageQueued,
+  SubAgentExecutionMode,
+  SubAgentExecutionSnapshot,
+  SubAgentHookOutcome,
+  SubAgentOutcome,
+  SubAgentRunCommand,
+  SubAgentRunCommandResult,
+  SubAgentRunError,
+  SubAgentRunRecord,
+  SubAgentRunScope,
+} from "../../../../../shared/subAgentRuns";
+import { isSubAgentTerminal } from "../../../../../shared/subAgentRuns";
+import {
+  notifySubAgentRunChanges,
+  readSubAgentRunResult,
+  retainOwnedSubAgentResourceStop,
+  requestOwnedSubAgentRunCancel,
+  startOwnedSubAgentRun,
+} from "./subAgentRunRegistry";
+import type { SubAgentRunPersistence } from "./subAgentRunRegistry";
 import {
   PARENT_PLAN_APPROVAL_REQUIRED,
   accumulateConversationRunStats,
@@ -100,27 +142,17 @@ import {
   markRunStarted,
 } from "./agentLoopHelpers";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+/** Communication is explicitly authorized per durable run, never ambient. */
+export const SUB_AGENT_COMMS_TOOL_NAMES = new Set(["sub-agents-sendMessage"]);
 
-/** 子代理队友通信工具：所有子代理默认携带（Rust collect_allowed_mcp_tools
- *  无条件追加定义；执行在渲染进程完成）。 */
-export const SUB_AGENT_COMMS_TOOL_NAMES = new Set([
-  "sub-agents-listTeammates",
-  "sub-agents-sendMessage",
-]);
-
-/** 主会话专用的子代理管理工具：仅主会话工具集可见（Rust collect_allowed_
- *  mcp_tools 对子代理显式过滤），用于查询当前会话子代理并继续其运行。 */
+/** 主会话管理工具；Rust 对子代理过滤。 */
 export const SUB_AGENT_MAIN_TOOL_NAMES = new Set([
-  "sub-agents-listSubAgents",
   "sub-agents-continue",
+  "sub-agents-getResult",
+  "sub-agents-cancel",
 ]);
 
-/** 子代理恢复器：主会话 sub-agents-continue 重新激活已结束子代理的入口。
- * resume 返回 JSON 字符串（success/queued/summary），与工具结果格式一致。
- * 会话持久化到 DB，应用重启后可由 restoreSubAgentResumer 按需重建。 */
+/** continue 恢复器，返回工具结果 JSON；重启后按需重建。 */
 export type SubAgentResumer = {
   parentConversationId: string;
   agentId: string;
@@ -128,13 +160,14 @@ export type SubAgentResumer = {
   resume: (
     messages: { role: "user"; content: string }[],
     checkpointIds?: string[],
+    options?: RunOptions,
+    activationDeps?: SubAgentActivationDeps,
   ) => Promise<string>;
 };
 
-/** 本次应用运行期间激活（或从 DB 恢复）的子代理恢复器注册表
- * （key = 子代理会话 id）。子代理运行结束后注册保留，主会话可凭它
- * 重新激活；应用重启后注册表清空，continue 时按需从 DB 重建。 */
+/** 按会话保留恢复器至 renderer 退出，终态不移除。 */
 const subAgentResumers = new Map<string, SubAgentResumer>();
+const subAgentSessionOwners = new Map<string, string>();
 
 type CheckpointIdsRef = { current: string[] };
 
@@ -144,6 +177,9 @@ export type SubAgentActivationDeps = {
     toolCalls: ToolCallInfo[],
     conversationId: string,
     projectId?: string,
+    waitForConfirmation?: (
+      confirm: () => Promise<ToolAuthorizationDecision[]>,
+    ) => Promise<ToolAuthorizationDecision[]>,
   ) => Promise<ToolAuthorizationDecision[]>;
   parentApiProfile: string | undefined;
   parentModel: string | undefined;
@@ -153,6 +189,10 @@ export type SubAgentActivationDeps = {
   /** Effective Fast Mode captured by the parent run; an explicit tier is valid. */
   parentResponsesFastMode?: string | null;
   planApprovedSessionKeysRef: { current: Set<string> };
+  runPersistence?: {
+    command(command: SubAgentRunCommand): Promise<SubAgentRunCommandResult>;
+    onCommitted(run: SubAgentRunRecord): void;
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -199,6 +239,19 @@ type SubAgentRunLoopDeps = {
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"];
   planApprovedSessionKeysRef: { current: Set<string> };
   isSubCancelled: () => boolean;
+  slotOwner: string;
+  taskHistory: ReturnType<typeof currentAgentTask>;
+  worktreeMode: boolean;
+  parentPlanMode: boolean;
+  withWaiting: <T>(
+    reason: NonNullable<SubAgentRunRecord["waitingReason"]>,
+    action: () => Promise<T>,
+  ) => Promise<T>;
+  retainedPending: ReadonlySet<PendingQueueItem>;
+  takeRunMessages: () => Promise<string[]>;
+  runPersistence: SubAgentRunPersistence;
+  budget: ReturnType<typeof createSubAgentBudget>;
+  onExecutionError: (error: SubAgentRunError) => void;
 };
 
 /** 子代理回合循环工厂。激活（createSubAgentActivation）与重启后恢复
@@ -215,6 +268,14 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     requestToolAuthorizations,
     planApprovedSessionKeysRef,
     isSubCancelled,
+    slotOwner,
+    taskHistory,
+    worktreeMode,
+    parentPlanMode,
+    withWaiting,
+    takeRunMessages,
+    retainedPending,
+    onExecutionError,
   } = deps;
   const agentName = runtimeConfig.agentName;
   const subAgentToolsJson = runtimeConfig.toolsJson;
@@ -244,14 +305,15 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       options.conversationRuntimeConfigOverride.responsesFastMode ===
         sendOptions.responsesFastMode);
   let stopped = false;
+  const diagnosticScope = {
+    runId: slotOwner,
+    conversationId: subConvId,
+    parentConversationId,
+  };
   let activeCheckpointId: string | undefined;
   let activeCheckpointWorkDir = subCheckpointWorkDir;
   const createPendingCheckpoint = async (): Promise<string | undefined> => {
-    const workDir = await resolveConversationWorkspacePath(
-      subConvId,
-      dirId,
-      subCheckpointWorkDir ?? directoryIdToPath(dirId) ?? ctx.directoryPath,
-    );
+    const workDir = subCheckpointWorkDir;
     if (!workDir || isSubCancelled()) return undefined;
     activeCheckpointWorkDir = workDir;
     return window.snow.createCheckpoint(workDir).catch(() => undefined);
@@ -295,157 +357,87 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
   const consumeSteering = async (): Promise<
     { role: "user"; content: string }[]
   > => {
-    if (stopped || !hasPendingSteering(ctx, subConvId) || isSubCancelled())
-      return [];
+    if (stopped || isSubCancelled()) return [];
+    const durableMessages = await takeRunMessages();
+    if (durableMessages.length) appendPendingUsers(durableMessages);
+    if (!hasPendingSteering(ctx, subConvId)) {
+      return durableMessages.map((content) => ({
+        role: "user" as const,
+        content,
+      }));
+    }
     // Await the checkpoint BEFORE selecting: a withdrawal during the await
     // must not suppress the ordinary tool-results continuation.
     const checkpointId = await createPendingCheckpoint();
     const items = isSubCancelled() ? [] : takePendingSteering(ctx, subConvId);
     if (!items.length) {
       if (checkpointId) deleteCheckpoints([checkpointId]);
-      return [];
+      return durableMessages.map((content) => ({
+        role: "user" as const,
+        content,
+      }));
     }
-    return appendPendingUsers(
-      items.map((item) => item.text),
-      checkpointId,
-    );
+    return [
+      ...durableMessages.map((content) => ({ role: "user" as const, content })),
+      ...appendPendingUsers(
+        items.map((item) => item.text),
+        checkpointId,
+      ),
+    ];
   };
 
-  // ---------------------------------------------------------------------
-  // 子代理队友通信（sub-agents-listTeammates / sub-agents-sendMessage）
-  // 在渲染进程直接执行：在线队友状态（subAgentSessionEventsRef）与
-  // Pending 消息队列（pendingQueueRef）都只存在于渲染进程，Rust 无法
-  // 感知。会话隔离：只允许同一 parentConversationId 下的子代理互相
-  // 可见、互相通信，跨会话查询/发送一律拒绝。
-  // ---------------------------------------------------------------------
+  // Peer messages use durable run identities and storage-enforced authorization.
   const executeSubAgentCommsTool = async (
-    toolName: string,
     argsJson: string,
-    senderConvId: string,
-    senderAgentName: string,
-  ): Promise<string> => {
-    let args: Record<string, unknown>;
-    try {
-      args = JSON.parse(argsJson) as Record<string, unknown>;
-    } catch {
-      return JSON.stringify({
-        success: false,
-        error: "Invalid JSON arguments",
-      });
+    hostRequestId: string,
+  ): Promise<string> =>
+    executePeerMessage(
+      deps.runPersistence,
+      { projectId: dirId, parentConversationId },
+      slotOwner,
+      argsJson,
+      runtimeConfig.toolsJson,
+      hostRequestId,
+    );
+
+  // Pause only at safe request/compaction boundaries; an already running tool is not interrupted.
+  const awaitPauseBoundary = async (): Promise<boolean> => {
+    if (isSubCancelled()) return false;
+    deps.budget.check();
+    while (true) {
+      const controller = ctx.pauseControllerRef.current.get(subConvId);
+      if (!controller?.paused) return !isSubCancelled();
+      await withWaiting(
+        "pause",
+        () =>
+          new Promise<void>((resolve) => {
+            const resume = (): void => {
+              if (controller.resolve === resume) controller.resolve = null;
+              resolve();
+            };
+            controller.resolve = resume;
+            // Resume/cancel may have happened while the durable waiting transition awaited I/O.
+            if (
+              !controller.paused ||
+              isSubCancelled() ||
+              ctx.pauseControllerRef.current.get(subConvId) !== controller
+            )
+              resume();
+          }),
+      );
+      if (isSubCancelled()) return false;
+      deps.budget.check();
     }
-
-    const eventMap = ctx.subAgentSessionEventsRef.current;
-
-    if (toolName === "sub-agents-listTeammates") {
-      const teammates = Object.values(eventMap)
-        .filter(
-          (event) =>
-            event.parentConversationId === parentConversationId &&
-            event.conversationId !== senderConvId &&
-            event.status === "running" &&
-            !ctx.sessionsRefData.current.get(event.conversationId)
-              ?.subAgentTerminated,
-        )
-        .map((event) => ({
-          conversationId: event.conversationId,
-          agentId: event.agentId,
-          agentName: event.agentName,
-        }));
-      return JSON.stringify({ success: true, teammates });
-    }
-
-    if (toolName === "sub-agents-sendMessage") {
-      const targetConvId =
-        typeof args.conversationId === "string"
-          ? args.conversationId.trim()
-          : "";
-      const message =
-        typeof args.message === "string" ? args.message.trim() : "";
-      if (!targetConvId || !message) {
-        return JSON.stringify({
-          success: false,
-          error: "conversationId and message are required",
-        });
-      }
-      if (targetConvId === senderConvId) {
-        return JSON.stringify({
-          success: false,
-          error: "Cannot send a message to yourself",
-        });
-      }
-
-      // 会话隔离：目标必须是同一父会话下的子代理。
-      const targetEvent = eventMap[targetConvId];
-      if (
-        !targetEvent ||
-        targetEvent.parentConversationId !== parentConversationId
-      ) {
-        return JSON.stringify({
-          success: false,
-          error:
-            "Target sub-agent does not exist or belongs to another conversation (session isolation: teammates must be in the same session)",
-        });
-      }
-      // 只允许发给仍在运行的子代理：消息以 Pending 形式进入目标会话的
-      // 队列，由目标循环在下一回合边界自动切入。
-      if (
-        targetEvent.status !== "running" ||
-        ctx.sessionsRefData.current.get(targetConvId)?.subAgentTerminated
-      ) {
-        return JSON.stringify({
-          success: false,
-          error:
-            "Target sub-agent is no longer running; messages can only be sent to teammates that are still active",
-        });
-      }
-
-      // 来源结构化存放，投递时再拼接发送方标识（见 composePendingDeliveryText）。
-      const messageId = createSubAgentMessageId();
-      const queuedAt = registerSubAgentMessage(messageId);
-      const queue = ctx.pendingQueueRef.current.get(targetConvId) ?? [];
-      queue.push({
-        text: message,
-        options: { deliveryMode: "steer" },
-        steeringRunId: ctx.sessionsRefData.current.get(targetConvId)?.runId,
-        source: {
-          kind: "teammate",
-          agentName: senderAgentName,
-          conversationId: senderConvId,
-          messageId,
-        },
-      });
-      ctx.pendingQueueRef.current.set(targetConvId, queue);
-      // 目标会话若正处于激活状态，让 Pending 消息气泡实时可见。
-      if (ctx.activeConversationIdRef.current === targetConvId) {
-        ctx.setActivePendingMessages(queue.map((item) => item.text));
-      }
-
-      return JSON.stringify({
-        success: true,
-        queued: true,
-        messageId,
-        queuedAt,
-        recipient: {
-          conversationId: targetConvId,
-          agentName: targetEvent.agentName,
-        },
-        note: "The message was queued as a Pending message and will be delivered to the target at the end of its current round.",
-      });
-    }
-
-    return JSON.stringify({
-      success: false,
-      error: `Unknown sub-agent communication tool: ${toolName}`,
-    });
   };
 
-  const subAgentRunLoop: SubAgentRunLoop = async (
-    subMessages,
+  const subAgentRunLoop = async (
+    subMessages: Parameters<SubAgentRunLoop>[0],
     resumeAfterCompaction = false,
+    modelRetryOnly = false,
   ): Promise<string> => {
-    const taskHistory = currentAgentTask(parentConversationId);
+    if (!(await awaitPauseBoundary())) return "Sub-agent interrupted by user";
     if (taskHistory) bindAgentTask(subConvId, taskHistory);
-    if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+    if (isSubCancelled()) {
       return "Sub-agent interrupted by user";
     }
 
@@ -453,19 +445,23 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     // 激活、插话续跑、旧会话恢复、内部排队、强行发送）都汇合到本循环，阈值
     // 检查因此不再依赖各调用方自己的续跑判断。携带工具结果的请求与压缩边界
     // 续跑由闸门内部跳过（前者在响应后的检查点、工具执行前压缩）。
-    const gateCompaction = await runAutoCompactionGate(ctx, {
-      conversationId: subConvId,
-      requestMessages: subMessages,
-      model: runtimeConfig.model,
-      // 子代理严格绑定自身 Profile，找不到时不回落全局活动档案。
-      apiProfile: runtimeConfig.apiProfile,
-      strictProfile: true,
-      subAgentToolsJson: runtimeConfig.toolsJson,
-      subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
-      thinkingStrength: runtimeConfig.effectiveThinkingStrength,
-      responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
-      resumeAfterCompaction,
-    });
+    // Model-only retries must not compact into a tool-enabled round.
+    const gateCompaction = modelRetryOnly
+      ? null
+      : await runAutoCompactionGate(ctx, {
+          conversationId: subConvId,
+          requestMessages: subMessages,
+          model: runtimeConfig.model,
+          // 子代理严格绑定自身 Profile，找不到时不回落全局活动档案。
+          apiProfile: runtimeConfig.apiProfile,
+          strictProfile: true,
+          subAgentToolsJson: runtimeConfig.toolsJson,
+          subAgentSystemPrompt: runtimeConfig.systemPrompt || undefined,
+          thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+          responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+          resumeAfterCompaction,
+          beforeCompaction: () => deps.budget.request(),
+        });
     if (gateCompaction) {
       if (isSubCancelled()) {
         return "Sub-agent interrupted by user";
@@ -484,6 +480,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     const subAssistantMessageId = createMessageId("assistant");
     const subAssistantMessage: ChatConversationMessage = {
       id: subAssistantMessageId,
+      subAgentRunId: slotOwner,
       role: "assistant",
       content: "",
       timestamp: formatMessageTime(),
@@ -512,6 +509,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       .filter(Boolean)
       .join("\n\n");
 
+    if (!(await awaitPauseBoundary())) return "Sub-agent interrupted by user";
+    deps.budget.request();
     const subStreamPromise = window.snow.createResponseStream(
       {
         messages: subMessages,
@@ -525,14 +524,14 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         thinkingStrength: runtimeConfig.effectiveThinkingStrength,
         responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
         resumeAfterCompaction,
+        disableTools: modelRetryOnly,
         subAgentToolsJson,
         subAgentSystemPrompt: subAgentSystemPrompt || undefined,
         // Sub-agents always use their own normal-mode prompt and tool set;
         // WorkTree Mode only carries the parent's persisted workspace binding.
         planMode: false,
         goalMode: false,
-        worktreeMode:
-          ctx.sessionsRefData.current.get(subConvId)?.worktreeMode ?? false,
+        worktreeMode,
       },
       subChunkHandler,
       createStreamIdHandler(ctx, subConvId, isSubCancelled),
@@ -560,6 +559,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         ),
       );
     }
+    deps.budget.check();
     recordTaskResponse(taskHistory, subConvId, subResponse.id, agentName);
     const subResponseDisposition = resolveResponseDisposition(subResponse);
     const subResponseFailed = subResponseDisposition.kind === "error";
@@ -569,6 +569,15 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         subAssistantMessageId,
         subResponse,
         isSubCancelled(),
+      ).map((message) =>
+        message.id === subAssistantMessageId
+          ? {
+              ...message,
+              failureReason: subResponseFailed
+                ? subResponse.failureReason || undefined
+                : undefined,
+            }
+          : message,
       ),
     );
 
@@ -628,7 +637,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       }
     }
 
-    if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+    if (isSubCancelled()) {
       const forceSendAbort =
         !!ctx.sessionsRefData.current.get(subConvId)?.forceSendAbort;
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
@@ -648,6 +657,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       return forceSendAbort ? "" : "Sub-agent interrupted by user";
     }
 
+    if (
+      settleApiCancellation(ctx, subConvId, subAssistantMessageId, subResponse)
+    )
+      return "";
     if (subResponse.tokenUsage && !subResponseFailed) {
       ctx.updateSessionField(subConvId, "tokenUsage", subResponse.tokenUsage);
       accumulateRunTokenUsage(ctx, subConvId, subResponse.tokenUsage);
@@ -658,40 +671,22 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     // authorize, execute, or return incomplete tool arguments.
     if (subResponseDisposition.kind === "incomplete") {
       stopped = true;
-      const currentSubAssistant = ctx.sessionsRef.current?.[
-        subConvId
-      ]?.messages.find((message) => message.id === subAssistantMessageId);
-      const incompleteContent =
-        subResponse.content || currentSubAssistant?.content || "";
-      const safeIncompleteResult = incompleteContent.trim()
-        ? incompleteContent
-        : "Sub-agent response ended before completion. Any incomplete tool call was discarded and was not executed.";
-
-      ctx.updateSessionMessages(subConvId, (currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === subAssistantMessageId
+      ctx.updateSessionMessages(subConvId, (messages) =>
+        messages.map((message) =>
+          message.id === subAssistantMessageId
             ? {
-                ...currentMessage,
-                content: subResponse.content || currentMessage.content || "",
-                thinking:
-                  subResponse.thinking || currentMessage.thinking || undefined,
-                timestamp: formatMessageTime(),
+                ...failedModelMessage(message, subResponse),
                 status: "incomplete" as const,
+                failureReason: undefined,
                 incompleteVariant: subResponseDisposition.variant,
                 interruptionReason: subResponseDisposition.reason,
                 recoveryOutcome: subResponseDisposition.recoveryOutcome,
-                responseId: subResponse.id || undefined,
-                model: subResponse.model || undefined,
-                toolCalls: undefined,
-                isRetrying: false,
-                retryAttempt: undefined,
-                retryError: undefined,
               }
-            : currentMessage,
+            : message,
         ),
       );
       throw new Error(
-        `Sub-agent response incomplete (${subResponseDisposition.reason}): ${safeIncompleteResult}`,
+        `Sub-agent response incomplete (${subResponseDisposition.reason})`,
       );
     }
 
@@ -701,49 +696,58 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         : [];
 
     if (subResponseFailed) {
-      const failureContent =
-        subResponse.content ||
-        (subResponse.failureReason
-          ? `Sub-agent request failed: ${subResponse.failureReason}`
-          : "Sub-agent request failed. Please retry.");
-      ctx.updateSessionMessages(subConvId, (currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === subAssistantMessageId
-            ? {
-                ...currentMessage,
-                content: failureContent,
-                thinking: subResponse.thinking || undefined,
-                timestamp: formatMessageTime(),
-                status: "error" as const,
-                responseId: subResponse.id || undefined,
-                model: subResponse.model || undefined,
-                isRetrying: false,
-                retryAttempt: undefined,
-                retryError: undefined,
-              }
-            : currentMessage,
+      logSubAgentDiagnostic("fatal", {
+        ...diagnosticScope,
+        reasonCode: "MODEL_REQUEST_FAILED",
+      });
+      const failureReason = subResponse.failureReason || undefined;
+      ctx.updateSessionMessages(subConvId, (messages) =>
+        messages.map((message) =>
+          message.id === subAssistantMessageId
+            ? failedModelMessage(message, subResponse)
+            : message,
         ),
       );
       // 挂起等待用户「重试 / 放弃」，主会话的工具调用保持等待；挂起期间让出并发名额。
       if (!isSubCancelled()) {
-        releaseSubAgentSlot(subConvId);
         ctx.updateSessionField(subConvId, "isStreaming", false);
         ctx.removeStreamingId(subConvId);
-        const decision = await awaitSubAgentFailureDecision(subConvId);
-        if (decision === "retry" && !isSubCancelled()) {
+        const decision = await withWaiting("failure_decision", () =>
+          awaitSubAgentFailureDecision(slotOwner),
+        );
+        const retryReady = decision === "retry" && !isSubCancelled();
+        if (
+          retryReady &&
+          subMessages.some((message) => message.role === "tool")
+        ) {
+          stopped = true;
+          const reason = modelRetryToolsBlockedReason();
+          onExecutionError({
+            category: "model",
+            code: "MODEL_RETRY_TOOLS_BLOCKED",
+            message: reason,
+            retryable: false,
+          });
+          ctx.updateSessionMessages(subConvId, (messages) =>
+            messages.map((message) =>
+              message.id === subAssistantMessageId
+                ? failedModelMessage(message, {
+                    ...subResponse,
+                    failureReason: reason,
+                  })
+                : message,
+            ),
+          );
+          return subResponse.content || "";
+        }
+        if (retryReady) {
+          await window.snow.truncateTrailingFailedExchange(subConvId);
+          if (isSubCancelled()) {
+            stopped = true;
+            return "Sub-agent interrupted by user";
+          }
           ctx.updateSessionField(subConvId, "isStreaming", true);
           ctx.addStreamingId(subConvId);
-        }
-        const retryReady =
-          decision === "retry" &&
-          !isSubCancelled() &&
-          (await acquireSubAgentSlot(subConvId, isSubCancelled)) &&
-          !isSubCancelled() &&
-          (await window.snow
-            .truncateTrailingFailedExchange(subConvId)
-            .then(() => true)
-            .catch(() => false));
-        if (retryReady) {
           const revertIds = new Map(
             Array.from(appliedSubIdRemap ?? []).map(
               ([oldId, newId]): [string, string] => [newId, oldId],
@@ -757,14 +761,44 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                 return oldId ? { ...message, id: oldId } : message;
               }),
           );
-          return subAgentRunLoop(subMessages, resumeAfterCompaction);
+          return subAgentRunLoop(subMessages, resumeAfterCompaction, true);
         }
       }
       stopped = true;
       if (isSubCancelled()) {
         return "Sub-agent interrupted by user";
       }
-      throw new Error(failureContent);
+      // Only the normalized reason may leave the failure channel, never the body.
+      throw new Error(failureReason || "Sub-agent model request failed");
+    }
+
+    // A model retry never authorizes tools, compacts, or consumes steering.
+    if (modelRetryOnly) {
+      stopped = true;
+      const reason = hasModelRetryToolCalls(subResponse.toolCallsJson)
+        ? modelRetryToolCallsRejectedReason()
+        : undefined;
+      if (reason)
+        onExecutionError({
+          category: "model",
+          code: "MODEL_RETRY_TOOL_CALLS_REJECTED",
+          message: reason,
+          retryable: false,
+        });
+      ctx.updateSessionMessages(subConvId, (messages) =>
+        messages.map((message) =>
+          message.id === subAssistantMessageId
+            ? {
+                ...failedModelMessage(message, {
+                  ...subResponse,
+                  failureReason: reason,
+                }),
+                status: reason ? "error" : "sent",
+              }
+            : message,
+        ),
+      );
+      return subResponse.content || "";
     }
 
     // 工具调用必然带来下一轮请求：这里在工具执行之前压缩，压缩交接因此覆盖
@@ -774,6 +808,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     // 闸门检查。子代理自然收尾（无工具调用且无续跑输入）时不得压缩 —— 那会
     // 把已完成的子代理重新唤醒。
     if (subToolCalls.length > 0 && !subResponseFailed) {
+      if (!(await awaitPauseBoundary())) return "Sub-agent interrupted by user";
       const subCompaction = await runAutoCompactionGate(ctx, {
         conversationId: subConvId,
         requestMessages: [],
@@ -785,7 +820,8 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         thinkingStrength: runtimeConfig.effectiveThinkingStrength,
         responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
         tokenUsage: subResponse.tokenUsage,
-        beforeCompaction: () =>
+        beforeCompaction: () => {
+          deps.budget.request();
           ctx.updateSessionMessages(subConvId, (currentMessages) =>
             currentMessages.map((currentMessage) =>
               currentMessage.id === subAssistantMessageId
@@ -805,8 +841,11 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                   }
                 : currentMessage,
             ),
-          ),
+          );
+        },
       });
+
+      // Continue only after the shared compaction gate succeeds.
 
       if (subCompaction) {
         if (isSubCancelled()) {
@@ -876,6 +915,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       dispatchToolCalls,
       subConvId,
       dirId,
+      (confirm) => withWaiting("authorization", confirm),
     );
 
     const subAllToolsRejected =
@@ -895,19 +935,21 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       result: string;
     }[] = [];
     let parentPlanApprovalRequired = false;
-    // 纠错所需的工具 schema：仅在本批首次失败时拉取一次。
-    const getSubToolDefinition = createToolDefinitionLookup();
-
     for (
       let subToolIndex = 0;
       subToolIndex < dispatchToolCalls.length;
       subToolIndex++
     ) {
+      deps.budget.check();
       const subToolCall = dispatchToolCalls[subToolIndex];
       const subAuthorizationDecision = subAuthorizationDecisions[subToolIndex];
 
-      if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
-        return "Sub-agent interrupted by user";
+      if (
+        isSubCancelled() ||
+        ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested
+      ) {
+        stopped = true;
+        break;
       }
 
       if (subAuthorizationDecision.status === "rejected") {
@@ -1018,222 +1060,194 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }),
       );
 
-      // 原始调用与纠错重试共用同一执行上下文（工具白名单 / checkpoint /
-      // 父会话写闸门 / 溯源会话），保证修正后的调用不越权。
-      const invokeSubTool = (
-        toolArgs: string,
-        sensitiveAuthorizationToken: string | undefined,
-      ): Promise<string> =>
-        window.snow.callMcpTool(
-          subToolCall.name,
-          toolArgs,
-          dirId,
-          [
-            ...parentCheckpointIdsRef.current,
-            ...(activeCheckpointId ? [activeCheckpointId] : []),
-          ],
-          activeCheckpointWorkDir,
-          sensitiveAuthorizationToken,
-          (chunk) => {
-            if (!chunk.data) {
-              return;
-            }
-            if (
-              chunk.stream === "interactive_session" ||
-              chunk.stream === "tool_execution"
-            ) {
-              ctx.updateSessionMessages(subConvId, (currentMessages) =>
-                currentMessages.map((currentMessage) => {
-                  if (currentMessage.id !== subAssistantMessageId) {
-                    return currentMessage;
-                  }
-                  return {
-                    ...currentMessage,
-                    toolCalls: updateFirstMatchingToolCall(
-                      currentMessage.toolCalls,
-                      subToolCall,
-                      ["pending", "running"],
-                      (currentToolCall) => ({
-                        ...currentToolCall,
-                        interactiveSessionId:
-                          chunk.stream === "interactive_session"
-                            ? chunk.data
-                            : currentToolCall.interactiveSessionId,
-                        toolExecutionId:
-                          chunk.stream === "tool_execution"
-                            ? chunk.data
-                            : currentToolCall.toolExecutionId,
-                      }),
-                    ),
-                  };
-                }),
-              );
-              return;
-            }
-            ctx.updateSessionMessages(subConvId, (currentMessages) =>
-              currentMessages.map((currentMessage) => {
-                if (currentMessage.id !== subAssistantMessageId) {
-                  return currentMessage;
-                }
-                return {
-                  ...currentMessage,
-                  toolCalls: updateFirstMatchingToolCall(
-                    currentMessage.toolCalls,
-                    subToolCall,
-                    ["pending", "running"],
-                    (currentToolCall) => ({
-                      ...currentToolCall,
-                      streamingStdout:
-                        chunk.stream === "stdout"
-                          ? `${currentToolCall.streamingStdout ?? ""}${
-                              chunk.data
-                            }`
-                          : currentToolCall.streamingStdout,
-                      streamingStderr:
-                        chunk.stream === "stderr"
-                          ? `${currentToolCall.streamingStderr ?? ""}${
-                              chunk.data
-                            }`
-                          : currentToolCall.streamingStderr,
-                    }),
-                  ),
-                };
-              }),
-            );
-          },
-          subToolCall.interactionId,
-          allowedTools,
-          // These booleans carry only the parent conversation's Rust
-          // write-gate state; they do not enable Plan Mode for the sub-agent.
-          // Read from the parent session's own ref so a background parent
-          // keeps its gate even after the user switches conversations.
-          ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
-            ctx.planModeRef.current,
-          planApprovedSessionKeysRef.current.has(parentConversationId),
-          // 会话溯源：子代理内 memory-save 溯源到子代理会话（删除主会话
-          // 时级联子会话一并清理）。
-          subConvId,
-        );
-
+      const toolStartedAt = Date.now();
+      const toolDiagnosticScope = {
+        ...diagnosticScope,
+        toolName: subToolCall.name,
+        callId: subToolCall.callId,
+        interactionId: subToolCall.interactionId,
+      };
+      logSubAgentDiagnostic("toolStarted", {
+        ...toolDiagnosticScope,
+        reasonCode: "TOOL_STARTED",
+      });
       let subResult: string;
       let subToolErrored = false;
       try {
-        if (SUB_AGENT_COMMS_TOOL_NAMES.has(subToolCall.name)) {
-          // 队友通信工具由渲染进程直接执行（会话隔离与 Pending 队列
-          // 都在渲染进程），不走 Rust callMcpTool。
+        const validationFailure = validateToolCall(subToolCall);
+        if (validationFailure) {
+          subResult = validationFailure;
+        } else if (SUB_AGENT_COMMS_TOOL_NAMES.has(subToolCall.name)) {
+          // Owner and request identity are captured by the host, never model-supplied.
           subResult = await executeSubAgentCommsTool(
-            subToolCall.name,
             subToolArgs,
-            subConvId,
-            agentName,
+            subToolCall.interactionId
+              ? `peer:${subToolCall.interactionId}`
+              : "",
           );
         } else {
-          subResult = await invokeSubTool(
-            subToolArgs,
-            subSensitiveAuthorizationToken,
-          );
+          const executeTool = () =>
+            window.snow.callMcpTool(
+              subToolCall.name,
+              subToolArgs,
+              dirId,
+              [
+                ...parentCheckpointIdsRef.current,
+                ...(activeCheckpointId ? [activeCheckpointId] : []),
+              ],
+              activeCheckpointWorkDir,
+              subSensitiveAuthorizationToken,
+              (chunk) => {
+                if (!chunk.data) {
+                  return;
+                }
+                if (
+                  chunk.stream === "interactive_session" ||
+                  chunk.stream === "tool_execution"
+                ) {
+                  ctx.updateSessionMessages(subConvId, (currentMessages) =>
+                    currentMessages.map((currentMessage) => {
+                      if (currentMessage.id !== subAssistantMessageId) {
+                        return currentMessage;
+                      }
+                      return {
+                        ...currentMessage,
+                        toolCalls: updateFirstMatchingToolCall(
+                          currentMessage.toolCalls,
+                          subToolCall,
+                          ["pending", "running"],
+                          (currentToolCall) => ({
+                            ...currentToolCall,
+                            interactiveSessionId:
+                              chunk.stream === "interactive_session"
+                                ? chunk.data
+                                : currentToolCall.interactiveSessionId,
+                            toolExecutionId:
+                              chunk.stream === "tool_execution"
+                                ? chunk.data
+                                : currentToolCall.toolExecutionId,
+                          }),
+                        ),
+                      };
+                    }),
+                  );
+                  return;
+                }
+                ctx.updateSessionMessages(subConvId, (currentMessages) =>
+                  currentMessages.map((currentMessage) => {
+                    if (currentMessage.id !== subAssistantMessageId) {
+                      return currentMessage;
+                    }
+                    return {
+                      ...currentMessage,
+                      toolCalls: updateFirstMatchingToolCall(
+                        currentMessage.toolCalls,
+                        subToolCall,
+                        ["pending", "running"],
+                        (currentToolCall) => ({
+                          ...currentToolCall,
+                          streamingStdout:
+                            chunk.stream === "stdout"
+                              ? `${currentToolCall.streamingStdout ?? ""}${
+                                  chunk.data
+                                }`
+                              : currentToolCall.streamingStdout,
+                          streamingStderr:
+                            chunk.stream === "stderr"
+                              ? `${currentToolCall.streamingStderr ?? ""}${
+                                  chunk.data
+                                }`
+                              : currentToolCall.streamingStderr,
+                        }),
+                      ),
+                    };
+                  }),
+                );
+              },
+              subToolCall.interactionId,
+              allowedTools,
+              // These booleans carry only the parent conversation's Rust
+              // write-gate state; they do not enable Plan Mode for the sub-agent.
+              // Read from the parent session's own ref so a background parent
+              // keeps its gate even after the user switches conversations.
+              ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
+                parentPlanMode,
+              planApprovedSessionKeysRef.current.has(parentConversationId),
+              // 会话溯源：子代理内 memory-save 溯源到子代理会话（删除主会话
+              // 时级联子会话一并清理）。
+              subConvId,
+            );
+          if (subToolCall.name === "user-interaction-askUserQuestion") {
+            ctx.userQuestionTargetRef.current.set(subToolCall.interactionId, {
+              sessionKey: subConvId,
+              assistantMessageId: subAssistantMessageId,
+            });
+            try {
+              subResult = await withWaiting("question", executeTool);
+            } finally {
+              ctx.userQuestionTargetRef.current.delete(
+                subToolCall.interactionId,
+              );
+            }
+          } else subResult = await executeTool();
         }
       } catch (err) {
         subToolErrored = true;
         const errorMessage = getErrorMessage(err);
-
-        if (errorMessage.includes(PARENT_PLAN_APPROVAL_REQUIRED)) {
-          parentPlanApprovalRequired = true;
-        }
-        // Recover partial streaming output for terminal-execute
-        // so the sub-agent (and ultimately the parent AI loop)
-        // receives the partial output together with the error.
-        if (subToolCall.name === "bash-terminal-execute") {
-          const subSessionMessages =
-            ctx.sessionsRef.current?.[subConvId]?.messages ?? [];
-          const subAssistantMsg = subSessionMessages.find(
-            (m) => m.id === subAssistantMessageId,
-          );
-          const liveSubToolCall = subAssistantMsg?.toolCalls?.find(
-            (tc) =>
-              tc.interactionId === subToolCall.interactionId &&
-              tc.name === subToolCall.name,
-          );
-          const partialStdout = liveSubToolCall?.streamingStdout ?? "";
-          const partialStderr = liveSubToolCall?.streamingStderr ?? "";
-          const partialOutput = [partialStdout, partialStderr]
-            .filter(Boolean)
-            .join("\n");
-          subResult = JSON.stringify({
-            error: errorMessage,
-            stdout: partialStdout,
-            stderr: partialStderr,
-            partialOutput: partialOutput.length > 0 ? partialOutput : undefined,
-          });
+        if (isSubCancelled()) {
+          stopped = true;
+          // Cancellation remains cancellation; do not assign a tool failure.
         } else {
-          subResult = JSON.stringify({ error: errorMessage });
+          // Unknown bridge/host exceptions fail closed. Ordinary tool failures
+          // must arrive as structured results, never be inferred from prose.
+          stopped = true;
+          onExecutionError({
+            category: "tool",
+            code: "TOOL_EXECUTION_FAILED",
+            message: errorMessage,
+            retryable: false,
+          });
+          logSubAgentDiagnostic("fatal", {
+            ...toolDiagnosticScope,
+            reasonCode: "TOOL_EXECUTION_FAILED",
+            decision: "stop",
+            elapsedMs: Math.max(0, Date.now() - toolStartedAt),
+          });
+          if (errorMessage.includes(PARENT_PLAN_APPROVAL_REQUIRED)) {
+            parentPlanApprovalRequired = true;
+          }
         }
+        subResult = JSON.stringify({ success: false, error: errorMessage });
       }
-
-      // 工具失败（含抛错）：与主会话一致交给纠错 Agent 修正参数并重新执行，
-      // 最多 3 次；修正后的调用重新经过子代理会话的授权。Plan 审批阻断
-      // 不是参数问题，不参与纠错。
-      let subCorrection: ToolCorrectionSuccess | null = null;
-      if (!parentPlanApprovalRequired) {
-        const failedSubResult = subResult;
-        subCorrection = await correctFailedToolCall({
-          toolCall: subToolCall,
-          failedResult: failedSubResult,
-          apiProfile: runtimeConfig.apiProfile,
-          conversationId: subConvId,
-          responseId: subResponse.id || undefined,
-          getToolDefinition: getSubToolDefinition,
-          authorize: async (authorizationCall) => {
-            const decisions = await requestToolAuthorizations(
-              [authorizationCall],
-              subConvId,
-              dirId,
-            );
-            return decisions[0]?.status === "approved";
-          },
-          execute: (argumentsJson) =>
-            invokeSubTool(
-              injectSessionIdIntoToolArgs(
-                subToolCall.name,
-                argumentsJson,
-                subConvId,
-              ),
-              undefined,
-            ),
-          onUpdate: (correction) =>
-            ctx.updateSessionMessages(subConvId, (currentMessages) =>
-              currentMessages.map((currentMessage) => {
-                if (currentMessage.id !== subAssistantMessageId) {
-                  return currentMessage;
-                }
-                return {
-                  ...currentMessage,
-                  toolCalls: updateFirstMatchingToolCall(
-                    currentMessage.toolCalls,
-                    subToolCall,
-                    ["pending", "running", "completed", "error"],
-                    (currentToolCall) =>
-                      applyToolCorrectionToCall(
-                        currentToolCall,
-                        correction,
-                        false,
-                        failedSubResult,
-                      ),
-                  ),
-                };
-              }),
-            ),
-          isCancelled: isSubCancelled,
-        });
-        if (subCorrection) {
-          subResult = subCorrection.result;
-          subToolErrored = false;
-        }
+      // Returned failures and rejected invocations use the same visible/evidence
+      // status. Only the model's next round may decide how to recover; no replay.
+      subToolErrored = subToolErrored || detectToolFailure(subResult) !== null;
+      if (subToolErrored && subToolCall.name === "bash-terminal-execute") {
+        const liveTool = ctx.sessionsRef.current?.[subConvId]?.messages
+          .find((message) => message.id === subAssistantMessageId)
+          ?.toolCalls?.find(
+            (call) =>
+              call.interactionId === subToolCall.interactionId &&
+              call.name === subToolCall.name,
+          );
+        subResult = withSubAgentTerminalFailureOutput(
+          subResult,
+          liveTool?.streamingStdout ?? "",
+          liveTool?.streamingStderr ?? "",
+        );
       }
-      if (subToolErrored) {
-        stopped = true;
-      }
-      const subExecutedArgs = subCorrection?.arguments ?? subToolArgs;
+      logSubAgentDiagnostic("toolCompleted", {
+        ...toolDiagnosticScope,
+        reasonCode: isSubCancelled()
+          ? "RUN_CANCELLED"
+          : subToolErrored
+            ? "TOOL_EXECUTION_FAILED"
+            : "TOOL_COMPLETED",
+        elapsedMs: Math.max(0, Date.now() - toolStartedAt),
+        emptyText:
+          !subToolErrored &&
+          isSubAgentEmptyTextRead(subToolCall.name, subResult),
+      });
 
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
         currentMessages.map((currentMessage) => {
@@ -1281,7 +1295,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }
         const subFileChanges = extractFileChangesFromTool(
           subToolCall.name,
-          subExecutedArgs,
+          subToolArgs,
           subResult,
         );
         for (const subFileChange of subFileChanges) {
@@ -1296,19 +1310,13 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         }
       }
 
-      const subBaseModelResult = formatMcpToolResultForModel(subResult);
       const subModelResult = withSubAgentEvidence(
         subConvId,
         subToolCall.name,
         subToolCall.callId,
         subToolErrored ? "error" : "completed",
         subResult,
-        subCorrection
-          ? appendToolCorrectionNote(
-              subBaseModelResult,
-              subCorrection.reasoning,
-            )
-          : subBaseModelResult,
+        formatMcpToolResultForModel(subResult),
       );
       subToolResults.push(subModelResult);
       subStructuredResults.push({
@@ -1317,10 +1325,28 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         result: subModelResult,
       });
 
-      if (parentPlanApprovalRequired) {
+      if (stopped || parentPlanApprovalRequired || isSubCancelled()) {
         break;
       }
     }
+
+    const skipped = recordSkippedSubAgentTools(
+      ctx,
+      subConvId,
+      subAssistantMessageId,
+      dispatchToolCalls.slice(subStructuredResults.length),
+      (call, result) =>
+        withSubAgentEvidence(
+          subConvId,
+          call.name,
+          call.callId,
+          "rejected",
+          result,
+          formatMcpToolResultForModel(result),
+        ),
+    );
+    subStructuredResults.push(...skipped);
+    subToolResults.push(...skipped.map((tool) => tool.result));
 
     const subToolResultMessage: ChatConversationMessage = {
       id: createMessageId("tool"),
@@ -1336,17 +1362,44 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       subToolResultMessage,
     ]);
 
-    // A Plan denial must stop the delegated run, preserving its own queue.
+    if (isSubCancelled()) {
+      stopped = true;
+      return "Sub-agent interrupted by user";
+    }
+    // Permission and fatal gates take precedence over the next model round.
     if (parentPlanApprovalRequired) {
       stopped = true;
+      onExecutionError({
+        category: "permission",
+        code: "PERMISSION_DENIED",
+        message: PARENT_PLAN_APPROVAL_REQUIRED,
+        retryable: false,
+      });
+      logSubAgentDiagnostic("fatal", {
+        ...diagnosticScope,
+        reasonCode: "PERMISSION_DENIED",
+        decision: "stop",
+      });
       return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
     }
 
     if (subAllToolsRejected && !subHasContinuableRejection) {
       stopped = true;
+      onExecutionError({
+        category: "permission",
+        code: "PERMISSION_DENIED",
+        message: "All delegated tool authorizations were rejected",
+        retryable: false,
+      });
+      logSubAgentDiagnostic("fatal", {
+        ...diagnosticScope,
+        reasonCode: "PERMISSION_DENIED",
+        decision: "stop",
+      });
       return subToolResults.join("\n\n");
     }
 
+    if (stopped) return subToolResults.join("\n\n");
     const subToolResultsJson = JSON.stringify(subStructuredResults);
     const subNextMessages: {
       role: "user" | "assistant" | "system" | "developer" | "tool";
@@ -1395,7 +1448,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         demotePendingSteering(ctx, subConvId);
         while (true) {
           const head = ctx.pendingQueueRef.current.get(subConvId)?.[0];
-          if (!head) return summary;
+          if (!head || retainedPending.has(head)) return summary;
           if (!supportsQueuedOptions(head.options)) {
             const note =
               "Queued message retained in this sub-agent: its requested configuration is not supported by this delegated runtime. Withdraw it or resume with compatible options.";
@@ -1437,7 +1490,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         ? forceSendAbort
           ? ""
           : "Sub-agent interrupted by user"
-        : getErrorMessage(error);
+        : modelFailureReason();
       ctx.updateSessionMessages(subConvId, (currentMessages) =>
         currentMessages.map((currentMessage) =>
           currentMessage.role === "assistant" &&
@@ -1446,9 +1499,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
                 ...currentMessage,
                 content: cancelled
                   ? currentMessage.content || errorMessage
-                  : currentMessage.content
-                    ? `${currentMessage.content}\n\n${errorMessage}`
-                    : errorMessage,
+                  : currentMessage.content,
+                // Raw rejections are not provider-normalized diagnostic metadata.
+                failureReason: undefined,
+                htmlPreviewEligible: false,
                 timestamp: formatMessageTime(),
                 status: cancelled ? "sent" : "error",
                 isThinkingActive: false,
@@ -1482,10 +1536,13 @@ const createRunForceSendLoop = (
   ctx: ConversationContextValue,
   subConvId: string,
   subAgentRunLoop: SubAgentRunLoop,
+  canContinue: () => boolean,
 ): (() => Promise<string>) => {
   return async (): Promise<string> => {
     let lastSummary = "";
     while (true) {
+      // A fatal run must settle before any further queued input is consumed.
+      if (!canContinue()) return lastSummary;
       const ref = ctx.sessionsRefData.current.get(subConvId);
       const forceSends = ref?.forceSendMessages;
       if (!forceSends || forceSends.length === 0) {
@@ -1538,1133 +1595,1593 @@ const createForwardSubPendingQueue = (
   };
 };
 
-type SubAgentFinalizerDeps = {
-  ctx: ConversationContextValue;
-  parentConversationId: string;
-  agentId: string;
+type RunOptions = {
+  executionMode: SubAgentExecutionMode;
+  requestId?: string;
+  interactionId?: string;
+  taskHistory?: ReturnType<typeof currentAgentTask>;
+  requestInput?: SubAgentLogicalInput;
+};
+type PreparedRun = {
+  deps: SubAgentActivationDeps;
+  scope: SubAgentRunScope;
+  conversationId: string;
+  operation: "activate" | "continue";
+  runtimeConfig: SubAgentRuntimeConfig;
+  snapshot: SubAgentExecutionSnapshot;
   summary: string;
-  getAgentName: () => string;
-  dirId: string;
   prompt: string;
-  toolCallInteractionId?: string;
-  runForceSendLoop: () => Promise<string>;
-  forwardSubPendingQueue: (convId: string) => void;
-  /** 白名单中不可用的工具，回传主控便于判断子代理能力边界。 */
-  unavailableTools?: SubAgentUnavailableTool[];
+  checkpointIds: string[];
+  taskHistory: ReturnType<typeof currentAgentTask>;
+  parentPlanMode: boolean;
+  options: RunOptions;
 };
 
-type SubAgentFinalizeFn = (
-  convId: string,
-  summary: string,
-  status: "completed" | "failed",
-) => Promise<string>;
+const parseRunOptions = (
+  args: Record<string, unknown>,
+  operation: "activate" | "continue",
+  interactionId?: string,
+): RunOptions => {
+  const executionMode = args.executionMode;
+  if (executionMode !== "sync" && executionMode !== "async")
+    throw new Error("VALIDATION_ERROR: executionMode must be sync or async");
+  if (
+    args.requestId !== undefined &&
+    (typeof args.requestId !== "string" ||
+      !args.requestId.trim() ||
+      args.requestId.length > 160)
+  )
+    throw new Error(
+      "VALIDATION_ERROR: requestId must contain 1..160 characters",
+    );
+  const requestId =
+    typeof args.requestId === "string"
+      ? args.requestId
+      : interactionId
+        ? `${operation}:${interactionId}`
+        : undefined;
+  if (requestId && requestId.length > 160)
+    throw new Error(
+      "VALIDATION_ERROR: derived requestId exceeds 160 characters",
+    );
+  const hostInteractionId =
+    interactionId ??
+    (requestId?.startsWith(`${operation}:`)
+      ? requestId.slice(operation.length + 1)
+      : requestId);
+  return {
+    executionMode,
+    requestId,
+    interactionId: hostInteractionId,
+  };
+};
+const requirePersistence = (
+  persistence: SubAgentRunPersistence | undefined,
+): SubAgentRunPersistence => {
+  if (!persistence)
+    throw new Error(
+      "PERSISTENCE_ERROR: durable sub-agent run persistence is not connected",
+    );
+  return persistence;
+};
 
-/** 子代理回合统一收尾工厂：标记只读、清理运行状态、广播终止事件、持久化
- * 状态、保留 Pending 队列，最后执行 onSubAgentComplete hooks。激活与
- * 重新激活（sub-agents-continue，含重启后恢复）共用，保证收尾行为一致。 */
+const requireSubAgentParent = async (
+  scope: SubAgentRunScope,
+): Promise<void> => {
+  if (!scope.projectId.trim())
+    throw new Error(
+      "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires a project-bound parent",
+    );
+  const parent = await window.snow.getChatConversation(
+    scope.parentConversationId,
+  );
+  if (!parent)
+    throw new Error("RUN_NOT_FOUND: parent conversation does not exist");
+  if (parent.directoryId !== scope.projectId)
+    throw new Error(
+      "PERMISSION_DENIED: parent project does not match dispatch scope",
+    );
+  if (parent.conversationType !== "main" || parent.parentConversationId)
+    throw new Error(
+      "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires an ordinary parent conversation",
+    );
+};
+
+/** Hold preparation, not a successful-result cache; failures always release the key. */
+const subAgentRequestPreparations = new Map<
+  string,
+  { input: string; promise: Promise<string> }
+>();
+const replaySubAgentReceipt = async (
+  persistence: SubAgentRunPersistence,
+  scope: SubAgentRunScope,
+  receipt: SubAgentAccepted | SubAgentMessageQueued,
+): Promise<string> => {
+  const executionMode = receipt.executionMode;
+  if (executionMode !== "sync" && executionMode !== "async")
+    throw new Error(
+      "PERSISTENCE_ERROR: receipt has no captured execution mode",
+    );
+  if (executionMode === "async")
+    return JSON.stringify({ ...receipt, executionMode, created: false });
+  if (receipt.kind === "accepted") {
+    const result = JSON.parse(
+      await awaitSettledSubAgentResult(persistence, scope, receipt.runId),
+    );
+    return JSON.stringify(result);
+  }
+  return JSON.stringify({
+    ...receipt,
+    executionMode,
+    created: false,
+  });
+};
+const prepareLogicalSubAgentRequest = async (
+  persistence: SubAgentRunPersistence | undefined,
+  scope: SubAgentRunScope,
+  options: RunOptions,
+  requestInput: SubAgentLogicalInput,
+  prepare: () => Promise<string>,
+): Promise<string> => {
+  persistence = requirePersistence(persistence);
+  const requestId = options.requestId;
+  if (!requestId)
+    throw new Error(
+      "VALIDATION_ERROR: durable dispatch requires a stable host requestId",
+    );
+  const key = JSON.stringify([
+    scope.projectId,
+    scope.parentConversationId,
+    requestInput.operation,
+    requestId,
+  ]);
+  const { executionMode: _derivedMode, ...businessInput } = requestInput;
+  const input = JSON.stringify(businessInput);
+  const existing = subAgentRequestPreparations.get(key);
+  if (existing) {
+    if (existing.input !== input)
+      throw new Error(
+        "REQUEST_CONFLICT: requestId is already preparing a different logical input",
+      );
+    // The original promise has already applied its captured mode; never reinterpret its result.
+    return existing.promise;
+  }
+  const promise = Promise.resolve().then(async () => {
+    const result = await persistence.command({
+      op: "lookup_request",
+      scope,
+      requestId,
+      requestInput,
+    });
+    if (result.kind !== "request")
+      throw new Error(
+        "PERSISTENCE_ERROR: lookup_request returned an unexpected receipt",
+      );
+    if (result.receipt)
+      return replaySubAgentReceipt(persistence, scope, result.receipt);
+    return prepare();
+  });
+  const entry = { input, promise };
+  subAgentRequestPreparations.set(key, entry);
+  try {
+    return await promise;
+  } finally {
+    if (subAgentRequestPreparations.get(key) === entry)
+      subAgentRequestPreparations.delete(key);
+  }
+};
+
+/** A hook decision has a real card resolver; it is never silently treated as pass. */
+const executeSubAgentHook = async (
+  ctx: ConversationContextValue,
+  prepared: Pick<
+    PreparedRun,
+    | "scope"
+    | "conversationId"
+    | "runtimeConfig"
+    | "snapshot"
+    | "prompt"
+    | "options"
+  >,
+  hookType: "beforeSubAgentStart" | "onSubAgentComplete",
+  summary?: string,
+  wait?: SubAgentRunLoopDeps["withWaiting"],
+): Promise<SubAgentHookOutcome> => {
+  const result = await runHook(
+    hookType,
+    prepared.scope.projectId,
+    JSON.stringify({
+      agentId: prepared.runtimeConfig.agentId,
+      agentName: prepared.runtimeConfig.agentName,
+      prompt: prepared.prompt,
+      summary,
+      parentConversationId: prepared.scope.parentConversationId,
+      cwd: prepared.snapshot.workspacePath,
+    }),
+  );
+  if (!result) return { kind: "none" };
+  let decide: Promise<boolean> | undefined;
+  let decisionId: string | undefined;
+  let resolveDecision: ((approved: boolean) => void) | undefined;
+  if (result.outcome.kind === "needsDecision") {
+    decisionId = crypto.randomUUID();
+    const id = decisionId;
+    decide = new Promise<boolean>((resolve) => {
+      resolveDecision = (approved) => {
+        ctx.pendingHookDecisionRef.current.delete(id);
+        resolve(approved);
+      };
+      ctx.pendingHookDecisionRef.current.set(id, {
+        sessionKey:
+          hookType === "beforeSubAgentStart"
+            ? prepared.scope.parentConversationId
+            : prepared.conversationId,
+        resolve: resolveDecision,
+      });
+    });
+  }
+  ctx.updateSessionMessages(prepared.scope.parentConversationId, (messages) =>
+    appendHookExecutionToMessage(messages, {
+      ...result.record,
+      toolCallInteractionId: prepared.options.interactionId,
+      _decisionId: decisionId,
+      _resolveDecision: resolveDecision,
+    }),
+  );
+  if (decide) {
+    try {
+      const approved = wait
+        ? await wait("hook_decision", () => decide!)
+        : await decide;
+      return approved
+        ? { kind: "success" }
+        : { kind: "abort", message: "Sub-agent hook decision was rejected" };
+    } finally {
+      if (decisionId) ctx.pendingHookDecisionRef.current.delete(decisionId);
+    }
+  }
+  if (result.outcome.kind === "pass")
+    return { kind: "success", message: result.outcome.context ?? undefined };
+  if (result.outcome.kind === "abort")
+    return { kind: "abort", message: result.outcome.message };
+  return { kind: "warn", message: result.outcome.message };
+};
+
+/** Stops only resources belonging to the captured sub-session, never the selected chat. */
+const stopSubAgentResources = async (
+  ctx: ConversationContextValue,
+  conversationId: string,
+  ownerId: string,
+  markAborted = true,
+): Promise<void> => {
+  const ref = ctx.sessionsRefData.current.get(conversationId);
+  if (ref && markAborted) ref.isAbortRequested = true;
+  cancelSubAgentRunWaits(ownerId);
+  for (const [id, pending] of ctx.pendingToolAuthorizationRef.current) {
+    if (pending.toolCall.authorizationConversationId !== conversationId)
+      continue;
+    ctx.pendingToolAuthorizationRef.current.delete(id);
+    pending.resolve({ status: "rejected", reason: "Sub-agent run cancelled" });
+  }
+  for (const [id, pending] of ctx.pendingUserQuestionRef.current) {
+    if (pending.sessionKey !== conversationId) continue;
+    ctx.pendingUserQuestionRef.current.delete(id);
+    pending.reject(new Error("Sub-agent run cancelled"));
+  }
+  for (const [id, pending] of ctx.pendingHookDecisionRef.current) {
+    if (pending.sessionKey !== conversationId) continue;
+    ctx.pendingHookDecisionRef.current.delete(id);
+    pending.resolve(false);
+  }
+  const pause = ctx.pauseControllerRef.current.get(conversationId);
+  if (pause) {
+    pause.paused = false;
+    pause.resolve?.();
+    ctx.pauseControllerRef.current.delete(conversationId);
+  }
+  const ids = new Set<string>();
+  for (const message of ctx.sessionsRef.current[conversationId]?.messages ??
+    []) {
+    for (const call of message.toolCalls ?? []) {
+      if (
+        (call.status === "pending" || call.status === "running") &&
+        call.toolExecutionId
+      )
+        ids.add(call.toolExecutionId);
+    }
+  }
+  const results = await Promise.allSettled([
+    ...(ref?.streamId ? [window.snow.abortResponseStream(ref.streamId)] : []),
+    ...Array.from(ids, (id) => window.snow.abortToolExecution(id)),
+  ]);
+  const errors = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason as unknown] : [],
+  );
+  if (errors.length)
+    throw new AggregateError(errors, "Sub-agent resource cancellation failed");
+};
+
+type RunState = {
+  run?: SubAgentRunRecord;
+  error?: SubAgentRunError;
+  cancelled: boolean;
+  finalizing: boolean;
+};
+
+/** One finalizer per run, with one retained promise, shared by sync and async. */
 const createSubAgentFinalizer = (
-  deps: SubAgentFinalizerDeps,
-): SubAgentFinalizeFn => {
-  const {
-    ctx,
-    parentConversationId,
-    agentId,
-    summary: activationSummary,
-    getAgentName,
-    dirId,
-    prompt,
-    toolCallInteractionId,
-    runForceSendLoop,
-    forwardSubPendingQueue,
-    unavailableTools,
-  } = deps;
-  const unavailablePayload = unavailableTools?.length
-    ? { unavailableTools }
-    : {};
-
-  return async (convId, summary, status): Promise<string> => {
-    const finalRef = ctx.sessionsRefData.current.get(convId);
-    // 用户在子代理运行中点击"立即发送"：先消费暂存消息继续回合，
-    // 再统一走终止收尾（terminated + 状态广播 + 队列保留本会话）。
-    if (finalRef?.forceSendMessages?.length) {
-      try {
-        const forceSendSummary = await runForceSendLoop();
-        if (forceSendSummary) {
-          summary = forceSendSummary;
-          status = "completed";
-        }
-      } catch (error) {
-        summary = getErrorMessage(error);
-        status = "failed";
-      }
-    }
-    // 验收回执：只在主控附带清单时启用。证据 id 必须命中本会话真实的工具
-    // 执行日志；声称 completed 但缺少有效证据的项一律降级为 unverified，
-    // 模型自述「已验证」不能替代证据。回执代码块从交回主控的摘要中移除。
+  prepared: PreparedRun,
+  state: RunState,
+  withWaiting: SubAgentRunLoopDeps["withWaiting"],
+  transition: (
+    from: SubAgentRunRecord["status"][],
+    to: SubAgentRunRecord["status"],
+    reason?: SubAgentRunRecord["waitingReason"],
+  ) => Promise<boolean>,
+  publish: (run: SubAgentRunRecord) => void,
+  ownerId: string,
+): ((summary: string) => Promise<string>) => {
+  const logSettled = (status: SubAgentRunRecord["status"]): void => {
+    const startedAt = prepared.deps.ctx.sessionsRefData.current.get(
+      prepared.conversationId,
+    )?.runStartedAt;
+    logSubAgentDiagnostic("runSettled", {
+      runId: ownerId,
+      conversationId: prepared.conversationId,
+      parentConversationId: prepared.scope.parentConversationId,
+      reasonCode:
+        status === "cancelled"
+          ? "RUN_CANCELLED"
+          : status === "completed"
+            ? "RUN_COMPLETED"
+            : "RUN_FAILED",
+      decision:
+        status === "cancelled"
+          ? "cancelled"
+          : status === "completed"
+            ? "completed"
+            : "failed",
+      elapsedMs: startedAt ? Math.max(0, Date.now() - startedAt) : undefined,
+      cancellation: state.run?.cancellation,
+    });
+  };
+  let finalizing: Promise<string> | undefined;
+  const finalize = async (summary: string): Promise<string> => {
+    const {
+      deps: { ctx },
+      scope,
+      conversationId,
+      runtimeConfig,
+    } = prepared;
+    const runPersistence = requirePersistence(prepared.deps.runPersistence);
+    if (!state.run)
+      throw new Error(
+        "PERSISTENCE_ERROR: run hydration failed before settlement",
+      );
     let acceptance: SubAgentAcceptanceSnapshot | null = null;
-    let reportedSummary = summary;
-    if (hasSubAgentAcceptance(convId)) {
-      const parsedAcceptance = parseSubAgentAcceptanceReport(summary);
-      if (parsedAcceptance.report) {
-        acceptance = applySubAgentAcceptanceReport(
-          convId,
-          parsedAcceptance.report,
+    if (hasSubAgentAcceptance(conversationId)) {
+      const report = parseSubAgentAcceptanceReport(summary);
+      acceptance = report.report
+        ? applySubAgentAcceptanceReport(conversationId, report.report)
+        : noteSubAgentAcceptanceReportMissing(conversationId, report.invalid);
+      if (report.report || report.invalid) summary = report.stripped;
+    }
+
+    if (state.cancelled && !isSubAgentTerminal(state.run.status)) {
+      const receipt = await runPersistence.command({
+        op: "cancel",
+        scope,
+        runId: state.run.runId,
+        source: "runtime_abort",
+      });
+      if (receipt.kind !== "cancel")
+        throw new Error(
+          "PERSISTENCE_ERROR: cancel returned an unexpected receipt",
         );
-      } else {
-        acceptance = noteSubAgentAcceptanceReportMissing(
-          convId,
-          parsedAcceptance.invalid,
+      state.run = (
+        await readSubAgentRunResult(runPersistence, scope, state.run.runId)
+      ).run;
+      if (receipt.disposition === "too_late") state.cancelled = false;
+    }
+    if (isSubAgentTerminal(state.run.status)) {
+      publish(state.run);
+      logSettled(state.run.status);
+      return settledResult(state.run);
+    }
+    if (state.run.status === "cancelling") state.cancelled = true;
+    if (!state.cancelled && state.run.status !== "queued") {
+      const won = await transition(["running", "waiting_input"], "finalizing");
+      if (!won) {
+        if (state.run.status === "cancelling") state.cancelled = true;
+        else if (isSubAgentTerminal(state.run.status)) {
+          logSettled(state.run.status);
+          return settledResult(state.run);
+        } else
+          throw new Error(
+            "INVALID_TRANSITION: completion did not acquire finalizing ownership",
+          );
+      } else state.finalizing = true;
+    }
+
+    let hookOutcome: SubAgentHookOutcome = { kind: "none" };
+    if (!state.cancelled && !state.error && state.finalizing) {
+      try {
+        hookOutcome = await executeSubAgentHook(
+          ctx,
+          prepared,
+          "onSubAgentComplete",
+          summary,
+          withWaiting,
         );
-      }
-      if (parsedAcceptance.report || parsedAcceptance.invalid) {
-        reportedSummary = parsedAcceptance.stripped;
+        if (hookOutcome.kind === "abort")
+          state.error = runError("hook", "HOOK_ABORTED", hookOutcome.message);
+        else if (hookOutcome.message)
+          summary += `
+
+[Hook ${hookOutcome.kind === "warn" ? "Warning" : "Context"}]
+${hookOutcome.message}`;
+      } catch (error) {
+        hookOutcome = { kind: "failed", message: getErrorMessage(error) };
+        state.error = runError("hook", "HOOK_EXECUTION_FAILED", error);
       }
     }
-    if (finalRef) {
-      // Mark the sub-agent conversation read-only before clearing isSending:
-      // once the run ends no new agent loop may start in it, and this
-      // synchronous flag closes the race window before the UI hides the
-      // input box.
-      finalRef.subAgentTerminated = true;
-      finalRef.isSending = false;
-      finalRef.streamId = null;
-      finalRef.streamPromise = null;
-      finalRef.activeSendOptions = undefined;
-      finalRef.activeTaskMessages = undefined;
-    }
-    ctx.updateSessionField(convId, "isStreaming", false);
-    // 固化本次 run 总耗时（置 0 前读取），累加进会话统计（内存 + DB）。
-    // 起点优先取 runtime ref：UI state 可能已被 TTL 回收。
-    const finalizeStartedAt =
-      finalRef?.runStartedAt ||
-      ctx.sessionsRef.current?.[convId]?.streamStartedAt ||
-      0;
-    if (finalRef) finalRef.runStartedAt = 0;
-    if (finalizeStartedAt > 0) {
-      const finalizeDurationMs = Math.max(0, Date.now() - finalizeStartedAt);
-      const finalRefStats = ctx.sessionsRefData.current.get(convId);
-      const runUsage = finalRefStats?.runTokenUsage;
-      const runTtftSumMs = finalRefStats?.runTtftSumMs ?? 0;
-      const runRequestCount = finalRefStats?.runRequestCount ?? 0;
+    const ref = ctx.sessionsRefData.current.get(conversationId);
+    const startedAt = ref?.runStartedAt;
+    if (startedAt) {
+      const duration = Math.max(0, Date.now() - startedAt);
+      const usage = ref.runTokenUsage;
       accumulateConversationRunStats(
         ctx,
-        convId,
-        runUsage,
-        finalizeDurationMs,
-        runTtftSumMs,
-        runRequestCount,
+        conversationId,
+        usage,
+        duration,
+        ref.runTtftSumMs ?? 0,
+        ref.runRequestCount ?? 0,
       );
-      // 持久化（Rust 端累加），重启后打开子代理会话仍可完整回显。
-      void window.snow
-        .setConversationRunStats(
-          convId,
-          runUsage?.inputTokens ?? 0,
-          runUsage?.outputTokens ?? 0,
-          runUsage?.cacheCreationInputTokens ?? 0,
-          runUsage?.cacheReadInputTokens ?? 0,
-          finalizeDurationMs,
-          runTtftSumMs,
-          runRequestCount,
-        )
-        .catch(() => {
-          // 持久化失败不阻塞收尾
-        });
-    }
-    ctx.updateSessionField(convId, "streamStartedAt", 0);
-    ctx.updateSessionField(convId, "isAborting", false);
-    ctx.removeStreamingId(convId);
-
-    // Broadcast the terminal status FIRST — immediately after the flag, so
-    // the UI hides the input box as soon as possible. Persisting to the DB
-    // and running the (possibly slow) completion hook happen afterwards.
-    ctx.setSubAgentSessionEvent({
-      parentConversationId,
-      conversationId: convId,
-      agentId,
-      agentName: getAgentName(),
-      summary: activationSummary,
-      status,
-      timestamp: Date.now(),
-      toolCallInteractionId,
-    });
-
-    // Persist the terminal status so it survives an app restart.
-    await window.snow
-      .updateSubAgentSessionStatus(
-        convId,
-        status,
-        status === "failed" ? reportedSummary : "",
-      )
-      .catch(() => {});
-
-    // Preserve unconsumed tasks locally; a terminal/aborted delegated session
-    // must never grant the parent authority to execute those messages.
-    forwardSubPendingQueue(convId);
-
-    if (status === "failed") {
-      return JSON.stringify({
-        success: false,
-        error: reportedSummary,
-        ...unavailablePayload,
-        ...(acceptance
-          ? {
-              acceptanceSatisfied: acceptance.satisfied,
-              acceptance,
-            }
-          : {}),
-      });
-    }
-
-    // Execute onSubAgentComplete hooks. The hook context includes the
-    // sub-agent's summary so prompt-type hooks can inspect the result.
-    // If blocked, the error message replaces the summary returned to
-    // the parent AI loop.
-    let effectiveSummary = reportedSummary;
-    try {
-      const onCompleteContext = JSON.stringify({
-        agentId,
-        agentName: getAgentName(),
-        prompt,
-        summary: reportedSummary,
-        parentConversationId,
-        cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
-      });
-      const onCompleteResult = await runHook(
-        "onSubAgentComplete",
-        dirId || undefined,
-        onCompleteContext,
-      );
-      if (onCompleteResult) {
-        ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-          appendHookExecutionToMessage(currentMessages, {
-            ...onCompleteResult.record,
-            // Bind to the sub-agent tool call so the hook renders attached
-            // to the sub-agent card ("完成" step), not the message footer.
-            toolCallInteractionId,
-          }),
+      try {
+        await window.snow.setConversationRunStats(
+          conversationId,
+          usage?.inputTokens ?? 0,
+          usage?.outputTokens ?? 0,
+          usage?.cacheCreationInputTokens ?? 0,
+          usage?.cacheReadInputTokens ?? 0,
+          duration,
+          ref.runTtftSumMs ?? 0,
+          ref.runRequestCount ?? 0,
         );
-        if (onCompleteResult.outcome.kind === "abort") {
-          effectiveSummary = onCompleteResult.outcome.message;
-        } else if (
-          onCompleteResult.outcome.kind === "pass" &&
-          onCompleteResult.outcome.context
-        ) {
-          effectiveSummary = `${reportedSummary}\n\n[Hook Context]\n${onCompleteResult.outcome.context}`;
-        } else if (onCompleteResult.outcome.kind === "warn") {
-          effectiveSummary = `${reportedSummary}\n\n[Hook Warning]\n${onCompleteResult.outcome.message}`;
-        }
+      } catch (error) {
+        state.error = runError("persistence", "PERSISTENCE_ERROR", error);
+        logSubAgentDiagnostic("fatal", {
+          runId: ownerId,
+          conversationId,
+          parentConversationId: scope.parentConversationId,
+          reasonCode: "PERSISTENCE_ERROR",
+          decision: "stop",
+        });
       }
-    } catch {
-      // Hook execution failed -- use original summary
     }
+    const terminalStatus = state.cancelled
+      ? "cancelled"
+      : state.error
+        ? "failed"
+        : "completed";
+    let outcome: SubAgentOutcome | undefined;
 
-    // 验收未满足时给主控的显式指引：不能把回执里的未完成项汇总为成功。
-    const acceptanceInstruction =
-      acceptance && !acceptance.satisfied
-        ? "ACCEPTANCE_UNMET: at least one required acceptance item is not completed with verifiable tool evidence. The per-item receipt is authoritative - do not summarize those items as done. Continue the SAME sub-agent with sub-agents-continue to complete or verify only the missing items (never repeat steps that already succeeded), or report the gap to the user."
-        : null;
-    const acceptancePayload = acceptance
-      ? {
-          acceptanceSatisfied: acceptance.satisfied,
-          acceptance,
-        }
-      : {};
-
-    return JSON.stringify({
-      success: true,
-      conversationId: convId,
-      agentName: getAgentName(),
-      summary: effectiveSummary,
-      ...unavailablePayload,
-      ...acceptancePayload,
-      ...(acceptanceInstruction ? { instruction: acceptanceInstruction } : {}),
+    const run = state.run;
+    if (!run)
+      throw new Error(
+        "PERSISTENCE_ERROR: run hydration failed before settlement",
+      );
+    outcome = {
+      version: 1,
+      runId: run.runId,
+      conversationId,
+      parentConversationId: scope.parentConversationId,
+      parentTaskId: run.parentTaskId,
+      terminalStatus,
+      summary,
+      error: state.error,
+      ...(acceptance
+        ? { acceptance, acceptanceSatisfied: acceptance.satisfied }
+        : {}),
+      unavailableTools: runtimeConfig.unavailableTools ?? [],
+      hookOutcome,
+      acceptedAt: run.acceptedAt,
+      startedAt: run.startedAt,
+      completedAt: Date.now(),
+    };
+    const result = await runPersistence.command({
+      op: "settle",
+      scope,
+      runId: run.runId,
+      outcome,
     });
+    if (result.kind !== "settled")
+      throw new Error(
+        "PERSISTENCE_ERROR: settle returned an unexpected receipt",
+      );
+    state.run = result.run;
+    if (!isSubAgentTerminal(result.run.status))
+      throw new Error(
+        "PERSISTENCE_ERROR: settle did not return a terminal run",
+      );
+    // Only durable facts are published; failed settlement never looks completed.
+    if (result.committed) publish(result.run);
+    logSettled(result.run.status);
+    return settledResult(result.run);
   };
+  return (summary) => (finalizing ??= finalize(summary));
 };
 
-type SubAgentResumeDeps = {
-  ctx: ConversationContextValue;
-  subConvId: string;
-  parentConversationId: string;
-  agentId: string;
-  summary: string;
-  getAgentName: () => string;
-  subAgentRunLoop: SubAgentRunLoop;
-  runtimeConfig: SubAgentRuntimeConfig;
-  finalizeSubAgentSession: SubAgentFinalizeFn;
-  parentCheckpointIdsRef: CheckpointIdsRef;
-};
-
-/** 重新激活入口工厂（sub-agents-continue）：运行中 → Pending 队列排队
- * （目标回合边界自动消费）；已结束 → 恢复运行状态并启动新回合，完成后走
- * 与激活完全相同的统一收尾。会话隔离在调用方（createSubAgentMainToolExecutor
- * / restoreSubAgentResumer）强制校验，此处只负责运行。 */
-const createSubAgentResume = (
-  deps: SubAgentResumeDeps,
-): SubAgentResumer["resume"] => {
+const finishSubAgentSession = (
+  prepared: PreparedRun,
+  ownerId: string,
+  run: SubAgentRunRecord,
+): void => {
   const {
-    ctx,
-    subConvId,
-    parentConversationId,
-    agentId,
-    summary: activationSummary,
-    getAgentName,
-    subAgentRunLoop,
+    deps: { ctx },
+    conversationId,
+    scope,
     runtimeConfig,
-    finalizeSubAgentSession,
-    parentCheckpointIdsRef,
-  } = deps;
+  } = prepared;
+  if (subAgentSessionOwners.get(conversationId) !== ownerId) return;
+  const ref = ctx.sessionsRefData.current.get(conversationId);
+  if (ref) {
+    ref.subAgentTerminated = true;
+    ref.isSending = false;
+    ref.streamId = null;
+    ref.streamPromise = null;
+    ref.activeSendOptions = undefined;
+    ref.activeTaskMessages = undefined;
+    ref.runStartedAt = 0;
+  }
+  ctx.updateSessionField(conversationId, "isStreaming", false);
+  ctx.updateSessionField(conversationId, "streamStartedAt", 0);
+  ctx.updateSessionField(conversationId, "isAborting", false);
+  ctx.removeStreamingId(conversationId);
+  ctx.setSubAgentSessionEvent({
+    parentConversationId: scope.parentConversationId,
+    conversationId,
+    agentId: runtimeConfig.agentId,
+    agentName: runtimeConfig.agentName,
+    summary: prepared.summary,
+    status:
+      run.status === "completed"
+        ? "completed"
+        : run.status === "cancelled"
+          ? "cancelled"
+          : "failed",
+    timestamp: Date.now(),
+    toolCallInteractionId: prepared.options.interactionId,
+  });
+};
 
-  return async (
-    messages: { role: "user"; content: string }[],
-    checkpointIds?: string[],
-  ): Promise<string> => {
-    const resumeRef = ctx.sessionsRefData.current.get(subConvId);
-    if (!resumeRef) {
-      return JSON.stringify({
-        success: false,
-        error: "Sub-agent session no longer exists",
-      });
-    }
-    // 运行中：消息进入 Pending 队列，目标回合结束时自动切入。
-    if (resumeRef.isSending && !resumeRef.subAgentTerminated) {
-      const messageId = createSubAgentMessageId();
-      const queuedAt = registerSubAgentMessage(messageId);
-      const queue = ctx.pendingQueueRef.current.get(subConvId) ?? [];
-      queue.push(
-        ...messages.map((m, index) => ({
-          text: m.content,
-          options: { deliveryMode: "steer" as const },
-          steeringRunId: resumeRef.runId,
-          // 多条消息共用一条通信记录，首条送达即回写
-          source: {
-            kind: "parent" as const,
-            conversationId: parentConversationId,
-            ...(index === 0 ? { messageId } : {}),
-          },
-        })),
-      );
-      ctx.pendingQueueRef.current.set(subConvId, queue);
-      if (ctx.activeConversationIdRef.current === subConvId) {
-        ctx.setActivePendingMessages(queue.map((item) => item.text));
-      }
-      return JSON.stringify({
-        success: true,
-        queued: true,
-        messageId,
-        queuedAt,
-        acceptance: peekSubAgentAcceptanceSnapshot(subConvId),
-        note: "The target sub-agent is still running; the message was queued as a Pending message and will be delivered at the end of its current round.",
-      });
-    }
+const dispatchPreparedSubAgentRun = async (
+  prepared: PreparedRun,
+): Promise<string> => {
+  const {
+    deps,
+    scope,
+    conversationId,
+    runtimeConfig,
+    snapshot,
+    options,
+    taskHistory,
+  } = prepared;
+  const { ctx } = deps;
+  const runPersistence = requirePersistence(deps.runPersistence);
+  await requireSubAgentParent(scope);
+  let receipt: SubAgentAccepted;
 
-    // 已结束：重新激活。恢复运行状态与流式标记（与激活时初始化一致），
-    // handleAbort 与暂停检查才能正常工作；广播 running 事件让 UI 立即
-    // 恢复实时状态，并持久化 running 状态（重启后恢复的子代理 DB 里
-    // 还是终态）。
-    if (checkpointIds) parentCheckpointIdsRef.current = checkpointIds;
-    resumeRef.subAgentTerminated = false;
-    resumeRef.isSending = true;
-    resumeRef.isAbortRequested = false;
-    demotePendingSteering(ctx, subConvId);
-    resumeRef.runId += 1;
-    resumeRef.activeSendOptions = {
-      apiProfile: runtimeConfig.apiProfile,
-      model: runtimeConfig.model,
-      thinkingStrength: runtimeConfig.effectiveThinkingStrength,
-      responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
-    };
-    // The wrapper recognizes this prepared task by identity; steers admitted
-    // during the running-status write must keep this generation.
-    resumeRef.activeTaskMessages = messages;
-    ctx.updateSessionField(subConvId, "isStreaming", true);
-    resetRunStreamMetrics(ctx, subConvId);
-    markRunStarted(ctx, subConvId);
-    ctx.addStreamingId(subConvId);
-    ctx.setSubAgentSessionEvent({
-      parentConversationId,
-      conversationId: subConvId,
-      agentId,
-      agentName: getAgentName(),
-      summary: activationSummary,
-      status: "running",
-      timestamp: Date.now(),
-    });
-    await window.snow
-      .updateSubAgentSessionStatus(subConvId, "running", "")
-      .catch(() => {});
-
-    const resumeUserMsg: ChatConversationMessage = {
-      id: createMessageId("user"),
-      role: "user",
-      content: messages.map((m) => m.content).join("\n\n"),
-      timestamp: formatMessageTime(),
-      status: "sent",
-    };
-    ctx.updateSessionMessages(subConvId, (currentMessages) => [
-      ...currentMessages,
-      resumeUserMsg,
-    ]);
-
-    await acquireSubAgentSlot(
-      subConvId,
-      () => !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested,
+  if (!snapshot.workspacePath)
+    throw new Error(
+      "CONFIGURATION_ERROR: durable dispatch requires an actual workspace binding",
     );
+  if (
+    !options.requestId ||
+    !options.interactionId ||
+    !options.requestInput ||
+    !taskHistory
+  )
+    throw new Error(
+      "VALIDATION_ERROR: durable dispatch requires stable requestId, interactionId and parent task",
+    );
+  const result = await runPersistence.command({
+    op: "accept",
+    scope,
+    requestId: options.requestId,
+    requestInput: options.requestInput,
+    operation: prepared.operation,
+    conversationId,
+    parentTaskId: taskHistory.id,
+    interactionId: options.interactionId,
+    executionMode: options.executionMode,
+    summary: prepared.summary,
+    prompt: prepared.prompt,
+    snapshot: { ...snapshot, workspacePath: snapshot.workspacePath },
+    acceptance: peekSubAgentAcceptanceSnapshot(conversationId) ?? undefined,
+  });
+  if (result.kind === "message_queued" && prepared.operation === "continue") {
+    return JSON.stringify(result);
+  }
+  if (result.kind !== "accepted")
+    throw new Error("PERSISTENCE_ERROR: accept returned an unexpected receipt");
+  if (!result.created)
+    return replaySubAgentReceipt(runPersistence, scope, result);
+  receipt = result;
+
+  const ownerId = receipt.runId;
+  const actualConversationId = receipt.conversationId;
+  const actual = { ...prepared, conversationId: actualConversationId };
+  const state: RunState = { cancelled: false, finalizing: false };
+  const capacityAbort = new AbortController();
+  let budgetResourceStop: Promise<void> | undefined;
+  const budget = createSubAgentBudget(
+    {
+      maxModelRequests: snapshot.maxModelRequests ?? 128,
+      maxActiveDurationMs: snapshot.maxActiveDurationMs ?? 30 * 60 * 1000,
+    },
+    (error) => {
+      state.error = runError("model", error.message.split(":", 1)[0], error);
+      capacityAbort.abort();
+      budgetResourceStop = stopSubAgentResources(
+        ctx,
+        actualConversationId,
+        ownerId,
+        false,
+      );
+      // A failed terminal result does not imply that external resources drained cleanly.
+      retainOwnedSubAgentResourceStop(ownerId, budgetResourceStop);
+      void budgetResourceStop.catch((stopError: unknown) => {
+        state.error = {
+          ...state.error!,
+          detail: `Resource stop failed: ${getErrorMessage(stopError)}`,
+        };
+      });
+    },
+  );
+  const retainedPending = new Set(
+    ctx.pendingQueueRef.current.get(actualConversationId) ?? [],
+  );
+  let sessionInitialized = false;
+  const cancelled = (): boolean =>
+    !state.finalizing &&
+    (state.cancelled ||
+      (!budget.error &&
+        Boolean(
+          ctx.sessionsRefData.current.get(actualConversationId)
+            ?.isAbortRequested &&
+          !ctx.sessionsRefData.current.get(actualConversationId)
+            ?.forceSendAbort,
+        )));
+  const publish = (run: SubAgentRunRecord): void => {
+    runPersistence.onCommitted(run);
+    notifySubAgentRunChanges();
+  };
+  const transition = async (
+    from: SubAgentRunRecord["status"][],
+    to: SubAgentRunRecord["status"],
+    waitingReason?: SubAgentRunRecord["waitingReason"],
+  ): Promise<boolean> => {
+    const attempt = async () => {
+      const result = await runPersistence.command({
+        op: "transition",
+        scope,
+        runId: ownerId,
+        from,
+        to,
+        waitingReason,
+      });
+      if (result.kind !== "transition")
+        throw new Error("PERSISTENCE_ERROR: invalid transition receipt");
+      if (!state.run || result.run.version >= state.run.version)
+        state.run = result.run;
+      if (
+        result.run.status === "cancelling" ||
+        result.run.status === "cancelled"
+      )
+        state.cancelled = true;
+      return result;
+    };
+    const result =
+      to === "running"
+        ? await waitForSubAgentCapacity(
+            attempt,
+            cancelled,
+            capacityAbort.signal,
+          )
+        : await attempt();
+    if (result?.changed) publish(result.run);
+    return result?.changed ?? false;
+  };
+  const withWaiting: SubAgentRunLoopDeps["withWaiting"] = async (
+    reason,
+    action,
+  ) => {
+    budget.check();
+    if (cancelled())
+      throw new Error("RUN_CANCELLED: run was cancelled before decision");
+    budget.pause();
+    if (
+      !state.finalizing &&
+      !(await transition(["running"], "waiting_input", reason))
+    )
+      throw new Error("INVALID_TRANSITION: run cannot enter waiting_input");
     try {
-      const resumeSummary = await subAgentRunLoop(messages);
-      return await finalizeSubAgentSession(
-        subConvId,
-        resumeSummary,
-        "completed",
-      );
-    } catch (error) {
-      return finalizeSubAgentSession(
-        subConvId,
-        getErrorMessage(error),
-        "failed",
-      );
+      return await action();
     } finally {
-      releaseSubAgentSlot(subConvId);
+      if (!state.finalizing && !cancelled() && !budget.error) {
+        if (!cancelled()) {
+          const resumed = await transition(["waiting_input"], "running");
+          if (!resumed && !cancelled())
+            throw new Error(
+              "INVALID_TRANSITION: run cannot resume after decision",
+            );
+          if (resumed) budget.resume();
+        }
+      }
     }
   };
+  const finalize = createSubAgentFinalizer(
+    actual,
+    state,
+    withWaiting,
+    transition,
+    publish,
+    ownerId,
+  );
+  registerSubAgentRunControl(ownerId, actualConversationId);
+  subAgentSessionOwners.set(actualConversationId, ownerId);
+  const promise = startOwnedSubAgentRun(
+    ownerId,
+    async () => {
+      try {
+        state.run = (
+          await readSubAgentRunResult(runPersistence, scope, ownerId)
+        ).run;
+        if (isSubAgentTerminal(state.run.status)) {
+          publish(state.run);
+          finishSubAgentSession(actual, ownerId, state.run);
+          logSubAgentDiagnostic("runSettled", {
+            runId: ownerId,
+            conversationId: actualConversationId,
+            parentConversationId: scope.parentConversationId,
+            reasonCode:
+              state.run.status === "cancelled"
+                ? "RUN_CANCELLED"
+                : state.run.status === "completed"
+                  ? "RUN_COMPLETED"
+                  : "RUN_FAILED",
+            cancellation: state.run.cancellation,
+          });
+          return settledResult(state.run);
+        }
+
+        let summary = "";
+        try {
+          if (prepared.operation === "activate")
+            await inheritConversationWorktreeBinding(
+              scope.parentConversationId,
+              actualConversationId,
+              scope.projectId,
+              snapshot.worktreeMode,
+            );
+          const boundWorkspace = await resolveConversationWorkspacePath(
+            actualConversationId,
+            scope.projectId,
+            snapshot.workspacePath,
+            snapshot.worktreeMode,
+          );
+          if (boundWorkspace !== snapshot.workspacePath)
+            throw new Error(
+              "CONFIGURATION_ERROR: sub-agent workspace binding changed after dispatch",
+            );
+          ctx.ensureSession(actualConversationId, scope.projectId);
+          const ref = ctx.sessionsRefData.current.get(actualConversationId);
+          if (!ref)
+            throw new Error(
+              "CONFIGURATION_ERROR: sub-agent runtime session is unavailable",
+            );
+          ref.subAgentTerminated = false;
+          ref.isSending = true;
+          ref.isAbortRequested = state.cancelled;
+          ref.planMode = false;
+          ref.goalMode = false;
+          ref.worktreeMode = snapshot.worktreeMode;
+          demotePendingSteering(ctx, actualConversationId);
+          ref.runId += 1;
+          const messages = [
+            { role: "user" as const, content: prepared.prompt },
+          ];
+          ref.activeTaskMessages = messages;
+          ref.activeSendOptions = {
+            apiProfile: runtimeConfig.apiProfile,
+            model: runtimeConfig.model,
+            thinkingStrength: runtimeConfig.effectiveThinkingStrength,
+            responsesFastMode: runtimeConfig.effectiveResponsesFastMode,
+          };
+          ctx.sessionsRefData.current
+            .get(scope.parentConversationId)
+            ?.childSubAgentIds.add(actualConversationId);
+          sessionInitialized = true;
+          ctx.updateSessionMessages(actualConversationId, (current) => [
+            ...current,
+            {
+              id: createMessageId("user"),
+              role: "user",
+              content: prepared.prompt,
+              status: "sent",
+              timestamp: formatMessageTime(),
+            },
+          ]);
+          if (!cancelled()) {
+            if (!(await transition(["queued"], "running"))) {
+              if (!cancelled())
+                throw new Error(
+                  "INVALID_TRANSITION: queued run did not acquire execution ownership",
+                );
+            } else {
+              budget.resume();
+              ctx.updateSessionField(actualConversationId, "isStreaming", true);
+              resetRunStreamMetrics(ctx, actualConversationId);
+              markRunStarted(ctx, actualConversationId);
+              logSubAgentDiagnostic("runStarted", {
+                runId: ownerId,
+                conversationId: actualConversationId,
+                parentConversationId: scope.parentConversationId,
+                interactionId: options.interactionId,
+                reasonCode: "RUN_STARTED",
+              });
+              ctx.addStreamingId(actualConversationId);
+              ctx.setSubAgentSessionEvent({
+                parentConversationId: scope.parentConversationId,
+                conversationId: actualConversationId,
+                agentId: runtimeConfig.agentId,
+                agentName: runtimeConfig.agentName,
+                summary: prepared.summary,
+                status: "running",
+                timestamp: Date.now(),
+                toolCallInteractionId: options.interactionId,
+              });
+              const loop = createSubAgentRunLoop({
+                ctx,
+                subConvId: actualConversationId,
+                dirId: scope.projectId,
+                runtimeConfig,
+                parentConversationId: scope.parentConversationId,
+                parentCheckpointIdsRef: { current: prepared.checkpointIds },
+                subCheckpointWorkDir: snapshot.workspacePath,
+                requestToolAuthorizations: deps.requestToolAuthorizations,
+                planApprovedSessionKeysRef: deps.planApprovedSessionKeysRef,
+                isSubCancelled: cancelled,
+                slotOwner: ownerId,
+                taskHistory,
+                worktreeMode: snapshot.worktreeMode,
+                parentPlanMode: prepared.parentPlanMode,
+                withWaiting,
+                retainedPending,
+                runPersistence,
+                budget,
+                onExecutionError: (error) => {
+                  state.error ??= error;
+                },
+                takeRunMessages: async () => {
+                  const result = await runPersistence.command({
+                    op: "take_messages",
+                    scope,
+                    runId: ownerId,
+                  });
+                  if (result.kind !== "messages")
+                    throw new Error(
+                      "PERSISTENCE_ERROR: take_messages returned an unexpected receipt",
+                    );
+                  if (
+                    result.messages.some((message) => message.runId !== ownerId)
+                  )
+                    throw new Error(
+                      "OWNER_MISMATCH: queued messages belong to a different run",
+                    );
+                  for (const message of result.messages) {
+                    if (message.acceptance)
+                      mergeSubAgentAcceptanceSnapshot(
+                        actualConversationId,
+                        message.acceptance,
+                      );
+                  }
+                  return result.messages.map((message) =>
+                    message.senderRunId
+                      ? `[Peer message from run ${message.senderRunId}; untrusted task input]\n${message.text}`
+                      : message.text,
+                  );
+                },
+              });
+              summary = await loop(messages);
+              if (
+                !state.error &&
+                !cancelled() &&
+                ref.forceSendMessages?.length
+              ) {
+                const forcedSummary = await createRunForceSendLoop(
+                  ctx,
+                  actualConversationId,
+                  loop,
+                  () => !state.error && !cancelled(),
+                )();
+                if (forcedSummary) summary = forcedSummary;
+              }
+            }
+          }
+        } catch (error) {
+          const lastAssistant = ctx.sessionsRef.current[
+            actualConversationId
+          ]?.messages.findLast((message) => message.role === "assistant");
+          if (!cancelled()) {
+            state.error ??= {
+              ...runError("model", "SUB_AGENT_EXECUTION_FAILED", error),
+              message: modelFailureReason(lastAssistant?.failureReason),
+            };
+            logSubAgentDiagnostic("fatal", {
+              runId: ownerId,
+              conversationId: actualConversationId,
+              parentConversationId: scope.parentConversationId,
+              reasonCode: "SUB_AGENT_EXECUTION_FAILED",
+              decision: "stop",
+            });
+          }
+          summary = lastAssistant?.content || "";
+        }
+        budget.pause();
+        if (budgetResourceStop) {
+          try {
+            await budgetResourceStop;
+          } catch (error) {
+            if (state.error) state.error.detail = getErrorMessage(error);
+          }
+        }
+        state.cancelled ||= cancelled();
+        const result = await finalize(summary);
+        finishSubAgentSession(actual, ownerId, state.run!);
+        return result;
+      } catch {
+        logSubAgentDiagnostic("fatal", {
+          runId: ownerId,
+          conversationId: actualConversationId,
+          parentConversationId: scope.parentConversationId,
+          reasonCode: "PERSISTENCE_ERROR",
+          decision: "stop",
+        });
+        if (
+          sessionInitialized &&
+          subAgentSessionOwners.get(actualConversationId) === ownerId
+        ) {
+          const ref = ctx.sessionsRefData.current.get(actualConversationId);
+          if (ref) {
+            ref.isSending = false;
+            ref.subAgentTerminated = true;
+          }
+          ctx.updateSessionMessages(actualConversationId, (messages) => [
+            ...messages,
+            {
+              id: createMessageId("assistant"),
+              role: "assistant",
+              content: "",
+              failureReason: undefined,
+              htmlPreviewEligible: false,
+              status: "error",
+              timestamp: formatMessageTime(),
+            },
+          ]);
+          ctx.updateSessionField(actualConversationId, "isStreaming", false);
+          ctx.removeStreamingId(actualConversationId);
+        }
+        throw new Error(
+          "PERSISTENCE_ERROR: sub-agent run could not be settled",
+        );
+      } finally {
+        if (subAgentSessionOwners.get(actualConversationId) === ownerId) {
+          createForwardSubPendingQueue(
+            ctx,
+            scope.parentConversationId,
+          )(actualConversationId);
+          subAgentSessionOwners.delete(actualConversationId);
+        }
+        budget.pause();
+        capacityAbort.abort();
+        cancelSubAgentRunWaits(ownerId);
+        unregisterSubAgentRunControl(ownerId);
+      }
+    },
+    async () => {
+      if (state.finalizing) return;
+      if (subAgentSessionOwners.get(actualConversationId) !== ownerId)
+        throw new Error(
+          "OWNER_MISMATCH: sub-agent session now belongs to a different run",
+        );
+      state.cancelled = true;
+      capacityAbort.abort();
+      budget.pause();
+      await stopSubAgentResources(ctx, actualConversationId, ownerId);
+    },
+  );
+  if (receipt.executionMode === "async") return JSON.stringify(receipt);
+  return promise;
+};
+
+const createSubAgentResume =
+  (prepared: PreparedRun): SubAgentResumer["resume"] =>
+  async (
+    messages,
+    checkpointIds,
+    options = { executionMode: "sync" },
+    activationDeps,
+  ) => {
+    const deps = activationDeps ?? prepared.deps;
+    const taskHistory = options.taskHistory;
+    const config =
+      (await window.snow.getSubAgentConfig(
+        prepared.runtimeConfig.agentId,
+        prepared.scope.projectId,
+      )) ??
+      (await window.snow.getSubAgentConfig(prepared.runtimeConfig.agentId));
+    if (!config)
+      throw new Error(
+        "CONFIGURATION_ERROR: sub-agent configuration is unavailable",
+      );
+    const configuredTools = parseSubAgentTools(config.toolsJson);
+    const group = options.requestInput?.collaborationGroup;
+    const authorized =
+      group &&
+      (configuredTools.includes("sub-agents-sendMessage") ||
+        (prepared.runtimeConfig.agentId === "agent_general" &&
+          configuredTools.includes("*")));
+    const ordinaryTools = parseSubAgentTools(
+      prepared.runtimeConfig.toolsJson,
+    ).filter((name) => !name.startsWith("sub-agents-"));
+    const toolsJson = JSON.stringify(
+      authorized ? [...ordinaryTools, "sub-agents-sendMessage"] : ordinaryTools,
+    );
+    const next: PreparedRun = {
+      ...prepared,
+      deps,
+      runtimeConfig: { ...prepared.runtimeConfig, toolsJson },
+      snapshot: {
+        ...prepared.snapshot,
+        ...(await loadSubAgentBudgetLimits()),
+        toolsJson,
+        collaborationGroup: group,
+      },
+      operation: "continue",
+      prompt: messages.map((message) => message.content).join("\n\n"),
+      checkpointIds: checkpointIds ?? [],
+      options,
+      taskHistory,
+      parentPlanMode:
+        deps.ctx.sessionsRefData.current.get(
+          prepared.scope.parentConversationId,
+        )?.planMode ?? false,
+    };
+    const hook = await executeSubAgentHook(
+      deps.ctx,
+      next,
+      "beforeSubAgentStart",
+    );
+    if (hook.kind === "abort")
+      throw new Error(`PERMISSION_DENIED: ${hook.message}`);
+    return dispatchPreparedSubAgentRun(next);
+  };
+const registerResumer = (prepared: PreparedRun): SubAgentResumer => {
+  const resumer = {
+    parentConversationId: prepared.scope.parentConversationId,
+    agentId: prepared.runtimeConfig.agentId,
+    agentName: prepared.runtimeConfig.agentName,
+    resume: createSubAgentResume(prepared),
+  };
+  subAgentResumers.set(prepared.conversationId, resumer);
+  return resumer;
 };
 
 export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
-  const {
-    ctx,
-    requestToolAuthorizations,
-    parentApiProfile,
-    parentModel,
-    parentThinkingStrength,
-    parentResponsesFastMode,
-    planApprovedSessionKeysRef,
-  } = deps;
-
   return async (
     argsJson: string,
     parentConversationId: string,
     dirId: string,
     toolCallInteractionId: string | undefined,
     activeCheckpointIds: string[],
+    capturedExecutionMode?: SubAgentExecutionMode,
   ): Promise<string> => {
-    // 当前主会话回合的所有子代理文件工具共享同一个 active checkpoint，
-    // 但不会触碰更早消息的 checkpoint expected 状态。
-    const parentCheckpointIdsRef: CheckpointIdsRef = {
-      current: activeCheckpointIds,
-    };
-    const parentWorktreeMode =
-      ctx.sessionsRefData.current.get(parentConversationId)?.worktreeMode ??
-      false;
-    const projectSessionDirPath = directoryIdToPath(dirId) ?? ctx.directoryPath;
-    const subCheckpointWorkDir =
-      activeCheckpointIds.length > 0
-        ? await resolveConversationWorkspacePath(
+    const taskHistory = currentAgentTask(parentConversationId);
+    const parent = deps.ctx.sessionsRefData.current.get(parentConversationId);
+    const worktreeMode = parent?.worktreeMode ?? false;
+    const parentPlanMode = parent?.planMode ?? false;
+    try {
+      const args = parseToolArgs(argsJson);
+      const options = parseRunOptions(
+        {
+          ...args,
+          executionMode:
+            capturedExecutionMode ?? (await loadSubAgentExecutionMode()),
+        },
+        "activate",
+        toolCallInteractionId,
+      );
+      await requireSubAgentParent({ projectId: dirId, parentConversationId });
+      const persistence = requirePersistence(deps.runPersistence);
+      const agentId =
+        typeof args.agentId === "string" ? args.agentId.trim() : "";
+      const prompt = typeof args.prompt === "string" ? args.prompt : "";
+      const summary =
+        typeof args.summary === "string" ? args.summary.trim() : "";
+      if (!agentId || !prompt || !summary)
+        throw new Error(
+          "VALIDATION_ERROR: agentId, summary and prompt are required",
+        );
+      const acceptance = parseSubAgentAcceptanceCriteria(args.acceptance);
+      if (acceptance.errors.length)
+        throw new Error(`VALIDATION_ERROR: ${acceptance.errors.join("; ")}`);
+      const scope: SubAgentRunScope = {
+        projectId: dirId,
+        parentConversationId,
+      };
+      const requestInput: SubAgentLogicalInput = {
+        operation: "activate",
+        executionMode: options.executionMode,
+        collaborationGroup: parseCollaborationGroup(args.collaborationGroup),
+        agentId,
+        summary,
+        text: prompt,
+        acceptance: [...acceptance.criteria].sort((left, right) =>
+          left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+        ),
+      };
+      options.requestInput = requestInput;
+      return await prepareLogicalSubAgentRequest(
+        deps.runPersistence,
+        scope,
+        options,
+        requestInput,
+        async () => {
+          const config = dirId
+            ? ((await window.snow.getSubAgentConfig(agentId, dirId)) ??
+              (await window.snow.getSubAgentConfig(agentId)))
+            : await window.snow.getSubAgentConfig(agentId);
+          if (!config)
+            throw new Error(
+              `CONFIGURATION_ERROR: sub-agent configuration not found: ${agentId}`,
+            );
+          let runtimeConfig: SubAgentRuntimeConfig;
+          try {
+            runtimeConfig = resolveSubAgentRuntimeConfig({
+              config,
+              apiConfigs: await window.snow.listApiConfigs(),
+              parentApiProfile: deps.parentApiProfile,
+              parentModel: deps.parentModel,
+              parentThinkingStrength: deps.parentThinkingStrength,
+              parentResponsesFastMode: deps.parentResponsesFastMode,
+            });
+          } catch (error) {
+            throw new Error(`CONFIGURATION_ERROR: ${getErrorMessage(error)}`, {
+              cause: error,
+            });
+          }
+          runtimeConfig = {
+            ...runtimeConfig,
+            toolsJson: collaborationToolsJson(
+              runtimeConfig.toolsJson,
+              requestInput.collaborationGroup,
+            ),
+          };
+          const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
+          runtimeConfig = {
+            ...runtimeConfig,
+            unavailableTools: allowedTools.includes("*")
+              ? []
+              : await window.snow.diagnoseSubAgentTools(
+                  dirId,
+                  runtimeConfig.toolsJson,
+                ),
+          };
+          const workspacePath = await resolveConversationWorkspacePath(
             parentConversationId,
             dirId,
-            projectSessionDirPath,
-            parentWorktreeMode,
-          )
-        : undefined;
-
-    const parsedArgs = JSON.parse(argsJson) as Record<string, unknown>;
-    const agentId =
-      typeof parsedArgs.agentId === "string" ? parsedArgs.agentId : "";
-    const prompt =
-      typeof parsedArgs.prompt === "string" ? parsedArgs.prompt : "";
-    const activationSummary =
-      typeof parsedArgs.summary === "string" ? parsedArgs.summary.trim() : "";
-
-    if (!agentId || !prompt || !activationSummary) {
-      return JSON.stringify({
-        success: false,
-        error: "agentId, summary and prompt are required",
-      });
-    }
-    // 可选的验收清单：子代理必须按项回执状态并引用真实工具证据。
-    const acceptanceParse = parseSubAgentAcceptanceCriteria(
-      parsedArgs.acceptance,
-    );
-    if (acceptanceParse.errors.length) {
-      return JSON.stringify({
-        success: false,
-        error: `Invalid sub-agent acceptance checklist: ${acceptanceParse.errors.join(
-          "; ",
-        )}`,
-      });
-    }
-    let subConversationId: string | undefined;
-    let subAgentName: string | undefined;
-    let config: Awaited<ReturnType<typeof window.snow.getSubAgentConfig>> =
-      null;
-
-    // 子代理运行时依赖（try 块内依据运行时解析的配置赋值）。以 let 占位
-    // 声明：catch 路径（第一轮失败/被中断）也需要 finalize 来完成失败收尾
-    // （finalize 内部会消费用户强行发送的消息）。
-    let subAgentRunLoop: SubAgentRunLoop = async () => "";
-    let runForceSendLoop: () => Promise<string> = async () => "";
-    let forwardSubPendingQueue: (finishedSubConvId: string) => void = () => {};
-    let finalizeSubAgentSession: SubAgentFinalizeFn | null = null;
-    let subAgentSessionCreated = false;
-    let subWorktreeMode = false;
-
-    try {
-      // 项目级子代理优先：先查当前项目（dirId）下的配置，未命中再回退全局。
-      config = dirId
-        ? ((await window.snow.getSubAgentConfig(agentId, dirId)) ??
-          (await window.snow.getSubAgentConfig(agentId)))
-        : await window.snow.getSubAgentConfig(agentId);
-      if (!config) {
-        return JSON.stringify({
-          success: false,
-          error: `Sub-agent configuration not found: ${agentId}`,
-        });
-      }
-
-      const resolvedRuntimeConfig = resolveSubAgentRuntimeConfig({
-        config,
-        apiConfigs: await window.snow.listApiConfigs(),
-        parentApiProfile,
-        parentModel,
-        parentThinkingStrength,
-        parentResponsesFastMode,
-      });
-      const allowedTools = parseSubAgentTools(resolvedRuntimeConfig.toolsJson);
-      // 显式白名单诊断不可用工具（通配符跳过）；诊断失败不阻塞激活。
-      const unavailableTools = allowedTools.includes("*")
-        ? []
-        : await window.snow
-            .diagnoseSubAgentTools(
-              dirId || undefined,
-              resolvedRuntimeConfig.toolsJson,
-            )
-            .catch((): SubAgentUnavailableTool[] => []);
-      const runtimeConfig = {
-        ...resolvedRuntimeConfig,
-        unavailableTools,
-      };
-
-      subConversationId = `sub-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 10)}`;
-      // 验收清单按新的子代理会话注册；未附带清单时不创建追踪器。
-      initializeSubAgentAcceptance(subConversationId, acceptanceParse.criteria);
-
-      // Execute beforeSubAgentStart hooks. If blocked, abort the
-      // sub-agent activation immediately with the hook's message.
-      try {
-        const beforeSubAgentContext = JSON.stringify({
-          agentId,
-          agentName: runtimeConfig.agentName,
-          prompt,
-          parentConversationId,
-          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
-        });
-        const subHookResult = await runHook(
-          "beforeSubAgentStart",
-          dirId || undefined,
-          beforeSubAgentContext,
-        );
-        if (subHookResult) {
-          ctx.updateSessionMessages(parentConversationId, (currentMessages) =>
-            appendHookExecutionToMessage(currentMessages, {
-              ...subHookResult.record,
-              // Bind to the sub-agent tool call so the hook renders attached
-              // to the sub-agent card ("启动前" step), not the message footer.
-              toolCallInteractionId,
-            }),
+            directoryIdToPath(dirId) ?? deps.ctx.directoryPath,
+            worktreeMode,
           );
-          if (subHookResult.outcome.kind === "abort") {
-            return JSON.stringify({
-              success: false,
-              error: subHookResult.outcome.message,
-            });
-          }
-        }
-      } catch {
-        // Hook execution failed -- continue with sub-agent activation
-      }
-
-      await window.snow.createSubAgentSession(
-        subConversationId,
-        parentConversationId,
-        runtimeConfig.agentId,
-        runtimeConfig.agentName,
-        dirId,
-        runtimeConfig.apiProfile,
-        runtimeConfig.model,
-        activationSummary,
-        runtimeConfig.effectiveThinkingStrength || null,
-        runtimeConfig.effectiveResponsesFastMode,
-      );
-      subAgentSessionCreated = true;
-      subWorktreeMode = await inheritConversationWorktreeBinding(
-        parentConversationId,
-        subConversationId,
-        dirId,
-        parentWorktreeMode,
-      );
-
-      await window.snow.updateSubAgentSessionStatus(
-        subConversationId,
-        "running",
-        "",
-      );
-
-      ctx.setSubAgentSessionEvent({
-        parentConversationId,
-        conversationId: subConversationId,
-        agentId,
-        agentName: runtimeConfig.agentName,
-        summary: activationSummary,
-        status: "running",
-        timestamp: Date.now(),
-        toolCallInteractionId,
-      });
-
-      const subAgentToolsJson = runtimeConfig.toolsJson;
-      subAgentName = runtimeConfig.agentName;
-
-      // 构建子代理运行环境：回合循环、强行发送循环、队列转交、统一收尾、
-      // 恢复入口（sub-agents-continue）并注册到恢复器注册表。与重启后从
-      // DB 恢复（restoreSubAgentResumer）共用同一批工厂，行为完全一致。
-      const subConvId = subConversationId!;
-      subAgentRunLoop = createSubAgentRunLoop({
-        ctx,
-        subConvId,
-        dirId,
-        runtimeConfig,
-        parentConversationId,
-        parentCheckpointIdsRef,
-        subCheckpointWorkDir,
-        requestToolAuthorizations,
-        planApprovedSessionKeysRef,
-        isSubCancelled: () =>
-          !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested,
-      });
-      runForceSendLoop = createRunForceSendLoop(
-        ctx,
-        subConvId,
-        subAgentRunLoop,
-      );
-      forwardSubPendingQueue = createForwardSubPendingQueue(
-        ctx,
-        parentConversationId,
-      );
-      const subAgentFinalizer = createSubAgentFinalizer({
-        ctx,
-        parentConversationId,
-        agentId,
-        summary: activationSummary,
-        getAgentName: () => subAgentName ?? agentId,
-        dirId,
-        prompt,
-        toolCallInteractionId,
-        runForceSendLoop,
-        forwardSubPendingQueue,
-        unavailableTools,
-      });
-      finalizeSubAgentSession = subAgentFinalizer;
-      subAgentResumers.set(subConversationId, {
-        parentConversationId,
-        agentId,
-        agentName: subAgentName ?? agentId,
-        resume: createSubAgentResume({
-          ctx,
-          subConvId,
-          parentConversationId,
-          agentId,
-          summary: activationSummary,
-          getAgentName: () => subAgentName ?? agentId,
-          subAgentRunLoop,
-          runtimeConfig,
-          finalizeSubAgentSession: subAgentFinalizer,
-          parentCheckpointIdsRef,
-        }),
-      });
-
-      ctx.ensureSession(subConvId, dirId);
-      const subSessionRef = ctx.sessionsRefData.current.get(subConvId);
-      if (subSessionRef) {
-        subSessionRef.isSending = true;
-        subSessionRef.isAbortRequested = false;
-        // Sub-agents never run Plan/Goal Mode. WorkTree binding is inherited
-        // from the parent so their MCP executor cannot fall back to the project root.
-        subSessionRef.planMode = false;
-        subSessionRef.goalMode = false;
-        subSessionRef.worktreeMode = subWorktreeMode;
-      }
-      // Register this sub-agent on the parent session so aborting the main
-      // flow can cascade the cancellation down to it (and its children).
-      const parentSessionRef =
-        ctx.sessionsRefData.current.get(parentConversationId);
-      if (parentSessionRef) {
-        parentSessionRef.childSubAgentIds.add(subConvId);
-      }
-      ctx.updateSessionField(subConvId, "isStreaming", true);
-      resetRunStreamMetrics(ctx, subConvId);
-      // Anchor the accumulating timer start for the sub-agent session so
-      // its StreamMetrics timer is independent of the parent session.
-      markRunStarted(ctx, subConvId);
-      ctx.addStreamingId(subConvId);
-
-      const subUserMessage: ChatConversationMessage = {
-        id: createMessageId("user"),
-        role: "user",
-        content: prompt,
-        timestamp: formatMessageTime(),
-        status: "sent",
-      };
-
-      ctx.updateSessionMessages(subConvId, (currentMessages) => [
-        ...currentMessages,
-        subUserMessage,
-      ]);
-
-      // 全局并发上限：名额不足时排队，取消时 run loop 会按中止返回。
-      await acquireSubAgentSlot(
-        subConvId,
-        () => !!ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested,
-      );
-      try {
-        const summary = await subAgentRunLoop([
-          { role: "user", content: prompt },
-        ]);
-
-        const activationFinalizer = finalizeSubAgentSession;
-        if (!activationFinalizer) {
-          throw new Error("Sub-agent finalizer was not initialized");
-        }
-        return await activationFinalizer(
-          subConversationId,
-          summary,
-          "completed",
-        );
-      } finally {
-        releaseSubAgentSlot(subConvId);
-      }
-    } catch (err) {
-      const errorMessage = getErrorMessage(err);
-      if (subConversationId && subAgentSessionCreated) {
-        // 真实 Finalizer 尚未初始化时，至少将已创建的 Native 会话标记为失败；
-        // 不再调用会吞掉异常的空 Finalizer。
-        const finalizer = finalizeSubAgentSession;
-        if (finalizer) {
-          try {
-            return await finalizer(subConversationId, errorMessage, "failed");
-          } catch (finalizeError) {
-            return JSON.stringify({
-              success: false,
-              error: `${errorMessage}; failed to finalize sub-agent session: ${getErrorMessage(
-                finalizeError,
-              )}`,
-            });
-          }
-        }
-        try {
-          await window.snow.updateSubAgentSessionStatus(
-            subConversationId,
-            "failed",
-            errorMessage,
+          if (!workspacePath)
+            throw new Error(
+              "CONFIGURATION_ERROR: dispatch workspace is unavailable",
+            );
+          const conversationId = `sub-${crypto.randomUUID()}`;
+          initializeSubAgentAcceptance(conversationId, acceptance.criteria);
+          const prepared: PreparedRun = {
+            deps: { ...deps, runPersistence: persistence },
+            scope,
+            conversationId,
+            operation: "activate",
+            runtimeConfig,
+            snapshot: {
+              ...(await loadSubAgentBudgetLimits()),
+              collaborationGroup: requestInput.collaborationGroup,
+              agentId: runtimeConfig.agentId,
+              agentName: runtimeConfig.agentName,
+              apiProfile: runtimeConfig.apiProfile,
+              model: runtimeConfig.model,
+              systemPrompt: runtimeConfig.systemPrompt,
+              toolsJson: runtimeConfig.toolsJson,
+              effectiveThinkingStrength:
+                runtimeConfig.effectiveThinkingStrength,
+              effectiveResponsesFastMode:
+                runtimeConfig.effectiveResponsesFastMode,
+              workspacePath,
+              worktreeMode,
+            },
+            summary,
+            prompt,
+            checkpointIds: [...activeCheckpointIds],
+            taskHistory,
+            parentPlanMode,
+            options,
+          };
+          const hook = await executeSubAgentHook(
+            deps.ctx,
+            prepared,
+            "beforeSubAgentStart",
           );
-        } catch (persistError) {
-          return JSON.stringify({
-            success: false,
-            error: `${errorMessage}; failed to persist sub-agent failure: ${getErrorMessage(
-              persistError,
-            )}`,
-          });
-        }
-      }
-
-      return JSON.stringify({
-        success: false,
-        error: errorMessage,
-      });
+          if (hook.kind === "abort")
+            throw new Error(`PERMISSION_DENIED: ${hook.message}`);
+          const result = await dispatchPreparedSubAgentRun(prepared);
+          const receipt = JSON.parse(result);
+          const committedId =
+            receipt.kind === "accepted"
+              ? receipt.conversationId
+              : receipt.kind === "result"
+                ? receipt.run?.conversationId
+                : undefined;
+          if (committedId === conversationId) registerResumer(prepared);
+          return result;
+        },
+      );
+    } catch (error) {
+      return toolFailure(error);
     }
   };
 };
 
-// ---------------------------------------------------------------------------
-// 主会话子代理管理工具（sub-agents-listSubAgents / sub-agents-continue）
-// ---------------------------------------------------------------------------
-
-/** 从 DB 重建子代理恢复器（应用重启后的恢复路径）。子代理会话记录已持久化
- * （agentId/agentName/directoryId/apiProfileName/model），运行时配置从子代理
- * 配置重新解析（toolsJson/systemPrompt 等不入库），并优先保持会话持久化的
- * apiProfile/model。会话隔离在此强制：只接受当前父会话自己的子代理记录。
- * 重建成功后注册到 subAgentResumers，后续 continue 直接走内存。 */
 const restoreSubAgentResumer = async (
-  ctx: ConversationContextValue,
-  requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"],
-  planApprovedSessionKeysRef: { current: Set<string> },
-  parentThinkingStrength: string | null | undefined,
-  parentResponsesFastMode: string | null | undefined,
-  parentConversationId: string,
+  deps: SubAgentActivationDeps,
+  scope: SubAgentRunScope,
   targetConvId: string,
-  activeCheckpointIds: string[],
-): Promise<SubAgentResumer | null> => {
-  // 1. DB 查询：仅当前父会话下的子代理可见（会话隔离）。
-  let grouped: Record<string, ChatConversationRecord[]>;
-  try {
-    grouped = await window.snow.listSubAgentConversationsByParents([
-      parentConversationId,
-    ]);
-  } catch {
-    return null;
-  }
-  const record = grouped[parentConversationId]?.find(
+  checkpointIds: string[],
+): Promise<SubAgentResumer> => {
+  const grouped = await window.snow.listSubAgentConversationsByParents([
+    scope.parentConversationId,
+  ]);
+  const record = grouped[scope.parentConversationId]?.find(
     (item) => item.conversationId === targetConvId,
   );
-  if (!record) {
-    return null;
-  }
-
+  if (!record || record.directoryId !== scope.projectId)
+    throw new Error(
+      "PERMISSION_DENIED: target sub-agent does not belong to this parent/project",
+    );
   const agentId = record.subAgentId.trim();
-  const agentName = record.subAgentName.trim();
-  const dirId = record.directoryId.trim();
-  if (!agentId) {
-    return null;
-  }
-
-  // 2. 子代理配置：项目级优先，未命中回退全局；配置已删除则无法恢复。
-  let config: Awaited<ReturnType<typeof window.snow.getSubAgentConfig>> = null;
-  try {
-    config = dirId
-      ? ((await window.snow.getSubAgentConfig(agentId, dirId)) ??
-        (await window.snow.getSubAgentConfig(agentId)))
-      : await window.snow.getSubAgentConfig(agentId);
-  } catch {
-    config = null;
-  }
-  if (!config) {
-    return null;
-  }
-
-  // 3. 父会话参数（用于继承 profile/model，父会话是当前会话）。
-  let parentRecord: ChatConversationRecord | null = null;
-  try {
-    parentRecord = await window.snow.getChatConversation(parentConversationId);
-  } catch {
-    // 父会话查询失败不影响恢复（继承参数走 undefined）
-  }
-
-  // 4. 运行时配置解析 + 校准：优先保持会话持久化的 apiProfile/model
-  //（父会话参数漂移不影响已运行过的子代理）；profile 已删除时保留解析结果。
-  let runtimeConfig: SubAgentRuntimeConfig;
-  try {
-    const apiConfigs = await window.snow.listApiConfigs();
-    const persistedRuntimeConfig = await window.snow
-      .getConversationRuntimeConfig(targetConvId)
-      .catch(() => null);
-    // Fast mode 回退顺序：父运行捕获值 > 会话持久化快照 > 该持久化会话
-    // Profile 的配置值；思考强度同理（父运行捕获值 > 会话持久化快照，
-    // 最终由 resolveSubAgentRuntimeConfig 校验档位并回落 Profile 配置）。
-    const fallbackProfileName =
-      record.apiProfileName.trim() || parentRecord?.apiProfileName.trim();
-    const fallbackApiConfig = fallbackProfileName
-      ? apiConfigs.find(
-          (item) => item.profileName.trim() === fallbackProfileName,
-        )
-      : undefined;
-    const restoredThinkingStrength =
-      parentThinkingStrength ??
-      persistedRuntimeConfig?.thinkingStrength ??
-      undefined;
-    const restoredFastMode =
-      parentResponsesFastMode ??
-      persistedRuntimeConfig?.responsesFastMode ??
-      (fallbackApiConfig
-        ? getResponsesFastModeFromConfig(fallbackApiConfig)
-        : undefined);
-    runtimeConfig = resolveSubAgentRuntimeConfig({
-      config,
-      apiConfigs,
-      parentApiProfile: fallbackProfileName || undefined,
-      parentModel: parentRecord?.model || undefined,
-      parentThinkingStrength: restoredThinkingStrength,
-      parentResponsesFastMode: restoredFastMode,
-    });
-    if (
-      record.apiProfileName &&
-      runtimeConfig.apiProfile !== record.apiProfileName
-    ) {
-      const apiConfigs = await window.snow.listApiConfigs();
-      if (
-        apiConfigs.some(
-          (item) => item.profileName.trim() === record.apiProfileName,
-        )
-      ) {
-        runtimeConfig = { ...runtimeConfig, apiProfile: record.apiProfileName };
-        if (record.model) {
-          runtimeConfig = { ...runtimeConfig, model: record.model };
-        }
-      }
-    }
-  } catch {
-    return null;
-  }
-
-  // 5. 内存会话状态：已结束的子代理标记为 terminated（未激活）、
-  //    关闭 Plan/Goal Mode，并登记到父会话的级联取消集合。
-  const existingRef = ctx.sessionsRefData.current.get(targetConvId);
-  if (existingRef?.isSending && !existingRef.subAgentTerminated) {
-    return null; // 运行中但无 resumer：不应发生，防御性拒绝
-  }
-  const parentSessionRef =
-    ctx.sessionsRefData.current.get(parentConversationId);
-  const parentWorktreeMode = parentSessionRef?.worktreeMode ?? false;
-  const restoredWorktreeMode = await inheritConversationWorktreeBinding(
-    parentConversationId,
-    targetConvId,
-    dirId,
-    parentWorktreeMode,
-  );
-  if (parentSessionRef) {
-    parentSessionRef.childSubAgentIds.add(targetConvId);
-  }
-  ctx.ensureSession(targetConvId, dirId || undefined);
-  const restoredRef = ctx.sessionsRefData.current.get(targetConvId);
-  if (restoredRef) {
-    restoredRef.subAgentTerminated = true;
-    restoredRef.isSending = false;
-    restoredRef.planMode = false;
-    restoredRef.goalMode = false;
-    restoredRef.worktreeMode = restoredWorktreeMode;
-  }
-
-  // 6. 构建运行环境（与激活路径共用同一批工厂）。
-  const parentCheckpointIdsRef: CheckpointIdsRef = {
-    current: activeCheckpointIds,
-  };
-  const parentProjectDirPath = directoryIdToPath(dirId) ?? ctx.directoryPath;
-  const subCheckpointWorkDir =
-    activeCheckpointIds.length > 0
-      ? await resolveConversationWorkspacePath(
-          parentConversationId,
-          dirId,
-          parentProjectDirPath,
-          parentWorktreeMode,
-        )
-      : undefined;
-  const subAgentRunLoop = createSubAgentRunLoop({
-    ctx,
-    subConvId: targetConvId,
-    dirId,
+  const config = scope.projectId
+    ? ((await window.snow.getSubAgentConfig(agentId, scope.projectId)) ??
+      (await window.snow.getSubAgentConfig(agentId)))
+    : await window.snow.getSubAgentConfig(agentId);
+  if (!config)
+    throw new Error(
+      `CONFIGURATION_ERROR: sub-agent configuration is unavailable: ${agentId}`,
+    );
+  const apiConfigs = await window.snow.listApiConfigs();
+  const result = await requirePersistence(deps.runPersistence).command({
+    op: "list",
+    scope,
+    conversationId: targetConvId,
+    limit: 1,
+  });
+  if (result.kind !== "runs")
+    throw new Error("PERSISTENCE_ERROR: invalid persisted run list");
+  const snapshot = result.runs[0]?.snapshot;
+  if (!snapshot)
+    throw new Error(
+      "RUN_NOT_FOUND: sub-agent has no persisted execution snapshot",
+    );
+  if (
+    snapshot.agentId !== agentId ||
+    !apiConfigs.some((item) => item.profileName.trim() === snapshot.apiProfile)
+  )
+    throw new Error(
+      "CONFIGURATION_ERROR: captured agent or API profile is unavailable",
+    );
+  const runtimeConfig = resolveSubAgentRuntimeConfig({
+    config: {
+      ...config,
+      configProfile: snapshot.apiProfile,
+      model: snapshot.model,
+      systemPrompt: snapshot.systemPrompt,
+      toolsJson: snapshot.toolsJson,
+    },
+    apiConfigs,
+    parentThinkingStrength: snapshot.effectiveThinkingStrength,
+    parentResponsesFastMode: snapshot.effectiveResponsesFastMode,
+  });
+  return registerResumer({
+    deps,
+    scope,
+    conversationId: targetConvId,
+    operation: "continue",
     runtimeConfig,
-    parentConversationId,
-    parentCheckpointIdsRef,
-    subCheckpointWorkDir,
-    requestToolAuthorizations,
-    planApprovedSessionKeysRef,
-    isSubCancelled: () =>
-      !!ctx.sessionsRefData.current.get(targetConvId)?.isAbortRequested,
-  });
-  const runForceSendLoop = createRunForceSendLoop(
-    ctx,
-    targetConvId,
-    subAgentRunLoop,
-  );
-  const forwardSubPendingQueue = createForwardSubPendingQueue(
-    ctx,
-    parentConversationId,
-  );
-  const finalizeSubAgentSession = createSubAgentFinalizer({
-    ctx,
-    parentConversationId,
-    agentId,
+    snapshot,
     summary: record.summary || record.title,
-    getAgentName: () => agentName || agentId,
-    dirId,
-    // 恢复路径没有激活时的原始 prompt，用会话标题近似（仅 hooks 上下文用）。
-    prompt: record.title || agentName || agentId,
-    runForceSendLoop,
-    forwardSubPendingQueue,
+    prompt: "",
+    checkpointIds: [...checkpointIds],
+    taskHistory: undefined,
+    parentPlanMode: false,
+    options: { executionMode: "sync" },
   });
-  const resumer: SubAgentResumer = {
-    parentConversationId,
-    agentId,
-    agentName: agentName || agentId,
-    resume: createSubAgentResume({
-      ctx,
-      subConvId: targetConvId,
-      parentConversationId,
-      agentId,
-      summary: record.summary || record.title,
-      getAgentName: () => agentName || agentId,
-      subAgentRunLoop,
-      runtimeConfig,
-      finalizeSubAgentSession,
-      parentCheckpointIdsRef,
-    }),
-  };
-  subAgentResumers.set(targetConvId, resumer);
-  return resumer;
 };
 
-/** 主会话专用的子代理管理工具执行器。会话隔离在此强制：查询与继续都只
- *  允许当前父会话（parentConversationId）自己的子代理，跨会话一律拒绝。
- *  continue 优先走内存恢复器；内存没有时（应用重启后）从 DB 重建。 */
+/** Never send an execution snapshot/prompt or an unpaged duplicate summary to a model. */
+const modelResultPage = (
+  page: Awaited<ReturnType<typeof readSubAgentRunResult>>,
+) => {
+  const { snapshot: _snapshot, ...run } = page.run;
+  return {
+    ...page,
+    run: {
+      ...run,
+      ...(run.outcome
+        ? { outcome: { ...run.outcome, summary: page.summaryPage?.text ?? "" } }
+        : {}),
+    },
+  };
+};
+const parseToolArgs = (argsJson: string): Record<string, unknown> => {
+  const args: unknown = JSON.parse(argsJson);
+  if (!args || typeof args !== "object" || Array.isArray(args))
+    throw new Error("VALIDATION_ERROR: tool arguments must be an object");
+  return args as Record<string, unknown>;
+};
+const stringArg = (args: Record<string, unknown>, key: string): string => {
+  const value = args[key];
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`VALIDATION_ERROR: ${key} is required`);
+  return value.trim();
+};
+
 export const createSubAgentMainToolExecutor = (
   ctx: ConversationContextValue,
   deps: Pick<
     SubAgentActivationDeps,
-    "requestToolAuthorizations" | "planApprovedSessionKeysRef"
+    | "requestToolAuthorizations"
+    | "planApprovedSessionKeysRef"
+    | "runPersistence"
   > & {
     parentThinkingStrength?: string | null;
     parentResponsesFastMode?: string | null;
   },
 ) => {
-  const {
-    requestToolAuthorizations,
-    planApprovedSessionKeysRef,
-    parentThinkingStrength,
-    parentResponsesFastMode,
-  } = deps;
-
   return async (
     toolName: string,
     argsJson: string,
     parentConversationId: string,
     checkpointIds: string[],
+    capturedExecutionMode?: SubAgentExecutionMode,
   ): Promise<string> => {
-    if (toolName === "sub-agents-listSubAgents") {
-      const eventMap = ctx.subAgentSessionEventsRef.current;
-      // 内存事件：本次运行期激活的子代理（实时状态优先）。
-      const memoryAgents = Object.values(eventMap)
-        .filter((event) => event.parentConversationId === parentConversationId)
-        .map((event) => ({
-          conversationId: event.conversationId,
-          agentId: event.agentId,
-          agentName: event.agentName,
-          status: event.status,
-          resumable: subAgentResumers.has(event.conversationId),
-          acceptance: peekSubAgentAcceptanceSnapshot(event.conversationId),
-        }));
-      // DB 持久化记录：应用重启后也能列出；status 取持久化的终态。
-      let dbAgents: typeof memoryAgents = [];
-      try {
-        const grouped = await window.snow.listSubAgentConversationsByParents([
-          parentConversationId,
-        ]);
-        dbAgents = (grouped[parentConversationId] ?? []).map((record) => ({
-          conversationId: record.conversationId,
-          agentId: record.subAgentId,
-          agentName: record.subAgentName,
-          status: (["running", "completed", "failed", "cancelled"].includes(
-            record.subAgentStatus,
-          )
-            ? record.subAgentStatus
-            : "completed") as SubAgentSessionEvent["status"],
-          // 持久化记录均可尝试恢复（continue 时按需重建，失败会返回错误）。
-          resumable: subAgentResumers.has(record.conversationId),
-          // 验收清单只存在于本次运行期（重启后为 null）。
-          acceptance: peekSubAgentAcceptanceSnapshot(record.conversationId),
-        }));
-      } catch {
-        // DB 查询失败不阻塞内存结果
-      }
-      // 合并去重（内存优先：同一会话在内存与 DB 中可能同时存在）。
-      const seen = new Set<string>();
-      const subAgents = [...memoryAgents, ...dbAgents].filter((agent) => {
-        if (seen.has(agent.conversationId)) {
-          return false;
-        }
-        seen.add(agent.conversationId);
-        return true;
-      });
-      return JSON.stringify({ success: true, subAgents });
-    }
-
-    if (toolName === "sub-agents-continue") {
-      let args: Record<string, unknown>;
-      try {
-        args = JSON.parse(argsJson) as Record<string, unknown>;
-      } catch {
-        return JSON.stringify({
-          success: false,
-          error: "Invalid JSON arguments",
+    const taskHistory = currentAgentTask(parentConversationId);
+    try {
+      // Retired/unknown public names must not fall through to continue.
+      if (!SUB_AGENT_MAIN_TOOL_NAMES.has(toolName))
+        throw new Error(
+          "VALIDATION_ERROR: unavailable sub-agent management tool",
+        );
+      const args = parseToolArgs(argsJson);
+      const parentRecord =
+        await window.snow.getChatConversation(parentConversationId);
+      if (!parentRecord)
+        throw new Error("RUN_NOT_FOUND: parent conversation does not exist");
+      const scope: SubAgentRunScope = {
+        projectId: parentRecord.directoryId,
+        parentConversationId,
+      };
+      await requireSubAgentParent(scope);
+      const persistence = requirePersistence(deps.runPersistence);
+      const fullDeps: SubAgentActivationDeps = {
+        ...deps,
+        runPersistence: persistence,
+        ctx,
+        parentApiProfile: parentRecord.apiProfileName,
+        parentModel: parentRecord.model,
+      };
+      if (toolName === "sub-agents-getResult") {
+        const runId = stringArg(args, "runId");
+        if (
+          args.offset !== undefined &&
+          (typeof args.offset !== "number" ||
+            !Number.isInteger(args.offset) ||
+            args.offset < 0)
+        )
+          throw new Error("VALIDATION_ERROR: offset must be an integer >= 0");
+        if (
+          args.limit !== undefined &&
+          (typeof args.limit !== "number" ||
+            !Number.isInteger(args.limit) ||
+            args.limit < 1 ||
+            args.limit > 64000)
+        )
+          throw new Error(
+            "VALIDATION_ERROR: limit must be an integer in 1..64000",
+          );
+        const page = await requirePersistence(persistence).command({
+          op: "get",
+          scope,
+          runId,
+          terminalOnly: true,
+          offset: args.offset as number | undefined,
+          limit: args.limit as number | undefined,
         });
+        if (page.kind !== "result")
+          throw new Error("PERSISTENCE_ERROR: invalid terminal result receipt");
+        if (!isSubAgentTerminal(page.run.status))
+          throw new Error(
+            "RESULT_NOT_READY: getResult only reads immutable terminal content; do not poll",
+          );
+        return JSON.stringify(modelResultPage(page));
       }
-      const targetConvId =
-        typeof args.conversationId === "string"
-          ? args.conversationId.trim()
-          : "";
-      const message =
-        typeof args.message === "string" ? args.message.trim() : "";
-      if (!targetConvId || !message) {
-        return JSON.stringify({
-          success: false,
-          error: "conversationId and message are required",
-        });
-      }
-      // 可选的清单补充：只在目标子代理归属校验通过后写入其验收记录。
-      const acceptanceParse = parseSubAgentAcceptanceCriteria(args.acceptance);
-      if (acceptanceParse.errors.length) {
-        return JSON.stringify({
-          success: false,
-          error: `Invalid sub-agent acceptance checklist: ${acceptanceParse.errors.join(
-            "; ",
-          )}`,
-        });
-      }
-
-      // 消息自带发送方标识，子代理收到后可知来源。
-      const queuedText = `[来自主会话]\n${message}`;
-
-      // 会话隔离 + 恢复器解析：内存优先；运行期事件缺失时（应用重启后）
-      // 从 DB 重建（restoreSubAgentResumer 内部再次校验父会话归属）。
-      const eventMap = ctx.subAgentSessionEventsRef.current;
-      const targetEvent = eventMap[targetConvId];
-      let resumer: SubAgentResumer | null =
-        subAgentResumers.get(targetConvId) ?? null;
-      if (
-        !resumer &&
-        (!targetEvent ||
-          targetEvent.parentConversationId === parentConversationId)
-      ) {
-        resumer = await restoreSubAgentResumer(
-          ctx,
-          requestToolAuthorizations,
-          planApprovedSessionKeysRef,
-          parentThinkingStrength,
-          parentResponsesFastMode,
-          parentConversationId,
-          targetConvId,
-          checkpointIds,
+      if (toolName === "sub-agents-cancel") {
+        return JSON.stringify(
+          await requestOwnedSubAgentRunCancel(
+            requirePersistence(persistence),
+            scope,
+            stringArg(args, "runId"),
+            "cancel_tool",
+          ),
         );
       }
-      if (!resumer || resumer.parentConversationId !== parentConversationId) {
-        return JSON.stringify({
-          success: false,
-          error:
-            "Target sub-agent does not exist, belongs to another conversation (session isolation: only sub-agents of the current conversation can be resumed), or its configuration is no longer available",
-        });
-      }
+      if (toolName === "sub-agents-continue") {
+        const targetConvId = stringArg(args, "conversationId");
+        const text = typeof args.message === "string" ? args.message : "";
+        if (!text.trim())
+          throw new Error("VALIDATION_ERROR: message is required");
+        const message = `[来自主会话]
+${text}`;
+        const options: RunOptions = {
+          ...parseRunOptions(
+            {
+              ...args,
+              executionMode:
+                capturedExecutionMode ?? (await loadSubAgentExecutionMode()),
+            },
+            "continue",
+          ),
+          taskHistory,
+        };
 
-      if (acceptanceParse.criteria.length) {
-        const acceptanceErrors = mergeSubAgentAcceptanceCriteria(
-          targetConvId,
-          acceptanceParse.criteria,
+        const acceptance = parseSubAgentAcceptanceCriteria(args.acceptance);
+        if (acceptance.errors.length)
+          throw new Error(`VALIDATION_ERROR: ${acceptance.errors.join("; ")}`);
+        const requestInput: SubAgentLogicalInput = {
+          operation: "continue",
+          executionMode: options.executionMode,
+          collaborationGroup: parseCollaborationGroup(args.collaborationGroup),
+          conversationId: targetConvId,
+          text,
+          acceptance: [...acceptance.criteria].sort((left, right) =>
+            left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+          ),
+        };
+        options.requestInput = requestInput;
+        return await prepareLogicalSubAgentRequest(
+          persistence,
+          scope,
+          options,
+          requestInput,
+          async () => {
+            const grouped =
+              await window.snow.listSubAgentConversationsByParents([
+                parentConversationId,
+              ]);
+            if (
+              !(grouped[parentConversationId] ?? []).some(
+                (record) =>
+                  record.conversationId === targetConvId &&
+                  record.directoryId === scope.projectId,
+              )
+            )
+              throw new Error(
+                "PERMISSION_DENIED: target sub-agent is outside this parent/project",
+              );
+            if (!hasSubAgentAcceptance(targetConvId)) {
+              const result = await persistence.command({
+                op: "list",
+                scope,
+                conversationId: targetConvId,
+                limit: 1,
+              });
+              if (result.kind !== "runs")
+                throw new Error(
+                  "PERSISTENCE_ERROR: list returned an unexpected receipt",
+                );
+              const persistedAcceptance = result.runs[0]?.outcome?.acceptance;
+              if (persistedAcceptance)
+                restoreSubAgentAcceptanceSnapshot(
+                  targetConvId,
+                  persistedAcceptance,
+                );
+            }
+            if (acceptance.criteria.length) {
+              const errors = mergeSubAgentAcceptanceCriteria(
+                targetConvId,
+                acceptance.criteria,
+              );
+              if (errors.length)
+                throw new Error(`VALIDATION_ERROR: ${errors.join("; ")}`);
+            }
+
+            if (!options.requestId)
+              throw new Error(
+                "VALIDATION_ERROR: continue requires a stable host requestId",
+              );
+            const active = await activeConversationRun(
+              persistence,
+              scope,
+              targetConvId,
+            );
+            // Capture the exact generation. A finishing target is not permission to create its successor.
+            const result = active
+              ? await persistence.command({
+                  op: "queue_message",
+                  scope,
+                  requestId: options.requestId,
+                  requestInput,
+                  conversationId: targetConvId,
+                  expectedRunId: active.runId,
+                  message,
+                  acceptance:
+                    peekSubAgentAcceptanceSnapshot(targetConvId) ?? undefined,
+                })
+              : undefined;
+            if (result) {
+              if (result.kind === "message_queued")
+                return JSON.stringify({
+                  ...result,
+
+                  acceptance: peekSubAgentAcceptanceSnapshot(targetConvId),
+                });
+              if (result.kind === "accepted")
+                return replaySubAgentReceipt(persistence, scope, result);
+              throw new Error(
+                "PERSISTENCE_ERROR: queue_message returned an unexpected receipt",
+              );
+            }
+
+            let resumer = subAgentResumers.get(targetConvId);
+            if (
+              resumer &&
+              resumer.parentConversationId !== parentConversationId
+            )
+              throw new Error(
+                "PERMISSION_DENIED: sub-agent belongs to another parent",
+              );
+            resumer ??= await restoreSubAgentResumer(
+              fullDeps,
+              scope,
+              targetConvId,
+              checkpointIds,
+            );
+            return await resumer.resume(
+              [{ role: "user", content: message }],
+              checkpointIds,
+              options,
+              fullDeps,
+            );
+          },
         );
-        if (acceptanceErrors.length) {
-          return JSON.stringify({
-            success: false,
-            error: `Invalid sub-agent acceptance checklist: ${acceptanceErrors.join(
-              "; ",
-            )}`,
-          });
-        }
       }
-
-      return resumer.resume(
-        [{ role: "user", content: queuedText }],
-        checkpointIds,
+      throw new Error(
+        `VALIDATION_ERROR: unknown sub-agent management tool: ${toolName}`,
       );
+    } catch (error) {
+      return toolFailure(error);
     }
-
-    return JSON.stringify({
-      success: false,
-      error: `Unknown sub-agents tool: ${toolName}`,
-    });
   };
 };

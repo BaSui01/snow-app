@@ -20,8 +20,6 @@ const EXCLUDED_TOOL_NAMES = new Set([
   "app-control-requestApproval",
   "sub-agents-activate",
   "sub-agents-continue",
-  "sub-agents-listSubAgents",
-  "sub-agents-listTeammates",
   "sub-agents-sendMessage",
   "workflow-workflow-generate",
   "workflow-workflow-resume",

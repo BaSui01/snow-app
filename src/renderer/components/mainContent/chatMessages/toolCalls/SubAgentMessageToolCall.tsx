@@ -1,100 +1,27 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, ArrowRight, Bot } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import {
-  useChatConversationContext,
-  useChatConversationSessions,
-} from "../components/ChatConversationContext";
+import { useChatConversationContext } from "../components/ChatConversationContext";
 import { PromptPreview } from "../components/PromptPreview";
+import { useSubAgentRuns } from "../hooks/subAgentRuntimeClient";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { ToolResultView } from "./shared/ToolResultView";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { SubAgentMessageDelivery } from "./SubAgentMessageDelivery";
 
-type ParsedArgs = { conversationId: string; message: string };
-
-type ParsedResult =
-  | {
-      type: "queued";
-      messageId?: string;
-      queuedAt?: number;
-      recipientName: string;
-      recipientConversationId: string;
-    }
-  | { type: "error"; message: string }
-  | { type: "empty" };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-/** 输入由下方正则限定为完整 JSON 字符/转义，未完成的转义不会进入解码。 */
-const decodeJsonString = (value: string): string =>
-  JSON.parse(`"${value}"`) as string;
-
-/**
- * 解析 sub-agents-sendMessage 的参数。
- * 流式输出期间 arguments 可能还是半截 JSON（message 里还可能含转义引号），
- * 因此完整解析失败时用正则提前提取已经到达的字段，让卡片头部尽早有内容。
- */
-const parseArgs = (raw: string | undefined): ParsedArgs | null => {
-  if (!raw || !raw.trim()) return null;
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const parseObject = (raw?: string): Record<string, unknown> | null => {
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed)) return null;
-    return {
-      conversationId:
-        typeof parsed.conversationId === "string"
-          ? parsed.conversationId.trim()
-          : "",
-      message: typeof parsed.message === "string" ? parsed.message : "",
-    };
+    const value: unknown = JSON.parse(raw ?? "");
+    return record(value) ? value : null;
   } catch {
-    // ID 必须完整闭合；正文可以只到达一部分。仅匹配完整转义，避免把
-    // 末尾的反斜杠、半截 \uXXXX 或字面量 \\n 错解码成其他内容。
-    const conversationMatch = raw.match(
-      /"conversationId"\s*:\s*"((?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*)"/,
-    );
-    const messageMatch = raw.match(
-      /"message"\s*:\s*"((?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[\da-fA-F]{4}))*)/,
-    );
-    if (!conversationMatch && !messageMatch) return null;
-    return {
-      conversationId: conversationMatch
-        ? decodeJsonString(conversationMatch[1]).trim()
-        : "",
-      message: messageMatch ? decodeJsonString(messageMatch[1]) : "",
-    };
+    return null;
   }
 };
 
-const parseResult = (result: string | undefined): ParsedResult => {
-  if (!result) return { type: "empty" };
-  try {
-    const parsed: unknown = JSON.parse(result);
-    if (!isRecord(parsed)) return { type: "error", message: result };
-    if (typeof parsed.error === "string") {
-      return { type: "error", message: parsed.error };
-    }
-    const recipient = isRecord(parsed.recipient) ? parsed.recipient : {};
-    return {
-      type: "queued",
-      messageId:
-        typeof parsed.messageId === "string" ? parsed.messageId : undefined,
-      queuedAt:
-        typeof parsed.queuedAt === "number" ? parsed.queuedAt : undefined,
-      recipientName:
-        typeof recipient.agentName === "string" ? recipient.agentName : "",
-      recipientConversationId:
-        typeof recipient.conversationId === "string"
-          ? recipient.conversationId
-          : "",
-    };
-  } catch {
-    return { type: "error", message: result };
-  }
-};
-
-/** sub-agents-sendMessage：发送方 → 接收方、入队时间与送达状态。 */
+/** Current peer messaging addresses an exact run, never a conversation alias. */
 export const SubAgentMessageToolCall = ({
   toolCall,
   conversationId,
@@ -108,48 +35,71 @@ export const SubAgentMessageToolCall = ({
     subAgentSessionEvents,
     handleSelectConversation,
   } = useChatConversationContext();
-  const sessions = useChatConversationSessions();
-
+  const senderId = conversationId ?? activeConversationId ?? "";
+  const [identity, setIdentity] = useState<{
+    senderId: string;
+    parentId: string;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (!senderId) return;
+    void window.snow.getChatConversation(senderId).then(
+      (sender) => {
+        if (!active) return;
+        setIdentity(
+          sender?.conversationType === "sub_agent" &&
+            sender.parentConversationId
+            ? { senderId, parentId: sender.parentConversationId }
+            : null,
+        );
+      },
+      () => {
+        if (active) setIdentity(null);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [senderId]);
+  const parentId =
+    identity?.senderId === senderId ? identity.parentId : undefined;
+  const { runs } = useSubAgentRuns(parentId);
   const args = useMemo(
-    () => parseArgs(toolCall.arguments),
+    () => parseObject(toolCall.arguments),
     [toolCall.arguments],
   );
-  const result = useMemo(() => parseResult(toolCall.result), [toolCall.result]);
-
-  const senderId = conversationId ?? activeConversationId ?? "";
-  const senderEvent = senderId ? subAgentSessionEvents[senderId] : undefined;
-  const targetId = args?.conversationId ?? "";
-  const targetEvent = targetId ? subAgentSessionEvents[targetId] : undefined;
-
-  const senderName = senderEvent?.agentName || t("toolCall.subAgentComms.self");
-  const recipientName =
-    (result.type === "queued" ? result.recipientName : "") ||
-    targetEvent?.agentName ||
-    targetId;
-  // 会话隔离：仅同一父会话下的队友可跳转。实时事件只存在于内存，重启后
-  // 目标会话仍可凭成功回执里的 recipient.conversationId 或已加载的历史
-  // 佐证——请求参数（可能还没发送成功）不参与导航判定。
+  const result = useMemo(() => parseObject(toolCall.result), [toolCall.result]);
+  const recipientRunId =
+    typeof args?.recipientRunId === "string" ? args.recipientRunId : "";
+  const target = runs.find(
+    (run) =>
+      run.runId === recipientRunId && run.parentConversationId === parentId,
+  );
+  const error = typeof result?.error === "string" ? result.error : null;
+  const queued =
+    result?.success === true &&
+    result.kind === "message_queued" &&
+    result.deliveryStatus === "queued" &&
+    result.runId === recipientRunId &&
+    typeof result.conversationId === "string" &&
+    typeof result.messageId === "string" &&
+    typeof result.queuedAt === "number";
   const jumpTargetId =
-    (result.type === "queued" ? result.recipientConversationId : "") ||
-    (targetEvent ? targetId : "");
-  const canJump =
-    !!jumpTargetId &&
-    (targetEvent
-      ? targetEvent.parentConversationId === senderEvent?.parentConversationId
-      : sessions[jumpTargetId]?.isInitialHistoryLoaded === true);
-
-  const status =
-    result.type === "error" || toolCall.status === "error"
-      ? "error"
-      : toolCall.status;
-
+    queued && target && target.conversationId === result.conversationId
+      ? target.conversationId
+      : undefined;
+  const senderName =
+    subAgentSessionEvents[senderId]?.agentName ||
+    t("toolCall.subAgentComms.self");
+  const recipientName = target?.agentName || recipientRunId;
+  const message = typeof args?.message === "string" ? args.message : "";
   return (
     <ToolCallNode
       toolName={toolCall.name}
       category="agent"
       displayName={`${senderName} → ${recipientName}`}
-      displayNameTitle={targetId || undefined}
-      status={status}
+      displayNameTitle={recipientRunId || undefined}
+      status={error ? "error" : toolCall.status}
       className="tool-call-sub-agent"
     >
       <div className="tool-call-body tool-call-sub-agent-body">
@@ -159,45 +109,43 @@ export const SubAgentMessageToolCall = ({
             <span>{senderName}</span>
           </span>
           <ArrowRight size={12} aria-hidden="true" />
-          {canJump ? (
+          {jumpTargetId ? (
             <button
               type="button"
-              className={`tool-call-sub-agent-comms-party ${
-                activeConversationId === jumpTargetId ? "active" : ""
-              }`}
-              title={jumpTargetId}
+              className="tool-call-sub-agent-comms-party"
               onClick={() => void handleSelectConversation(jumpTargetId)}
             >
               <Bot size={12} aria-hidden="true" />
               <span>{recipientName}</span>
             </button>
           ) : (
-            <span className="tool-call-sub-agent-comms-party" title={targetId}>
+            <span
+              className="tool-call-sub-agent-comms-party"
+              title={recipientRunId}
+            >
               <Bot size={12} aria-hidden="true" />
               <span>{recipientName}</span>
             </span>
           )}
         </div>
-
-        {args?.message ? (
+        {message ? (
           <PromptPreview
-            text={args.message}
+            text={message}
             label={t("toolCall.subAgentContinue.message")}
           />
         ) : null}
-
-        {result.type === "queued" ? (
+        {queued ? (
           <SubAgentMessageDelivery
-            messageId={result.messageId}
-            queuedAt={result.queuedAt}
+            messageId={result.messageId as string}
+            queuedAt={result.queuedAt as number}
           />
-        ) : null}
-
-        {result.type === "error" ? (
+        ) : error ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
-            <span>{localizeToolError(t, result.message)}</span>
+            <span>{localizeToolError(t, error)}</span>
           </div>
+        ) : toolCall.result ? (
+          <ToolResultView value={result ?? toolCall.result} />
         ) : null}
       </div>
     </ToolCallNode>

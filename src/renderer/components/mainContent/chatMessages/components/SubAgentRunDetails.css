@@ -1,0 +1,18 @@
+.sub-agent-run-evidence {
+  min-width: 0;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.sub-agent-run-evidence summary {
+  cursor: pointer;
+}
+.sub-agent-run-evidence summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.sub-agent-run-evidence pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}

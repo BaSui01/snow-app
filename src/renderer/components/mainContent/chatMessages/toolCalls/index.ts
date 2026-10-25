@@ -13,7 +13,6 @@ export { FindToolCall } from "./FindToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
 export { SubAgentMessageToolCall } from "./SubAgentMessageToolCall";
 export { SubAgentContinueToolCall } from "./SubAgentContinueToolCall";
-export { SubAgentListToolCall } from "./SubAgentListToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { LspToolCall } from "./LspToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";

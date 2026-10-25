@@ -60,6 +60,7 @@ import {
 import { safeSend } from "../../utils/safeSend";
 import { dispatchWebSearchCommand } from "../../websearch/webSearchRegistry";
 import { registerImageGenerationHandlers } from "./imageGenerationHandlers";
+import { notifySubAgentCapacityChanged } from "../../subAgents/subAgentRunHost";
 import {
   forwardMcpToolChunk,
   injectImageGenerationContext,
@@ -143,6 +144,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         settingCode,
         settingValue,
       );
+      // A successful capacity-setting commit must wake durable waiters in every
+      // execution window. Reuse the original host invalidation, never a model
+      // polling request. A same-value save is a harmless extra invalidation.
+      if (settingCode === "sub_agent_max_concurrency") {
+        notifySubAgentCapacityChanged();
+      }
       // 语言设置变化后刷新主进程文案缓存（托盘等原生菜单随之重建）。
       if (settingCode === MAIN_LANGUAGE_SETTING_CODE) {
         await refreshMainLocale();

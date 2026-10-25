@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.5.5
+
+## New Features
+
+- **Conversation API Profile Binding**: plugins can bind a conversation to a specific API profile through the new `conversations.setApiProfile` write action and the `apiProfile` option of `conversations.create`; background sends keep the bound profile, so sub-agents inherit it.
+- **Edit Area Context Menu**: the editor gains a right-click menu for cut / copy / paste / select all, executed by the main process with unavailable items greyed out.
+- **Use Guide Floating Menu**: the sidebar Use Guide button opens a floating menu linking straight to the shortcut guide and the update log.
+- **Model Selector Grouping**: the collapsed model list is grouped by brand.
+- **Extra High Thinking Level**: supported models gain an "Extra High" thinking option.
+- **Reply Prediction Polish**: prediction requests now record token usage against the conversation, and predictions are cached per conversation so they survive session switches.
+
+## Improvements
+
+- Tool error correction is extracted into a shared executor, giving sub-agents and Workflow nodes the same automatic correction as the main session, with corrected calls going through their own authorization flow again.
+- Auto-compaction is unified behind a shared gate at every request entry point (main loop, sub-agent loop, Workflow nodes); failures now surface as a dedicated notice and stay visible.
+- The plus menu stays next to the expand button when the right panel is collapsed, and terminal scrollbar styling is aligned with the rest of the app.
+
+## Bug Fixes
+
+- Empty pending assistant messages render as hidden placeholders, removing an extra flex gap.
+- Task history saves use an IMMEDIATE transaction and a write lock.
+- Derived path caches are cleared after the checkpoint root changes, and inherited read-only attributes are stripped when publishing content-addressed objects.
+- File snapshots resolve the entry type first, skipping directories and missing paths to avoid noisy handler errors.
+- Windows process trees verify parent-child relations by creation time, so pid reuse no longer merges unrelated subtrees.
+
 ## v0.5.4
 
 ## New Features

@@ -336,24 +336,38 @@ async fn run_page_retry(
         save_logged(&wiki).await;
         emit(build_event(&wiki, "status"));
     }
-    let view = WikiReadView::new(&project_path).await;
+    let token = handle.token.clone();
+    let result = tokio::select! {
+        _ = token.cancelled() => Ok(()),
+        result = retry_page_with_view(project_path.clone(), handle.clone(), ctx, page_id) => result,
+    };
+    match result {
+        Ok(()) => finish_page_retry(&project_path, &handle).await,
+        // 只读视图建立失败（如 SSH 不可达）：整体标记失败并带上原因
+        Err(error) => finalize(&project_path, &handle, Err(Some(error))).await,
+    }
+}
+
+async fn retry_page_with_view(
+    project_path: String,
+    handle: Arc<JobHandle>,
+    ctx: ModelContext,
+    page_id: String,
+) -> Result<()> {
+    let view = WikiReadView::new(&project_path).await?;
     let job = Job {
         project_path,
         handle,
         ctx,
         view,
     };
-    let token = job.handle.token.clone();
-    tokio::select! {
-        _ = token.cancelled() => {}
-        _ = generate_page(&job, page_id, true, &[]) => {}
-    }
-    finish_page_retry(&job).await;
+    generate_page(&job, page_id, true, &[]).await;
+    Ok(())
 }
 
-async fn finish_page_retry(job: &Job) {
+async fn finish_page_retry(project_path: &str, handle: &JobHandle) {
     let event = {
-        let mut wiki = job.handle.wiki.lock().await;
+        let mut wiki = handle.wiki.lock().await;
         wiki.status = if wiki.count("done") > 0 {
             "completed".to_string()
         } else {
@@ -373,7 +387,7 @@ async fn finish_page_retry(job: &Job) {
         save_logged(&wiki).await;
         build_event(&wiki, "status")
     };
-    unregister(&job.project_path);
+    unregister(project_path);
     emit(event);
 }
 
@@ -383,19 +397,29 @@ async fn run(project_path: String, handle: Arc<JobHandle>, ctx: ModelContext, mo
         save_logged(&wiki).await;
         emit(build_event(&wiki, "status"));
     }
-    let view = WikiReadView::new(&project_path).await;
+    let token = handle.token.clone();
+    let result = tokio::select! {
+        _ = token.cancelled() => Err(None),
+        result = execute_with_view(project_path.clone(), handle.clone(), ctx, mode) => result.map_err(Some),
+    };
+    finalize(&project_path, &handle, result).await;
+}
+
+/// 建立只读视图（SSH 工作区需先拉取远程文件树）后执行任务，视图建立同样受停止控制。
+async fn execute_with_view(
+    project_path: String,
+    handle: Arc<JobHandle>,
+    ctx: ModelContext,
+    mode: JobMode,
+) -> Result<()> {
+    let view = WikiReadView::new(&project_path).await?;
     let job = Job {
         project_path,
         handle,
         ctx,
         view,
     };
-    let token = job.handle.token.clone();
-    let result = tokio::select! {
-        _ = token.cancelled() => Err(None),
-        result = execute(&job, mode) => result.map_err(Some),
-    };
-    finalize(&job, result).await;
+    execute(&job, mode).await
 }
 
 async fn set_phase(job: &Job, phase: &str) {
@@ -416,7 +440,7 @@ async fn execute(job: &Job, mode: JobMode) -> Result<()> {
     }
     let (page_ids, fingerprint, incremental, changed_files) = match mode {
         JobMode::Full => {
-            let fingerprint = store::scan_fingerprint(&root).await.unwrap_or_default();
+            let fingerprint = job.view.fingerprint().await.unwrap_or_default();
             set_phase(job, "catalog").await;
             let (title, summary, pages) = generate_catalog(job).await?;
             let ids = pages.iter().map(|page| page.id.clone()).collect();
@@ -480,9 +504,13 @@ async fn execute(job: &Job, mode: JobMode) -> Result<()> {
     Ok(())
 }
 
-async fn finalize(job: &Job, result: std::result::Result<(), Option<Error>>) {
+async fn finalize(
+    project_path: &str,
+    handle: &JobHandle,
+    result: std::result::Result<(), Option<Error>>,
+) {
     let event = {
-        let mut wiki = job.handle.wiki.lock().await;
+        let mut wiki = handle.wiki.lock().await;
         match result {
             Ok(()) => {
                 wiki.status = "completed".to_string();
@@ -508,7 +536,7 @@ async fn finalize(job: &Job, result: std::result::Result<(), Option<Error>>) {
         save_logged(&wiki).await;
         build_event(&wiki, "status")
     };
-    unregister(&job.project_path);
+    unregister(project_path);
     emit(event);
 }
 

@@ -6344,7 +6344,6 @@ export const zhTW = {
   "repoWiki.relatedFiles": "相關檔案",
   "repoWiki.noProject": "未選擇專案",
   "repoWiki.noProjectHint": "在專案的右鍵選單中開啟「儲存庫 Wiki」。",
-  "repoWiki.remoteUnsupported": "遠端（SSH）專案暫不支援儲存庫 Wiki",
   "repoWiki.setupTitle": "為 {{name}} 產生 Wiki",
   "repoWiki.setupDescription":
     "AI 會用唯讀工具閱讀程式碼庫，整理出附原始碼位置的架構導讀。結果儲存在本機，不寫入儲存庫。",

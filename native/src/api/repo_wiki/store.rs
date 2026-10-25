@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use napi::bindgen_prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::mcp::servers::remote_workspace::is_ssh_path;
+
 pub(crate) const WIKI_VERSION: u32 = 1;
 /// 目录页数上限。
 pub(crate) const MAX_PAGES: usize = 40;
@@ -268,6 +270,9 @@ pub(crate) async fn save_fingerprint(project_path: &str, fingerprint: &Fingerpri
 
 /// 扫描工作区文本文件（遵循 .gitignore 与跳过目录规则）生成指纹。
 pub(crate) async fn scan_fingerprint(root: &str) -> Result<Fingerprint> {
+    if is_ssh_path(root) {
+        return super::remote::scan_fingerprint(root).await;
+    }
     let root = root.to_string();
     tokio::task::spawn_blocking(move || {
         let root_path = Path::new(&root);
@@ -326,6 +331,9 @@ pub(crate) fn diff_fingerprints(old: &Fingerprint, new: &Fingerprint) -> Fingerp
 
 /// 分支名与 HEAD 提交（非 git 仓库返回 None）。
 pub(crate) async fn read_git_meta(root: &str) -> (Option<String>, Option<String>) {
+    if is_ssh_path(root) {
+        return super::remote::read_git_meta(root).await;
+    }
     let root = root.to_string();
     tokio::task::spawn_blocking(move || {
         if !Path::new(&root).join(".git").exists() {

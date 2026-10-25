@@ -1,8 +1,10 @@
 //! 仓库 Wiki：Rust 端 agent 生成代码库架构导读（只读浏览 + 页面就地编辑），结果存于 ~/.snowapp/repo-wiki。
+//! SSH 工作区经全局远程命令回调由 Electron 代为读取（见 remote.rs）。
 
 mod agent;
 mod job;
 mod prompts;
+mod remote;
 mod store;
 mod tools;
 
@@ -155,21 +157,16 @@ pub(crate) fn unregister(project_path: &str) {
         .remove(&normalize_project_path(project_path));
 }
 
-fn reject_remote(project_path: &str) -> Result<()> {
+fn require_project_path(project_path: &str) -> Result<()> {
     if project_path.trim().is_empty() {
         return Err(Error::from_reason("Project path is required"));
-    }
-    if crate::mcp::servers::remote_workspace::is_ssh_path(project_path) {
-        return Err(Error::from_reason(
-            "Repo Wiki is not available for remote (SSH) workspaces",
-        ));
     }
     Ok(())
 }
 
 /// 读取 Wiki（运行中返回内存态；残留的 running / paused 状态视为已停止）。
 pub async fn load(project_path: String) -> Result<Option<String>> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     let wiki = if let Some(handle) = running_job(&project_path) {
         Some(handle.wiki.lock().await.clone())
     } else {
@@ -195,7 +192,7 @@ pub async fn load(project_path: String) -> Result<Option<String>> {
 }
 
 pub async fn start(options: RepoWikiStartOptions) -> Result<()> {
-    reject_remote(&options.project_path)?;
+    require_project_path(&options.project_path)?;
     job::start_full(options).await
 }
 
@@ -236,7 +233,7 @@ pub async fn resume(project_path: &str) -> Result<()> {
 
 /// 单个章节重新生成（成功或失败都可重试）。
 pub async fn retry_page(project_path: String, page_id: String) -> Result<()> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     job::start_page_retry(project_path, page_id).await
 }
 
@@ -252,7 +249,7 @@ fn ensure_idle(project_path: &str) -> Result<()> {
 
 /// 导出为 md 压缩包（README.md + pages/*.md + wiki.json）。
 pub async fn export(project_path: String, target_path: String) -> Result<u32> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     ensure_idle(&project_path)?;
     let Some(wiki) = store::load_wiki(&project_path).await? else {
         return Err(Error::from_reason("Wiki has not been generated yet"));
@@ -265,7 +262,7 @@ pub async fn export(project_path: String, target_path: String) -> Result<u32> {
 
 /// 从 JSON 导入 Wiki：覆盖当前项目的本地 Wiki。
 pub async fn import(project_path: String, json: String) -> Result<u32> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     ensure_idle(&project_path)?;
     let mut wiki: store::RepoWiki = serde_json::from_str(&json)
         .map_err(|error| Error::from_reason(format!("Invalid wiki JSON: {error}")))?;
@@ -333,7 +330,7 @@ pub fn stop(project_path: &str) -> bool {
 }
 
 pub async fn delete(project_path: String) -> Result<bool> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     if running_job(&project_path).is_some() {
         return Err(Error::from_reason(
             "Stop the running wiki generation before deleting it",
@@ -343,7 +340,7 @@ pub async fn delete(project_path: String) -> Result<bool> {
 }
 
 pub async fn set_auto_refresh(project_path: String, enabled: bool) -> Result<()> {
-    reject_remote(&project_path)?;
+    require_project_path(&project_path)?;
     if let Some(handle) = running_job(&project_path) {
         handle.wiki.lock().await.auto_refresh = enabled;
         return Ok(());
@@ -363,19 +360,18 @@ pub fn file_path(project_path: &str) -> Result<String> {
 
 /// 回合结束：代码有变化且开启自动刷新时，后台刷新受影响页面。
 pub async fn notify_turn_ended(project_path: String) -> Result<bool> {
-    if project_path.trim().is_empty()
-        || crate::mcp::servers::remote_workspace::is_ssh_path(&project_path)
-        || running_job(&project_path).is_some()
-    {
+    if project_path.trim().is_empty() || running_job(&project_path).is_some() {
         return Ok(false);
     }
     job::auto_refresh(project_path).await
 }
 
 /// 系统提示词章节：项目已有 Wiki 时告知其绝对路径。
+/// SSH 会话里只有 Windows 盘符路径会走本机通道读取（见 prepare_remote_workspace_args），
+/// 其他平台的本机绝对路径会被解析到远端，因此仅 Windows 下为 SSH 项目注入。
 pub(crate) async fn build_system_prompt_section(project_path: &str) -> String {
     if project_path.trim().is_empty()
-        || crate::mcp::servers::remote_workspace::is_ssh_path(project_path)
+        || (crate::mcp::servers::remote_workspace::is_ssh_path(project_path) && !cfg!(windows))
     {
         return String::new();
     }

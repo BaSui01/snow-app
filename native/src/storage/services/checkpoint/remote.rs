@@ -613,8 +613,9 @@ fn is_ignored_with_ancestors(
 }
 
 /// 远程工作区文件树扫描 + .gitignore 过滤：所有远程 checkpoint 流程统一
-/// 使用本函数，保证 before/after 捕获与变更/回滚检测的过滤语义一致。
-async fn filter_remote_tree(
+/// 使用本函数，保证 before/after 捕获与变更/回滚检测的过滤语义一致
+/// （仓库 Wiki 的远程只读视图同样复用）。
+pub(crate) async fn filter_remote_tree(
     client: &RemoteCheckpointClient<'_>,
     root: &str,
 ) -> Result<Vec<RemoteTreeEntry>> {

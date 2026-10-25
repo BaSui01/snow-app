@@ -6335,7 +6335,6 @@ export const zhCN = {
   "repoWiki.relatedFiles": "相关文件",
   "repoWiki.noProject": "未选择项目",
   "repoWiki.noProjectHint": "在项目的右键菜单中打开「仓库 Wiki」。",
-  "repoWiki.remoteUnsupported": "远程（SSH）项目暂不支持仓库 Wiki",
   "repoWiki.setupTitle": "为 {{name}} 生成 Wiki",
   "repoWiki.setupDescription":
     "AI 会用只读工具阅读代码库，整理出带源码位置的架构导读。结果保存在本机，不写入仓库。",

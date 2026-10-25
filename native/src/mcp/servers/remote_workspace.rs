@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex, OnceLock};
+
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunction;
 use napi_derive::napi;
@@ -19,6 +21,30 @@ pub type RemoteWorkspaceCallback = ThreadsafeFunction<
     Status,
     false,
 >;
+
+/// 全局注册的 SSH 远程命令回调：不经过工具调用链的后台流程（checkpoint 导出
+/// API、仓库 Wiki 任务等）没有 callback 可传，由 Electron 初始化时注册一次。
+/// napi ThreadsafeFunction 不支持 Clone，用 Arc 共享。
+static GLOBAL_CALLBACK: OnceLock<Mutex<Option<Arc<RemoteWorkspaceCallback>>>> = OnceLock::new();
+
+fn global_callback_slot() -> &'static Mutex<Option<Arc<RemoteWorkspaceCallback>>> {
+    GLOBAL_CALLBACK.get_or_init(|| Mutex::new(None))
+}
+
+/// 注册（或清除）全局远程命令回调。
+pub fn set_global_remote_callback(callback: Option<RemoteWorkspaceCallback>) {
+    *global_callback_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = callback.map(Arc::new);
+}
+
+/// 取得全局远程命令回调（未注册时返回 None）。
+pub fn global_remote_callback() -> Option<Arc<RemoteWorkspaceCallback>> {
+    global_callback_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
 
 pub fn is_ssh_path(path: &str) -> bool {
     path.trim_start().starts_with("ssh://")

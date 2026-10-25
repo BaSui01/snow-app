@@ -6703,10 +6703,6 @@ body.is-panel-resizing * {
   background: var(--bg-secondary);
 }
 
-.sensitive-command-assist.is-active {
-  border-color: var(--accent);
-}
-
 .sensitive-command-assist-header {
   display: flex;
   align-items: flex-start;
@@ -61115,6 +61111,8 @@ img.plugin-icon {
 .plugin-market-script input[type="checkbox"] {
   flex-shrink: 0;
   margin: 2px 0 0;
+  accent-color: var(--accent-color, #4a9eff);
+  cursor: pointer;
 }
 
 .plugin-market-script-body {

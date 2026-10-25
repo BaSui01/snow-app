@@ -1,9 +1,11 @@
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::mcp::servers::remote_workspace::{is_ssh_path, RemoteWorkspaceCallback};
+use crate::mcp::servers::remote_workspace::{
+    global_remote_callback, is_ssh_path, set_global_remote_callback, RemoteWorkspaceCallback,
+};
 use crate::storage::services::checkpoint::remote::{
     create_checkpoint_remote, list_checkpoint_changes_batch_remote, list_checkpoint_changes_remote,
     list_checkpoint_diffs_batch_remote, list_checkpoint_diffs_remote, restore_checkpoint_remote,
@@ -11,31 +13,18 @@ use crate::storage::services::checkpoint::remote::{
 };
 use crate::storage::services::checkpoint::{CheckpointFileChange, CheckpointFileDiff};
 
-/// 全局注册的 SSH 远程命令回调：renderer 通过独立的 checkpoint 导出 API
-/// （create/restore/list）操作 SSH 工作区时，本进程内没有工具调用链可传
-/// callback，因此 Electron 初始化时注册一次，供远程 checkpoint 流程使用。
-/// napi ThreadsafeFunction 不支持 Clone，用 Arc 共享。
-static CHECKPOINT_REMOTE_CALLBACK: OnceLock<Mutex<Option<Arc<RemoteWorkspaceCallback>>>> =
-    OnceLock::new();
-
-/// 注册（或清除）checkpoint 远程命令回调。由 Electron 主进程在初始化
-/// native 时调用一次；传入 None 可撤销注册。
+/// 注册（或清除）全局 SSH 远程命令回调。renderer 通过独立的 checkpoint 导出
+/// API（create/restore/list）操作 SSH 工作区、以及仓库 Wiki 后台任务读取 SSH
+/// 工作区时，本进程内没有工具调用链可传 callback，因此由 Electron 主进程在
+/// 初始化 native 时调用一次；传入 None 可撤销注册。
 #[napi]
 pub fn set_checkpoint_remote_callback(callback: Option<RemoteWorkspaceCallback>) {
-    let mut guard = CHECKPOINT_REMOTE_CALLBACK
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    *guard = callback.map(Arc::new);
+    set_global_remote_callback(callback);
 }
 
 fn checkpoint_remote_callback() -> napi::Result<Arc<RemoteWorkspaceCallback>> {
-    let guard = CHECKPOINT_REMOTE_CALLBACK
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    match guard.as_ref() {
-        Some(callback) => Ok(Arc::clone(callback)),
+    match global_remote_callback() {
+        Some(callback) => Ok(callback),
         None => Err(Error::new(
             Status::GenericFailure,
             "Checkpoint remote callback is not registered; SSH checkpoint is unavailable".to_string(),

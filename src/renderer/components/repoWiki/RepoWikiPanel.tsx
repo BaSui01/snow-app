@@ -90,10 +90,8 @@ export const RepoWikiPanel = ({
   }, [activeDirectory, target]);
 
   const projectPath = target?.path ?? null;
-  const isRemote = Boolean(projectPath?.startsWith("ssh://"));
-  const { wiki, isLoading, loadError, activity, reload } = useRepoWiki(
-    isRemote ? null : projectPath,
-  );
+  const { wiki, isLoading, loadError, activity, reload } =
+    useRepoWiki(projectPath);
   const pathClick = usePathClickOpen(
     projectPath ?? undefined,
     target?.directoryId || undefined,
@@ -124,13 +122,13 @@ export const RepoWikiPanel = ({
     setIsSetupOpen(false);
     setActionError(null);
     setWikiFilePath("");
-    if (projectPath && !isRemote) {
+    if (projectPath) {
       void window.snow
         .repoWikiFilePath(projectPath)
         .then(setWikiFilePath)
         .catch(() => setWikiFilePath(""));
     }
-  }, [isRemote, projectPath]);
+  }, [projectPath]);
 
   const pages = wiki?.pages ?? [];
   const isPaused = wiki?.status === "paused";
@@ -555,18 +553,6 @@ export const RepoWikiPanel = ({
         </div>
       );
     }
-    if (isRemote) {
-      return (
-        <div className="repo-wiki-placeholder">
-          <AlertTriangle size={20} />
-          <strong>
-            {t("repoWiki.remoteUnsupported", {
-              defaultValue: "Repo Wiki is not available for SSH workspaces",
-            })}
-          </strong>
-        </div>
-      );
-    }
     if (isLoading && !wiki) {
       return (
         <div className="repo-wiki-placeholder">
@@ -664,7 +650,7 @@ export const RepoWikiPanel = ({
     );
   };
 
-  const showToolbar = Boolean(target && !isRemote && wiki);
+  const showToolbar = Boolean(target && wiki);
 
   return (
     <div className="feature-page repo-wiki-page">
@@ -743,7 +729,7 @@ export const RepoWikiPanel = ({
               ) : null}
               <div className="repo-wiki-title">
                 <strong>{wiki?.title || target.name}</strong>
-                {wiki && !isRemote ? (
+                {wiki ? (
                   <span className={`repo-wiki-status status-${wiki.status}`}>
                     {wiki.status === "running"
                       ? phaseLabel(wiki.phase)

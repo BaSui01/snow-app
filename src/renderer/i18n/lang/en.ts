@@ -6741,7 +6741,6 @@ export const en = {
   "repoWiki.relatedFiles": "Related files",
   "repoWiki.noProject": "No project",
   "repoWiki.noProjectHint": "Open Repo Wiki from a project's context menu.",
-  "repoWiki.remoteUnsupported": "Repo Wiki is not available for SSH workspaces",
   "repoWiki.setupTitle": "Generate a wiki for {{name}}",
   "repoWiki.setupDescription":
     "The AI reads the codebase with read-only tools and writes an architecture guide with source references. Results are stored locally, not in the repository.",

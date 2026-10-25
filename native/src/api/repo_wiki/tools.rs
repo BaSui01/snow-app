@@ -10,12 +10,14 @@ use serde_json::{json, Value};
 use crate::api::file_search_agent::AgentToolExecutor;
 use crate::mcp::servers::filesystem::FilesystemService;
 use crate::mcp::servers::grep::GrepService;
+use crate::mcp::servers::remote_workspace::{is_ssh_path, is_windows_absolute_path};
 use crate::mcp::service::McpService;
 use crate::mcp::tools::McpTool;
 use crate::storage::services::file_scanner::{BINARY_EXTENSIONS, IMAGE_EXTENSIONS, SKIP_DIRS};
 use crate::storage::services::gitignore::GitignoreMatcher;
 
-use super::store::{sanitize_page_id, WikiPage, MAX_FILES_PER_PAGE, MAX_PAGES};
+use super::remote::{remote_base_path, RemoteSnapshot};
+use super::store::{sanitize_page_id, Fingerprint, WikiPage, MAX_FILES_PER_PAGE, MAX_PAGES};
 
 
 const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
@@ -41,23 +43,54 @@ const ALWAYS_SENSITIVE_EXTENSIONS: &[&str] = &["pem", "key", "p12", "pfx", "keys
 
 pub(crate) struct WikiReadView {
     root: String,
-    matcher: GitignoreMatcher,
+    source: ViewSource,
+}
+
+enum ViewSource {
+    Local(GitignoreMatcher),
+    /// SSH 工作区：快照已按 .gitignore 与跳过目录过滤；`base_path` 为远端根路径。
+    Remote {
+        snapshot: RemoteSnapshot,
+        base_path: String,
+    },
 }
 
 impl WikiReadView {
-    pub(crate) async fn new(root: &str) -> Self {
+    pub(crate) async fn new(root: &str) -> Result<Self> {
         let root = super::store::normalize_project_path(root);
+        if is_ssh_path(&root) {
+            let snapshot = RemoteSnapshot::load(&root).await?;
+            let base_path = remote_base_path(&root);
+            return Ok(Self {
+                root,
+                source: ViewSource::Remote {
+                    snapshot,
+                    base_path,
+                },
+            });
+        }
         let matcher_root = root.clone();
         let matcher = tokio::task::spawn_blocking(move || {
             GitignoreMatcher::from_project_root(Path::new(&matcher_root))
         })
         .await
         .unwrap_or_else(|_| GitignoreMatcher::from_root_content(None));
-        Self { root, matcher }
+        Ok(Self {
+            root,
+            source: ViewSource::Local(matcher),
+        })
     }
 
     pub(crate) fn root(&self) -> &str {
         &self.root
+    }
+
+    /// 代码指纹：远程直接复用快照，避免再拉一次文件树。
+    pub(crate) async fn fingerprint(&self) -> Result<Fingerprint> {
+        match &self.source {
+            ViewSource::Local(_) => super::store::scan_fingerprint(&self.root).await,
+            ViewSource::Remote { snapshot, .. } => Ok(snapshot.fingerprint()),
+        }
     }
 
     /// 绝对路径转为根内相对路径（不在根内返回 None）。
@@ -66,6 +99,9 @@ impl WikiReadView {
         let normalized = normalized.trim_start_matches("./");
         if normalized.is_empty() || normalized == "." {
             return Some(String::new());
+        }
+        if let ViewSource::Remote { base_path, .. } = &self.source {
+            return remote_relative(&self.root, base_path, normalized);
         }
         let is_absolute = normalized.starts_with('/')
             || (normalized.len() >= 3 && normalized.as_bytes()[1] == b':');
@@ -85,10 +121,11 @@ impl WikiReadView {
             .map(|rest| rest.trim_end_matches('/').to_string())
     }
 
-    /// 工具输出里的路径：绝对路径直接转换，相对路径按搜索目录拼接。
+    /// 工具输出里的路径：绝对路径（含 ssh:// URI）直接转换，相对路径按搜索目录拼接。
     fn relative_from(&self, base_relative: &str, file: &str) -> Option<String> {
         let normalized = file.replace('\\', "/");
-        if normalized.starts_with('/') || Path::new(file).is_absolute() {
+        if normalized.starts_with('/') || is_ssh_path(&normalized) || Path::new(file).is_absolute()
+        {
             return self.relative(&normalized);
         }
         let joined = if base_relative.is_empty() {
@@ -114,11 +151,47 @@ impl WikiReadView {
         if relative.split('/').any(|part| part == ".." || SKIP_DIRS.contains(&part)) {
             return true;
         }
-        if self.matcher.is_ignored(relative, is_dir) {
+        let excluded = match &self.source {
+            ViewSource::Local(matcher) => matcher.is_ignored(relative, is_dir),
+            // 远程快照已过滤：不在快照里即不存在或被排除（目录判定兼容把单个文件
+            // 当作检索范围的 grep-search / grep-find）
+            ViewSource::Remote { snapshot, .. } => {
+                if is_dir {
+                    !snapshot.is_dir(relative) && !snapshot.is_file(relative)
+                } else {
+                    !snapshot.is_file(relative)
+                }
+            }
+        };
+        if excluded {
             return true;
         }
         !is_dir && is_sensitive_file(relative.rsplit('/').next().unwrap_or(relative))
     }
+}
+
+/// 远程路径（ssh:// URI、远端绝对路径或相对路径）转为根内相对路径；远端路径区分大小写。
+fn remote_relative(root: &str, base_path: &str, path: &str) -> Option<String> {
+    if is_ssh_path(path) {
+        return strip_root(path, root);
+    }
+    if path.starts_with('/') {
+        return strip_root(path, base_path);
+    }
+    if is_windows_absolute_path(path) {
+        return None;
+    }
+    Some(path.trim_end_matches('/').to_string())
+}
+
+fn strip_root(path: &str, root: &str) -> Option<String> {
+    let path = path.trim_end_matches('/');
+    if path == root {
+        return Some(String::new());
+    }
+    path.strip_prefix(root)?
+        .strip_prefix('/')
+        .map(str::to_string)
 }
 
 fn is_sensitive_file(name: &str) -> bool {
@@ -151,6 +224,19 @@ fn truncate_output(output: &Value) -> String {
     let mut text: String = serialized.chars().take(MAX_TOOL_OUTPUT_CHARS).collect();
     text.push_str("...[truncated: narrow the range with startLine/endLine or a more specific query]");
     text
+}
+
+/// 目录列举结果（本地与远程同一结构）。
+fn dir_listing(relative: &str, mut entries: Vec<String>, hidden: usize) -> Value {
+    entries.sort();
+    let truncated = entries.len() > MAX_DIR_ENTRIES;
+    entries.truncate(MAX_DIR_ENTRIES);
+    json!({
+        "path": if relative.is_empty() { "." } else { relative },
+        "entries": entries.join("\n"),
+        "excludedEntries": hidden,
+        "truncated": truncated,
+    })
 }
 
 /// 页面局部编辑草稿：模型用 wiki-page-edit 就地打补丁，避免整章重写。
@@ -601,6 +687,10 @@ impl WikiToolExecutor<'_> {
         let absolute = self.view.absolute(&relative);
         (self.on_activity)("read", if relative.is_empty() { "." } else { relative.as_str() });
 
+        if let ViewSource::Remote { snapshot, .. } = &self.view.source {
+            return self.read_remote(snapshot, args, relative, absolute).await;
+        }
+
         let metadata = tokio::fs::symlink_metadata(&absolute)
             .await
             .map_err(|error| format!("cannot access \"{relative}\": {error}"))?;
@@ -625,6 +715,55 @@ impl WikiToolExecutor<'_> {
             .map_err(|error| error.to_string())?
             .map_err(|error| error.reason.clone())?;
         let mut output = output;
+        if let Some(object) = output.as_object_mut() {
+            object.insert("path".to_string(), json!(relative));
+        }
+        Ok(output)
+    }
+
+    /// 远程读取：目录直接由快照列出，文件经 SSH 读取。
+    async fn read_remote(
+        &self,
+        snapshot: &RemoteSnapshot,
+        mut args: Value,
+        relative: String,
+        absolute: String,
+    ) -> std::result::Result<Value, String> {
+        if snapshot.is_dir(&relative) {
+            if self.view.is_blocked(&relative, true) {
+                return Err(format!("\"{relative}\" is excluded from the wiki read view"));
+            }
+            let mut entries: Vec<String> = Vec::new();
+            let mut hidden = 0usize;
+            for label in snapshot.children(&relative) {
+                let is_dir = label.ends_with('/');
+                let name = label.trim_end_matches('/');
+                let child = if relative.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{relative}/{name}")
+                };
+                if self.view.is_blocked(&child, is_dir) {
+                    hidden += 1;
+                    continue;
+                }
+                entries.push(label.clone());
+            }
+            return Ok(dir_listing(&relative, entries, hidden));
+        }
+        if self.view.is_blocked(&relative, false) {
+            return Err(format!(
+                "\"{relative}\" does not exist or is excluded from the wiki read view"
+            ));
+        }
+        if is_binary_file(&relative) {
+            return Err(format!("\"{relative}\" is a binary file"));
+        }
+        args["filePath"] = Value::String(absolute);
+        let mut output = snapshot
+            .run("filesystem-read", &args)
+            .await
+            .map_err(|error| error.reason.clone())?;
         if let Some(object) = output.as_object_mut() {
             object.insert("path".to_string(), json!(relative));
         }
@@ -658,15 +797,7 @@ impl WikiToolExecutor<'_> {
             }
             entries.push(if is_dir { format!("{name}/") } else { name });
         }
-        entries.sort();
-        let truncated = entries.len() > MAX_DIR_ENTRIES;
-        entries.truncate(MAX_DIR_ENTRIES);
-        Ok(json!({
-            "path": if relative.is_empty() { "." } else { relative },
-            "entries": entries.join("\n"),
-            "excludedEntries": hidden,
-            "truncated": truncated,
-        }))
+        Ok(dir_listing(relative, entries, hidden))
     }
 
     async fn search(&self, mut args: Value) -> std::result::Result<Value, String> {
@@ -684,10 +815,11 @@ impl WikiToolExecutor<'_> {
         if let Some(object) = args.as_object_mut() {
             object.remove("linkedRoots");
         }
-        let mut output = GrepService::new()
-            .execute_search_local(&args)
-            .await
-            .map_err(|error| error.reason.clone())?;
+        let mut output = match &self.view.source {
+            ViewSource::Local(_) => GrepService::new().execute_search_local(&args).await,
+            ViewSource::Remote { snapshot, .. } => snapshot.run("grep-search", &args).await,
+        }
+        .map_err(|error| error.reason.clone())?;
         if let Some(object) = output.as_object_mut() {
             object.remove("rawOutput");
             object.remove("backend");
@@ -726,10 +858,11 @@ impl WikiToolExecutor<'_> {
         if let Some(object) = args.as_object_mut() {
             object.remove("linkedRoots");
         }
-        let mut output = GrepService::new()
-            .execute_find_local(&args)
-            .await
-            .map_err(|error| error.reason.clone())?;
+        let mut output = match &self.view.source {
+            ViewSource::Local(_) => GrepService::new().execute_find_local(&args).await,
+            ViewSource::Remote { snapshot, .. } => snapshot.run("grep-find", &args).await,
+        }
+        .map_err(|error| error.reason.clone())?;
         if let Some(object) = output.as_object_mut() {
             object.remove("backend");
             object.insert("path".to_string(), json!(relative));

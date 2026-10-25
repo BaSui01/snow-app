@@ -1,4 +1,4 @@
-import type { MarketCategory } from "./market";
+import type { MarketTab } from "./market";
 
 /** 与 userscripts/ClientScriptBridge 约定的主视图切换事件名。 */
 const OPEN_MAIN_VIEW_EVENT = "snow:client-open-view";
@@ -8,7 +8,7 @@ export type PluginsPanelTab = "list" | "market" | "metadata";
 export type PluginsPanelNavigation = {
   tab: PluginsPanelTab;
   /** 市场页的目标分类（tab 为 market 时生效）。 */
-  category?: MarketCategory;
+  category?: MarketTab;
 };
 
 let pending: PluginsPanelNavigation | null = null;

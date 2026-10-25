@@ -29,6 +29,8 @@ export type UserscriptRecord = {
   privacy: string[];
   /** 脚本文件在磁盘上的绝对路径。 */
   filePath: string;
+  /** 来源仓库地址（插件市场 / 社区通道安装时记录，本地创建为空）。 */
+  sourceRepo: string;
   createdAt: string;
   updatedAt: string;
 };

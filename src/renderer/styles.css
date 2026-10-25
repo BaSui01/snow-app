@@ -59545,9 +59545,31 @@ pre.file-viewer-code {
   margin-top: 0;
 }
 
+/* “AI 生成”是展开 / 收起下方描述框的开关，不是一次性动作按钮：
+   尾随箭头给出“可展开”的暗示，展开态用强调色底填充并让箭头翻转，
+   与旁边的动作按钮（安装 / 刷新 / 更新）在视觉上区分开。 */
+.plugins-create-toggle-chevron {
+  flex-shrink: 0;
+  margin-left: -1px;
+  color: var(--text-tertiary);
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
+}
+
+.plugins-toolbar-btn:hover .plugins-create-toggle-chevron {
+  color: currentColor;
+}
+
 .plugins-toolbar-btn.active {
   border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 14%, var(--bg-secondary));
   color: var(--accent-color);
+}
+
+.plugins-toolbar-btn.active .plugins-create-toggle-chevron {
+  color: var(--accent-color);
+  transform: rotate(180deg);
 }
 
 .plugin-icon {
@@ -60591,6 +60613,140 @@ img.plugin-icon {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 插件市场条目标签：官方收录 / 官方认证 / 社区插件（未发布到市场） */
+.plugin-market-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.plugin-market-badge.official {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.plugin-market-badge.verified {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.plugin-market-badge.community {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.plugin-market-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.plugin-market-notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* 弹窗里的次要提示：只是说明，不用警告色 */
+.plugin-market-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.plugin-market-hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* 插件名与标签同行：名称可省略号收缩，标签保持完整 */
+.plugins-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plugins-item-name-row .plugins-item-name {
+  min-width: 0;
+}
+
+/* 社区多脚本仓库：确认弹窗里的脚本勾选列表 */
+.plugin-market-scripts {
+  display: flex;
+  max-height: 320px;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.plugin-market-script {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.plugin-market-script:hover {
+  border-color: var(--border-color);
+}
+
+.plugin-market-script input[type="checkbox"] {
+  flex-shrink: 0;
+  margin: 2px 0 0;
+}
+
+.plugin-market-script-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-market-script-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.plugin-market-script-name small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.plugin-market-script-path {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  word-break: break-all;
+}
+
+.plugin-market-script-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 /* ===== Git Multi-Remote & Tracking Badges ===== */

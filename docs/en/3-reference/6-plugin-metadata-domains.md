@@ -271,7 +271,8 @@ Returns a read-only array of installed plugins from the renderer plugin store. E
 | ----------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `pluginId` / `name` / `description` / `version` / `author` / `homepage` / `license` | string / localized object | Manifest metadata (`name` and `description` are `{ default, zh-CN, ... }`)                              |
 | `icon`                                                                              | string                    | `lucide:Name`, a relative path, or a URL                                                                |
-| `renderMode` / `entry`                                                              | string                    | `esm` or `iframe`; entry file relative path                                                             |
+| `renderMode`                                                                        | string                    | `esm` or `iframe`                                                                                       |
+| `kind` / `entry`                                                                    | string                    | `plugin` (panel plugin) or `oauth` (OAuth sign-in plugin); entry file relative path                     |
 | `panels`                                                                            | object[]                  | `{ id, title, entry, icon, widthHint, chatInput, chatInputAction, chatInputTitle, chatInputSettings? }` |
 | `privacy` / `privacyNote`                                                           | string[] / string         | Declared sensitive scopes and the explanation                                                           |
 | `enabled`                                                                           | boolean                   | Whether the plugin is enabled                                                                           |
@@ -587,7 +588,7 @@ No declaration · Not live · Parameters: `projectId`, `page`, `pageSize`
 
 **Whole-domain sensitive: `userscripts`** · Not live · No parameters
 
-Returns scripts: `{ scriptId, name, version, description, namespace, author, enabled, runAt, noframes, grant, matches, includes, excludes, requires, filePath, createdAt, updatedAt }`.
+Returns scripts: `{ scriptId, name, version, description, namespace, author, enabled, runAt, noframes, grant, matches, includes, excludes, requires, filePath, sourceRepo, createdAt, updatedAt }`.
 
 #### 4.5.5 `imageLibrary`
 

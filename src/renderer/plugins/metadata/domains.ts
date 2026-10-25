@@ -567,6 +567,7 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
         license: plugin.license,
         icon: plugin.icon,
         renderMode: plugin.renderMode,
+        kind: plugin.kind,
         entry: plugin.entry,
         panels: plugin.panels,
         privacy: plugin.privacy,

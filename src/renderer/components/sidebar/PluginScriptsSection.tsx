@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Download,
   FileCode2,
   Loader2,
@@ -471,6 +472,7 @@ export const PluginScriptsSection = ({
           </button>
         )}
         <button
+          aria-expanded={createBoxOpen}
           className={`plugins-toolbar-btn${createBoxOpen ? " active" : ""}`}
           type="button"
           onClick={() => setCreateOpen(!createBoxOpen)}
@@ -479,6 +481,11 @@ export const PluginScriptsSection = ({
           <span>
             {t("plugins.createButton", { defaultValue: "Generate with AI" })}
           </span>
+          <ChevronDown
+            className="plugins-create-toggle-chevron"
+            size={14}
+            strokeWidth={2}
+          />
         </button>
       </div>
 

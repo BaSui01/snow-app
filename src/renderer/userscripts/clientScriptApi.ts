@@ -49,6 +49,7 @@ const buildScriptPluginView = (
   renderMode: "esm",
   entry: "",
   oauthEntry: "",
+  kind: "plugin",
   panels: [],
   messageFooters: [],
   toolCallRenderers: [],

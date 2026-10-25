@@ -331,16 +331,19 @@ pub fn list_userscripts(database_path: &Path) -> Result<Vec<UserscriptRecord>> {
 /// 创建用户脚本：解析元数据 → 写文件 → 插入 DB（元数据 + file_path）。
 pub fn create_userscript(database_path: &Path, raw: &str) -> Result<UserscriptRecord> {
     let script_id = Uuid::new_v4().to_string();
-    insert_new_userscript(database_path, &script_id, raw)
+    insert_new_userscript(database_path, &script_id, raw, "")
 }
 
-/// 从插件市场安装用户脚本：`script_id` 由市场条目指定（跨版本稳定，更新时命中同一行）。
+/// 从插件市场安装用户脚本：`script_id` 由市场条目指定（跨版本稳定，更新时命中同一行），
+/// `source_repo` 记录脚本来源仓库（社区通道同样复用，供「已安装」判定与来源核对）。
 pub fn install_market_userscript(
     database_path: &Path,
     script_id: &str,
     raw: &str,
+    source_repo: &str,
 ) -> Result<UserscriptRecord> {
     let script_id = script_id.trim();
+    let source_repo = source_repo.trim();
     let is_valid = !script_id.is_empty()
         && script_id.len() <= 96
         && script_id
@@ -364,17 +367,18 @@ pub fn install_market_userscript(
         .map_err(|error| database::database_error(database_path, "check userscript", error))?
         .is_some();
     if exists {
-        update_userscript(database_path, script_id, raw)
+        update_userscript_internal(database_path, script_id, raw, Some(source_repo))
     } else {
-        insert_new_userscript(database_path, script_id, raw)
+        insert_new_userscript(database_path, script_id, raw, source_repo)
     }
 }
 
-/// 以指定 id 新建脚本：解析元数据 → 写文件 → 插入 DB（元数据 + file_path）。
+/// 以指定 id 新建脚本：解析元数据 → 写文件 → 插入 DB（元数据 + file_path + 来源）。
 fn insert_new_userscript(
     database_path: &Path,
     script_id: &str,
     raw: &str,
+    source_repo: &str,
 ) -> Result<UserscriptRecord> {
     let meta = parse_meta(raw);
 
@@ -394,12 +398,14 @@ fn insert_new_userscript(
                 script_id, name, version, description, namespace, author, icon,
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
-                target, view_json, surface_json, scope, sandbox, privacy_json, file_path
+                target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
+                source_repo
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, ?7,
                 1, ?8, ?9, ?10, ?11,
                 ?12, ?13, ?14,
-                ?15, ?16, ?17, ?18, ?19, ?20, ?21
+                ?15, ?16, ?17, ?18, ?19, ?20, ?21,
+                ?22
             )",
             params![
                 script_id,
@@ -423,6 +429,7 @@ fn insert_new_userscript(
                 meta.sandbox,
                 serde_json::to_string(&meta.privacy).unwrap_or_else(|_| "[]".to_string()),
                 file_path_str,
+                source_repo,
             ],
         )
         .map_err(|error| database::database_error(database_path, "create userscript", error))?;
@@ -431,8 +438,19 @@ fn insert_new_userscript(
     created.ok_or_else(|| Error::from_reason("Failed to read back created userscript"))
 }
 
-/// 更新用户脚本：解析元数据 → 覆写文件 → 更新 DB 元数据。
+/// 更新用户脚本：解析元数据 → 覆写文件 → 更新 DB 元数据（来源仓库保持不变）。
 pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Result<UserscriptRecord> {
+    update_userscript_internal(database_path, script_id, raw, None)
+}
+
+/// 更新用户脚本的内部实现：`source_repo` 为 `Some` 时同时改写来源仓库
+/// （市场 / 社区通道安装），为 `None` 时保留原值（用户在编辑器里改脚本）。
+fn update_userscript_internal(
+    database_path: &Path,
+    script_id: &str,
+    raw: &str,
+    source_repo: Option<&str>,
+) -> Result<UserscriptRecord> {
     let meta = parse_meta(raw);
 
     // 从 DB 查出 file_path 并覆写文件
@@ -463,6 +481,7 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
                 requires_json = ?14,
                 target = ?15, view_json = ?16, surface_json = ?17,
                 scope = ?18, sandbox = ?19, privacy_json = ?20,
+                source_repo = COALESCE(?21, source_repo),
                 updated_at = datetime('now', 'localtime')
             WHERE script_id = ?1",
             params![
@@ -486,6 +505,7 @@ pub fn update_userscript(database_path: &Path, script_id: &str, raw: &str) -> Re
                 meta.scope,
                 meta.sandbox,
                 serde_json::to_string(&meta.privacy).unwrap_or_else(|_| "[]".to_string()),
+                source_repo,
             ],
         )
         .map_err(|error| database::database_error(database_path, "update userscript", error))?;
@@ -535,12 +555,14 @@ pub fn delete_userscript(database_path: &Path, script_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// 启停用户脚本：只写 enabled，不刷新 updated_at。
+/// 脚本列表按 `updated_at DESC` 排序，若启停也刷新时间，用户每拨一次开关该条就会跳到列表最前，
+/// 列表顺序被反复打乱（体验很差）。`updated_at` 只表示脚本内容变更（新建 / 编辑 / 市场更新）。
 pub fn set_userscript_enabled(database_path: &Path, script_id: &str, enabled: bool) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|connection| {
             let changed = connection.execute(
-                "UPDATE userscripts SET enabled = ?2, updated_at = datetime('now', 'localtime')
-                WHERE script_id = ?1",
+                "UPDATE userscripts SET enabled = ?2 WHERE script_id = ?1",
                 params![script_id, enabled],
             )?;
             if changed == 0 {
@@ -651,7 +673,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
                 enabled, run_at, noframes, grant_json, matches_json,
                 includes_json, excludes_json, requires_json,
                 target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
-                created_at, updated_at
+                source_repo, created_at, updated_at
         FROM userscripts WHERE script_id = ?1",
         [script_id],
         |row| {
@@ -669,7 +691,8 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
                 row.get::<_, bool>(19)?,
                 row.get::<_, String>(20)?,
                 row.get::<_, String>(21)?,
-                row.get::<_, String>(22)?, row.get::<_, String>(23)?,
+                row.get::<_, String>(22)?,
+                row.get::<_, String>(23)?, row.get::<_, String>(24)?,
             ))
         },
     ).optional()?;
@@ -678,7 +701,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
               enabled, run_at, noframes, grant_json, matches_json,
               includes_json, excludes_json, requires_json,
               target, view_json, surface_json, scope, sandbox, privacy_json, file_path,
-              created_at, updated_at)) = row else {
+              source_repo, created_at, updated_at)) = row else {
         return Ok(None);
     };
 
@@ -705,6 +728,7 @@ fn query_userscript_record(connection: &Connection, script_id: &str) -> rusqlite
         sandbox,
         privacy: serde_json::from_str(&privacy_json).unwrap_or_default(),
         file_path,
+        source_repo,
         created_at,
         updated_at,
     }))

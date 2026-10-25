@@ -46,7 +46,7 @@ const REGISTRY_SHA_RESOLVE_TIMEOUT: Duration = Duration::from_secs(8);
 /// SHA 解析失败后的退避时长：避免不可达网络下反复等待。
 const REGISTRY_SHA_RESOLVE_BACKOFF: Duration = Duration::from_secs(120);
 /// 插件归档（zip）大小上限，与存储层复制上限保持一致。
-const MAX_PLUGIN_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
+pub(crate) const MAX_PLUGIN_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 /// 解压后总大小上限（防 zip 炸弹）。
 const MAX_PLUGIN_EXTRACT_BYTES: u64 = 512 * 1024 * 1024;
 /// 用户脚本文件（.user.js）大小上限。
@@ -75,7 +75,7 @@ fn sha_resolve_backoff_cell() -> &'static Mutex<Option<Instant>> {
     REGISTRY_SHA_RESOLVE_BACKOFF_UNTIL.get_or_init(|| Mutex::new(None))
 }
 
-fn marketplace_dir() -> Result<PathBuf> {
+pub(crate) fn marketplace_dir() -> Result<PathBuf> {
     Ok(crate::storage::paths::app_storage_dir()?.join("plugin-market"))
 }
 
@@ -114,7 +114,7 @@ fn read_registry_disk_cache() -> Option<String> {
         .filter(|text| !text.trim().is_empty())
 }
 
-fn build_blocking_client() -> Result<reqwest::blocking::Client> {
+pub(crate) fn build_blocking_client() -> Result<reqwest::blocking::Client> {
     let proxy = crate::api::http_client::load_proxy_config_sync().unwrap_or_default();
     let builder = reqwest::blocking::Client::builder()
         .user_agent(crate::api::http_client::app_user_agent())
@@ -151,7 +151,7 @@ fn fetch_registry_source(url: &str) -> std::result::Result<String, String> {
 }
 
 /// 校验字符串是否为 40 位十六进制 commit SHA。
-fn is_commit_sha(value: &str) -> bool {
+pub(crate) fn is_commit_sha(value: &str) -> bool {
     value.len() == 40 && value.chars().all(|character| character.is_ascii_hexdigit())
 }
 
@@ -371,7 +371,7 @@ fn stats_cache_path() -> Result<PathBuf> {
     Ok(marketplace_dir()?.join("stats.json"))
 }
 
-fn now_epoch_secs() -> u64 {
+pub(crate) fn now_epoch_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs())
@@ -411,7 +411,7 @@ fn store_stats_cache(cache: &MarketStatsCache) {
 }
 
 /// 解析 "https://github.com/owner/repo" 为 "owner/repo"。
-fn github_repo_slug(repo: &str) -> Option<String> {
+pub(crate) fn github_repo_slug(repo: &str) -> Option<String> {
     let rest = repo
         .trim()
         .trim_end_matches('/')
@@ -441,7 +441,7 @@ impl MarketStatsTarget {
 /// GitHub token：优先 GITHUB_TOKEN，其次 GH_TOKEN（gh CLI 登录后写入的环境变量），
 /// 与内置 Skills 安装器 / Git 头像反查的既有约定一致；无 token 时匿名请求
 /// （限额 60 次/小时且按 IP 共享）。
-fn github_token() -> Option<String> {
+pub(crate) fn github_token() -> Option<String> {
     std::env::var("GITHUB_TOKEN")
         .or_else(|_| std::env::var("GH_TOKEN"))
         .ok()
@@ -713,7 +713,7 @@ fn raw_github_mirror_url(url: &str) -> Option<String> {
 }
 
 /// 下载文件；主地址失败且为 GitHub raw 直链时，自动改用 jsDelivr 镜像重试一次。
-fn download_with_mirror(
+pub(crate) fn download_with_mirror(
     client: &reqwest::blocking::Client,
     url: &str,
     destination: &Path,
@@ -754,7 +754,7 @@ fn sha256_file_hex(path: &Path) -> Result<String> {
         .collect())
 }
 
-fn extract_archive(archive_path: &Path, target_dir: &Path) -> Result<()> {
+pub(crate) fn extract_archive(archive_path: &Path, target_dir: &Path) -> Result<()> {
     let file = fs::File::open(archive_path).map_err(|error| {
         Error::from_reason(format!("Failed to open the plugin archive: {error}"))
     })?;
@@ -807,7 +807,7 @@ fn extract_archive(archive_path: &Path, target_dir: &Path) -> Result<()> {
 }
 
 /// 定位解压后的插件根目录：根目录直接含 plugin.json，或唯一的顶层子目录含之。
-fn locate_plugin_root(extract_dir: &Path) -> Option<PathBuf> {
+pub(crate) fn locate_plugin_root(extract_dir: &Path) -> Option<PathBuf> {
     if extract_dir.join("plugin.json").is_file() {
         return Some(extract_dir.to_path_buf());
     }
@@ -950,6 +950,7 @@ fn install_script_from_market_internal(
     script_id: &str,
     download_url: &str,
     expected_sha256: &str,
+    source_repo: &str,
     work_dir: &Path,
 ) -> Result<UserscriptRecord> {
     let client = build_blocking_client()?;
@@ -978,15 +979,17 @@ fn install_script_from_market_internal(
     }
 
     let database_path = crate::storage::ensure_database_file()?;
-    crate::storage::install_market_userscript(&database_path, script_id, &raw)
+    crate::storage::install_market_userscript(&database_path, script_id, &raw, source_repo)
 }
 
 /// 从插件市场安装（或更新）用户脚本（blocking）。
-/// `download_url` 为 .user.js 直链，`sha256` 为市场索引锁定的文件哈希。
+/// `download_url` 为 .user.js 直链，`sha256` 为市场索引锁定的文件哈希，
+/// `source_repo` 为脚本仓库地址（写入来源字段，供「已安装」判定与来源核对）。
 pub fn install_script_from_market_blocking(
     script_id: &str,
     download_url: &str,
     sha256: &str,
+    source_repo: &str,
 ) -> Result<UserscriptRecord> {
     let script_id = script_id.trim();
     let download_url = download_url.trim();
@@ -1019,8 +1022,13 @@ pub fn install_script_from_market_blocking(
         Error::from_reason(format!("Failed to create the market temp directory: {error}"))
     })?;
 
-    let result =
-        install_script_from_market_internal(script_id, download_url, &expected_sha256, &work_dir);
+    let result = install_script_from_market_internal(
+        script_id,
+        download_url,
+        &expected_sha256,
+        source_repo,
+        &work_dir,
+    );
     let _ = fs::remove_dir_all(&work_dir);
     result
 }

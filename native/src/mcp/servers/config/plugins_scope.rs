@@ -115,6 +115,7 @@ fn record_to_json(record: &PluginRecord) -> Value {
         "license": record.license,
         "icon": record.icon,
         "renderMode": record.render_mode,
+        "kind": record.kind,
         "entry": record.entry,
         "enabled": record.enabled,
         "installPath": record.install_path,

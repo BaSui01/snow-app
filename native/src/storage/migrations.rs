@@ -104,6 +104,7 @@ pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<(
     migrate_workspace_directory_path_health(connection)?;
     migrate_userscripts_client_fields(connection)?;
     migrate_userscripts_icon(connection)?;
+    migrate_userscripts_source_repo(connection)?;
     migrate_git_worktrees(connection)?;
     migrate_app_logs_conversation_id(connection)?;
     migrate_file_review_annotations(connection)?;
@@ -243,6 +244,29 @@ fn migrate_userscripts_icon(connection: &Connection) -> rusqlite::Result<()> {
     }
     connection.execute(
         "ALTER TABLE userscripts ADD COLUMN icon TEXT NOT NULL DEFAULT ''",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Adds the `source_repo` column (the GitHub repository a script was installed
+/// from through the plugin market or the community channel) to `userscripts`.
+///
+/// Existing rows keep the empty value — locally authored scripts have no
+/// upstream repository. Idempotent: checked against `PRAGMA table_info` first;
+/// fresh databases get it from the `CREATE TABLE` statement.
+fn migrate_userscripts_source_repo(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(userscripts)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if columns.iter().any(|column| column == "source_repo") {
+        return Ok(());
+    }
+    connection.execute(
+        "ALTER TABLE userscripts ADD COLUMN source_repo TEXT NOT NULL DEFAULT ''",
         [],
     )?;
     Ok(())

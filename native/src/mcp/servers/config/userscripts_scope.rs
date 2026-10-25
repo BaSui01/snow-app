@@ -384,6 +384,7 @@ fn record_to_json(record: &UserscriptRecord) -> Value {
         "scope": record.scope,
         "sandbox": record.sandbox,
         "filePath": record.file_path,
+        "sourceRepo": record.source_repo,
         "createdAt": record.created_at,
         "updatedAt": record.updated_at,
     })

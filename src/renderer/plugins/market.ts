@@ -3,6 +3,9 @@ import type { PluginLocalizedMap } from "./types";
 /** 市场分类：面板插件 / 脚本插件 / OAuth 登录插件。 */
 export type MarketCategory = "panel" | "script" | "oauth";
 
+/** 市场标签页：三个官方分类 + 社区通道（GitHub `snow-plugins` 主题检索）。 */
+export type MarketTab = MarketCategory | "community";
+
 /** 市场条目的结构化字段（与市场索引仓库 registry.json 对应）。 */
 export type MarketPluginEntry = {
   id: string;
@@ -23,6 +26,8 @@ export type MarketPluginEntry = {
   privacy: string[];
   tags: string[];
   icon: string;
+  /** 索引条目是否声明了官方人工审核（`verified: true`），用于区分认证徽章。 */
+  verified: boolean;
 };
 
 export type MarketRegistry = {
@@ -70,6 +75,12 @@ const toStringList = (value: unknown): string[] => {
     .map((item) => item.trim())
     .filter(Boolean);
 };
+
+/** 非负整数计数：非法值一律按 0 处理。 */
+const toNonNegativeCount = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
 
 const MARKET_SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const GITHUB_REPO_PATTERN = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+)$/i;
@@ -140,6 +151,7 @@ export const parseMarketRegistry = (text: string): MarketRegistry => {
       privacy: toStringList(raw.privacy),
       tags,
       icon: asTrimmedString(raw.icon),
+      verified: raw.verified === true,
     });
   }
   return {
@@ -245,8 +257,8 @@ export const parseMarketStats = (text: string): Record<string, number> => {
   return counts;
 };
 
-/** 下载量紧凑展示：1000 以下原样，千 / 百万分别用 k / M。 */
-export const formatMarketDownloads = (count: number): string => {
+/** 计数紧凑展示：1000 以下原样，千 / 百万分别用 k / M（下载量与社区仓库星标共用）。 */
+export const formatCompactCount = (count: number): string => {
   if (count < 1000) {
     return String(count);
   }
@@ -254,4 +266,175 @@ export const formatMarketDownloads = (count: number): string => {
     return `${(count / 1000).toFixed(count < 10000 ? 1 : 0)}k`;
   }
   return `${(count / 1000000).toFixed(1)}M`;
+};
+
+/** 社区插件通道约定的 GitHub 主题名；与 Rust `native/src/plugin_community.rs` 的 `COMMUNITY_TOPIC` 保持一致。 */
+export const COMMUNITY_PLUGIN_TOPIC = "snow-plugins";
+
+/** 社区插件主题的 GitHub 浏览地址（市场页「来源」行与空态使用）。 */
+export const COMMUNITY_PLUGIN_TOPICS_URL = `https://github.com/topics/${COMMUNITY_PLUGIN_TOPIC}`;
+
+/** 社区仓库条目（GitHub 搜索 API 结果，与 Rust 侧 `CommunityRepo` 字段一一对应）。 */
+export type CommunityPluginEntry = {
+  /** `owner/repo`。 */
+  id: string;
+  repo: string;
+  owner: string;
+  name: string;
+  description: string;
+  homepage: string;
+  license: string;
+  stars: number;
+  forks: number;
+  topics: string[];
+  /** 仓库最近一次推送时间（ISO 字符串）。 */
+  pushedAt: string;
+  /** 仓库默认分支名（安装时用于解析提交，可为空）。 */
+  defaultBranch: string;
+  archived: boolean;
+};
+
+export type CommunitySearchResult = {
+  query: string;
+  items: CommunityPluginEntry[];
+  total: number;
+  /** 本轮是否因限流 / 网络故障沿用缓存（true 时保留旧结果并提示原因）。 */
+  limited: boolean;
+  reason: string;
+  fetchedAt: number;
+};
+
+/** 解析社区检索结果 JSON；单个无效条目会被丢弃，整份无效时抛错。 */
+export const parseCommunitySearch = (text: string): CommunitySearchResult => {
+  const parsed: unknown = JSON.parse(text);
+  if (!isRecord(parsed)) {
+    throw new Error("Invalid community plugin search result");
+  }
+  const items: CommunityPluginEntry[] = [];
+  for (const raw of Array.isArray(parsed.items) ? parsed.items : []) {
+    if (!isRecord(raw)) {
+      continue;
+    }
+    const id = asTrimmedString(raw.id);
+    const repo = normalizeRepoUrl(asTrimmedString(raw.repo));
+    if (!id || !GITHUB_REPO_PATTERN.test(repo)) {
+      continue;
+    }
+    items.push({
+      id,
+      repo,
+      owner: asTrimmedString(raw.owner),
+      name: asTrimmedString(raw.name),
+      description: asTrimmedString(raw.description),
+      homepage: asTrimmedString(raw.homepage),
+      license: asTrimmedString(raw.license),
+      stars: toNonNegativeCount(raw.stars),
+      forks: toNonNegativeCount(raw.forks),
+      topics: toStringList(raw.topics),
+      pushedAt: asTrimmedString(raw.pushedAt),
+      defaultBranch: asTrimmedString(raw.defaultBranch),
+      archived: raw.archived === true,
+    });
+  }
+  return {
+    query: asTrimmedString(parsed.query),
+    items,
+    total: toNonNegativeCount(parsed.total),
+    limited: parsed.limited === true,
+    reason: asTrimmedString(parsed.reason),
+    fetchedAt: toNonNegativeCount(parsed.fetchedAt),
+  };
+};
+
+/** 社区仓库地址与已安装插件的来源是否一致（用于展示「已安装」）。 */
+export const isCommunityRepoSource = (
+  repo: string,
+  sourcePath: string,
+): boolean =>
+  normalizeRepoUrl(sourcePath).toLowerCase() ===
+  normalizeRepoUrl(repo).toLowerCase();
+
+/** 社区仓库里的一个用户脚本（勾选安装列表项）。 */
+export type CommunityScriptItem = {
+  /** 安装用的稳定脚本 id（文件名主干，与官方市场 kind=script 条目同一语义）。 */
+  id: string;
+  /** 仓库内相对路径，勾选时回传。 */
+  path: string;
+  name: string;
+  version: string;
+  description: string;
+};
+
+/** 社区来源解析结果：已装面板插件 / 已装用户脚本 / 需要勾选脚本。 */
+export type CommunityResolveResult =
+  | { outcome: "plugin" }
+  | { outcome: "scripts"; installed: { scriptId: string; name: string }[] }
+  | {
+      outcome: "selection-required";
+      token: string;
+      items: CommunityScriptItem[];
+    };
+
+/** 解析社区来源解析结果 JSON；未知 outcome 视为解析失败。 */
+export const parseCommunityResolve = (text: string): CommunityResolveResult => {
+  const parsed: unknown = JSON.parse(text);
+  if (!isRecord(parsed)) {
+    throw new Error("Invalid community resolve result");
+  }
+  const outcome = asTrimmedString(parsed.outcome);
+  if (outcome === "plugin") {
+    return { outcome: "plugin" };
+  }
+  if (outcome === "scripts") {
+    const installed: { scriptId: string; name: string }[] = [];
+    for (const raw of Array.isArray(parsed.installed) ? parsed.installed : []) {
+      if (!isRecord(raw)) {
+        continue;
+      }
+      const scriptId = asTrimmedString(raw.scriptId);
+      if (!scriptId) {
+        continue;
+      }
+      installed.push({ scriptId, name: asTrimmedString(raw.name) });
+    }
+    return { outcome: "scripts", installed };
+  }
+  if (outcome === "selection-required") {
+    const items: CommunityScriptItem[] = [];
+    for (const raw of Array.isArray(parsed.items) ? parsed.items : []) {
+      if (!isRecord(raw)) {
+        continue;
+      }
+      const path = asTrimmedString(raw.path);
+      if (!path) {
+        continue;
+      }
+      items.push({
+        id: asTrimmedString(raw.id),
+        path,
+        name: asTrimmedString(raw.name),
+        version: asTrimmedString(raw.version),
+        description: asTrimmedString(raw.description),
+      });
+    }
+    return {
+      outcome: "selection-required",
+      token: asTrimmedString(parsed.token),
+      items,
+    };
+  }
+  throw new Error("Invalid community resolve result");
+};
+
+/** 社区仓库时间的紧凑展示（YYYY-MM-DD）：数字按秒级时间戳，字符串按 ISO 解析。 */
+export const formatCommunityTime = (value: string | number): string => {
+  const timestamp =
+    typeof value === "number" ? value * 1000 : Date.parse(value.trim());
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  const date = new Date(timestamp);
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 };

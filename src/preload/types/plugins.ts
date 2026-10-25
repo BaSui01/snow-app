@@ -13,6 +13,8 @@ export type PluginRecord = {
   icon: string;
   /** "esm" | "iframe" */
   renderMode: string;
+  /** "plugin"（面板插件）| "oauth"（OAuth 登录插件） */
+  kind: string;
   entry: string;
   enabled: boolean;
   installPath: string;

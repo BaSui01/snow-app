@@ -134,9 +134,7 @@ pub async fn set_conversation_run_stats(
 
 /// 清零会话的累计 run 统计（回滚截断消息后调用）。
 #[napi]
-pub async fn reset_conversation_run_stats(
-    conversation_id: String,
-) -> napi::Result<()> {
+pub async fn reset_conversation_run_stats(conversation_id: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::reset_conversation_run_stats(&conversation_id)
     })
@@ -272,6 +270,13 @@ pub async fn preview_conversation_attachment(conversation_id: String) -> napi::R
     .map_err(map_spawn_error)?
 }
 
+#[napi(js_name = "subAgentRunCommand")]
+pub async fn sub_agent_run_command(command_json: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::sub_agent_run_command(&command_json))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn list_sub_agent_conversations(
     parent_conversation_id: String,
@@ -305,57 +310,6 @@ pub async fn create_chat_conversation(
     })
     .await
     .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn create_sub_agent_session(
-    conversation_id: String,
-    parent_conversation_id: String,
-    agent_id: String,
-    agent_name: String,
-    directory_id: String,
-    api_profile_name: String,
-    model: String,
-    title: String,
-    thinking_strength: Option<String>,
-    responses_fast_mode: Option<String>,
-) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::create_sub_agent_session(
-            conversation_id,
-            parent_conversation_id,
-            agent_id,
-            agent_name,
-            directory_id,
-            api_profile_name,
-            model,
-            title,
-            thinking_strength,
-            responses_fast_mode,
-        )
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn update_sub_agent_session_status(
-    conversation_id: String,
-    run_status: String,
-    error_message: String,
-) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::update_sub_agent_session_status(conversation_id, run_status, error_message)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn cancel_running_sub_agent_sessions() -> napi::Result<u32> {
-    tokio::task::spawn_blocking(crate::storage::cancel_running_sub_agent_sessions)
-        .await
-        .map_err(map_spawn_error)?
 }
 
 #[napi]
@@ -444,11 +398,9 @@ pub async fn list_workflow_node_sessions_by_parents(
 pub async fn get_workflow_node_session(
     conversation_id: String,
 ) -> napi::Result<Option<WorkflowNodeSessionRecord>> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::get_workflow_node_session(&conversation_id)
-    })
-    .await
-    .map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || crate::storage::get_workflow_node_session(&conversation_id))
+        .await
+        .map_err(map_spawn_error)?
 }
 
 #[napi]
@@ -586,13 +538,23 @@ pub async fn delete_conversations(
 }
 
 #[napi]
-pub async fn save_task_history(conversation_id: String, response_id: String, manifest: String) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || crate::storage::save_task_history(conversation_id, response_id, manifest)).await.map_err(map_spawn_error)?
+pub async fn save_task_history(
+    conversation_id: String,
+    response_id: String,
+    manifest: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::save_task_history(conversation_id, response_id, manifest)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
 pub async fn list_task_history(conversation_id: String) -> napi::Result<Vec<String>> {
-    tokio::task::spawn_blocking(move || crate::storage::list_task_history(conversation_id)).await.map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || crate::storage::list_task_history(conversation_id))
+        .await
+        .map_err(map_spawn_error)?
 }
 
 #[napi]
@@ -776,14 +738,10 @@ pub async fn export_conversation(conversation_id: String, format: String) -> nap
 }
 
 #[napi]
-pub async fn import_conversation(
-    directory_id: String,
-    file_path: String,
-) -> napi::Result<String> {
+pub async fn import_conversation(directory_id: String, file_path: String) -> napi::Result<String> {
     tokio::task::spawn_blocking(move || {
         crate::storage::import_conversation(directory_id, file_path)
     })
     .await
     .map_err(map_spawn_error)?
 }
-

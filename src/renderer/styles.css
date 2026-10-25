@@ -7031,6 +7031,19 @@ body.is-panel-resizing * {
   gap: 8px;
 }
 
+.api-settings-form-grid.api-settings-form-grid-responsive {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.api-settings-form-grid-responsive
+  .api-settings-field
+  > input:not([type="checkbox"]):not([type="range"]),
+.api-settings-form-grid-responsive .custom-select-trigger {
+  min-height: 32px;
+}
+
 .api-settings-field {
   display: flex;
   min-width: 0;
@@ -7483,45 +7496,6 @@ body.is-panel-resizing * {
 .api-model-combobox-option.selected {
   color: var(--text-primary);
   font-weight: 600;
-}
-
-/* 分组标题行：更小的字号与次要色，与模型行区分 */
-.api-model-combobox-group {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.api-model-combobox-group-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.api-model-combobox-group-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.api-model-combobox-group-chevron {
-  flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-
-.api-model-combobox-group[aria-expanded="false"]
-  .api-model-combobox-group-chevron {
-  transform: rotate(-90deg);
-}
-
-/* 分组内的模型行缩进一级，体现层级 */
-.api-model-combobox-model {
-  padding-left: 12px;
 }
 
 .api-model-combobox .api-model-combobox-option-name {
@@ -17621,142 +17595,6 @@ body.is-panel-resizing * {
    ============================================================ */
 
 /* DataTableViewer */
-.data-table-viewer {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  border: 1px solid var(--border-color, #30363d);
-  border-radius: var(--radius-md, 6px);
-  background: var(--bg-secondary, #161b22);
-  overflow: hidden;
-  margin: 4px 0;
-}
-.data-table-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: var(--bg-tertiary, #21262d);
-  border-bottom: 1px solid var(--border-color, #30363d);
-  gap: 8px;
-}
-.data-table-search-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-primary, #0d1117);
-  border: 1px solid var(--border-color, #30363d);
-  border-radius: var(--radius-sm, 4px);
-  padding: 2px 6px;
-  flex: 1;
-  max-width: 240px;
-}
-.data-table-search-input {
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 11px;
-  color: var(--text-primary, #e6edf3);
-  width: 100%;
-}
-.data-table-search-input::placeholder {
-  color: var(--text-muted, #8b949e);
-}
-.data-table-toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.data-table-row-counter {
-  font-size: 10.5px;
-  color: var(--text-muted, #8b949e);
-}
-.data-table-export-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-primary, #0d1117);
-  border: 1px solid var(--border-color, #30363d);
-  color: var(--text-secondary, #c9d1d9);
-  font-size: 10.5px;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs, 3px);
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.data-table-export-btn:hover {
-  color: var(--text-primary, #e6edf3);
-  border-color: var(--accent, #58a6ff);
-}
-.data-table-scroll-container {
-  overflow-x: auto;
-  max-height: 400px;
-}
-.data-table-grid {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11.5px;
-  font-family: var(--font-mono, monospace);
-  text-align: left;
-}
-.data-table-grid th,
-.data-table-grid td {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border-color, #30363d);
-  white-space: nowrap;
-}
-.data-table-grid th {
-  background: var(--bg-tertiary, #21262d);
-  color: var(--text-secondary, #8b949e);
-  font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.data-table-th-index,
-.data-table-td-index {
-  width: 32px;
-  text-align: center;
-  color: var(--text-muted, #484f58);
-  user-select: none;
-}
-.data-table-th-sortable {
-  cursor: pointer;
-  user-select: none;
-}
-.data-table-th-sortable:hover {
-  background: var(--bg-hover, #30363d);
-}
-.data-table-th-sortable span {
-  margin-right: 4px;
-}
-.data-table-th-sortable .sort-idle {
-  opacity: 0.3;
-}
-.data-table-cell-null {
-  color: var(--text-muted, #484f58);
-  font-style: italic;
-}
-.data-table-pagination-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  background: var(--bg-tertiary, #21262d);
-  border-top: 1px solid var(--border-color, #30363d);
-  font-size: 10.5px;
-  color: var(--text-muted, #8b949e);
-}
-.data-table-toggle-rows-btn {
-  background: transparent;
-  border: none;
-  color: var(--accent, #58a6ff);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-.data-table-toggle-rows-btn:hover {
-  text-decoration: underline;
-}
 
 /* CodeHighlightView Expand Bar */
 .tool-call-code-expand-bar {
@@ -24704,243 +24542,6 @@ body.is-panel-resizing * {
   overflow-y: auto;
 }
 
-/* 子代理验收清单（acceptance receipt）：按项展示状态、观察、理由与证据 */
-.tool-call-sub-agent-acceptance {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
-}
-
-.tool-call-sub-agent-acceptance-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tool-call-sub-agent-acceptance-label {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.tool-call-sub-agent-acceptance-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  background: var(--bg-active);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-}
-
-.tool-call-sub-agent-acceptance-verdict {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-}
-
-.tool-call-sub-agent-acceptance-verdict.is-passed {
-  color: var(--color-success, #22c55e);
-  background: color-mix(
-    in srgb,
-    var(--color-success, #22c55e) 12%,
-    transparent
-  );
-}
-
-.tool-call-sub-agent-acceptance-verdict.is-unmet {
-  color: var(--color-error, #ef4444);
-  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
-}
-
-.tool-call-sub-agent-acceptance-meta {
-  font-size: 11px;
-  color: var(--color-error, #ef4444);
-  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
-.tool-call-sub-agent-acceptance-notice {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-active);
-  border-radius: var(--radius-sm);
-  padding: 4px 6px;
-}
-
-.tool-call-sub-agent-acceptance-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.tool-call-sub-agent-acceptance-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 5px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  min-width: 0;
-}
-
-.tool-call-sub-agent-acceptance-item-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  padding-top: 1px;
-}
-
-.tool-call-sub-agent-acceptance-item-icon--completed {
-  color: var(--color-success, #22c55e);
-}
-
-.tool-call-sub-agent-acceptance-item-icon--incomplete {
-  color: var(--color-error, #ef4444);
-}
-
-.tool-call-sub-agent-acceptance-item-icon--blocked {
-  color: #f59e0b;
-}
-
-.tool-call-sub-agent-acceptance-item-icon--unverified {
-  color: var(--text-muted);
-}
-
-.tool-call-sub-agent-acceptance-main {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1;
-}
-
-.tool-call-sub-agent-acceptance-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.tool-call-sub-agent-acceptance-description {
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  word-break: break-word;
-  flex: 1;
-  min-width: 120px;
-}
-
-.tool-call-sub-agent-acceptance-required {
-  font-size: 9.5px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-
-.tool-call-sub-agent-acceptance-status {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
-.tool-call-sub-agent-acceptance-status--completed {
-  color: var(--color-success, #22c55e);
-  background: color-mix(
-    in srgb,
-    var(--color-success, #22c55e) 12%,
-    transparent
-  );
-}
-
-.tool-call-sub-agent-acceptance-status--incomplete {
-  color: var(--color-error, #ef4444);
-  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
-}
-
-.tool-call-sub-agent-acceptance-status--blocked {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.12);
-}
-
-.tool-call-sub-agent-acceptance-status--unverified {
-  color: var(--text-muted);
-  background: var(--bg-active);
-}
-
-.tool-call-sub-agent-acceptance-id {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: var(--font-mono, monospace);
-}
-
-.tool-call-sub-agent-acceptance-observation,
-.tool-call-sub-agent-acceptance-reason {
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  word-break: break-word;
-}
-
-.tool-call-sub-agent-acceptance-reason {
-  color: var(--text-muted);
-}
-
-.tool-call-sub-agent-acceptance-evidence {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.tool-call-sub-agent-acceptance-evidence-label {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.tool-call-sub-agent-acceptance-evidence-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--text-secondary);
-  background: var(--bg-active);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 1px 5px;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.tool-call-sub-agent-acceptance-evidence-id {
-  font-family: var(--font-mono, monospace);
-  color: var(--accent-blue-text);
-  flex-shrink: 0;
-}
-
-.tool-call-sub-agent-acceptance-evidence-tool {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.tool-call-sub-agent-acceptance-no-evidence {
-  font-size: 10.5px;
-  color: var(--color-error, #ef4444);
-}
-
 .tool-call-sub-agent-pending {
   display: flex;
   align-items: center;
@@ -25142,6 +24743,37 @@ button.user-message-source:hover {
   gap: 12px;
   font-size: 12.5px;
   color: var(--text-secondary);
+}
+
+/* Sub-agent observations reuse existing run controls and semantic state styles. */
+.tool-call-sub-agent-observations,
+.tool-call-sub-agent-observation {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.tool-call-sub-agent-observation {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.tool-call-sub-agent-observation > .tool-call-sub-agent-list-item {
+  flex-wrap: wrap;
+  padding: 0;
+  background: transparent;
+}
+
+.tool-call-sub-agent-observation .tool-call-sub-agent-list-item-name {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: none;
+}
+
+.tool-call-sub-agent-observations .tool-call-section-pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Sub-agent list (sub-agents-listSubAgents) */
@@ -31285,38 +30917,6 @@ button.user-message-source:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-/* 模型分组标题行：更小的字号与次要色，与模型行区分 */
-.model-dropdown-group {
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.model-dropdown-group-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.model-dropdown-group-chevron {
-  flex-shrink: 0;
-  transition: transform 0.15s ease;
-}
-
-.model-dropdown-group[aria-expanded="false"] .model-dropdown-group-chevron {
-  transform: rotate(-90deg);
-}
-
-/* 分组内的模型行缩进一级，体现层级 */
-.model-dropdown-model {
-  padding-left: 12px;
 }
 
 .thinking-option-icon {
@@ -53894,11 +53494,10 @@ pre.file-viewer-code {
   flex: none;
 }
 
-/* 未匹配到品牌 logo 时的默认占位（“其他”模型）：背景用主题强调色的半透明叠色做差异色，
-   浅色/深色主题下都能与品牌彩色 logo 区分开，同时不抢眼 */
+/* 未匹配到品牌 logo 时的默认占位 */
 .model-brand-icon-fallback {
-  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
-  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
   pointer-events: none;
   user-select: none;
 }

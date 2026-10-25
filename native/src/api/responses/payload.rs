@@ -43,10 +43,10 @@ pub(super) fn build_responses_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    host_system_prompts: &[String],
     cache_key: &str,
 ) -> Result<Value> {
-    let model =
-        resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
+    let model = resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
     let mut builtin_system_parts = Vec::new();
@@ -311,6 +311,14 @@ pub(super) fn build_responses_payload(
         }
     } else if !builtin_system_parts.is_empty() {
         instructions = Some(builtin_system_parts.join("\n\n"));
+    }
+    // Host facts never participate in the user-prompt precedence decision.
+    if !host_system_prompts.is_empty() {
+        let host_text = host_system_prompts.join("\n\n");
+        instructions = Some(match instructions {
+            Some(existing) => format!("{existing}\n\n{host_text}"),
+            None => host_text,
+        });
     }
     if let Some(prompt) = request
         .internal_recovery_prompt

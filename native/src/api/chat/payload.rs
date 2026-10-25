@@ -34,6 +34,7 @@ pub(super) fn build_chat_completions_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    host_system_prompts: &[String],
 ) -> Result<Value> {
     let model = resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
 
@@ -233,49 +234,41 @@ pub(super) fn build_chat_completions_payload(
 
     flush_tool_image_parts(&mut payload_messages, &mut pending_tool_image_parts);
 
-    // When user system prompts are present, emit them as a single `system`
-    // message with multiple content blocks and demote the built-in prompt
-    // to a leading `user` message (Snow CLI PR #127).
-    if has_user_system_prompts
-        || request
-            .internal_recovery_prompt
-            .as_deref()
-            .is_some_and(|prompt| !prompt.trim().is_empty())
-    {
-        let mut user_prompt_blocks: Vec<Value> = user_system_prompts
-            .iter()
-            .map(|text| json!({ "type": "text", "text": text }))
-            .collect();
-        if let Some(prompt) = request
-            .internal_recovery_prompt
-            .as_deref()
-            .map(str::trim)
-            .filter(|prompt| !prompt.is_empty())
-        {
-            user_prompt_blocks.push(json!({ "type": "text", "text": prompt }));
-        }
-        let system_message = json!({
-            "role": "system",
-            "content": user_prompt_blocks,
-        });
-        payload_messages.insert(0, system_message);
-
+    // Only actual user-configured prompts trigger built-in demotion. Host
+    // facts and internal recovery remain in the system slot in either branch.
+    let mut system_parts = if has_user_system_prompts {
         if !builtin_system_parts.is_empty() {
-            let builtin_text = builtin_system_parts.join("\n\n");
-            let builtin_message = json!({
-                "role": "user",
-                "content": builtin_text,
-            });
-            payload_messages.insert(1, builtin_message);
+            payload_messages.insert(
+                0,
+                json!({
+                    "role": "user", "content": builtin_system_parts.join("\n\n")
+                }),
+            );
         }
-    } else if !builtin_system_parts.is_empty() {
-        // No user prompts: keep built-in prompt as a `system` message.
-        let builtin_text = builtin_system_parts.join("\n\n");
-        let system_message = json!({
-            "role": "system",
-            "content": builtin_text,
-        });
-        payload_messages.insert(0, system_message);
+        user_system_prompts.to_vec()
+    } else {
+        builtin_system_parts
+    };
+    system_parts.extend(host_system_prompts.iter().cloned());
+    let recovery_prompt = request
+        .internal_recovery_prompt
+        .as_deref()
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty());
+    if let Some(prompt) = recovery_prompt {
+        system_parts.push(prompt.to_string());
+    }
+    if !system_parts.is_empty() {
+        // Keep ordinary parent system content a string, including host facts.
+        let content = if !has_user_system_prompts && recovery_prompt.is_none() {
+            json!(system_parts.join("\n\n"))
+        } else {
+            json!(system_parts
+                .iter()
+                .map(|text| json!({ "type": "text", "text": text }))
+                .collect::<Vec<_>>())
+        };
+        payload_messages.insert(0, json!({ "role": "system", "content": content }));
     }
 
     if payload_messages.is_empty() {
@@ -536,8 +529,16 @@ mod tests {
     fn build_payload_with_messages(messages: Vec<ChatContextMessage>) -> Value {
         let request = create_test_request();
         let api_record = create_test_record();
-        build_chat_completions_payload(&messages, Path::new(""), &request, &api_record, None, &[])
-            .unwrap()
+        build_chat_completions_payload(
+            &messages,
+            Path::new(""),
+            &request,
+            &api_record,
+            None,
+            &[],
+            &[],
+        )
+        .unwrap()
     }
 
     /// The synthesized user message must land only after every tool reply of

@@ -58,6 +58,7 @@ pub(super) fn build_interactions_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    host_system_prompts: &[String],
 ) -> Result<Value> {
     let selected_model = request
         .model
@@ -214,6 +215,8 @@ pub(super) fn build_interactions_payload(
 
     // System instruction
     let mut system_instruction_parts = user_system_prompts.to_vec();
+    // Host facts belong to system_instruction, never to role=user input.
+    system_instruction_parts.extend(host_system_prompts.iter().cloned());
     if let Some(prompt) = request
         .internal_recovery_prompt
         .as_deref()
@@ -521,6 +524,7 @@ mod tests {
             &config,
             None,
             &[],
+            &[],
         )
         .expect("Interactions payload");
 
@@ -545,6 +549,7 @@ mod tests {
             &create_test_record(""),
             None,
             &[],
+            &[],
         )
         .expect("Interactions payload");
 
@@ -563,6 +568,7 @@ mod tests {
             &create_test_record(""),
             None,
             &["configured system rule".to_string()],
+            &[],
         )
         .expect("Interactions payload");
 
@@ -622,6 +628,7 @@ mod tests {
             &config,
             Some(tools),
             &[],
+            &[],
         )
         .expect("Interactions payload");
         let tool_entries = payload["tools"].as_array().expect("tools array");
@@ -676,6 +683,7 @@ mod tests {
             &config,
             None,
             &[],
+            &[],
         )
         .expect("Interactions payload");
 
@@ -707,6 +715,7 @@ mod tests {
             &create_test_request(),
             &config,
             Some(tools.clone()),
+            &[],
             &[],
         )
         .expect("Interactions payload");
@@ -745,6 +754,7 @@ mod tests {
                 &create_test_request(),
                 &config,
                 tools,
+                &[],
                 &[],
             )
             .expect("Interactions payload");
@@ -803,6 +813,7 @@ mod tests {
             &create_test_request(),
             &create_test_record(""),
             None,
+            &[],
             &[],
         )
         .expect("Interactions payload");
@@ -872,6 +883,7 @@ mod tests {
             &create_test_request(),
             &create_test_record(""),
             None,
+            &[],
             &[],
         )
         .expect("Interactions payload");
@@ -957,6 +969,7 @@ mod tests {
             &create_test_record(""),
             None,
             &[],
+            &[],
         )
         .expect("Interactions payload");
         let input = payload["input"].as_array().expect("input array");
@@ -1001,6 +1014,7 @@ mod tests {
             &create_test_record(""),
             None,
             &[],
+            &[],
         )
         .expect("Interactions payload");
 
@@ -1042,6 +1056,7 @@ mod tests {
             &create_test_request(),
             &create_test_record(""),
             None,
+            &[],
             &[],
         )
         .expect("Interactions payload");
@@ -1106,6 +1121,7 @@ mod tests {
             &create_test_request(),
             &create_test_record(""),
             None,
+            &[],
             &[],
         )
         .expect("Interactions payload");

@@ -26,9 +26,8 @@ use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
 };
 use crate::api::retry::{
-    classify_final_stream_warning, resolve_empty_response_terminal, resolve_stream_idle_timeout_sec,
-    FinalStreamWarningDisposition,
-    RetryOptions,
+    classify_final_stream_warning, resolve_empty_response_terminal,
+    resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition, RetryOptions,
 };
 use crate::storage::services::app_logs::{
     log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
@@ -110,7 +109,7 @@ async fn create_anthropic_response_async(
         })
         .collect::<Vec<_>>();
     // Collect once, before prompt generation; providers serialize this same snapshot.
-    let allowed_tools = resolve_request_tools_optional(&request).await;
+    let allowed_tools = resolve_request_tools_optional(&request).await?;
     let prepared_request = prepare_context_request(ConversationContextRequest {
         allowed_tools: allowed_tools.as_deref().unwrap_or_default(),
         database_path: &database_path,
@@ -172,6 +171,7 @@ async fn create_anthropic_response_async(
         &api_config,
         tools,
         &prepared_request.user_system_prompts,
+        &prepared_request.host_system_prompts,
     )?;
     let (endpoint, payload) = crate::api::oauth::plugin::transform_request(
         &api_config,

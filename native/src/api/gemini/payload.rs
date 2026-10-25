@@ -9,11 +9,11 @@ use serde_json::{json, Value};
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
-use crate::api::conversation::{parse_chat_message_content, ParsedChatMessageContent};
 use crate::api::conversation::tool_messages::{
     extract_tool_call_entries, parse_tool_results_with_images, remove_invalid_snow_tool_calls,
     ParsedToolResult,
 };
+use crate::api::conversation::{parse_chat_message_content, ParsedChatMessageContent};
 use crate::api::oauth::antigravity as antigravity_oauth;
 use crate::api::oauth::provider::antigravity_profile_metadata;
 use crate::api::responses::ResponsesApiRequest;
@@ -159,6 +159,7 @@ fn build_gemini_content_parts(
 fn build_gemini_system_instruction(
     user_system_prompts: &[String],
     builtin_system_parts: Vec<String>,
+    host_system_prompts: &[String],
     internal_recovery_prompt: Option<&str>,
 ) -> Option<Value> {
     let mut system_parts = if user_system_prompts.is_empty() {
@@ -166,6 +167,7 @@ fn build_gemini_system_instruction(
     } else {
         user_system_prompts.to_vec()
     };
+    system_parts.extend(host_system_prompts.iter().cloned());
     if let Some(prompt) = internal_recovery_prompt
         .map(str::trim)
         .filter(|prompt| !prompt.is_empty())
@@ -186,6 +188,7 @@ pub(super) fn build_gemini_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    host_system_prompts: &[String],
 ) -> Result<Value> {
     // Never mutate database-backed history. Gemini requests receive a filtered
     // copy so an upstream empty built-in call and its error result cannot seed
@@ -414,12 +417,12 @@ pub(super) fn build_gemini_payload(
         "contents": contents,
     });
 
-    // Build `systemInstruction`. When user system prompts are present they
-    // occupy the field exclusively (each prompt as an independent part).
-    // Otherwise the built-in system prompt parts are used.
+    // Preserve user/built-in precedence; host facts and recovery are appended
+    // as independent systemInstruction parts without causing demotion.
     if let Some(system_instruction) = build_gemini_system_instruction(
         user_system_prompts,
         builtin_system_parts,
+        host_system_prompts,
         request.internal_recovery_prompt.as_deref(),
     ) {
         payload["systemInstruction"] = system_instruction;
@@ -756,6 +759,7 @@ mod tests {
         let payload = build_gemini_system_instruction(
             &["configured system rule".to_string()],
             vec!["built-in protocol".to_string()],
+            &[],
             Some("Use completed results and answer without tools."),
         )
         .expect("system instruction");

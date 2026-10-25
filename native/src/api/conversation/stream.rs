@@ -14,7 +14,6 @@ use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest, ResponsesApiResult,
     ResponsesApiStreamCallback,
 };
-use crate::storage::services::app_logs::{insert_app_log, AppLogInput};
 use crate::storage::services::chat_conversations::{
     get_conversation_api_profile, store_failed_chat_exchange, ChatContextMessage,
 };
@@ -221,6 +220,7 @@ pub async fn create_response_stream(
     let failure_model = resolved_model;
     let failure_directory_id = request.directory_id.clone().unwrap_or_default();
     let failure_context_compaction = request.context_compaction.unwrap_or(false);
+    let failure_skip_context = request.skip_context.unwrap_or(false);
     let failure_resume_after_compaction = request.resume_after_compaction.unwrap_or(false);
     let failure_database_path = context.database_path.clone();
     // The profile that actually served this request. Persisted on failed
@@ -254,6 +254,7 @@ pub async fn create_response_stream(
         );
     }
 
+    let failure_api_key = api_config.api_key.clone();
     let result = match api_config.request_method.as_str() {
         "chat" => {
             create_chat_completion_response_stream(
@@ -319,6 +320,7 @@ pub async fn create_response_stream(
     crate::api::cancel::unregister_stream(&stream_id);
     match result {
         Ok(response) => {
+            if crate::api::ephemeral::is_active() { return Ok(response); }
             // Record token usage for every successful API call. Context
             // compaction requests also consume tokens and must be accounted
             // for. Errors here are non-fatal: we log and continue so the
@@ -364,76 +366,42 @@ pub async fn create_response_stream(
             Ok(response)
         }
         Err(error) => {
-            if failure_context_compaction {
-                // Context compaction failures are surfaced to the renderer
-                // as a raw Err (no persisted error exchange). Log the full
-                // request metadata here so the app_logs table captures enough
-                // detail to diagnose provider/model/config issues without
-                // needing to reproduce the failure.
-                let compaction_error = error.to_string();
-                let compaction_db = failure_database_path.clone();
-                let compaction_context = serde_json::json!({
-                    "conversation_id": failure_conversation_id,
-                    "model": failure_model,
-                    "directory_id": failure_directory_id,
-                    "request_method": usage_request_method,
-                    "api_profile": usage_api_profile_name,
-                })
-                .to_string();
-                tokio::task::spawn_blocking(move || {
-                    let _ = insert_app_log(
-                        &compaction_db,
-                        &AppLogInput {
-                            level: "ERROR".to_string(),
-                            module: "api".to_string(),
-                            func: "create_response_stream".to_string(),
-                            line: None,
-                            message: "Context compaction request failed".to_string(),
-                            input: None,
-                            output: None,
-                            duration: None,
-                            context: Some(compaction_context),
-                            error: Some(compaction_error),
-                            source: "main".to_string(),
-                        },
-                    );
+            let failure = crate::api::failure::ProviderFailure::from_message(
+                &error.reason, Some(&failure_api_key),
+            );
+            let failure_reason = failure.reason();
+            if cancel_token.is_cancelled() {
+                return Ok(ResponsesApiResult {
+                    id: String::new(), conversation_id: failure_conversation_id.unwrap_or_default(),
+                    content: String::new(), thinking: String::new(), model: failure_model,
+                    status: "cancelled".to_string(), interruption_reason: None,
+                    recovery_outcome: None, failure_reason: None,
+                    tool_calls_json: "[]".to_string(),
+                    token_usage: crate::api::responses::TokenUsage {
+                        input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                    },
+                    persisted_user_message_ids: Vec::new(),
                 });
-                return Err(error);
+            }
+            if failure_context_compaction {
+                crate::api::failure::log_stream_failure(
+                    &failure_database_path, failure_conversation_id.as_deref().unwrap_or(""),
+                    "", &usage_request_method, "error", Some(&failure), serde_json::json!({}),
+                ).await;
+                return Err(Error::from_reason(failure_reason.unwrap_or_default()));
             }
             let failure_log_db = failure_database_path.clone();
-            let failure_log_context = serde_json::json!({
-                "conversation_id": failure_conversation_id.clone(),
-                "model": failure_model.clone(),
-                "directory_id": failure_directory_id.clone(),
-                "api_profile": failure_api_profile.clone(),
-            })
-            .to_string();
-            let failure_log_error = error.to_string();
-            tokio::task::spawn_blocking(move || {
-                let _ = insert_app_log(
-                    &failure_log_db,
-                    &AppLogInput {
-                        level: "ERROR".to_string(),
-                        module: "api".to_string(),
-                        func: "create_response_stream".to_string(),
-                        line: None,
-                        message: "Conversation API request failed".to_string(),
-                        input: None,
-                        output: None,
-                        duration: None,
-                        context: Some(failure_log_context),
-                        error: Some(failure_log_error),
-                        source: "main".to_string(),
-                    },
-                );
-            });
-            let error_message = error.to_string();
+            let error_message = failure_reason.clone().unwrap_or_default();
             let persisted_error_message = error_message.clone();
             let persisted_failure_model = failure_model.clone();
             let failure_dir_id = failure_directory_id.clone();
             let persisted_failure_api_profile = failure_api_profile.clone();
             let persisted_failure_resume = failure_resume_after_compaction;
             let (conversation_id, persisted_user_message_ids) =
+                if failure_skip_context || crate::api::ephemeral::is_active() {
+                    (failure_conversation_id.unwrap_or_default(), Vec::new())
+                } else {
                 tokio::task::spawn_blocking(move || {
                     store_failed_chat_exchange(
                         &failure_database_path,
@@ -454,7 +422,13 @@ pub async fn create_response_stream(
                         "Failed to persist chat request error: {}",
                         join_error
                     ))
-                })??;
+                })??
+                };
+            // Resolve/create the conversation before emitting its terminal log.
+            crate::api::failure::log_stream_failure(
+                &failure_log_db, &conversation_id, "", &usage_request_method, "error",
+                Some(&failure), serde_json::json!({}),
+            ).await;
 
             // Record the failed API call with zero token usage so the usage
             // history reflects every attempt, not just successful ones.
@@ -465,6 +439,7 @@ pub async fn create_response_stream(
             let usage_req_method = usage_request_method.clone();
             let usage_db_path = usage_database_path.clone();
             let usage_is_sub_agent = is_sub_agent;
+            if !crate::api::ephemeral::is_active() {
             if let Err(record_error) = tokio::task::spawn_blocking(move || {
                 record_usage(
                     &usage_db_path,
@@ -489,17 +464,18 @@ pub async fn create_response_stream(
             {
                 eprintln!("Failed to record failed usage: {record_error}");
             }
+            }
 
             Ok(ResponsesApiResult {
                 id: String::new(),
                 conversation_id,
-                content: error_message,
+                content: String::new(),
                 thinking: String::new(),
                 model: failure_model,
                 status: "error".to_string(),
                 interruption_reason: None,
                 recovery_outcome: None,
-                failure_reason: None,
+                failure_reason,
                 tool_calls_json: "[]".to_string(),
                 token_usage: crate::api::responses::TokenUsage {
                     input_tokens: 0,

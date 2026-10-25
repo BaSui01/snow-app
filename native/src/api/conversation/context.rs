@@ -21,8 +21,8 @@ use crate::storage::services::workspace_directories::get_workspace_directory_pat
 use crate::storage::SubAgentConfigRecord;
 
 use super::tool_messages::ensure_tool_pairing;
-use crate::api::responses::ResponsesApiMessage;
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
+use crate::api::responses::ResponsesApiMessage;
 
 pub struct PreparedConversationRequest {
     pub conversation_id: String,
@@ -32,25 +32,16 @@ pub struct PreparedConversationRequest {
     /// `system_prompt_ids_json`. Providers use this to decide whether to
     /// keep the built-in system prompt as a `system` message or demote it
     /// to a `user` message (matching Snow CLI PR #127): when non-empty, the
-    /// user prompts occupy the `system` slot exclusively and the built-in
-    /// prompt is prepended as a leading `user` message.
+    /// user prompts take configured precedence and the built-in prompt is
+    /// prepended as a leading `user` message. Child requests retain their
+    /// existing ordered builtin/API/child composition in this list; host facts
+    /// are always separate and never influence this precedence decision.
     pub user_system_prompts: Vec<String>,
+    /// Request-local host facts, separate from user prompt precedence. Providers
+    /// append these to their actual system slot without demoting the built-in
+    /// prompt. Never persisted as conversation messages or user authorization.
+    pub host_system_prompts: Vec<String>,
 }
-
-/// 子代理默认携带的队友通信能力说明，追加到每个子代理系统提示词末尾，
-/// 让子代理知道它可以用 sub-agents-listTeammates / sub-agents-sendMessage
-/// 与同一会话的队友协作。放置在所有用户配置的提示词之后，作为最终
-/// 权威规则（且不受用户是否配置 systemPrompt 影响）。
-const SUB_AGENT_COMMS_PROMPT_SECTION: &str = r#"## Teammate Communication
-
-You automatically carry two teammate communication tools scoped to the CURRENT conversation session:
-- `sub-agents-listTeammates`: query the sub-agents currently running in the same session. Returns the `conversationId`, `agentId` and `agentName` of each online teammate (you are excluded).
-- `sub-agents-sendMessage`: send a message to a teammate that is still running. The message is delivered as a Pending message and the target receives it automatically at the end of its current round; the queued text is prefixed with your identity (name + conversationId) so the recipient always knows where it came from.
-
-Rules:
-- Session isolation: only sub-agents spawned by the SAME parent conversation are visible or reachable. Teammates from other conversations are never exposed, and cross-session sends are rejected — do not try to guess other conversations' ids.
-- Only send to teammates that are still running: `sub-agents-listTeammates` returns only running teammates, and sending to a finished teammate fails with an error.
-- Use these tools to coordinate with parallel teammates (share partial findings, request input, or hand off follow-up work) when the task benefits from collaboration. Prefer concise, essential information over full context dumps."#;
 
 pub(crate) fn compose_sub_agent_system_prompts(
     builtin: &str,
@@ -60,8 +51,7 @@ pub(crate) fn compose_sub_agent_system_prompts(
     let mut seen = HashSet::new();
     let candidates = std::iter::once(builtin)
         .chain(api_prompts.iter().map(String::as_str))
-        .chain(sub_agent_prompt)
-        .chain(std::iter::once(SUB_AGENT_COMMS_PROMPT_SECTION));
+        .chain(sub_agent_prompt);
 
     candidates
         .filter_map(|prompt| {
@@ -311,8 +301,7 @@ pub(crate) async fn build_builtin_system_prompt(
                 .flatten()
         })
         .unwrap_or_else(|| working_directory.clone());
-    let wiki_section =
-        crate::api::repo_wiki::build_system_prompt_section(&wiki_project_path).await;
+    let wiki_section = crate::api::repo_wiki::build_system_prompt_section(&wiki_project_path).await;
     let system_prompt = if wiki_section.is_empty() {
         system_prompt
     } else {
@@ -335,9 +324,11 @@ pub(crate) async fn resolve_configured_system_prompts(
             return Vec::new();
         };
         let database_path = PathBuf::from(storage_info.database_path);
-        let directory_id = conversation_id
-            .as_deref()
-            .and_then(|id| get_conversation_directory_id(&database_path, id).ok().flatten());
+        let directory_id = conversation_id.as_deref().and_then(|id| {
+            get_conversation_directory_id(&database_path, id)
+                .ok()
+                .flatten()
+        });
         resolve_active_system_prompt_contents(
             &database_path,
             &system_prompt_ids_json,
@@ -416,6 +407,7 @@ pub async fn prepare_context_request(
             messages: current_messages.clone(),
             current_messages,
             user_system_prompts,
+            host_system_prompts: Vec::new(),
         });
     }
     let mut current_messages = if request.resume_after_compaction {
@@ -477,6 +469,7 @@ pub async fn prepare_context_request(
             messages: current_messages.clone(),
             current_messages,
             user_system_prompts: Vec::new(),
+            host_system_prompts: Vec::new(),
         });
     }
 
@@ -502,6 +495,17 @@ pub async fn prepare_context_request(
 
     // Inject the built-in system prompt as the first message.
     let system_prompt = build_builtin_system_prompt(&request, &conversation_id).await;
+    // Rebuilt for every actual request (including post-compaction/restart), not
+    // persisted as a user message, event acknowledgement or task authorization.
+    let ledger = super::sub_agent_ledger::context_section(
+        request.database_path,
+        &conversation_id,
+        request.directory_id,
+        request
+            .allowed_tools
+            .iter()
+            .any(|tool| tool.full_name() == "sub-agents-sendMessage"),
+    );
     let user_system_prompts = if request.is_sub_agent {
         compose_sub_agent_system_prompts(
             &system_prompt,
@@ -511,6 +515,9 @@ pub async fn prepare_context_request(
     } else {
         user_system_prompts
     };
+    // Distinct host context is always refreshed, even with existing system
+    // history, but never makes the provider treat a parent as user-configured.
+    let host_system_prompts = ledger.into_iter().collect();
 
     // Main conversations retain the existing provider-specific built-in prompt
     // behavior. Sub-agents pass the unified ordered prompt list directly to
@@ -554,6 +561,7 @@ pub async fn prepare_context_request(
         messages,
         current_messages,
         user_system_prompts,
+        host_system_prompts,
     })
 }
 

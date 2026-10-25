@@ -7,8 +7,6 @@ import {
 } from "react";
 import { Check, ChevronDown, Loader2, RefreshCw, Search } from "lucide-react";
 import { ModelBrandIcon } from "../../common/ModelBrandIcon";
-import { groupModelsByBrand, type ModelGroup } from "../../common/modelGroups";
-import { useI18n } from "../../../i18n";
 import type { Model } from "../../../../preload";
 
 type ApiModelComboboxProps = {
@@ -49,10 +47,6 @@ type ApiModelComboboxProps = {
 
 const MAX_VISIBLE_MODELS = 80;
 
-/** 列表行：分组标题行 + 已展开分组的模型行。 */
-type ModelComboboxRow =
-  { type: "group"; group: ModelGroup } | { type: "model"; model: Model };
-
 export function ApiModelCombobox({
   label,
   value,
@@ -74,14 +68,8 @@ export function ApiModelCombobox({
   labelAction,
 }: ApiModelComboboxProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
-  // null 表示高亮跟随选中模型所在行（由列表结构推导），交互后固定为具体行索引
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
-  // 手动展开的分组键；null 表示未被用户改动，回到默认（只展开选中模型所在分组）
-  const [expandedGroups, setExpandedGroups] = useState<Set<string> | null>(
-    null,
-  );
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   // Kept separate from `value`: the input value holds the selected model id,
   // and filtering by it would hide every other model when the list reopens.
   // The keyword only applies to text the user typed since the list was opened.
@@ -96,82 +84,14 @@ export function ApiModelCombobox({
     return matchedModels.slice(0, MAX_VISIBLE_MODELS);
   }, [models, filterKeyword]);
 
-  // 按品牌分组：只有多个品牌时才折叠展示，单品牌保持平铺列表
-  const modelGroups = useMemo(
-    () => groupModelsByBrand(filteredModels),
-    [filteredModels],
-  );
-  const isGrouped = modelGroups.length > 1;
-  const isFiltering = filterKeyword.trim().length > 0;
-
-  // 默认展开选中模型所在分组（无选中项时退回首个分组）
-  const defaultExpandedGroupKeys = useMemo(() => {
-    const selectedGroup = modelGroups.find((group) =>
-      group.models.some((model) => model.id === value),
-    );
-    const key = selectedGroup?.key ?? modelGroups[0]?.key;
-    return new Set<string>(key ? [key] : []);
-  }, [modelGroups, value]);
-  const expandedGroupKeys = expandedGroups ?? defaultExpandedGroupKeys;
-
-  const rows = useMemo<ModelComboboxRow[]>(() => {
-    if (!isGrouped) {
-      return filteredModels.map((model) => ({ type: "model", model }));
-    }
-    const list: ModelComboboxRow[] = [];
-    for (const group of modelGroups) {
-      list.push({ type: "group", group });
-      if (expandedGroupKeys.has(group.key)) {
-        for (const model of group.models) {
-          list.push({ type: "model", model });
-        }
-      }
-    }
-    return list;
-  }, [filteredModels, modelGroups, isGrouped, expandedGroupKeys]);
-
-  // 未交互时高亮跟随选中模型所在行，交互后固定为具体行
-  const defaultHighlightedIndex = useMemo(() => {
-    const selectedIndex = rows.findIndex(
-      (row) => row.type === "model" && row.model.id === value,
-    );
-    if (selectedIndex >= 0) {
-      return selectedIndex;
-    }
-    const firstModelIndex = rows.findIndex((row) => row.type === "model");
-    return firstModelIndex >= 0 ? firstModelIndex : 0;
-  }, [rows, value]);
-  const activeIndex = highlightedIndex ?? defaultHighlightedIndex;
-
-  // 选中模型或过滤结果变化时，高亮回到选中模型所在行
   useEffect(() => {
-    setHighlightedIndex(null);
+    // Prefer the currently selected model when it is visible so that
+    // reopening the list highlights what is already configured.
+    const selectedIndex = filteredModels.findIndex(
+      (model) => model.id === value,
+    );
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
   }, [value, filteredModels]);
-
-  // 过滤时展开所有分组保证匹配结果可见；未过滤时回到默认展开状态
-  useEffect(() => {
-    if (!isFiltering) {
-      setExpandedGroups(null);
-      return;
-    }
-    setExpandedGroups(new Set(modelGroups.map((group) => group.key)));
-  }, [isFiltering, modelGroups]);
-
-  // 每次打开列表回到默认展开状态：只展开选中模型所在分组
-  useEffect(() => {
-    if (isOpen) {
-      setExpandedGroups(null);
-    }
-  }, [isOpen]);
-
-  // 可见行变化时收敛高亮索引，避免越界
-  useEffect(() => {
-    setHighlightedIndex((index) =>
-      index === null || rows.length === 0
-        ? index
-        : Math.min(index, rows.length - 1),
-    );
-  }, [rows]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -212,20 +132,6 @@ export function ApiModelCombobox({
     setIsOpen(false);
   };
 
-  const setGroupExpanded = (key: string, expanded: boolean): void => {
-    setExpandedGroups((previous) => {
-      const next = new Set(previous ?? defaultExpandedGroupKeys);
-      if (expanded) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-  };
-
-  // ↑↓ 在可见行（分组标题 + 已展开分组的模型）间移动高亮，
-  // Enter 选中模型或展开/收起分组标题行。
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       if (isOpen) {
@@ -244,29 +150,21 @@ export function ApiModelCombobox({
       } else {
         showFullModelList();
       }
-      setHighlightedIndex(
-        Math.min(activeIndex + 1, Math.max(rows.length - 1, 0)),
+      setHighlightedIndex((index) =>
+        Math.min(index + 1, Math.max(filteredModels.length - 1, 0)),
       );
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setHighlightedIndex(Math.max(activeIndex - 1, 0));
+      setHighlightedIndex((index) => Math.max(index - 1, 0));
       return;
     }
 
-    if (event.key === "Enter" && isOpen) {
-      const row = rows[activeIndex];
-      if (!row) {
-        return;
-      }
+    if (event.key === "Enter" && isOpen && filteredModels[highlightedIndex]) {
       event.preventDefault();
-      if (row.type === "group") {
-        setGroupExpanded(row.group.key, !expandedGroupKeys.has(row.group.key));
-      } else {
-        handleSelectModel(row.model.id);
-      }
+      handleSelectModel(filteredModels[highlightedIndex].id);
     }
   };
 
@@ -336,53 +234,11 @@ export function ApiModelCombobox({
               </div>
             )}
 
-            {!isLoading && !error && rows.length > 0 && (
+            {!isLoading && !error && filteredModels.length > 0 && (
               <div className="api-model-combobox-list">
-                {rows.map((row, index) => {
-                  if (row.type === "group") {
-                    const isExpanded = expandedGroupKeys.has(row.group.key);
-
-                    return (
-                      <button
-                        key={`group-${row.group.key}`}
-                        type="button"
-                        className={`api-model-combobox-option api-model-combobox-group ${
-                          index === activeIndex ? "highlighted" : ""
-                        }`}
-                        aria-expanded={isExpanded}
-                        onMouseEnter={() => setHighlightedIndex(index)}
-                        onClick={(event) => {
-                          // Prevent the wrapping <label> from forwarding the
-                          // click to the input.
-                          event.preventDefault();
-                          setGroupExpanded(row.group.key, !isExpanded);
-                        }}
-                      >
-                        <span className="api-model-combobox-option-main">
-                          <ModelBrandIcon
-                            model={row.group.iconModel}
-                            size={14}
-                            className="api-model-combobox-option-icon"
-                          />
-                          <span className="api-model-combobox-group-name">
-                            {row.group.label ||
-                              t("chat.otherModels", { defaultValue: "Other" })}
-                          </span>
-                        </span>
-                        <span className="api-model-combobox-group-meta">
-                          <span>{row.group.models.length}</span>
-                          <ChevronDown
-                            size={12}
-                            className="api-model-combobox-group-chevron"
-                          />
-                        </span>
-                      </button>
-                    );
-                  }
-
-                  const model = row.model;
+                {filteredModels.map((model, index) => {
                   const isSelected = model.id === value;
-                  const isHighlighted = index === activeIndex;
+                  const isHighlighted = index === highlightedIndex;
                   const known = knownModels?.find(
                     (entry) =>
                       entry.id.toLowerCase() === model.id.toLowerCase(),
@@ -394,9 +250,7 @@ export function ApiModelCombobox({
                       type="button"
                       className={`api-model-combobox-option ${
                         isSelected ? "selected" : ""
-                      } ${isHighlighted ? "highlighted" : ""}${
-                        isGrouped ? " api-model-combobox-model" : ""
-                      }`}
+                      } ${isHighlighted ? "highlighted" : ""}`}
                       onMouseEnter={() => setHighlightedIndex(index)}
                       onClick={(event) => {
                         // Prevent the wrapping <label> from forwarding the

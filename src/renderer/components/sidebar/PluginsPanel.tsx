@@ -7,6 +7,7 @@ import {
   KeyRound,
   Loader2,
   RefreshCw,
+  ShieldAlert,
   Sparkles,
   Store,
   Trash2,
@@ -33,15 +34,17 @@ import {
   clearPluginsPanelNavigation,
   peekPluginsPanelNavigation,
 } from "../../plugins/panelNavigation";
-import { METADATA_DOMAINS } from "../../plugins/metadata";
+import {
+  METADATA_DOMAINS,
+  describeMetadataDomains,
+} from "../../plugins/metadata";
 import type { PluginView } from "../../plugins/types";
 import { pluginStore, usePluginStore } from "../../plugins/pluginStore";
-import { buildScriptPluginView } from "../../userscripts/clientScriptApi";
+import { describeWriteDomains } from "../../plugins/writes";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { PluginIcon } from "../common/PluginIcon";
 import { Tooltip } from "../common/Tooltip";
 import { useChatConversationContext } from "../mainContent/chatMessages";
-import { PluginCapabilityLinks } from "./PluginCapabilityLinks";
 import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginMarketPanel } from "./PluginMarketPanel";
 import { PluginMetadataCatalog } from "./PluginMetadataCatalog";
@@ -94,26 +97,12 @@ export const PluginsPanel = ({
   const [privacyTarget, setPrivacyTarget] =
     useState<PluginPrivacyTarget | null>(null);
   const clientScripts = useClientScriptStore();
-  // 元数据清单的对照对象：面板插件或脚本插件（脚本按同一规则包装成插件视图）。
-  const [metadataTarget, setMetadataTarget] = useState<{
-    kind: "plugin" | "script";
-    id: string;
-  } | null>(null);
-  const metadataPlugin = useMemo(() => {
-    if (!metadataTarget) {
-      return null;
-    }
-    if (metadataTarget.kind === "plugin") {
-      return (
-        state.plugins.find((item) => item.pluginId === metadataTarget.id) ??
-        null
-      );
-    }
-    const script = clientScripts.scripts.find(
-      (item) => item.scriptId === metadataTarget.id,
-    );
-    return script ? buildScriptPluginView(script.scriptId, script) : null;
-  }, [clientScripts.scripts, metadataTarget, state.plugins]);
+  const [metadataPluginId, setMetadataPluginId] = useState("");
+  const metadataPlugin = useMemo(
+    () =>
+      state.plugins.find((item) => item.pluginId === metadataPluginId) ?? null,
+    [state.plugins, metadataPluginId],
+  );
   const isEmpty = state.status === "ready" && state.plugins.length === 0;
   const createBoxOpen = createOpen ?? isEmpty;
 
@@ -195,17 +184,12 @@ export const PluginsPanel = ({
   }, []);
 
   const openMetadata = useCallback((plugin: PluginView) => {
-    setMetadataTarget({ kind: "plugin", id: plugin.pluginId });
-    setActiveTab("metadata");
-  }, []);
-
-  const openScriptMetadata = useCallback((scriptId: string) => {
-    setMetadataTarget({ kind: "script", id: scriptId });
+    setMetadataPluginId(plugin.pluginId);
     setActiveTab("metadata");
   }, []);
 
   const clearMetadataPlugin = useCallback(() => {
-    setMetadataTarget(null);
+    setMetadataPluginId("");
   }, []);
 
   const openPrivacy = useCallback(
@@ -687,6 +671,22 @@ export const PluginsPanel = ({
                       const updateTooNew =
                         marketEntry !== null &&
                         isMarketEntryTooNew(marketEntry, market.appVersion);
+                      const metadata = describeMetadataDomains(plugin);
+                      const readableDomains = metadata.filter(
+                        (domain) => domain.granted,
+                      ).length;
+                      const writeDomains = describeWriteDomains(plugin, locale);
+                      const writableActions = writeDomains.reduce(
+                        (total, domain) =>
+                          total +
+                          domain.actions.filter((action) => action.granted)
+                            .length,
+                        0,
+                      );
+                      const totalWriteActions = writeDomains.reduce(
+                        (total, domain) => total + domain.actions.length,
+                        0,
+                      );
                       return (
                         <div className="plugins-item" key={plugin.pluginId}>
                           <div className="plugins-item-head">
@@ -818,10 +818,47 @@ export const PluginsPanel = ({
                             onOpen={() => openPrivacy(plugin)}
                           />
 
-                          <PluginCapabilityLinks
-                            plugin={plugin}
-                            onOpen={() => openMetadata(plugin)}
-                          />
+                          <button
+                            className="plugins-metadata-link"
+                            type="button"
+                            title={t("plugins.metadata.openHint", {
+                              defaultValue:
+                                "Open the metadata catalog to compare every domain",
+                            })}
+                            onClick={() => openMetadata(plugin)}
+                          >
+                            <Database size={12} strokeWidth={1.8} />
+                            <span>
+                              {t("plugins.metadata.pluginEntry", {
+                                values: {
+                                  granted: readableDomains,
+                                  total: metadata.length,
+                                },
+                                defaultValue: "Metadata {{granted}}/{{total}}",
+                              })}
+                            </span>
+                          </button>
+
+                          <button
+                            className="plugins-metadata-link"
+                            type="button"
+                            title={t("plugins.write.openHint", {
+                              defaultValue:
+                                "Open the metadata catalog to compare every write action",
+                            })}
+                            onClick={() => openMetadata(plugin)}
+                          >
+                            <ShieldAlert size={12} strokeWidth={1.8} />
+                            <span>
+                              {t("plugins.write.entry", {
+                                values: {
+                                  granted: writableActions,
+                                  total: totalWriteActions,
+                                },
+                                defaultValue: "Write {{granted}}/{{total}}",
+                              })}
+                            </span>
+                          </button>
 
                           {plugin.privacyNote && (
                             <div className="plugins-privacy-note">
@@ -843,7 +880,6 @@ export const PluginsPanel = ({
               ) : (
                 <PluginScriptsSection
                   onClose={onClose}
-                  onOpenMetadata={openScriptMetadata}
                   onOpenPrivacy={setPrivacyTarget}
                 />
               )}

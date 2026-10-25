@@ -34,12 +34,26 @@ const createSnapshot = () => {
     process.exit(1);
   }
 
+  // Forced development update checks resolve this file from app.getAppPath(),
+  // which is the snapshot, not cwd. Validate before creating a partial snapshot.
+  const updateConfig = path.join(PROJECT_ROOT, "dev-app-update.yml");
+  if (!existsSync(updateConfig)) {
+    console.error(
+      "[preview] PREVIEW_UPDATE_CONFIG_MISSING: dev-app-update.yml is required for forced update checks",
+    );
+    process.exit(1);
+  }
+
   const snapshotDir = path.join(PREVIEW_ROOT, `run-${Date.now()}`);
   mkdirSync(snapshotDir, { recursive: true });
   cpSync(outDir, path.join(snapshotDir, "out"), { recursive: true });
   copyFileSync(
     path.join(PROJECT_ROOT, "package.json"),
     path.join(snapshotDir, "package.json"),
+  );
+  copyFileSync(updateConfig, path.join(snapshotDir, "dev-app-update.yml"));
+  console.log(
+    "[preview] development update configuration copied into snapshot",
   );
 
   for (const name of SHARED_DIRS) {
@@ -81,6 +95,9 @@ const child = spawn(require("electron"), [snapshotDir], {
     ...process.env,
     NODE_ENV: "production",
     NODE_ENV_ELECTRON_VITE: "production",
+    // 预览必须加载冻结快照：is.dev 等价于 !app.isPackaged，未打包恒为 true，
+    // 若继承到开发服务器的渲染地址，主窗口会去连并不存在的 Vite 服务而白屏。
+    ELECTRON_RENDERER_URL: "",
     // 未打包也执行真实更新检查与下载（安装仍被拦截）
     SNOW_UPDATE_FORCE_CHECK: "1",
   },

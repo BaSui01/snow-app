@@ -103,19 +103,20 @@ sequenceDiagram
     P->>H: beforeSubAgentStart
     H-->>P: pass or abort
     P->>S: activate configured agent
-    S->>DB: create child conversation and running session
+    S->>DB: accept durable run, create child conversation
     S->>C: start with profile tools and parent checkpoints
     loop Child model and tools
         C->>C: independent stream and allowed-tools checks
     end
-    C->>DB: completed or failed
+    C->>DB: settle terminal state, async also writes the run event
     C->>H: onSubAgentComplete
-    C-->>P: final result
+    C-->>P: sync mode returns the unified result
+    DB-->>P: async mode delivers the event and wakes the parent
 ```
 
-**Maintenance**: Tool Hook order is `toolConfirmation` → authorization → `beforeToolCall` → MCP → `afterToolCall`. Parent abort propagates to children; stale running sessions are cancelled at startup.
+**Maintenance**: Tool Hook order is `toolConfirmation` → authorization → `beforeToolCall` → MCP → `afterToolCall`. Parent abort propagates to children; startup marks leftover non-terminal runs `interrupted` without replaying them. Asynchronous result delivery and parent wake-up are covered in §9.4 of [Agent Runtime and Tool Orchestration](4-agent-runtime-and-tool-orchestration.md).
 
-**Source anchors**: `src/renderer/components/mainContent/chatMessages/hooks/subAgentActivation.ts`, `toolExecution.ts`, `useToolAuthorization.ts`, `hookOutcome.ts`, `native/src/hooks/`, `native/src/mcp/servers/sub_agents.rs`.
+**Source anchors**: `src/renderer/components/mainContent/chatMessages/hooks/subAgentActivation.ts`, `subAgentParentInbox.ts`, `subAgentRunRegistry.ts`, `toolExecution.ts`, `useToolAuthorization.ts`, `hookOutcome.ts`, `native/src/hooks/`, `native/src/mcp/servers/sub_agents.rs`, `native/src/storage/services/chat_conversations/sub_agent_runs.rs`.
 
 ## 5. Image Generation and Library
 

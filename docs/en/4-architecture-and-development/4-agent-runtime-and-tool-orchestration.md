@@ -582,9 +582,65 @@ After the model calls `sub-agents-activate`, Renderer runs `beforeSubAgentStart`
 
 While building the main session's system prompt, Snow queries `sub_agent_configs` and **dynamically injects the available sub-agent list** (with `agentId`, name, and purpose) together with a selection rule — the main agent picks the best-matching `agentId` instead of defaulting to the built-in `agent_general`. The list resolves like activation: **project-scoped sub-agents of the current project (`directory_id`) take priority** and override the global one on the same `agentId`; sub-agents of other projects are not injected.
 
-A sub-agent inherits parent checkpoint IDs so its file changes remain inside the parent's rollback boundary. Rust also enforces allowed-tools and blocks writes while the parent Plan is unapproved. A sub-agent cannot call or grant Plan approval. Completion persists `completed` or `failed`, runs `onSubAgentComplete`, and makes the conversation read-only; later queued input is forwarded to the parent. Parent abort propagates to active sub-agents, and startup cancels stale `running` sessions.
+A sub-agent inherits parent checkpoint IDs so its file changes remain inside the parent's rollback boundary. Rust also enforces allowed-tools and blocks writes while the parent Plan is unapproved. A sub-agent cannot call or grant Plan approval. Completion persists a terminal state (`completed`, `failed`, `cancelled`, or `interrupted`), runs `onSubAgentComplete`, and makes the conversation read-only; the child session keeps its own pending queue instead of forwarding it to the parent. Parent abort propagates to active sub-agents, and startup marks leftover non-terminal runs as `interrupted` (`OWNER_LOST`) without replaying them.
 
-Activation runs in parallel with the main agent (pre-started by the Renderer) and returns a structured JSON tool result when it ends; the main agent never auto-retries — the model decides the next step from the result. Normal completion returns `{success: true, conversationId, agentName, summary}` (`onSubAgentComplete` may append context on pass, append a warning on warn, or replace the summary on abort). An API stream failure returns the failure content as the final output and marks the message as error. An exception returns `{success: false, error}`, persists the session as `failed`, broadcasts the failure event, and forwards messages the user queued inside the sub-conversation to the parent. A user interrupt returns "Sub-agent interrupted by user". An unapproved parent Plan stops the sub-agent immediately and returns control to the main loop. There is no global sub-agent timeout (only per-tool timeouts); stopping the main agent recursively cancels the whole descendant tree via `childSubAgentIds` (aborting streams, rejecting pending authorizations, killing bash child processes), and app startup cleans up stale `running` sessions.
+Activation runs in parallel with the main agent (pre-started by the Renderer). In synchronous mode it returns a structured JSON tool result when it ends; the main agent never auto-retries — the model decides the next step from the result. Normal completion returns `{success: true, conversationId, agentName, summary}` (`onSubAgentComplete` may append context on pass, append a warning on warn, or replace the summary on abort). An API stream failure returns the failure content as the final output and marks the message as error. An exception returns `{success: false, error}` and persists `failed`. A user interrupt returns "Sub-agent interrupted by user". An unapproved parent Plan stops the sub-agent immediately and returns control to the main loop. There is no global sub-agent timeout (only per-tool timeouts); stopping the main agent recursively cancels the whole descendant tree via `childSubAgentIds` (aborting streams, rejecting pending authorizations, killing bash child processes). Asynchronous mode does not return through that tool result; it wakes the parent conversation through the event delivery in §9.4.
+
+### 9.1 Run Model and State Machine
+
+Both execution modes (Settings → Sub-agent settings → Run limits, synchronous by default) share one durable run: `accept` admission, `transition` state changes, `settle` terminal commit, and result paging. They differ only in whether the parent tool waits for a terminal state — **synchronous** waits for the terminal state and returns the unified result payload, while **asynchronous** waits only for the `accepted` receipt, releases the main flow immediately, and delivers the result back to the parent conversation through durable events (see §9.4). The host captures the mode; there is no model-side `executionMode` compatibility parameter, and a `continue` against a busy target returns `message_queued` without changing that run's mode. Both modes require a real project/workspace binding, and runs do not continue after the application exits.
+
+Run state is persisted by `native/src/storage/services/chat_conversations/sub_agent_runs.rs`; the terminal set is `completed | failed | cancelled | interrupted` (`sub_agent_runs.rs::terminal`).
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: accept
+    queued --> running: transition
+    running --> waiting_input: needs decision
+    waiting_input --> running: decision done
+    running --> finalizing: finalize
+    waiting_input --> finalizing: finalize
+    running --> cancelling: cancel
+    waiting_input --> cancelling: cancel
+    queued --> cancelled: cancel
+    finalizing --> completed: settle
+    finalizing --> failed: settle
+    cancelling --> cancelled: settle
+    queued --> failed: settle
+    running --> failed: settle
+    waiting_input --> failed: settle
+    queued --> interrupted: recover
+    running --> interrupted: recover
+    waiting_input --> interrupted: recover
+    finalizing --> interrupted: recover
+    cancelling --> interrupted: recover
+```
+
+### 9.2 Activation and Asynchronous Dispatch
+
+`sub-agents-activate` and `sub-agents-continue` first pass through `prepareLogicalSubAgentRequest` for request-identity deduplication: the same `requestId` with identical logical input reuses one Promise, a different input raises `REQUEST_CONFLICT`, and an existing durable receipt is replayed instead of re-executed. `dispatchPreparedSubAgentRun` then submits `accept`; in asynchronous mode the `accepted` receipt returns to the parent model as soon as the local owner is registered, without waiting for the child run to finish.
+
+```mermaid
+flowchart TD
+    A[Model calls activate or continue] --> B[Run beforeSubAgentStart]
+    B -->|Hook blocks| B1[Return the block message, no admission]
+    B --> C[Request-identity deduplication]
+    C -->|input differs| C1[REQUEST_CONFLICT]
+    C -->|durable receipt exists| C2[Replay the receipt, no re-execution]
+    C -->|first attempt| D[Submit accept]
+    D -->|continue on a busy target| D1[message_queued into the durable queue and return]
+    D -->|not created| D2[Replay the receipt]
+    D -->|created| E[Register the local owner and child ownership]
+    E --> F{Execution mode}
+    F -->|async| F1[Return the accepted receipt immediately, parent released]
+    F -->|sync| F2[Wait for the terminal state, return the unified result]
+```
+
+### 9.3 Child Run Execution and Finalization
+
+After owner registration the run is read back: an already terminal run is published and ends immediately. Otherwise the child session is initialized, the run moves to `running` subject to capacity (`waitingForCapacity` is not an error; it waits for a durable change or cancellation), a running event is published, and the independent loop starts. A user decision or authorization enters `waiting_input` through `withWaiting` and returns to `running` once decided. When the loop ends, the finalizer wins `finalizing` ownership, runs `onSubAgentComplete`, and `settle` commits the terminal state. Failures record `SUB_AGENT_EXECUTION_FAILED`; a failed settlement records `PERSISTENCE_ERROR` and marks the child session read-only. The child session keeps its own pending queue; it is never transferred to the parent.
+
+The diagram below covers exit conditions and result return; asynchronous mode returns through the event delivery in §9.4 instead.
 
 ```mermaid
 flowchart TD
@@ -596,7 +652,7 @@ flowchart TD
     E --> F{Exit condition}
     F -->|normal completion, no tool calls| G[Run onSubAgentComplete, persist completed]
     F -->|API stream failure| H[Failure content as final output, message marked error]
-    F -->|exception| I[Persist failed and broadcast failure, forward queued input to parent]
+    F -->|exception| I[Persist failed and broadcast failure]
     F -->|user interrupt| J[Return Sub-agent interrupted by user]
     F -->|parent Plan unapproved| K[Stop immediately, return control]
     G --> L[Structured JSON tool result to main agent]
@@ -605,6 +661,68 @@ flowchart TD
     J --> L
     K --> L
     L --> M[Main agent model decides next step, no auto-retry]
+```
+
+### 9.4 Result Delivery and Parent Wake-up
+
+On an asynchronous terminal commit, Rust records the event as `pending` or `revoked` inside `finish`, depending on whether the parent task is open and whether a rollback or deletion gate applies; `interrupted` is committed by `recover` without an event, so it produces no delivery. On the Renderer side `src/renderer/components/mainContent/chatMessages/hooks/subAgentParentInbox.ts` orchestrates delivery and picks the timing from the parent conversation's current state:
+
+| Priority | Condition                             | Behavior                                                                     |
+| -------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| 1        | Parent conversation is running        | Use the tool boundary `flushSubAgentToolBoundary`, no wake-up                |
+| 2        | User queue is not empty               | Yield to user-queued messages                                                |
+| 3        | A wake-up is already in flight        | Set `wakeAgain` and run once more afterwards                                 |
+| 4        | Parent task open with a pending event | `receive` writes the receipt, then wakes the parent with the internal marker |
+| 5        | Parent run failed or was cancelled    | Do not close the parent task or wake it; the event is retained               |
+
+`receive` inserts a synthetic `sub-agents-getResult` message pair into the parent conversation (the body is truncated to 16000 characters) and sets `wake_pending` to 1 on the receipt; only after the parent conversation actually accepts the continuation turn does `acknowledge_wake` verify that the tool message exists and clear the flag. A rejected wake-up is never retried indefinitely — it is rescheduled on the next durable change, parent run end, or window remount.
+
+```mermaid
+flowchart TD
+    A[Event produced or run change] --> B{Parent conversation running}
+    I[Parent run ends or window remounts] --> B
+    B -->|yes| C[Tool boundary flushSubAgentToolBoundary]
+    B -->|no| D{Parent task open and user queue empty}
+    D -->|no| D1[Yield, wait for the next opportunity]
+    D -->|yes| E[receive writes the receipt, wake_pending set to 1]
+    C --> E
+    E --> F[Submit the parent continuation with the internal marker]
+    F -->|rejected| F1[Report an error message, no unbounded retry]
+    F -->|accepted| G[Parent acknowledges the wake, then continues]
+    G -->|tool message missing| G1[PERSISTENCE_ERROR, event stays pending]
+    G -->|verified| H[wake_pending cleared, delivery closed]
+```
+
+### 9.5 Failures, Gates, and Recovery
+
+Delivery and wake-up must first pass the gates: a conversation closing for deletion raises `CONVERSATION_DELETING`, a prepared rollback range raises `ROLLBACK_PENDING`, a non-open parent task raises `INVALID_TRANSITION`, a revoked event raises `INVALID_TRANSITION: event was revoked`, and a cross-scope event raises `PERMISSION_DENIED`. Re-delivering the same event is idempotent, and concurrent races are stopped by the event-status CAS. Archiving requires every run in the tree to be terminal (`RUN_BUSY`), and physical deletion requires a prepared deletion gate (`DELETE_PENDING`, `CONVERSATION_DELETING`).
+
+Events are produced only by asynchronous terminal commits, along these branches:
+
+| Terminal path                                                     | Writes a delivery event (async)               |
+| ----------------------------------------------------------------- | --------------------------------------------- |
+| `completed` / `failed` (settle)                                   | Yes; the gate decides `pending` or `revoked`  |
+| `cancelled` (cancellation hits `queued`)                          | Yes                                           |
+| `cancelled` (settled from `cancelling`)                           | Yes                                           |
+| Repeated cancellation of a terminal run, or `finalizing` too late | No                                            |
+| Cancellation on the deletion-preparation path                     | Yes, but always `revoked`                     |
+| `interrupted` (restart recovery)                                  | No                                            |
+| Terminal-commit CAS miss                                          | No; the receipt reports an uncommitted result |
+
+```mermaid
+flowchart TD
+    A[Delivery or wake-up request] --> B{Gate and scope checks}
+    B -->|conversation deleting| B1[CONVERSATION_DELETING]
+    B -->|rollback range prepared| B2[ROLLBACK_PENDING]
+    B -->|child outside scope| B3[PERMISSION_DENIED]
+    B -->|parent task not open| B4[INVALID_TRANSITION]
+    B -->|pass| C{Event status}
+    C -->|revoked| C1[Delivery refused, the result stays readable]
+    C -->|received with a receipt| C2[Idempotent reuse, no duplicate insert]
+    C -->|pending| D[Insert the message pair and mark it received]
+    D -->|CAS lost| D1[INVALID_TRANSITION, transaction rolled back]
+    D -->|succeeded| E[Parent confirms and wake_pending is cleared]
+    F[Application exit or renderer rebuild] --> G[recover marks non-terminal runs interrupted, no event]
 ```
 
 ## 10. Context Compaction
@@ -708,14 +826,14 @@ sequenceDiagram
 
 ## 15. Source Anchors
 
-| Topic                            | Files                                                                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Main loop and stream state       | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`, `agentLoopHelpers.ts`                   |
-| Tool execution and authorization | `toolExecution.ts`, `useToolAuthorization.ts`                                                                     |
-| Hooks                            | `hooks/hookOutcome.ts`, `useToolAuthorization.ts`, `native/src/hooks/`                                            |
-| Sub-agents                       | `hooks/subAgentActivation.ts`, `native/src/api/conversation/sub_agent.rs`, `native/src/mcp/servers/sub_agents.rs` |
-| Compaction and rollback          | `hooks/useCompaction.ts`, `hooks/useRollback.ts`, `native/src/exports/checkpoint.rs`                              |
-| Stream IPC                       | `src/preload/modules/apiConfigApi.ts`, `src/main/ipc/handlers/chatHandlers.ts`, `src/main/utils/safeSend.ts`      |
-| Provider dispatch                | `native/src/api/conversation/stream.rs`, `tool_messages.rs`                                                       |
-| MCP discovery and call           | `native/src/mcp/builtin.rs`, `native/src/mcp/tools.rs`, `native/src/mcp/external/`                                |
-| Conversation and usage storage   | `native/src/storage/services/chat_conversations.rs`, `usage_records.rs`                                           |
+| Topic                            | Files                                                                                                                                                                                                                                                 |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main loop and stream state       | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`, `agentLoopHelpers.ts`                                                                                                                                                       |
+| Tool execution and authorization | `toolExecution.ts`, `useToolAuthorization.ts`                                                                                                                                                                                                         |
+| Hooks                            | `hooks/hookOutcome.ts`, `useToolAuthorization.ts`, `native/src/hooks/`                                                                                                                                                                                |
+| Sub-agents                       | `hooks/subAgentActivation.ts`, `hooks/subAgentParentInbox.ts`, `hooks/subAgentRunRegistry.ts`, `native/src/api/conversation/sub_agent.rs`, `native/src/mcp/servers/sub_agents.rs`, `native/src/storage/services/chat_conversations/sub_agent_runs.rs` |
+| Compaction and rollback          | `hooks/useCompaction.ts`, `hooks/useRollback.ts`, `native/src/exports/checkpoint.rs`                                                                                                                                                                  |
+| Stream IPC                       | `src/preload/modules/apiConfigApi.ts`, `src/main/ipc/handlers/chatHandlers.ts`, `src/main/utils/safeSend.ts`                                                                                                                                          |
+| Provider dispatch                | `native/src/api/conversation/stream.rs`, `tool_messages.rs`                                                                                                                                                                                           |
+| MCP discovery and call           | `native/src/mcp/builtin.rs`, `native/src/mcp/tools.rs`, `native/src/mcp/external/`                                                                                                                                                                    |
+| Conversation and usage storage   | `native/src/storage/services/chat_conversations.rs`, `usage_records.rs`                                                                                                                                                                               |

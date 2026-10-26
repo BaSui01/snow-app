@@ -597,9 +597,65 @@ sequenceDiagram
 
 主会话构建系统提示词时，会从 `sub_agent_configs` 查询并**动态注入可用子代理清单**（`agentId`、名称、用途描述）与选择规则——主 Agent 据此挑选最匹配的 `agentId`，而不是默认使用内置 `agent_general`。清单解析与激活一致：**当前项目（`directory_id`）的项目级子代理优先**，同 `agentId` 覆盖全局；其他项目的子代理不注入。
 
-子代理继承父会话 checkpoint IDs，使文件改动纳入父会话回滚范围；Rust 同时限制 allowed-tools，并在父 Plan 尚未批准时阻止写入。子代理不能调用或授予 Plan approval。完成后会话标记 `completed` 或 `failed`，执行 `onSubAgentComplete`，随后变为只读；其后续排队输入转发父会话。父 abort 会传播到活动子代理，应用启动会把遗留 `running` 状态取消。
+子代理继承父会话 checkpoint IDs，使文件改动纳入父会话回滚范围；Rust 同时限制 allowed-tools，并在父 Plan 尚未批准时阻止写入。子代理不能调用或授予 Plan approval。完成后会话标记终态（`completed`、`failed`、`cancelled` 或 `interrupted`），执行 `onSubAgentComplete`，随后变为只读；子会话自身的待处理队列保留在该子会话，不转交父会话。父 abort 会传播到活动子代理，应用启动把遗留非终态运行置为 `interrupted`（`OWNER_LOST`），不自动重放。
 
-激活与主代理并行执行（渲染进程预启动），结束时以结构化 JSON 作为工具结果回传主代理，主代理不做自动重试，由模型根据结果决定下一步：正常完成返回 `{success: true, conversationId, agentName, summary}`（`onSubAgentComplete` 可 pass 追加上下文、warn 追加警告或 abort 替换 summary）；API 流失败时把失败内容作为最终输出并标记消息为 error；异常时返回 `{success: false, error}`，会话持久化 `failed` 并广播失败事件，子会话中用户排队插入的消息转发父会话；用户中断返回 "Sub-agent interrupted by user"；父会话 Plan 未批准时立即停止并把控制权交还主循环。子代理没有独立的全局超时（只有单工具层超时）；停止主代理会通过 `childSubAgentIds` 递归级联取消全部后代子代理（中止流、拒绝挂起授权、杀掉 bash 子进程），应用启动时清理遗留 `running` 会话。
+激活与主代理并行执行（渲染进程预启动）。同步模式在结束时以结构化 JSON 作为工具结果回传主代理，主代理不做自动重试，由模型根据结果决定下一步：正常完成返回 `{success: true, conversationId, agentName, summary}`（`onSubAgentComplete` 可 pass 追加上下文、warn 追加警告或 abort 替换 summary）；API 流失败时把失败内容作为最终输出并标记消息为 error；异常时返回 `{success: false, error}` 并持久化 `failed`；用户中断返回 "Sub-agent interrupted by user"；父会话 Plan 未批准时立即停止并把控制权交还主循环。子代理没有独立的全局超时（只有单工具层超时）；停止主代理会通过 `childSubAgentIds` 递归级联取消全部后代子代理（中止流、拒绝挂起授权、杀掉 bash 子进程）。异步模式不经过该工具结果，而由 §9.4 的事件投递唤醒父会话。
+
+### 9.1 运行模型与状态机
+
+两种执行模式（设置 → 子代理设置 → 运行限制，默认同步）共享同一套持久化运行：`accept` 受理、`transition` 状态迁移、`settle` 终态提交与结果分页。差异只在父工具是否等待终态——**同步**等到终态后返回统一 result 回包；**异步**只等待 `accepted` 回执，主流程立即释放，结果改由持久化事件投递回父会话（见 §9.4）。模式由宿主捕获，模型侧不再提供 `executionMode` 兼容参数；忙碌目标的 `continue` 返回 `message_queued`，不改变该 run 的模式。两种模式都要求实际项目／工作区绑定，应用退出后运行不继续。
+
+运行状态由 `native/src/storage/services/chat_conversations/sub_agent_runs.rs` 持久化，终态集合为 `completed | failed | cancelled | interrupted`（`sub_agent_runs.rs::terminal`）。
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: accept
+    queued --> running: transition
+    running --> waiting_input: needs decision
+    waiting_input --> running: decision done
+    running --> finalizing: finalize
+    waiting_input --> finalizing: finalize
+    running --> cancelling: cancel
+    waiting_input --> cancelling: cancel
+    queued --> cancelled: cancel
+    finalizing --> completed: settle
+    finalizing --> failed: settle
+    cancelling --> cancelled: settle
+    queued --> failed: settle
+    running --> failed: settle
+    waiting_input --> failed: settle
+    queued --> interrupted: recover
+    running --> interrupted: recover
+    waiting_input --> interrupted: recover
+    finalizing --> interrupted: recover
+    cancelling --> interrupted: recover
+```
+
+### 9.2 激活与异步派发
+
+`sub-agents-activate` 与 `sub-agents-continue` 先经 `prepareLogicalSubAgentRequest` 做请求身份去重：同一 `requestId` 且逻辑输入一致时复用同一 Promise，输入不一致报 `REQUEST_CONFLICT`，已有持久回执时直接重放而不重新执行。随后 `dispatchPreparedSubAgentRun` 提交 `accept`；异步模式在本地 owner 注册后立即把 `accepted` 回执交回父模型，不等待子运行结束。
+
+```mermaid
+flowchart TD
+    A[模型调用 activate 或 continue] --> B[运行 beforeSubAgentStart]
+    B -->|Hook 阻断| B1[返回阻断消息，不受理]
+    B --> C[请求身份去重]
+    C -->|输入不一致| C1[REQUEST_CONFLICT]
+    C -->|已有持久回执| C2[重放回执，不重新执行]
+    C -->|首次| D[提交 accept 受理]
+    D -->|忙碌目标的 continue| D1[message_queued 入持久队列并返回]
+    D -->|未新建| D2[重放回执]
+    D -->|已新建| E[注册本地 owner 与子会话所有权]
+    E --> F{执行模式}
+    F -->|异步| F1[立即返回 accepted 回执，父流程释放]
+    F -->|同步| F2[等待终态后返回统一 result]
+```
+
+### 9.3 子运行执行与收尾
+
+owner 注册后先读回 run：已是终态则直接发布并结束。否则初始化子会话、按容量迁移到 `running`（容量不足时 `waitingForCapacity` 不是错误，等待持久变更或取消）、推送 running 事件并进入独立 loop。需要用户决策或授权时经 `withWaiting` 进入 `waiting_input`，决策完成后回到 `running`。loop 结束后由 finalizer 抢 `finalizing` 所有权、执行 `onSubAgentComplete` 并 `settle` 提交终态。异常路径记录 `SUB_AGENT_EXECUTION_FAILED`；结算失败记录 `PERSISTENCE_ERROR` 并把子会话置为只读。子会话自身的待处理队列保留在该子会话，不转交父会话。
+
+下图是结束条件与结果回传；异步模式的回传改由 §9.4 的事件投递完成。
 
 ```mermaid
 flowchart TD
@@ -611,7 +667,7 @@ flowchart TD
     E --> F{结束条件}
     F -->|正常完成（无工具调用）| G[执行 onSubAgentComplete，持久化 completed]
     F -->|API 流失败| H[失败内容作为最终输出，消息标记 error]
-    F -->|异常| I[持久化 failed 并广播失败事件，排队输入转发父会话]
+    F -->|异常| I[持久化 failed 并广播失败事件]
     F -->|用户中断| J[返回 Sub-agent interrupted by user]
     F -->|父会话 Plan 未批准| K[立即停止，交还控制权]
     G --> L[结构化 JSON 工具结果回传主代理]
@@ -620,6 +676,68 @@ flowchart TD
     J --> L
     K --> L
     L --> M[主代理模型决策下一步，不自动重试]
+```
+
+### 9.4 结果投递与父会话唤醒
+
+异步终态提交时，Rust 在 `finish` 中按「父任务是否 open、是否命中回滚或删除门禁」把事件记为 `pending` 或 `revoked`；`interrupted` 由 `recover` 以不写事件的方式提交，因此不产生投递。Renderer 侧由 `src/renderer/components/mainContent/chatMessages/hooks/subAgentParentInbox.ts` 编排投递，按父会话当前状态选择时机：
+
+| 优先级 | 判定                         | 行为                                           |
+| ------ | ---------------------------- | ---------------------------------------------- |
+| 1      | 父会话正在运行               | 走工具边界 `flushSubAgentToolBoundary`，不唤醒 |
+| 2      | 用户队列非空                 | 让路给用户排队消息                             |
+| 3      | 已有唤醒在进行               | 置 `wakeAgain`，结束后补跑一次                 |
+| 4      | 父任务 open 且存在待投递事件 | `receive` 落收据后以内部标记唤醒父会话         |
+| 5      | 父 run 失败或被取消          | 不关闭父任务、不唤醒，事件保留                 |
+
+`receive` 会自动在父会话插入合成的 `sub-agents-getResult` 消息对（正文截断到 16000 字符），并在收据上把 `wake_pending` 置 1；父会话真正接受续写回合后才由 `acknowledge_wake` 校验「父会话确实存在该工具消息」并清零。唤醒失败不会无限重试，只在下次持久变更、父 run 结束或窗口重挂载时重新调度。
+
+```mermaid
+flowchart TD
+    A[事件产生或 run 变更] --> B{父会话正在运行}
+    I[父 run 结束或窗口重挂载] --> B
+    B -->|是| C[工具边界 flushSubAgentToolBoundary]
+    B -->|否| D{父任务 open 且用户队列为空}
+    D -->|否| D1[让路，等待下次时机]
+    D -->|是| E[receive 落收据，wake_pending 置 1]
+    C --> E
+    E --> F[以内部标记提交父续写回合]
+    F -->|被拒| F1[上报错误消息，不无限重试]
+    F -->|接受| G[父会话先 acknowledge_wake 再续写]
+    G -->|父会话缺少该工具消息| G1[PERSISTENCE_ERROR，事件保持待投递]
+    G -->|校验通过| H[wake_pending 清零，投递闭环]
+```
+
+### 9.5 失败、门禁与恢复
+
+投递与唤醒都要先过门禁：会话正在删除报 `CONVERSATION_DELETING`，存在已准备的回滚范围报 `ROLLBACK_PENDING`，父任务非 open 报 `INVALID_TRANSITION`，事件已撤销报 `INVALID_TRANSITION: event was revoked`，跨作用域报 `PERMISSION_DENIED`。同一事件重复投递是幂等的；并发竞态由事件状态 CAS 拦下。归档要求树内全部 run 已终态（`RUN_BUSY`），物理删除要求先建立删除门禁（`DELETE_PENDING`、`CONVERSATION_DELETING`）。
+
+事件只在异步模式的终态提交中产生，具体分支如下：
+
+| 终态路径                            | 是否写投递事件（异步）                    |
+| ----------------------------------- | ----------------------------------------- |
+| `completed` / `failed`（settle）    | 写，状态由门禁决定 `pending` 或 `revoked` |
+| `cancelled`（取消命中 `queued`）    | 写                                        |
+| `cancelled`（从 `cancelling` 结算） | 写                                        |
+| 已终态重复取消或 `finalizing` 太晚  | 不写                                      |
+| 删除准备路径的取消                  | 写，但必为 `revoked`                      |
+| `interrupted`（重启恢复）           | 不写                                      |
+| 终态提交 CAS 未命中                 | 不写，回执为未提交                        |
+
+```mermaid
+flowchart TD
+    A[投递或唤醒请求] --> B{门禁与作用域校验}
+    B -->|会话删除中| B1[CONVERSATION_DELETING]
+    B -->|存在回滚范围| B2[ROLLBACK_PENDING]
+    B -->|子会话不属于作用域| B3[PERMISSION_DENIED]
+    B -->|父任务非 open| B4[INVALID_TRANSITION]
+    B -->|通过| C{事件状态}
+    C -->|revoked| C1[拒绝投递，结果仍可读取]
+    C -->|已接收且已有收据| C2[幂等复用，不重复插入]
+    C -->|pending| D[插入消息并改为 received]
+    D -->|CAS 丢失| D1[INVALID_TRANSITION，事务回滚]
+    D -->|成功| E[父会话确认后清零 wake_pending]
+    F[应用退出或渲染重建] --> G[recover 把非终态置 interrupted，不写事件]
 ```
 
 ## 10. 上下文压缩
@@ -725,15 +843,15 @@ sequenceDiagram
 
 ## 15. 源码锚点
 
-| 主题               | 文件                                                                                                                      |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| 主循环与流状态     | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                           |
-| 工具执行与授权     | `toolExecution.ts`、`useToolAuthorization.ts`                                                                             |
-| 工作树执行域与绑定 | `native/src/storage/services/git/worktrees.rs`、`utils/conversationHelpers.ts`、`chatInput/useConversationFileChanges.ts` |
-| Hooks              | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                                    |
-| 子代理             | `hooks/subAgentActivation.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs`         |
-| 压缩与回滚         | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                                      |
-| 流 IPC             | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`              |
-| Provider 分派      | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                               |
-| MCP 发现与调用     | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                        |
-| 会话与 usage 存储  | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                                   |
+| 主题               | 文件                                                                                                                                                                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 主循环与流状态     | `src/renderer/components/mainContent/chatMessages/hooks/useAgentLoop.ts`、`agentLoopHelpers.ts`                                                                                                                                                       |
+| 工具执行与授权     | `toolExecution.ts`、`useToolAuthorization.ts`                                                                                                                                                                                                         |
+| 工作树执行域与绑定 | `native/src/storage/services/git/worktrees.rs`、`utils/conversationHelpers.ts`、`chatInput/useConversationFileChanges.ts`                                                                                                                             |
+| Hooks              | `hooks/hookOutcome.ts`、`useToolAuthorization.ts`、`native/src/hooks/`                                                                                                                                                                                |
+| 子代理             | `hooks/subAgentActivation.ts`、`hooks/subAgentParentInbox.ts`、`hooks/subAgentRunRegistry.ts`、`native/src/api/conversation/sub_agent.rs`、`native/src/mcp/servers/sub_agents.rs`、`native/src/storage/services/chat_conversations/sub_agent_runs.rs` |
+| 压缩与回滚         | `hooks/useCompaction.ts`、`hooks/useRollback.ts`、`native/src/exports/checkpoint.rs`                                                                                                                                                                  |
+| 流 IPC             | `src/preload/modules/apiConfigApi.ts`、`src/main/ipc/handlers/chatHandlers.ts`、`src/main/utils/safeSend.ts`                                                                                                                                          |
+| Provider 分派      | `native/src/api/conversation/stream.rs`、`tool_messages.rs`                                                                                                                                                                                           |
+| MCP 发现与调用     | `native/src/mcp/builtin.rs`、`native/src/mcp/tools.rs`、`native/src/mcp/external/`                                                                                                                                                                    |
+| 会话与 usage 存储  | `native/src/storage/services/chat_conversations.rs`、`usage_records.rs`                                                                                                                                                                               |

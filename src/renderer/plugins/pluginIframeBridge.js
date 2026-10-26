@@ -169,6 +169,31 @@
     },
   };
 
+  // 自定义 OAuth 登录面板：会话操作走宿主桥，状态由宿主推送。
+  if (config.oauth && config.oauth.session) {
+    api.oauth = {
+      session: config.oauth.session,
+      status: function () {
+        return request("oauth.status", {});
+      },
+      submitCallback: function (url) {
+        return request("oauth.submitCallback", { url: url });
+      },
+      submitTokens: function (tokens) {
+        return request("oauth.submitTokens", { tokens: tokens });
+      },
+      openBrowser: function (url) {
+        return request("oauth.openBrowser", { url: url });
+      },
+      cancel: function () {
+        return request("oauth.cancel", {});
+      },
+      onStatus: function (handler) {
+        return api.on("oauth.status", handler);
+      },
+    };
+  }
+
   Object.defineProperty(window, "SnowPlugin", {
     value: api,
     writable: false,

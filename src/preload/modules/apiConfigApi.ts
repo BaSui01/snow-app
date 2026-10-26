@@ -341,6 +341,11 @@ export const apiConfigApi = {
     callbackUrl: string,
   ): Promise<OAuthLoginStatus> =>
     ipcRenderer.invoke("api-configs:oauth-callback", sessionId, callbackUrl),
+  submitOAuthLoginTokens: (
+    sessionId: string,
+    tokens: Record<string, unknown>,
+  ): Promise<OAuthLoginStatus> =>
+    ipcRenderer.invoke("api-configs:oauth-submit-tokens", sessionId, tokens),
   cancelOAuthLogin: (sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke("api-configs:oauth-cancel", sessionId),
   getOAuthQuota: (profileName: string): Promise<OAuthQuotaSnapshot> =>

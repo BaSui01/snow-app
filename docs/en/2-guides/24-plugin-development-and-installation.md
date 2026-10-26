@@ -870,7 +870,7 @@ export default {
       name: { default: "Acme", "zh-CN": "Acme" },
       description: "Sign in to an Acme subscription through OAuth",
       icon: "icon.svg", // plugin-relative path, https or data:image URL
-      flow: "redirect", // redirect | manual | device
+      flow: "redirect", // redirect | manual | device | panel
       callback: { ports: [1455], path: "/auth/callback", host: "127.0.0.1" },
       api: {
         baseUrl: "https://api.acme.example/v1",
@@ -922,7 +922,7 @@ export default {
 };
 ```
 
-Hooks (`authorize` is required; export the others as needed, missing hooks fall back to the generic behavior):
+Hooks (`authorize` is required unless `panel` is declared; export the others as needed, missing hooks fall back to the generic behavior):
 
 | Hook                          | When it runs                                                               | Returns                                                                                                                                                    |
 | ----------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -941,7 +941,7 @@ Hooks (`authorize` is required; export the others as needed, missing hooks fall 
 - **Common ctx fields**: `fetch` (Electron `net.fetch`, honoring the app proxy), `decodeJwt(token)`, `log(message, detail?)`, `providerId`, `pluginId`, `pluginDir`. Sign-in hooks also get `redirectUri`, `state`, `nonce`, `codeVerifier`, `codeChallenge`, `code`, `params` (all callback parameters) and `session`; account hooks get `account` (`accessToken`, `refreshToken`, `expiresAt`, `accountId`, `email`, `planType`, `data`, `profileName`, `baseUrl`); `transformRequest` also gets `protocol`, `model`, `url`, `body` and `headers`.
 - **Header templates**: `requestHeaders` supports `{{accessToken}}`, `{{accountId}}`, `{{email}}`, `{{planType}}` and `{{data.<key>}}`; other placeholders such as `{{session_id}}` are left untouched.
 - **Custom header schemes**: hooks manage the headers Snow App actually sends via `ctx.headerSchemes` (same source as the Settings > Custom headers panel, effective immediately). `upsert({ schemeId?, name?, headers, isActive?, sortOrder?, profileName? })` creates or updates a scheme matched by `schemeId` or by case-insensitive name; `headers` is merged in and a `null` value removes that header; account hooks bind the current profile automatically unless `profileName` is given. `bind(schemeId, profileName?)` binds a scheme (an empty `schemeId` unbinds, and only this plugin's OAuth profiles are accepted) and `remove(schemeId)` deletes a scheme and clears the profile bindings still pointing at it.
-- **Flows**: `redirect` listens for the local callback (the OS picks a port when none is declared; a busy port falls back to manual paste); `manual` only lets the user paste the callback URL or code; `device` shows `userCode` while Rust polls `poll()`.
+- **Flows**: `redirect` listens for the local callback (the OS picks a port when none is declared; a busy port falls back to manual paste); `manual` only lets the user paste the callback URL or code; `device` shows `userCode` while Rust polls `poll()`; `panel` hands the sign-in UI to a plugin-defined panel (declaring `panel` without an explicit `flow` also selects `panel`).
 - **Profiles**: a successful sign-in creates an activated profile with `source = oauth-<id>` at the top of the list, storing metadata in `configJson.oauthPlugin`; saving the profile always keeps the stored tokens and metadata.
 - **Hot reload**: `oauth.mjs` is reloaded when its modification time changes; after editing `plugin.json`, use "Rescan" in the plugins dialog. Errors thrown by hooks surface in the sign-in dialog and in the system logs (module `oauthPlugins`).
 - **Response hooks (three tiers)**: `transformResponse` runs once for a whole non-SSE HTTP response; `onResponseChunk` runs per event on both the SSE and WebSocket Responses transports (`ctx.chunk` is still a `data: {...}` block there); declaring `fetch` lets the plugin send the request itself while the native layer keeps event parsing, usage accounting and cancellation. The tiers are independent and can be combined; exporting none keeps the previous behavior.
@@ -949,6 +949,45 @@ Hooks (`authorize` is required; export the others as needed, missing hooks fall 
 - **Header overrides and event chaining**: `headers` returned by `transformResponse` override the response header snapshot (`null` removes a header). When the effective `content-type` is `text/event-stream`, the rewritten `body` is split into SSE events and handed to `onResponseChunk` one by one (passed through unchanged when that hook is absent); the overridden headers are what that hook sees in `ctx.headers`.
 - **Takeover cost**: `fetch` bypasses typewriter streaming, cross-protocol tool normalization, native retries and partial-truncation protection; cancelling the conversation aborts the wait immediately, but the plugin must bound its own request timeouts. Profiles that declare `transformResponse` or `fetch` skip the Responses WebSocket transport and stay on SSE (the former only handles whole response bodies, the latter owns the connection); `onResponseChunk` alone works on both transports. Providers that declare `fetch` are marked "Custom transport" in the provider list and the sign-in dialog.
 - **Scope**: response hooks apply to main conversation streams only; summaries, codebase reviews and title generation never trigger them. Non-SSE responses are buffered up to 16 MB for rewriting; beyond that they pass through unchanged with a system log entry.
+
+#### 12.1 Custom sign-in panels
+
+Declaring `panel` stops the host from opening a browser automatically: the OAuth dialog renders the plugin panel itself (the dialog is the panel host). The panel entry reuses the normal plugin panel runtime: `plugin.json`'s `renderMode` selects ESM (a React component or `mount(container, api)`) or the iframe sandbox, and `panel.entry` overrides the entry per provider. After `panel` is declared, `authorize` becomes optional.
+
+```js
+export default {
+  providers: [
+    {
+      id: "acme",
+      name: "Acme",
+      flow: "panel", // optional: declaring panel implies the panel flow
+      panel: {
+        entry: "login.js", // plugin-relative; falls back to plugin.json's entry
+        title: { default: "Acme sign-in", "zh-CN": "Acme sign-in" },
+      },
+      // authorize is optional when the panel builds the authorization URL itself
+    },
+  ],
+};
+```
+
+The panel drives sign-in through `api.oauth` (ESM panels use it directly; iframe panels use the global `SnowPlugin.oauth` with the same arguments and return values):
+
+| Member                 | Description                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`              | Session context: `sessionId`, `providerId`, `flow`, `authUrl`, `redirectUri`, `state`, `nonce`, `codeChallenge`, `codeVerifier`, `userCode`, `instructions`, `manualMode` and `pluginSession` (the `session` returned by `authorize`) |
+| `status()`             | Reads the current status (`pending` / `success` / `error` / `cancelled`)                                                                                                                                                              |
+| `submitCallback(url)`  | Submits a callback URL or code and runs the plugin's `exchange` hook                                                                                                                                                                  |
+| `submitTokens(tokens)` | Submits a token object after the panel completes sign-in itself; Rust then runs the `models` hook, persists the profile and activates it                                                                                              |
+| `openBrowser(url?)`    | Opens the authorization page in the system browser (defaults to `session.authUrl`)                                                                                                                                                    |
+| `cancel()`             | Cancels the current sign-in session                                                                                                                                                                                                   |
+| `onStatus(listener)`   | Subscribes to the status polled by the host and returns an unsubscribe function                                                                                                                                                       |
+
+- Opening the panel creates the session immediately and the host polls the status every 2 seconds; on success the dialog switches to its success page and the profile is activated. When `authorize` is declared it runs once while creating the session; omit it for full control over the timing and build the authorization URL inside the panel.
+- On `error` / `cancelled` the panel stays mounted so it can show the error and retry; only "Cancel sign-in" or closing the dialog ends the session.
+- The token object matches `exchange` / `refresh`: `accessToken` is required, and `refreshToken`, `expiresIn` / `expiresAt`, `email`, `accountId`, `planType` and `data` are optional.
+- When the panel entry fails to load, the dialog shows the error and a reload button; `submitTokens` only works for plugin providers.
+- A custom panel can still use `api.metadata`, `api.storage`, `api.net`, `api.assets` and `api.t()` from the regular panel runtime; network requests from a panel should go through `api.net.fetch` so they honor the app proxy.
 
 Export only the tiers you need (the sample shows all three):
 
@@ -1000,6 +1039,7 @@ export default {
 - The community install confirmation shows the repository URL and the "no SHA-256 pinning" risk note; after confirming, the plugin installs, the row shows "Installed", and `config-get scope=plugins key=<id>` reports that repository as `sourcePath`.
 - A community repository that is also in the official index shows an additional "In official market" badge.
 - A script-collection repository (no `plugin.json`, several `.user.js` files) opens the script picker first, everything checked by default and already-installed scripts marked "Installed · will be replaced"; after confirming, the scripts appear enabled under **Plugin list → Script plugins**.
+- After an OAuth plugin declares `panel.entry`, opening the sign-in dialog shows the plugin panel immediately; a successful `submitTokens()` switches the dialog to its success page and creates a profile with `source = oauth-<id>`.
 
 ## Troubleshooting and recovery
 

@@ -2369,6 +2369,12 @@ export const zhTW = {
   "settings.oauthLoginDescription": "把訂閱帳號接入為 Snow App 的 LLM 渠道。",
   "settings.oauthLoginIntro":
     "將開啟瀏覽器完成帳號授權，完成後自動建立並啟用渠道。",
+  "settings.oauthPanelLoading": "正在載入登入面板...",
+  "settings.oauthPanelLoadFailed": "登入面板載入失敗",
+  "settings.oauthPanelReload": "重新載入",
+  "settings.oauthPanelPluginMissing": "提供此登入方式的外掛不存在",
+  "settings.oauthPanelInvalidEntry":
+    "面板入口需匯出一個 React 元件或 mount(container, api) 函式",
   "settings.oauthProviderLabel": "服務商",
   "settings.oauthProvider.codex": "Codex（ChatGPT 訂閱）",
   "settings.oauthProvider.chatgpt": "ChatGPT（訂閱方案）",

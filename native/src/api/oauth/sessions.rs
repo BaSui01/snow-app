@@ -139,6 +139,13 @@ pub struct StartLoginResult {
     pub flow: String,
     pub user_code: String,
     pub instructions: String,
+    /// 面板自定义登录所需上下文（PKCE / state / 插件会话）。
+    pub state: String,
+    pub nonce: String,
+    pub redirect_uri: String,
+    pub code_challenge: String,
+    pub code_verifier: String,
+    pub plugin_session: Value,
 }
 
 async fn bind_first(ports: &[u16]) -> (Option<TcpListener>, u16) {
@@ -247,10 +254,10 @@ async fn start_builtin_login(
         session_id: session_id.clone(),
         provider: LoginProvider::Builtin(provider),
         flow: "redirect".to_string(),
-        state,
-        nonce,
-        code_verifier: pkce.verifier,
-        redirect_uri,
+        state: state.clone(),
+        nonce: nonce.clone(),
+        code_verifier: pkce.verifier.clone(),
+        redirect_uri: redirect_uri.clone(),
         callback_path,
         auth_url: auth_url.clone(),
         local_port: if manual_mode { 0 } else { port },
@@ -273,6 +280,12 @@ async fn start_builtin_login(
         flow: "redirect".to_string(),
         user_code: String::new(),
         instructions: String::new(),
+        state,
+        nonce,
+        redirect_uri,
+        code_challenge: pkce.challenge,
+        code_verifier: pkce.verifier,
+        plugin_session: Value::Null,
     })
 }
 
@@ -289,27 +302,45 @@ async fn start_plugin_login(
     let flow = spec.flow().to_string();
     let callback_path = spec.callback_path();
 
-    let (listener, port) = if flow == "redirect" {
+    // panel 与 redirect 一样监听本机回调；面板也可自行完成登录。
+    let listens_callback = flow == "redirect" || flow == "panel";
+    let (listener, port) = if listens_callback {
         bind_plugin_listener(&spec.callback_ports).await
     } else {
         (None, spec.callback_ports.first().copied().unwrap_or(0))
     };
-    let manual_mode = flow == "manual" || (flow == "redirect" && listener.is_none());
+    let manual_mode = flow == "manual" || (listens_callback && listener.is_none());
     let default_redirect = if flow == "device" {
         String::new()
     } else {
         build_redirect_uri(spec.redirect_host(), port, &callback_path)
     };
 
-    let authorized = plugin_login::authorize(
-        &spec,
-        &default_redirect,
-        &state,
-        &nonce,
-        &pkce.verifier,
-        &pkce.challenge,
-    )
-    .await?;
+    let authorized = if spec.hooks.authorize {
+        plugin_login::authorize(
+            &spec,
+            &default_redirect,
+            &state,
+            &nonce,
+            &pkce.verifier,
+            &pkce.challenge,
+        )
+        .await?
+    } else {
+        plugin_login::AuthorizeResult {
+            url: String::new(),
+            redirect_uri: None,
+            user_code: String::new(),
+            instructions: String::new(),
+            interval_secs: 0,
+            expires_in_secs: 0,
+            session: Value::Null,
+        }
+    };
+    let redirect_uri = authorized
+        .redirect_uri
+        .clone()
+        .unwrap_or(default_redirect);
     let timeout_secs = match authorized.expires_in_secs {
         0 => LOGIN_SESSION_TIMEOUT_SECS,
         expires => expires.min(LOGIN_SESSION_TIMEOUT_SECS * 2),
@@ -318,17 +349,17 @@ async fn start_plugin_login(
         session_id: session_id.clone(),
         provider: LoginProvider::Plugin(spec.id.clone()),
         flow: flow.clone(),
-        state,
-        nonce,
-        code_verifier: pkce.verifier,
-        redirect_uri: authorized.redirect_uri.unwrap_or(default_redirect),
+        state: state.clone(),
+        nonce: nonce.clone(),
+        code_verifier: pkce.verifier.clone(),
+        redirect_uri: redirect_uri.clone(),
         callback_path,
         auth_url: authorized.url.clone(),
         local_port: if listener.is_some() { port } else { 0 },
         manual_mode,
         user_code: authorized.user_code.clone(),
         instructions: authorized.instructions.clone(),
-        plugin_session: authorized.session,
+        plugin_session: authorized.session.clone(),
         advanced_model,
         basic_model,
     };
@@ -347,6 +378,12 @@ async fn start_plugin_login(
         flow,
         user_code: authorized.user_code,
         instructions: authorized.instructions,
+        state,
+        nonce,
+        redirect_uri,
+        code_challenge: pkce.challenge,
+        code_verifier: pkce.verifier,
+        plugin_session: authorized.session,
     })
 }
 
@@ -413,6 +450,22 @@ pub fn get_status(session_id: &str) -> Option<OAuthStatusView> {
 pub fn get_session(session_id: &str) -> Option<OAuthLoginSession> {
     let sessions = lock_sessions();
     sessions.get(session_id).map(|entry| entry.session.clone())
+}
+
+/// 面板自行拿到令牌后提交：落库并收敛会话状态。
+pub async fn complete_with_tokens(
+    session_id: &str,
+    tokens: PluginTokens,
+) -> Result<OAuthLoginOutcome> {
+    let Some(session) = get_session(session_id) else {
+        return Err(Error::from_reason("Login session not found or expired"));
+    };
+    if !matches!(session.provider, LoginProvider::Plugin(_)) {
+        return Err(Error::from_reason(
+            "Only plugin OAuth providers support token completion",
+        ));
+    }
+    complete_login(&session, CompletionInput::Tokens(tokens)).await
 }
 
 fn is_pending(session_id: &str) -> bool {

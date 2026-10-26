@@ -24,12 +24,10 @@ export function OAuthLoginDialog({
       setSelectedProvider(null);
       return;
     }
-    if (providers.length > 0) {
-      return;
-    }
 
     let stopped = false;
-    setIsLoadingProviders(true);
+    // 每次打开都重新同步插件 provider，安装 / 更新插件后无需重开页面。
+    setIsLoadingProviders(providers.length === 0);
     void window.snow
       .listOAuthProviders()
       .then((list) => {
@@ -46,7 +44,7 @@ export function OAuthLoginDialog({
     return () => {
       stopped = true;
     };
-  }, [open, providers.length]);
+  }, [open]);
 
   const handleSelect = useCallback((provider: OAuthProviderInfo) => {
     setSelectedProvider(provider);

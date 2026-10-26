@@ -51,7 +51,7 @@ type ProviderSpec = {
   displayName: string;
   description: string;
   icon: string;
-  flow: "redirect" | "manual" | "device";
+  flow: "redirect" | "manual" | "device" | "panel";
   callbackPorts: number[];
   callbackPath: string;
   redirectHost: string;
@@ -65,7 +65,11 @@ type ProviderSpec = {
   headers: Record<string, string>;
   requestHeaders: Record<string, string>;
   refreshLeadSecs: number;
+  /** 渲染层自定义登录面板入口（插件内相对路径）。 */
+  panelEntry: string;
+  panelTitle: string;
   hooks: {
+    authorize: boolean;
     poll: boolean;
     refresh: boolean;
     models: boolean;
@@ -260,18 +264,43 @@ const buildSpec = async (
     });
     return null;
   }
-  if (!hasHook(definition, "authorize")) {
+  const panelRaw = definition.panel;
+  const panel = isPlainObject(panelRaw)
+    ? panelRaw
+    : typeof panelRaw === "string"
+      ? { entry: panelRaw }
+      : {};
+  const panelEntryRaw = text(panel.entry);
+  const panelEntry =
+    panelEntryRaw && resolveInside(pluginDir, panelEntryRaw)
+      ? panelEntryRaw
+      : "";
+  if (panelEntryRaw && !panelEntry) {
     snowLog.warn({
       module: MODULE_NAME,
       func: "buildSpec",
-      message: "OAuth plugin provider must implement authorize()",
+      message: "OAuth panel entry escapes the plugin directory",
+      context: JSON.stringify({ pluginId, id, panelEntry: panelEntryRaw }),
+    });
+  }
+  const panelTitle = localized(panel.title);
+  if (!hasHook(definition, "authorize") && !panelEntry) {
+    snowLog.warn({
+      module: MODULE_NAME,
+      func: "buildSpec",
+      message:
+        "OAuth plugin provider must implement authorize() or declare a panel",
       context: JSON.stringify({ pluginId, id }),
     });
     return null;
   }
   const flowRaw = text(definition.flow);
   const flow: ProviderSpec["flow"] =
-    flowRaw === "device" || flowRaw === "manual" ? flowRaw : "redirect";
+    flowRaw === "device" || flowRaw === "manual"
+      ? flowRaw
+      : flowRaw === "panel" || (!flowRaw && panelEntry)
+        ? "panel"
+        : "redirect";
   const callback = isPlainObject(definition.callback)
     ? definition.callback
     : {};
@@ -302,7 +331,10 @@ const buildSpec = async (
     headers: stringMap(definition.headers),
     requestHeaders: stringMap(definition.requestHeaders),
     refreshLeadSecs: positiveInt(definition.refreshLeadSeconds) ?? 0,
+    panelEntry,
+    panelTitle,
     hooks: {
+      authorize: hasHook(definition, "authorize"),
       poll: hasHook(definition, "poll"),
       refresh: hasHook(definition, "refresh"),
       models: hasHook(definition, "models"),

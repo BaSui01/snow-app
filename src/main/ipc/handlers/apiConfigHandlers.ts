@@ -122,6 +122,26 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
       return native.submitOAuthCallback(sessionId.trim(), callbackUrl.trim());
     },
   );
+  // 自定义面板自行完成登录后提交令牌集合。
+  ipcMain.handle(
+    "api-configs:oauth-submit-tokens",
+    async (_event, sessionId: unknown, tokens: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("OAuth session id is required");
+      }
+      if (
+        typeof tokens !== "object" ||
+        tokens === null ||
+        Array.isArray(tokens)
+      ) {
+        throw new Error("OAuth token set is required");
+      }
+      return native.submitOAuthLoginTokens(
+        sessionId.trim(),
+        JSON.stringify(tokens),
+      );
+    },
+  );
   ipcMain.handle(
     "api-configs:oauth-cancel",
     async (_event, sessionId: unknown) => {

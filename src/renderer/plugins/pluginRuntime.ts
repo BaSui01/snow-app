@@ -179,6 +179,8 @@ const isMountFunction = (
 export type MountedPanel = {
   mode: "dom" | "react" | "iframe";
   cleanup: () => void;
+  /** iframe 宿主向面板推送事件（ESM 直接走 api 回调）。 */
+  notify?: (event: string, payload: unknown) => void;
 };
 
 /** 以 DOM 方式挂载插件（module.mount / module.render / default.mount）。 */
@@ -255,14 +257,16 @@ const resolveConfigForIframe = (params: {
   plugin: PluginView;
   locale: Locale;
   messages: Record<string, string>;
+  oauthSession?: Record<string, unknown>;
 }): string => {
-  const { plugin, locale, messages } = params;
+  const { plugin, locale, messages, oauthSession } = params;
   return JSON.stringify({
     pluginId: plugin.pluginId,
     name: plugin.name[locale] ?? plugin.name.default ?? plugin.pluginId,
     version: plugin.version,
     locale,
     messages,
+    ...(oauthSession ? { oauth: { session: oauthSession } } : {}),
   });
 };
 
@@ -333,8 +337,10 @@ export const createIframePanel = async (params: {
   api: PluginRuntimeApi;
   locale: Locale;
   messages: Record<string, string>;
+  /** OAuth 登录面板的会话数据（注入 iframe 配置）。 */
+  oauthSession?: Record<string, unknown>;
 }): Promise<MountedPanel> => {
-  const { iframe, plugin, entry, api, locale, messages } = params;
+  const { iframe, plugin, entry, api, locale, messages, oauthSession } = params;
   const stylesCss = (
     await Promise.all(
       plugin.styles.map((style) =>
@@ -350,7 +356,7 @@ export const createIframePanel = async (params: {
 
   const bridgeCode = bridgeSource.replace(
     "__SNOW_PLUGIN_CONFIG__",
-    resolveConfigForIframe({ plugin, locale, messages }),
+    resolveConfigForIframe({ plugin, locale, messages, oauthSession }),
   );
   const bridgeUrl = URL.createObjectURL(
     new Blob([bridgeCode], { type: "text/javascript" }),
@@ -383,6 +389,12 @@ export const createIframePanel = async (params: {
     }
     const reply = (message: Record<string, unknown>): void => {
       iframe.contentWindow?.postMessage(message, "*");
+    };
+    const requireOauth = () => {
+      if (!api.oauth) {
+        throw new Error("OAuth login API is not available in this panel");
+      }
+      return api.oauth;
     };
 
     void (async () => {
@@ -464,6 +476,32 @@ export const createIframePanel = async (params: {
             result = await api.net.fetch(url, options);
             break;
           }
+          case "oauth.status":
+            result = await requireOauth().status();
+            break;
+          case "oauth.submitCallback": {
+            const url = typeof payload?.url === "string" ? payload.url : "";
+            result = await requireOauth().submitCallback(url);
+            break;
+          }
+          case "oauth.submitTokens": {
+            const tokens =
+              payload?.tokens && typeof payload.tokens === "object"
+                ? (payload.tokens as Record<string, unknown>)
+                : {};
+            result = await requireOauth().submitTokens(tokens);
+            break;
+          }
+          case "oauth.openBrowser": {
+            requireOauth().openBrowser(
+              typeof payload?.url === "string" ? payload.url : undefined,
+            );
+            result = true;
+            break;
+          }
+          case "oauth.cancel":
+            result = await requireOauth().cancel();
+            break;
           default:
             throw new Error(`Unsupported plugin request '${data.type}'`);
         }
@@ -500,6 +538,17 @@ export const createIframePanel = async (params: {
       URL.revokeObjectURL(documentUrl);
       URL.revokeObjectURL(pluginUrl);
       URL.revokeObjectURL(bridgeUrl);
+    },
+    notify: (event: string, payload: unknown) => {
+      iframe.contentWindow?.postMessage(
+        {
+          source: "snow-plugin-host",
+          type: "event",
+          event,
+          payload,
+        },
+        "*",
+      );
     },
   };
 };

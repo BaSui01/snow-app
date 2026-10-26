@@ -2506,6 +2506,13 @@ export const en = {
     "Connect a subscription account as a Snow App LLM channel.",
   "settings.oauthLoginIntro":
     "A browser window will open for the sign-in. The channel is created and activated automatically once it completes.",
+  "settings.oauthPanelLoading": "Loading the sign-in panel...",
+  "settings.oauthPanelLoadFailed": "Failed to load the sign-in panel",
+  "settings.oauthPanelReload": "Reload",
+  "settings.oauthPanelPluginMissing":
+    "The plugin that provides this sign-in method is missing",
+  "settings.oauthPanelInvalidEntry":
+    "The panel entry must export a React component or a mount(container, api) function",
   "settings.oauthProviderLabel": "Provider",
   "settings.oauthProvider.codex": "Codex (ChatGPT subscription)",
   "settings.oauthProvider.chatgpt": "ChatGPT (subscription plan)",

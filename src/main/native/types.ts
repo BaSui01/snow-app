@@ -75,6 +75,10 @@ export type OAuthProviderInfo = {
   pluginId?: string;
   /** 插件通过 fetch 接管传输层：原生流式、重试与工具归一化不再生效。 */
   takesOverTransport: boolean;
+  /** 插件渲染层自定义登录面板入口；为空时使用宿主默认面板。 */
+  panelEntry?: string;
+  /** 自定义登录面板标题。 */
+  panelTitle?: string;
 };
 
 /** OAuth 登录会话（回调端口仅登录期间监听本机）。 */
@@ -90,6 +94,13 @@ export type OAuthLoginStart = {
   /** 设备码流程的用户码与插件说明。 */
   userCode?: string;
   instructions?: string;
+  /** 自定义面板上下文：state / PKCE / 插件会话（JSON 字符串）。 */
+  state: string;
+  nonce: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeVerifier: string;
+  pluginSession?: string;
 };
 
 export type OAuthLoginStatus = {
@@ -2382,6 +2393,11 @@ export type NativeBridge = ImageGenerationNativeApi & {
   submitOAuthCallback: (
     sessionId: string,
     callbackUrl: string,
+  ) => Promise<OAuthLoginStatus>;
+  /** 自定义面板自行取得令牌后提交（tokens 为 JSON 字符串）。 */
+  submitOAuthLoginTokens: (
+    sessionId: string,
+    tokensJson: string,
   ) => Promise<OAuthLoginStatus>;
   cancelOAuthLogin: (sessionId: string) => Promise<boolean>;
   /** 注册 OAuth 插件宿主回调：Rust 以 JSON 消息调用插件钩子。 */

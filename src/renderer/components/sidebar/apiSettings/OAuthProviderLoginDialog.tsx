@@ -15,6 +15,7 @@ import type {
   OAuthProviderInfo,
 } from "../../../../preload";
 import { oauthProviderLabel } from "./oauthProviderText";
+import { OAuthPluginLoginPanel } from "./OAuthPluginLoginPanel";
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -45,9 +46,13 @@ export function OAuthProviderLoginDialog({
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const sessionRef = useRef<OAuthLoginStart | null>(null);
+  const completedRef = useRef(false);
+  const startingRef = useRef(false);
 
   const reset = useCallback(() => {
     sessionRef.current = null;
+    completedRef.current = false;
+    startingRef.current = false;
     setPhase("idle");
     setSession(null);
     setStatus(null);
@@ -57,6 +62,41 @@ export function OAuthProviderLoginDialog({
     setCopied(false);
     setCodeCopied(false);
   }, []);
+
+  const isPanelFlow = Boolean(provider.panelEntry);
+
+  // 统一状态收敛：面板模式下错误保留面板，默认模式下切换到错误页。
+  const applyStatus = useCallback(
+    (next: OAuthLoginStatus) => {
+      setStatus(next);
+      if (next.status === "success") {
+        if (!completedRef.current) {
+          completedRef.current = true;
+          onCompleted(next);
+        }
+        setPhase("success");
+        return;
+      }
+      if (next.status === "error") {
+        setError(next.error ?? "");
+        if (!isPanelFlow) {
+          setPhase("error");
+        }
+        return;
+      }
+      if (next.status === "cancelled") {
+        setError(
+          t("settings.oauthCancelled", {
+            defaultValue: "The sign-in session was cancelled.",
+          }),
+        );
+        if (!isPanelFlow) {
+          setPhase("error");
+        }
+      }
+    },
+    [onCompleted, isPanelFlow, t],
+  );
 
   useEffect(() => {
     if (open) {
@@ -83,26 +123,12 @@ export function OAuthProviderLoginDialog({
         if (stopped || !next) {
           return;
         }
-        if (next.status === "success") {
-          setStatus(next);
-          setPhase("success");
-          onCompleted(next);
-          return;
-        }
-        if (next.status === "error") {
-          setStatus(next);
-          setError(next.error ?? "");
-          setPhase("error");
-          return;
-        }
-        if (next.status === "cancelled") {
-          setStatus(next);
-          setError(
-            t("settings.oauthCancelled", {
-              defaultValue: "The sign-in session was cancelled.",
-            }),
-          );
-          setPhase("error");
+        if (
+          next.status === "success" ||
+          next.status === "error" ||
+          next.status === "cancelled"
+        ) {
+          applyStatus(next);
         }
       } catch (pollError) {
         if (!stopped) {
@@ -119,9 +145,13 @@ export function OAuthProviderLoginDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [open, phase, session, onCompleted, t]);
+  }, [open, phase, session, applyStatus]);
 
   const handleStart = useCallback(async () => {
+    if (startingRef.current) {
+      return;
+    }
+    startingRef.current = true;
     setPhase("starting");
     setError("");
     try {
@@ -129,14 +159,27 @@ export function OAuthProviderLoginDialog({
       sessionRef.current = started;
       setSession(started);
       setPhase("waiting");
-      window.open(started.authUrl, "_blank", "noopener,noreferrer");
+      // 面板自行决定是否跳浏览器
+      if (!provider.panelEntry && started.authUrl) {
+        window.open(started.authUrl, "_blank", "noopener,noreferrer");
+      }
     } catch (startError) {
       setError(
         startError instanceof Error ? startError.message : String(startError),
       );
       setPhase("error");
+    } finally {
+      startingRef.current = false;
     }
-  }, [provider.id]);
+  }, [provider.id, provider.panelEntry]);
+
+  // 自定义面板：打开弹窗即创建会话，由面板驱动后续步骤。
+  useEffect(() => {
+    if (!open || !isPanelFlow || phase !== "idle" || sessionRef.current) {
+      return;
+    }
+    void handleStart();
+  }, [open, isPanelFlow, phase, handleStart]);
 
   const handleCopyLink = useCallback(async () => {
     if (!session) {
@@ -181,14 +224,7 @@ export function OAuthProviderLoginDialog({
         session.sessionId,
         callbackInput.trim(),
       );
-      setStatus(next);
-      if (next.status === "success") {
-        setPhase("success");
-        onCompleted(next);
-      } else if (next.status === "error") {
-        setError(next.error ?? "");
-        setPhase("error");
-      }
+      applyStatus(next);
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -200,10 +236,7 @@ export function OAuthProviderLoginDialog({
           session.sessionId,
         );
         if (snapshot) {
-          setStatus(snapshot);
-          if (snapshot.status === "error") {
-            setPhase("error");
-          }
+          applyStatus(snapshot);
         }
       } catch {
         // 状态快照失败时保留当前错误提示即可
@@ -211,7 +244,7 @@ export function OAuthProviderLoginDialog({
     } finally {
       setIsSubmitting(false);
     }
-  }, [session, callbackInput, onCompleted]);
+  }, [session, callbackInput, applyStatus]);
 
   const exitTo = useCallback(
     (next: () => void) => {
@@ -266,6 +299,20 @@ export function OAuthProviderLoginDialog({
     }
 
     if (phase === "waiting" && session) {
+      if (isPanelFlow) {
+        return (
+          <div className="oauth-login-body">
+            <OAuthPluginLoginPanel
+              provider={provider}
+              session={session}
+              status={status}
+              onStatus={applyStatus}
+            />
+            {error ? <p className="oauth-login-error">{error}</p> : null}
+          </div>
+        );
+      }
+
       return (
         <div className="oauth-login-body">
           <div className="oauth-login-status">
@@ -543,7 +590,7 @@ export function OAuthProviderLoginDialog({
   return (
     <Modal
       open={open}
-      title={oauthProviderLabel(t, provider)}
+      title={provider.panelTitle || oauthProviderLabel(t, provider)}
       description={t("settings.oauthLoginDescription", {
         defaultValue:
           "Connect a subscription account as a Snow App LLM channel.",

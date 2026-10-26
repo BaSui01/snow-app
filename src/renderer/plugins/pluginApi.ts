@@ -89,6 +89,51 @@ export type PluginWriteApi = {
   domains: () => PluginWriteDomainSummary[];
 } & Record<string, unknown>;
 
+/** OAuth 登录会话上下文（仅自定义登录面板注入）。 */
+export type PluginOAuthSession = {
+  sessionId: string;
+  providerId: string;
+  flow: string;
+  authUrl: string;
+  redirectUri: string;
+  state: string;
+  nonce: string;
+  codeChallenge: string;
+  codeVerifier: string;
+  userCode: string;
+  instructions: string;
+  manualMode: boolean;
+  pluginSession?: unknown;
+};
+
+export type PluginOAuthStatus = {
+  provider: string;
+  /** pending | success | error | cancelled */
+  status: string;
+  error?: string;
+  profileName?: string;
+  displayName?: string;
+  email?: string;
+  planType?: string;
+  availableModels?: string[];
+  authUrl?: string;
+  manualMode?: boolean;
+  flow?: string;
+  userCode?: string;
+  instructions?: string;
+};
+
+/** OAuth 自定义登录面板 API：宿主会话操作与自行提交令牌。 */
+export type PluginOAuthLoginApi = {
+  session: PluginOAuthSession;
+  status: () => Promise<PluginOAuthStatus | null>;
+  submitCallback: (callbackUrl: string) => Promise<PluginOAuthStatus>;
+  submitTokens: (tokens: Record<string, unknown>) => Promise<PluginOAuthStatus>;
+  openBrowser: (url?: string) => void;
+  cancel: () => Promise<boolean>;
+  onStatus: (listener: (status: PluginOAuthStatus) => void) => () => void;
+};
+
 export type PluginRuntimeApi = {
   id: string;
   version: string;
@@ -101,6 +146,8 @@ export type PluginRuntimeApi = {
   storage: PluginStorageApi;
   ai: PluginAiApi;
   net: PluginNetApi;
+  /** 自定义 OAuth 登录面板上下文；普通面板为 undefined。 */
+  oauth?: PluginOAuthLoginApi;
   assets: { resolve: (relativePath: string) => Promise<string | null> };
   ui: {
     messageFooterVersion: 1;
@@ -152,6 +199,8 @@ export const createPluginApi = async (params: {
   icons: Record<string, unknown>;
   /** Actions must not silently run with defaults when current preferences cannot load. */
   requireFreshStorage?: boolean;
+  /** OAuth 登录面板会话上下文（仅登录弹窗注入）。 */
+  oauth?: PluginOAuthLoginApi;
 }): Promise<PluginRuntimeApi> => {
   const { plugin, locale, messages, icons } = params;
   const storageCache = new Map<string, string>();
@@ -231,6 +280,7 @@ export const createPluginApi = async (params: {
       fetch: (url, options) =>
         window.snow.requestPluginHttp({ ...(options ?? {}), url }),
     },
+    ...(params.oauth ? { oauth: params.oauth } : {}),
     ui: {
       messageFooterVersion: 1,
       React: ReactNamespace,

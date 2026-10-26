@@ -17,6 +17,7 @@ const DEFAULT_MAX_CONTEXT_TOKENS: i32 = 200_000;
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PluginHooks {
+    pub authorize: bool,
     pub poll: bool,
     pub refresh: bool,
     pub models: bool,
@@ -54,6 +55,10 @@ pub struct PluginProviderSpec {
     /// 每次请求按账号渲染的请求头模板（{{accessToken}} / {{accountId}} / {{data.x}} 等）。
     pub request_headers: HashMap<String, String>,
     pub refresh_lead_secs: i64,
+    /// 渲染层自定义登录面板入口（相对插件目录）。
+    pub panel_entry: String,
+    /// 自定义登录面板标题；为空时用 provider 名称。
+    pub panel_title: String,
     pub hooks: PluginHooks,
 }
 
@@ -62,8 +67,13 @@ impl PluginProviderSpec {
         match self.flow.trim() {
             "device" => "device",
             "manual" => "manual",
+            "panel" => "panel",
             _ => "redirect",
         }
+    }
+
+    pub fn has_panel(&self) -> bool {
+        !self.panel_entry.trim().is_empty()
     }
 
     pub fn redirect_host(&self) -> &str {

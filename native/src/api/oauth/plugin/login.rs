@@ -64,7 +64,8 @@ pub async fn authorize(
         .as_object()
         .ok_or_else(|| Error::from_reason("OAuth plugin authorize() must return an object"))?;
     let url = read_text(object, "url");
-    if url.is_empty() {
+    // 自定义面板可以自行构建授权地址（甚至不跳浏览器）。
+    if url.is_empty() && spec.flow() != "panel" {
         return Err(Error::from_reason(
             "OAuth plugin authorize() did not return a sign-in url",
         ));

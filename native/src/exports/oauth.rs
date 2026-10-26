@@ -23,6 +23,10 @@ pub struct OAuthProviderInfo {
     pub plugin_id: Option<String>,
     /// 插件通过 `fetch` 接管传输层：原生流式、重试与工具归一化不再生效。
     pub takes_over_transport: bool,
+    /// 插件渲染层自定义登录面板入口；为空时使用宿主默认面板。
+    pub panel_entry: Option<String>,
+    /// 自定义登录面板标题。
+    pub panel_title: Option<String>,
 }
 
 #[napi(object)]
@@ -36,6 +40,14 @@ pub struct OAuthLoginStart {
     pub flow: String,
     pub user_code: Option<String>,
     pub instructions: Option<String>,
+    /// 自定义面板上下文：state / PKCE / 插件会话。
+    pub state: String,
+    pub nonce: String,
+    pub redirect_uri: String,
+    pub code_challenge: String,
+    pub code_verifier: String,
+    /// 插件 authorize() 返回的会话数据（JSON 字符串，无则为空）。
+    pub plugin_session: Option<String>,
 }
 
 #[napi(object)]
@@ -98,6 +110,8 @@ pub fn list_oauth_providers() -> Vec<OAuthProviderInfo> {
         icon: None,
         plugin_id: None,
         takes_over_transport: false,
+        panel_entry: None,
+        panel_title: None,
     });
     let plugins = plugin::registry::list().into_iter().map(|spec| OAuthProviderInfo {
         id: spec.id.clone(),
@@ -109,6 +123,8 @@ pub fn list_oauth_providers() -> Vec<OAuthProviderInfo> {
         icon: non_empty(spec.icon.clone()),
         plugin_id: non_empty(spec.plugin_id.clone()),
         takes_over_transport: spec.hooks.fetch,
+        panel_entry: non_empty(spec.panel_entry.clone()),
+        panel_title: non_empty(spec.panel_title.clone()),
     });
     builtin.chain(plugins).collect()
 }
@@ -162,7 +178,33 @@ pub async fn start_oauth_login(
         flow: result.flow,
         user_code: non_empty(result.user_code),
         instructions: non_empty(result.instructions),
+        state: result.state,
+        nonce: result.nonce,
+        redirect_uri: result.redirect_uri,
+        code_challenge: result.code_challenge,
+        code_verifier: result.code_verifier,
+        plugin_session: if result.plugin_session.is_null() {
+            None
+        } else {
+            Some(result.plugin_session.to_string())
+        },
     })
+}
+
+/// 自定义面板拿到令牌后提交，落库为对应插件档案并收敛登录会话。
+#[napi(js_name = "submitOAuthLoginTokens")]
+pub async fn submit_oauth_login_tokens(
+    session_id: String,
+    tokens_json: String,
+) -> Result<OAuthLoginStatus> {
+    let session_id = session_id.trim().to_string();
+    let value: serde_json::Value = serde_json::from_str(&tokens_json)
+        .map_err(|error| Error::from_reason(format!("Invalid OAuth token set: {error}")))?;
+    let tokens = plugin::PluginTokens::from_value(&value)?;
+    sessions::complete_with_tokens(&session_id, tokens).await?;
+    sessions::get_status(&session_id)
+        .map(to_status)
+        .ok_or_else(|| Error::from_reason("Login session not found or expired"))
 }
 
 #[napi(js_name = "getOAuthLoginStatus")]

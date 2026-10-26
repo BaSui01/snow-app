@@ -4078,6 +4078,7 @@ export const zhCN = {
     "将工具结果发送到配置的隐私过滤 API 进行脱敏。",
   "settings.privacyApiConfig": "API 配置",
   "settings.privacyApiConfigInfo": "配置线上隐私过滤 API 端点。",
+  "settings.privacyApiDeployHint": "还没有端点？可使用这个参考项目自行部署：",
   "settings.privacyUrlLabel": "URL",
   "settings.privacyUrlPlaceholder": "https://example.com/privacy-filter",
   "settings.privacyApiKeyLabel": "API 密钥（选填）",

@@ -34273,6 +34273,33 @@ button.user-message-source:hover {
   word-break: break-all;
 }
 
+.privacy-api-reference {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.privacy-api-reference-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-color);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.privacy-api-reference-link:hover {
+  text-decoration: underline;
+}
+
 .sub-agent-editor-form {
   display: flex;
   flex-direction: column;

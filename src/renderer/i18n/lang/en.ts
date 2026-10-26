@@ -4342,6 +4342,8 @@ export const en = {
   "settings.privacyApiConfig": "API configuration",
   "settings.privacyApiConfigInfo":
     "Configure the online privacy filter API endpoint.",
+  "settings.privacyApiDeployHint":
+    "No endpoint yet? Self-host it with this reference project:",
   "settings.privacyUrlLabel": "URL",
   "settings.privacyUrlPlaceholder": "https://example.com/privacy-filter",
   "settings.privacyApiKeyLabel": "API key (optional)",

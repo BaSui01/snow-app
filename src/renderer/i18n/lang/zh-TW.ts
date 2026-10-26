@@ -4021,6 +4021,7 @@ export const zhTW = {
     "將工具結果傳送至設定的隱私過濾 API 進行脫敏。",
   "settings.privacyApiConfig": "API 配置",
   "settings.privacyApiConfigInfo": "設定線上隱私過濾 API 端點。",
+  "settings.privacyApiDeployHint": "還沒有端點？可使用這個參考專案自行部署：",
   "settings.privacyUrlLabel": "URL",
   "settings.privacyUrlPlaceholder": "https://example.com/privacy-filter",
   "settings.privacyApiKeyLabel": "API 金鑰（選填）",

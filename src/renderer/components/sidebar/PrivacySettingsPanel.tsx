@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ExternalLink,
   FilePenLine,
   KeyRound,
   Loader2,
@@ -85,6 +86,10 @@ type ToolCatalogServer = {
 };
 
 const SAVE_DEBOUNCE_MS = 600;
+
+/** 自建隐私过滤 API 的参考部署项目 */
+const PRIVACY_FILTER_API_REPO_URL =
+  "https://github.com/MayDay-wpf/privacy-filter-api";
 
 /**
  * 计算待保存的隐私设置值。
@@ -614,6 +619,30 @@ export function PrivacySettingsPanel({
                       defaultValue:
                         "Configure the online privacy filter API endpoint.",
                     })}
+                  </span>
+                  <span className="privacy-api-reference">
+                    {t("settings.privacyApiDeployHint", {
+                      defaultValue:
+                        "No endpoint yet? Self-host it with this reference project:",
+                    })}
+                    <button
+                      type="button"
+                      className="privacy-api-reference-link"
+                      title={PRIVACY_FILTER_API_REPO_URL}
+                      onClick={() =>
+                        window.open(PRIVACY_FILTER_API_REPO_URL, "_blank")
+                      }
+                    >
+                      {PRIVACY_FILTER_API_REPO_URL.replace(
+                        "https://github.com/",
+                        "",
+                      )}
+                      <ExternalLink
+                        size={12}
+                        strokeWidth={1.8}
+                        aria-hidden="true"
+                      />
+                    </button>
                   </span>
                   <div className="api-settings-form-grid">
                     <label className="api-settings-field wide">

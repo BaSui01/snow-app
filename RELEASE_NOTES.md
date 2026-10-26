@@ -1,5 +1,36 @@
 # Release Notes
 
+## v0.5.6
+
+## New Features
+
+- **Durable Sub-Agent Runs**: dispatch, resume, cancel and completion now go through a persisted run record (runs, parent tasks, request receipts and the parent inbox live in SQLite), so runs survive a restart and stay visible in the sidebar; rollback and deletion pass an explicit gate.
+- **Per-Dispatch Execution Mode**: the user execution-mode setting is only the default - `activate` / `continue` accept an optional `executionMode` argument that overrides it, and Workflow nodes may dispatch sub-agents synchronously only.
+- **Multi-Engine Web Search**: the single search engine setting becomes a multi-select list; the selected engines run in parallel and their results are de-duplicated and re-ranked by a local relevance score, with new options for site restriction, time range, language and per-call engines, plus Brave, Google, Startpage, Seznam, Yahoo and Yep engines.
+- **Plugin Sign-In Panel**: an OAuth provider can declare a `panel` that takes over the sign-in UI inside the OAuth dialog instead of opening the browser, driven by the new `api.oauth` API; `authorize` becomes optional.
+- **Repo Wiki over SSH**: repo wiki generation works in SSH remote workspaces through read-only views (file tree snapshot, fingerprint, git metadata).
+- **Browser Panel Shortcuts**: `mod+shift+a` shares the current browser tab with the agent and `mod+shift+e` picks an element while the browser panel is focused; `Ctrl/Cmd+D` now toggles the project explorer.
+- **Unified Edit Context Menu**: all windows (main, pet, detached panels) share one right-click edit menu for input boxes.
+- **Image Describe Lightbox**: described image thumbnails open a full-size overlay, dismissed with Esc, the close button or a backdrop click.
+
+## Improvements
+
+- Volatile host facts and request-only instructions move to a trailing user message, so the cached prompt prefix survives run-status notifications and sub-agent wakeups; the sub-agent tool set stays stable and the host ledger section is omitted when there is no delegation history.
+- The model selector returns to a flat list (brand grouping is removed).
+- Layered and flush theme header and sidebar spacing is tightened, and the image preview window becomes display-only - clicking the image chip opens the large image.
+- Mobile remote control aligns sub-agent tool results and sync/async semantics with the desktop contract.
+
+## Breaking Changes
+
+- Plugins can no longer bind a conversation to an API profile: `conversations.setApiProfile` and the `apiProfile` option of `conversations.create` are removed (212 -> 210 write actions). Conversation profile binding is owned solely by the runtime conversation-identity check, so the plugin write domain no longer exposes a second, unvalidated entry point for it.
+
+## Bug Fixes
+
+- File links starting with `~/` expand the home directory before the absolute-path check, so home-directory references resolve again.
+- A failing app log write no longer interrupts committed work (synchronous native throws are caught).
+- LSP shutdown is ordered as shutdown, exit, wait, then kill.
+- Mobile authorization and question cards collapse to a 44px bar by default so they no longer cover the transcript.
+
 ## v0.5.5
 
 ## New Features

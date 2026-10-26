@@ -19,6 +19,7 @@ import {
 import { useChatConversationList } from "../chats/useChatConversationList";
 import { useChatSelection } from "../chats/useChatSelection";
 import { useConversationActions } from "../chats/useConversationActions";
+import { useConversationCycleShortcut } from "../chats/useConversationCycleShortcut";
 import { useConversationTree } from "../chats/useConversationTree";
 import { usePausedConversationIds } from "../chats/usePausedConversationIds";
 import { usePinnedConversations } from "../chats/usePinnedConversations";
@@ -126,6 +127,27 @@ export function TreeProjectChats({
     directoryId,
     conversationListVersion,
     upsertedConversation,
+  });
+
+  // Option/Alt+方向键切换会话：树里只让当前激活项目注册，避免多个项目节点重复响应。
+  const cycleOrderIds = useMemo(
+    () => [
+      ...pinned.pinnedConversations.map((c) => c.conversationId),
+      ...list.conversations.map((c) => c.conversationId),
+    ],
+    [pinned.pinnedConversations, list.conversations],
+  );
+  useConversationCycleShortcut({
+    activeConversationId,
+    enabled: activeDirectoryId === directoryId,
+    onSelect: (conversationId) =>
+      void handleSelectConversation(
+        conversationId,
+        undefined,
+        undefined,
+        directoryId,
+      ),
+    orderedConversationIds: cycleOrderIds,
   });
 
   const exitMultiSelect = useCallback((): void => {

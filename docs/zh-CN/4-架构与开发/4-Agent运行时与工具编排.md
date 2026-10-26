@@ -603,7 +603,7 @@ sequenceDiagram
 
 ### 9.1 运行模型与状态机
 
-两种执行模式（设置 → 子代理设置 → 运行限制，默认同步）共享同一套持久化运行：`accept` 受理、`transition` 状态迁移、`settle` 终态提交与结果分页。差异只在父工具是否等待终态——**同步**等到终态后返回统一 result 回包；**异步**只等待 `accepted` 回执，主流程立即释放，结果改由持久化事件投递回父会话（见 §9.4）。模式由宿主捕获，模型侧不再提供 `executionMode` 兼容参数；忙碌目标的 `continue` 返回 `message_queued`，不改变该 run 的模式。两种模式都要求实际项目／工作区绑定，应用退出后运行不继续。
+两种执行模式（设置 → 子代理设置 → 运行限制，默认同步）共享同一套持久化运行：`accept` 受理、`transition` 状态迁移、`settle` 终态提交与结果分页。差异只在父工具是否等待终态——**同步**等到终态后返回统一 result 回包；**异步**只等待 `accepted` 回执，主流程立即释放，结果改由持久化事件投递回父会话（见 §9.4）。模式取自每次派发的 `executionMode` 参数，省略时回落到设置中的默认值（宿主在每批工具调用前读取一次）；Workflow 节点作为父会话时只允许同步：Rust 工具策略把节点的 `executionMode` 枚举收窄为 `sync`，渲染层 `requireSubAgentParent` 按父会话类型拒绝 `async`，节点每个回合自行开启父任务并在收尾时关闭。忙碌目标的 `continue` 返回 `message_queued`，不改变该 run 的模式。两种模式都要求实际项目／工作区绑定，应用退出后运行不继续。
 
 运行状态由 `native/src/storage/services/chat_conversations/sub_agent_runs.rs` 持久化，终态集合为 `completed | failed | cancelled | interrupted`（`sub_agent_runs.rs::terminal`）。
 

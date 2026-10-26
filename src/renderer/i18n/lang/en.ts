@@ -3527,6 +3527,9 @@ export const en = {
   "settings.subAgentSaveError": "Failed to save sub-agent configuration",
   "settings.subAgentDeleteSuccess": "Deleted sub-agent configuration.",
   "settings.subAgentDeleteError": "Failed to delete sub-agent configuration",
+  "settings.subAgentDeleteTitle": "Delete sub-agent",
+  "settings.subAgentDeleteConfirm":
+    'Delete sub-agent "{{name}}"? This action cannot be undone.',
   "settings.subAgentAddNew": "Add sub-agent",
   "settings.subAgentManageTitle": "Manage sub-agents",
   "settings.subAgentConcurrencyTitle": "Run limits",

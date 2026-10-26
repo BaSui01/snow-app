@@ -3328,6 +3328,9 @@ export const zhCN = {
   "settings.subAgentSaveError": "保存子代理配置失败",
   "settings.subAgentDeleteSuccess": "已删除子代理配置。",
   "settings.subAgentDeleteError": "删除子代理配置失败",
+  "settings.subAgentDeleteTitle": "删除子代理",
+  "settings.subAgentDeleteConfirm":
+    "确定删除子代理「{{name}}」？此操作无法撤销。",
   "settings.subAgentAddNew": "添加子代理",
   "settings.subAgentManageTitle": "管理子代理",
   "settings.subAgentConcurrencyTitle": "运行限制",

@@ -25,6 +25,7 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import { ChatHistorySkeleton } from "./chatMessages/components/ChatHistorySkeleton";
+import { FilePathOpenMenu } from "./chatMessages/components/FilePathOpenMenu";
 import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
 import { PromptPreview } from "./chatMessages/components/PromptPreview";
 import type { MainContentView } from "./types";
@@ -613,6 +614,7 @@ const ChatContentBody = ({
             ref={scrollRef}
             onClick={pathClickOpenProps.onClick}
             onAuxClick={pathClickOpenProps.onAuxClick}
+            onContextMenu={pathClickOpenProps.onContextMenu}
             onWheel={handleChatWheel}
             onTouchStart={() => markUserScrollIntent(0)}
             onPointerDown={handleChatPointerDown}
@@ -786,6 +788,14 @@ const ChatContentBody = ({
           </div>
         </>
       )}
+
+      {/* 正文文件路径（md-file-path）右键菜单：文件管理器 / 系统默认应用 / IDE。 */}
+      {pathClickOpenProps.pathMenu ? (
+        <FilePathOpenMenu
+          target={pathClickOpenProps.pathMenu}
+          onClose={pathClickOpenProps.closePathMenu}
+        />
+      ) : null}
 
       {rollbackPreview ? (
         <RollbackConfirmDialog

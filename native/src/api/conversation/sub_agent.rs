@@ -53,7 +53,9 @@ pub async fn resolve_request_tools(request: &ResponsesApiRequest) -> Result<Vec<
 }
 
 /// Intersect discovery with real persisted facts; never enable a disabled tool
-/// or overwrite settings. Existing runs keep their captured execution mode.
+/// or overwrite settings. The user setting is only the default execution mode:
+/// each dispatch may choose its own, except workflow nodes, which are sync-only.
+/// Existing runs keep their captured execution mode.
 async fn apply_sub_agent_tool_policy(
     request: &ResponsesApiRequest,
     tools: &mut Vec<McpTool>,
@@ -138,13 +140,16 @@ async fn apply_sub_agent_tool_policy(
     .map_err(|_| Error::from_reason("SUB_AGENT_LEDGER_UNAVAILABLE: policy read failed"))??;
     let (asynchronous, ledger, identity_resolved) = policy;
     let is_child = ledger.as_ref().is_some_and(|facts| facts.is_child);
+    // Workflow nodes run unattended inside a blocking workflow: they may delegate,
+    // but only synchronously, so the node never settles before its children.
+    let workflow_node = ledger.as_ref().is_some_and(|facts| facts.workflow_node);
     // A request without durable identity cannot prove child status, but it is still
     // a real project-bound main conversation: the context layer creates/attaches
     // that conversation on the same request. Delegation must therefore not vanish
     // merely because the first request of a session carries no conversation id yet.
     let supports_durable = ledger
         .as_ref()
-        .map(|facts| facts.project_bound && !facts.workflow_node)
+        .map(|facts| facts.project_bound)
         .unwrap_or(request_project_bound);
     let has_children = ledger.as_ref().is_some_and(|facts| facts.has_children);
     let has_result = ledger.as_ref().is_some_and(|facts| facts.has_result);
@@ -180,7 +185,8 @@ async fn apply_sub_agent_tool_policy(
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
     log_tool_policy(serde_json::json!({
-        "mode":if asynchronous {"async"} else {"sync"},
+        "defaultMode":if asynchronous {"async"} else {"sync"},
+        "workflowNode":workflow_node,
         "conversationPresent":request.conversation_id.as_deref().is_some_and(|id| !id.trim().is_empty()),
         "identityResolved":identity_resolved,
         "requestProjectBound":request_project_bound,
@@ -194,10 +200,15 @@ async fn apply_sub_agent_tool_policy(
         .filter(|tool| tool.server_id == "sub-agents")
     {
         if matches!(tool.name.as_str(), "activate" | "continue") {
-            let policy = if asynchronous {
-                "New-run dispatch setting: async. Trust the actual receipt executionMode/kind; accepted is not completion. Existing busy targets retain their original mode and only queue the message. Host events deliver eligible results; do not poll."
+            let policy = if workflow_node {
+                // The schema itself forbids async here, not just the prose.
+                tool.input_schema["properties"]["executionMode"]["enum"] =
+                    serde_json::json!(["sync"]);
+                "Execution mode: this conversation is a workflow node, so only sync dispatch is supported. The call returns the child's final result; omit executionMode or pass \"sync\". Existing busy targets retain their original mode and only queue the message."
+            } else if asynchronous {
+                "Default execution mode (user setting): async. Choose per call with executionMode: sync when your next step depends on the result, async for long independent work. For async, trust the actual receipt executionMode/kind; accepted is not completion and host events deliver eligible results; do not poll. Existing busy targets retain their original mode and only queue the message."
             } else {
-                "New-run dispatch setting: sync. The dispatch returns its final result; no follow-up wait is needed. Existing busy targets retain their original mode and only queue the message. Trust the actual receipt executionMode/kind, not a changed setting."
+                "Default execution mode (user setting): sync. Choose per call with executionMode: sync when your next step depends on the result, async for long independent work. A sync dispatch returns its final result; no follow-up wait is needed. Existing busy targets retain their original mode and only queue the message. Trust the actual receipt executionMode/kind."
             };
             tool.description = format!("{policy}\n\n{}", tool.description);
         }

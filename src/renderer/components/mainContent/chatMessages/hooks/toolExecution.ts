@@ -165,14 +165,14 @@ export type ToolExecutorDeps = {
     dirId: string,
     toolCallInteractionId: string | undefined,
     checkpointIds: string[],
-    executionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
+    defaultExecutionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
   ) => Promise<string>;
   executeSubAgentMainTool: (
     toolName: string,
     argsJson: string,
     parentConversationId: string,
     checkpointIds: string[],
-    executionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
+    defaultExecutionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
   ) => Promise<string>;
   executeWorkflowGenerate: (
     argsJson: string,
@@ -246,8 +246,9 @@ export function createToolExecutor(
     toolCalls: ToolCallInfo[],
     authorizationDecisions: ToolAuthorizationDecision[],
   ): Promise<ToolExecutionResult | null> => {
-    // Capture host policy once for this entire dispatch batch, never from model JSON.
-    const executionMode = toolCalls.some(
+    // Capture the user's default mode once for this batch; each call's own
+    // executionMode argument still takes precedence over it.
+    const defaultExecutionMode = toolCalls.some(
       (call) =>
         call.name === "sub-agents-activate" ||
         call.name === "sub-agents-continue",
@@ -259,13 +260,13 @@ export function createToolExecutor(
     const executeSubAgentActivation = (
       ...args: Parameters<ToolExecutorDeps["executeSubAgentActivation"]>
     ) => {
-      args[5] = executionMode;
+      args[5] = defaultExecutionMode;
       return dispatchSubAgentActivation(...args);
     };
     const executeSubAgentMainTool = (
       ...args: Parameters<ToolExecutorDeps["executeSubAgentMainTool"]>
     ) => {
-      args[4] = executionMode;
+      args[4] = defaultExecutionMode;
       return dispatchSubAgentMainTool(...args);
     };
     const targetSession = ctx.sessionsRefData.current.get(effectiveKey);

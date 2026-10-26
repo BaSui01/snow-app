@@ -55,7 +55,17 @@ import {
   resetRunStreamMetrics,
 } from "../hooks/agentLoopHelpers";
 import { SUB_AGENT_MAIN_TOOL_NAMES } from "../hooks/subAgentActivation";
-import { resolveSubAgentExecutionMode } from "../hooks/subAgentExecutionMode";
+import {
+  beginSubAgentParentTask,
+  closeSubAgentParentIfIdle,
+  reportSubAgentParentError,
+} from "../hooks/subAgentParentInbox";
+import {
+  finishAgentTask,
+  startAgentTask,
+  type AgentTaskHistory,
+} from "../hooks/taskHistory";
+import type { SubAgentExecutionMode } from "../../../../../shared/subAgentRuns";
 
 export type WorkflowNodeData = {
   id: string;
@@ -504,20 +514,23 @@ type WorkflowRunnerDeps = {
   ) => Promise<ToolAuthorizationDecision[]>;
   planApprovedSessionKeysRef: { current: Set<string> };
   /** 子代理激活执行器（渲染进程异步运行时）：节点内允许派生子代理，
-   *  子代理在节点会话下运行，交互与授权在子代理会话内处理。 */
+   *  子代理在节点会话下运行，交互与授权在子代理会话内处理。
+   *  节点只允许同步子代理：默认执行方式固定传 sync。 */
   executeSubAgentActivation: (
     argsJson: string,
     parentConversationId: string,
     dirId: string,
     toolCallInteractionId: string | undefined,
     checkpointIds: string[],
+    defaultExecutionMode: SubAgentExecutionMode,
   ) => Promise<string>;
-  /** 主会话子代理管理工具（listSubAgents/continue）执行器 */
+  /** 主会话子代理管理工具（getResult/continue/cancel）执行器 */
   executeSubAgentMainTool: (
     toolName: string,
     argsJson: string,
     parentConversationId: string,
     checkpointIds: string[],
+    defaultExecutionMode: SubAgentExecutionMode,
   ) => Promise<string>;
 };
 
@@ -1897,6 +1910,9 @@ export function createWorkflowRunner(
       demotePendingSteering(ctx, conversationId);
       refreshPendingMessages(ctx, conversationId);
     };
+    // 节点作为子代理父会话的任务边界：每个节点回合（首条需求、排队消息、
+    // 强行发送）开启一个父任务，子代理受理须挂在打开的父任务下。
+    const nodeTask: { current?: AgentTaskHistory } = {};
 
     try {
       // 首条 user 消息：新节点发节点需求 + 前置节点的交接文档（单前驱即
@@ -2401,25 +2417,13 @@ export function createWorkflowRunner(
           try {
             // 子代理工具必须走渲染进程异步运行时：Rust callMcpTool 端
             // 会拒绝并报 "must be executed through the asynchronous
-            // Electron interaction bridge"。节点内与主会话一致，允许
-            // 激活子代理（在节点会话下运行）与 listSubAgents/continue
-            // 管理工具，侧边栏以 节点 → 子代理 树形展示。
-            if (
-              toolCall.name === "sub-agents-activate" ||
-              toolCall.name === "sub-agents-continue"
-            ) {
+            // Electron interaction bridge"。节点内允许激活子代理（在节点
+            // 会话下运行）与 getResult/continue/cancel 管理工具，侧边栏以
+            // 节点 → 子代理 树形展示。节点只允许同步子代理：未指定执行方式
+            // 时默认 sync，显式 async 由子代理运行时按父会话类型拒绝。
+            if (toolCall.name === "sub-agents-continue") {
               const args = JSON.parse(toolArgs) as Record<string, unknown>;
-              if (
-                (await resolveSubAgentExecutionMode(args.executionMode)) ===
-                "async"
-              )
-                throw new Error(
-                  "UNSUPPORTED_EXECUTION_MODE: workflow nodes support synchronous sub-agents only",
-                );
-              if (
-                toolCall.name === "sub-agents-continue" &&
-                args.requestId === undefined
-              ) {
+              if (args.requestId === undefined) {
                 if (!toolCall.interactionId)
                   throw new Error(
                     "VALIDATION_ERROR: stable workflow tool identity is required",
@@ -2435,6 +2439,7 @@ export function createWorkflowRunner(
                 dirId,
                 toolCall.interactionId,
                 toolCheckpointIds,
+                "sync",
               );
             } else if (SUB_AGENT_MAIN_TOOL_NAMES.has(toolCall.name)) {
               result = await executeSubAgentMainTool(
@@ -2442,6 +2447,7 @@ export function createWorkflowRunner(
                 toolArgs,
                 conversationId,
                 toolCheckpointIds,
+                "sync",
               );
             } else {
               // 第三参 projectId 必须传目录 id：工具执行的工作目录上下文。
@@ -2566,6 +2572,14 @@ export function createWorkflowRunner(
       };
 
       const startTask = (content: string): void => {
+        // 新回合取代上一回合的父任务（同步子代理此时均已结算）。
+        if (nodeTask.current)
+          void finishAgentTask(nodeTask.current, conversationId).catch(
+            () => {},
+          );
+        const task = startAgentTask(conversationId);
+        nodeTask.current = task;
+        beginSubAgentParentTask(conversationId, task.id);
         const ref = ctx.sessionsRefData.current.get(conversationId);
         if (!ref) return;
         demotePendingSteering(ctx, conversationId);
@@ -2716,6 +2730,15 @@ export function createWorkflowRunner(
       ctx.removeStreamingId(conversationId);
       // 保留节点自己未消费的 queue/强行发送暂存，不转交父会话。
       forwardNodePendingQueue();
+      // 关闭节点的子代理父任务：未派生子代理时只在内存收尾，不写库。
+      const task = nodeTask.current;
+      if (task) {
+        void finishAgentTask(task, conversationId).catch(() => {});
+        void closeSubAgentParentIfIdle(conversationId, task.id).catch(
+          (error: unknown) =>
+            reportSubAgentParentError(ctx, conversationId, error),
+        );
+      }
     }
   };
 

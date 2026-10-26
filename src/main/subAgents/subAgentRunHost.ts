@@ -41,6 +41,12 @@ const operations = new Set([
 ]);
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+const EMPTY_RUN_LIST: SubAgentRunCommandResult = {
+  success: true,
+  kind: "runs",
+  runs: [],
+  total: 0,
+};
 const identifier = (value: unknown): string => {
   if (
     typeof value !== "string" ||
@@ -149,6 +155,9 @@ export const registerSubAgentRunHost = (native: NativeBridge): void => {
       const parentId = identifier(value.scope.parentConversationId);
       const projectId = identifier(value.scope.projectId);
       const parent = await native.getChatConversation(parentId);
+      // 侧边栏每行都会在运行变更广播后重查 list；父会话恰好被删除（如回滚首条
+      // 消息）时没有运行事实可读，按空列表回执而不是抛错。
+      if (!parent && value.op === "list") return EMPTY_RUN_LIST;
       if (!parent || parent.directoryId !== projectId) {
         snowLog.warn({
           module: "sub-agents",
@@ -175,12 +184,23 @@ export const registerSubAgentRunHost = (native: NativeBridge): void => {
         },
         ownerInstanceId: owner.id,
       } as SubAgentRunCommand;
+      // 普通主会话可派发同步/异步子代理；Workflow 节点只允许同步派发。
+      const isWorkflowNode = parent.conversationType === "workflow_node";
       if (
         (command.op === "accept" || command.op === "queue_message") &&
+        !isWorkflowNode &&
         (parent.conversationType !== "main" || parent.parentConversationId)
       )
         throw new Error(
-          "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires an ordinary parent conversation",
+          "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires an ordinary parent conversation or a workflow node",
+        );
+      if (
+        command.op === "accept" &&
+        isWorkflowNode &&
+        command.executionMode !== "sync"
+      )
+        throw new Error(
+          "UNSUPPORTED_EXECUTION_MODE: workflow nodes support synchronous sub-agents only",
         );
       if (command.op === "accept") {
         if (!record(command.snapshot))
@@ -289,6 +309,8 @@ export const registerSubAgentRunHost = (native: NativeBridge): void => {
             // A failed re-check keeps the original permission classification.
           }
           if (parentMissing) {
+            // 只读 list 与删除并发：父会话已不存在即没有运行，返回空列表。
+            if (command.op === "list") return EMPTY_RUN_LIST;
             message = "RUN_NOT_FOUND: parent conversation does not exist";
             error = new Error(message);
           }

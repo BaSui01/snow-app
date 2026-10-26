@@ -65,7 +65,10 @@ fn read_error(stage: &'static str) -> impl FnOnce(rusqlite::Error) -> Error {
 }
 
 /// Scope comes solely from the actual request conversation record. The optional
-/// directory is only a consistency check, never an alternative scope.
+/// directory is only a consistency check, never an alternative scope. A
+/// conversation that is not persisted yet — the first request of a new
+/// conversation, whose id is minted in this same request and written only when
+/// the exchange is stored — yields an empty ledger instead of an error.
 pub(super) fn load_host_ledger(
     database_path: &Path,
     conversation_id: &str,
@@ -92,11 +95,25 @@ pub(super) fn load_host_ledger(
          WHERE c.conversation_id=?1",
         [conversation_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).optional().map_err(read_error("identity"))?;
-    let (project, kind, parent) = identity.ok_or_else(|| {
-        Error::from_reason(
-            "SUB_AGENT_LEDGER_UNAVAILABLE: stage=identity class=conversation_missing",
-        )
-    })?;
+    let (project, kind, parent) = match identity {
+        Some(identity) => identity,
+        // No durable facts can exist for a conversation that has no record yet.
+        // Report an empty ledger rather than a read failure: no scope is
+        // invented, no other conversation or project is used as a fallback, and
+        // no degraded section is injected into the request.
+        None => {
+            return Ok(HostLedger {
+                is_child: false,
+                project_bound: expected_project.is_some_and(|id| !id.trim().is_empty()),
+                workflow_node: false,
+                has_children: false,
+                has_cancellable: false,
+                has_result: false,
+                has_result_reader: false,
+                context: None,
+            })
+        }
+    };
     if expected_project
         .filter(|id| !id.trim().is_empty())
         .is_some_and(|id| id != project)

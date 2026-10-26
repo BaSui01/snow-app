@@ -1539,7 +1539,7 @@ const RAW_GROUPS: RawGroup[] = [
         "subAgent.field.executionMode",
         "field",
         "settings.subAgentExecutionModeLabel",
-        "Sub-agent execution mode",
+        "Default sub-agent execution mode",
         [],
         [
           "sync",

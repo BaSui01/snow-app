@@ -299,7 +299,7 @@ If the `beforeSubAgentStart` call throws, acceptance fails: the sub-agent is not
 
 ### 2.7 Current durable execution: sync and async
 
-Choose execution mode under Settings → Sub-agent Settings → Run limits. Sync waits for a terminal result envelope; async returns an accepted receipt. The host captures mode from settings; there is no model-facing executionMode compatibility argument. Continue against an active target returns message_queued without changing that run's mode.
+Choose the default execution mode under Settings → Sub-agent Settings → Run limits (synchronous by default). The setting is only a default: `activate` / `continue` accept an optional `executionMode` argument (`sync` / `async`), so the AI can pick the mode per dispatch and the setting applies only when the argument is omitted. Sync waits for a terminal result envelope; async returns an accepted receipt. Sub-agents inside Workflow nodes are synchronous only: the node's tool schema offers `sync` alone and an explicit `async` is rejected. Continue against an active target returns message_queued without changing that run's mode.
 
 Both modes require a project/workspace-bound ordinary desktop parent or registered detached conversation window. They share acceptance, transitions, settlement and paging. Unbound and Workflow nondurable sub-agent execution is unsupported. Old child conversations without a run/snapshot cannot resume or reconstruct execution from old messages/current settings. Runs do not continue after application exit.
 

@@ -23,7 +23,10 @@ import { ShortcutHint } from "../../ShortcutHint";
 import { FileManagerIcon } from "../../icons/fileManagerIcons";
 import { IdeIcon } from "../../icons/ideIcons";
 import { requestOpenRepoWiki } from "../../repoWiki/repoWikiNavigation";
-import { isMacOS } from "../../../utils/shortcutUtils";
+import {
+  getFileManagerLabelKey,
+  useOpenWithApps,
+} from "../../../hooks/useOpenWithApps";
 import { useMenuPosition } from "./useMenuPosition";
 
 type WorkspaceDirectoryMenuProps = {
@@ -88,9 +91,14 @@ export function WorkspaceDirectoryMenu({
   // 右键锚点存在时菜单即为打开状态
   const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const [isOpenWithOpen, setIsOpenWithOpen] = useState(false);
-  const [installedIdes, setInstalledIdes] = useState<IdeInfo[]>([]);
-  const [isLoadingIdes, setIsLoadingIdes] = useState(false);
-  const [ideError, setIdeError] = useState<string | null>(null);
+  // 打开方式（系统文件管理器 / IDE）的共用数据源与错误通道。
+  const {
+    ides: installedIdes,
+    isLoadingIdes,
+    error: ideError,
+    setError: setIdeError,
+    ensureIdesLoaded,
+  } = useOpenWithApps();
   const containerRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -100,7 +108,6 @@ export function WorkspaceDirectoryMenu({
   onOpenChangeRef.current = onOpenChange;
   const onContextMenuCloseRef = useRef(onContextMenuClose);
   onContextMenuCloseRef.current = onContextMenuClose;
-  const idesLoadedRef = useRef(false);
   const openWithCloseTimerRef = useRef<number | null>(null);
 
   // 鼠标从触发项移到二级菜单之间存在间隙，直接关闭会导致菜单闪烁。
@@ -155,26 +162,11 @@ export function WorkspaceDirectoryMenu({
   const canLinkProjects = kind !== "ssh" && Boolean(onLinkProjects);
 
   useEffect(() => {
-    if (!isOpen || !canOpenWith || idesLoadedRef.current) {
+    if (!isOpen || !canOpenWith) {
       return;
     }
-    idesLoadedRef.current = true;
-    setIsLoadingIdes(true);
-    setIdeError(null);
-    window.snow
-      .listInstalledIdes()
-      .then((ides) => setInstalledIdes(ides))
-      .catch((error) => {
-        setIdeError(
-          error instanceof Error
-            ? error.message
-            : t("sidebar.openWithError", {
-                defaultValue: "Failed to detect installed IDEs",
-              }),
-        );
-      })
-      .finally(() => setIsLoadingIdes(false));
-  }, [isOpen, canOpenWith, t]);
+    ensureIdesLoaded();
+  }, [isOpen, canOpenWith, ensureIdesLoaded]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -355,11 +347,7 @@ export function WorkspaceDirectoryMenu({
   };
 
   // macOS 显示“访达”，Windows 显示“资源管理器”，其余平台显示“文件管理器”
-  const fileManagerLabelKey = isMacOS()
-    ? "sidebar.openWithFinder"
-    : navigator.userAgent.includes("Windows")
-      ? "sidebar.openWithExplorer"
-      : "sidebar.openWithFileManager";
+  const fileManagerLabelKey = getFileManagerLabelKey();
 
   const handleOpenInFileManager = (): void => {
     if (!directoryPath) {

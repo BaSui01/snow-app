@@ -3328,6 +3328,9 @@ export const zhTW = {
   "settings.subAgentSaveError": "儲存子代理配置失敗",
   "settings.subAgentDeleteSuccess": "已刪除子代理配置。",
   "settings.subAgentDeleteError": "刪除子代理配置失敗",
+  "settings.subAgentDeleteTitle": "刪除子代理",
+  "settings.subAgentDeleteConfirm":
+    "確定刪除子代理「{{name}}」？此操作無法復原。",
   "settings.subAgentAddNew": "新增子代理",
   "settings.subAgentManageTitle": "管理子代理",
   "settings.subAgentConcurrencyTitle": "執行限制",

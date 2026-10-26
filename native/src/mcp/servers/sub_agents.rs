@@ -62,7 +62,7 @@ fn acceptance_schema() -> Value {
 
 fn operation_properties() -> Value {
     json!({
-
+        "executionMode":{"type":"string","enum":["sync","async"],"description":"Execution mode for THIS dispatch. sync: the call blocks until the child finishes and returns its final result; choose it when your next step depends on that result. async: the call returns an accepted receipt immediately so you can keep working, and the host delivers the result to this conversation when the child finishes; choose it for long, independent work that can overlap with your own. Omit to use the default stated in this tool's description. A busy continue target keeps its original run mode and only queues the message."},
         "requestId":{"type":"string","minLength":1,"maxLength":160,"description":"Stable logical operation identity. Host-derived when omitted; reuse after an unknown receipt, use a new identity only for an intentional new operation."},
         "collaborationGroup":{"type":"string","minLength":1,"maxLength":80,"description":"Explicit collaboration authorization for THIS new run, intersected with configured communication permission. Omission grants no peer communication and never inherits an old group. Use the same group only for collaborators in this parent task."},
         "acceptance":acceptance_schema()

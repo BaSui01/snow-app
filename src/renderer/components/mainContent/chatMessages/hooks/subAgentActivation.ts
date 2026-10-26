@@ -1665,8 +1665,11 @@ const requirePersistence = (
   return persistence;
 };
 
+/** Ordinary conversations may dispatch in either mode; workflow nodes run inside
+ *  a blocking workflow and may only dispatch synchronously. */
 const requireSubAgentParent = async (
   scope: SubAgentRunScope,
+  executionMode?: SubAgentExecutionMode,
 ): Promise<void> => {
   if (!scope.projectId.trim())
     throw new Error(
@@ -1681,9 +1684,16 @@ const requireSubAgentParent = async (
     throw new Error(
       "PERMISSION_DENIED: parent project does not match dispatch scope",
     );
+  if (parent.conversationType === "workflow_node") {
+    if (executionMode === "async")
+      throw new Error(
+        'UNSUPPORTED_EXECUTION_MODE: workflow nodes support synchronous sub-agents only; retry with executionMode "sync"',
+      );
+    return;
+  }
   if (parent.conversationType !== "main" || parent.parentConversationId)
     throw new Error(
-      "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires an ordinary parent conversation",
+      "UNSUPPORTED_EXECUTION_MODE: sub-agent dispatch requires an ordinary parent conversation or a workflow node",
     );
 };
 
@@ -2170,7 +2180,7 @@ const dispatchPreparedSubAgentRun = async (
   } = prepared;
   const { ctx } = deps;
   const runPersistence = requirePersistence(deps.runPersistence);
-  await requireSubAgentParent(scope);
+  await requireSubAgentParent(scope, options.executionMode);
   let receipt: SubAgentAccepted;
 
   if (!snapshot.workspacePath)
@@ -2687,7 +2697,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     dirId: string,
     toolCallInteractionId: string | undefined,
     activeCheckpointIds: string[],
-    capturedExecutionMode?: SubAgentExecutionMode,
+    defaultExecutionMode?: SubAgentExecutionMode,
   ): Promise<string> => {
     const taskHistory = currentAgentTask(parentConversationId);
     const parent = deps.ctx.sessionsRefData.current.get(parentConversationId);
@@ -2695,16 +2705,22 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     const parentPlanMode = parent?.planMode ?? false;
     try {
       const args = parseToolArgs(argsJson);
+      // The model chooses per call; the user setting is only the fallback.
       const options = parseRunOptions(
         {
           ...args,
           executionMode:
-            capturedExecutionMode ?? (await loadSubAgentExecutionMode()),
+            args.executionMode ??
+            defaultExecutionMode ??
+            (await loadSubAgentExecutionMode()),
         },
         "activate",
         toolCallInteractionId,
       );
-      await requireSubAgentParent({ projectId: dirId, parentConversationId });
+      await requireSubAgentParent(
+        { projectId: dirId, parentConversationId },
+        options.executionMode,
+      );
       const persistence = requirePersistence(deps.runPersistence);
       const agentId =
         typeof args.agentId === "string" ? args.agentId.trim() : "";
@@ -2965,7 +2981,7 @@ export const createSubAgentMainToolExecutor = (
     argsJson: string,
     parentConversationId: string,
     checkpointIds: string[],
-    capturedExecutionMode?: SubAgentExecutionMode,
+    defaultExecutionMode?: SubAgentExecutionMode,
   ): Promise<string> => {
     const taskHistory = currentAgentTask(parentConversationId);
     try {
@@ -3049,12 +3065,16 @@ ${text}`;
             {
               ...args,
               executionMode:
-                capturedExecutionMode ?? (await loadSubAgentExecutionMode()),
+                args.executionMode ??
+                defaultExecutionMode ??
+                (await loadSubAgentExecutionMode()),
             },
             "continue",
           ),
           taskHistory,
         };
+        // Queued messages bypass dispatch: enforce the parent's mode limit here.
+        await requireSubAgentParent(scope, options.executionMode);
 
         const acceptance = parseSubAgentAcceptanceCriteria(args.acceptance);
         if (acceptance.errors.length)

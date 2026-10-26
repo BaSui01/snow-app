@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import {
   openResolvedLocalEntry,
@@ -51,8 +51,22 @@ const hasTextSelection = (): boolean => {
 const FILE_PATH_CODE_SELECTOR = "code.md-file-path[data-file-path]";
 const FILE_PATH_MISSING_CLASS = "md-file-path-missing";
 
+/** 「打开方式」右键菜单的目标：已解析到磁盘的真实条目与右键位置。 */
+export type PathMenuTarget = {
+  /** 右键位置（viewport 坐标）。 */
+  x: number;
+  y: number;
+  path: string;
+  isDirectory: boolean;
+};
+
+/** 路径是否为本地条目（其他 scheme 如 http / data / javascript 不参与打开方式）。 */
+const isLocalEntryPath = (path: string): boolean =>
+  Boolean(path) &&
+  (!/^[a-z][a-z0-9+.-]*:/i.test(path) || /^[a-z]:[\\/]/i.test(path));
+
 /**
- * 聊天区路径点击 → 打开文件 的容器级委托。
+ * 聊天区路径交互（左键打开文件 / 右键选择打开方式）的容器级委托。
  *
  * 性能设计：
  * - 渲染零扫描：不遍历消息文本，仅在用户点击时识别目标元素。
@@ -70,6 +84,9 @@ const FILE_PATH_MISSING_CLASS = "md-file-path-missing";
  * SSH 工作区经主进程远端 stat / find：目录在资源管理器中展开高亮，本地文档与
  * 媒体类文件交给系统默认应用，其余在右侧文件阅读器中打开；找不到时给触发元素
  * 打上「未找到」标记。
+ *
+ * 右键：命中同一批 inline code 时解析为绝对路径，返回「打开方式」菜单目标
+ * （见 pathMenu），由调用方渲染 FilePathOpenMenu。
  */
 export const usePathClickOpen = (
   directoryPath: string | undefined,
@@ -77,8 +94,15 @@ export const usePathClickOpen = (
 ): {
   onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onAuxClick: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => void;
+  /** 「打开方式」菜单目标；非空时调用方渲染 FilePathOpenMenu。 */
+  pathMenu: PathMenuTarget | null;
+  closePathMenu: () => void;
 } => {
   const { t } = useI18n();
+  const [pathMenu, setPathMenu] = useState<PathMenuTarget | null>(null);
+
+  const closePathMenu = useCallback((): void => setPathMenu(null), []);
 
   useEffect(() => {
     const updateHeld = (held: boolean): void => {
@@ -259,9 +283,61 @@ export const usePathClickOpen = (
     [openPath],
   );
 
+  // 右键正文里的文件路径：先解析为磁盘上的真实条目，再给出「打开方式」菜单目标。
+  // SSH 工作区的路径在远端，系统文件管理器与 IDE 都无法打开，保持默认行为。
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>): void => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const pathCode = target.closest<HTMLElement>(FILE_PATH_CODE_SELECTOR);
+      if (!pathCode || pathCode.closest("a[href]")) {
+        return;
+      }
+      if (directoryPath?.startsWith("ssh://")) {
+        return;
+      }
+      const parsed = parsePathWithLine(pathCode.dataset.filePath ?? "");
+      const path = /^file:/i.test(parsed.path)
+        ? localFileUrlToPath(parsed.path)
+        : parsed.path;
+      if (!isLocalEntryPath(path)) {
+        return;
+      }
+      event.preventDefault();
+      const { clientX: x, clientY: y } = event;
+      void window.snow
+        .resolveFileLink(directoryPath ?? null, path)
+        .then((resolved) => {
+          if (!resolved) {
+            pathCode.classList.add(FILE_PATH_MISSING_CLASS);
+            pathCode.title = t("markdown.filePathNotFound");
+            return;
+          }
+          setPathMenu({
+            x,
+            y,
+            path: resolved.path,
+            isDirectory: resolved.isDirectory,
+          });
+        })
+        .catch((error: unknown) => {
+          console.error("Failed to resolve file path from chat", error);
+        });
+    },
+    [directoryPath, t],
+  );
+
   // auxclick 与 click 共用同一处理：Chromium 中 Ctrl/Cmd+点击或中键点击
   // 触发的是 auxclick 事件，其“新标签打开”默认行为只有 auxclick 的
   // preventDefault 才能阻止；若只挂 onClick，Ctrl+点击 <a href> 会降级为
   // 当前窗口导航，导致整个前端刷新、进行中的会话/生成全部中断。
-  return { onClick: handleClick, onAuxClick: handleClick };
+  return {
+    onClick: handleClick,
+    onAuxClick: handleClick,
+    onContextMenu: handleContextMenu,
+    pathMenu,
+    closePathMenu,
+  };
 };

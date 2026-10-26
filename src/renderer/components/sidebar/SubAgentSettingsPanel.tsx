@@ -6,6 +6,7 @@ import type {
   SubAgentConfigRecord,
 } from "../../../preload";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { formatMcpError } from "./mcpSettings/mcpErrorMessages";
@@ -62,6 +63,8 @@ export function SubAgentSettingsPanel({
   const [modelCatalogError, setModelCatalogError] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [pendingDeletion, setPendingDeletion] =
+    useState<SubAgentConfigRecord | null>(null);
   const [activeScope, setActiveScope] = useState<"global" | "project">(
     "global",
   );
@@ -422,6 +425,13 @@ export function SubAgentSettingsPanel({
     }
   };
 
+  const confirmDelete = (): void => {
+    if (!pendingDeletion || isBusy) return;
+    const agent = pendingDeletion;
+    setPendingDeletion(null);
+    void deleteAgent(agent);
+  };
+
   return (
     <div className="api-settings-page" role="region">
       <SubAgentSummary
@@ -568,7 +578,7 @@ export function SubAgentSettingsPanel({
             agents={agents}
             isBusy={isBusy}
             onEdit={startEdit}
-            onDelete={(agent) => void deleteAgent(agent)}
+            onDelete={(agent) => setPendingDeletion(agent)}
           />
         </div>
       </div>
@@ -620,6 +630,23 @@ export function SubAgentSettingsPanel({
           />
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={pendingDeletion !== null}
+        title={t("settings.subAgentDeleteTitle", {
+          defaultValue: "Delete sub-agent",
+        })}
+        message={t("settings.subAgentDeleteConfirm", {
+          defaultValue:
+            'Delete sub-agent "{{name}}"? This action cannot be undone.',
+          values: { name: pendingDeletion?.name ?? "" },
+        })}
+        confirmLabel={t("settings.delete", { defaultValue: "Delete" })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeletion(null)}
+        variant="danger"
+      />
     </div>
   );
 }

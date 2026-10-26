@@ -667,6 +667,35 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             )
           : undefined,
       });
+      // Workflow 执行器：节点会话可作为同步子代理的父会话。父任务由节点自身
+      // 开启，持久化不绑定本轮主会话的任务，受理时按节点当前任务校验。
+      const createSessionWorkflowRunner = () =>
+        createWorkflowRunner({
+          ctx,
+          requestToolAuthorizations,
+          planApprovedSessionKeysRef,
+          executeSubAgentActivation: createSubAgentActivation({
+            ctx,
+            requestToolAuthorizations,
+            parentApiProfile: capturedOptions.apiProfile,
+            parentModel: capturedOptions.model,
+            parentThinkingStrength: capturedOptions.thinkingStrength,
+            parentResponsesFastMode: capturedOptions.responsesFastMode,
+            planApprovedSessionKeysRef,
+            runPersistence: sessionDirId
+              ? createSubAgentRunPersistence(ctx)
+              : undefined,
+          }),
+          executeSubAgentMainTool: createSubAgentMainToolExecutor(ctx, {
+            requestToolAuthorizations,
+            planApprovedSessionKeysRef,
+            parentThinkingStrength: capturedOptions.thinkingStrength,
+            parentResponsesFastMode: capturedOptions.responsesFastMode,
+            runPersistence: sessionDirId
+              ? createSubAgentRunPersistence(ctx)
+              : undefined,
+          }),
+        });
       // 阻塞式工作流工具：工具调用挂起直到用户在 UI 上确认执行或输入修改
       // 意见（与 sub-agents-activate 同语义）。注册时创建执行器：闭包持有
       // 本轮新鲜的 ctx 与工具授权入口，供 WorkflowToolCall 执行按钮取用
@@ -680,26 +709,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         registerWorkflowRunner(
           parentConversationId,
           toolCallInteractionId,
-          createWorkflowRunner({
-            ctx,
-            requestToolAuthorizations,
-            planApprovedSessionKeysRef,
-            executeSubAgentActivation: createSubAgentActivation({
-              ctx,
-              requestToolAuthorizations,
-              parentApiProfile: capturedOptions.apiProfile,
-              parentModel: capturedOptions.model,
-              parentThinkingStrength: capturedOptions.thinkingStrength,
-              parentResponsesFastMode: capturedOptions.responsesFastMode,
-              planApprovedSessionKeysRef,
-            }),
-            executeSubAgentMainTool: createSubAgentMainToolExecutor(ctx, {
-              requestToolAuthorizations,
-              planApprovedSessionKeysRef,
-              parentThinkingStrength: capturedOptions.thinkingStrength,
-              parentResponsesFastMode: capturedOptions.responsesFastMode,
-            }),
-          }),
+          createSessionWorkflowRunner(),
         );
         // 通知系统：与 askUserQuestion 同语义——工具挂起等待用户操作时
         // 触发系统通知（窗口聚焦时主进程 notificationManager 自动跳过）。
@@ -756,26 +766,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         registerWorkflowRunner(
           parentConversationId,
           flowId,
-          createWorkflowRunner({
-            ctx,
-            requestToolAuthorizations,
-            planApprovedSessionKeysRef,
-            executeSubAgentActivation: createSubAgentActivation({
-              ctx,
-              requestToolAuthorizations,
-              parentApiProfile: capturedOptions.apiProfile,
-              parentModel: capturedOptions.model,
-              parentThinkingStrength: capturedOptions.thinkingStrength,
-              parentResponsesFastMode: capturedOptions.responsesFastMode,
-              planApprovedSessionKeysRef,
-            }),
-            executeSubAgentMainTool: createSubAgentMainToolExecutor(ctx, {
-              requestToolAuthorizations,
-              planApprovedSessionKeysRef,
-              parentThinkingStrength: capturedOptions.thinkingStrength,
-              parentResponsesFastMode: capturedOptions.responsesFastMode,
-            }),
-          }),
+          createSessionWorkflowRunner(),
         );
         const runner = getWorkflowRunner(parentConversationId, flowId);
         if (!runner) {

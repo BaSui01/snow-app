@@ -298,7 +298,7 @@ sequenceDiagram
 
 ### 2.7 当前持久化运行：同步与异步
 
-在「设置 → 子代理设置 → 运行限制」选择执行方式。默认为同步：父工具等到终态后返回统一的 result 回包；异步只等待 accepted 回执。模式由宿主捕获，不再提供模型侧 executionMode 兼容参数。忙碌目标的 continue 返回 message_queued，不改变该 run 的模式。
+在「设置 → 子代理设置 → 运行限制」选择默认执行方式（默认为同步）。该设置只是默认值：`activate` / `continue` 提供可选的 `executionMode` 参数（`sync` / `async`），AI 可按场景为每次派发单独选择，省略时才使用设置中的默认值。同步：父工具等到终态后返回统一的 result 回包；异步只等待 accepted 回执。Workflow 节点内的子代理只允许同步执行：节点的工具 schema 仅提供 `sync`，显式传 `async` 会被拒绝。忙碌目标的 continue 返回 message_queued，不改变该 run 的模式。
 
 两种模式只支持实际项目／工作区绑定的普通桌面主会话及已登记的独立会话窗口，共享 accept、transition、settle 和结果分页。无项目、Workflow 非持久化子代理执行不再支持；旧子会话缺少 run/snapshot 时明确拒绝续跑，不从旧消息或当前配置重建执行。应用退出后不继续运行。
 

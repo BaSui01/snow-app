@@ -2,6 +2,7 @@ import {
   directoryIdToPath,
   formatMcpToolResultForModel,
   getErrorMessage,
+  isValidToolName,
   isUserQuestionCancellationResult,
   resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
@@ -45,13 +46,15 @@ import {
 import { settleImageGenerationReceipt } from "../utils/imageGenerationState";
 import {
   appendToolCorrectionNote,
+  detectToolFailure,
+  isNonCorrectableToolFailure,
+  isToolCorrectionEligible,
+  runToolCorrection,
+  serializeToolCorrectionState,
   type ToolCorrectionSuccess,
+  type ToolCorrectionToolDefinition,
 } from "./toolCorrection";
-import {
-  applyToolCorrectionToCall,
-  correctFailedToolCall,
-  createToolDefinitionLookup,
-} from "./toolCorrectionRunner";
+import { ensureToolCorrectionPreference } from "../utils/toolCorrectionPreference";
 
 export type ToolExecutionResult = {
   structuredToolResults: {
@@ -162,12 +165,14 @@ export type ToolExecutorDeps = {
     dirId: string,
     toolCallInteractionId: string | undefined,
     checkpointIds: string[],
+    executionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
   ) => Promise<string>;
   executeSubAgentMainTool: (
     toolName: string,
     argsJson: string,
     parentConversationId: string,
     checkpointIds: string[],
+    executionMode?: import("../../../../../shared/subAgentRuns").SubAgentExecutionMode,
   ) => Promise<string>;
   executeWorkflowGenerate: (
     argsJson: string,
@@ -203,13 +208,34 @@ export function createToolExecutor(
     isRunCancelled,
     requestToolAuthorizations,
     awaitHookDecision,
-    executeSubAgentActivation,
-    executeSubAgentMainTool,
+    executeSubAgentActivation: dispatchSubAgentActivation,
+    executeSubAgentMainTool: dispatchSubAgentMainTool,
     executeWorkflowGenerate,
     executeWorkflowResume,
     planApprovedSessionKeysRef,
     planModeRef,
   } = deps;
+
+  const subAgentArgs = (call: ToolCallInfo, argsJson: string): string => {
+    if (call.name !== "sub-agents-continue") return argsJson;
+    const parsed: unknown = JSON.parse(argsJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("VALIDATION_ERROR: invalid sub-agent arguments");
+    const args = parsed as Record<string, unknown>;
+    if (args.requestId === undefined) {
+      const identity =
+        call.interactionId ||
+        (responseId && call.callId
+          ? `${responseId}:${call.callId}`
+          : undefined);
+      if (!identity)
+        throw new Error(
+          "VALIDATION_ERROR: stable tool interaction identity is required",
+        );
+      args.requestId = `continue:${identity}`;
+    }
+    return JSON.stringify(args);
+  };
 
   // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
   // activeDirectory。实际 WorkTree 模式在每轮执行开始时由持久绑定解析。
@@ -220,6 +246,28 @@ export function createToolExecutor(
     toolCalls: ToolCallInfo[],
     authorizationDecisions: ToolAuthorizationDecision[],
   ): Promise<ToolExecutionResult | null> => {
+    // Capture host policy once for this entire dispatch batch, never from model JSON.
+    const executionMode = toolCalls.some(
+      (call) =>
+        call.name === "sub-agents-activate" ||
+        call.name === "sub-agents-continue",
+    )
+      ? await import("./subAgentExecutionMode").then((module) =>
+          module.loadSubAgentExecutionMode(),
+        )
+      : undefined;
+    const executeSubAgentActivation = (
+      ...args: Parameters<ToolExecutorDeps["executeSubAgentActivation"]>
+    ) => {
+      args[5] = executionMode;
+      return dispatchSubAgentActivation(...args);
+    };
+    const executeSubAgentMainTool = (
+      ...args: Parameters<ToolExecutorDeps["executeSubAgentMainTool"]>
+    ) => {
+      args[4] = executionMode;
+      return dispatchSubAgentMainTool(...args);
+    };
     const targetSession = ctx.sessionsRefData.current.get(effectiveKey);
     const sessionDirPath = await resolveConversationWorkspacePath(
       isPendingSessionKey(effectiveKey) ? "" : effectiveKey,
@@ -418,7 +466,35 @@ export function createToolExecutor(
 
       // Tool definitions are fetched lazily once per executor: only failed
       // calls need the schema, and most turns never fail.
-      const getToolDefinition = createToolDefinitionLookup();
+      let toolDefinitionsPromise: Promise<
+        Map<string, ToolCorrectionToolDefinition>
+      > | null = null;
+      const getToolDefinition = async (
+        toolName: string,
+      ): Promise<ToolCorrectionToolDefinition | null> => {
+        if (!toolDefinitionsPromise) {
+          toolDefinitionsPromise = window.snow
+            .listMcpTools()
+            .then(
+              (tools) =>
+                new Map(
+                  tools.map(
+                    (tool) =>
+                      [
+                        tool.name,
+                        {
+                          description: tool.description,
+                          inputSchemaJson: tool.inputSchemaJson,
+                        },
+                      ] as const,
+                  ),
+                ),
+            )
+            .catch(() => new Map<string, ToolCorrectionToolDefinition>());
+        }
+        const definitions = await toolDefinitionsPromise;
+        return definitions.get(toolName) ?? null;
+      };
 
       /** 用纠错后的参数重新执行同一条工具调用。 */
       const executeCorrectedTool = async (
@@ -436,6 +512,29 @@ export function createToolExecutor(
               : effectiveKey,
           },
         );
+        if (
+          correctedCall.name === "sub-agents-activate" &&
+          !isPendingSessionKey(effectiveKey)
+        ) {
+          return executeSubAgentActivation(
+            preparedArgs,
+            effectiveKey,
+            sessionDirId ?? ctx.directoryId ?? "",
+            correctedCall.interactionId,
+            checkpointIds,
+          );
+        }
+        if (
+          SUB_AGENT_MAIN_TOOL_NAMES.has(correctedCall.name) &&
+          !isPendingSessionKey(effectiveKey)
+        ) {
+          return executeSubAgentMainTool(
+            correctedCall.name,
+            subAgentArgs(correctedCall, preparedArgs),
+            effectiveKey,
+            checkpointIds,
+          );
+        }
         return withToolWatchdog(
           window.snow.callMcpTool(
             correctedCall.name,
@@ -462,6 +561,9 @@ export function createToolExecutor(
         settle: boolean,
         originalResult: string,
       ): void => {
+        const succeeded = correction.attempts.find(
+          (attempt) => attempt.status === "succeeded",
+        );
         ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((message) => {
             if (message.id !== currentAssistantMessageId) return message;
@@ -471,13 +573,37 @@ export function createToolExecutor(
                 message.toolCalls,
                 correctedCall,
                 ["pending", "running", "completed", "error"],
-                (currentToolCall) =>
-                  applyToolCorrectionToCall(
-                    currentToolCall,
+                (currentToolCall) => {
+                  if (succeeded?.result !== undefined) {
+                    return {
+                      ...currentToolCall,
+                      arguments: succeeded.arguments,
+                      result: succeeded.result,
+                      status: "completed" as const,
+                      correction,
+                      streamingStdout: undefined,
+                      streamingStderr: undefined,
+                    };
+                  }
+                  if (settle) {
+                    return {
+                      ...currentToolCall,
+                      result: originalResult,
+                      status: "completed" as const,
+                      correction,
+                      streamingStdout: undefined,
+                      streamingStderr: undefined,
+                    };
+                  }
+                  return {
+                    ...currentToolCall,
+                    status: "running" as const,
+                    result: undefined,
                     correction,
-                    settle,
-                    originalResult,
-                  ),
+                    streamingStdout: undefined,
+                    streamingStderr: undefined,
+                  };
+                },
               ),
             };
           }),
@@ -485,26 +611,94 @@ export function createToolExecutor(
       };
 
       /**
+       * 落库纠错状态：应用重启后历史消息重建时仍能展开纠错树（审计）。
+       * 与修正参数一样，仅在助手消息已持久化的会话中写入。
+       */
+      const persistToolCorrection = (
+        correctedCall: ToolCallInfo,
+        correction: ToolCorrectionState,
+      ): void => {
+        if (
+          !responseId ||
+          !correctedCall.callId ||
+          isPendingSessionKey(effectiveKey)
+        ) {
+          return;
+        }
+        void window.snow
+          .updateToolCallCorrection(
+            effectiveKey,
+            responseId,
+            correctedCall.callId,
+            serializeToolCorrectionState(correction),
+          )
+          .catch(() => undefined);
+      };
+
+      /** 让下一轮请求看到修正后的工具调用参数。 */
+      const persistCorrectedArguments = async (
+        correctedCall: ToolCallInfo,
+        argsJson: string,
+      ): Promise<void> => {
+        if (
+          !responseId ||
+          !correctedCall.callId ||
+          isPendingSessionKey(effectiveKey)
+        ) {
+          return;
+        }
+        await window.snow
+          .updateToolCallArguments(
+            effectiveKey,
+            responseId,
+            correctedCall.callId,
+            argsJson,
+          )
+          .catch(() => undefined);
+      };
+
+      /**
        * 失败工具纠错入口：仅对可纠错的普通工具触发，最多 3 次。
        * `settle` 为 true 时，纠错失败会把卡片恢复为原始结果
        * （并行预启动路径不会再经过顺序路径的最终结算）。
        */
-      const runCorrectionForTool = (
+      const runCorrectionForTool = async (
         correctedCall: ToolCallInfo,
         failedResult: string,
         workDir: string | undefined,
         settle: boolean,
-      ): Promise<ToolCorrectionSuccess | null> =>
-        correctFailedToolCall({
-          toolCall: correctedCall,
+      ): Promise<ToolCorrectionSuccess | null> => {
+        if (
+          !isToolCorrectionEligible(correctedCall.name) ||
+          !isValidToolName(correctedCall.name) ||
+          !(await ensureToolCorrectionPreference())
+        ) {
+          return null;
+        }
+        const failure = detectToolFailure(failedResult);
+        if (!failure || isNonCorrectableToolFailure(failure)) {
+          return null;
+        }
+
+        const outcome = await runToolCorrection({
+          toolName: correctedCall.name,
+          originalArguments: correctedCall.arguments,
           failedResult,
           apiProfile,
           conversationId: isPendingSessionKey(effectiveKey)
             ? undefined
             : effectiveKey,
-          responseId,
-          getToolDefinition,
-          authorize: async (authorizationCall) => {
+          getToolDefinition: () => getToolDefinition(correctedCall.name),
+          requestCorrection: (request) => window.snow.correctToolCall(request),
+          authorize: async (argumentsJson, attempt) => {
+            const authorizationCall: ToolCallInfo = {
+              ...correctedCall,
+              arguments: argumentsJson,
+              interactionId: `${correctedCall.interactionId}-correction-${attempt}`,
+              status: "pending",
+              result: undefined,
+              correction: undefined,
+            };
             const decisions = await requestToolAuthorizations(
               [authorizationCall],
               effectiveKey,
@@ -524,15 +718,23 @@ export function createToolExecutor(
               throw error;
             }
           },
-          onUpdate: (correction) =>
+          onUpdate: (correction) => {
             publishToolCorrection(
               correctedCall,
               correction,
               settle,
               failedResult,
-            ),
+            );
+            persistToolCorrection(correctedCall, correction);
+          },
           isCancelled: () => isRunCancelled(effectiveKey),
         });
+
+        if (outcome) {
+          await persistCorrectedArguments(correctedCall, outcome.arguments);
+        }
+        return outcome;
+      };
 
       // Pre-start every approved call up front and store the pending promises
       // keyed by tool index; the main loop below simply awaits the already-
@@ -788,14 +990,13 @@ export function createToolExecutor(
                   parallelToolCall.interactionId,
                   checkpointIds,
                 );
-              } else if (isSubAgentContinue) {
-                // 重新激活（sub-agents-continue）与激活同语义：阻塞至子代理
-                // 本次回合结束（运行中的目标则入 Pending 队列后立即返回）。
-                // 同批次的多个 continue 因此并发运行，与并行激活完全一致；
-                // 会话隔离与内存/DB 恢复器解析都在执行器内部完成。
+              } else if (SUB_AGENT_MAIN_TOOL_NAMES.has(parallelToolCall.name)) {
+                // Every parent management tool uses the renderer executor, including
+                // readonly getResult/wait. Native callMcpTool intentionally rejects them.
+                // Keep the enclosing batch barrier and existing Hook/authorization flow.
                 parallelResult = await executeSubAgentMainTool(
                   parallelToolCall.name,
-                  parallelToolCall.arguments,
+                  subAgentArgs(parallelToolCall, parallelToolCall.arguments),
                   effectiveKey,
                   checkpointIds,
                 );
@@ -948,7 +1149,8 @@ export function createToolExecutor(
         // PENDING 会话还没有真实会话 id，无法关联子代理（执行器内部也会
         // 拒绝），因此不进入并行预启动，交由顺序路径返回结构化错误。
         const skipPendingSubAgent =
-          (name === "sub-agents-activate" || name === "sub-agents-continue") &&
+          (name === "sub-agents-activate" ||
+            SUB_AGENT_MAIN_TOOL_NAMES.has(name)) &&
           isPendingSessionKey(effectiveKey);
         if (
           (isParallelizable || isReadonlyTool) &&
@@ -1482,7 +1684,7 @@ export function createToolExecutor(
                   // 无法关联子代理，直接拒绝。
                   result = await executeSubAgentMainTool(
                     toolCall.name,
-                    toolArgs,
+                    subAgentArgs(toolCall, toolArgs),
                     effectiveKey,
                     checkpointIds,
                   );

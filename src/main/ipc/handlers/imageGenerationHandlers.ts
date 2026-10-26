@@ -231,7 +231,10 @@ export const registerImageGenerationHandlers = (native: NativeBridge): void => {
       conversationId: unknown,
     ): Promise<ImageGenerationBatchSnapshot[]> => {
       assertMainFrame(event);
-      const conversation = await requireConversation(native, conversationId);
+      const conversation = requireIdentifier(conversationId, "conversation ID");
+      // A deleted or archived conversation has no batches. Reads treat that as
+      // an empty result so restored UI state cannot raise an IPC error forever.
+      if (!(await native.getChatConversation(conversation))) return [];
       const result = decodeNativeJson(
         await native.listImageGenerationBatches(conversation),
       );
@@ -258,11 +261,14 @@ export const registerImageGenerationHandlers = (native: NativeBridge): void => {
       assertMainFrame(event);
       const task = requireIdentifier(taskId, "task ID");
       // Unregistered direct calls deliberately use an empty conversation scope.
-      const conversation = await requireConversation(
-        native,
+      const conversation = requireIdentifier(
         conversationId,
+        "conversation ID",
         true,
       );
+      // A deleted or archived conversation has no task to recover.
+      if (conversation && !(await native.getChatConversation(conversation)))
+        return null;
       try {
         const result = decodeNativeJson(
           await native.getImageGenerationTask(conversation, task),

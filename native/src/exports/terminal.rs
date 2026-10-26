@@ -237,7 +237,7 @@ pub(crate) fn load_terminal_shell_path_sync() -> napi::Result<String> {
         .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read terminal settings: {error}"),
+                format!("HOST_OPERATION_FAILED: Failed to read terminal settings: {error}"),
             )
         })?;
 
@@ -246,7 +246,7 @@ pub(crate) fn load_terminal_shell_path_sync() -> napi::Result<String> {
             let settings: TerminalSettingsJson = serde_json::from_str(&json).map_err(|error| {
                 Error::new(
                     Status::GenericFailure,
-                    format!("Failed to parse terminal settings: {error}"),
+                    format!("HOST_OPERATION_FAILED: Failed to parse terminal settings: {error}"),
                 )
             })?;
             Ok(settings.shell_path)
@@ -263,7 +263,7 @@ pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
         .map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read terminal settings: {error}"),
+                format!("HOST_OPERATION_FAILED: Failed to read terminal settings: {error}"),
             )
         })?
 }

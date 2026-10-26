@@ -1,3 +1,8 @@
+import {
+  isDurableSubAgentConversation,
+  reportSubAgentParentError,
+  stopSubAgentParentTask,
+} from "./subAgentParentInbox";
 import { useCallback } from "react";
 import type {
   ConversationContextValue,
@@ -24,11 +29,7 @@ import {
   toNonBlockingRecord,
 } from "./hookOutcome";
 import { prefetchMarkdown } from "../components/markdownRenderer";
-import {
-  deliverPendingItem,
-  demotePendingSteering,
-} from "../utils/pendingInputs";
-import { settleSubAgentMessage } from "./subAgentMessageStatus";
+import { demotePendingSteering } from "../utils/pendingInputs";
 import { cancelSubAgentRunWaits } from "./subAgentRunControl";
 import { imageGenerationRuntime } from "./imageGenerationRuntime";
 import {
@@ -87,7 +88,6 @@ export const useConversationManagement = (
       if (queue.length === 0) {
         ctx.pendingQueueRef.current.delete(sessionKey);
       }
-      settleSubAgentMessage(removed?.source?.messageId, "withdrawn");
       // 显示镜像只反映当前激活会话的队列（会话隔离）：目标为后台会话时
       // 不更新镜像，等切回该会话时再从队列重载。激活基准同样经迁移映射
       // 解析（槽位迁移后 activeSessionKey 与队列 key 可能相差一层映射）。
@@ -857,6 +857,12 @@ export const useConversationManagement = (
    */
   const abortSubAgentTree = useCallback(
     (subKey: string): void => {
+      if (isDurableSubAgentConversation(subKey)) {
+        void stopSubAgentParentTask(ctx, subKey).catch((error) =>
+          reportSubAgentParentError(ctx, subKey, error),
+        );
+        return;
+      }
       const subRef = ctx.sessionsRefData.current.get(subKey);
       if (!subRef || subRef.isAbortRequested) {
         return;
@@ -932,6 +938,12 @@ export const useConversationManagement = (
         typeof targetSessionKey === "string" && targetSessionKey.length > 0
           ? targetSessionKey
           : (ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY);
+      if (!isPendingSessionKey(key)) {
+        void stopSubAgentParentTask(ctx, key).catch((error) =>
+          reportSubAgentParentError(ctx, key, error),
+        );
+        if (isDurableSubAgentConversation(key)) return;
+      }
       const ref = ctx.sessionsRefData.current.get(key);
       if (!ref?.isSending || ref.isAbortRequested) {
         return;
@@ -1134,6 +1146,14 @@ export const useConversationManagement = (
         return false;
       }
 
+      // A terminated child retains its pending input; it is not parent authorization.
+      if (
+        ctx.subAgentSessionEventsRef.current[sessionKey]
+          ?.parentConversationId &&
+        ctx.sessionsRefData.current.get(sessionKey)?.subAgentTerminated
+      )
+        return false;
+
       // Abort the target session's streaming run so isSending flips to
       // false and handleSendMessage will start a new agent loop instead of
       // re-queuing the message.
@@ -1146,7 +1166,7 @@ export const useConversationManagement = (
         ctx.pendingQueueRef.current.delete(sessionKey);
       }
       // 立即发送即视为送达，正文按投递格式拼接来源
-      const removed = taken ? deliverPendingItem(taken) : undefined;
+      const removed = taken;
 
       if (!removed) {
         if (isActiveTarget) {

@@ -63,6 +63,88 @@ pub(crate) fn begin_external_tool_execution(
     Some(register_remote_tool_execution(on_chunk))
 }
 
+/// Only errors from an invoked service are tool feedback. Context, authorization,
+/// checkpoint, join, serialization and privacy failures retain their host boundary.
+trait SubAgentToolFeedback {
+    fn tool_feedback(self, delegated: bool) -> napi::Result<Value>;
+    fn validation_feedback(self, delegated: bool) -> napi::Result<Value>;
+}
+impl SubAgentToolFeedback for napi::Result<Value> {
+    // Metadata-oriented services must not turn an unclassified storage/config
+    // failure into a model-repairable operation. Their argument errors may retry.
+    fn validation_feedback(self, delegated: bool) -> napi::Result<Value> {
+        match self {
+            Err(error) if error.status != Status::InvalidArg => Err(error),
+            result => result.tool_feedback(delegated),
+        }
+    }
+
+    fn tool_feedback(self, delegated: bool) -> napi::Result<Value> {
+        if !delegated {
+            return self;
+        }
+        let error = match self {
+            Ok(result) => return Ok(result),
+            Err(error) => error,
+        };
+        if !matches!(error.status, Status::GenericFailure | Status::InvalidArg) {
+            return Err(error);
+        }
+        let reason = error.reason.trim();
+        let payload = serde_json::from_str::<Value>(reason).ok();
+        let code = payload
+            .as_ref()
+            .and_then(|value| {
+                value
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .or_else(|| value.get("error").and_then(Value::as_str))
+            })
+            .unwrap_or(reason);
+        let protected = [
+            "[SELF-PROTECTION]",
+            "PERMISSION_DENIED",
+            "PARENT_PLAN_APPROVAL_REQUIRED",
+            "TOOL_EXECUTION_DENIED",
+            "SENSITIVE_COMMAND_DETECTED",
+            "OWNER_MISMATCH",
+            "PERSISTENCE_ERROR",
+            "HOST_OPERATION_FAILED",
+            "INVALID_TRANSITION",
+            "CONFIGURATION_ERROR",
+            "CONVERSATION_DELETING",
+            "DELETE_PENDING",
+            "ROLLBACK_",
+            "RUN_CANCELLED",
+        ]
+        .iter()
+        .any(|prefix| reason.starts_with(prefix) || code.starts_with(prefix))
+            || payload.as_ref().is_some_and(|value| {
+                [
+                    "requiresConfirmation",
+                    "requiresApproval",
+                    "cancelled",
+                    "denied",
+                    "skipped",
+                ]
+                .iter()
+                .any(|field| value.get(*field).and_then(Value::as_bool) == Some(true))
+            });
+        if protected {
+            return Err(error);
+        }
+        let mut feedback = match payload {
+            Some(Value::Object(object)) => object,
+            _ => serde_json::Map::new(),
+        };
+        feedback.insert("success".into(), Value::Bool(false));
+        if !feedback.contains_key("error") {
+            feedback.insert("error".into(), Value::String(error.reason.clone()));
+        }
+        Ok(Value::Object(feedback))
+    }
+}
+
 /// Execute an MCP tool and capture incremental checkpoint state immediately
 pub async fn call_mcp_tool(
     tool_full_name: String,
@@ -246,12 +328,13 @@ pub async fn call_mcp_tool(
     ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name, project_override).await?;
 
     if let Some(ref allowed_tools) = sub_agent_allowed_tools {
-        let wildcard_enabled = allowed_tools.iter().any(|name| name == "*");
-        let comms_allowed = SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool_full_name.as_str());
-        if !wildcard_enabled
-            && !comms_allowed
-            && !allowed_tools.iter().any(|name| name == &tool_full_name)
-        {
+        let explicitly_allowed = allowed_tools.iter().any(|name| name == &tool_full_name);
+        // Communication requires the explicit runtime token produced by the
+        // configured-capability/current-delegation intersection. A bare wildcard
+        // must not restore the retired implicit teammate-tool exemption.
+        let wildcard_allowed = allowed_tools.iter().any(|name| name == "*")
+            && !SUB_AGENT_COMMS_TOOL_FULL_NAMES.contains(&tool_full_name.as_str());
+        if !explicitly_allowed && !wildcard_allowed {
             return Err(Error::new(
                 Status::GenericFailure,
                 format!("Sub-agent tool is not in the allowed whitelist: {tool_full_name}"),
@@ -421,21 +504,24 @@ pub async fn call_mcp_tool(
                 }
             }
         }
-        let mut result = terminal_result.map_err(|mut error| {
-            // Sensitive-command errors are themselves JSON parsed by the host.
-            // Preserve that shape, status and all existing safety fields.
-            if let Ok(Value::Object(mut payload)) = serde_json::from_str::<Value>(&error.reason) {
-                payload.insert("fileTracking".into(), file_tracking.clone());
-                error.reason = Value::Object(payload).to_string();
-            } else if !error.reason.starts_with("[SELF-PROTECTION]") {
-                error.reason = serde_json::json!({
-                    "error": error.reason,
-                    "fileTracking": file_tracking.clone(),
-                })
-                .to_string();
-            }
-            error
-        })?;
+        let mut result = terminal_result
+            .map_err(|mut error| {
+                // Sensitive-command errors are themselves JSON parsed by the host.
+                // Preserve that shape, status and all existing safety fields.
+                if let Ok(Value::Object(mut payload)) = serde_json::from_str::<Value>(&error.reason)
+                {
+                    payload.insert("fileTracking".into(), file_tracking.clone());
+                    error.reason = Value::Object(payload).to_string();
+                } else if !error.reason.starts_with("[SELF-PROTECTION]") {
+                    error.reason = serde_json::json!({
+                        "error": error.reason,
+                        "fileTracking": file_tracking.clone(),
+                    })
+                    .to_string();
+                }
+                error
+            })
+            .tool_feedback(is_sub_agent_call)?;
         result["fileTracking"] = file_tracking;
         result
     } else if tool_full_name == "grep-search" {
@@ -462,7 +548,7 @@ pub async fn call_mcp_tool(
             crate::api::cancel::unregister_tool_execution(&tool_execution_id);
         }
         annotate_grep_result_with_semantic_routing(
-            search_result?,
+            search_result.tool_feedback(is_sub_agent_call)?,
             &args,
             project_id.as_deref(),
             sub_agent_allowed_tools.as_deref(),
@@ -489,7 +575,7 @@ pub async fn call_mcp_tool(
         if let Some((tool_execution_id, _)) = remote_cancel {
             crate::api::cancel::unregister_tool_execution(&tool_execution_id);
         }
-        find_result?
+        find_result.tool_feedback(is_sub_agent_call)?
     } else if uses_remote_workspace {
         let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
             Error::new(
@@ -515,13 +601,14 @@ pub async fn call_mcp_tool(
             Some(&on_chunk),
         )
         .await?;
-        fs_result?
+        fs_result.tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "todo-todo-manage" {
         // 会话隔离键由分发层注入当前会话 ID（与 memory 相同模式），
         // 模型传入的 sessionId 参数一律忽略，无法跨会话读写。
         TodoService::new()
             .execute_async(&args, conversation_id.as_deref())
-            .await?
+            .await
+            .validation_feedback(is_sub_agent_call)?
     } else if let Some(memory_tool) = tool_full_name.strip_prefix("memory-") {
         // 项目记忆工具集：project_id 由调用链注入（当前会话项目），
         // 工具参数不携带 projectId，模型无法跨项目读写；conversation_id
@@ -533,13 +620,18 @@ pub async fn call_mcp_tool(
                 project_id.as_deref(),
                 conversation_id.as_deref(),
             )
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "websearch-websearch-search" {
         WebSearchService::new()
             .execute_async("websearch-search", &args, &on_websearch_command)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "websearch-websearch-fetch" {
-        WebSearchService::new().execute_fetch(&args).await?
+        WebSearchService::new()
+            .execute_fetch(&args)
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "imagegen-generate" {
         // Main injects the interaction anchor; conversation ownership is always the real executor scope.
         let interaction_id = args
@@ -554,19 +646,23 @@ pub async fn call_mcp_tool(
         });
         ImageGenService::new()
             .execute_generate(&args, on_chunk)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "imagegen-image-describe" {
         ImageGenService::new()
             .execute_describe(&args, conversation_id.as_deref())
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {
         BrowserService::new()
             .execute_async(tool_name, &args, &on_browser_command)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("terminal-") {
         TerminalService::new()
             .execute_async(tool_name, &args, &on_terminal_command)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if tool_full_name == "user-interaction-askUserQuestion" {
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
@@ -598,7 +694,8 @@ pub async fn call_mcp_tool(
     } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
         AppControlService::new()
             .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(routed) = match tool_full_name.as_str() {
         "config-set" => route_config_set(&args, project_id.as_deref()),
         "config-delete" => route_config_delete(&args, project_id.as_deref()),
@@ -608,7 +705,8 @@ pub async fn call_mcp_tool(
         let (action, payload) = routed?;
         AppControlService::new()
             .dispatch(action, payload, &on_app_control)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(config_tool) = tool_full_name.strip_prefix("config-") {
         // 传入运行时已知的当前会话 projectId（directoryId）。ConfigService
         // 内部会将其注入到支持项目级作用域的调用（hooks/subAgents/skills/
@@ -616,20 +714,24 @@ pub async fn call_mcp_tool(
         // 修复 AI 无法获知当前会话项目ID导致项目级配置落到全局的问题。
         ConfigService::new()
             .execute_async(config_tool, &args, project_id.clone())
-            .await?
+            .await
+            .validation_feedback(is_sub_agent_call)?
     } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()
             .execute(&args, project_id.as_deref())
-            .await?
+            .await
+            .validation_feedback(is_sub_agent_call)?
     } else if tool_full_name == "codebase-search" {
         CodebaseService::new()
             .execute_search(&args, project_id.as_deref(), &on_chunk)
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(lsp_tool) = tool_full_name.strip_prefix("lsp-") {
         let service = LspService::new();
         service
             .execute_lsp_tool(lsp_tool, &args, project_id.as_deref())
-            .await?
+            .await
+            .tool_feedback(is_sub_agent_call)?
     } else if let Some(filesystem_tool) = tool_full_name.strip_prefix("filesystem-") {
         // 本地文件系统工具走异步执行路径：编辑成功后（auto-format 开启时）
         // 需要异步调用 Prettier 格式化，同步 execute_builtin_tool 无法完成。
@@ -648,14 +750,15 @@ pub async fn call_mcp_tool(
                     format!("Failed to capture checkpoint after tool execution: {error}"),
                 )
             })??;
-        filesystem_result?
+        filesystem_result.tool_feedback(is_sub_agent_call)?
     } else if let Some(result) =
         super::super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
     {
         result
     } else {
         tokio::task::spawn_blocking(move || {
-            let result = execute_builtin_tool(&tool_full_name, &args);
+            let result =
+                execute_builtin_tool(&tool_full_name, &args).tool_feedback(is_sub_agent_call);
             capture_checkpoint_after_tool(checkpoint_capture)?;
             result
         })
@@ -672,7 +775,7 @@ pub async fn call_mcp_tool(
     // 访问工作区，无需继续阻塞同项目的其他并行工具。
     drop(checkpoint_operation_guard);
 
-    if returns_plain_text {
+    if returns_plain_text && result.get("success").and_then(Value::as_bool) != Some(false) {
         let plain_text = result.as_str().map(str::to_string).ok_or_else(|| {
             Error::new(
                 Status::GenericFailure,

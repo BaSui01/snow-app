@@ -25,24 +25,10 @@ export const agentsEn: Record<string, string> = {
   "remote.toolCall.agents.subAgent.conversationId": "Session",
   "remote.toolCall.agents.subAgent.summary": "Summary",
   "remote.toolCall.agents.subAgent.queued":
-    "Message queued — delivered at the end of the target's current round.",
+    "Message queued; consumption and understanding are not confirmed.",
   "remote.toolCall.agents.subAgent.failed": "Sub-agent run failed",
   "remote.toolCall.agents.subAgent.activating": "Activating…",
   "remote.toolCall.agents.subAgent.resuming": "Resuming…",
-
-  // 子代理列表（sub-agents-listSubAgents）
-  "remote.toolCall.agents.subAgentList.name": "Sub-agents",
-  "remote.toolCall.agents.subAgentList.count": "{{count}} sub-agents",
-  "remote.toolCall.agents.subAgentList.resumableCount": "{{count}} resumable",
-  "remote.toolCall.agents.subAgentList.empty":
-    "No sub-agents in this conversation",
-  "remote.toolCall.agents.subAgentList.loading": "Loading…",
-  "remote.toolCall.agents.subAgentList.resumable": "Resumable",
-  "remote.toolCall.agents.subAgentList.notResumable": "Not resumable",
-  "remote.toolCall.agents.subAgentList.status.running": "Running",
-  "remote.toolCall.agents.subAgentList.status.completed": "Completed",
-  "remote.toolCall.agents.subAgentList.status.failed": "Failed",
-  "remote.toolCall.agents.subAgentList.status.cancelled": "Cancelled",
 
   // 技能（skills-skill-execute）
   "remote.toolCall.agents.skill.name": "Skill",
@@ -124,24 +110,10 @@ export const agentsZhCN: Record<string, string> = {
   "remote.toolCall.agents.subAgent.config": "配置",
   "remote.toolCall.agents.subAgent.conversationId": "会话",
   "remote.toolCall.agents.subAgent.summary": "结果摘要",
-  "remote.toolCall.agents.subAgent.queued":
-    "消息已排队，将在目标子代理本回合结束时送达。",
+  "remote.toolCall.agents.subAgent.queued": "消息已入队；尚未确认消费或理解。",
   "remote.toolCall.agents.subAgent.failed": "子代理运行失败",
   "remote.toolCall.agents.subAgent.activating": "正在激活…",
   "remote.toolCall.agents.subAgent.resuming": "正在恢复…",
-
-  // 子代理列表
-  "remote.toolCall.agents.subAgentList.name": "子代理列表",
-  "remote.toolCall.agents.subAgentList.count": "{{count}} 个子代理",
-  "remote.toolCall.agents.subAgentList.resumableCount": "{{count}} 个可恢复",
-  "remote.toolCall.agents.subAgentList.empty": "本会话暂无子代理",
-  "remote.toolCall.agents.subAgentList.loading": "加载中…",
-  "remote.toolCall.agents.subAgentList.resumable": "可恢复",
-  "remote.toolCall.agents.subAgentList.notResumable": "不可恢复",
-  "remote.toolCall.agents.subAgentList.status.running": "运行中",
-  "remote.toolCall.agents.subAgentList.status.completed": "已完成",
-  "remote.toolCall.agents.subAgentList.status.failed": "失败",
-  "remote.toolCall.agents.subAgentList.status.cancelled": "已取消",
 
   // 技能
   "remote.toolCall.agents.skill.name": "技能",
@@ -223,24 +195,10 @@ export const agentsZhTW: Record<string, string> = {
   "remote.toolCall.agents.subAgent.config": "設定",
   "remote.toolCall.agents.subAgent.conversationId": "會話",
   "remote.toolCall.agents.subAgent.summary": "結果摘要",
-  "remote.toolCall.agents.subAgent.queued":
-    "訊息已排隊，將在目標子代理本回合結束時送達。",
+  "remote.toolCall.agents.subAgent.queued": "訊息已入列；尚未確認取用或理解。",
   "remote.toolCall.agents.subAgent.failed": "子代理執行失敗",
   "remote.toolCall.agents.subAgent.activating": "正在啟動…",
   "remote.toolCall.agents.subAgent.resuming": "正在恢復…",
-
-  // 子代理清單
-  "remote.toolCall.agents.subAgentList.name": "子代理清單",
-  "remote.toolCall.agents.subAgentList.count": "{{count}} 個子代理",
-  "remote.toolCall.agents.subAgentList.resumableCount": "{{count}} 個可恢復",
-  "remote.toolCall.agents.subAgentList.empty": "本會話暫無子代理",
-  "remote.toolCall.agents.subAgentList.loading": "載入中…",
-  "remote.toolCall.agents.subAgentList.resumable": "可恢復",
-  "remote.toolCall.agents.subAgentList.notResumable": "不可恢復",
-  "remote.toolCall.agents.subAgentList.status.running": "執行中",
-  "remote.toolCall.agents.subAgentList.status.completed": "已完成",
-  "remote.toolCall.agents.subAgentList.status.failed": "失敗",
-  "remote.toolCall.agents.subAgentList.status.cancelled": "已取消",
 
   // 技能
   "remote.toolCall.agents.skill.name": "技能",

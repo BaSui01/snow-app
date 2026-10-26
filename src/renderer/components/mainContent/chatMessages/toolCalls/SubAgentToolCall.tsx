@@ -1,16 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import type {
+  SubAgentAccepted,
+  SubAgentMessageQueued,
+  SubAgentCancelReceipt,
+  SubAgentRunRecord,
+} from "../../../../../shared/subAgentRuns";
+import { isSubAgentTerminal } from "../../../../../shared/subAgentRuns";
+import {
+  requestSubAgentRunCancel,
+  useSubAgentRuns,
+} from "../hooks/subAgentRuntimeClient";
+import { SubAgentAcceptanceDetails } from "../components/SubAgentRunDetails";
 import {
   AlertCircle,
   ArrowRight,
-  Ban,
   Bot,
   CheckCircle2,
   CircleDot,
-  CircleQuestionMark,
   Hourglass,
-  Loader2,
   RotateCcw,
-  Wrench,
   XCircle,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
@@ -21,22 +29,35 @@ import {
 import {
   resolveSubAgentFailureDecision,
   useSubAgentFailurePending,
-  useSubAgentQueued,
 } from "../hooks/subAgentRunControl";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import type { HookExecutionRecord } from "../utils/conversationTypes";
 import type { SubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
-import { parseSubAgentAcceptanceSnapshot } from "../hooks/subAgentAcceptance";
+import {
+  parseSubAgentObservationResult,
+  subAgentRunTone,
+} from "./subAgentRunObservation";
 import { ToolCallNode } from "./shared/ToolCallNode";
+import { ToolResultView } from "./shared/ToolResultView";
+
 import { resolveToolDisplayName } from "./shared/toolDisplayName";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { HookExecutionUI } from "./HookExecutionUI";
 import { PromptPreview } from "../components/PromptPreview";
+import { MarkdownBlock } from "../components/markdownRenderer";
 import { SubAgentMessageDelivery } from "./SubAgentMessageDelivery";
 
+const parseUnknownResult = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+};
 type SubAgentToolCallProps = {
   toolCall: ToolCallInfo;
+  parentConversationId?: string;
   /** Hook execution records bound to this tool call (matched by
    *  toolCallInteractionId). beforeSubAgentStart renders as a "pre" step,
    *  onSubAgentComplete as a "post" step inside the card. */
@@ -52,7 +73,11 @@ type ParsedSubAgentArgs =
   | { mode: "activate"; agentId: string; summary: string; prompt: string }
   | { mode: "continue"; conversationId: string; message: string };
 
-type ParsedSubAgentResult =
+type ParsedSubAgentResult = { runId?: string } & (
+  | ({ type: "receipt"; messageId?: string; queuedAt?: number } & Pick<
+      SubAgentAccepted | SubAgentMessageQueued,
+      "kind" | "conversationId" | "requestId" | "runId"
+    >)
   | {
       type: "success";
       conversationId: string;
@@ -60,14 +85,14 @@ type ParsedSubAgentResult =
       summary: string;
       acceptance: SubAgentAcceptanceSnapshot | null;
     }
-  | { type: "queued"; note: string; messageId?: string; queuedAt?: number }
   | {
       type: "error";
       message: string;
       acceptance: SubAgentAcceptanceSnapshot | null;
     }
   | { type: "raw"; text: string }
-  | { type: "empty" };
+  | { type: "empty" }
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -95,11 +120,9 @@ const parseArgs = (
     if (!agentId || !prompt) {
       return null;
     }
-    // summary 从本版本起为必填参数；历史会话的激活调用可能缺失，
-    // 因此这里按可选解析（缺失时头部回退为代理名）。
     const summary =
       typeof parsed.summary === "string" ? parsed.summary.trim() : "";
-    return { mode: "activate", agentId, summary, prompt };
+    return summary ? { mode: "activate", agentId, summary, prompt } : null;
   } catch {
     return null;
   }
@@ -116,18 +139,25 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
       return { type: "raw", text: result };
     }
 
-    const acceptance = parseSubAgentAcceptanceSnapshot(parsed.acceptance);
-
-    if (typeof parsed.error === "string") {
-      return { type: "error", message: parsed.error, acceptance };
-    }
-
-    // continue 的目标子代理仍在运行：消息已进入 Pending 队列，
-    // 没有 conversationId/summary，只展示排队提示。
-    if (parsed.success === true && parsed.queued === true) {
+    const acceptance = null;
+    const runId =
+      typeof parsed.runId === "string" && parsed.runId
+        ? parsed.runId
+        : undefined;
+    if (
+      parsed.success === true &&
+      runId &&
+      typeof parsed.conversationId === "string" &&
+      typeof parsed.requestId === "string" &&
+      parsed.requestId.length > 0 &&
+      (parsed.kind === "accepted" || parsed.kind === "message_queued")
+    ) {
       return {
-        type: "queued",
-        note: typeof parsed.note === "string" ? parsed.note : "",
+        type: "receipt",
+        kind: parsed.kind,
+        requestId: parsed.requestId,
+        runId,
+        conversationId: parsed.conversationId,
         messageId:
           typeof parsed.messageId === "string" ? parsed.messageId : undefined,
         queuedAt:
@@ -135,18 +165,36 @@ const parseResult = (result: string | undefined): ParsedSubAgentResult => {
       };
     }
 
+    if (typeof parsed.error === "string") {
+      return { type: "error", message: parsed.error, acceptance, runId };
+    }
+
     if (
       parsed.success === true &&
-      typeof parsed.conversationId === "string" &&
-      typeof parsed.agentName === "string"
+      parsed.kind === "result" &&
+      isRecord(parsed.run)
     ) {
-      return {
-        type: "success",
-        conversationId: parsed.conversationId,
-        agentName: parsed.agentName,
-        summary: typeof parsed.summary === "string" ? parsed.summary : "",
-        acceptance,
-      };
+      const observed = parseSubAgentObservationResult(result);
+      if (observed.kind === "runs" && observed.runs.length === 1) {
+        const run = observed.runs[0];
+        const acceptance = run.acceptance ?? null;
+        if (run.status !== "completed")
+          return {
+            type: "error",
+            message: run.error ?? run.status,
+            acceptance,
+            runId: run.runId,
+          };
+        if (run.conversationId)
+          return {
+            type: "success",
+            runId: run.runId,
+            conversationId: run.conversationId,
+            agentName: run.agentName ?? "",
+            summary: run.summary ?? "",
+            acceptance,
+          };
+      }
     }
 
     return { type: "raw", text: result };
@@ -242,6 +290,7 @@ const extractSubAgentToolCalls = (
 
 export const SubAgentToolCall = ({
   toolCall,
+  parentConversationId,
   hookExecutions,
   mode = "activate",
 }: SubAgentToolCallProps): React.JSX.Element => {
@@ -253,6 +302,13 @@ export const SubAgentToolCall = ({
   } = useChatConversationContext();
   // 会话内存态表每个流式帧都会更换引用：单独订阅（读取子代理会话状态）。
   const sessions = useChatConversationSessions();
+  const parentId = parentConversationId ?? activeConversationId;
+  const {
+    runs,
+    loading: runsLoading,
+    error: runsError,
+    refresh,
+  } = useSubAgentRuns(parentId);
 
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments, mode),
@@ -263,119 +319,93 @@ export const SubAgentToolCall = ({
     [toolCall.result],
   );
 
-  // 验收回执：成功回执、失败回执与预算超限回执都可能携带。
+  // Bind this card to its exact run, never the latest run of the same agent.
+  const run = parsedResult.runId
+    ? runs.find(
+        (item) =>
+          item.runId === parsedResult.runId &&
+          item.parentConversationId === parentId,
+      )
+    : toolCall.interactionId
+      ? runs.find(
+          (item) =>
+            item.interactionId === toolCall.interactionId &&
+            item.parentConversationId === parentId,
+        )
+      : undefined;
+  const runTone = run ? subAgentRunTone(run.status) : undefined;
   const acceptance =
-    parsedResult.type === "success" || parsedResult.type === "error"
+    run?.outcome?.acceptance ??
+    (parsedResult.type === "success" || parsedResult.type === "error"
       ? parsedResult.acceptance
-      : null;
+      : null);
+  const summary =
+    run?.outcome?.summary ??
+    (parsedResult.type === "success" ? parsedResult.summary : "");
   const unmetAcceptanceCount = useMemo(
     () =>
-      acceptance
-        ? acceptance.items.filter(
-            (item) =>
-              item.required &&
-              (item.status !== "completed" || item.evidence.length === 0),
-          ).length
-        : 0,
+      acceptance?.items.filter(
+        (item) =>
+          item.required &&
+          (item.status !== "completed" || item.evidence.length === 0),
+      ).length ?? 0,
     [acceptance],
   );
-
-  // Match the sub-agent session event to this tool call so the sub-agent
-  // conversation id is available while the tool is still running (before the
-  // result is available).
-  // - activate：多个子代理可以并行激活同一个 agentId，toolCallInteractionId
-  //   是主键（agentId 匹配仅作旧事件兜底）。
-  // - continue：resume 不绑定 toolCallInteractionId（重新激活不是新的
-  //   激活流程），按目标 conversationId 精确匹配。
   const matchedEvent = useMemo(() => {
-    if (!parsedArgs) {
+    if (parsedResult.type !== "empty" || run || !toolCall.interactionId)
       return null;
-    }
-    const events = Object.values(subAgentSessionEvents);
-
-    if (parsedArgs.mode === "continue") {
-      return (
-        events.find(
-          (event) =>
-            event.conversationId === parsedArgs.conversationId &&
-            event.parentConversationId === activeConversationId,
-        ) ?? null
-      );
-    }
-
-    const byInteractionId = events.find(
-      (event) =>
-        event.toolCallInteractionId === toolCall.interactionId &&
-        event.parentConversationId === activeConversationId,
+    return (
+      Object.values(subAgentSessionEvents).find(
+        (event) =>
+          event.toolCallInteractionId === toolCall.interactionId &&
+          event.parentConversationId === parentId,
+      ) ?? null
     );
-    if (byInteractionId) {
-      return byInteractionId;
-    }
-
-    const byAgentId = events.find(
-      (event) =>
-        event.agentId === parsedArgs.agentId &&
-        event.parentConversationId === activeConversationId,
-    );
-    return byAgentId ?? null;
   }, [
     subAgentSessionEvents,
-    parsedArgs,
-    activeConversationId,
+    parsedResult.type,
+    run,
+    parentId,
     toolCall.interactionId,
   ]);
-
-  // The sub-agent conversation id may come from the parsed result (once the
-  // activation call resolves) or from the live session event (while running).
   const subConversationId =
-    parsedResult.type === "success"
+    run?.conversationId ??
+    (parsedResult.type === "success" || parsedResult.type === "receipt"
       ? parsedResult.conversationId
-      : matchedEvent?.conversationId;
-
-  // Live session state for the sub-agent conversation. While the sub-agent is
-  // running, this provides real-time message and tool-call progress.
+      : matchedEvent?.conversationId);
   const subSession = subConversationId
     ? sessions[subConversationId]
     : undefined;
-
-  const isRunning = toolCall.status === "running";
+  // A continued conversation contains multiple runs. Do not show later activity
+  // as progress of an earlier, already completed dispatch.
+  const runMessages = useMemo(
+    () =>
+      run
+        ? subSession?.messages.filter(
+            (message) => message.subAgentRunId === run.runId,
+          )
+        : undefined,
+    [run, subSession?.messages],
+  );
   const isEmptyResultError =
     parsedResult.type === "empty" && toolCall.status === "error";
-  const isError =
-    parsedResult.type === "error" ||
-    toolCall.status === "error" ||
-    isEmptyResultError;
-
-  // 首次响应开始后，激活卡片不再显示“正在激活”。流式指标能覆盖
-  // 仅输出工具调用或思考内容的响应，消息状态则覆盖首轮结束后的间隔。
-  const hasSubAgentResponseStarted = useMemo(() => {
-    if (!subSession) {
-      return false;
-    }
-    if (subSession.streamTtftMs > 0 || subSession.streamTokenCount > 0) {
-      return true;
-    }
-    return subSession.messages.some(
-      (message) =>
-        message.role === "assistant" &&
-        (message.content.trim().length > 0 ||
-          Boolean(message.thinking?.trim()) ||
-          (message.toolCalls?.length ?? 0) > 0 ||
-          message.status === "sent" ||
-          message.status === "incomplete" ||
-          message.status === "error"),
-    );
-  }, [subSession]);
-
-  const isActivationPending = isRunning && !hasSubAgentResponseStarted;
-  const isQueued = useSubAgentQueued(isRunning ? subConversationId : undefined);
-  const isFailurePending = useSubAgentFailurePending(
-    isRunning ? subConversationId : undefined,
-  );
-
+  // Run controls must not attribute a later continuation's state to this card.
+  const activeRunConversationId =
+    run && !isSubAgentTerminal(run.status) ? run.conversationId : undefined;
+  const isQueued = run?.status === "queued";
+  const isFailurePending = useSubAgentFailurePending(activeRunConversationId);
+  const queryStatus = parsedResult.runId
+    ? runsError
+      ? "subAgentRun.queryFailed"
+      : !run
+        ? runsLoading
+          ? "subAgentRun.loading"
+          : "subAgentRun.unavailable"
+        : null
+    : null;
   const toolCallEntries = useMemo(
-    () => extractSubAgentToolCalls(subSession?.messages),
-    [subSession?.messages],
+    () => extractSubAgentToolCalls(runMessages),
+    [runMessages],
   );
 
   const completedCount = toolCallEntries.filter(
@@ -407,8 +437,6 @@ export const SubAgentToolCall = ({
     [hookExecutions],
   );
 
-  const effectiveStatus = isError ? "error" : toolCall.status;
-
   // continue 模式没有 agentId（参数是 conversationId + message），
   // 身份名只能来自结果或会话事件。
   const argIdentityId =
@@ -416,14 +444,14 @@ export const SubAgentToolCall = ({
   const agentName =
     parsedResult.type === "success"
       ? parsedResult.agentName
-      : (matchedEvent?.agentName ?? argIdentityId);
+      : (run?.agentName ?? matchedEvent?.agentName ?? argIdentityId);
 
   // 头部摘要：激活调用取 summary 参数；continue 取目标子代理事件里记录的
   // 激活摘要（应用重启后事件缺失则回退为代理名）。
   const headSummary =
     parsedArgs?.mode === "activate"
       ? parsedArgs.summary
-      : (matchedEvent?.summary ?? "");
+      : (run?.summary ?? matchedEvent?.summary ?? "");
   const headSummaryPreview = getSummaryPreview(headSummary);
 
   const promptText = parsedArgs
@@ -451,15 +479,6 @@ export const SubAgentToolCall = ({
   const renderActivityIcon = (
     status: SubAgentToolCallEntry["status"],
   ): React.ReactNode => {
-    if (status === "running") {
-      return (
-        <Loader2
-          size={11}
-          className="tool-call-icon-spinning"
-          aria-hidden="true"
-        />
-      );
-    }
     if (status === "completed") {
       return <CheckCircle2 size={11} aria-hidden="true" />;
     }
@@ -467,21 +486,6 @@ export const SubAgentToolCall = ({
       return <AlertCircle size={11} aria-hidden="true" />;
     }
     return <CircleDot size={11} aria-hidden="true" />;
-  };
-
-  const renderAcceptanceIcon = (
-    status: SubAgentAcceptanceSnapshot["items"][number]["status"],
-  ): React.ReactNode => {
-    if (status === "completed") {
-      return <CheckCircle2 size={12} aria-hidden="true" />;
-    }
-    if (status === "incomplete") {
-      return <AlertCircle size={12} aria-hidden="true" />;
-    }
-    if (status === "blocked") {
-      return <Ban size={12} aria-hidden="true" />;
-    }
-    return <CircleQuestionMark size={12} aria-hidden="true" />;
   };
 
   return (
@@ -508,17 +512,36 @@ export const SubAgentToolCall = ({
         )
       }
       displayNameTitle={headSummary || undefined}
-      status={effectiveStatus}
+      status={toolCall.status}
+      activityIndicator="single"
       meta={
-        totalCount > 0 || unmetAcceptanceCount > 0 ? (
+        run || queryStatus || totalCount > 0 || unmetAcceptanceCount > 0 ? (
           <>
+            {run ? (
+              <>
+                <span className="tool-call-run-mode">
+                  {t(`subAgentRun.mode.${run.executionMode}`)}
+                </span>
+                <span
+                  className="tool-call-run-status"
+                  title={t("subAgentRun.receiptNotCompletion")}
+                >
+                  {run.status === "waiting_input" ? (
+                    <AlertCircle size={12} aria-hidden="true" />
+                  ) : null}
+                  {t(`subAgentRun.status.${run.status}`)}
+                </span>
+              </>
+            ) : null}
+            {queryStatus ? (
+              <span className="tool-call-sub-agent-count" role="status">
+                {t(queryStatus)}
+              </span>
+            ) : null}
             {totalCount > 0 ? (
               <span className="tool-call-sub-agent-count">
                 {t("toolCall.subAgent.toolProgress", {
-                  values: {
-                    completed: completedCount,
-                    total: totalCount,
-                  },
+                  values: { completed: completedCount, total: totalCount },
                 })}
               </span>
             ) : null}
@@ -532,9 +555,20 @@ export const SubAgentToolCall = ({
           </>
         ) : null
       }
-      className="tool-call-sub-agent"
+      className={`tool-call-sub-agent${
+        runTone ? ` tool-call-run-tone--${runTone}` : ""
+      }`}
     >
       <div className="tool-call-body tool-call-sub-agent-body">
+        {queryStatus && !runsLoading ? (
+          <button
+            type="button"
+            className="tool-call-sub-agent-jump"
+            onClick={() => void refresh()}
+          >
+            {t("subAgentRun.refresh")}
+          </button>
+        ) : null}
         {/* Pre-step: beforeSubAgentStart hook ran before the sub-agent session
             was created — show it at the top of the card. */}
         {preHooks.length > 0 ? (
@@ -605,42 +639,8 @@ export const SubAgentToolCall = ({
           </div>
         ) : null}
 
-        {/* Pending state - only when no activity yet */}
-        {parsedResult.type === "empty" &&
-        !isEmptyResultError &&
-        toolCallEntries.length === 0 ? (
-          <div
-            className={`tool-call-sub-agent-pending ${
-              isActivationPending ? "tool-call-sub-agent-pending-running" : ""
-            }`}
-          >
-            {isQueued ? (
-              <Hourglass size={14} aria-hidden="true" />
-            ) : isActivationPending ? (
-              <Loader2
-                className="tool-call-icon-spinning"
-                size={14}
-                aria-hidden="true"
-              />
-            ) : (
-              <Wrench size={14} aria-hidden="true" />
-            )}
-            <span>
-              {isQueued
-                ? t("toolCall.subAgent.waitingSlot")
-                : isActivationPending
-                  ? parsedArgs?.mode === "continue"
-                    ? t("toolCall.subAgent.resuming")
-                    : t("toolCall.subAgent.activating")
-                  : isRunning
-                    ? t("toolCall.subAgent.status.running")
-                    : t("toolCall.subAgent.waiting")}
-            </span>
-          </div>
-        ) : null}
-
-        {/* 重试时再次排队（已有活动记录时单独提示） */}
-        {isQueued && toolCallEntries.length > 0 ? (
+        {/* Queue state is static; the dispatch header owns the only request animation. */}
+        {isQueued ? (
           <div className="tool-call-sub-agent-pending">
             <Hourglass size={14} aria-hidden="true" />
             <span>{t("toolCall.subAgent.waitingSlot")}</span>
@@ -680,7 +680,8 @@ export const SubAgentToolCall = ({
         ) : null}
 
         {/* Queued notice (continue 目标仍在运行：消息已进入 Pending 队列） */}
-        {parsedResult.type === "queued" ? (
+        {parsedResult.type === "receipt" &&
+        parsedResult.kind === "message_queued" ? (
           <SubAgentMessageDelivery
             messageId={parsedResult.messageId}
             queuedAt={parsedResult.queuedAt}
@@ -688,151 +689,38 @@ export const SubAgentToolCall = ({
         ) : null}
 
         {/* Summary on success */}
-        {parsedResult.type === "success" && parsedResult.summary ? (
+        {summary ? (
           <div className="tool-call-sub-agent-summary">
             <span className="tool-call-sub-agent-summary-label">
               {t("toolCall.subAgent.summary")}
             </span>
-            <pre className="tool-call-sub-agent-summary-value">
-              {parsedResult.summary}
-            </pre>
+            <MarkdownBlock
+              className="ai-message tool-call-sub-agent-summary-value"
+              content={summary}
+            />
           </div>
         ) : null}
 
         {/* Acceptance receipt: per-item status verified against the real tool
             execution log. Missing evidence is never treated as passed. */}
         {acceptance ? (
-          <div className="tool-call-sub-agent-acceptance">
-            <div className="tool-call-sub-agent-acceptance-head">
-              <span className="tool-call-sub-agent-acceptance-label">
-                {t("toolCall.subAgent.acceptance.title")}
-              </span>
-              <span
-                className={`tool-call-sub-agent-acceptance-verdict${
-                  acceptance.satisfied ? " is-passed" : " is-unmet"
-                }`}
-              >
-                {acceptance.satisfied
-                  ? t("toolCall.subAgent.acceptance.verdictPassed")
-                  : t("toolCall.subAgent.acceptance.verdictUnmet")}
-              </span>
-              <span className="tool-call-sub-agent-acceptance-count">
-                {t("toolCall.subAgent.acceptance.count", {
-                  values: {
-                    completed: acceptance.counts.completed,
-                    total: acceptance.counts.total,
-                  },
-                })}
-              </span>
-            </div>
-            {acceptance.reportState === "invalid" ? (
-              <div className="tool-call-sub-agent-acceptance-notice">
-                {t("toolCall.subAgent.acceptance.reportInvalid")}
-              </div>
-            ) : acceptance.reportState === "none" ? (
-              <div className="tool-call-sub-agent-acceptance-notice">
-                {t("toolCall.subAgent.acceptance.reportMissing")}
-              </div>
-            ) : null}
-            <ul className="tool-call-sub-agent-acceptance-list">
-              {acceptance.items.map((item) => {
-                const reason =
-                  item.reasonCode === "not_reported"
-                    ? t("toolCall.subAgent.acceptance.reason.notReported")
-                    : item.reasonCode === "no_valid_evidence"
-                      ? t("toolCall.subAgent.acceptance.reason.noEvidence")
-                      : item.reason;
-                return (
-                  <li
-                    key={item.id}
-                    className={`tool-call-sub-agent-acceptance-item tool-call-sub-agent-acceptance-item--${item.status}`}
-                  >
-                    <span
-                      className={`tool-call-sub-agent-acceptance-item-icon tool-call-sub-agent-acceptance-item-icon--${item.status}`}
-                    >
-                      {renderAcceptanceIcon(item.status)}
-                    </span>
-                    <div className="tool-call-sub-agent-acceptance-main">
-                      <div className="tool-call-sub-agent-acceptance-row">
-                        <span className="tool-call-sub-agent-acceptance-description">
-                          {item.description}
-                        </span>
-                        {item.required ? (
-                          <span className="tool-call-sub-agent-acceptance-required">
-                            {t("toolCall.subAgent.acceptance.required")}
-                          </span>
-                        ) : null}
-                        <span
-                          className={`tool-call-sub-agent-acceptance-status tool-call-sub-agent-acceptance-status--${item.status}`}
-                        >
-                          {t(
-                            `toolCall.subAgent.acceptance.status.${item.status}`,
-                          )}
-                        </span>
-                      </div>
-                      <span className="tool-call-sub-agent-acceptance-id">
-                        {item.id}
-                      </span>
-                      {item.observation ? (
-                        <div className="tool-call-sub-agent-acceptance-observation">
-                          {item.observation}
-                        </div>
-                      ) : null}
-                      {reason ? (
-                        <div className="tool-call-sub-agent-acceptance-reason">
-                          {reason}
-                        </div>
-                      ) : null}
-                      {acceptance.reportState === "received" &&
-                      !item.confirmedInLatestReport &&
-                      item.updatedAt > 0 ? (
-                        <div className="tool-call-sub-agent-acceptance-reason">
-                          {t("toolCall.subAgent.acceptance.previous")}
-                        </div>
-                      ) : null}
-                      {item.evidence.length > 0 ? (
-                        <div className="tool-call-sub-agent-acceptance-evidence">
-                          <span className="tool-call-sub-agent-acceptance-evidence-label">
-                            {t("toolCall.subAgent.acceptance.evidence")}
-                          </span>
-                          {item.evidence.map((ref) => (
-                            <span
-                              key={ref.id}
-                              className="tool-call-sub-agent-acceptance-evidence-chip"
-                              title={ref.preview || undefined}
-                            >
-                              <span className="tool-call-sub-agent-acceptance-evidence-id">
-                                {ref.id}
-                              </span>
-                              <span className="tool-call-sub-agent-acceptance-evidence-tool">
-                                {ref.toolName}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      ) : item.status === "completed" ? (
-                        <div className="tool-call-sub-agent-acceptance-no-evidence">
-                          {t("toolCall.subAgent.acceptance.noEvidence")}
-                        </div>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          <SubAgentAcceptanceDetails acceptance={acceptance} />
         ) : null}
 
         {/* Error */}
-        {parsedResult.type === "error" || isEmptyResultError ? (
+        {parsedResult.type === "error" ||
+        isEmptyResultError ||
+        run?.outcome?.error ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
             <span>
-              {isEmptyResultError
-                ? t("toolCall.subAgent.activationFailed")
-                : parsedResult.type === "error"
-                  ? localizeToolError(t, parsedResult.message)
-                  : t("toolCall.subAgent.activationFailed")}
+              {run?.outcome?.error
+                ? localizeToolError(t, run.outcome.error.message)
+                : isEmptyResultError
+                  ? t("toolCall.subAgent.activationFailed")
+                  : parsedResult.type === "error"
+                    ? localizeToolError(t, parsedResult.message)
+                    : t("toolCall.subAgent.activationFailed")}
             </span>
           </div>
         ) : null}
@@ -843,7 +731,7 @@ export const SubAgentToolCall = ({
             <span className="tool-call-section-label">
               {t("toolCall.subAgent.result")}
             </span>
-            <pre className="tool-call-section-pre">{parsedResult.text}</pre>
+            <ToolResultView value={parseUnknownResult(parsedResult.text)} />
           </section>
         ) : null}
 
@@ -856,7 +744,9 @@ export const SubAgentToolCall = ({
         ) : null}
 
         {/* Jump to sub-agent conversation - available even while running */}
-        {subConversationId ? (
+        {run ? (
+          <SubAgentRunActions key={run.runId} run={run} />
+        ) : subConversationId ? (
           <button
             type="button"
             className={`tool-call-sub-agent-jump ${
@@ -870,5 +760,88 @@ export const SubAgentToolCall = ({
         ) : null}
       </div>
     </ToolCallNode>
+  );
+};
+
+/** Compact actions in the existing sub-agent card; messaging stays in its conversation. */
+export const SubAgentRunActions = ({
+  run,
+}: {
+  run: SubAgentRunRecord;
+}): React.JSX.Element => {
+  const { t } = useI18n();
+  const { handleSelectConversation, activeConversationId } =
+    useChatConversationContext();
+  const inFlight = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<SubAgentCancelReceipt | null>(null);
+  const canCancel =
+    run.status === "queued" ||
+    run.status === "running" ||
+    run.status === "waiting_input";
+  const cancel = async (): Promise<void> => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      setReceipt(
+        await requestSubAgentRunCancel(run.parentConversationId, run.runId),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+  const open = async (): Promise<void> => {
+    setError(null);
+    try {
+      await handleSelectConversation(run.conversationId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  return (
+    <>
+      <div className="tool-call-sub-agent-retry-actions">
+        <button
+          type="button"
+          className={`tool-call-sub-agent-jump ${activeConversationId === run.conversationId ? "active" : ""}`}
+          onClick={() => void open()}
+        >
+          <ArrowRight size={12} aria-hidden="true" />
+          {t(
+            run.status === "waiting_input"
+              ? "subAgentRun.handleInput"
+              : "toolCall.subAgent.jumpToConversation",
+          )}
+        </button>
+        {canCancel ? (
+          <button
+            type="button"
+            className="tool-call-sub-agent-jump"
+            disabled={busy || receipt !== null}
+            onClick={() => void cancel()}
+          >
+            <XCircle size={12} aria-hidden="true" />
+            {t("subAgentRun.cancel")}
+          </button>
+        ) : null}
+        {receipt ? (
+          <span role="status">
+            {t(`subAgentRun.cancel.${receipt.disposition}`)}
+          </span>
+        ) : null}
+      </div>
+      {error ? (
+        <div className="tool-call-error" role="alert">
+          <AlertCircle size={12} aria-hidden="true" />
+          <span>{localizeToolError(t, error)}</span>
+        </div>
+      ) : null}
+    </>
   );
 };

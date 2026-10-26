@@ -7,6 +7,10 @@ export const SUB_AGENT_ALL_TOOLS_MARKER = "*";
 /** 子代理运行时永远不会获得的工具（UI 过滤用镜像；权威来源为 Rust SUB_AGENT_RESERVED_TOOL_FULL_NAMES）。 */
 export const SUB_AGENT_RESERVED_TOOL_NAMES = new Set<string>([
   ...SUB_AGENT_MAIN_TOOL_NAMES,
+  "sub-agents-activate",
+  "sub-agents-listSubAgents",
+  "sub-agents-listTeammates",
+  "sub-agents-wait",
   "app-control-requestApproval",
   "app-control-conversation",
   "workflow-workflow-generate",

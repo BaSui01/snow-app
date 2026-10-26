@@ -8,6 +8,8 @@ import type {
   ConversationImportSummary,
   ConversationSearchResult,
   UserMessageSummary,
+  SubAgentRunCommand,
+  SubAgentRunCommandResult,
   WorkflowCanvasRecord,
   WorkflowGraphValidationResult,
   WorkflowNodeSessionRecord,
@@ -46,7 +48,67 @@ const ensureImportProgressListener = (): void => {
 const createImportStreamId = (): string =>
   `conversation-import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+const SUB_AGENT_CHANGED_CHANNEL = "sub-agents:changed";
+// Separate entries preserve independent cancellation even for the same callback.
+const subAgentSubscribers = new Set<{ notify: () => void }>();
+const logSubAgentSubscription = (
+  event: "attached" | "detached" | "subscriber_failed",
+): void => {
+  try {
+    void ipcRenderer
+      .invoke(
+        "debug:write-log",
+        event === "subscriber_failed" ? "WARN" : "DEBUG",
+        {
+          module: "preload/sub-agents",
+          func: "subscription",
+          message: `Sub-agent subscription ${event}`,
+          context: JSON.stringify({
+            event,
+            subscriberCount: subAgentSubscribers.size,
+          }),
+        },
+      )
+      .catch(() => undefined);
+  } catch {
+    // Diagnostics must not interrupt notification delivery or cleanup.
+  }
+};
+const notifySubAgentSubscribers = (): void => {
+  for (const subscriber of [...subAgentSubscribers]) {
+    // A callback may unsubscribe another entry during this dispatch.
+    if (!subAgentSubscribers.has(subscriber)) continue;
+    try {
+      subscriber.notify();
+    } catch {
+      logSubAgentSubscription("subscriber_failed");
+    }
+  }
+};
+
 export const conversationApi = {
+  subAgentRunCommand: (
+    command: SubAgentRunCommand,
+  ): Promise<SubAgentRunCommandResult> =>
+    ipcRenderer.invoke("sub-agents:command", command),
+  onSubAgentRunsChanged: (callback: () => void): (() => void) => {
+    const subscriber = { notify: callback };
+    if (subAgentSubscribers.size === 0) {
+      ipcRenderer.on(SUB_AGENT_CHANGED_CHANNEL, notifySubAgentSubscribers);
+    }
+    subAgentSubscribers.add(subscriber);
+    if (subAgentSubscribers.size === 1) logSubAgentSubscription("attached");
+    return () => {
+      if (!subAgentSubscribers.delete(subscriber)) return;
+      if (subAgentSubscribers.size === 0) {
+        ipcRenderer.removeListener(
+          SUB_AGENT_CHANGED_CHANNEL,
+          notifySubAgentSubscribers,
+        );
+        logSubAgentSubscription("detached");
+      }
+    };
+  },
   listChatConversations: (
     directoryId: string,
   ): Promise<ChatConversationRecord[]> =>
@@ -294,42 +356,6 @@ export const conversationApi = {
     ipcRenderer.invoke(
       "chat-conversations:list-sub-agent",
       parentConversationId,
-    ),
-  createSubAgentSession: (
-    conversationId: string,
-    parentConversationId: string,
-    agentId: string,
-    agentName: string,
-    directoryId: string,
-    apiProfileName: string,
-    model: string,
-    title: string,
-    thinkingStrength?: string | null,
-    responsesFastMode?: string | null,
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "chat-conversations:create-sub-agent-session",
-      conversationId,
-      parentConversationId,
-      agentId,
-      agentName,
-      directoryId,
-      apiProfileName,
-      model,
-      title,
-      thinkingStrength,
-      responsesFastMode,
-    ),
-  updateSubAgentSessionStatus: (
-    conversationId: string,
-    runStatus: string,
-    errorMessage: string,
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "chat-conversations:update-sub-agent-status",
-      conversationId,
-      runStatus,
-      errorMessage,
     ),
   createWorkflowNodeSession: (
     conversationId: string,

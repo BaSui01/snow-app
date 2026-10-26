@@ -71,7 +71,6 @@ const ChatContentBody = ({
     conversationDirectoryId,
     isLoadingOlderMessages,
     hasMoreMessages,
-    isInitialHistoryLoaded,
     isLoadingInitialHistory,
     isStreaming,
     isPaused,
@@ -94,7 +93,7 @@ const ChatContentBody = ({
     cancelRollback,
     pendingMessages,
     pendingMessageModes,
-    pendingMessageSources,
+
     withdrawPendingMessage,
     sendPendingMessageNow,
     compactConversation,
@@ -309,23 +308,6 @@ const ChatContentBody = ({
     activeConversationMeta?.parentConversationId ||
     liveSubAgentEvent?.parentConversationId ||
     "";
-
-  // 排队来源跳转：仅限本会话的父会话或同一父会话下的队友（会话隔离）。
-  const handleOpenPendingSource = useCallback(
-    (targetId: string): void => {
-      if (!subAgentParentConversationId) return;
-      const allowed =
-        targetId === subAgentParentConversationId ||
-        subAgentSessionEvents[targetId]?.parentConversationId ===
-          subAgentParentConversationId;
-      if (allowed) void handleSelectConversation(targetId);
-    },
-    [
-      subAgentParentConversationId,
-      subAgentSessionEvents,
-      handleSelectConversation,
-    ],
-  );
 
   // workflow 节点会话（conversationType = workflow_node）与子代理同构：
   // run_status 映射进 subAgentStatus 字段；节点结束（completed/failed）后
@@ -760,8 +742,7 @@ const ChatContentBody = ({
                 loadOlderMessages={handleLoadOlderWithScroll}
                 pendingMessages={pendingMessages}
                 pendingMessageModes={pendingMessageModes}
-                pendingMessageSources={pendingMessageSources}
-                onOpenPendingSource={handleOpenPendingSource}
+
                 onWithdrawPendingMessage={withdrawPendingMessage}
                 onSendPendingMessageNow={sendPendingMessageNow}
                 onCompactConversation={compactConversation}

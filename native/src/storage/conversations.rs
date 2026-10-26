@@ -3,14 +3,24 @@ use std::collections::HashMap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::api::conversation::images::{
-    resolve_inline_images_from_disk, resolve_message_image,
-};
+use crate::api::conversation::images::{resolve_inline_images_from_disk, resolve_message_image};
 
 use super::ensure_archive_database_file;
 use super::ensure_database_file;
 use super::models::*;
 use super::services;
+
+pub fn sub_agent_run_command(command_json: &str) -> Result<String> {
+    let command: serde_json::Value = serde_json::from_str(command_json)
+        .map_err(|_| Error::from_reason("VALIDATION_ERROR: invalid sub-agent command JSON"))?;
+    let database_path = ensure_database_file().map_err(|error| {
+        Error::from_reason(format!(
+            "PERSISTENCE_ERROR: initialize run storage: {error}"
+        ))
+    })?;
+    services::chat_conversations::sub_agent_run_command(&database_path, &command)
+        .map(|result| result.to_string())
+}
 
 pub fn get_conversation_modes(
     conversation_id: &str,
@@ -81,10 +91,7 @@ pub fn update_workflow_node_session(
     )
 }
 
-pub fn update_workflow_node_handoff(
-    conversation_id: &str,
-    handoff_content: &str,
-) -> Result<()> {
+pub fn update_workflow_node_handoff(conversation_id: &str, handoff_content: &str) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::update_workflow_node_handoff(
         &database_path,
@@ -173,7 +180,7 @@ pub fn get_workflow_canvas(
     interaction_id: &str,
 ) -> Result<Option<WorkflowCanvasRecord>> {
     let database_path = ensure_database_file()?;
-services::chat_conversations::get_workflow_canvas(
+    services::chat_conversations::get_workflow_canvas(
         &database_path,
         parent_conversation_id,
         interaction_id,
@@ -184,10 +191,7 @@ pub fn get_conversation_runtime_config(
     conversation_id: &str,
 ) -> Result<services::chat_conversations::ConversationRuntimeConfig> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::get_conversation_runtime_config(
-        &database_path,
-        conversation_id,
-    )
+    services::chat_conversations::get_conversation_runtime_config(&database_path, conversation_id)
 }
 
 pub fn set_conversation_runtime_config(
@@ -230,10 +234,7 @@ pub fn set_conversation_run_stats(
 
 pub fn reset_conversation_run_stats(conversation_id: &str) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::reset_conversation_run_stats(
-        &database_path,
-        conversation_id,
-    )
+    services::chat_conversations::reset_conversation_run_stats(&database_path, conversation_id)
 }
 
 pub fn list_chat_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
@@ -259,10 +260,7 @@ pub fn list_chat_conversations_by_ids(
     conversation_ids: Vec<String>,
 ) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::list_chat_conversations_by_ids(
-        &database_path,
-        &conversation_ids,
-    )
+    services::chat_conversations::list_chat_conversations_by_ids(&database_path, &conversation_ids)
 }
 
 /// 记忆来源解析：按会话 ID 批量查询会话记录（含子代理 / WorkFlow 节点会话）。
@@ -328,34 +326,6 @@ pub fn list_sub_agent_conversations_by_parents(
     )
 }
 
-pub fn create_sub_agent_session(
-    conversation_id: String,
-    parent_conversation_id: String,
-    agent_id: String,
-    agent_name: String,
-    directory_id: String,
-    api_profile_name: String,
-    model: String,
-    title: String,
-    thinking_strength: Option<String>,
-    responses_fast_mode: Option<String>,
-) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::chat_conversations::create_sub_agent_session(
-        &database_path,
-        &conversation_id,
-        &parent_conversation_id,
-        &agent_id,
-        &agent_name,
-        &directory_id,
-        &api_profile_name,
-        &model,
-        &title,
-        thinking_strength,
-        responses_fast_mode,
-    )
-}
-
 pub fn create_chat_conversation(
     directory_id: String,
     title: String,
@@ -368,32 +338,6 @@ pub fn create_chat_conversation(
         &title,
         initial_text.as_deref(),
     )
-}
-
-pub fn update_sub_agent_session_status(
-    conversation_id: String,
-    run_status: String,
-    error_message: String,
-) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::chat_conversations::update_sub_agent_session_status(
-        &database_path,
-        &conversation_id,
-        &run_status,
-        &error_message,
-    )
-}
-
-pub fn cancel_running_sub_agent_sessions() -> Result<u32> {
-    let database_path = ensure_database_file()?;
-    let cancelled_count =
-        services::chat_conversations::cancel_running_sub_agent_sessions(&database_path)?;
-    u32::try_from(cancelled_count).map_err(|_| {
-        Error::new(
-            Status::GenericFailure,
-            "Cancelled sub-agent session count exceeds u32 range".to_string(),
-        )
-    })
 }
 
 pub fn update_conversation_status(conversation_id: String, status: String) -> Result<()> {
@@ -486,9 +430,18 @@ pub fn delete_archived_conversations(conversation_ids: Vec<String>) -> Result<()
     services::archive::delete_archived_conversations(&archive_path, &conversation_ids)
 }
 
-pub fn save_task_history(conversation_id: String, response_id: String, manifest: String) -> Result<()> {
+pub fn save_task_history(
+    conversation_id: String,
+    response_id: String,
+    manifest: String,
+) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::save_task_history(&database_path, &conversation_id, &response_id, &manifest)
+    services::chat_conversations::save_task_history(
+        &database_path,
+        &conversation_id,
+        &response_id,
+        &manifest,
+    )
 }
 
 pub fn list_task_history(conversation_id: String) -> Result<Vec<String>> {

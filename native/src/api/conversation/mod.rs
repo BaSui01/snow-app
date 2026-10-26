@@ -8,6 +8,7 @@ pub mod image_optimize;
 pub mod images;
 pub mod stream;
 pub mod sub_agent;
+mod sub_agent_ledger;
 pub mod tags;
 pub mod tail_guard;
 pub mod tool_messages;
@@ -27,7 +28,7 @@ pub struct ConversationContextRequest<'a> {
     /// Optional actual analysis worktree; does not change configuration scope.
     pub analysis_workspace_root: Option<&'a str>,
     /// Final request tools, after project switches and sub-agent whitelist.
-    /// Empty when tools are disabled, compaction is active or discovery failed.
+    /// Empty when tools are disabled or compaction is active; discovery failures propagate.
     pub allowed_tools: &'a [crate::mcp::tools::McpTool],
     pub context_compaction: bool,
     /// Internal auto-compaction resume mode: the latest `context_compaction`

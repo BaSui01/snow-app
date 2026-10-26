@@ -61,10 +61,11 @@ impl TodoService {
     }
 
     fn get_connection(&self) -> napi::Result<Connection> {
-        let conn = crate::storage::database::open_connection(&self.db_path).map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to open database: {e}"),
+        let conn = crate::storage::database::open_connection(&self.db_path).map_err(|error| {
+            crate::storage::database::database_error(
+                std::path::Path::new(&self.db_path),
+                "open",
+                error,
             )
         })?;
         Ok(conn)
@@ -572,7 +573,12 @@ impl TodoService {
             }
         })
         .await
-        .map_err(|e| Error::new(Status::GenericFailure, format!("Task join error: {e}")))??;
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("HOST_OPERATION_FAILED: Task join error: {e}"),
+            )
+        })??;
 
         Ok(result)
     }

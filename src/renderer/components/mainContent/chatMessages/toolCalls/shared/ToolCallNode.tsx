@@ -20,6 +20,8 @@ type ToolCallNodeProps = {
   displayNameDataPath?: string;
   /** Current status of the tool call. */
   status: "pending" | "running" | "completed" | "error";
+  /** Motion policy; the actual tool status is never changed for presentation. */
+  activityIndicator?: "default" | "single" | "none";
   /** Whether the node is expanded by default. */
   defaultOpen?: boolean;
   /** Extra metadata rendered inline in the header (badges, counts, etc.). */
@@ -43,6 +45,7 @@ export const ToolCallNode = ({
   displayNameTitle,
   displayNameDataPath,
   status,
+  activityIndicator = "default",
   defaultOpen = false,
   meta,
   className,
@@ -113,8 +116,10 @@ export const ToolCallNode = ({
   return (
     <details
       className={`tcn tcn--${status}${isClosing ? " tcn--closing" : ""}${
-        className ? ` ${className}` : ""
-      }`}
+        activityIndicator !== "default"
+          ? ` tcn--activity-${activityIndicator}`
+          : ""
+      }${className ? ` ${className}` : ""}`}
       open={isOpen}
       onToggle={(e) => setIsOpen(e.currentTarget.open)}
     >
@@ -161,7 +166,7 @@ export const ToolCallNode = ({
             </span>
           </>
         ) : null}
-        {isRunning ? (
+        {isRunning && activityIndicator !== "none" ? (
           <Loader2
             size={13}
             className="tcn-icon-spin tcn-running-spinner"

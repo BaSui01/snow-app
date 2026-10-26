@@ -32,11 +32,9 @@ import {
   useClientScriptStore,
 } from "../../userscripts/clientScriptStore";
 import { scriptEditorStore } from "../../userscripts/scriptEditorStore";
-import { buildScriptPluginView } from "../../userscripts/clientScriptApi";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { UserscriptIcon } from "../common/UserscriptIcon";
 import { useChatConversationContext } from "../mainContent/chatMessages";
-import { PluginCapabilityLinks } from "./PluginCapabilityLinks";
 import { PluginCreateBox } from "./PluginCreateBox";
 import { PluginPrivacyBadges } from "./PluginPrivacyBadges";
 import type { PluginPrivacyTarget } from "./PluginPrivacyDialog";
@@ -144,14 +142,12 @@ snow.onCleanup(() => observer.disconnect());
 
 type PluginScriptsSectionProps = {
   onClose: () => void;
-  onOpenMetadata: (scriptId: string) => void;
   onOpenPrivacy: (target: PluginPrivacyTarget) => void;
 };
 
 /** 「脚本插件」标签页：管理注入桌面窗口的客户端脚本（不改动浏览器油猴脚本）。 */
 export const PluginScriptsSection = ({
   onClose,
-  onOpenMetadata,
   onOpenPrivacy,
 }: PluginScriptsSectionProps): React.JSX.Element => {
   const { locale, t } = useI18n();
@@ -188,18 +184,6 @@ export const PluginScriptsSection = ({
     }
     return map;
   }, [state.commands]);
-
-  // 脚本的插件视图（与 snow.metadata / snow.write 授权同源），供能力入口计数。
-  const scriptViews = useMemo(
-    () =>
-      new Map(
-        state.scripts.map((script) => [
-          script.scriptId,
-          buildScriptPluginView(script.scriptId, script),
-        ]),
-      ),
-    [state.scripts],
-  );
 
   const isEmpty = state.status === "ready" && state.scripts.length === 0;
   const createBoxOpen = createOpen ?? isEmpty;
@@ -610,7 +594,6 @@ export const PluginScriptsSection = ({
           const failure = state.failures[script.scriptId];
           const commands = commandsByScript.get(script.scriptId) ?? [];
           const privacyScopes = script.privacy.filter(isSensitiveScope);
-          const scriptView = scriptViews.get(script.scriptId);
           const summary = [
             ...script.views.map((view) =>
               t("plugins.scripts.viewBadge", {
@@ -759,13 +742,6 @@ export const PluginScriptsSection = ({
                   </button>
                 </div>
               </div>
-
-              {scriptView && (
-                <PluginCapabilityLinks
-                  plugin={scriptView}
-                  onOpen={() => onOpenMetadata(script.scriptId)}
-                />
-              )}
 
               {commands.length > 0 && (
                 <div className="plugin-script-commands">

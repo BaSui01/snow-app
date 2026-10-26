@@ -4,7 +4,6 @@
  * 归口工具：
  * - 精确名 `sub-agents-activate` / `sub-agents-continue` → 子代理卡片（身份 + 任务
  *   + 运行态 + 结果 / 排队提示；与桌面 SubAgentToolCall 同源解析）；
- * - 精确名 `sub-agents-listSubAgents` → 子代理列表（名称 / 会话 ID / 状态 / 可恢复性）；
  * - 精确名 `skills-skill-execute` → 技能卡片（技能名 + 位置 + 允许工具 + 技能内容）；
  * - 精确名 `todo-todo-manage` → 待办卡片（动作 + 受影响条目 + 列表与统计）；
  * - 前缀 `memory-` → 记忆卡片（检索命中 / 列表 / 保存更新删除结论）。
@@ -27,8 +26,6 @@ import {
   argsSummary,
   createToolNode,
   decodeEscapedNewlines,
-  extractLongText,
-  formatJson,
   parseJsonRecord,
   resolveStatus,
   tcBadge,
@@ -247,7 +244,7 @@ type SubAgentResult =
 
 /**
  * 结果解析（与桌面 SubAgentToolCall.parseResult 同源）：
- * success+queued → 排队提示；success → conversationId / agentName / summary；
+ * accepted/message_queued 回执与 result.run.outcome 是唯一结构化协议；
  * error → 失败；非 JSON 或未知结构 → 原文回退；无结果 → empty。
  */
 const parseSubAgentResult = (raw?: string): SubAgentResult => {
@@ -258,26 +255,46 @@ const parseSubAgentResult = (raw?: string): SubAgentResult => {
   const error = asString(record.error);
   if (error) return { type: "error", message: error };
 
-  if (record.success === true && record.queued === true) {
+  if (
+    record.success === true &&
+    (record.kind === "accepted" || record.kind === "message_queued") &&
+    asString(record.runId) &&
+    asString(record.conversationId)
+  ) {
     return {
       type: "queued",
-      conversationId: asString(record.conversationId) ?? "",
-      agentName: asString(record.agentName) ?? "",
-      note: asString(record.note) ?? "",
+      conversationId: asString(record.conversationId)!,
+      agentName: "",
+      note:
+        record.kind === "message_queued"
+          ? tr("subAgent.queued")
+          : (asString(record.runStatus) ?? ""),
     };
   }
-
-  if (record.success === true) {
-    return {
-      type: "success",
-      conversationId: asString(record.conversationId) ?? "",
-      agentName: asString(record.agentName) ?? "",
-      // 结果文本优先：summary 字段（短摘要也保留）→ 长文本字段 → 结构化 JSON。
-      text:
-        asString(record.summary) ??
-        extractLongText(record) ??
-        formatJson(record),
-    };
+  if (
+    record.success === true &&
+    record.kind === "result" &&
+    isRecord(record.run)
+  ) {
+    const run = record.run;
+    if (
+      asString(run.runId) &&
+      asString(run.conversationId) &&
+      isRecord(run.outcome) &&
+      run.outcome.runId === run.runId
+    ) {
+      const outcome = run.outcome;
+      if (isRecord(outcome.error) && asString(outcome.error.message))
+        return { type: "error", message: asString(outcome.error.message)! };
+      return {
+        type: "success",
+        conversationId: asString(run.conversationId)!,
+        agentName: asString(run.agentName) ?? "",
+        text: isRecord(record.summaryPage)
+          ? (asString(record.summaryPage.text) ?? "")
+          : (asString(outcome.summary) ?? ""),
+      };
+    }
   }
 
   return { type: "raw", text: raw };
@@ -449,134 +466,6 @@ const renderSubAgentActivate: ToolCallRenderer = (tool) =>
 
 const renderSubAgentContinue: ToolCallRenderer = (tool) =>
   renderSubAgent(tool, "continue");
-
-// ── 子代理列表（sub-agents-listSubAgents） ──────────────────────────────
-
-type SubAgentEntry = {
-  conversationId: string;
-  agentId: string;
-  agentName: string;
-  description: string;
-  status: string;
-  resumable: boolean;
-};
-
-/** 结果解析（与桌面 SubAgentListToolCall.parseResult 同源）。 */
-const parseSubAgentList = (record: Json | null): SubAgentEntry[] | null => {
-  if (!record || !Array.isArray(record.subAgents)) return null;
-  return asRecords(record.subAgents)
-    .map((item): SubAgentEntry => ({
-      conversationId: asString(item.conversationId) ?? "",
-      agentId: asString(item.agentId) ?? "",
-      agentName: asString(item.agentName) ?? "",
-      description:
-        asString(item.description) ?? asString(item.capability) ?? "",
-      status: asString(item.status) ?? "",
-      resumable: item.resumable === true,
-    }))
-    .filter((item) => item.conversationId || item.agentId);
-};
-
-/** 子代理状态 → 色调（running 进行中 / completed 完成 / failed 失败 / cancelled 取消）。 */
-const subAgentTone = (
-  status: string,
-): "ok" | "warn" | "err" | "muted" | undefined => {
-  switch (status) {
-    case "running":
-      return "warn";
-    case "completed":
-      return "ok";
-    case "failed":
-      return "err";
-    case "cancelled":
-      return "muted";
-    default:
-      return undefined;
-  }
-};
-
-const subAgentListRow = (entry: SubAgentEntry): HTMLElement => {
-  const row = host("tc-ag-list-item");
-  const head = host("tc-ag-list-head");
-  head.append(iconSpan("brain-circuit", "tc-ag-ico"));
-  const name = textSpan(
-    "tc-ag-list-name",
-    entry.agentName || entry.agentId || entry.conversationId || "-",
-  );
-  if (entry.conversationId) name.title = entry.conversationId;
-  head.append(name);
-  if (entry.status)
-    head.append(
-      tcBadge(
-        dyn(`subAgentList.status.${entry.status}`, entry.status),
-        subAgentTone(entry.status),
-      ),
-    );
-  head.append(
-    tcBadge(
-      entry.resumable
-        ? tr("subAgentList.resumable")
-        : tr("subAgentList.notResumable"),
-      entry.resumable ? "ok" : "muted",
-    ),
-  );
-  row.append(head);
-  if (entry.conversationId)
-    row.append(textSpan("tc-ag-list-sub", entry.conversationId));
-  if (entry.description)
-    row.append(textSpan("tc-ag-list-desc", clip(entry.description, 160)));
-  return row;
-};
-
-const renderSubAgentList: ToolCallRenderer = (tool) => {
-  const args = parseJsonRecord(tool.arguments);
-  const record = parseJsonRecord(tool.result);
-  const entries = parseSubAgentList(record);
-  const error = record ? asString(record.error) : undefined;
-  const hasRawResult = (tool.result ?? "").trim() !== "";
-
-  if (!args && !entries && !error && !hasRawResult) return null;
-
-  const body = document.createDocumentFragment();
-  const meta: Node[] = [];
-  let display = "";
-
-  if (error) {
-    body.append(tcErrorRow(readable(error)));
-  } else if (entries) {
-    const countText = tr("subAgentList.count", { count: entries.length });
-    display = countText;
-    meta.push(tcBadge(countText, entries.length ? "muted" : undefined));
-    const resumable = entries.filter((entry) => entry.resumable).length;
-    if (resumable)
-      meta.push(
-        tcBadge(tr("subAgentList.resumableCount", { count: resumable }), "ok"),
-      );
-    if (entries.length) {
-      const list = host("tc-ag-list");
-      for (const entry of entries) list.append(subAgentListRow(entry));
-      body.append(list);
-    } else {
-      body.append(noteRow("empty", "blocks", tr("subAgentList.empty")));
-    }
-  } else {
-    const live = liveRow(tool, tr("subAgentList.loading"));
-    if (live) body.append(live);
-    const raw = rawResultSection(tool);
-    if (raw) body.append(raw);
-  }
-
-  return createToolNode({
-    tool,
-    status: resolveStatus(tool),
-    badge: tr("subAgentList.name"),
-    display: display || undefined,
-    meta,
-    className: "tc-ag-list-card",
-    bodyClass: "tc-ag",
-    body,
-  });
-};
 
 // ── 技能（skills-skill-execute） ───────────────────────────────────────
 
@@ -1142,7 +1031,6 @@ export const agentsModule: ToolModule = {
   renderers: {
     "sub-agents-activate": renderSubAgentActivate,
     "sub-agents-continue": renderSubAgentContinue,
-    "sub-agents-listSubAgents": renderSubAgentList,
     "skills-skill-execute": renderSkill,
     "todo-todo-manage": renderTodo,
   },

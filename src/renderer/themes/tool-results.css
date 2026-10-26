@@ -1,0 +1,228 @@
+/* Shared structured tool output; all visual roles follow the active theme. */
+.tool-result-sections {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  font-family: var(--font-sans);
+}
+
+.tool-result-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tool-result-section-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.tool-result-view {
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: inherit;
+  line-height: 1.6;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.tool-result-fields {
+  margin: 0;
+}
+
+.tool-result-field {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 6px 16px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.tool-result-field + .tool-result-field {
+  border-top: 1px solid var(--border-color);
+}
+
+.tool-result-key {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: pre-wrap;
+}
+
+.tool-result-field-value {
+  margin: 0;
+  min-width: 0;
+}
+
+.tool-result-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-result-view > .tool-result-value,
+.tool-result-view > .tool-result-collection > .tool-result-empty {
+  padding: 10px 12px;
+}
+
+.tool-result-empty {
+  color: var(--text-tertiary);
+}
+
+.tool-result-details {
+  min-width: 0;
+}
+
+.tool-result-summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.tool-result-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tool-result-details[open] > .tool-result-summary {
+  margin-bottom: 8px;
+}
+
+.tool-result-details > .tool-result-collection {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.tool-result-details .tool-result-field {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 8px;
+}
+
+.tool-result-details .tool-result-empty {
+  padding: 8px;
+}
+
+.tool-result-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.tool-result-button {
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tool-result-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tool-result-button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.tool-result-button:focus-visible,
+.tool-result-summary:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.tool-result-range {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-result-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool-result-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-result-copy-error {
+  color: var(--accent-red-text);
+}
+
+.tool-result-preview {
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.tool-result-preview > .tool-result-summary {
+  padding: 8px 12px;
+}
+
+.tool-result-preview-content {
+  padding: 0 12px 12px;
+  min-width: 0;
+}
+
+.tool-result-document-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 400px;
+  overflow: auto;
+}
+
+.tool-result-table-preview .data-table-grid {
+  font-family: var(--font-sans);
+}
+
+.tool-result-table-preview .data-table-toolbar,
+.tool-result-table-preview .data-table-toolbar-right,
+.tool-result-table-preview .data-table-pagination-bar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-result-table-preview .data-table-search-box {
+  min-width: 0;
+}
+
+.tool-result-table-preview .data-table-export-btn {
+  border-radius: var(--radius-sm);
+}
+
+.tool-result-table-preview .data-table-export-btn:hover {
+  border-color: var(--accent-color);
+}
+
+.tool-result-table-preview .data-table-toggle-rows-btn {
+  color: var(--accent-color);
+}
+
+.tool-result-table-preview .data-table-search-box:focus-within,
+.tool-result-table-preview .data-table-export-btn:focus-visible,
+.tool-result-table-preview .data-table-toggle-rows-btn:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}

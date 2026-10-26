@@ -194,6 +194,8 @@ export type ChatConversationMessage = {
    *  "thinking" state of the thinking block; never persisted. */
   isThinkingActive?: boolean;
   timestamp: string;
+  /** Runtime-only provenance for sub-agent activity; display timestamps are not run boundaries. */
+  subAgentRunId?: string;
   status?: "sending" | "sent" | "incomplete" | "error";
   /** 自动执行资格独立于展示状态；仅真实成功终态授予，取消后不可恢复。
    *  不单独持久化，历史加载从原始响应 status 重新计算。 */
@@ -201,6 +203,8 @@ export type ChatConversationMessage = {
   incompleteVariant?: IncompleteVariant;
   interruptionReason?: NormalizedInterruptionReason;
   recoveryOutcome?: NormalizedRecoveryOutcome;
+  /** Redacted provider diagnostic; generated content is never an error reason. */
+  failureReason?: string;
   responseId?: string;
   model?: string;
   toolCalls?: ToolCallInfo[];
@@ -638,22 +642,12 @@ export type UserQuestionTarget = {
   assistantMessageId: string;
 };
 
-/** 排队消息来源；缺省视为用户本人。 */
-export type PendingQueueSource = {
-  kind: "user" | "teammate" | "parent";
-  agentName?: string;
-  conversationId?: string;
-  /** 通信记录 id，用于送达状态回写 */
-  messageId?: string;
-};
-
 export type PendingQueueItem = {
-  /** 真实消息正文（不含来源前缀，前缀在投递时拼接） */
+  /** User input text; peer messages use durable run messaging instead. */
   text: string;
   options: ChatInputSendOptions;
   /** A steer belongs to this generation, never to a later replacement run. */
   steeringRunId?: number;
-  source?: PendingQueueSource;
 };
 
 export type ConversationNotificationContext = {
@@ -1060,7 +1054,6 @@ export type UseChatConversationResult = {
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   pendingMessageModes?: ("queue" | "steer")[];
-  pendingMessageSources?: (PendingQueueSource | undefined)[];
   /** 撤回一条待发送消息。targetSessionKey 缺省为当前激活会话（桌面面板
    *  只操作激活会话）；远控等跨会话通道可指定“消息所属会话”，从该会话的
    *  队列移除（目标为后台会话时不更新显示镜像，切回时重载）。返回原文；

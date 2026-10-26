@@ -1,15 +1,12 @@
 import {
   ArrowUp,
   BookOpen,
-  Bot,
-  BotMessageSquare,
   Clock,
   CornerDownRight,
   FileText,
   GitCommitHorizontal,
   GitCompare,
   Globe,
-  Inbox,
   Link2,
   MessageSquareQuote,
   MessageSquareText,
@@ -19,7 +16,6 @@ import {
   Wand2,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import type { PendingQueueSource } from "../chatMessages/utils/conversationTypes";
 import {
   extractUrlHost,
   formatAnnotationLabel,
@@ -34,8 +30,7 @@ import { getFileTypeIcon } from "../../../utils/fileIcons";
 type PendingMessagesProps = {
   messages: string[];
   modes?: ("queue" | "steer")[];
-  sources?: (PendingQueueSource | undefined)[];
-  onOpenSource?: (conversationId: string) => void;
+
   onWithdraw?: (index: number) => string | null;
   onSendNow?: (index: number) => void;
 };
@@ -350,8 +345,6 @@ const renderSegments = (content: string): React.ReactNode => {
 export const PendingMessages = ({
   messages,
   modes,
-  sources,
-  onOpenSource,
   onWithdraw,
   onSendNow,
 }: PendingMessagesProps): React.JSX.Element | null => {
@@ -378,46 +371,6 @@ export const PendingMessages = ({
     onSendNow(index);
   };
 
-  const renderSourceChip = (
-    source: PendingQueueSource | undefined,
-  ): React.ReactNode => {
-    if (!source || source.kind === "user") return null;
-    const isTeammate = source.kind === "teammate";
-    const name = isTeammate
-      ? source.agentName || t("chatInput.pendingSource.teammateFallback")
-      : t("chatInput.pendingSource.parentName");
-    const title = source.conversationId
-      ? t("chatInput.pendingSource.chipTitle", {
-          values: { id: source.conversationId },
-        })
-      : name;
-    const icon = isTeammate ? (
-      <Bot size={12} aria-hidden="true" />
-    ) : (
-      <BotMessageSquare size={12} aria-hidden="true" />
-    );
-    if (!source.conversationId || !onOpenSource) {
-      return (
-        <span className="pending-message-source" title={title}>
-          {icon}
-          <span className="pending-message-source-name">{name}</span>
-        </span>
-      );
-    }
-    const targetId = source.conversationId;
-    return (
-      <button
-        type="button"
-        className="pending-message-source is-clickable"
-        title={title}
-        onClick={() => onOpenSource(targetId)}
-      >
-        {icon}
-        <span className="pending-message-source-name">{name}</span>
-      </button>
-    );
-  };
-
   return (
     <div
       className="pending-messages-area"
@@ -427,18 +380,15 @@ export const PendingMessages = ({
     >
       <ul className="pending-messages-list">
         {messages.map((msg, index) => {
-          const source = sources?.[index];
-          const kind = source?.kind ?? "user";
           const isSteer = modes?.[index] === "steer";
-          const modeKey = `chatInput.pendingSource.${kind}${
+          const modeKey = `chatInput.pendingSource.user${
             isSteer ? "Steer" : "Queue"
           }`;
-          const ItemIcon =
-            kind === "user" ? (isSteer ? CornerDownRight : Clock) : Inbox;
+          const ItemIcon = isSteer ? CornerDownRight : Clock;
           return (
-            <li key={index} className={`pending-message-item is-${kind}`}>
+            <li key={index} className="pending-message-item is-user">
               <ItemIcon size={14} className="pending-message-icon" />
-              {renderSourceChip(source)}
+
               <span className="pending-message-text">
                 {renderSegments(msg)}
               </span>

@@ -1,4 +1,10 @@
 import { useCallback, useRef, useState } from "react";
+import { useI18n } from "../../../../i18n";
+import {
+  markSubAgentRollbackRestoring,
+  releasePreparedSubAgentRollback,
+  type SubAgentRollbackIdentity,
+} from "./subAgentRollbackIdentity";
 import type {
   ConversationContextValue,
   CheckpointFileChange,
@@ -25,6 +31,12 @@ import {
   resolveWorkflowFlowImpact,
 } from "../utils/rollbackChain";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
+import { abortConversationRun } from "./conversationMessageBridge";
+import {
+  prepareSubAgentDeletion,
+  prepareSubAgentRollback,
+  revokeSubAgentParentOwnership,
+} from "./subAgentParentInbox";
 
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。
@@ -32,6 +44,10 @@ import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
  * 为起点删除边界及后续消息；不得调用 deleteConversation。
  */
 export const useRollback = (ctx: ConversationContextValue) => {
+  const { t } = useI18n();
+  const rollbackIdentityRef = useRef<SubAgentRollbackIdentity | null>(null);
+  const rollbackConfirmingRef = useRef(false);
+  const rollbackCancelRequestedRef = useRef(false);
   const clearDraftToRestore = useCallback((): void => {
     ctx.setDraftToRestore(null);
   }, [ctx.setDraftToRestore]);
@@ -46,8 +62,15 @@ export const useRollback = (ctx: ConversationContextValue) => {
 
   const handleRollback = useCallback(
     (messageId: string): void => {
+      // Never replace the only releasable identity or hide a partial restoration.
+      if (rollbackConfirmingRef.current || rollbackIdentityRef.current) return;
       const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
       const requestId = ++rollbackRequestIdRef.current;
+
+      // Revoke wake admission synchronously; rollback must never revive the
+      // original delegation while the preview or owner preparation awaits I/O.
+      revokeSubAgentParentOwnership(key);
+      if (!isPendingSessionKey(key)) abortConversationRun(key);
 
       // Abort any in-flight stream before rolling back.
       const ref = ctx.sessionsRefData.current.get(key);
@@ -459,252 +482,368 @@ export const useRollback = (ctx: ConversationContextValue) => {
   const confirmRollback = useCallback(
     async (mode: RollbackMode, deleteMemories?: boolean): Promise<void> => {
       const preview = ctx.rollbackPreview;
-      if (!preview || rollbackRequestIdRef.current !== preview.requestId) {
-        return;
-      }
-
-      // 确认必须使用打开弹窗时冻结的会话键，不能重新读取当前活动会话；
-      // 同项目会话共享 workDir，仅靠目录无法发现串线。
-      const key = preview.sessionKey;
-      const {
-        messageId,
-        messageContent,
-        checkpointIds,
-        convId,
-        responseId,
-        persistedMessageId,
-        rollbackConversationState,
-        directoryId,
-        isFirstMessage,
-        isContextCompaction,
-        flowCheckpointIds,
-        workflowNodeIds,
-        memoryItems,
-      } = preview;
-
-      // Wait for any in-flight stream AND summary generation to fully settle
-      // (including the Rust store_chat_exchange / update_conversation_summary
-      // write transactions) before issuing delete/truncate. Without this, the
-      // write transactions race and can exceed the busy_timeout, producing a
-      // "database is locked" error. The promises are captured at
-      // handleRollback time (before the agent loop clears them from the ref).
-      const pending: Promise<unknown>[] = [];
-      if (preview.streamPromise) {
-        pending.push(preview.streamPromise);
-      }
-      if (preview.summaryPromise) {
-        pending.push(preview.summaryPromise);
-      }
-      if (pending.length > 0) {
-        await Promise.allSettled(pending);
-      }
-      if (rollbackRequestIdRef.current !== preview.requestId) {
-        return;
-      }
-
-      // 文件恢复必须前置于 DB 删除/截断：Rust delete_conversation（提交
-      // 34be2bff 引入的孤儿快照清理）删除会话时会级联物理删除消息级
-      // （chat_messages.checkpoint_id）与 flow 级（workflow_node_sessions.
-      // flow_checkpoint_id）的 checkpoint 快照目录；放在删除之后会让
-      // restore_checkpoints 因 manifest 缺失而静默跳过，文件完全不恢复。
-      // 恢复只依赖磁盘 manifest 与对象文件、不依赖任何 DB 行，且幂等：
-      // DB 失败重试时已恢复文件不再匹配 manifest 的 expected 状态，
-      // states_match 门控自动跳过，重试安全。checkpointIds 为预览阶段
-      // 按消息持久化顺序收集的检查点，flowCheckpointIds 为被回滚
-      // WorkFlow 的 flow 级检查点（flow 首节点执行前拍摄）。Rust 侧按路径
-      // 合并整条链（original 取最早、expected 取最新）后逐条恢复，与传入
-      // 顺序无关，最终工作区 = 回滚目标处理前状态。
       if (
-        mode === "conversation-and-files" &&
-        preview.workDir &&
-        checkpointIds.length + flowCheckpointIds.length > 0
+        !preview ||
+        rollbackRequestIdRef.current !== preview.requestId ||
+        rollbackConfirmingRef.current
       ) {
-        // SSH 回滚经 SFTP 逐文件写回可能较慢，对话框确认按钮在此期间
-        // 显示 loading。恢复失败不阻塞后续 DB 回滚（best effort）。
-        try {
-          await window.snow.restoreCheckpoints(
-            [...checkpointIds, ...flowCheckpointIds],
-            preview.workDir,
-          );
-        } catch {
-          // Best effort — file restore failure must not block DB rollback.
-        } finally {
-          ctx.setConversationVersion((version) => version + 1);
-        }
+        return;
       }
-
-      // 删除/截断持久化会话；失败时界面消息保持原样，预览重新打开并
-      // 显示错误后 return——checkpoint 尚未清理，用户重试时上面的前置
-      // 恢复是幂等 no-op，重试可行，不会出现"界面已撤销但重启后消息
-      // 复活"的不一致。
+      rollbackConfirmingRef.current = true;
+      rollbackCancelRequestedRef.current = false;
       try {
-        if (isFirstMessage && !isContextCompaction && convId) {
-          // 首条消息回滚 = 整会话删除：deleteMemories 直接走既有级联
-          //（含子代理/WorkFlow 子会话）删除事务。
-          await window.snow.deleteConversation(convId, deleteMemories === true);
-        } else if (convId && persistedMessageId) {
-          // 失败/中断轮次没有 responseId，用持久化用户消息 ID 作为边界，
-          // 从该行开始删除该轮及之后的所有消息。
-          await window.snow.truncateConversationFromMessage(
-            convId,
-            persistedMessageId,
-          );
-          // 上下文 token 快照从截断后剩余的最后一条 assistant 消息恢复
-          //（schema v46+ 每条 assistant 行都持久化了产生它的那次请求用量）；
-          // 查不到（如旧数据全为 0）才退回 null。run 级累计统计仍清零——
-          // 被截断轮次的贡献无法重算。
-          const restoredUsage = await window.snow
-            .listChatMessages(convId)
-            .then((records) => tokenUsageFromMessageRecords(records))
-            .catch(() => null);
-          ctx.updateSessionField(key, "tokenUsage", restoredUsage);
-          ctx.updateSessionField(key, "runTokenUsage", null);
-          ctx.updateSessionField(key, "conversationTokenUsage", null);
-          ctx.updateSessionField(key, "lastRunDurationMs", 0);
-          ctx.updateSessionField(key, "conversationTtftSumMs", 0);
-          ctx.updateSessionField(key, "conversationRequestCount", 0);
-          // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加），
-          // 避免重启后摘要条回显与截断后的消息列表不一致。
-          void window.snow.resetConversationRunStats(convId).catch(() => {
-            // 清零失败不阻塞回滚
-          });
-        } else if (convId && responseId) {
-          await window.snow.truncateConversation(convId, responseId);
-          const restoredUsage = await window.snow
-            .listChatMessages(convId)
-            .then((records) => tokenUsageFromMessageRecords(records))
-            .catch(() => null);
-          ctx.updateSessionField(key, "tokenUsage", restoredUsage);
-          ctx.updateSessionField(key, "runTokenUsage", null);
-          ctx.updateSessionField(key, "conversationTokenUsage", null);
-          ctx.updateSessionField(key, "lastRunDurationMs", 0);
-          ctx.updateSessionField(key, "conversationTtftSumMs", 0);
-          ctx.updateSessionField(key, "conversationRequestCount", 0);
-          // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加）。
-          void window.snow.resetConversationRunStats(convId).catch(() => {
-            // 清零失败不阻塞回滚
-          });
+        // 确认必须使用打开弹窗时冻结的会话键，不能重新读取当前活动会话；
+        // 同项目会话共享 workDir，仅靠目录无法发现串线。
+        const key = preview.sessionKey;
+        const {
+          messageId,
+          messageContent,
+          checkpointIds,
+          convId,
+          responseId,
+          persistedMessageId,
+          rollbackConversationState,
+          directoryId,
+          isFirstMessage,
+          isContextCompaction,
+          flowCheckpointIds,
+          workflowNodeIds,
+          memoryItems,
+        } = preview;
+
+        // Wait for any in-flight stream AND summary generation to fully settle
+        // (including the Rust store_chat_exchange / update_conversation_summary
+        // write transactions) before issuing delete/truncate. Without this, the
+        // write transactions race and can exceed the busy_timeout, producing a
+        // "database is locked" error. The promises are captured at
+        // handleRollback time (before the agent loop clears them from the ref).
+        const pending: Promise<unknown>[] = [];
+        if (preview.streamPromise) {
+          pending.push(preview.streamPromise);
         }
-      } catch (error) {
-        ctx.setRollbackPreview({
-          ...preview,
-          error: getErrorMessage(error),
-        });
-        return;
-      }
-
-      // 截断/删除成功后按预览清单清理记忆（best effort，不阻塞回滚）。
-      // 首条消息路径已由 deleteConversation 的级联事务覆盖，不重复删除。
-      if (
-        deleteMemories === true &&
-        convId &&
-        memoryItems.length > 0 &&
-        !(isFirstMessage && !isContextCompaction)
-      ) {
-        void window.snow
-          .deleteProjectMemoriesByIds(memoryItems.map((item) => item.memoryId))
-          .catch(() => {
-            // 清理失败不阻塞回滚
-          });
-      }
-
-      // DB 删除/截断成功。文件恢复已前移到 DB 之前完成（见上），此处
-      // 仅清理 checkpoint：过滤内存集合并删除快照；conversation-only
-      // 模式从不恢复文件，同样只清理。deleteCheckpoints 只在 DB 成功
-      // 后到达——失败分支已提前 return，快照未删，重试不受影响。
-      if (checkpointIds.length > 0 || flowCheckpointIds.length > 0) {
-        const sessionRef = ctx.sessionsRefData.current.get(key);
-        if (sessionRef) {
-          const discarded = new Set([...checkpointIds, ...flowCheckpointIds]);
-          sessionRef.checkpointIds = sessionRef.checkpointIds.filter(
-            (id) => !discarded.has(id),
-          );
+        if (preview.summaryPromise) {
+          pending.push(preview.summaryPromise);
         }
-        deleteCheckpoints([...checkpointIds, ...flowCheckpointIds]);
-      }
+        if (pending.length > 0) {
+          await Promise.allSettled(pending);
+        }
+        if (rollbackRequestIdRef.current !== preview.requestId) {
+          return;
+        }
 
-      // 文件恢复与 DB 删除/截断均已完成，此时再更新消息列表：弹窗此刻
-      // 仍打开，列表变化与弹窗关闭同步发生，避免"消息已回滚但弹窗还
-      // 停着"的割裂，也不会出现界面与磁盘/DB 不一致。
-      ctx.updateSessionMessages(key, (currentMessages) => {
-        const targetIndex = currentMessages.findIndex(
-          (message) => message.id === messageId,
-        );
-        return targetIndex === -1
-          ? currentMessages
-          : currentMessages.slice(0, targetIndex);
-      });
-
-      // WorkFlow 节点会话已随 truncate/delete 在 DB 级联删除：同步清掉
-      // 内存槽位，避免侧边栏点击残留会话出现空视图。
-      for (const nodeId of workflowNodeIds) {
-        ctx.sessionsRefData.current.delete(nodeId);
-        ctx.setSessions((prev) => {
-          const next = { ...prev };
-          delete next[nodeId];
-          return next;
-        });
-      }
-
-      const targetWasActive = ctx.activeSessionKeyRef.current === key;
-      if (isFirstMessage && !isContextCompaction && convId) {
-        // 会话已被删除：刷新侧边栏列表，移除该会话。只有目标仍是活动会话
-        // 时才清空 activeId，不能影响用户已切换到的另一个并行会话。
-        ctx.setConversationListVersion((version) => version + 1);
-        ctx.sessionsRefData.current.delete(key);
-        ctx.setSessions((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
-        if (targetWasActive) {
-          const rollbackState = rollbackConversationState;
-          // 回滚首条消息后视图回到"新建会话"：分配独立的新 pending 槽位
-          // （可能与仍在后台流式的其他 pending 会话并行），并把回滚前的
-          // 会话配置（模型/API/模式）迁移到该槽位。
-          ctx.pendingSessionSeqRef.current += 1;
-          ctx.setActiveId(undefined);
-          const pendingKey = ctx.activeSessionKeyRef.current!;
-          ctx.ensureSession(pendingKey, directoryId ?? ctx.directoryId);
-          const pendingRef = ctx.sessionsRefData.current.get(pendingKey);
-          if (pendingRef) {
-            pendingRef.planMode = rollbackState.planMode;
-            pendingRef.goalMode = rollbackState.goalMode;
-            pendingRef.worktreeMode = rollbackState.worktreeMode;
-            pendingRef.workflowMode = rollbackState.workflowMode;
-            pendingRef.goalModeTokenBudget = rollbackState.goalModeTokenBudget;
+        // Close durable admission and drain every local delegated owner BEFORE
+        // either filesystem restore or SQLite truncation. A remote live owner or
+        // unresolved historical boundary is a hard stop, not a best-effort restore.
+        try {
+          if (convId) {
+            const stopParent = (): void => {
+              abortConversationRun(convId);
+            };
+            if (isFirstMessage && !isContextCompaction) {
+              await prepareSubAgentDeletion(ctx, convId, stopParent);
+            } else {
+              await prepareSubAgentRollback(
+                convId,
+                persistedMessageId
+                  ? { fromMessageId: persistedMessageId }
+                  : { fromResponseId: responseId },
+                stopParent,
+                (identity) => {
+                  rollbackIdentityRef.current = identity;
+                },
+              );
+            }
           }
-          ctx.runtimeInputStateRef.current[pendingKey] = {
-            model: rollbackState.model,
-            apiProfile: rollbackState.apiProfile,
-            thinkingStrength: rollbackState.thinkingStrength,
-            responsesFastMode: rollbackState.responsesFastMode,
-          };
-          ctx.planModeRef.current = rollbackState.planMode;
-          ctx.goalModeRef.current = rollbackState.goalMode;
-          ctx.worktreeModeRef.current = rollbackState.worktreeMode;
-          ctx.workflowModeRef.current = rollbackState.workflowMode;
-          ctx.setPlanModeState(rollbackState.planMode);
-          ctx.setGoalModeState(rollbackState.goalMode);
-          ctx.setWorktreeModeState(rollbackState.worktreeMode);
-          ctx.setWorkflowModeState(rollbackState.workflowMode);
-          ctx.setGoalModeTokenBudgetState(rollbackState.goalModeTokenBudget);
-          ctx.setRollbackNewChatState(rollbackState);
+        } catch (error) {
+          if (
+            rollbackCancelRequestedRef.current &&
+            rollbackIdentityRef.current?.phase === "prepared"
+          ) {
+            try {
+              await releasePreparedSubAgentRollback(
+                rollbackIdentityRef.current,
+              );
+              rollbackIdentityRef.current = null;
+              rollbackRequestIdRef.current += 1;
+              ctx.setRollbackPreview(null);
+            } catch (releaseError) {
+              ctx.setRollbackPreview({
+                ...preview,
+                error: getErrorMessage(releaseError),
+              });
+            }
+          } else
+            ctx.setRollbackPreview({
+              ...preview,
+              error: getErrorMessage(error),
+            });
+          return;
         }
-      } else {
-        // Bump version so dependent components (user-message rail) re-fetch
-        // the updated message list after truncation.
-        ctx.setConversationVersion((version) => version + 1);
-        // 截断会改变会话记录（消息数/预览/更新时间）：同步侧边栏列表
-        ctx.setConversationListVersion((version) => version + 1);
-      }
+        if (rollbackCancelRequestedRef.current) {
+          const identity = rollbackIdentityRef.current;
+          if (identity?.phase === "prepared") {
+            try {
+              await releasePreparedSubAgentRollback(identity);
+              rollbackIdentityRef.current = null;
+              ctx.setRollbackPreview(null);
+              rollbackRequestIdRef.current += 1;
+            } catch (error) {
+              ctx.setRollbackPreview({
+                ...preview,
+                error: getErrorMessage(error),
+              });
+            }
+          } else
+            ctx.setRollbackPreview({
+              ...preview,
+              error: t("chat.rollbackRetryRequired"),
+            });
+          return;
+        }
+        if (rollbackRequestIdRef.current !== preview.requestId) return;
 
-      if (!isContextCompaction && targetWasActive) {
-        ctx.setDraftToRestore(messageContent);
+        // Both conversation-only truncation and file restoration commit the irreversible phase.
+        try {
+          const identity = rollbackIdentityRef.current;
+          if (identity) await markSubAgentRollbackRestoring(identity);
+        } catch (error) {
+          ctx.setRollbackPreview({
+            ...preview,
+            error: `${getErrorMessage(error)} ${t("chat.rollbackRetryRequired")}`,
+          });
+          return;
+        }
+        if (rollbackCancelRequestedRef.current) {
+          ctx.setRollbackPreview({
+            ...preview,
+            error: t("chat.rollbackRetryRequired"),
+          });
+          return;
+        }
+
+        // 文件恢复必须前置于 DB 删除/截断：Rust delete_conversation（提交
+        // 34be2bff 引入的孤儿快照清理）删除会话时会级联物理删除消息级
+        // （chat_messages.checkpoint_id）与 flow 级（workflow_node_sessions.
+        // flow_checkpoint_id）的 checkpoint 快照目录；放在删除之后会让
+        // restore_checkpoints 因 manifest 缺失而静默跳过，文件完全不恢复。
+        // 恢复只依赖磁盘 manifest 与对象文件、不依赖任何 DB 行，且幂等：
+        // DB 失败重试时已恢复文件不再匹配 manifest 的 expected 状态，
+        // states_match 门控自动跳过，重试安全。checkpointIds 为预览阶段
+        // 按消息持久化顺序收集的检查点，flowCheckpointIds 为被回滚
+        // WorkFlow 的 flow 级检查点（flow 首节点执行前拍摄）。Rust 侧按路径
+        // 合并整条链（original 取最早、expected 取最新）后逐条恢复，与传入
+        // 顺序无关，最终工作区 = 回滚目标处理前状态。
+        if (
+          mode === "conversation-and-files" &&
+          preview.workDir &&
+          checkpointIds.length + flowCheckpointIds.length > 0
+        ) {
+          // Persist the irreversible phase before touching files; failures retain the gate and preview.
+          try {
+            if (rollbackCancelRequestedRef.current) {
+              ctx.setRollbackPreview({
+                ...preview,
+                error: t("chat.rollbackRetryRequired"),
+              });
+              return;
+            }
+            await window.snow.restoreCheckpoints(
+              [...checkpointIds, ...flowCheckpointIds],
+              preview.workDir,
+            );
+          } catch (error) {
+            ctx.setRollbackPreview({
+              ...preview,
+              error: `${getErrorMessage(error)} ${t("chat.rollbackRetryRequired")}`,
+            });
+            return;
+          } finally {
+            ctx.setConversationVersion((version) => version + 1);
+          }
+        }
+
+        // 删除/截断持久化会话；失败时界面消息保持原样，预览重新打开并
+        // 显示错误后 return——checkpoint 尚未清理，用户重试时上面的前置
+        // 恢复是幂等 no-op，重试可行，不会出现"界面已撤销但重启后消息
+        // 复活"的不一致。
+        try {
+          if (isFirstMessage && !isContextCompaction && convId) {
+            // 首条消息回滚 = 整会话删除：deleteMemories 直接走既有级联
+            //（含子代理/WorkFlow 子会话）删除事务。
+            await window.snow.deleteConversation(
+              convId,
+              deleteMemories === true,
+            );
+          } else if (convId && persistedMessageId) {
+            // 失败/中断轮次没有 responseId，用持久化用户消息 ID 作为边界，
+            // 从该行开始删除该轮及之后的所有消息。
+            await window.snow.truncateConversationFromMessage(
+              convId,
+              persistedMessageId,
+            );
+            // 上下文 token 快照从截断后剩余的最后一条 assistant 消息恢复
+            //（schema v46+ 每条 assistant 行都持久化了产生它的那次请求用量）；
+            // 查不到（如旧数据全为 0）才退回 null。run 级累计统计仍清零——
+            // 被截断轮次的贡献无法重算。
+            const restoredUsage = await window.snow
+              .listChatMessages(convId)
+              .then((records) => tokenUsageFromMessageRecords(records))
+              .catch(() => null);
+            ctx.updateSessionField(key, "tokenUsage", restoredUsage);
+            ctx.updateSessionField(key, "runTokenUsage", null);
+            ctx.updateSessionField(key, "conversationTokenUsage", null);
+            ctx.updateSessionField(key, "lastRunDurationMs", 0);
+            ctx.updateSessionField(key, "conversationTtftSumMs", 0);
+            ctx.updateSessionField(key, "conversationRequestCount", 0);
+            // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加），
+            // 避免重启后摘要条回显与截断后的消息列表不一致。
+            void window.snow.resetConversationRunStats(convId).catch(() => {
+              // 清零失败不阻塞回滚
+            });
+          } else if (convId && responseId) {
+            await window.snow.truncateConversation(convId, responseId);
+            const restoredUsage = await window.snow
+              .listChatMessages(convId)
+              .then((records) => tokenUsageFromMessageRecords(records))
+              .catch(() => null);
+            ctx.updateSessionField(key, "tokenUsage", restoredUsage);
+            ctx.updateSessionField(key, "runTokenUsage", null);
+            ctx.updateSessionField(key, "conversationTokenUsage", null);
+            ctx.updateSessionField(key, "lastRunDurationMs", 0);
+            ctx.updateSessionField(key, "conversationTtftSumMs", 0);
+            ctx.updateSessionField(key, "conversationRequestCount", 0);
+            // 回滚后累计统计已无对应消息：清零 DB（覆盖而非累加）。
+            void window.snow.resetConversationRunStats(convId).catch(() => {
+              // 清零失败不阻塞回滚
+            });
+          }
+        } catch (error) {
+          ctx.setRollbackPreview({
+            ...preview,
+            error: `${getErrorMessage(error)} ${t("chat.rollbackRetryRequired")}`,
+          });
+          return;
+        }
+
+        // 截断/删除成功后按预览清单清理记忆（best effort，不阻塞回滚）。
+        // 首条消息路径已由 deleteConversation 的级联事务覆盖，不重复删除。
+        if (
+          deleteMemories === true &&
+          convId &&
+          memoryItems.length > 0 &&
+          !(isFirstMessage && !isContextCompaction)
+        ) {
+          void window.snow
+            .deleteProjectMemoriesByIds(
+              memoryItems.map((item) => item.memoryId),
+            )
+            .catch(() => {
+              // 清理失败不阻塞回滚
+            });
+        }
+
+        // DB 删除/截断成功。文件恢复已前移到 DB 之前完成（见上），此处
+        // 仅清理 checkpoint：过滤内存集合并删除快照；conversation-only
+        // 模式从不恢复文件，同样只清理。deleteCheckpoints 只在 DB 成功
+        // 后到达——失败分支已提前 return，快照未删，重试不受影响。
+        if (checkpointIds.length > 0 || flowCheckpointIds.length > 0) {
+          const sessionRef = ctx.sessionsRefData.current.get(key);
+          if (sessionRef) {
+            const discarded = new Set([...checkpointIds, ...flowCheckpointIds]);
+            sessionRef.checkpointIds = sessionRef.checkpointIds.filter(
+              (id) => !discarded.has(id),
+            );
+          }
+          deleteCheckpoints([...checkpointIds, ...flowCheckpointIds]);
+        }
+
+        // 文件恢复与 DB 删除/截断均已完成，此时再更新消息列表：弹窗此刻
+        // 仍打开，列表变化与弹窗关闭同步发生，避免"消息已回滚但弹窗还
+        // 停着"的割裂，也不会出现界面与磁盘/DB 不一致。
+        ctx.updateSessionMessages(key, (currentMessages) => {
+          const targetIndex = currentMessages.findIndex(
+            (message) => message.id === messageId,
+          );
+          return targetIndex === -1
+            ? currentMessages
+            : currentMessages.slice(0, targetIndex);
+        });
+
+        // WorkFlow 节点会话已随 truncate/delete 在 DB 级联删除：同步清掉
+        // 内存槽位，避免侧边栏点击残留会话出现空视图。
+        for (const nodeId of workflowNodeIds) {
+          ctx.sessionsRefData.current.delete(nodeId);
+          ctx.setSessions((prev) => {
+            const next = { ...prev };
+            delete next[nodeId];
+            return next;
+          });
+        }
+
+        const targetWasActive = ctx.activeSessionKeyRef.current === key;
+        if (isFirstMessage && !isContextCompaction && convId) {
+          // 会话已被删除：刷新侧边栏列表，移除该会话。只有目标仍是活动会话
+          // 时才清空 activeId，不能影响用户已切换到的另一个并行会话。
+          ctx.setConversationListVersion((version) => version + 1);
+          ctx.sessionsRefData.current.delete(key);
+          ctx.setSessions((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          if (targetWasActive) {
+            const rollbackState = rollbackConversationState;
+            // 回滚首条消息后视图回到"新建会话"：分配独立的新 pending 槽位
+            // （可能与仍在后台流式的其他 pending 会话并行），并把回滚前的
+            // 会话配置（模型/API/模式）迁移到该槽位。
+            ctx.pendingSessionSeqRef.current += 1;
+            ctx.setActiveId(undefined);
+            const pendingKey = ctx.activeSessionKeyRef.current!;
+            ctx.ensureSession(pendingKey, directoryId ?? ctx.directoryId);
+            const pendingRef = ctx.sessionsRefData.current.get(pendingKey);
+            if (pendingRef) {
+              pendingRef.planMode = rollbackState.planMode;
+              pendingRef.goalMode = rollbackState.goalMode;
+              pendingRef.worktreeMode = rollbackState.worktreeMode;
+              pendingRef.workflowMode = rollbackState.workflowMode;
+              pendingRef.goalModeTokenBudget =
+                rollbackState.goalModeTokenBudget;
+            }
+            ctx.runtimeInputStateRef.current[pendingKey] = {
+              model: rollbackState.model,
+              apiProfile: rollbackState.apiProfile,
+              thinkingStrength: rollbackState.thinkingStrength,
+              responsesFastMode: rollbackState.responsesFastMode,
+            };
+            ctx.planModeRef.current = rollbackState.planMode;
+            ctx.goalModeRef.current = rollbackState.goalMode;
+            ctx.worktreeModeRef.current = rollbackState.worktreeMode;
+            ctx.workflowModeRef.current = rollbackState.workflowMode;
+            ctx.setPlanModeState(rollbackState.planMode);
+            ctx.setGoalModeState(rollbackState.goalMode);
+            ctx.setWorktreeModeState(rollbackState.worktreeMode);
+            ctx.setWorkflowModeState(rollbackState.workflowMode);
+            ctx.setGoalModeTokenBudgetState(rollbackState.goalModeTokenBudget);
+            ctx.setRollbackNewChatState(rollbackState);
+          }
+        } else {
+          // Bump version so dependent components (user-message rail) re-fetch
+          // the updated message list after truncation.
+          ctx.setConversationVersion((version) => version + 1);
+          // 截断会改变会话记录（消息数/预览/更新时间）：同步侧边栏列表
+          ctx.setConversationListVersion((version) => version + 1);
+        }
+
+        if (!isContextCompaction && targetWasActive) {
+          ctx.setDraftToRestore(messageContent);
+        }
+        rollbackIdentityRef.current = null;
+        ctx.setRollbackPreview((current) =>
+          current?.requestId === preview.requestId ? null : current,
+        );
+      } finally {
+        rollbackConfirmingRef.current = false;
       }
-      ctx.setRollbackPreview((current) =>
-        current?.requestId === preview.requestId ? null : current,
-      );
     },
     [
       ctx.rollbackPreview,
@@ -734,10 +873,41 @@ export const useRollback = (ctx: ConversationContextValue) => {
   );
 
   const cancelRollback = useCallback((): void => {
-    rollbackRequestIdRef.current += 1;
-    setPreparingMessageId(null);
-    ctx.setRollbackPreview(null);
-  }, [ctx.setRollbackPreview]);
+    const preview = ctx.rollbackPreview;
+    const identity = rollbackIdentityRef.current;
+    if (identity?.phase === "restoring") {
+      if (preview)
+        ctx.setRollbackPreview({
+          ...preview,
+          error: `${preview.error ?? ""} ${t("chat.rollbackRetryRequired")}`,
+        });
+      return;
+    }
+    if (rollbackConfirmingRef.current) {
+      rollbackCancelRequestedRef.current = true;
+      return;
+    }
+    const close = (): void => {
+      rollbackIdentityRef.current = null;
+      rollbackRequestIdRef.current += 1;
+      setPreparingMessageId(null);
+      ctx.setRollbackPreview(null);
+    };
+    if (!identity) {
+      close();
+      return;
+    }
+    rollbackConfirmingRef.current = true;
+    void releasePreparedSubAgentRollback(identity)
+      .then(close)
+      .catch((error: unknown) => {
+        if (preview)
+          ctx.setRollbackPreview({ ...preview, error: getErrorMessage(error) });
+      })
+      .finally(() => {
+        rollbackConfirmingRef.current = false;
+      });
+  }, [ctx.rollbackPreview, ctx.setRollbackPreview, t]);
 
   return {
     clearDraftToRestore,

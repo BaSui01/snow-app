@@ -40,8 +40,7 @@ pub(crate) fn has_one_m_context_marker(model: &str) -> bool {
     let trimmed = model.trim_end();
     let marker = ONE_M_CONTEXT_MARKER.as_bytes();
     let bytes = trimmed.as_bytes();
-    bytes.len() >= marker.len()
-        && bytes[bytes.len() - marker.len()..].eq_ignore_ascii_case(marker)
+    bytes.len() >= marker.len() && bytes[bytes.len() - marker.len()..].eq_ignore_ascii_case(marker)
 }
 
 /// 剥离模型名末尾的 `[1M]` 上下文标记（上游 API 不接受该本地标记）。
@@ -107,9 +106,9 @@ pub(super) fn build_anthropic_payload(
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
     user_system_prompts: &[String],
+    host_system_prompts: &[String],
 ) -> Result<Value> {
-    let model =
-        resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
+    let model = resolve_advanced_model(request.model.as_deref(), &api_config.advanced_model)?;
     // `[1M]` 后缀是 Claude Code 生态的本地上下文能力声明（见
     // ANTHROPIC_ONE_M_CONTEXT_BETA），上游 API 不接受该标记，发送前剥离；
     // 对应的 context-1m beta 头由调用方（api/anthropic/mod.rs）注入。
@@ -346,16 +345,16 @@ pub(super) fn build_anthropic_payload(
         }
     }
 
-    // Build the `system` field.
-    // the field exclusively (each prompt as an independent text block, with
-    // cache_control on the last block). Otherwise the built-in system
-    // prompt parts are used. A plain string system field cannot carry
-    // cache_control, so we always emit an array of text blocks.
+    // Select the existing user/built-in system base, then append host facts
+    // and recovery. A plain string cannot carry cache_control, so emit text
+    // blocks with cache_control on the last block as before.
     let mut system_parts: Vec<String> = if has_user_system_prompts {
         user_system_prompts.to_vec()
     } else {
         builtin_system_parts
     };
+    // Append host facts without making them user-configured prompts.
+    system_parts.extend(host_system_prompts.iter().cloned());
     if let Some(prompt) = request
         .internal_recovery_prompt
         .as_deref()

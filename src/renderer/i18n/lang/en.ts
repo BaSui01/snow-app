@@ -27,20 +27,10 @@ export const en = {
     "Could not load the send preference. Using steer until successfully saved.",
   "chatInput.pendingSource.userSteer": "Your steer · pending",
   "chatInput.pendingSource.userQueue": "Your queued message",
-  "chatInput.pendingSource.teammateSteer": "From teammate · pending",
-  "chatInput.pendingSource.teammateQueue": "From teammate · next run",
-  "chatInput.pendingSource.parentSteer": "From main agent · pending",
-  "chatInput.pendingSource.parentQueue": "From main agent · next run",
-  "chatInput.pendingSource.parentName": "Main agent",
-  "chatInput.pendingSource.teammateFallback": "Teammate",
-  "chatInput.pendingSource.chipTitle": "Conversation ID: {{id}}",
+  "chat.rollbackRetryRequired":
+    "Rollback has entered restoration and cannot be dismissed. Keep this preview and retry to complete recovery; the failed state will remain visible.",
   "chat.promptPreview.label": "Prompt",
   "chat.promptPreview.stats": "{{chars}} chars · {{lines}} lines",
-  "chat.message.fromTeammate": "From teammate · {{name}}",
-  "toolCall.subAgentComms.pending":
-    "Queued, delivered at the target's next round boundary",
-  "toolCall.subAgentComms.delivered": "Delivered",
-  "toolCall.subAgentComms.withdrawn": "Withdrawn, not delivered",
   "toolCall.subAgentComms.queuedAt": "Queued at {{time}}",
   "toolCall.subAgentComms.self": "This sub-agent",
   "chatInput.sendKeyMode": "Send shortcut",
@@ -933,7 +923,6 @@ export const en = {
   "chat.noModelsFound": "No models found",
   "chat.searchModels": "Search models",
   "chat.noMatchingModels": "No matching models",
-  "chat.otherModels": "Other",
   "chat.searchApiProfiles": "Search API providers",
   "chat.noMatchingApiProfiles": "No matching providers",
   "chat.loadModelsError": "Failed to load models",
@@ -1162,6 +1151,120 @@ export const en = {
   "toolCall.skill.content": "Skill content",
   "toolCall.skill.running": "Loading skill...",
   "toolCall.skill.waiting": "Waiting to load skill",
+  "subAgentRun.evidenceStatus.completed": "Execution completed",
+  "subAgentRun.evidenceStatus.error": "Execution error",
+  "subAgentRun.evidenceStatus.rejected": "Rejected",
+  "subAgentRun.ignoredEvidence": "Evidence IDs not accepted",
+  "subAgentRun.ignoredReportItems": "Ignored unknown checklist IDs",
+  "subAgentRun.title": "Sub-agent run",
+  "subAgentRun.mode.sync": "Synchronous",
+  "subAgentRun.mode.async": "Async background",
+  "subAgentRun.status.queued": "Queued",
+  "subAgentRun.status.running": "Running",
+  "subAgentRun.status.waiting_input": "Needs input",
+  "subAgentRun.status.finalizing": "Checking acceptance and finalizing",
+  "subAgentRun.status.cancelling": "Cancellation awaiting confirmation",
+  "subAgentRun.status.completed": "Execution finished",
+  "subAgentRun.status.failed": "Failed",
+  "subAgentRun.status.cancelled": "Cancellation confirmed",
+  "subAgentRun.status.interrupted": "Interrupted",
+  "subAgentRun.hint.queued":
+    "Accepted, waiting for an execution slot; model generation has not started.",
+  "subAgentRun.hint.running":
+    "The sub-agent is running. A dispatch receipt does not mean task completion.",
+  "subAgentRun.hint.waiting_input":
+    "Authorization, an answer or a decision is required. Open the child conversation.",
+  "subAgentRun.hint.finalizing":
+    "Checking acceptance, running the completion Hook and saving results; reliable settlement is not complete.",
+  "subAgentRun.hint.cancelling":
+    "Stop requested, awaiting actual settlement. Existing side effects are not undone.",
+  "subAgentRun.hint.completed":
+    "Execution finished. Check acceptance and result delivery separately.",
+  "subAgentRun.hint.failed":
+    "This run failed and will not replay automatically. Inspect the error before explicitly continuing.",
+  "subAgentRun.hint.cancelled":
+    "This run stopped. Earlier file changes and external operations are not undone.",
+  "subAgentRun.hint.interrupted":
+    "The execution process was interrupted. The original run was not restored; explicitly continue if needed.",
+  "subAgentRun.waiting.authorization": "Waiting for tool authorization",
+  "subAgentRun.waiting.question": "Waiting for an answer",
+  "subAgentRun.waiting.failure_decision": "Waiting for a failure decision",
+  "subAgentRun.waiting.hook_decision": "Waiting for a Hook decision",
+  "subAgentRun.runId": "Run ID",
+  "subAgentRun.acceptedAt": "Accepted at",
+  "subAgentRun.startedAt": "Started at",
+  "subAgentRun.completedAt": "Settled at",
+  "subAgentRun.duration": "Execution duration",
+  "subAgentRun.durationValue": "{{seconds}} seconds",
+  "subAgentRun.delivery.pending":
+    "Result saved, pending parent-task input; the parent model has not necessarily processed it.",
+  "subAgentRun.delivery.received":
+    "Result durably added to parent-task input; this does not mean the model understood it or completed follow-up work.",
+  "subAgentRun.delivery.revoked":
+    "Automatic delivery revoked; the saved result remains available.",
+  "subAgentRun.acceptanceUnmet":
+    "Execution finished, but acceptance is unmet. Do not treat this as all work completed.",
+  "subAgentRun.errorCategory.validation": "Input validation failed",
+  "subAgentRun.errorCategory.configuration": "Run configuration error",
+  "subAgentRun.errorCategory.permission": "Permission error",
+  "subAgentRun.errorCategory.model": "Model request failed",
+  "subAgentRun.errorCategory.tool": "Tool execution failed",
+  "subAgentRun.errorCategory.hook": "Hook execution failed",
+  "subAgentRun.errorCategory.persistence":
+    "Result persistence / settlement failed",
+  "subAgentRun.errorCategory.interrupted": "Execution interrupted",
+  "subAgentRun.errorNextStep":
+    "Inspect the error and completed work in the child conversation before deciding whether to explicitly continue.",
+  "subAgentRun.errorDetails": "Expand redacted error details",
+  "subAgentRun.retryable":
+    "An explicit retry is allowed; no automatic retry occurs.",
+  "subAgentRun.notRetryable": "Fix the cause first. No automatic retry occurs.",
+  "subAgentRun.hook.success": "Completion Hook succeeded",
+  "subAgentRun.hook.warn": "Completion Hook warning",
+  "subAgentRun.hook.abort": "Completion Hook aborted",
+  "subAgentRun.hook.failed": "Completion Hook failed",
+  "subAgentRun.unavailableTools": "Unavailable tools and reasons",
+  "subAgentRun.viewResult": "View paginated result",
+  "subAgentRun.handleInput": "Handle in child conversation",
+  "subAgentRun.cancel": "Request run cancellation",
+  "subAgentRun.cancel.requested":
+    "Cancellation accepted, but stopping is not yet confirmed.",
+  "subAgentRun.cancel.confirmed":
+    "Cancellation confirmed. Existing side effects are not undone.",
+  "subAgentRun.cancel.already_terminal":
+    "The run is already terminal; no cancellation is needed.",
+  "subAgentRun.cancel.too_late":
+    "Finalization already started; cancellation is too late. Await actual settlement.",
+  "subAgentRun.loading": "Reading persisted result…",
+  "subAgentRun.queryFailed":
+    "Could not read run facts. Existing information may be stale.",
+  "subAgentRun.page": "Result characters {{offset}}–{{end}} / {{total}}",
+  "subAgentRun.firstPage": "First page",
+  "subAgentRun.nextPage": "Next page",
+  "subAgentRun.continue": "Explicitly continue this child conversation",
+  "subAgentRun.sendMessage": "Add a message to the current run",
+  "subAgentRun.continueHint":
+    "Submits only to the original child conversation. A busy run only queues the message, may not process it, and no parent user message is constructed.",
+  "subAgentRun.retrySameRequest":
+    "Receipt not received. Retrying reuses the same requestId and message to prevent duplicate dispatch.",
+  "subAgentRun.retryRequest": "Retry the same request",
+  "subAgentRun.actionFailed":
+    "The operation was not confirmed. Inspect the error; no automatic retry occurs.",
+  "subAgentRun.continueReceipt":
+    "Continue request receipt (not task completion)",
+  "subAgentRun.linkedRun":
+    "Run linked to this continue request (original run unchanged)",
+  "subAgentRun.dispatch": "Dispatch tool",
+  "subAgentRun.receiptNotCompletion":
+    "Dispatch status is separate from the background run: acceptance or a queued-message receipt is not task completion.",
+  "subAgentRun.receipt.accepted": "Durable acceptance receipt returned.",
+  "subAgentRun.receipt.message_queued":
+    "Message durably queued for the target run; not proof of model receipt or processing.",
+  "subAgentRun.unavailable":
+    "Persisted facts for this run are unavailable; no status is inferred",
+  "subAgentRun.refresh": "Query again",
+  "subAgentRun.legacy":
+    "Legacy record: no persisted run ID. No run history is created or inferred.",
   "toolCall.subAgent.name": "sub-agent",
   "toolCall.subAgent.unknownAgent": "Sub-agent",
   "toolCall.subAgent.prompt": "Prompt",
@@ -1187,7 +1290,7 @@ export const en = {
   "toolCall.subAgent.status.error": "Failed",
   "toolCall.subAgent.resuming": "Resuming sub-agent...",
   "toolCall.subAgent.queued":
-    "Message queued; it will be delivered when the sub-agent finishes its current round",
+    "Message queued; consumption and understanding are not confirmed.",
   "toolCall.subAgent.acceptance.title": "Acceptance checklist",
   "toolCall.subAgent.acceptance.verdictPassed": "All passed",
   "toolCall.subAgent.acceptance.verdictUnmet": "Some items unmet",
@@ -1221,17 +1324,6 @@ export const en = {
     "The target sub-agent does not exist or belongs to another conversation (session isolation: only teammates in the same session can communicate)",
   "toolCall.subAgentMessage.error.notRunning":
     "The target sub-agent is no longer running; messages can only be sent to active teammates",
-  "toolCall.subAgentList.name": "Sub-agents",
-  "toolCall.subAgentList.loading": "Listing sub-agents...",
-  "toolCall.subAgentList.count": "{{count}} sub-agents",
-  "toolCall.subAgentList.resumable": "Resumable",
-  "toolCall.subAgentList.notResumable": "Not resumable",
-  "toolCall.subAgentList.jump": "Open",
-  "toolCall.subAgentList.empty": "No sub-agents in this conversation",
-  "toolCall.subAgentList.status.running": "Running",
-  "toolCall.subAgentList.status.completed": "Completed",
-  "toolCall.subAgentList.status.failed": "Failed",
-  "toolCall.subAgentList.status.cancelled": "Cancelled",
   "toolCall.userQuestion.name": "question",
   "toolCall.userQuestion.action": "Ask user",
   "toolCall.userQuestion.status.waiting": "Waiting for answer",
@@ -1844,6 +1936,9 @@ export const en = {
   "toolNames.sub-agents-sendMessage": "Send message",
   "toolNames.sub-agents-listSubAgents": "List sub-agents",
   "toolNames.sub-agents-continue": "Continue sub-agent",
+  "toolNames.sub-agents-getResult": "Get run result",
+  "toolNames.sub-agents-wait": "Wait for sub-agent runs",
+  "toolNames.sub-agents-cancel": "Cancel sub-agent run",
   "toolNames.websearch-websearch-search": "Search web",
   "toolNames.websearch-websearch-fetch": "Fetch page",
   "toolNames.imagegen-generate": "Generate image",
@@ -7012,9 +7107,9 @@ export const en = {
   "plugins.write.openHint":
     "Open the metadata catalog (Writable) to compare every action and its declaration state",
   "plugins.write.description":
-    "Write actions panel plugins call through api.write and script plugins through snow.write (the same action set); sensitive ones require the same privacy declaration as reads.",
+    "Write actions a plugin can call through api.write; sensitive ones require the same privacy declaration as reads.",
   "plugins.write.scopeHint":
-    "Calling this action requires declaring the \u201c{{scope}}\u201d privacy scope in plugin.json privacy or the script's @snow-privacy",
+    "Calling this action requires declaring the \u201c{{scope}}\u201d privacy scope in plugin.json",
   "plugins.write.granted": "Writable",
   "plugins.write.denied": "Not declared",
   "plugins.write.empty": "No matching write action",
@@ -7028,7 +7123,7 @@ export const en = {
   "plugins.metadata.tabMetadata": "Reading",
   "plugins.metadata.contextClear": "Show all domains",
   "plugins.metadata.description":
-    "App metadata domains panel plugins read through api.metadata and script plugins through snow.metadata (the same read-only domain set). A domain tagged with a privacy scope must be declared in plugin.json privacy or the script's @snow-privacy before it can be read.",
+    "App metadata domains a plugin can read through api.metadata (read-only). A domain tagged with a privacy scope must be declared in plugin.json before it can be read.",
   "plugins.metadata.searchPlaceholder": "Search domains, fields or parameters",
   "plugins.metadata.count": "{{matched}} / {{total}} domains",
   "plugins.metadata.empty": "No matching metadata domain",
@@ -7040,7 +7135,7 @@ export const en = {
   "plugins.metadata.granted": "Readable",
   "plugins.metadata.denied": "Not declared",
   "plugins.metadata.scopeHint":
-    "Reading this domain requires declaring the “{{scope}}” privacy scope in plugin.json privacy or the script's @snow-privacy",
+    "Reading this domain requires declaring the “{{scope}}” privacy scope in plugin.json",
   "plugins.metadata.pluginContext":
     "“{{name}}”: {{granted}} / {{total}} domains granted, the rest are denied",
   "plugins.metadata.pluginEntry": "Metadata {{granted}}/{{total}}",
@@ -7054,18 +7149,12 @@ export const en = {
   "plugins.metadata.groups.other": "Other",
   "plugins.net.tabNet": "Network",
   "plugins.net.description":
-    "External HTTP requests made by panel plugins through api.net.fetch and by script plugins through snow.fetch / GM_xmlhttpRequest (all forwarded by the main process, bypassing CORS), plus direct WebSocket / HTTP connections; declare the network privacy scope in plugin.json privacy or the script's @snow-privacy.",
+    "External HTTP requests through api.net.fetch and direct WebSocket / HTTP connections; the plugin must declare the network privacy scope.",
   "plugins.net.count": "{{matched}} / {{total}} capabilities",
   "plugins.net.badge": "Declaration required",
-  "plugins.net.runtimePanel": "Panel plugin",
-  "plugins.net.runtimeScript": "Script plugin",
   "plugins.net.fetchSummary":
     'Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB of raw bytes; responseType "text" (default) decodes body as UTF-8, while "arraybuffer" returns the raw bytes as base64 in bodyBase64 so the plugin decodes them itself (e.g. GBK / GB18030). Network failures never throw and are reported in the error field.',
   "plugins.net.empty": "No matching network capability",
-  "plugins.net.scriptFetchSummary":
-    "Cross-origin request forwarded by the main process (bypasses CORS) that returns a standard Response (status / headers / text() / json() / arrayBuffer() / blob()); sandboxed scripts get it as the global fetch, main-world scripts call it explicitly. Relative URLs and data: / blob: fall back to the native fetch; no streaming, signal or FormData; 30-second timeout.",
-  "plugins.net.gmXhrSummary":
-    "Tampermonkey-compatible GM_xmlhttpRequest forwarded by the main process (bypasses CORS, http/https only); arraybuffer / blob responses travel as base64 and are decoded on the script side; 30-second timeout.",
   "plugins.net.docHint":
     "Full reference: the built-in plugin development guide ~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md",
   "chatCommand.customCommandsDescription":

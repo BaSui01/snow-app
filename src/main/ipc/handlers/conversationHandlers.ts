@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import type { NativeBridge } from "../../native/types";
 import { snowLog } from "../../../utils/snowLogger";
 import { safeSend } from "../../utils/safeSend";
+import { registerSubAgentRunHost } from "../../subAgents/subAgentRunHost";
 
 const EXPORT_FORMATS = ["markdown", "html", "json", "csv"] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -81,6 +82,7 @@ const readImportedConversations = (
 };
 
 export const registerConversationHandlers = (native: NativeBridge): void => {
+  registerSubAgentRunHost(native);
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
     if (typeof directoryId !== "string" || !directoryId.trim()) {
       throw new Error("Directory ID is required to list chat conversations");
@@ -736,142 +738,6 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         return Promise.resolve({});
       }
       return native.listSubAgentConversationsByParents(safeIds);
-    },
-  );
-  ipcMain.handle(
-    "chat-conversations:create-sub-agent-session",
-    async (
-      _event,
-      conversationId: unknown,
-      parentConversationId: unknown,
-      agentId: unknown,
-      agentName: unknown,
-      directoryId: unknown,
-      apiProfileName: unknown,
-      model: unknown,
-      title: unknown,
-      thinkingStrength: unknown,
-      responsesFastMode: unknown,
-    ) => {
-      if (typeof conversationId !== "string" || !conversationId.trim()) {
-        throw new Error(
-          "Conversation ID is required to create sub-agent session",
-        );
-      }
-      if (
-        typeof parentConversationId !== "string" ||
-        !parentConversationId.trim()
-      ) {
-        throw new Error(
-          "Parent conversation ID is required to create sub-agent session",
-        );
-      }
-      if (typeof agentId !== "string" || !agentId.trim()) {
-        throw new Error("Agent ID is required to create sub-agent session");
-      }
-      if (typeof agentName !== "string" || !agentName.trim()) {
-        throw new Error("Agent name is required to create sub-agent session");
-      }
-      if (typeof directoryId !== "string") {
-        throw new Error("Directory ID is required to create sub-agent session");
-      }
-      if (typeof apiProfileName !== "string" || !apiProfileName.trim()) {
-        throw new Error("API profile is required to create sub-agent session");
-      }
-      if (typeof model !== "string" || !model.trim()) {
-        throw new Error("Model is required to create sub-agent session");
-      }
-      if (typeof title !== "string" || !title.trim()) {
-        throw new Error("Title is required to create sub-agent session");
-      }
-      // These are captured effective values, not API Profile writes. Invalid or
-      // omitted values stay null so storage can fall back to the parent row.
-      const capturedThinkingStrength =
-        typeof thinkingStrength === "string" && thinkingStrength.trim()
-          ? thinkingStrength.trim()
-          : null;
-      const capturedResponsesFastMode =
-        typeof responsesFastMode === "string" && responsesFastMode.trim()
-          ? responsesFastMode.trim()
-          : null;
-
-      const sessionContext = `agent=${agentName.trim()} conversation=${conversationId.trim()} parent=${parentConversationId.trim()}`;
-      try {
-        await native.createSubAgentSession(
-          conversationId.trim(),
-          parentConversationId.trim(),
-          agentId.trim(),
-          agentName.trim(),
-          directoryId.trim(),
-          apiProfileName.trim(),
-          model.trim(),
-          title.trim(),
-          capturedThinkingStrength,
-          capturedResponsesFastMode,
-        );
-        snowLog.info({
-          module: "ipc/conversation",
-          func: "create-sub-agent-session",
-          message: "Sub-agent session created",
-          context: sessionContext,
-        });
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        snowLog.error({
-          module: "ipc/conversation",
-          func: "create-sub-agent-session",
-          message: "Failed to create sub-agent session",
-          context: sessionContext,
-          error: errorMessage,
-        });
-        throw error;
-      }
-    },
-  );
-  ipcMain.handle(
-    "chat-conversations:update-sub-agent-status",
-    async (
-      _event,
-      conversationId: unknown,
-      runStatus: unknown,
-      errorMessage: unknown,
-    ) => {
-      if (typeof conversationId !== "string" || !conversationId.trim()) {
-        throw new Error(
-          "Conversation ID is required to update sub-agent session status",
-        );
-      }
-      if (typeof runStatus !== "string" || !runStatus.trim()) {
-        throw new Error(
-          "Run status is required to update sub-agent session status",
-        );
-      }
-
-      const normalizedStatus = runStatus.trim();
-      const normalizedError =
-        typeof errorMessage === "string" ? errorMessage : "";
-      if (normalizedStatus === "failed" || normalizedError) {
-        snowLog.error({
-          module: "ipc/conversation",
-          func: "update-sub-agent-status",
-          message: "Sub-agent session failed",
-          context: `conversation=${conversationId.trim()} status=${normalizedStatus}`,
-          error: normalizedError,
-        });
-      } else {
-        snowLog.info({
-          module: "ipc/conversation",
-          func: "update-sub-agent-status",
-          message: "Sub-agent session status updated",
-          context: `conversation=${conversationId.trim()} status=${normalizedStatus}`,
-        });
-      }
-      await native.updateSubAgentSessionStatus(
-        conversationId.trim(),
-        normalizedStatus,
-        normalizedError,
-      );
     },
   );
   ipcMain.handle(

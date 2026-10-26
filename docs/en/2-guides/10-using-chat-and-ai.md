@@ -16,7 +16,7 @@ Code views for HTML fences and file cards provide IDE-style multicolor syntax hi
 
 Layout is defined only in the shared `src/renderer/styles.css`. At the final stage, Vite embeds the `.html-artifact-frame` and `.html-artifact-carrier` layout rules into the standalone carrier page, without relying on an opaque `file:` sandbox to read external CSS. This prevents the inner iframe from falling back to the top-left `300×150` default size without relaxing sandbox isolation or CSP.
 
-Preview denies network requests, external scripts/styles/fonts, forms, objects, nested frames, and host APIs; inline scripts/styles and data/blob images are allowed. CDN dependencies and JSX compilation are unavailable. The fixed viewport scrolls internally. It provides no CPU/memory quotas and does not promise to prevent self-navigation. Preview only code you trust. See the [HTML preview ADR](../../adr/2026-10-16-html-artifact-preview.md) for architecture and limitations.
+Preview denies network requests, external scripts/styles/fonts, forms, objects, nested frames, and host APIs; inline scripts/styles and data/blob images are allowed. CDN dependencies and JSX compilation are unavailable. The fixed viewport scrolls internally. It provides no CPU/memory quotas and does not promise to prevent self-navigation. Preview only code you trust.
 
 | Area              | Contents                                                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |

@@ -13,7 +13,7 @@ pub fn fork_conversation(
     up_to_response_id: &str,
 ) -> Result<ChatConversationRecord> {
     let mut connection = database::open_connection(database_path)
-    .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
+        .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
 
     // Reserve the write transaction before reading the source conversation.
     // A deferred transaction would first establish a read snapshot and then
@@ -285,7 +285,13 @@ pub fn truncate_conversation_from_response(
             .unwrap_or_else(|| target_id.clone())
     };
 
-    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+    truncate_conversation_from_id(
+        database_path,
+        &transaction,
+        conversation_id,
+        &delete_from,
+        Some(("response", response_id)),
+    )?;
 
     transaction
         .commit()
@@ -344,7 +350,13 @@ pub fn truncate_conversation_from_message(
         target_id.clone()
     };
 
-    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+    truncate_conversation_from_id(
+        database_path,
+        &transaction,
+        conversation_id,
+        &delete_from,
+        Some(("message", message_id)),
+    )?;
 
     transaction
         .commit()
@@ -360,11 +372,14 @@ pub fn truncate_trailing_failed_exchange(
     database_path: &Path,
     conversation_id: &str,
 ) -> Result<bool> {
-    let mut connection = database::open_connection(database_path)
-        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+    let mut connection = database::open_connection(database_path).map_err(|error| {
+        database::database_error(database_path, "truncate failed exchange", error)
+    })?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+        .map_err(|error| {
+            database::database_error(database_path, "truncate failed exchange", error)
+        })?;
 
     let last: Option<(String, String, String)> = transaction
         .query_row(
@@ -376,9 +391,17 @@ pub fn truncate_trailing_failed_exchange(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
-        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+        .map_err(|error| {
+            database::database_error(database_path, "truncate failed exchange", error)
+        })?;
     let failed_id = match last {
-        Some((id, role, status)) if role == "assistant" && matches!(status.as_str(), "failed" | "error") => id,
+        Some((id, role, status))
+            if role.eq_ignore_ascii_case("assistant")
+                && (status.eq_ignore_ascii_case("failed")
+                    || status.eq_ignore_ascii_case("error")) =>
+        {
+            id
+        }
         _ => return Ok(false),
     };
 
@@ -392,7 +415,7 @@ pub fn truncate_trailing_failed_exchange(
                   (SELECT id FROM chat_messages
                     WHERE conversation_id = ?1
                       AND id < ?2
-                      AND (role = 'assistant' OR status = 'context_compaction')
+                      AND (lower(role) = 'assistant' OR lower(status) = 'context_compaction')
                     ORDER BY id DESC
                     LIMIT 1),
                   ''
@@ -400,14 +423,41 @@ pub fn truncate_trailing_failed_exchange(
             params![conversation_id, failed_id],
             |row| row.get(0),
         )
-        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+        .map_err(|error| {
+            database::database_error(database_path, "truncate failed exchange", error)
+        })?;
     let delete_from = delete_from.unwrap_or(failed_id);
 
-    truncate_conversation_from_id(database_path, &transaction, conversation_id, &delete_from)?;
+    // A model retry must never erase the durable evidence of completed tools.
+    // Fail closed before any deletion; replaying those actions is a separate,
+    // explicit user operation, not a response-retry cleanup side effect.
+    let has_tool_results: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM chat_messages
+              WHERE conversation_id = ?1 AND id >= ?2 AND lower(role) = 'tool')",
+            params![conversation_id, delete_from],
+            |row| row.get(0),
+        )
+        .map_err(|error| {
+            database::database_error(database_path, "check model retry boundary", error)
+        })?;
+    if has_tool_results {
+        return Err(Error::from_reason(
+            "Model response retry cannot remove completed tool results",
+        ));
+    }
 
-    transaction
-        .commit()
-        .map_err(|error| database::database_error(database_path, "truncate failed exchange", error))?;
+    truncate_conversation_from_id(
+        database_path,
+        &transaction,
+        conversation_id,
+        &delete_from,
+        None,
+    )?;
+
+    transaction.commit().map_err(|error| {
+        database::database_error(database_path, "truncate failed exchange", error)
+    })?;
 
     Ok(true)
 }
@@ -480,11 +530,9 @@ fn collect_truncated_workflow_node_ids(
                                 .get(*wrapper)
                                 .and_then(|value| value.as_object())
                                 .and_then(|function| {
-                                    ["call_id", "callId", "id"]
-                                        .iter()
-                                        .find_map(|key| {
-                                            function.get(*key).and_then(|value| value.as_str())
-                                        })
+                                    ["call_id", "callId", "id"].iter().find_map(|key| {
+                                        function.get(*key).and_then(|value| value.as_str())
+                                    })
                                 })
                         })
                 })
@@ -550,19 +598,20 @@ fn truncate_conversation_from_id(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: &str,
     delete_from: &str,
+    requested: Option<(&str, &str)>,
 ) -> Result<()> {
+    super::sub_agent_runs::guard_truncate(transaction, conversation_id, delete_from, requested)?;
+
     // 被截断范围内的 workflow-generate 工具调用对应的 flow 节点会话随截断
     // 级联删除：flow 卡片是节点会话的唯一入口，卡片删除后重新执行 flow 会
     // 生成新的 flowId，旧节点会话将永远成为孤儿。必须在删除消息之前收集
     // （tool_calls_json 随消息一起消失）。
-    let (truncated_node_ids, truncated_flow_ids) = collect_truncated_workflow_node_ids(
-        transaction,
-        conversation_id,
-        delete_from,
-    )
-    .map_err(|error| {
-        database::database_error(database_path, "collect truncated workflow nodes", error)
-    })?;
+    let (truncated_node_ids, truncated_flow_ids) =
+        collect_truncated_workflow_node_ids(transaction, conversation_id, delete_from).map_err(
+            |error| {
+                database::database_error(database_path, "collect truncated workflow nodes", error)
+            },
+        )?;
 
     // Delete linked TODO items before deleting their response rows, otherwise the
     // response-id subquery would no longer be able to locate the affected items.
@@ -640,7 +689,9 @@ fn truncate_conversation_from_id(
             })?;
         // 登记墓碑：仍在收尾的节点 run 迟到的持久化不得重建已删除的节点会话。
         super::record_conversation_tombstones(transaction, &truncated_node_ids).map_err(
-            |error| database::database_error(database_path, "delete workflow node conversation", error),
+            |error| {
+                database::database_error(database_path, "delete workflow node conversation", error)
+            },
         )?;
     }
 
@@ -649,8 +700,8 @@ fn truncate_conversation_from_id(
     if !truncated_flow_ids.is_empty() {
         let placeholders = in_clause_placeholders(truncated_flow_ids.len());
         // 第一个占位符是父会话 id，其余是 flow ids；统一为 &str 迭代。
-        let run_params = std::iter::once(conversation_id)
-            .chain(truncated_flow_ids.iter().map(String::as_str));
+        let run_params =
+            std::iter::once(conversation_id).chain(truncated_flow_ids.iter().map(String::as_str));
         transaction
             .execute(
                 &format!(
@@ -662,8 +713,8 @@ fn truncate_conversation_from_id(
             .map_err(|error| {
                 database::database_error(database_path, "delete truncated workflow runs", error)
             })?;
-        let canvas_params = std::iter::once(conversation_id)
-            .chain(truncated_flow_ids.iter().map(String::as_str));
+        let canvas_params =
+            std::iter::once(conversation_id).chain(truncated_flow_ids.iter().map(String::as_str));
         transaction
             .execute(
                 &format!(

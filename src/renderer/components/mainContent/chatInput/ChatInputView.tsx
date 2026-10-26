@@ -738,7 +738,6 @@ export const ChatInputView = ({
   );
   const {
     imagePreview,
-    setImagePreview,
     imageLightbox,
     setImageLightbox,
     textSnippetPreview,
@@ -750,7 +749,7 @@ export const ChatInputView = ({
     conversationPreview,
     showImagePreview,
     scheduleHideImagePreview,
-    cancelHideImagePreview,
+    handleImageChipClick,
     showTextSnippetPreview,
     scheduleHideTextSnippetPreview,
     cancelHideTextSnippetPreview,
@@ -974,6 +973,7 @@ export const ChatInputView = ({
             }}
             onClick={(event) => {
               handleChipRemove(event);
+              handleImageChipClick(event);
               handleTextSnippetClick(event);
               handleWebChipClick(event);
             }}
@@ -1000,7 +1000,6 @@ export const ChatInputView = ({
           ) : null}
           <InputOverlayLayer
             imagePreview={imagePreview}
-            setImagePreview={setImagePreview}
             imageLightbox={imageLightbox}
             setImageLightbox={setImageLightbox}
             textSnippetPreview={textSnippetPreview}
@@ -1010,8 +1009,6 @@ export const ChatInputView = ({
             setWebChipMenu={setWebChipMenu}
             chipDetails={chipDetails}
             conversationPreview={conversationPreview}
-            cancelHideImagePreview={cancelHideImagePreview}
-            scheduleHideImagePreview={scheduleHideImagePreview}
             cancelHideTextSnippetPreview={cancelHideTextSnippetPreview}
             scheduleHideTextSnippetPreview={scheduleHideTextSnippetPreview}
             cancelHideChipDetails={cancelHideChipDetails}

@@ -88,13 +88,6 @@ export const UserMessage = memo(
       typeof setTimeout
     > | null>(null);
 
-    const cancelHideImagePreview = useCallback(() => {
-      if (imagePreviewTimerRef.current) {
-        clearTimeout(imagePreviewTimerRef.current);
-        imagePreviewTimerRef.current = null;
-      }
-    }, []);
-
     const scheduleHideImagePreview = useCallback(() => {
       imagePreviewTimerRef.current = setTimeout(() => {
         setImagePreview(null);
@@ -659,12 +652,6 @@ export const UserMessage = memo(
                   imagePreview.placement === "up"
                     ? "translate(-50%, calc(-100% - 8px))"
                     : "translate(-50%, 8px)",
-              }}
-              onMouseEnter={cancelHideImagePreview}
-              onMouseLeave={scheduleHideImagePreview}
-              onClick={() => {
-                setImageLightbox(imagePreview.url);
-                setImagePreview(null);
               }}
             >
               <img src={imagePreview.url} alt="preview" />

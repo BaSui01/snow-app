@@ -71,7 +71,7 @@ export type ChipInteractionsResult = {
   conversationPreview: ConversationPreviewState | null;
   showImagePreview: (event: React.MouseEvent<HTMLDivElement>) => void;
   scheduleHideImagePreview: () => void;
-  cancelHideImagePreview: () => void;
+  handleImageChipClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   showTextSnippetPreview: (event: React.MouseEvent<HTMLDivElement>) => void;
   scheduleHideTextSnippetPreview: () => void;
   cancelHideTextSnippetPreview: () => void;
@@ -181,12 +181,32 @@ export const useChipInteractions = ({
     }, 200);
   }, []);
 
-  const cancelHideImagePreview = useCallback(() => {
-    if (imagePreviewTimerRef.current) {
-      clearTimeout(imagePreviewTimerRef.current);
-      imagePreviewTimerRef.current = null;
-    }
-  }, []);
+  // 预览浮窗不接收指针（避免盖住上方各行 chip），点击 chip 本身打开大图
+  const handleImageChipClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-chip-remove='true']")) {
+        return;
+      }
+      const chip = target.closest(
+        "[data-image-tag='true']",
+      ) as HTMLElement | null;
+      if (!chip || !textareaRef.current?.contains(chip)) {
+        return;
+      }
+      const dataUrl = chip.dataset.imageDataUrl;
+      if (!dataUrl) {
+        return;
+      }
+      if (imagePreviewTimerRef.current) {
+        clearTimeout(imagePreviewTimerRef.current);
+        imagePreviewTimerRef.current = null;
+      }
+      setImagePreview(null);
+      setImageLightbox(dataUrl);
+    },
+    [textareaRef],
+  );
 
   const showTextSnippetPreview = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -891,7 +911,7 @@ export const useChipInteractions = ({
     conversationPreview,
     showImagePreview,
     scheduleHideImagePreview,
-    cancelHideImagePreview,
+    handleImageChipClick,
     showTextSnippetPreview,
     scheduleHideTextSnippetPreview,
     cancelHideTextSnippetPreview,

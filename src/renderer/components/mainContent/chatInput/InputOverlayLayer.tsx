@@ -53,7 +53,6 @@ export type ConversationPreviewState = {
 
 type InputOverlayLayerProps = {
   imagePreview: ImagePreviewState | null;
-  setImagePreview: Dispatch<SetStateAction<ImagePreviewState | null>>;
   imageLightbox: string | null;
   setImageLightbox: Dispatch<SetStateAction<string | null>>;
   textSnippetPreview: TextSnippetPreviewState | null;
@@ -63,8 +62,6 @@ type InputOverlayLayerProps = {
   setWebChipMenu: Dispatch<SetStateAction<WebChipMenuState | null>>;
   chipDetails: ChipDetailsState | null;
   conversationPreview: ConversationPreviewState | null;
-  cancelHideImagePreview: () => void;
-  scheduleHideImagePreview: () => void;
   cancelHideTextSnippetPreview: () => void;
   scheduleHideTextSnippetPreview: () => void;
   cancelHideChipDetails: () => void;
@@ -79,7 +76,6 @@ type InputOverlayLayerProps = {
 
 export const InputOverlayLayer = ({
   imagePreview,
-  setImagePreview,
   imageLightbox,
   setImageLightbox,
   textSnippetPreview,
@@ -89,8 +85,6 @@ export const InputOverlayLayer = ({
   setWebChipMenu,
   chipDetails,
   conversationPreview,
-  cancelHideImagePreview,
-  scheduleHideImagePreview,
   cancelHideTextSnippetPreview,
   scheduleHideTextSnippetPreview,
   cancelHideChipDetails,
@@ -114,12 +108,6 @@ export const InputOverlayLayer = ({
               left: imagePreview.x,
               top: imagePreview.y,
               transform: "translate(-50%, calc(-100% - 8px))",
-            }}
-            onMouseEnter={cancelHideImagePreview}
-            onMouseLeave={scheduleHideImagePreview}
-            onClick={() => {
-              setImageLightbox(imagePreview.url);
-              setImagePreview(null);
             }}
           >
             <img src={imagePreview.url} alt="preview" />

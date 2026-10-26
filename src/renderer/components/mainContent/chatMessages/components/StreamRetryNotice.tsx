@@ -1,4 +1,9 @@
-import { ChevronRight, Loader2, TriangleAlert } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { HoverCopyButton } from "../../../common/HoverCopyButton";
@@ -150,7 +155,11 @@ export const StreamRetryNotice = ({
                       defaultValue: "Error details",
                     })}
               </span>
-              <ChevronRight aria-hidden="true" size={12} />
+              {isExpanded ? (
+                <ChevronDown aria-hidden="true" size={12} />
+              ) : (
+                <ChevronRight aria-hidden="true" size={12} />
+              )}
             </button>
           </>
         ) : null}

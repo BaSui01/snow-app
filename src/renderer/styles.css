@@ -1215,7 +1215,7 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
-/* 图钉置顶按钮：与侧栏切换按钮同组（no-drag），激活时主题色高亮 */
+/* 图钉置顶按钮：与侧栏切换按钮同组（no-drag），激活态与待办面板图钉一致 */
 .always-on-top-btn {
   position: relative;
   z-index: 2;
@@ -1224,13 +1224,13 @@ body.is-panel-resizing * {
 }
 
 .always-on-top-btn.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+  background: var(--bg-active);
 }
 
-.always-on-top-btn.active:hover {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+.always-on-top-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .sidebar-nav {
@@ -9320,10 +9320,10 @@ body.is-panel-resizing * {
 }
 
 .snowflake-spin {
+  /* 旋转必须挂在 HTML 包裹层：DPR>1 时 SVG 元素的 transform 动画不进合成器，
+     主线程一忙（切换会话、挂载历史消息）就整段停转。span 上的动画由合成器驱动。 */
+  display: inline-flex;
   animation: snow-spin 1.5s linear infinite;
-  /* SVG 图标的旋转默认由主线程驱动：主线程一旦繁忙（切换会话、流式内容提交），
-     视觉上会整段停转、看起来像卡死。提升为独立合成层后由合成器线程持续推进，
-     阻塞期间动画照常播放（外观不变，只是不再受主线程阻塞影响）。 */
   will-change: transform;
 }
 

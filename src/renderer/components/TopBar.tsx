@@ -9,7 +9,6 @@ import {
   Minimize2,
   Paintbrush,
   Pin,
-  PinOff,
   SidebarClose,
   SidebarOpen,
   SquarePen,
@@ -514,7 +513,6 @@ export const TopBar = ({
   const fullscreenToggleLabel = isRightPanelFullscreen
     ? "Exit right panel fullscreen"
     : "Right panel fullscreen";
-  const AlwaysOnTopIcon = isAlwaysOnTop ? PinOff : Pin;
   const alwaysOnTopLabel = isAlwaysOnTop
     ? t("topBar.disableAlwaysOnTop", { defaultValue: "Disable Always on Top" })
     : t("topBar.alwaysOnTop", { defaultValue: "Always on Top" });
@@ -813,7 +811,7 @@ export const TopBar = ({
         title={alwaysOnTopLabel}
         onClick={toggleAlwaysOnTop}
       >
-        <AlwaysOnTopIcon size={16} strokeWidth={1.8} />
+        <Pin size={16} strokeWidth={1.8} />
       </button>
       <button
         className="icon-btn new-chat-btn"

@@ -436,11 +436,9 @@ export function ChatItem({
             isPaused ? (
               <Pause size={11} aria-hidden="true" />
             ) : (
-              <Snowflake
-                size={11}
-                className="snowflake-spin"
-                aria-hidden="true"
-              />
+              <span className="snowflake-spin">
+                <Snowflake size={11} aria-hidden="true" />
+              </span>
             )
           ) : showCompletedStatus ? (
             <CheckCircle2 size={12} aria-hidden="true" />

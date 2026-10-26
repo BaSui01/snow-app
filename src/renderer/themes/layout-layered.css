@@ -15,6 +15,9 @@
   /* 浮层向左压住下一层的宽度（左侧只压住侧栏内边距） */
   --layered-overlap-left: 8px;
   --layered-overlap-right: 18px;
+  /* 顶栏比常规矮一档：左侧融入背景，红绿灯行不必撑满完整标题栏 */
+  --layered-header-height: calc(var(--header-height) - 8px);
+  --layered-header-pad-top: 6px;
   /* 投影的 spread 取负值，让阴影不向相邻边溢出，接缝处不会出现阴影带 */
   --layered-sheet-shadow-left: -10px 0 16px -10px rgba(15, 23, 42, 0.16);
   --layered-sheet-shadow-right: 10px 0 16px -10px rgba(15, 23, 42, 0.1);
@@ -28,7 +31,7 @@
 }
 
 /* ==========================================================================
-   1. 顶栏：顶部留白保留，列间零间隙
+   1. 顶栏：紧凑顶部留白，列间零间隙
    ========================================================================== */
 
 :root[data-layout-style="layered"] .app-shell,
@@ -42,9 +45,13 @@
 }
 
 :root[data-layout-style="layered"] .top-bar {
-  height: calc(var(--header-height) + 10px) !important;
-  min-height: calc(var(--header-height) + 10px) !important;
-  padding: 10px 10px 0 !important;
+  height: calc(
+    var(--layered-header-height) + var(--layered-header-pad-top)
+  ) !important;
+  min-height: calc(
+    var(--layered-header-height) + var(--layered-header-pad-top)
+  ) !important;
+  padding: var(--layered-header-pad-top) 10px 0 !important;
   border: none !important;
   background: var(--app-bg) !important;
 }
@@ -195,6 +202,19 @@
   .app-shell:not(.right-panel-fullscreen)
   .sidebar-content-wrapper {
   padding-right: 10px;
+}
+
+/* 侧栏首尾贴边：收紧搜索区与页脚的纵向留白，把高度还给列表 */
+:root[data-layout-style="layered"] .sidebar-search-bar {
+  padding-top: 4px !important;
+}
+
+:root[data-layout-style="layered"] .sidebar-footer {
+  padding: 4px 12px 4px !important;
+}
+
+:root[data-layout-style="layered"] .sidebar-footer-row .nav-item {
+  padding: 4px 8px !important;
 }
 
 /* ==========================================================================

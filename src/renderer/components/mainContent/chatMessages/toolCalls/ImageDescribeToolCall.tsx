@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   Check,
@@ -7,6 +8,7 @@ import {
   Loader2,
   ScanSearch,
   Sparkles,
+  X,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
@@ -139,6 +141,22 @@ export const ImageDescribeToolCall = ({
     };
   }, [path]);
 
+  // 点击缩略图放大查看（Esc / 点击背景关闭）
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isLightboxOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setIsLightboxOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isLightboxOpen]);
+
   const description =
     parsedResult.type === "success" ? parsedResult.description : "";
 
@@ -216,6 +234,9 @@ export const ImageDescribeToolCall = ({
             <img
               src={thumbSrc}
               alt={fileName || t("toolCall.imagegen.describeImage")}
+              title={t("toolCall.computerUse.clickToZoom")}
+              onClick={() => setIsLightboxOpen(true)}
+              draggable={false}
             />
           </div>
         ) : null}
@@ -290,6 +311,37 @@ export const ImageDescribeToolCall = ({
           </div>
         ) : null}
       </div>
+
+      {isLightboxOpen && thumbSrc
+        ? createPortal(
+            <div
+              className="tool-call-imagegen-lightbox"
+              onClick={() => setIsLightboxOpen(false)}
+              role="presentation"
+            >
+              <img
+                src={thumbSrc}
+                alt={fileName || t("toolCall.imagegen.describeImage")}
+                draggable={false}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <div
+                className="tool-call-imagegen-lightbox-toolbar"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="tool-call-imagegen-lightbox-close"
+                  onClick={() => setIsLightboxOpen(false)}
+                  aria-label={t("toolCall.imagegen.close")}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </ToolCallNode>
   );
 };

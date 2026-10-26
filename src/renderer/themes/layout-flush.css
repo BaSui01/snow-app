@@ -38,6 +38,9 @@
   border: none !important;
   border-bottom: 1px solid var(--flush-divider) !important;
   background: var(--app-bg) !important;
+  /* 贴边布局不需要为浮层卡片预留上下留白：高度回到标准 header */
+  height: var(--header-height) !important;
+  min-height: var(--header-height) !important;
 }
 
 /* 同层叠风格：始终保留三列轨道，收起时轨道宽度过渡到 0，与下方面板同曲线；

@@ -21101,6 +21101,15 @@ body.is-panel-resizing * {
   border: 1px solid var(--border-light);
   background: var(--bg-tertiary);
   object-fit: contain;
+  cursor: zoom-in;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.tool-call-imagegen-describe-preview img:hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .tool-call-imagegen-describe-result {

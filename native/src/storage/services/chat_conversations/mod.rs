@@ -439,6 +439,12 @@ pub fn store_chat_exchange(
                 // normal message — the assistant response is always persisted
                 // below.
                 for (index, message) in input.request_messages.iter().enumerate() {
+                        // 系统/开发者文本是请求级指令（内置提示词、宿主事实、
+                        // 内部续跑指令），从不进入会话历史：落库会让后续请求
+                        // 误判历史已自带系统提示词，并破坏可缓存的前缀。
+                        if matches!(normalize_role(&message.role), "system" | "developer") {
+                            continue;
+                        }
                         // 所有 user 消息都绑定本次请求的 checkpoint。工具迭代
                         // 中途刷新的待发消息以 [tool, user] 结构进入请求，
                         // 若只绑定首条 user，该消息的 checkpoint 无法落库，

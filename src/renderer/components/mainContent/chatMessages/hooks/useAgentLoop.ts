@@ -1777,7 +1777,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             owns: () => !isRunCancelled(effectiveKey),
           },
         ))
-          ? [{ role: "developer", content: SUB_AGENT_RESULT_CONTINUATION }]
+          ? // developer 文本是请求级尾部指令：后端不写入系统提示词、不入库，
+            // 保证异步子代理通知不会重写可缓存的 prompt 前缀。
+            [{ role: "developer", content: SUB_AGENT_RESULT_CONTINUATION }]
           : [{ role: "tool", content: toolResultContent, toolResultsJson }];
         if (isRunCancelled(effectiveKey)) return;
         // All tool results are settled before steering is appended. Queue is
@@ -1872,6 +1874,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         if (internalSubAgentInput) {
+          // 异步子代理唤醒：只给本次请求追加尾部指令，不新增可见消息，
+          // 历史与系统提示词保持不变，缓存前缀因此仍然命中。
           await runAgentLoop(
             assistantMessageId,
             [{ role: "developer", content: SUB_AGENT_RESULT_CONTINUATION }],

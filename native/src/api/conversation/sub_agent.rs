@@ -166,10 +166,10 @@ async fn apply_sub_agent_tool_policy(
             return false;
         }
         match tool.name.as_str() {
-            "activate" => supports_durable,
-            "continue" => has_children && supports_durable,
-            "getResult" => supports_durable && has_result_reader,
-            "cancel" => supports_durable && has_cancellable,
+            // 工具集必须保持稳定：按活跃运行/结果缓存增删工具会在每次派发与
+            // 完成通知时改变请求工具列表，直接作废整段可缓存前缀。各工具自身
+            // 会校验实时状态并返回结构化结果（无运行可取消等）。
+            "activate" | "continue" | "getResult" | "cancel" => supports_durable,
             _ => false,
         }
     });

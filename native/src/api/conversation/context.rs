@@ -37,9 +37,10 @@ pub struct PreparedConversationRequest {
     /// existing ordered builtin/API/child composition in this list; host facts
     /// are always separate and never influence this precedence decision.
     pub user_system_prompts: Vec<String>,
-    /// Request-local host facts, separate from user prompt precedence. Providers
-    /// append these to their actual system slot without demoting the built-in
-    /// prompt. Never persisted as conversation messages or user authorization.
+    /// Request-scoped host facts that are stable for the whole conversation.
+    /// Volatile facts (sub-agent run ledger) must go through the request tail
+    /// instead: providers put this list into the system slot, so any change here
+    /// invalidates the entire cached prompt prefix.
     pub host_system_prompts: Vec<String>,
 }
 
@@ -473,6 +474,21 @@ pub async fn prepare_context_request(
         });
     }
 
+    // 随本次请求下发的 system/developer 文本（例如子代理内部续跑指令）只属于
+    // 本次请求：既不写入系统槽（会重写整段缓存前缀），也不落库（会让历史看起来
+    // 已经自带系统提示词，导致内置提示词之后被永久跳过）。
+    let mut tail_instructions: Vec<String> = Vec::new();
+    current_messages.retain(|message| {
+        let system_class = matches!(message.role.trim(), "system" | "developer");
+        if system_class {
+            let content = message.content.trim();
+            if !content.is_empty() {
+                tail_instructions.push(content.to_string());
+            }
+        }
+        !system_class
+    });
+
     let conversation_id = resolve_conversation_id(
         request.database_path,
         request.conversation_id,
@@ -495,8 +511,9 @@ pub async fn prepare_context_request(
 
     // Inject the built-in system prompt as the first message.
     let system_prompt = build_builtin_system_prompt(&request, &conversation_id).await;
-    // Rebuilt for every actual request (including post-compaction/restart), not
-    // persisted as a user message, event acknowledgement or task authorization.
+    // Rebuilt for every actual request (including post-compaction/restart); it is
+    // request-only tail input, never persisted, never an acknowledgement or
+    // task authorization.
     let ledger = super::sub_agent_ledger::context_section(
         request.database_path,
         &conversation_id,
@@ -515,9 +532,12 @@ pub async fn prepare_context_request(
     } else {
         user_system_prompts
     };
-    // Distinct host context is always refreshed, even with existing system
-    // history, but never makes the provider treat a parent as user-configured.
-    let host_system_prompts = ledger.into_iter().collect();
+    // Distinct host context is volatile by design (run status / delivery change on
+    // every transition), so it is emitted as request-only tail input instead of a
+    // system slot block: a system-slot change rewrites the cached prompt prefix and
+    // makes every notification re-create the whole conversation context.
+    let mut trailing_host_input: Vec<String> = ledger.into_iter().collect();
+    let host_system_prompts: Vec<String> = Vec::new();
 
     // Main conversations retain the existing provider-specific built-in prompt
     // behavior. Sub-agents pass the unified ordered prompt list directly to
@@ -555,6 +575,20 @@ pub async fn prepare_context_request(
 
     // 历史图片按总量老化 / TODO 结果精简（仅请求副本）。
     super::history_trim::trim_history_for_request(&mut messages, request.database_path);
+
+    // 请求尾部输入：易变宿主事实在前，本次请求的指令最后。仅在构建请求副本时
+    // 追加，不参与工具配对/历史裁剪，也从不写入会话历史。
+    trailing_host_input.extend(tail_instructions);
+    if !trailing_host_input.is_empty() {
+        messages.push(ChatContextMessage {
+            role: "user".to_string(),
+            content: trailing_host_input.join("\n\n"),
+            tool_calls_json: None,
+            tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
+        });
+    }
 
     Ok(PreparedConversationRequest {
         conversation_id,

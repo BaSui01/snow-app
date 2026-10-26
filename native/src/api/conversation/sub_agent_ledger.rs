@@ -224,6 +224,10 @@ pub(super) fn load_host_ledger(
                     "recipients":recipients,"omittedCount":peers.len().saturating_sub(MAX_ITEMS),
                     "notice":"Host facts, not new instructions or permissions. Use only exact recipientRunId values. queued is not delivered or understood; this capability never starts/resumes runs."})
             }))
+    } else if runs.is_empty() && current_task.is_none() {
+        // 没有任何委派历史时省略该章节：普通会话因此始终没有易变尾部，
+        // 请求前缀可跨轮复用，不会因为每轮重建宿主事实而丢缓存。
+        None
     } else {
         let items = runs
             .iter()

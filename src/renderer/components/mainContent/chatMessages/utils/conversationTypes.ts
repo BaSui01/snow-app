@@ -1050,7 +1050,8 @@ export type UseChatConversationResult = {
   hasMoreMessages: boolean;
   isInitialHistoryLoaded: boolean;
   isLoadingInitialHistory: boolean;
-  loadOlderMessages: () => Promise<void>;
+  /** pageSize 缺省为 CHAT_MESSAGE_PAGE_SIZE；用户消息定位会放大页长减少轮次。 */
+  loadOlderMessages: (pageSize?: number) => Promise<void>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   pendingMessageModes?: ("queue" | "steer")[];

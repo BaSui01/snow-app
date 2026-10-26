@@ -615,116 +615,124 @@ export const useConversationManagement = (
     ],
   );
 
-  const loadOlderMessages = useCallback(async (): Promise<void> => {
-    const conversationId = ctx.activeConversationIdRef.current;
-    if (!conversationId) {
-      return;
-    }
-
-    const session = ctx.sessionsRef.current[conversationId];
-    const beforeMessageId = session?.messageRecords[0]?.id;
-    if (
-      !session ||
-      !beforeMessageId ||
-      !session.hasMoreMessages ||
-      ctx.loadingOlderConversationIdsRef.current.has(conversationId)
-    ) {
-      return;
-    }
-
-    ctx.loadingOlderConversationIdsRef.current.add(conversationId);
-    ctx.updateSessionField(conversationId, "isLoadingOlderMessages", true);
-
-    try {
-      const page = await window.snow.listChatMessagesPaginated(
-        conversationId,
-        beforeMessageId,
-        CHAT_MESSAGE_PAGE_SIZE,
-      );
-      const currentSession = ctx.sessionsRef.current[conversationId];
-      if (!currentSession) {
+  const loadOlderMessages = useCallback(
+    async (pageSize?: number): Promise<void> => {
+      // 可能被直接当事件回调调用，非数字参数一律回落默认页长。
+      const limit =
+        typeof pageSize === "number" && pageSize > 0
+          ? Math.floor(pageSize)
+          : CHAT_MESSAGE_PAGE_SIZE;
+      const conversationId = ctx.activeConversationIdRef.current;
+      if (!conversationId) {
         return;
       }
 
-      const existingIds = new Set(
-        currentSession.messageRecords.map((record) => record.id),
-      );
-      const olderRecords = page.items.filter(
-        (record) => !existingIds.has(record.id),
-      );
-
-      // 新页 markdown 先行预热（倒序：贴近视口的最新旧消息优先，worker
-      // 按派发顺序处理）。MarkdownBlock 挂载时缓存未命中会先渲染空 html，
-      // worker 返回后内容涌入，新消息高度经历「近空白 → 真实高度」的剧变；
-      // ChatContent 的翻页滚动恢复若落在该窗口期，按偏小的 scrollHeight
-      // 补偿 scrollTop 必然错位，随后涌入的内容再推挤视口——表现为翻页
-      // 后滚动位置跳变。预热让新消息挂载首帧即为最终高度。超时由
-      // prefetchMarkdown 内部兜底，worker 忙碌时不会卡死翻页。
-      if (olderRecords.length > 0) {
-        const prefetchTargets: string[] = [];
-        for (let i = olderRecords.length - 1; i >= 0; i--) {
-          const record = olderRecords[i];
-          if (record.role === "user") {
-            continue;
-          }
-          const content = record.content?.trim();
-          if (content) {
-            prefetchTargets.push(content);
-          }
-          const thinking = record.thinking?.trim();
-          if (thinking) {
-            prefetchTargets.push(thinking);
-          }
-        }
-        if (prefetchTargets.length > 0) {
-          await prefetchMarkdown(prefetchTargets);
-        }
+      const session = ctx.sessionsRef.current[conversationId];
+      const beforeMessageId = session?.messageRecords[0]?.id;
+      if (
+        !session ||
+        !beforeMessageId ||
+        !session.hasMoreMessages ||
+        ctx.loadingOlderConversationIdsRef.current.has(conversationId)
+      ) {
+        return;
       }
 
-      const imageRuntime = imageGenerationRuntime(ctx);
-      await imageRuntime.recover(conversationId);
-      const projectImages = imageRuntime.projection(conversationId);
-      ctx.setSessions((prev) => {
-        const latestSession = prev[conversationId];
-        if (!latestSession) {
-          return prev;
-        }
-        const persistedIds = new Set(
-          latestSession.messageRecords.map((record) => record.id),
-        );
-        const combinedRecords = [
-          ...olderRecords.filter((record) => !persistedIds.has(record.id)),
-          ...latestSession.messageRecords,
-        ];
-        const transientMessages = latestSession.messages.filter(
-          (message) => !persistedIds.has(message.id),
-        );
-        return {
-          ...prev,
-          [conversationId]: {
-            ...latestSession,
-            messages: projectImages([
-              ...buildConversationMessages(combinedRecords),
-              ...transientMessages,
-            ]),
-            messageRecords: combinedRecords,
-            isLoadingOlderMessages: false,
-            hasMoreMessages: page.hasMore,
-            lastAccessedAt: Date.now(),
-          },
-        };
-      });
+      ctx.loadingOlderConversationIdsRef.current.add(conversationId);
+      ctx.updateSessionField(conversationId, "isLoadingOlderMessages", true);
 
-      const refData = ctx.sessionsRefData.current.get(conversationId);
-      if (refData) {
-        refData.checkpointIds = page.checkpointIds;
+      try {
+        const page = await window.snow.listChatMessagesPaginated(
+          conversationId,
+          beforeMessageId,
+          limit,
+        );
+        const currentSession = ctx.sessionsRef.current[conversationId];
+        if (!currentSession) {
+          return;
+        }
+
+        const existingIds = new Set(
+          currentSession.messageRecords.map((record) => record.id),
+        );
+        const olderRecords = page.items.filter(
+          (record) => !existingIds.has(record.id),
+        );
+
+        // 新页 markdown 先行预热（倒序：贴近视口的最新旧消息优先，worker
+        // 按派发顺序处理）。MarkdownBlock 挂载时缓存未命中会先渲染空 html，
+        // worker 返回后内容涌入，新消息高度经历「近空白 → 真实高度」的剧变；
+        // ChatContent 的翻页滚动恢复若落在该窗口期，按偏小的 scrollHeight
+        // 补偿 scrollTop 必然错位，随后涌入的内容再推挤视口——表现为翻页
+        // 后滚动位置跳变。预热让新消息挂载首帧即为最终高度。超时由
+        // prefetchMarkdown 内部兜底，worker 忙碌时不会卡死翻页。
+        if (olderRecords.length > 0) {
+          const prefetchTargets: string[] = [];
+          for (let i = olderRecords.length - 1; i >= 0; i--) {
+            const record = olderRecords[i];
+            if (record.role === "user") {
+              continue;
+            }
+            const content = record.content?.trim();
+            if (content) {
+              prefetchTargets.push(content);
+            }
+            const thinking = record.thinking?.trim();
+            if (thinking) {
+              prefetchTargets.push(thinking);
+            }
+          }
+          if (prefetchTargets.length > 0) {
+            await prefetchMarkdown(prefetchTargets);
+          }
+        }
+
+        const imageRuntime = imageGenerationRuntime(ctx);
+        await imageRuntime.recover(conversationId);
+        const projectImages = imageRuntime.projection(conversationId);
+        ctx.setSessions((prev) => {
+          const latestSession = prev[conversationId];
+          if (!latestSession) {
+            return prev;
+          }
+          const persistedIds = new Set(
+            latestSession.messageRecords.map((record) => record.id),
+          );
+          const combinedRecords = [
+            ...olderRecords.filter((record) => !persistedIds.has(record.id)),
+            ...latestSession.messageRecords,
+          ];
+          const transientMessages = latestSession.messages.filter(
+            (message) => !persistedIds.has(message.id),
+          );
+          return {
+            ...prev,
+            [conversationId]: {
+              ...latestSession,
+              messages: projectImages([
+                ...buildConversationMessages(combinedRecords),
+                ...transientMessages,
+              ]),
+              messageRecords: combinedRecords,
+              isLoadingOlderMessages: false,
+              hasMoreMessages: page.hasMore,
+              lastAccessedAt: Date.now(),
+            },
+          };
+        });
+
+        const refData = ctx.sessionsRefData.current.get(conversationId);
+        if (refData) {
+          refData.checkpointIds = page.checkpointIds;
+        }
+      } catch {
+        ctx.updateSessionField(conversationId, "isLoadingOlderMessages", false);
+      } finally {
+        ctx.loadingOlderConversationIdsRef.current.delete(conversationId);
       }
-    } catch {
-      ctx.updateSessionField(conversationId, "isLoadingOlderMessages", false);
-    } finally {
-      ctx.loadingOlderConversationIdsRef.current.delete(conversationId);
-    }
-  }, [ctx.updateSessionField]);
+    },
+    [ctx.updateSessionField],
+  );
 
   const handleNewChat = useCallback(
     (directoryId?: string): void => {

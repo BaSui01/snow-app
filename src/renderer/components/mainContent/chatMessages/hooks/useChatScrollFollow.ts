@@ -101,7 +101,7 @@ export type ChatScrollFollowResult = {
   handleChatKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   handleChatScroll: () => void;
   handleScrollToBottom: (options?: { animate?: boolean }) => void;
-  handleLoadOlderWithScroll: () => Promise<void>;
+  handleLoadOlderWithScroll: (pageSize?: number) => Promise<void>;
   handleSendWithScroll: (
     message: string,
     options: ChatInputSendOptions,
@@ -902,94 +902,99 @@ export const useChatScrollFollow = ({
     requestAnimationFrame(scrollToBottom);
   }, [isCompactingActive, stopScrollRestoreWatchdog]);
 
-  const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
-    const container = scrollRef.current;
-    const conversationId = activeConversationIdRef.current;
-    if (!container || !conversationId) {
-      return;
-    }
-
-    // 已有翻页在途：等待它收敛后返回。定位用户消息需要按页推进，直接返回
-    // 会让调用方误以为这一页已经到位。
-    const inflightRestore = scrollRestoreInflightRef.current;
-    if (inflightRestore) {
-      await inflightRestore;
-      return;
-    }
-
-    // 没有更早的记录时 loadOlderMessages 直接返回，建立恢复等待只会让调用
-    // 方白等一轮兜底超时。
-    if (!hasMoreMessagesRef.current) {
-      return;
-    }
-
-    const requestId = ++scrollRestoreRequestIdRef.current;
-    isLoadingOlderWithScrollRef.current = true;
-    // 翻页恢复按真实几何校正 scrollTop：平滑视口的显式高度会让新页插入
-    // 后的 scrollHeight 偏小、校正被钳制，必须先即时释放。
-    growthSmootherRef.current?.release();
-
-    let anchorElement: Element | null = null;
-    let anchorContentOffset = 0;
-    const containerTop = container.getBoundingClientRect().top;
-    for (const el of container.querySelectorAll<HTMLElement>(
-      "[data-message-id]",
-    )) {
-      if (el.getBoundingClientRect().bottom > containerTop) {
-        anchorElement = el;
-        anchorContentOffset = measureAnchorContentOffset(container, el);
-        break;
+  const handleLoadOlderWithScroll = useCallback(
+    async (pageSize?: number): Promise<void> => {
+      const container = scrollRef.current;
+      const conversationId = activeConversationIdRef.current;
+      if (!container || !conversationId) {
+        return;
       }
-    }
 
-    let resolveRestore: () => void = () => {};
-    const restoreFinished = new Promise<void>((resolve) => {
-      resolveRestore = resolve;
-    });
-    scrollRestoreSettleRef.current = resolveRestore;
-    scrollRestoreInflightRef.current = restoreFinished;
+      // 已有翻页在途：等待它收敛后返回。定位用户消息需要按页推进，直接返回
+      // 会让调用方误以为这一页已经到位。
+      const inflightRestore = scrollRestoreInflightRef.current;
+      if (inflightRestore) {
+        await inflightRestore;
+        return;
+      }
 
-    scrollAnchorLockRef.current = {
-      container,
-      anchorElement,
-      anchorContentOffset,
-      scrollHeight: container.scrollHeight,
-      scrollTop: container.scrollTop,
-      expectedScrollTop: container.scrollTop,
-      anchorLost: false,
-    };
+      // 没有更早的记录时 loadOlderMessages 直接返回，建立恢复等待只会让调用
+      // 方白等一轮兜底超时。
+      if (!hasMoreMessagesRef.current) {
+        return;
+      }
 
-    pendingScrollRestoreRef.current = {
-      conversationId,
-      requestId,
-      firstMessageId: messagesRef.current[0]?.id,
-      rounds: 0,
-    };
+      const requestId = ++scrollRestoreRequestIdRef.current;
+      isLoadingOlderWithScrollRef.current = true;
+      // 翻页恢复按真实几何校正 scrollTop：平滑视口的显式高度会让新页插入
+      // 后的 scrollHeight 偏小、校正被钳制，必须先即时释放。
+      growthSmootherRef.current?.release();
 
-    startScrollRestoreWatchdog();
-
-    try {
-      await loadOlderMessages();
-    } finally {
-      // 正常路径由下方的恢复 layout effect 在「新页 commit」的渲染周期内
-      // 消费 pending（paint 前校正，视觉零扰动）。此超时仅作兜底：新页为
-      // 空/加载异常导致 firstMessageId 始终未变时，清理状态防止
-      // isLoadingOlderWithScrollRef 卡死翻页。requestId 不匹配说明期间
-      // 发起了新一轮翻页，交由新轮回收，本轮只唤醒等待方。
-      window.setTimeout(() => {
-        if (scrollRestoreRequestIdRef.current === requestId) {
-          pendingScrollRestoreRef.current = null;
-          finishScrollRestore();
-          return;
+      let anchorElement: Element | null = null;
+      let anchorContentOffset = 0;
+      const containerTop = container.getBoundingClientRect().top;
+      for (const el of container.querySelectorAll<HTMLElement>(
+        "[data-message-id]",
+      )) {
+        if (el.getBoundingClientRect().bottom > containerTop) {
+          anchorElement = el;
+          anchorContentOffset = measureAnchorContentOffset(container, el);
+          break;
         }
-        resolveRestore();
-      }, 2000);
-    }
+      }
 
-    // 收敛后才返回：等待方（用户消息定位）据此保证「视口内容零跳动地翻完
-    // 这一页」再决定下一步。
-    await restoreFinished;
-  }, [finishScrollRestore, loadOlderMessages, startScrollRestoreWatchdog]);
+      let resolveRestore: () => void = () => {};
+      const restoreFinished = new Promise<void>((resolve) => {
+        resolveRestore = resolve;
+      });
+      scrollRestoreSettleRef.current = resolveRestore;
+      scrollRestoreInflightRef.current = restoreFinished;
+
+      scrollAnchorLockRef.current = {
+        container,
+        anchorElement,
+        anchorContentOffset,
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        expectedScrollTop: container.scrollTop,
+        anchorLost: false,
+      };
+
+      pendingScrollRestoreRef.current = {
+        conversationId,
+        requestId,
+        firstMessageId: messagesRef.current[0]?.id,
+        rounds: 0,
+      };
+
+      startScrollRestoreWatchdog();
+
+      try {
+        await loadOlderMessages(
+          typeof pageSize === "number" ? pageSize : undefined,
+        );
+      } finally {
+        // 正常路径由下方的恢复 layout effect 在「新页 commit」的渲染周期内
+        // 消费 pending（paint 前校正，视觉零扰动）。此超时仅作兜底：新页为
+        // 空/加载异常导致 firstMessageId 始终未变时，清理状态防止
+        // isLoadingOlderWithScrollRef 卡死翻页。requestId 不匹配说明期间
+        // 发起了新一轮翻页，交由新轮回收，本轮只唤醒等待方。
+        window.setTimeout(() => {
+          if (scrollRestoreRequestIdRef.current === requestId) {
+            pendingScrollRestoreRef.current = null;
+            finishScrollRestore();
+            return;
+          }
+          resolveRestore();
+        }, 2000);
+      }
+
+      // 收敛后才返回：等待方（用户消息定位）据此保证「视口内容零跳动地翻完
+      // 这一页」再决定下一步。
+      await restoreFinished;
+    },
+    [finishScrollRestore, loadOlderMessages, startScrollRestoreWatchdog],
+  );
 
   // 翻页滚动恢复（多轮收敛）：新页 commit 后、paint 前按 anchor 的内容
   // 坐标差分校正推挤。新页消息由虚拟化 hook 的 forceVisible 机制挂载即

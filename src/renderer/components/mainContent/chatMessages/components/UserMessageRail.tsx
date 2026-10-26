@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -14,6 +15,7 @@ import { ContentChips } from "../../chatInput/ContentChips";
 import {
   parseContentSegments,
   summarizeContentAsPlainText,
+  type ContentSegment,
 } from "../../chatInput/fileTagUtils";
 import { ChatHistorySkeleton } from "./ChatHistorySkeleton";
 
@@ -28,7 +30,7 @@ type UserMessageRailProps = {
    *  target message enters the DOM. The loader preserves the viewport anchor
    *  (content must not shift while pages are prepended) and resolves only after
    *  that restore has converged, so the next round never races the correction. */
-  loadOlderMessages: () => Promise<void>;
+  loadOlderMessages: (pageSize?: number) => Promise<void>;
   /** Whether older messages are currently being fetched. */
   isLoadingOlderMessages: boolean;
   /** Whether more historical messages remain unloaded. */
@@ -72,6 +74,147 @@ const nextFrame = (): Promise<void> =>
 /** 可视高亮计算的最小间隔：滚动期间每帧构建 DOM 索引并读取几何没有必要，
  *  尾部定时器保证滚动停止后的最后一次计算仍会执行。 */
 const VISIBILITY_COMPUTE_INTERVAL_MS = 120;
+
+/** 同会话内版本号成串变化时合并重拉（长会话单次拉取可达上百毫秒）。 */
+const USER_MESSAGES_REFETCH_DELAY_MS = 200;
+
+/** 定位翻页页长：逐轮翻倍，目标越远轮次越少；上限防一次挂载过多消息。 */
+const LOCATE_PAGE_SIZE_MIN = 20;
+const LOCATE_PAGE_SIZE_MAX = 160;
+const LOCATE_MAX_LOAD_ROUNDS = 400;
+/** 落位判定：连续若干帧位置与 scrollHeight 不变即视为稳定。 */
+const LOCATE_STABLE_FRAMES = 5;
+const LOCATE_SETTLE_MAX_FRAMES = 90;
+
+const CHIP_TAG_MARKERS = [
+  "@@file-selection:",
+  "@@file:",
+  "@@dir:",
+  "@@image:",
+  "@@commit:",
+  "@@change:",
+  "@@text-snippet:",
+  "@@review:",
+  "@@element:",
+  "@@web:",
+  "@@conversation:",
+  "@@command:",
+  "@@annotation:",
+  "@@skill:",
+];
+
+type RailItemData = {
+  id: string;
+  isContextCompaction: boolean;
+  summary: string;
+  /** 含 chip 标签时的解析结果，否则为 null（走纯文本摘要）。 */
+  segments: ContentSegment[] | null;
+};
+
+type RailItemCacheEntry = {
+  content: string;
+  isContextCompaction: boolean;
+  data: RailItemData;
+};
+
+const deriveRailItem = (msg: UserMessageSummary): RailItemData => {
+  const isContextCompaction = Boolean(msg.isContextCompaction);
+  const hasChips =
+    !isContextCompaction &&
+    CHIP_TAG_MARKERS.some((marker) => msg.content.includes(marker));
+  return {
+    id: msg.id,
+    isContextCompaction,
+    summary: summarizeContentAsPlainText(msg.content),
+    segments: hasChips ? parseContentSegments(msg.content) : null,
+  };
+};
+
+/** 视口内（目标附近）是否还有虚拟化占位符：从目标向两侧扫，越出视口即停，
+ *  只读取少量节点的几何。 */
+const hasPlaceholderInViewport = (
+  container: HTMLElement,
+  target: HTMLElement,
+  viewportTop: number,
+  viewportBottom: number,
+): boolean => {
+  const nodes = Array.from(
+    container.querySelectorAll<HTMLElement>("[data-message-id]"),
+  );
+  const start = nodes.indexOf(target);
+  if (start < 0) {
+    return false;
+  }
+  for (let i = start + 1; i < nodes.length; i++) {
+    const rect = nodes[i].getBoundingClientRect();
+    if (rect.top >= viewportBottom) break;
+    if (
+      rect.bottom > viewportTop &&
+      nodes[i].classList.contains("is-placeholder")
+    ) {
+      return true;
+    }
+  }
+  for (let i = start - 1; i >= 0; i--) {
+    const rect = nodes[i].getBoundingClientRect();
+    if (rect.bottom <= viewportTop) break;
+    if (
+      rect.top < viewportBottom &&
+      nodes[i].classList.contains("is-placeholder")
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
+type RailItemProps = {
+  item: RailItemData;
+  index: number;
+  isVisible: boolean;
+  compactionLabel: string;
+  onSelect: (messageId: string) => Promise<void>;
+};
+
+const RailItem = memo(
+  ({
+    item,
+    index,
+    isVisible,
+    compactionLabel,
+    onSelect,
+  }: RailItemProps): React.JSX.Element => {
+    const { summary } = item;
+    const itemLabel = item.isContextCompaction
+      ? compactionLabel
+      : summary.length > 0
+        ? summary.length > 64
+          ? `${summary.slice(0, 64)}...`
+          : summary
+        : `#${index + 1}`;
+    return (
+      <button
+        type="button"
+        className={`user-message-rail-popover-item${isVisible ? " is-visible" : ""}`}
+        onClick={() => void onSelect(item.id)}
+        title={item.isContextCompaction ? itemLabel : summary}
+      >
+        <span className="user-message-rail-popover-item-index">
+          {index + 1}
+        </span>
+        <span className="user-message-rail-popover-item-text">
+          {item.segments ? (
+            <ContentChips segments={item.segments} />
+          ) : (
+            itemLabel
+          )}
+        </span>
+      </button>
+    );
+  },
+);
+
+RailItem.displayName = "RailItem";
 
 export const UserMessageRail = memo(
   ({
@@ -124,39 +267,71 @@ export const UserMessageRail = memo(
     hasMoreMessagesRef.current = hasMoreMessages;
     isLoadingOlderMessagesRef.current = isLoadingOlderMessages;
 
-    // Fetch all user messages from the Rust backend on every version bump
-    // and conversation switch. No caching — the backend query is lightweight
-    // (id + content + created_at only, filtered by role='user') and every
-    // bump means the DB state changed (send, rollback, compaction, etc.).
+    // Fetch all user messages from the Rust backend on version bumps and
+    // conversation switches. 会话切换立即拉取；同会话的版本号成串变化合并
+    // 为一次；定位翻页期间每页都会 bump，暂停拉取，结束后补一次。
+    const fetchedConversationIdRef = useRef<string | undefined>(undefined);
+    const fetchedVersionRef = useRef<number>(-1);
     useEffect(() => {
       if (!conversationId) {
+        fetchedConversationIdRef.current = undefined;
+        fetchedVersionRef.current = -1;
         setUserMessages([]);
         userMessagesRef.current = [];
         return;
       }
+      if (locating) {
+        return;
+      }
+      const isSameConversation =
+        fetchedConversationIdRef.current === conversationId;
+      if (
+        isSameConversation &&
+        fetchedVersionRef.current === conversationVersion
+      ) {
+        return;
+      }
 
       let cancelled = false;
-      setLoading(true);
-      window.snow
-        .listUserMessages(conversationId)
-        .then((fetchedMessages) => {
-          if (cancelled) return;
-          setUserMessages(fetchedMessages);
-          userMessagesRef.current = fetchedMessages;
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setUserMessages([]);
-          userMessagesRef.current = [];
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
+      const fetchList = (): void => {
+        setLoading(true);
+        window.snow
+          .listUserMessages(conversationId)
+          .then((fetchedMessages) => {
+            if (cancelled) return;
+            fetchedConversationIdRef.current = conversationId;
+            fetchedVersionRef.current = conversationVersion;
+            setUserMessages(fetchedMessages);
+            userMessagesRef.current = fetchedMessages;
+          })
+          .catch(() => {
+            if (cancelled) return;
+            setUserMessages([]);
+            userMessagesRef.current = [];
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+      };
 
+      if (!isSameConversation) {
+        fetchList();
+        return () => {
+          cancelled = true;
+        };
+      }
+      const timer = window.setTimeout(
+        fetchList,
+        USER_MESSAGES_REFETCH_DELAY_MS,
+      );
       return () => {
         cancelled = true;
+        window.clearTimeout(timer);
       };
-    }, [conversationId, conversationVersion]);
+    }, [conversationId, conversationVersion, locating]);
+
+    // 定位结束后补一次可见高亮计算（定位期间计算被跳过）。
+    const scheduleVisibleComputeRef = useRef<(() => void) | null>(null);
 
     // Track which user messages are currently visible in the scroll viewport.
     // On every scroll/resize, iterate the DB user messages, find their DOM
@@ -169,6 +344,10 @@ export const UserMessageRail = memo(
       if (!container) return;
 
       const computeVisible = (): void => {
+        // 定位遮罩期间消息区不可见，高亮无意义，且会与定位循环争抢布局。
+        if (locatingRef.current) {
+          return;
+        }
         const dbUserMsgs = userMessagesRef.current;
         if (dbUserMsgs.length === 0) {
           setVisibleUserIndices(new Set());
@@ -251,8 +430,12 @@ export const UserMessageRail = memo(
       };
       container.addEventListener("scroll", scheduleCompute, { passive: true });
       window.addEventListener("resize", scheduleCompute);
+      scheduleVisibleComputeRef.current = scheduleCompute;
 
       return () => {
+        if (scheduleVisibleComputeRef.current === scheduleCompute) {
+          scheduleVisibleComputeRef.current = null;
+        }
         cancelAnimationFrame(raf);
         if (pendingRaf !== 0) {
           cancelAnimationFrame(pendingRaf);
@@ -333,6 +516,7 @@ export const UserMessageRail = memo(
       locateContainerRef.current = null;
       setLocating(false);
       setLocateRect(null);
+      scheduleVisibleComputeRef.current?.();
     }, []);
 
     // 骨架屏遮罩跟随滚动容器的位置与尺寸（窗口缩放、面板开合都会改变它）。
@@ -499,7 +683,7 @@ export const UserMessageRail = memo(
           // the refs, not the captured props: after the last page lands
           // hasMoreMessages flips to false and the loop must stop instead of
           // burning rounds (each of which would wait out the loader's fallback).
-          const MAX_LOAD_ROUNDS = 200;
+          let pageSize = LOCATE_PAGE_SIZE_MIN;
           let round = 0;
           // container.isConnected：定位途中切换会话会整体重建 .chat-area，旧
           // 容器脱离文档后目标永远不会出现，继续翻页只会把新会话的历史白拉
@@ -508,15 +692,15 @@ export const UserMessageRail = memo(
             !el &&
             hasMoreMessagesRef.current &&
             container.isConnected &&
-            round < MAX_LOAD_ROUNDS
+            round < LOCATE_MAX_LOAD_ROUNDS
           ) {
             round++;
             if (isLoadingOlderMessagesRef.current) {
               await new Promise((resolve) => setTimeout(resolve, 50));
               continue;
             }
-            await loadOlderMessages();
-            await nextFrame();
+            await loadOlderMessages(pageSize);
+            pageSize = Math.min(pageSize * 2, LOCATE_PAGE_SIZE_MAX);
             await nextFrame();
             el = findMessageElement(container, messageId);
           }
@@ -525,55 +709,59 @@ export const UserMessageRail = memo(
             return;
           }
 
-          // Iterate scrollIntoView until the target's offsetTop stabilizes.
-          // Each scrollIntoView brings the target to the top of the viewport,
-          // which causes virtualized placeholders *above* it (within the 600px
-          // IntersectionObserver buffer) to render real content. Their height
-          // grows, pushing the target down. We re-scroll and repeat until the
-          // target's offsetTop no longer changes between frames.
-          let prevOffsetTop = -1;
+          // 落位：每帧先集中读几何、再单次写 scrollTop（不再 scrollIntoView +
+          // 反复测量）。目标上方占位符反虚拟化会把目标往下推，逐帧补偿，直到
+          // 目标与视口内都无占位符、位置与 scrollHeight 连续若干帧不变。
+          let prevOffsetTop = Number.NaN;
           let prevScrollHeight = -1;
-          let stableSince = performance.now();
-          for (let i = 0; i < 30; i++) {
+          let stableFrames = 0;
+          for (let frame = 0; frame < LOCATE_SETTLE_MAX_FRAMES; frame++) {
             if (
               scrollContainerRef.current !== container ||
               !container.isConnected
             ) {
               break;
             }
-            el = findMessageElement(container, messageId);
-            if (!el) break;
-            el.scrollIntoView({ block: "start", behavior: "auto" });
-            await nextFrame();
-            await nextFrame();
-            const elNow = findMessageElement(container, messageId);
-            if (!elNow) break;
-            const currentOffsetTop =
-              elNow.getBoundingClientRect().top -
-              container.getBoundingClientRect().top +
-              container.scrollTop;
-            const currentScrollHeight = container.scrollHeight;
+            const target = findMessageElement(container, messageId);
+            if (!target) break;
+
             const containerRect = container.getBoundingClientRect();
             const viewportTop = containerRect.top + container.clientTop;
             const viewportBottom = viewportTop + container.clientHeight;
-            const hasVisiblePlaceholder = Array.from(
-              container.querySelectorAll<HTMLElement>(".is-placeholder"),
-            ).some((node) => {
-              const rect = node.getBoundingClientRect();
-              return rect.bottom > viewportTop && rect.top < viewportBottom;
-            });
-            const isReady =
-              !elNow.classList.contains("is-placeholder") &&
-              !hasVisiblePlaceholder &&
-              Math.abs(currentOffsetTop - prevOffsetTop) <= 0.5 &&
-              currentScrollHeight === prevScrollHeight;
-            if (!isReady) {
-              stableSince = performance.now();
-            } else if (performance.now() - stableSince >= 200) {
+            const targetTop = target.getBoundingClientRect().top;
+            const scrollTop = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            const offsetTop = targetTop - viewportTop + scrollTop;
+            const maxScrollTop = Math.max(
+              0,
+              scrollHeight - container.clientHeight,
+            );
+            const desiredScrollTop = Math.min(
+              Math.max(scrollTop + (targetTop - viewportTop), 0),
+              maxScrollTop,
+            );
+            const aligned = Math.abs(desiredScrollTop - scrollTop) <= 1;
+            const isStable =
+              aligned &&
+              Math.abs(offsetTop - prevOffsetTop) <= 0.5 &&
+              scrollHeight === prevScrollHeight &&
+              !target.classList.contains("is-placeholder") &&
+              !hasPlaceholderInViewport(
+                container,
+                target,
+                viewportTop,
+                viewportBottom,
+              );
+            stableFrames = isStable ? stableFrames + 1 : 0;
+            if (stableFrames >= LOCATE_STABLE_FRAMES) {
               break;
             }
-            prevOffsetTop = currentOffsetTop;
-            prevScrollHeight = currentScrollHeight;
+            prevOffsetTop = offsetTop;
+            prevScrollHeight = scrollHeight;
+            if (!aligned) {
+              container.scrollTop = desiredScrollTop;
+            }
+            await nextFrame();
           }
         } finally {
           if (needsPaging) {
@@ -593,9 +781,45 @@ export const UserMessageRail = memo(
       ],
     );
 
+    // 浮层列表项派生数据：仅浮层打开时计算，按 id + 内容缓存，避免高亮
+    // 变化或重拉列表时对全部消息重复做摘要与 chip 解析。
+    const railItemCacheRef = useRef<Map<string, RailItemCacheEntry>>(new Map());
+    const railItems = useMemo((): RailItemData[] => {
+      if (!hovered) {
+        return [];
+      }
+      const prevCache = railItemCacheRef.current;
+      const nextCache = new Map<string, RailItemCacheEntry>();
+      const items = userMessages.map((msg) => {
+        const isContextCompaction = Boolean(msg.isContextCompaction);
+        const cached = prevCache.get(msg.id);
+        if (
+          cached &&
+          cached.content === msg.content &&
+          cached.isContextCompaction === isContextCompaction
+        ) {
+          nextCache.set(msg.id, cached);
+          return cached.data;
+        }
+        const data = deriveRailItem(msg);
+        nextCache.set(msg.id, {
+          content: msg.content,
+          isContextCompaction,
+          data,
+        });
+        return data;
+      });
+      railItemCacheRef.current = nextCache;
+      return items;
+    }, [hovered, userMessages]);
+
     if (userMessages.length === 0 && !loading) {
       return null;
     }
+
+    const compactionLabel = t("chat.compactionSummary", {
+      defaultValue: "Context summary",
+    });
 
     const popover =
       hovered && userMessages.length > 0 && popoverPos
@@ -621,57 +845,16 @@ export const UserMessageRail = memo(
                 </span>
               </div>
               <div className="user-message-rail-popover-list">
-                {userMessages.map((msg, index) => {
-                  const summary = summarizeContentAsPlainText(msg.content);
-                  const hasChips =
-                    !msg.isContextCompaction &&
-                    (msg.content.includes("@@file-selection:") ||
-                      msg.content.includes("@@file:") ||
-                      msg.content.includes("@@dir:") ||
-                      msg.content.includes("@@image:") ||
-                      msg.content.includes("@@commit:") ||
-                      msg.content.includes("@@change:") ||
-                      msg.content.includes("@@text-snippet:") ||
-                      msg.content.includes("@@review:") ||
-                      msg.content.includes("@@element:") ||
-                      msg.content.includes("@@web:") ||
-                      msg.content.includes("@@conversation:") ||
-                      msg.content.includes("@@command:") ||
-                      msg.content.includes("@@annotation:") ||
-                      msg.content.includes("@@skill:"));
-                  const isVisible = visibleUserIndices.has(index);
-                  const itemLabel = msg.isContextCompaction
-                    ? t("chat.compactionSummary", {
-                        defaultValue: "Context summary",
-                      })
-                    : summary.length > 0
-                      ? summary.length > 64
-                        ? `${summary.slice(0, 64)}...`
-                        : summary
-                      : `#${index + 1}`;
-                  return (
-                    <button
-                      type="button"
-                      key={msg.id}
-                      className={`user-message-rail-popover-item${isVisible ? " is-visible" : ""}`}
-                      onClick={() => void handleItemClick(msg.id)}
-                      title={msg.isContextCompaction ? itemLabel : summary}
-                    >
-                      <span className="user-message-rail-popover-item-index">
-                        {index + 1}
-                      </span>
-                      <span className="user-message-rail-popover-item-text">
-                        {hasChips ? (
-                          <ContentChips
-                            segments={parseContentSegments(msg.content)}
-                          />
-                        ) : (
-                          itemLabel
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
+                {railItems.map((item, index) => (
+                  <RailItem
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    isVisible={visibleUserIndices.has(index)}
+                    compactionLabel={compactionLabel}
+                    onSelect={handleItemClick}
+                  />
+                ))}
               </div>
             </div>,
             document.body,

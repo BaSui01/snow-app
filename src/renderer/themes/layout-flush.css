@@ -146,6 +146,15 @@
   backdrop-filter: none !important;
 }
 
+/* 贴边布局没有浮层间隙：内容贴近顶栏分隔线。
+   无界主题在平铺下本就要求 padding: 0，不再改写。 */
+:root[data-layout-style="flush"]:not([data-theme-preset="compact"])
+  .app-shell:not(.right-panel-fullscreen)
+  .main-content {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
 :root[data-layout-style="flush"] .right-panel:not(.right-panel-detached) {
   border: none !important;
   border-radius: 0 !important;
@@ -163,7 +172,11 @@
 /* 侧栏树吸顶铺底与侧栏同色 */
 :root[data-layout-style="flush"]
   .sidebar-tree-list
-  :is(.project-collection-row, .tree-project-row-wrap)::before {
+  :is(
+    .project-collection-row,
+    .tree-project-row-wrap,
+    .chat-multi-select-bar
+  )::before {
   background: var(--flush-surface-side);
 }
 

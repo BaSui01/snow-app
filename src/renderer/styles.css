@@ -61220,8 +61220,10 @@ img.plugin-icon {
 /* 铺底用直角矩形：行自身是圆角，吸顶时四个圆角处会漏出下方滚过的内容。
    颜色必须与侧栏底色完全一致（侧栏 = --surface-island-muted 叠在 --app-bg 上），
    故用「不透明底 + 半透明层」的叠色写法，避免出现色差块 */
+/* 多选栏同样吸顶，共用同一份叠色配方 */
 :where(.sidebar-tree-list) .project-collection-row::before,
-:where(.sidebar-tree-list) .tree-project-row-wrap::before {
+:where(.sidebar-tree-list) .tree-project-row-wrap::before,
+:where(.sidebar-tree-list) .chat-multi-select-bar::before {
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -61330,6 +61332,21 @@ img.plugin-icon {
   );
   content: "";
   pointer-events: none;
+}
+
+/* 多选操作栏吸顶（与项目行吸顶同一套偏移）：树列表整体滚动，
+   多选栏跟随所属项目固定在项目行下方，不随会话行滚走，
+   top = 项目行吸顶偏移 + 一行高度 */
+.tree-project-chats .chat-multi-select-bar {
+  position: sticky;
+  z-index: 2;
+  top: calc(
+    (var(--tree-sticky-depth, 0) + 1) * var(--tree-sticky-row-height, 28px)
+  );
+  /* 底部间距由 margin 改成 padding：铺底矩形覆盖到按钮下方，
+     滚动内容不会从缝隙里露出 */
+  margin-bottom: 0;
+  padding-bottom: 6px;
 }
 
 .tree-project-row-edit {

@@ -15,9 +15,9 @@
   /* 浮层向左压住下一层的宽度（左侧只压住侧栏内边距） */
   --layered-overlap-left: 8px;
   --layered-overlap-right: 18px;
-  /* 顶栏比常规矮一档：左侧融入背景，红绿灯行不必撑满完整标题栏 */
-  --layered-header-height: calc(var(--header-height) - 8px);
-  --layered-header-pad-top: 6px;
+  /* 顶栏比常规矮两档：左侧融入背景，红绿灯行不必撑满完整标题栏 */
+  --layered-header-height: calc(var(--header-height) - 10px);
+  --layered-header-pad-top: 4px;
   /* 投影的 spread 取负值，让阴影不向相邻边溢出，接缝处不会出现阴影带 */
   --layered-sheet-shadow-left: -10px 0 16px -10px rgba(15, 23, 42, 0.16);
   --layered-sheet-shadow-right: 10px 0 16px -10px rgba(15, 23, 42, 0.1);
@@ -40,7 +40,7 @@
 }
 
 :root[data-layout-style="layered"] .app-layout {
-  padding: 0 10px 10px !important;
+  padding: 0 5px 5px !important;
   gap: 0 !important;
 }
 
@@ -51,7 +51,7 @@
   min-height: calc(
     var(--layered-header-height) + var(--layered-header-pad-top)
   ) !important;
-  padding: var(--layered-header-pad-top) 10px 0 !important;
+  padding: var(--layered-header-pad-top) 5px 0 !important;
   border: none !important;
   background: var(--app-bg) !important;
 }
@@ -132,7 +132,11 @@
 /* 侧栏透明后底色只剩 --app-bg，树吸顶铺底去掉 muted 叠层，避免色差块 */
 :root[data-layout-style="layered"]
   .sidebar-tree-list
-  :is(.project-collection-row, .tree-project-row-wrap)::before {
+  :is(
+    .project-collection-row,
+    .tree-project-row-wrap,
+    .chat-multi-select-bar
+  )::before {
   background-image: none;
 }
 
@@ -165,6 +169,22 @@
   backdrop-filter: none !important;
   /* 只保留全屏淡入淡出；内边距随面板状态瞬时切换，避免覆盖量与面板不同步 */
   transition: opacity 0.2s ease !important;
+}
+
+/* 顶栏与主区同属一张表面：去掉常规布局给浮层卡片的 18px 顶部间隙。
+   全屏隐藏态依赖 padding: 0 收窄宽度，必须排除。 */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .main-content {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+/* 右下角与右上角同一条右基准线：主区 10px + 输入区 6px = 顶栏 16px */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .input-area {
+  padding-right: 6px !important;
 }
 
 /* 主区左缘压住侧栏，顶栏中段同步前移保持同列 */

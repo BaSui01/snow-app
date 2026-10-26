@@ -73,6 +73,19 @@ export function OAuthProviderPicker({
               />
             </span>
             <strong>{oauthProviderLabel(t, provider)}</strong>
+            {provider.takesOverTransport ? (
+              <span
+                className="oauth-provider-badge"
+                title={t("settings.oauthTransportTakeoverHint", {
+                  defaultValue:
+                    "This provider sends requests from the plugin itself: native streaming, retries and tool-call normalization may be limited.",
+                })}
+              >
+                {t("settings.oauthTransportTakeoverBadge", {
+                  defaultValue: "Custom transport",
+                })}
+              </span>
+            ) : null}
           </span>
           <span className="oauth-provider-card-desc">
             {oauthProviderDescription(t, provider)}

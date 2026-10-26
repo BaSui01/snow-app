@@ -243,6 +243,14 @@ export function OAuthProviderLoginDialog({
                 "A browser window will open for the sign-in. The channel is created and activated automatically once it completes.",
             })}
           </p>
+          {provider.takesOverTransport ? (
+            <p className="oauth-login-hint oauth-login-warning">
+              {t("settings.oauthTransportTakeoverHint", {
+                defaultValue:
+                  "This provider sends requests from the plugin itself: native streaming, retries and tool-call normalization may be limited.",
+              })}
+            </p>
+          ) : null}
           {phase === "starting" ? (
             <div className="oauth-login-status">
               <Loader2 size={14} className="spin" />

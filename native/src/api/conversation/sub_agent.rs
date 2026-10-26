@@ -226,7 +226,6 @@ fn log_tool_policy(payload: serde_json::Value) {
         // 形状数量保持有界：只保留最近记录过的形状，清空后当前形状可再次输出。
         shapes.clear();
     }
-    eprintln!("Sub-agent tool policy: {}", payload);
 }
 
 /// Explicit whitelists survive skip_context; compaction/tool-less requests do not.

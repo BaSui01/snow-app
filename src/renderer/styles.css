@@ -60933,6 +60933,19 @@ img.plugin-icon {
   font-weight: 640;
 }
 
+/* 插件接管传输层时的提醒徽标 */
+.oauth-provider-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
 .oauth-provider-card-desc {
   color: var(--text-muted);
   font-size: 12px;
@@ -60964,6 +60977,10 @@ img.plugin-icon {
   font-size: 12px;
   line-height: 1.7;
   color: var(--text-muted);
+}
+
+.oauth-login-warning {
+  color: var(--accent-amber-text);
 }
 
 .oauth-login-field {

@@ -2391,6 +2391,9 @@ export const zhTW = {
   "settings.oauthLoadingProviders": "正在取得可用的服務…",
   "settings.oauthSourceBuiltin": "內建",
   "settings.oauthSourcePlugin": "外掛",
+  "settings.oauthTransportTakeoverBadge": "自訂傳輸",
+  "settings.oauthTransportTakeoverHint":
+    "此服務商由外掛自行收發請求，串流輸出、原生重試與工具呼叫正規化可能受限。",
   "settings.oauthBuiltinEmpty": "目前沒有內建的 OAuth 服務商。",
   "settings.oauthPluginEmpty": "目前沒有外掛提供 OAuth 服務商。",
   "settings.oauthPluginMarketHint": "安裝 OAuth 外掛即可增加更多登入服務商。",

@@ -73,6 +73,8 @@ export type OAuthProviderInfo = {
   icon?: string;
   /** 来源插件 id；内置 provider 为空。 */
   pluginId?: string;
+  /** 插件通过 fetch 接管传输层：原生流式、重试与工具归一化不再生效。 */
+  takesOverTransport: boolean;
 };
 
 /** OAuth 登录会话（回调端口仅登录期间监听本机）。 */

@@ -23,6 +23,7 @@ use crate::api::retry::{
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, StreamTimeouts, EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::oauth::plugin::response as plugin_response;
 use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -212,7 +213,7 @@ pub(super) async fn collect_anthropic_stream(
 
     'attempt_loop: loop {
         // ---- Phase 1: send the request (with retry on connect errors) ----
-        let response = loop {
+        let upstream = loop {
             if cancel_token.is_cancelled() {
                 return Ok(AnthropicStreamResult {
                     id: String::new(),
@@ -230,6 +231,11 @@ pub(super) async fn collect_anthropic_stream(
                     thinking_duration_ms: thinking_tracker.duration_ms(),
                     total_duration_ms: stream_start.elapsed().as_millis() as i64,
                 });
+            }
+
+            // 声明 fetch 钩子的插件在此接管传输层，后续仍走同一套解析与记账。
+            if let Some(body) = plugin_response::takeover(cancel_token).await? {
+                break plugin_response::UpstreamBody::Synthetic(body);
             }
 
             let send_future = client
@@ -330,7 +336,7 @@ pub(super) async fn collect_anthropic_stream(
                             Err(e) => return Err(e),
                         }
                     }
-                    break response;
+                    break plugin_response::UpstreamBody::Http(response);
                 }
                 Err(error) => {
                     if !should_retry(&error, attempt, retry_options) {
@@ -387,7 +393,8 @@ pub(super) async fn collect_anthropic_stream(
         // A fresh value per attempt makes retry reset atomic: no content,
         // thinking, tool fragments, parse errors, usage, or terminal state leaks.
         attempt_state = AnthropicAttemptState::default();
-        let mut stream = request_proxy::wrap_response_stream("anthropic", response.bytes_stream());
+        let mut stream =
+            plugin_response::wrap_stream("anthropic", upstream, cancel_token.clone());
         let mut byte_buffer = Vec::new();
 
         let stream_end = read_sse_stream_until_terminal(

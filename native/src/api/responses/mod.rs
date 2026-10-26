@@ -430,8 +430,11 @@ async fn create_response_async(
 
     // WebSocket 传输复用同一份 payload、事件解析与恢复策略，只是把 SSE 长连接
     // 换成 WebSocket 连接（snowcfg.responsesWebSocket），因此不需要 reqwest 客户端。
+    // 整段改写与传输接管只能走 HTTP/SSE：WebSocket 没有整段响应体，也无法让插件
+    // 接管连接；逐事件钩子在两条传输上都生效。
+    let force_http_transport = crate::api::oauth::plugin::response::requires_http_transport();
     let streamed_response = crate::api::failure::with_api_key(api_key, async {
-        if responses_web_socket_enabled(&api_config.config_json) {
+        if responses_web_socket_enabled(&api_config.config_json) && !force_http_transport {
             ws::collect_streaming_response_ws(
                 database_path.clone(),
                 &endpoint,

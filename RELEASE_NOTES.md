@@ -10,6 +10,7 @@
 - **Model Selector Grouping**: the collapsed model list is grouped by brand.
 - **Extra High Thinking Level**: supported models gain an "Extra High" thinking option.
 - **Reply Prediction Polish**: prediction requests now record token usage against the conversation, and predictions are cached per conversation so they survive session switches.
+- **OAuth Plugin Response Hooks**: OAuth plugins can now rewrite responses - `transformResponse` rewrites a whole non-SSE body before parsing and may override response headers, `onResponseChunk` translates each upstream event (SSE and WebSocket), and `fetch` lets the plugin take over the transport while the native layer keeps parsing, usage accounting and cancellation; providers that take over the transport are marked "Custom transport" in the provider list and sign-in dialog.
 
 ## Improvements
 

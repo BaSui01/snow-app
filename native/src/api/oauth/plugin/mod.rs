@@ -7,6 +7,7 @@ pub mod host;
 pub mod login;
 pub mod profile;
 pub mod registry;
+pub mod response;
 pub mod schemes;
 
 use std::collections::HashMap;
@@ -200,9 +201,10 @@ pub fn apply_request_headers(config: &ApiConfigRecord, headers: &mut HashMap<Str
 }
 
 /// 发送前的请求改写钩子：可替换 URL、请求体与请求头（null 删除）。
+/// 同时记录响应侧钩子所需的请求上下文（响应改写与传输层接管共用）。
 pub async fn transform_request(
     config: &ApiConfigRecord,
-    protocol: &str,
+    protocol: &'static str,
     model: &str,
     endpoint: String,
     payload: Value,
@@ -212,6 +214,17 @@ pub async fn transform_request(
         return Ok((endpoint, payload));
     };
     let spec = registry::ensure(&metadata.provider).await?;
+    let account = metadata.account_context(&config.api_key, &config.profile_name, &config.base_url);
+    response::record(
+        &metadata.provider,
+        &spec.hooks,
+        protocol,
+        model,
+        &endpoint,
+        &*headers,
+        &payload,
+        account.clone(),
+    );
     if !spec.hooks.transform_request {
         return Ok((endpoint, payload));
     }
@@ -221,7 +234,7 @@ pub async fn transform_request(
         "url": endpoint,
         "body": &payload,
         "headers": &*headers,
-        "account": metadata.account_context(&config.api_key, &config.profile_name, &config.base_url),
+        "account": account.clone(),
     });
     let result = host::call("transformRequest", &metadata.provider, ctx, HOOK_TIMEOUT).await?;
     let Some(object) = result.as_object() else {
@@ -252,6 +265,17 @@ pub async fn transform_request(
         Some(body) if body.is_object() => body.clone(),
         _ => payload,
     };
+    // transformRequest 可能改写了 URL / 请求体 / 请求头，响应侧钩子以最终值为准。
+    response::record(
+        &metadata.provider,
+        &spec.hooks,
+        protocol,
+        model,
+        &endpoint,
+        &*headers,
+        &payload,
+        account,
+    );
     Ok((endpoint, payload))
 }
 

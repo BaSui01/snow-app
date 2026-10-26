@@ -24,6 +24,7 @@ use crate::api::retry::{
     StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome, StreamTimeouts,
     EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::oauth::plugin::response as plugin_response;
 use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -567,9 +568,14 @@ pub(super) async fn collect_streaming_response(
         // flags, before the original request is issued again.
         // ---- Phase 1: send the request (with retry on connect errors) ----
         let header_map = super::payload::build_header_map(api_key, custom_headers)?;
-        let response = loop {
+        let upstream = loop {
             if cancel_token.is_cancelled() {
                 return Ok(cancelled_stream_result(&thinking_tracker, stream_start));
+            }
+
+            // 声明 fetch 钩子的插件在此接管传输层，后续仍走同一套解析与记账。
+            if let Some(body) = plugin_response::takeover(cancel_token).await? {
+                break plugin_response::UpstreamBody::Synthetic(body);
             }
 
             let send_future = client
@@ -652,7 +658,7 @@ pub(super) async fn collect_streaming_response(
                             Err(e) => return Err(e),
                         }
                     }
-                    break response;
+                    break plugin_response::UpstreamBody::Http(response);
                 }
                 Err(error) => {
                     if !should_retry(&error, attempt, retry_options) {
@@ -709,7 +715,8 @@ pub(super) async fn collect_streaming_response(
         // ---- Phase 2: read one complete Provider attempt ----
         let mut attempt_state = ResponsesAttemptState::default();
         let mut byte_buffer = Vec::new();
-        let mut stream = request_proxy::wrap_response_stream("responses", response.bytes_stream());
+        let mut stream =
+            plugin_response::wrap_stream("responses", upstream, cancel_token.clone());
 
         let stream_end = read_sse_stream_until_terminal(
             &mut stream,

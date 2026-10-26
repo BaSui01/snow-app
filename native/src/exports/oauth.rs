@@ -21,6 +21,8 @@ pub struct OAuthProviderInfo {
     pub icon: Option<String>,
     /// 来源插件 id；内置 provider 为空。
     pub plugin_id: Option<String>,
+    /// 插件通过 `fetch` 接管传输层：原生流式、重试与工具归一化不再生效。
+    pub takes_over_transport: bool,
 }
 
 #[napi(object)]
@@ -95,6 +97,7 @@ pub fn list_oauth_providers() -> Vec<OAuthProviderInfo> {
         description: None,
         icon: None,
         plugin_id: None,
+        takes_over_transport: false,
     });
     let plugins = plugin::registry::list().into_iter().map(|spec| OAuthProviderInfo {
         id: spec.id.clone(),
@@ -105,6 +108,7 @@ pub fn list_oauth_providers() -> Vec<OAuthProviderInfo> {
         description: non_empty(spec.description.clone()),
         icon: non_empty(spec.icon.clone()),
         plugin_id: non_empty(spec.plugin_id.clone()),
+        takes_over_transport: spec.hooks.fetch,
     });
     builtin.chain(plugins).collect()
 }

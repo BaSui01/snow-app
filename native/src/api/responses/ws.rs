@@ -38,6 +38,7 @@ use crate::api::common::StreamSink;
 use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
 use crate::api::failure::bounded_provider_detail;
 use crate::api::http_client::{app_user_agent, load_proxy_config, resolve_transport_proxy_url};
+use crate::api::oauth::plugin::response as plugin_response;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
     decide_stream_recovery, is_retriable_error, log_retry_attempt, next_stream_item_with_idle,
@@ -686,12 +687,14 @@ enum FrameOutcome {
 ///
 /// 顶层 `error` 事件（含服务端连接寿命到期）与 SSE 一样交给共享解析器，统一由
 /// `failure_recovery` 按重放安全、重试策略与剩余预算决定是否换新连接重试。
-fn process_frame(
+#[allow(clippy::too_many_arguments)]
+async fn process_frame(
     frame: &str,
     attempt_state: &mut ResponsesAttemptState,
     response_state: &mut WsResponseState,
     progress: &mut StreamProgress,
     on_chunk: StreamSink<'_>,
+    cancel_token: &CancellationToken,
 ) -> FrameOutcome {
     let Some(event) = parse_frame_event(frame) else {
         return FrameOutcome::Continue;
@@ -700,18 +703,41 @@ fn process_frame(
         return FrameOutcome::Continue;
     }
 
-    // 共享解析器按 SSE 事件块解析，这里把帧包装成一个 data 行，
-    // 保证两条传输路径的事件语义（含终态判定）完全一致。
-    let block = format!("data: {event}\n\n");
-    let (content_delta, thinking_delta, tool_args_delta) =
-        attempt_state.process_event_block(&block);
+    // 插件逐事件钩子与 SSE 路径同一套契约：可替换、拆分或丢弃上游事件。
+    let events = match plugin_response::rewrite_event(&event, cancel_token).await {
+        plugin_response::EventReply::Pass => vec![event],
+        plugin_response::EventReply::Events(events) => events,
+    };
+    if events.is_empty() {
+        return FrameOutcome::Continue;
+    }
+
+    let mut content_delta = String::new();
+    let mut thinking_delta = String::new();
+    let mut tool_args_delta = String::new();
+    let mut provider_error = false;
+    for event in &events {
+        if event.get("type").and_then(Value::as_str) == Some("error") {
+            provider_error = true;
+        }
+        // 共享解析器按 SSE 事件块解析，这里把帧包装成一个 data 行，
+        // 保证两条传输路径的事件语义（含终态判定）完全一致。
+        let block = format!("data: {event}\n\n");
+        let (content, thinking, tool_args) = attempt_state.process_event_block(&block);
+        content_delta.push_str(&content);
+        thinking_delta.push_str(&thinking);
+        tool_args_delta.push_str(&tool_args);
+        if attempt_state.stream_completed_normally() {
+            break;
+        }
+    }
     progress.observe_first_event();
     progress.emit_deltas(on_chunk, content_delta, thinking_delta);
     progress.emit_tool_args(on_chunk, &tool_args_delta);
 
     if attempt_state.stream_completed_normally() {
         FrameOutcome::Terminal {
-            reusable: event.get("type").and_then(Value::as_str) != Some("error"),
+            reusable: !provider_error,
         }
     } else {
         FrameOutcome::Continue
@@ -942,7 +968,10 @@ pub(super) async fn collect_streaming_response_ws(
                         &mut response_state,
                         &mut progress,
                         on_chunk,
-                    ) {
+                        cancel_token,
+                    )
+                    .await
+                    {
                         FrameOutcome::Continue => {}
                         FrameOutcome::Terminal { reusable } => {
                             reusable_socket = reusable;

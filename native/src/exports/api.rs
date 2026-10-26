@@ -108,10 +108,11 @@ pub async fn create_response_stream(
     stream_id: String,
 ) -> napi::Result<ResponsesApiResult> {
     let proxy_session = ProxySession::new(stream_id.clone(), request.conversation_id.clone());
-    let stream = request_proxy::with_session(
+    // 响应侧插件钩子的上下文写入 task-local 会话，需在对话流外层绑定。
+    let stream = crate::api::oauth::plugin::response::with_session(request_proxy::with_session(
         proxy_session,
         create_conversation_response_stream(request, on_chunk, stream_id),
-    );
+    ));
     crate::utils::panic_guard::guard_panic(stream).await
 }
 

@@ -2528,6 +2528,9 @@ export const en = {
   "settings.oauthLoadingProviders": "Loading available providers...",
   "settings.oauthSourceBuiltin": "Built-in",
   "settings.oauthSourcePlugin": "Plugins",
+  "settings.oauthTransportTakeoverBadge": "Custom transport",
+  "settings.oauthTransportTakeoverHint":
+    "This provider sends requests from the plugin itself: native streaming, retries and tool-call normalization may be limited.",
   "settings.oauthBuiltinEmpty": "No built-in OAuth provider is available.",
   "settings.oauthPluginEmpty": "No plugin provides an OAuth provider.",
   "settings.oauthPluginMarketHint":

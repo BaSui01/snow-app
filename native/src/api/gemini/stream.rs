@@ -26,6 +26,7 @@ use crate::api::retry::{
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, StreamTimeouts, EMPTY_RESPONSE_RETRY_ERROR,
 };
+use crate::api::oauth::plugin::response as plugin_response;
 use crate::api::request_proxy;
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -128,7 +129,7 @@ pub(super) async fn collect_gemini_stream(
             });
         }
 
-        let response = loop {
+        let upstream = loop {
             if cancel_token.is_cancelled() {
                 return Ok(GeminiStreamResult {
                     id: String::new(),
@@ -145,6 +146,11 @@ pub(super) async fn collect_gemini_stream(
                     thinking_duration_ms: thinking_tracker.duration_ms(),
                     total_duration_ms: stream_start.elapsed().as_millis() as i64,
                 });
+            }
+
+            // 声明 fetch 钩子的插件在此接管传输层，后续仍走同一套解析与记账。
+            if let Some(body) = plugin_response::takeover(cancel_token).await? {
+                break plugin_response::UpstreamBody::Synthetic(body);
             }
 
             let send_future = client
@@ -240,7 +246,7 @@ pub(super) async fn collect_gemini_stream(
                             Err(e) => return Err(e),
                         }
                     }
-                    break response;
+                    break plugin_response::UpstreamBody::Http(response);
                 }
                 Err(error) => {
                     if !should_retry(&error, attempt, retry_options) {
@@ -308,7 +314,7 @@ pub(super) async fn collect_gemini_stream(
         let mut stream_finished = false;
         let mut interruption_reason = None;
         let mut recovery_outcome = None;
-        let mut stream = request_proxy::wrap_response_stream("gemini", response.bytes_stream());
+        let mut stream = plugin_response::wrap_stream("gemini", upstream, cancel_token.clone());
         let mut end_cause: Option<(StreamEndCause, String)> = None;
 
         macro_rules! process_event_block {

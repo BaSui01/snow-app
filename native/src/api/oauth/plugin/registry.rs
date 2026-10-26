@@ -22,6 +22,12 @@ pub struct PluginHooks {
     pub models: bool,
     pub quota: bool,
     pub transform_request: bool,
+    /// 非 SSE 整段响应改写。
+    pub transform_response: bool,
+    /// SSE 事件逐条改写。
+    pub on_response_chunk: bool,
+    /// 插件接管传输层。
+    pub fetch: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

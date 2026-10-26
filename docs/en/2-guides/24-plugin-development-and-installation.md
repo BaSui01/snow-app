@@ -924,15 +924,18 @@ export default {
 
 Hooks (`authorize` is required; export the others as needed, missing hooks fall back to the generic behavior):
 
-| Hook                    | When it runs                                  | Returns                                                                                                      |
-| ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `authorize(ctx)`        | "Start sign-in" is clicked                    | `{ url, redirectUri?, userCode?, instructions?, interval?, expiresIn?, session? }`; `session` is passed back |
-| `exchange(ctx)`         | Browser callback, or the user pastes the URL  | A token object (see below)                                                                                   |
-| `poll(ctx)`             | At each interval when `flow: "device"`        | `null` / `{ pending: true }` while pending (`slowDown: true` backs off), a token object once done            |
-| `refresh(ctx)`          | The token expires within `refreshLeadSeconds` | A token object; empty fields keep their old values and `data` is shallow-merged                              |
-| `models(ctx)`           | After sign-in and when listing models         | String array or `[{ id }]`; without it the standard models endpoint of `requestMethod` is used               |
-| `quota(ctx)`            | Refresh in the quota panel                    | `{ plan?, groups: [{ id, label, buckets: [{ key, label, remainingPercent or usedPercent, resetAt }] }] }`    |
-| `transformRequest(ctx)` | Before every chat request is sent             | `{ url?, body?, headers? }`; a `null` header value removes it. Use it to wrap bodies for custom protocols    |
+| Hook                          | When it runs                                                               | Returns                                                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authorize(ctx)`              | "Start sign-in" is clicked                                                 | `{ url, redirectUri?, userCode?, instructions?, interval?, expiresIn?, session? }`; `session` is passed back                                               |
+| `exchange(ctx)`               | Browser callback, or the user pastes the URL                               | A token object (see below)                                                                                                                                 |
+| `poll(ctx)`                   | At each interval when `flow: "device"`                                     | `null` / `{ pending: true }` while pending (`slowDown: true` backs off), a token object once done                                                          |
+| `refresh(ctx)`                | The token expires within `refreshLeadSeconds`                              | A token object; empty fields keep their old values and `data` is shallow-merged                                                                            |
+| `models(ctx)`                 | After sign-in and when listing models                                      | String array or `[{ id }]`; without it the standard models endpoint of `requestMethod` is used                                                             |
+| `quota(ctx)`                  | Refresh in the quota panel                                                 | `{ plan?, groups: [{ id, label, buckets: [{ key, label, remainingPercent or usedPercent, resetAt }] }] }`                                                  |
+| `transformRequest(ctx)`       | Before every chat request is sent                                          | `{ url?, body?, headers? }`; a `null` header value removes it. Use it to wrap bodies for custom protocols                                                  |
+| `transformResponse(ctx)`      | After a non-SSE response is fully received, before protocol parsing        | `{ body?, headers? }`: `body` is an object or string, `headers` overrides response headers (`null` removes one); omitted fields stay unchanged             |
+| `onResponseChunk(ctx, chunk)` | Before each upstream event reaches the protocol parser (SSE and WebSocket) | A string (raw event block) or an object (framed as `data:`); `null` drops the event, `undefined` passes it through, an array splits one event into several |
+| `fetch(ctx)`                  | Before a chat request is sent (full transport takeover)                    | A `Response`, a string body, or `{ status?, headers?, body }`                                                                                              |
 
 - **Token object**: `accessToken` (required), `refreshToken`, `expiresIn` or `expiresAt` (seconds, milliseconds or ISO), plus `email`, `accountId`, `planType` and `data` (any object, persisted with the profile and read back as `ctx.account.data`). Raw `access_token` / `refresh_token` / `expires_in` names are accepted too.
 - **Common ctx fields**: `fetch` (Electron `net.fetch`, honoring the app proxy), `decodeJwt(token)`, `log(message, detail?)`, `providerId`, `pluginId`, `pluginDir`. Sign-in hooks also get `redirectUri`, `state`, `nonce`, `codeVerifier`, `codeChallenge`, `code`, `params` (all callback parameters) and `session`; account hooks get `account` (`accessToken`, `refreshToken`, `expiresAt`, `accountId`, `email`, `planType`, `data`, `profileName`, `baseUrl`); `transformRequest` also gets `protocol`, `model`, `url`, `body` and `headers`.
@@ -941,6 +944,45 @@ Hooks (`authorize` is required; export the others as needed, missing hooks fall 
 - **Flows**: `redirect` listens for the local callback (the OS picks a port when none is declared; a busy port falls back to manual paste); `manual` only lets the user paste the callback URL or code; `device` shows `userCode` while Rust polls `poll()`.
 - **Profiles**: a successful sign-in creates an activated profile with `source = oauth-<id>` at the top of the list, storing metadata in `configJson.oauthPlugin`; saving the profile always keeps the stored tokens and metadata.
 - **Hot reload**: `oauth.mjs` is reloaded when its modification time changes; after editing `plugin.json`, use "Rescan" in the plugins dialog. Errors thrown by hooks surface in the sign-in dialog and in the system logs (module `oauthPlugins`).
+- **Response hooks (three tiers)**: `transformResponse` runs once for a whole non-SSE HTTP response; `onResponseChunk` runs per event on both the SSE and WebSocket Responses transports (`ctx.chunk` is still a `data: {...}` block there); declaring `fetch` lets the plugin send the request itself while the native layer keeps event parsing, usage accounting and cancellation. The tiers are independent and can be combined; exporting none keeps the previous behavior.
+- **Response ctx fields**: `protocol`, `model`, `url`, `status`, `headers` (response headers) and `account`; `onResponseChunk` also gets `chunk` (the raw event block, also passed as the second argument) and `data` (the JSON of the first `data:` line in that block); on the WebSocket transport `status` is 200 and `headers` is an empty object; `fetch` gets `protocol`, `model`, `url`, `method`, `headers` (custom request headers of this request), `body` and `account`.
+- **Header overrides and event chaining**: `headers` returned by `transformResponse` override the response header snapshot (`null` removes a header). When the effective `content-type` is `text/event-stream`, the rewritten `body` is split into SSE events and handed to `onResponseChunk` one by one (passed through unchanged when that hook is absent); the overridden headers are what that hook sees in `ctx.headers`.
+- **Takeover cost**: `fetch` bypasses typewriter streaming, cross-protocol tool normalization, native retries and partial-truncation protection; cancelling the conversation aborts the wait immediately, but the plugin must bound its own request timeouts. Profiles that declare `transformResponse` or `fetch` skip the Responses WebSocket transport and stay on SSE (the former only handles whole response bodies, the latter owns the connection); `onResponseChunk` alone works on both transports. Providers that declare `fetch` are marked "Custom transport" in the provider list and the sign-in dialog.
+- **Scope**: response hooks apply to main conversation streams only; summaries, codebase reviews and title generation never trigger them. Non-SSE responses are buffered up to 16 MB for rewriting; beyond that they pass through unchanged with a system log entry.
+
+Export only the tiers you need (the sample shows all three):
+
+```js
+export default {
+  providers: [
+    {
+      id: "acme-coder",
+      // ...authorize / exchange and other sign-in hooks
+      // Tier 1: rewrite a whole non-SSE response, e.g. unwrap {"data": ...}
+      transformResponse(ctx) {
+        return ctx.body?.data ? { body: ctx.body.data } : undefined;
+      },
+      // Tier 2: rewrite SSE events one by one; undefined passes, null drops, an array splits
+      onResponseChunk(ctx, chunk) {
+        if (ctx.data?.type !== "vendor.delta") return undefined;
+        return { choices: [{ delta: { content: ctx.data.text } }] };
+      },
+      // Tier 3: take over the transport, returning a Response / string / { status, headers, body }
+      async fetch(ctx) {
+        const res = await ctx.fetch("https://upstream.example/v1/stream", {
+          method: ctx.method,
+          headers: {
+            ...ctx.headers,
+            authorization: `Bearer ${ctx.account.accessToken}`,
+          },
+          body: JSON.stringify(ctx.body),
+        });
+        return res;
+      },
+    },
+  ],
+};
+```
 
 ## Verification
 

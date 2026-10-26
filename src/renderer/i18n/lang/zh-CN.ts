@@ -2390,6 +2390,9 @@ export const zhCN = {
   "settings.oauthLoadingProviders": "正在获取可用的服务…",
   "settings.oauthSourceBuiltin": "内置",
   "settings.oauthSourcePlugin": "插件",
+  "settings.oauthTransportTakeoverBadge": "自定义传输",
+  "settings.oauthTransportTakeoverHint":
+    "该服务商由插件自行收发请求，流式输出、原生重试与工具调用归一化可能受限。",
   "settings.oauthBuiltinEmpty": "当前没有内置的 OAuth 服务商。",
   "settings.oauthPluginEmpty": "当前没有插件提供 OAuth 服务商。",
   "settings.oauthPluginMarketHint": "安装 OAuth 插件即可增加更多登录服务商。",

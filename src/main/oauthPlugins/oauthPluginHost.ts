@@ -31,9 +31,12 @@ type HookName =
   | "refresh"
   | "models"
   | "quota"
-  | "transformRequest";
+  | "transformRequest"
+  | "transformResponse"
+  | "onResponseChunk"
+  | "fetch";
 
-type HookFn = (ctx: Record<string, unknown>) => unknown;
+type HookFn = (ctx: Record<string, unknown>, chunk?: unknown) => unknown;
 
 type LoadedProvider = {
   pluginId: string;
@@ -68,6 +71,9 @@ type ProviderSpec = {
     models: boolean;
     quota: boolean;
     transformRequest: boolean;
+    transformResponse: boolean;
+    onResponseChunk: boolean;
+    fetch: boolean;
   };
 };
 
@@ -302,6 +308,9 @@ const buildSpec = async (
       models: hasHook(definition, "models"),
       quota: hasHook(definition, "quota"),
       transformRequest: hasHook(definition, "transformRequest"),
+      transformResponse: hasHook(definition, "transformResponse"),
+      onResponseChunk: hasHook(definition, "onResponseChunk"),
+      fetch: hasHook(definition, "fetch"),
     },
   };
 };
@@ -596,7 +605,86 @@ const normalizeTransform = (value: unknown): Record<string, unknown> => {
   };
 };
 
-const NORMALIZERS: Record<HookName, (value: unknown) => unknown> = {
+/** `transformResponse(ctx)` 返回 `{ body?, headers? }`；未返回的字段表示不修改。 */
+const normalizeResponseBody = (value: unknown): Record<string, unknown> => {
+  if (!isPlainObject(value)) return {};
+  const result: Record<string, unknown> = {};
+  const body = value.body;
+  if (typeof body === "string") result.body = body;
+  else if (isPlainObject(body) || Array.isArray(body)) result.body = body;
+  const headers: Record<string, string | null> = {};
+  if (isPlainObject(value.headers)) {
+    for (const [name, item] of Object.entries(value.headers)) {
+      if (item === null || typeof item === "string") headers[name] = item;
+    }
+  }
+  if (Object.keys(headers).length > 0) result.headers = headers;
+  return result;
+};
+
+/** 事件块：字符串原样使用，对象按 SSE 的 `data:` 行补齐。 */
+const chunkBlock = (item: unknown): string =>
+  typeof item === "string" ? item : `data: ${JSON.stringify(item ?? {})}`;
+
+/** `onResponseChunk`：undefined 放行、null 丢弃、字符串/对象替换事件。 */
+const normalizeResponseChunk = (value: unknown): Record<string, unknown> => {
+  if (value === undefined) return { kind: "pass" };
+  if (value === null) return { kind: "drop" };
+  const items = Array.isArray(value) ? value : [value];
+  const blocks = items
+    .filter((item) => item !== undefined)
+    .map(chunkBlock)
+    .filter((block) => block.trim().length > 0);
+  return blocks.length ? { kind: "events", blocks } : { kind: "drop" };
+};
+
+const isFetchResponse = (value: unknown): value is Response =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as Response).status === "number" &&
+  typeof (value as Response).text === "function" &&
+  typeof (value as Response).headers === "object";
+
+/** `fetch(ctx)` 可返回 Response、字符串或 `{ status, headers, body }`。 */
+const normalizeFetchResult = async (
+  value: unknown,
+): Promise<Record<string, unknown>> => {
+  if (isFetchResponse(value)) {
+    const headers: Record<string, string> = {};
+    value.headers.forEach((headerValue, name) => {
+      headers[name] = headerValue;
+    });
+    return { status: value.status, headers, body: await value.text() };
+  }
+  if (typeof value === "string") {
+    return { status: 200, headers: {}, body: value };
+  }
+  if (isPlainObject(value)) {
+    const raw = value.body;
+    const body =
+      typeof raw === "string"
+        ? raw
+        : raw === undefined
+          ? ""
+          : JSON.stringify(raw);
+    if (!body) {
+      throw new Error(
+        "fetch() must return a Response, a string body, or { body }",
+      );
+    }
+    return {
+      status: positiveInt(value.status) ?? 200,
+      headers: stringMap(value.headers),
+      body,
+    };
+  }
+  throw new Error("fetch() must return a Response, a string body, or { body }");
+};
+
+const NORMALIZERS: Record<
+  HookName,
+  (value: unknown) => unknown | Promise<unknown>
+> = {
   authorize: normalizeAuthorize,
   exchange: normalizeTokens,
   poll: normalizePoll,
@@ -604,6 +692,9 @@ const NORMALIZERS: Record<HookName, (value: unknown) => unknown> = {
   models: normalizeModels,
   quota: normalizeQuota,
   transformRequest: normalizeTransform,
+  transformResponse: normalizeResponseBody,
+  onResponseChunk: normalizeResponseChunk,
+  fetch: normalizeFetchResult,
 };
 
 const findProvider = async (id: string): Promise<LoadedProvider | null> => {
@@ -636,11 +727,18 @@ const dispatch = async (message: HostMessage): Promise<unknown> => {
       `OAuth plugin provider '${providerId}' does not implement ${method}()`,
     );
   }
-  const result = await (hook as HookFn).call(
-    provider.definition,
-    withHelpers(provider, message.ctx),
-  );
-  return normalize(result);
+  const ctx = withHelpers(provider, message.ctx);
+  const fn = hook as HookFn;
+  // onResponseChunk 同时把事件块作为第二个参数传入，兼容 (ctx, chunk) 写法。
+  const result =
+    method === "onResponseChunk"
+      ? await fn.call(
+          provider.definition,
+          ctx,
+          isPlainObject(message.ctx) ? message.ctx.chunk : undefined,
+        )
+      : await fn.call(provider.definition, ctx);
+  return await normalize(result);
 };
 
 /** Rust 回调入口：返回 `{ ok, result }` 或 `{ ok: false, error }` 的 JSON 字符串。 */

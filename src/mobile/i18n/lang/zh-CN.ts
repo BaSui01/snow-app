@@ -345,6 +345,10 @@ export const zhCN: Record<string, string> = {
 
   // 授权 / 提问卡片
   "remote.interaction.authRequired": "需要授权 · {{name}}",
+  "remote.interaction.view": "查看",
+  "remote.interaction.collapse": "收起",
+  "remote.interaction.expandDetail": "展开全文",
+  "remote.interaction.collapseDetail": "收起全文",
   "remote.interaction.authFallback": "Snow 请求执行此工具",
   "remote.interaction.rejectPlaceholder": "拒绝理由（可选）",
   "remote.interaction.reject": "拒绝",

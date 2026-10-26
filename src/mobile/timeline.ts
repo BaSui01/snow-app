@@ -883,6 +883,24 @@ const scrollTimelineToBottom = (timeline: HTMLElement): void => {
   syncScrollToBottomButton();
 };
 
+/**
+ * 视口高度变化（软键盘弹出 / 收起、旋转）后保持贴底。
+ *
+ * 只在用户原本就贴在底部时补偿，避免打断正在阅读历史的人；供 main.ts 的
+ * visualViewport 监听调用——键盘弹起会让消息区变矮，不补偿会把正在看的
+ * 正文尾部顶出视口。
+ */
+export const stickToBottomIfNear = (threshold = 48): void => {
+  const timeline = $("timeline");
+  const distance =
+    timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight;
+  if (distance >= threshold) return;
+  cancelScrollToBottomAnim();
+  userNearBottom = true;
+  timeline.scrollTop = timeline.scrollHeight;
+  syncScrollToBottomButton();
+};
+
 const paint = (options: {
   follow: boolean;
   anchorEl: HTMLElement | null;

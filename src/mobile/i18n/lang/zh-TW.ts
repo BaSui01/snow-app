@@ -340,6 +340,10 @@ export const zhTW: Record<string, string> = {
 
   // 授權 / 提問卡片
   "remote.interaction.authRequired": "需要授權 · {{name}}",
+  "remote.interaction.view": "檢視",
+  "remote.interaction.collapse": "收合",
+  "remote.interaction.expandDetail": "展開全文",
+  "remote.interaction.collapseDetail": "收合全文",
   "remote.interaction.authFallback": "Snow 請求執行此工具",
   "remote.interaction.rejectPlaceholder": "拒絕理由（選填）",
   "remote.interaction.reject": "拒絕",

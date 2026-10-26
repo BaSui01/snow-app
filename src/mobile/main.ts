@@ -23,7 +23,7 @@ import { initPending, renderPending } from "./pending";
 import { initRollback } from "./rollback";
 import { applyAccentColor, initTheme } from "./theme";
 import { initThreads, renderThreads } from "./threads";
-import { initTimeline, renderTimeline } from "./timeline";
+import { initTimeline, renderTimeline, stickToBottomIfNear } from "./timeline";
 import { initTodos, renderTodos } from "./todos";
 import { correctionDigest } from "./tools/correction";
 import { initTopbar, renderTopbar } from "./topbar";
@@ -254,12 +254,24 @@ window.addEventListener("focus", () => {
 });
 const viewport = window.visualViewport;
 if (viewport) {
-  viewport.addEventListener("resize", () => {
+  /**
+   * 软键盘遮挡高度 → CSS 变量（样式层据此压缩整页高度，卡片按钮不被键盘盖住）。
+   * 小于阈值的高度差来自地址栏收缩 / 渲染误差，不参与补偿，避免整页抖动。
+   * 视口变矮后若用户原本贴底，继续保持贴底，正在读的正文不会被顶走。
+   */
+  const syncKeyboardOffset = (): void => {
+    const covered = Math.max(0, window.innerHeight - viewport.height);
     document.documentElement.style.setProperty(
       "--keyboard-offset",
-      Math.max(0, window.innerHeight - viewport.height) + "px",
+      (covered > 80 ? covered : 0) + "px",
     );
-  });
+    // 等样式与布局真正生效后再补偿（单次 rAF 可能仍读到旧的可视高度）。
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => stickToBottomIfNear()),
+    );
+  };
+  viewport.addEventListener("resize", syncKeyboardOffset);
+  syncKeyboardOffset();
 }
 
 if (location.search) {

@@ -357,6 +357,10 @@ export const en: Record<string, string> = {
 
   // Authorization / question cards
   "remote.interaction.authRequired": "Authorization needed · {{name}}",
+  "remote.interaction.view": "View",
+  "remote.interaction.collapse": "Collapse",
+  "remote.interaction.expandDetail": "Show full text",
+  "remote.interaction.collapseDetail": "Show less",
   "remote.interaction.authFallback": "Snow requests to run this tool",
   "remote.interaction.rejectPlaceholder": "Reason (optional)",
   "remote.interaction.reject": "Reject",

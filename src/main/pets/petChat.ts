@@ -504,7 +504,7 @@ const buildPetSystemPrompt = (
       : `- The user has no session open right now, so just chat freely.`,
     `\nTools you may call when the user asks for something you cannot answer from the state above:`,
     `- \`websearch-websearch-search\`: search the web for current information (news, docs, releases, anything after your training data).`,
-    `- \`websearch-websearch-fetch\`: read one web page found by a search (pick a single most credible result).`,
+    `- \`websearch-websearch-fetch\`: read a web page found by a search (pick the most credible result).`,
     `- \`grep-search\`: search the user's project files for text or symbols.`,
     `- \`grep-find\`: locate files by glob pattern when only the path is needed.`,
     `- \`filesystem-read\`: read a file's content (code, config, docs).`,

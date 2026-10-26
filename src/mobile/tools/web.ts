@@ -325,6 +325,7 @@ type SearchResult =
       kind: "ok";
       items: SearchItem[];
       total: number;
+      engineNames: string[];
       blockedCount: number;
       blockedItems: SearchItem[];
       blockedPatterns: string[];
@@ -365,6 +366,9 @@ const parseSearchResult = (raw?: string): SearchResult => {
       kind: "ok",
       items,
       total: readNumber(record, "totalResults") ?? items.length,
+      engineNames: (readArray(record, "engineNames") ?? []).filter(
+        (name): name is string => typeof name === "string",
+      ),
       blockedCount: readNumber(record, "blockedCount") ?? 0,
       blockedItems: searchItems(readArray(record, "blockedResults") ?? []),
       blockedPatterns: (readArray(record, "blockedPatterns") ?? []).filter(
@@ -481,12 +485,17 @@ const renderSearch = (tool: SnowRemoteToolCall): HTMLElement | null => {
   }
 
   const meta: HTMLElement[] = [];
-  if (result.kind === "ok" && result.items.length > 0) {
-    meta.push(
-      badge(tr("search.resultCount", { count: result.total }), {
-        variant: result.total > 0 ? "ok" : "muted",
-      }),
-    );
+  if (result.kind === "ok") {
+    if (result.engineNames.length > 0) {
+      meta.push(badge(result.engineNames.join(" · "), { variant: "muted" }));
+    }
+    if (result.items.length > 0) {
+      meta.push(
+        badge(tr("search.resultCount", { count: result.total }), {
+          variant: result.total > 0 ? "ok" : "muted",
+        }),
+      );
+    }
   }
 
   return createToolNode({

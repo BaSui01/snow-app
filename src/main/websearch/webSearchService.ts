@@ -19,11 +19,32 @@ import { sanitizeProxyHost } from "../settings/proxyBrowserSettings";
 import { findBrowserExecutable, isExecutableForPlatform } from "./browserUtils";
 import { DuckDuckGoEngine } from "./duckduckgoEngine";
 import { BingEngine } from "./bingEngine";
-import type { SearchEngine, SearchResponse, SearchResult } from "./types";
+import { BraveEngine } from "./braveEngine";
+import { YahooEngine } from "./yahooEngine";
+import { GoogleEngine } from "./googleEngine";
+import { StartpageEngine } from "./startpageEngine";
+import { SeznamEngine } from "./seznamEngine";
+import { YepEngine } from "./yepEngine";
+import {
+  buildEngineQuery,
+  normalizeLanguage,
+  normalizeSite,
+  normalizeTimeRange,
+} from "./searchParams";
+import { dedupeSearchResults, rankSearchResults } from "./resultRanking";
+import type {
+  SearchEngine,
+  SearchOptions,
+  SearchResponse,
+  SearchResult,
+} from "./types";
 
 const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
 const DEFAULT_SEARCH_ENGINE = "duckduckgo";
-const DEFAULT_MAX_RESULTS = 10;
+/** 默认返回条数：单页只有 10 条，默认取两页以保证召回量。 */
+const DEFAULT_MAX_RESULTS = 20;
+/** 返回条数上限（引擎按需翻页，最多 5 页）。 */
+const MAX_MAX_RESULTS = 50;
 /**
  * 搜索结束后的空闲时长：超过该时间没有新的搜索，就关闭 headless 浏览器，
  * 释放其占用的内存与整棵子进程树（浏览器常驻成本远高于重新启动）。
@@ -41,13 +62,20 @@ type ProxyBrowserSettingsJson = {
   host?: string;
   port?: number;
   browserPath?: string;
-  searchEngine?: string;
+  /** 参与联网搜索的引擎 id 列表（多引擎混合）。 */
+  searchEngines?: string[];
   blockedPatterns?: string[];
 };
 
 const BUILT_IN_ENGINES: SearchEngine[] = [
   new DuckDuckGoEngine(),
   new BingEngine(),
+  new BraveEngine(),
+  new YahooEngine(),
+  new GoogleEngine(),
+  new StartpageEngine(),
+  new SeznamEngine(),
+  new YepEngine(),
 ];
 
 export class WebSearchService {
@@ -343,18 +371,55 @@ export class WebSearchService {
     }
   }
 
-  private resolveEngine(id: string | undefined): SearchEngine {
-    const engineId = (id ?? "").trim().toLowerCase();
-    const engine = BUILT_IN_ENGINES.find((e) => e.id === engineId);
-    return (
-      engine ?? BUILT_IN_ENGINES.find((e) => e.id === DEFAULT_SEARCH_ENGINE)!
+  /**
+   * 解析本次参与检索的引擎：显式 engines 参数优先（覆盖设置），
+   * 其次使用设置里勾选的引擎列表；都为空时回退默认引擎。
+   */
+  private resolveEngines(
+    requested: string[] | undefined,
+    configured: string[] | undefined,
+  ): SearchEngine[] {
+    const requestedIds = (requested ?? []).map((id) => id.trim().toLowerCase());
+    const explicit = BUILT_IN_ENGINES.filter((engine) =>
+      requestedIds.includes(engine.id),
     );
+    if (explicit.length > 0) {
+      return explicit;
+    }
+
+    const configuredIds = (configured ?? []).map((id) =>
+      id.trim().toLowerCase(),
+    );
+    const selected = BUILT_IN_ENGINES.filter((engine) =>
+      configuredIds.includes(engine.id),
+    );
+    if (selected.length > 0) {
+      return selected;
+    }
+
+    return [
+      BUILT_IN_ENGINES.find((engine) => engine.id === DEFAULT_SEARCH_ENGINE)!,
+    ];
   }
 
-  /** 执行搜索并返回结构化结果（自动过滤命中屏蔽规则的结果）。 */
-  async search(query: string, maxResults?: number): Promise<SearchResponse> {
-    const limit = Math.min(Math.max(maxResults ?? DEFAULT_MAX_RESULTS, 1), 20);
-    let page: Page | null = null;
+  /** 执行搜索并返回结构化结果（过滤屏蔽规则命中项，并按相关性重排）。 */
+  async search(
+    query: string,
+    options?: SearchOptions,
+  ): Promise<SearchResponse> {
+    const requested = options?.maxResults;
+    const limit = Math.min(
+      Math.max(
+        typeof requested === "number" && Number.isFinite(requested)
+          ? Math.trunc(requested)
+          : DEFAULT_MAX_RESULTS,
+        1,
+      ),
+      MAX_MAX_RESULTS,
+    );
+    const site = normalizeSite(options?.site);
+    const timeRange = normalizeTimeRange(options?.timeRange);
+    const language = normalizeLanguage(options?.language);
 
     try {
       if (this.disposed) {
@@ -362,20 +427,87 @@ export class WebSearchService {
       }
       this.activeSearches++;
       const settings = await this.loadSettings();
-      const engine = this.resolveEngine(settings.searchEngine);
+      const engines = this.resolveEngines(
+        options?.engineIds,
+        settings.searchEngines,
+      );
 
       const browser = await this.launchBrowser();
-      page = await browser.newPage();
-      await page.setUserAgent(USER_AGENT);
+      const engineQuery = buildEngineQuery(query, site);
 
-      const results = await engine.search(page, query, limit);
+      // 多引擎混合：各引擎独立 page 并行抓取，单个引擎失败不影响其它引擎。
+      const settled = await Promise.allSettled(
+        engines.map(async (engine) => {
+          const enginePage = await browser.newPage();
+          try {
+            await enginePage.setUserAgent(USER_AGENT);
+            const results = await engine.search(enginePage, {
+              query: engineQuery,
+              limit,
+              language,
+              timeRange,
+            });
+            return { engineId: engine.id, engineName: engine.name, results };
+          } finally {
+            await this.closePage(enginePage);
+          }
+        }),
+      );
+
+      const collected: Array<{
+        engineId: string;
+        engineName: string;
+        results: SearchResult[];
+      }> = [];
+      const failures: string[] = [];
+
+      settled.forEach((outcome, index) => {
+        if (outcome.status === "fulfilled") {
+          collected.push(outcome.value);
+          return;
+        }
+        const engine = engines[index];
+        const message =
+          outcome.reason instanceof Error
+            ? outcome.reason.message
+            : String(outcome.reason);
+        failures.push(`${engine.name}: ${message}`);
+        snowLog.error({
+          module: "websearch",
+          func: "search",
+          message: `Search engine failed: ${engine.name}`,
+          error: message,
+        });
+      });
+
+      if (collected.length === 0) {
+        throw new Error(`All search engines failed: ${failures.join("; ")}`);
+      }
+
+      // 合并各引擎结果：标记来源引擎与引擎内排名，供去重与重排使用。
+      const merged: SearchResult[] = [];
+      for (const { engineId, results } of collected) {
+        results.forEach((result, rank) => {
+          merged.push({ ...result, engines: [engineId], rank });
+        });
+      }
+
+      const deduped = dedupeSearchResults(merged);
       const { filtered, blockedCount, blockedResults, blockedPatterns } =
-        this.applyBlockedRules(results, settings.blockedPatterns ?? []);
+        this.applyBlockedRules(deduped, settings.blockedPatterns ?? []);
+      const results = rankSearchResults({
+        query,
+        site,
+        engineCount: collected.length,
+        results: filtered,
+      }).slice(0, limit);
 
       const response: SearchResponse = {
         query,
-        results: filtered,
-        totalResults: filtered.length,
+        engines: collected.map((entry) => entry.engineId),
+        engineNames: collected.map((entry) => entry.engineName),
+        results,
+        totalResults: results.length,
         ...(blockedCount > 0 ? { blockedCount } : {}),
       };
 
@@ -385,7 +517,7 @@ export class WebSearchService {
         response.blockedResults = blockedResults;
         response.blockedPatterns = blockedPatterns;
         response.blockNote =
-          `${blockedCount} of ${results.length} search results were filtered ` +
+          `${blockedCount} of ${deduped.length} search results were filtered ` +
           `out by your site blocking rules (${blockedPatterns.join(", ")}). ` +
           `These sites are NOT fetchable while the rules are active. ` +
           `If one of them is truly relevant despite the rule, tell the user ` +
@@ -399,7 +531,6 @@ export class WebSearchService {
       throw new Error(`Web search failed: ${message}`);
     } finally {
       this.activeSearches = Math.max(0, this.activeSearches - 1);
-      await this.closePage(page);
       // 浏览器实例常驻会持续占用内存，空闲后主动回收。
       this.scheduleIdleClose();
     }

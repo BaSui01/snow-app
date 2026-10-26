@@ -134,7 +134,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 - Verify changes after modifications
 
 ### Web Search (Reference)
-- websearch-websearch-search: Search the web using the configured search engine. Returns titles, URLs, and snippets. Choose ONE most credible result to fetch.
+- websearch-websearch-search: Search the web using the configured search engines. Multiple engines run in parallel and results are de-duplicated and re-ranked locally; it accepts site / timeRange / language / engines parameters. Returns titles, URLs and relevance scores.
 - websearch-websearch-fetch: Fetch and read full content of a web page or direct image URL. Automatically cleans and extracts main text content.
 - Use sparingly - focus on implementation first
 

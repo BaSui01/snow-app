@@ -13,13 +13,20 @@ export const DEFAULT_PROXY_BROWSER_SETTINGS: ProxyBrowserSettings = {
   port: 7890,
   browserPath: "",
   browserDebugPort: 9222,
-  searchEngine: "duckduckgo",
+  searchEngines: ["duckduckgo"],
   blockedPatterns: [],
 };
 
+/** 可勾选的搜索引擎（多选，混合检索时全部生效）。 */
 export const SEARCH_ENGINE_OPTIONS = [
   { value: "duckduckgo", label: "DuckDuckGo" },
   { value: "bing", label: "Bing" },
+  { value: "google", label: "Google" },
+  { value: "brave", label: "Brave" },
+  { value: "yahoo", label: "Yahoo" },
+  { value: "startpage", label: "Startpage" },
+  { value: "seznam", label: "Seznam" },
+  { value: "yep", label: "Yep" },
 ];
 
 /**

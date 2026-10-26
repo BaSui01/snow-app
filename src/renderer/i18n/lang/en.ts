@@ -2757,6 +2757,7 @@ export const en = {
   "settings.proxyStatus": "Proxy",
   "settings.proxyEndpoint": "Proxy endpoint",
   "settings.searchEngine": "Search engine",
+  "settings.searchEngines": "Search engines",
   "settings.syncSnowCliProxy": "Sync Snow CLI proxy config",
   "settings.saveProxyBrowserSettings": "Save settings",
   "settings.proxyBrowserManualTitle": "Manual configuration",

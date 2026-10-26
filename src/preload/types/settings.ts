@@ -4,7 +4,8 @@ export type ProxyBrowserSettings = {
   port: number;
   browserPath: string;
   browserDebugPort: number;
-  searchEngine: string;
+  /** 参与联网搜索的搜索引擎 id 列表（多引擎混合检索，至少一个）。 */
+  searchEngines: string[];
   /** 正则表达式列表，匹配的站点从联网搜索结果中过滤且禁止抓取。 */
   blockedPatterns: string[];
 };

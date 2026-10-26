@@ -35,8 +35,24 @@ const toTextArray = (value: unknown): string[] =>
         .filter((item) => item.length > 0)
     : [];
 
+/**
+ * 解析搜索引擎列表：优先新字段，回退旧版单选字段
+ * （旧版本地设置与 `~/.snow/proxy-config.json` 都是 `searchEngine` 单值）。
+ */
+const toSearchEngines = (source: Record<string, unknown>): string[] => {
+  const list = toTextArray(source.searchEngines).map((item) =>
+    item.toLowerCase(),
+  );
+  if (list.length > 0) {
+    return [...new Set(list)];
+  }
+
+  const legacy = toText(source.searchEngine).trim().toLowerCase();
+  return legacy ? [legacy] : [...DEFAULT_PROXY_BROWSER_SETTINGS.searchEngines];
+};
+
 export const normalizeProxyBrowserSettings = (
-  value: unknown
+  value: unknown,
 ): ProxyBrowserSettings => {
   const source = isRecord(value) ? value : {};
 
@@ -45,24 +61,20 @@ export const normalizeProxyBrowserSettings = (
     host: sanitizeProxyHost(toText(source.host)),
     port: parsePort(
       String(source.port ?? ""),
-      DEFAULT_PROXY_BROWSER_SETTINGS.port
+      DEFAULT_PROXY_BROWSER_SETTINGS.port,
     ),
     browserPath: toText(source.browserPath).trim(),
     browserDebugPort: parsePort(
       String(source.browserDebugPort ?? ""),
-      DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
+      DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort,
     ),
-    searchEngine:
-      toText(
-        source.searchEngine,
-        DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
-      ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+    searchEngines: toSearchEngines(source),
     blockedPatterns: toTextArray(source.blockedPatterns),
   };
 };
 
 export const readProxyBrowserSettingsJson = (
-  value: string | null
+  value: string | null,
 ): ProxyBrowserSettings => {
   if (!value) {
     return DEFAULT_PROXY_BROWSER_SETTINGS;
@@ -76,19 +88,19 @@ export const readProxyBrowserSettingsJson = (
 };
 
 export const toProxyBrowserForm = (
-  settings: ProxyBrowserSettings
+  settings: ProxyBrowserSettings,
 ): ProxyBrowserSettingsForm => ({
   enabled: settings.enabled,
   host: settings.host,
   port: String(settings.port),
   browserPath: settings.browserPath,
   browserDebugPort: String(settings.browserDebugPort),
-  searchEngine: settings.searchEngine,
+  searchEngines: [...settings.searchEngines],
   blockedPatternsText: settings.blockedPatterns.join("\n"),
 });
 
 export const toProxyBrowserSettings = (
-  form: ProxyBrowserSettingsForm
+  form: ProxyBrowserSettingsForm,
 ): ProxyBrowserSettings => ({
   enabled: form.enabled,
   host: sanitizeProxyHost(form.host),
@@ -96,10 +108,12 @@ export const toProxyBrowserSettings = (
   browserPath: form.browserPath.trim(),
   browserDebugPort: parsePort(
     form.browserDebugPort,
-    DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
+    DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort,
   ),
-  searchEngine:
-    form.searchEngine.trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+  searchEngines:
+    form.searchEngines.length > 0
+      ? [...form.searchEngines]
+      : [...DEFAULT_PROXY_BROWSER_SETTINGS.searchEngines],
   blockedPatterns: form.blockedPatternsText
     .split(/\r?\n/)
     .map((line) => line.trim())

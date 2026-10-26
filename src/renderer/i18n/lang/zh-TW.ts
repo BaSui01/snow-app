@@ -2606,6 +2606,7 @@ export const zhTW = {
   "settings.proxyStatus": "代理",
   "settings.proxyEndpoint": "代理端點",
   "settings.searchEngine": "搜尋引擎",
+  "settings.searchEngines": "搜尋引擎（可多選）",
   "settings.syncSnowCliProxy": "同步 Snow CLI 代理配置",
   "settings.saveProxyBrowserSettings": "儲存設定",
   "settings.proxyBrowserManualTitle": "手動配置",

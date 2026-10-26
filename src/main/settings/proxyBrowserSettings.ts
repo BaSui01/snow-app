@@ -10,20 +10,22 @@ export type ProxyBrowserSettings = {
   port: number;
   browserPath: string;
   browserDebugPort: number;
-  searchEngine: string;
+  searchEngines: string[];
   blockedPatterns: string[];
 };
 
 const PROXY_BROWSER_SETTING_NAME = "Proxy and browser settings";
 const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
 export const DEFAULT_PROXY_HOST = "127.0.0.1";
+/** 默认搜索引擎：设置里一个都没配时使用。 */
+const DEFAULT_SEARCH_ENGINES = ["duckduckgo"];
 const DEFAULT_PROXY_BROWSER_SETTINGS: ProxyBrowserSettings = {
   enabled: false,
   host: DEFAULT_PROXY_HOST,
   port: 7890,
   browserPath: "",
   browserDebugPort: 9222,
-  searchEngine: "duckduckgo",
+  searchEngines: DEFAULT_SEARCH_ENGINES,
   blockedPatterns: [],
 };
 
@@ -43,8 +45,28 @@ const toPort = (value: unknown, defaultValue: number): number => {
     : defaultValue;
 };
 
+/**
+ * 解析搜索引擎列表：优先新字段，回退旧版单选字段
+ * （`~/.snow/proxy-config.json` 同步过来的仍是 `searchEngine` 单值）。
+ */
+const toSearchEngines = (source: Record<string, unknown>): string[] => {
+  const list = Array.isArray(source.searchEngines)
+    ? source.searchEngines
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item.length > 0)
+    : [];
+
+  if (list.length > 0) {
+    return [...new Set(list)];
+  }
+
+  const legacy = toText(source.searchEngine).trim().toLowerCase();
+  return legacy ? [legacy] : [...DEFAULT_SEARCH_ENGINES];
+};
+
 const normalizeProxyBrowserSettings = (
-  value: unknown
+  value: unknown,
 ): ProxyBrowserSettings => {
   const source = isRecord(value) ? value : {};
 
@@ -55,13 +77,9 @@ const normalizeProxyBrowserSettings = (
     browserPath: toText(source.browserPath).trim(),
     browserDebugPort: toPort(
       source.browserDebugPort,
-      DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
+      DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort,
     ),
-    searchEngine:
-      toText(
-        source.searchEngine,
-        DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
-      ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+    searchEngines: toSearchEngines(source),
     blockedPatterns: Array.isArray(source.blockedPatterns)
       ? source.blockedPatterns
           .filter((item): item is string => typeof item === "string")
@@ -73,19 +91,19 @@ const normalizeProxyBrowserSettings = (
 
 const persistProxyBrowserSettings = async (
   native: NativeBridge,
-  settings: ProxyBrowserSettings
+  settings: ProxyBrowserSettings,
 ): Promise<ProxyBrowserSettings> => {
   await native.setSystemSetting(
     PROXY_BROWSER_SETTING_NAME,
     PROXY_BROWSER_SETTING_CODE,
-    JSON.stringify(settings)
+    JSON.stringify(settings),
   );
 
   return settings;
 };
 
 export const readSnowCliProxyConfig = async (
-  native: NativeBridge
+  native: NativeBridge,
 ): Promise<ProxyBrowserSettings> => {
   if (!existsSync(SNOW_CLI_PROXY_CONFIG_FILE)) {
     return persistProxyBrowserSettings(native, DEFAULT_PROXY_BROWSER_SETTINGS);
@@ -94,6 +112,6 @@ export const readSnowCliProxyConfig = async (
   const config = readJsonFile(SNOW_CLI_PROXY_CONFIG_FILE);
   return persistProxyBrowserSettings(
     native,
-    normalizeProxyBrowserSettings(config)
+    normalizeProxyBrowserSettings(config),
   );
 };

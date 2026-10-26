@@ -114,11 +114,18 @@ export function ProxyBrowserSettingsPanel(): React.JSX.Element {
       setForm((previous) => ({ ...previous, [field]: value }));
     };
 
-  const setValue = (
-    field: keyof ProxyBrowserSettingsFormValue,
-    value: string,
-  ) => {
-    setForm((previous) => ({ ...previous, [field]: value }));
+  /** 切换参与混合检索的搜索引擎；至少保留一个，避免搜索无处可去。 */
+  const toggleSearchEngine = (engineId: string) => {
+    const next = form.searchEngines.includes(engineId)
+      ? form.searchEngines.filter((id) => id !== engineId)
+      : [...form.searchEngines, engineId];
+    if (next.length === 0) {
+      return;
+    }
+
+    const updated = { ...form, searchEngines: next };
+    setForm(updated);
+    void saveSettings(toProxyBrowserSettings(updated));
   };
 
   const validate = useCallback(
@@ -322,7 +329,7 @@ export function ProxyBrowserSettingsPanel(): React.JSX.Element {
         isBusy={isBusy}
         isSelectingBrowser={isSelectingBrowser}
         onUpdateField={updateField}
-        onSetValue={setValue}
+        onToggleSearchEngine={toggleSearchEngine}
         onBlurSave={commitSave}
         onReset={() => {
           const defaults = toProxyBrowserForm(DEFAULT_PROXY_BROWSER_SETTINGS);

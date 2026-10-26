@@ -90,7 +90,7 @@ const isLocalEntryPath = (path: string): boolean =>
  */
 export const usePathClickOpen = (
   directoryPath: string | undefined,
-  directoryId: string | undefined,
+  directoryId: string | undefined
 ): {
   onClick: (event: React.MouseEvent<HTMLDivElement>) => void;
   onAuxClick: (event: React.MouseEvent<HTMLDivElement>) => void;
@@ -161,8 +161,8 @@ export const usePathClickOpen = (
       const sshWorkspacePath = explicitSsh
         ? path
         : directoryPath?.startsWith("ssh://")
-          ? directoryPath
-          : null;
+        ? directoryPath
+        : null;
       const resolving = sshWorkspacePath
         ? window.snow.sshResolveFileLink(sshWorkspacePath, path)
         : window.snow.resolveFileLink(directoryPath ?? null, path);
@@ -180,7 +180,7 @@ export const usePathClickOpen = (
             openResolvedRemoteEntry(
               resolved,
               { workspacePath: sshWorkspacePath, directoryId },
-              focusLine,
+              focusLine
             );
             return;
           }
@@ -194,7 +194,7 @@ export const usePathClickOpen = (
           console.error("Failed to resolve file path from chat", error);
         });
     },
-    [directoryId, directoryPath, t],
+    [directoryId, directoryPath, t]
   );
 
   const handleClick = useCallback(
@@ -280,7 +280,7 @@ export const usePathClickOpen = (
         }
       }
     },
-    [openPath],
+    [openPath]
   );
 
   // 右键正文里的文件路径：先解析为磁盘上的真实条目，再给出「打开方式」菜单目标。
@@ -302,7 +302,7 @@ export const usePathClickOpen = (
       const path = /^file:/i.test(parsed.path)
         ? localFileUrlToPath(parsed.path)
         : parsed.path;
-      if (!isLocalEntryPath(path)) {
+      if (!path || !isLocalEntryPath(path)) {
         return;
       }
       event.preventDefault();
@@ -326,7 +326,7 @@ export const usePathClickOpen = (
           console.error("Failed to resolve file path from chat", error);
         });
     },
-    [directoryPath, t],
+    [directoryPath, t]
   );
 
   // auxclick 与 click 共用同一处理：Chromium 中 Ctrl/Cmd+点击或中键点击

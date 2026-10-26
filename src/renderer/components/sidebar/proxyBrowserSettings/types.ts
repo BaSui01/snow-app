@@ -6,7 +6,8 @@ export type ProxyBrowserSettingsForm = {
   port: string;
   browserPath: string;
   browserDebugPort: string;
-  searchEngine: string;
+  /** 勾选的搜索引擎 id（多选，至少一个）。 */
+  searchEngines: string[];
   /** textarea 文本：每行一条正则表达式。 */
   blockedPatternsText: string;
 };

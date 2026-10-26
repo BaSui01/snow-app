@@ -7234,6 +7234,31 @@ body.is-panel-resizing * {
   min-width: 0;
 }
 
+/* 搜索引擎多选：复选框 + 图标 + 名称（混合检索时全部生效） */
+.search-engine-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.search-engine-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.search-engine-check input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent-color);
+  cursor: pointer;
+}
+
+.search-engine-check input[type="checkbox"]:disabled {
+  cursor: default;
+}
+
 /* 块级 flex：内联图标会按基线撑高下拉框 */
 .request-method-option {
   display: flex;
@@ -19878,6 +19903,12 @@ body.is-panel-resizing * {
 .tool-call-websearch-count-image {
   color: var(--accent-amber-text);
   background: var(--accent-amber-bg);
+}
+
+/* 搜索引擎来源标签：与计数标签同形，文字加深以区分 */
+.tool-call-websearch-count-engine {
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .tool-call-websearch-meta-group {

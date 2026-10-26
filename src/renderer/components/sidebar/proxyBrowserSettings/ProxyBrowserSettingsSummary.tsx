@@ -17,6 +17,8 @@ export function ProxyBrowserSettingsSummary({
   const browserLabel =
     preview.browserPath ||
     t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });
+  const engineLabels =
+    preview.searchEngines.map(getSearchEngineLabel).join(" · ") || "-";
 
   return (
     <div className="api-settings-summary-grid proxy-browser-settings-summary-grid">
@@ -37,10 +39,13 @@ export function ProxyBrowserSettingsSummary({
         </small>
       </div>
       <div className="api-settings-summary-card">
-        <SearchEngineIcon value={preview.searchEngine} size={15} />
-        <span>{getSearchEngineLabel(preview.searchEngine)}</span>
+        <SearchEngineIcon
+          value={preview.searchEngines[0] ?? "duckduckgo"}
+          size={15}
+        />
+        <span>{engineLabels}</span>
         <small>
-          {t("settings.searchEngine", { defaultValue: "Search engine" })}
+          {t("settings.searchEngines", { defaultValue: "Search engines" })}
         </small>
       </div>
       <div className="api-settings-summary-card">

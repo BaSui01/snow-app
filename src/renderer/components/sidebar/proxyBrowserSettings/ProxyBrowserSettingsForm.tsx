@@ -1,7 +1,6 @@
 import { FolderOpen, ListPlus, Loader2, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
-import { CustomSelect } from "../../common/CustomSelect";
 import { SEARCH_ENGINE_OPTIONS } from "./proxyBrowserSettingsConstants";
 import { SearchEngineIcon } from "./SearchEngineIcon";
 import type { ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue } from "./types";
@@ -17,10 +16,7 @@ type ProxyBrowserSettingsFormProps = {
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     >,
   ) => void;
-  onSetValue: (
-    field: keyof ProxyBrowserSettingsFormValue,
-    value: string,
-  ) => void;
+  onToggleSearchEngine: (engineId: string) => void;
   onBlurSave: () => void;
   onReset: () => void;
   onSelectBrowserExecutable: () => void;
@@ -32,23 +28,13 @@ export function ProxyBrowserSettingsForm({
   isBusy,
   isSelectingBrowser,
   onUpdateField,
-  onSetValue,
+  onToggleSearchEngine,
   onBlurSave,
   onReset,
   onSelectBrowserExecutable,
   onApplyRecommended,
 }: ProxyBrowserSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
-
-  const renderEngineOption = (option: {
-    value: string;
-    label: string;
-  }): React.JSX.Element => (
-    <span className="search-engine-option">
-      <SearchEngineIcon value={option.value} />
-      <span>{option.label}</span>
-    </span>
-  );
 
   return (
     <div className="api-settings-manual-form">
@@ -119,22 +105,29 @@ export function ProxyBrowserSettingsForm({
                 disabled={isBusy}
               />
             </label>
-            <label className="api-settings-field">
+            <div className="api-settings-field wide">
               <span>
-                {t("settings.searchEngine", { defaultValue: "Search engine" })}
+                {t("settings.searchEngines", {
+                  defaultValue: "Search engines",
+                })}
               </span>
-              <CustomSelect
-                value={form.searchEngine}
-                options={SEARCH_ENGINE_OPTIONS}
-                onChange={(value) => {
-                  onSetValue("searchEngine", value);
-                  onBlurSave();
-                }}
-                disabled={isBusy}
-                renderOption={renderEngineOption}
-                renderLabel={renderEngineOption}
-              />
-            </label>
+              <div className="search-engine-checklist">
+                {SEARCH_ENGINE_OPTIONS.map((option) => (
+                  <label key={option.value} className="search-engine-check">
+                    <input
+                      type="checkbox"
+                      checked={form.searchEngines.includes(option.value)}
+                      onChange={() => onToggleSearchEngine(option.value)}
+                      disabled={isBusy}
+                    />
+                    <span className="search-engine-option">
+                      <SearchEngineIcon value={option.value} />
+                      <span>{option.label}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 

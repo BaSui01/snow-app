@@ -184,20 +184,41 @@ impl McpService for WebSearchService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "websearch-search".to_string(),
-                description: "Search the web using the configured search engine (DuckDuckGo or Bing). Returns a list of search results with titles, URLs, and snippets. Best for finding current information, documentation, news, or general web content. IMPORTANT WORKFLOW: After getting search results, analyze them and choose ONLY ONE most credible and relevant page to fetch. Do NOT fetch multiple pages - reading one high-quality source is sufficient and more efficient.".to_string(),
+                description: "Search the web with one or more configured engines; the `engines` parameter lists the available ones. The service runs the selected engines in parallel, fetches multiple result pages, de-duplicates the hits and re-ranks them with a local relevance score (query-term coverage, engine agreement, domain authority, original rank), so results come back ordered by estimated usefulness instead of raw engine order. Use it for current information, documentation, news, releases, or anything after your training data.\n\nSEARCH STRATEGY (raises precision):\n- Start broad, then narrow: one query with the key terms, plus a second pass that adds the product/version/year or a site restriction when the first pass is noisy.\n- For technical topics, run the query in both the user's language and English - the two indexes surface different pages.\n- Use timeRange for anything time-sensitive (releases, prices, incidents, \"latest\") instead of hoping the newest page ranks first.\n- Use site when the authoritative source is already known (official docs, a vendor domain, a specific repository).\n- Use language when you need pages in a specific language or region.\n\nCROSS-CHECKING: for a claim that matters, fetch 2-3 independent sources and prefer official or first-party pages when they disagree. Do not settle on a single snippet for a consequential fact.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Search query string (e.g., \"Claude latest model\", \"TypeScript best practices\")"
+                            "description": "Search query string (e.g., \"Claude latest model\", \"TypeScript best practices\"). Engine operators such as quoted phrases, site:, filetype: and -excluded terms are passed through."
                         },
                         "maxResults": {
                             "type": "number",
-                            "description": "Maximum number of results to return (default: 10, max: 20)",
-                            "default": 10,
+                            "description": "Maximum number of results to return (default: 20, max: 50). Higher values make the engine fetch more result pages, which costs extra time.",
+                            "default": 20,
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 50
+                        },
+                        "site": {
+                            "type": "string",
+                            "description": "Restrict results to a single domain, e.g. \"docs.python.org\" or \"github.com\". Accepts a bare domain or a full URL."
+                        },
+                        "timeRange": {
+                            "type": "string",
+                            "enum": ["day", "week", "month", "year"],
+                            "description": "Only return pages from this time window. Use it for time-sensitive queries."
+                        },
+                        "language": {
+                            "type": "string",
+                            "description": "Language/region hint for the results, e.g. \"zh-CN\", \"en-US\", \"ja-JP\". Defaults to the engine's own locale."
+                        },
+                        "engines": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["duckduckgo", "bing", "brave", "yahoo", "google", "startpage", "seznam", "yep"]
+                            },
+                            "description": "Override the engines used for this call, e.g. [\"brave\", \"bing\"]. Multiple engines run in parallel and their results are merged and re-ranked - the more independent indexes agree on a page, the higher it scores. Omit to use the engines selected in Settings."
                         }
                     },
                     "required": ["query"]
@@ -206,7 +227,7 @@ impl McpService for WebSearchService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "websearch-fetch".to_string(),
-                description: "Fetch and read the full content of a web page or a direct image URL. For HTML pages, automatically cleans and extracts main text content. For direct image URLs (detected by image content-type or image file extension), downloads the image and returns a base64 image block for the model to inspect. RENDERING TIP: When the fetched result contains valid image information (a direct image URL or image data), present it to the user using Markdown image syntax, e.g. ![description](https://example.com/image.png), so the image is rendered inline. USAGE RULE: Only fetch ONE page per search - choose the most credible and relevant result (prefer official documentation, reputable tech sites, or well-known sources).".to_string(),
+                description: "Fetch and read the full content of a web page or a direct image URL. For HTML pages, automatically cleans and extracts main text content (scripts, styles, navigation and markup are stripped, HTML entities are decoded). For direct image URLs (detected by image content-type or image file extension), downloads the image and returns a base64 image block for the model to inspect. RENDERING TIP: When the fetched result contains valid image information (a direct image URL or image data), present it to the user using Markdown image syntax, e.g. ![description](https://example.com/image.png), so the image is rendered inline. USAGE: read the 2-3 most credible and independent results for a claim that matters rather than trusting a single page, and prefer official documentation, first-party sources and well-known projects.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -362,15 +383,117 @@ fn clean_html_text(value: &str) -> String {
     normalize_whitespace(&decode_html_entities(&without_tags))
 }
 
+/// 常用命名实体（覆盖排版符号、货币、标点与西欧重音字母）。
+///
+/// `amp` 与其它实体同表处理是安全的：正则替换是单次遍历，
+/// `&amp;lt;` 只会产出 `&lt;`，不会二次解码成 `<`。
+const NAMED_ENTITIES: &[(&str, &str)] = &[
+    ("amp", "&"),
+    ("lt", "<"),
+    ("gt", ">"),
+    ("quot", "\""),
+    ("apos", "'"),
+    ("nbsp", " "),
+    ("ensp", " "),
+    ("emsp", " "),
+    ("thinsp", " "),
+    ("shy", ""),
+    ("mdash", "—"),
+    ("ndash", "–"),
+    ("minus", "−"),
+    ("hellip", "…"),
+    ("lsquo", "‘"),
+    ("rsquo", "’"),
+    ("ldquo", "“"),
+    ("rdquo", "”"),
+    ("laquo", "«"),
+    ("raquo", "»"),
+    ("lsaquo", "‹"),
+    ("rsaquo", "›"),
+    ("middot", "·"),
+    ("bull", "•"),
+    ("dagger", "†"),
+    ("Dagger", "‡"),
+    ("para", "¶"),
+    ("sect", "§"),
+    ("prime", "′"),
+    ("Prime", "″"),
+    ("trade", "™"),
+    ("copy", "©"),
+    ("reg", "®"),
+    ("deg", "°"),
+    ("plusmn", "±"),
+    ("times", "×"),
+    ("divide", "÷"),
+    ("frac12", "½"),
+    ("frac14", "¼"),
+    ("frac34", "¾"),
+    ("sup1", "¹"),
+    ("sup2", "²"),
+    ("sup3", "³"),
+    ("iexcl", "¡"),
+    ("iquest", "¿"),
+    ("euro", "€"),
+    ("pound", "£"),
+    ("yen", "¥"),
+    ("cent", "¢"),
+    ("curren", "¤"),
+    ("szlig", "ß"),
+    ("agrave", "à"),
+    ("aacute", "á"),
+    ("acirc", "â"),
+    ("atilde", "ã"),
+    ("auml", "ä"),
+    ("aring", "å"),
+    ("ccedil", "ç"),
+    ("egrave", "è"),
+    ("eacute", "é"),
+    ("ecirc", "ê"),
+    ("euml", "ë"),
+    ("igrave", "ì"),
+    ("iacute", "í"),
+    ("icirc", "î"),
+    ("iuml", "ï"),
+    ("ntilde", "ñ"),
+    ("ograve", "ò"),
+    ("oacute", "ó"),
+    ("ocirc", "ô"),
+    ("otilde", "õ"),
+    ("ouml", "ö"),
+    ("oslash", "ø"),
+    ("ugrave", "ù"),
+    ("uacute", "ú"),
+    ("ucirc", "û"),
+    ("uuml", "ü"),
+    ("yacute", "ý"),
+    ("yuml", "ÿ"),
+];
+
 fn decode_html_entities(value: &str) -> String {
-    value
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&nbsp;", " ")
+    let numeric_regex =
+        Regex::new(r"&#(x?)([0-9a-fA-F]+);").expect("numeric entity regex must compile");
+    let decoded = numeric_regex.replace_all(value, |captures: &regex::Captures| {
+        let radix = if captures[1].is_empty() { 10 } else { 16 };
+        let digits = captures.get(2).map(|value| value.as_str()).unwrap_or("");
+        match u32::from_str_radix(digits, radix) {
+            Ok(code) => char::from_u32(code)
+                .map(|character| character.to_string())
+                .unwrap_or_else(|| captures[0].to_string()),
+            Err(_) => captures[0].to_string(),
+        }
+    });
+
+    let named_regex =
+        Regex::new(r"&([a-zA-Z][a-zA-Z0-9]{1,31});").expect("named entity regex must compile");
+    named_regex
+        .replace_all(&decoded, |captures: &regex::Captures| {
+            let name = captures.get(1).map(|value| value.as_str()).unwrap_or("");
+            match NAMED_ENTITIES.iter().find(|(key, _)| *key == name) {
+                Some((_, replacement)) => (*replacement).to_string(),
+                None => captures[0].to_string(),
+            }
+        })
+        .into_owned()
 }
 
 fn normalize_whitespace(value: &str) -> String {

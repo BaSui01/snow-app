@@ -1,5 +1,4 @@
-/**
- * 进程内共享的 Web 搜索服务实例与命令分发。
+/** 进程内共享的 Web 搜索服务实例与命令分发。
  *
  * 搜索由 puppeteer 驱动系统浏览器执行，浏览器实例创建成本高（进程启动 +
  * DevTools 连接），因此整个主进程只保留一个服务实例：MCP 工具调用链与
@@ -33,6 +32,9 @@ export const disposeWebSearchService = async (): Promise<void> => {
 /**
  * 执行 Rust 转发的 Web 搜索命令（puppeteer 驱动系统浏览器）。
  * 目前仅支持 websearch-search；未知操作返回错误。
+ *
+ * 除 query 外的参数（site / timeRange / language / engines）只做类型收敛，
+ * 取值校验与规范化由 WebSearchService 负责，无法识别的值退化为默认行为。
  */
 export const dispatchWebSearchCommand = async (
   native: NativeBridge,
@@ -41,6 +43,10 @@ export const dispatchWebSearchCommand = async (
   const args = JSON.parse(command.argsJson) as {
     query?: unknown;
     maxResults?: unknown;
+    site?: unknown;
+    timeRange?: unknown;
+    language?: unknown;
+    engines?: unknown;
   };
   if (command.operation !== "websearch-search") {
     throw new Error(`Unknown web search operation: ${command.operation}`);
@@ -48,11 +54,15 @@ export const dispatchWebSearchCommand = async (
   if (typeof args.query !== "string" || !args.query.trim()) {
     throw new Error('query is required for tool "websearch-search"');
   }
-  const maxResults =
-    typeof args.maxResults === "number" ? args.maxResults : undefined;
-  const response = await getWebSearchService(native).search(
-    args.query.trim(),
-    maxResults,
-  );
+  const response = await getWebSearchService(native).search(args.query.trim(), {
+    maxResults:
+      typeof args.maxResults === "number" ? args.maxResults : undefined,
+    site: typeof args.site === "string" ? args.site : undefined,
+    timeRange: typeof args.timeRange === "string" ? args.timeRange : undefined,
+    language: typeof args.language === "string" ? args.language : undefined,
+    engineIds: Array.isArray(args.engines)
+      ? args.engines.filter((id): id is string => typeof id === "string")
+      : undefined,
+  });
   return JSON.stringify(response);
 };

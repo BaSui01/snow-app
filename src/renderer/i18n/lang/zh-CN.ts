@@ -2607,6 +2607,7 @@ export const zhCN = {
   "settings.proxyStatus": "代理",
   "settings.proxyEndpoint": "代理地址",
   "settings.searchEngine": "搜索引擎",
+  "settings.searchEngines": "搜索引擎（可多选）",
   "settings.syncSnowCliProxy": "同步 Snow CLI 代理配置",
   "settings.saveProxyBrowserSettings": "保存设置",
   "settings.proxyBrowserManualTitle": "手动配置",

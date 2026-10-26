@@ -42,6 +42,7 @@ type ParsedSearchResult =
   | {
       type: "success";
       query: string;
+      engineNames?: string[];
       results: SearchResultItem[];
       totalResults: number;
       blockedCount?: number;
@@ -147,6 +148,11 @@ const parseSearchResult = (result: string | undefined): ParsedSearchResult => {
       return {
         type: "success",
         query: typeof parsed.query === "string" ? parsed.query : "",
+        engineNames: Array.isArray(parsed.engineNames)
+          ? parsed.engineNames.filter(
+              (name): name is string => typeof name === "string",
+            )
+          : undefined,
         results,
         totalResults:
           typeof parsed.totalResults === "number"
@@ -440,6 +446,11 @@ const SearchToolCall = ({
       meta={
         parsedResult.type === "success" ? (
           <span className="tool-call-websearch-meta-group">
+            {parsedResult.engineNames && parsedResult.engineNames.length > 0 ? (
+              <span className="tool-call-websearch-count tool-call-websearch-count-engine">
+                {parsedResult.engineNames.join(" · ")}
+              </span>
+            ) : null}
             {parsedResult.blockedCount && parsedResult.blockedCount > 0 ? (
               <span className="tool-call-websearch-count tool-call-websearch-count-blocked">
                 {t("toolCall.websearch.blockedCount", {

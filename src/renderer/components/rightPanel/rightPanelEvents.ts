@@ -114,6 +114,8 @@ type RightPanelEventMap = {
   "open-terminal-command": (payload: OpenTerminalCommandPayload) => void;
   "open-plugin-panel": (payload: OpenPluginPanelPayload) => void;
   "open-explorer": (payload: OpenExplorerPayload) => void;
+  /** 切换资源管理器：已打开则关闭，否则打开（快捷键专用） */
+  "toggle-explorer": (payload: OpenExplorerPayload) => void;
   "open-git-diff": (payload: OpenGitDiffPayload) => void;
   "open-git-file": (payload: OpenGitFilePayload) => void;
   "request-expand": () => void;
@@ -130,6 +132,7 @@ const listeners: {
   "open-terminal-command"?: Set<(payload: OpenTerminalCommandPayload) => void>;
   "open-plugin-panel"?: Set<(payload: OpenPluginPanelPayload) => void>;
   "open-explorer"?: Set<(payload: OpenExplorerPayload) => void>;
+  "toggle-explorer"?: Set<(payload: OpenExplorerPayload) => void>;
   "open-git-diff"?: Set<(payload: OpenGitDiffPayload) => void>;
   "open-git-file"?: Set<(payload: OpenGitFilePayload) => void>;
   "request-expand"?: Set<() => void>;

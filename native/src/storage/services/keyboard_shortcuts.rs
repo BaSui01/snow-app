@@ -264,7 +264,27 @@ fn default_cycle_detached_window_config() -> KeyboardShortcutConfig {
     }
 }
 
-/// 完整快捷键设置：30 个快捷键各自的配置。
+/// 共享当前浏览器标签页给 Agent 的默认配置：mod+shift+a。
+/// foreground_only 默认 true：仅浏览器面板激活时由渲染进程接管。
+fn default_browser_toggle_share_with_agent_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_BROWSER_TOGGLE_SHARE_WITH_AGENT_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
+/// 选择浏览器页面元素的默认配置：mod+shift+e。
+/// foreground_only 默认 true：仅浏览器面板激活且有页面时由渲染进程接管。
+fn default_browser_pick_element_config() -> KeyboardShortcutConfig {
+    KeyboardShortcutConfig {
+        key: DEFAULT_BROWSER_PICK_ELEMENT_KEY.to_string(),
+        enabled: true,
+        foreground_only: true,
+    }
+}
+
+/// 完整快捷键设置：32 个快捷键各自的配置。
 /// 序列化为 JSON 存储在 system_settings 表中。
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -349,6 +369,14 @@ pub struct KeyboardShortcutsSettings {
     /// （mod+shift+w，见 default_cycle_detached_window_config）。
     #[serde(default = "default_cycle_detached_window_config")]
     pub cycle_detached_window: KeyboardShortcutConfig,
+    /// 共享当前浏览器标签页给 Agent。旧 JSON 缺少该字段时回退到默认配置
+    /// （mod+shift+a，见 default_browser_toggle_share_with_agent_config）。
+    #[serde(default = "default_browser_toggle_share_with_agent_config")]
+    pub browser_toggle_share_with_agent: KeyboardShortcutConfig,
+    /// 选择浏览器页面元素。旧 JSON 缺少该字段时回退到默认配置
+    /// （mod+shift+e，见 default_browser_pick_element_config）。
+    #[serde(default = "default_browser_pick_element_config")]
+    pub browser_pick_element: KeyboardShortcutConfig,
 }
 
 impl Default for KeyboardShortcutsSettings {
@@ -414,11 +442,13 @@ impl Default for KeyboardShortcutsSettings {
             ui_zoom_reset: default_ui_zoom_reset_config(),
             new_chat_in_new_window: default_new_chat_in_new_window_config(),
             cycle_detached_window: default_cycle_detached_window_config(),
+            browser_toggle_share_with_agent: default_browser_toggle_share_with_agent_config(),
+            browser_pick_element: default_browser_pick_element_config(),
         }
     }
 }
 
-/// 30 个快捷键的默认按键绑定（与渲染层 KeyboardShortcutsProvider 默认值一致）。
+/// 32 个快捷键的默认按键绑定（与渲染层 KeyboardShortcutsProvider 默认值一致）。
 /// `mod` 为平台主修饰键占位符（macOS=Cmd，其他=Ctrl）。
 /// cycleApiProfile 平台相关：macOS 用 Ctrl+P（Option/Alt 会输入特殊字符），
 /// 其他平台用 Alt+P。
@@ -464,6 +494,9 @@ const DEFAULT_UI_ZOOM_OUT_KEY: &str = "mod+-";
 const DEFAULT_UI_ZOOM_RESET_KEY: &str = "mod+0";
 const DEFAULT_NEW_CHAT_IN_NEW_WINDOW_KEY: &str = "mod+shift+n";
 const DEFAULT_CYCLE_DETACHED_WINDOW_KEY: &str = "mod+shift+w";
+/// 浏览器面板动作（仅面板激活时由渲染进程接管）。
+const DEFAULT_BROWSER_TOGGLE_SHARE_WITH_AGENT_KEY: &str = "mod+shift+a";
+const DEFAULT_BROWSER_PICK_ELEMENT_KEY: &str = "mod+shift+e";
 
 impl KeyboardShortcutsSettings {
     /// 规范化：对每个配置校验 key 合法性，不合法时回退到默认按键绑定。
@@ -571,16 +604,23 @@ impl KeyboardShortcutsSettings {
         if !is_valid_key(&self.cycle_detached_window.key) {
             self.cycle_detached_window.key = DEFAULT_CYCLE_DETACHED_WINDOW_KEY.to_string();
         }
+        if !is_valid_key(&self.browser_toggle_share_with_agent.key) {
+            self.browser_toggle_share_with_agent.key =
+                DEFAULT_BROWSER_TOGGLE_SHARE_WITH_AGENT_KEY.to_string();
+        }
+        if !is_valid_key(&self.browser_pick_element.key) {
+            self.browser_pick_element.key = DEFAULT_BROWSER_PICK_ELEMENT_KEY.to_string();
+        }
     }
 }
 
-/// 默认值：30 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
+/// 默认值：32 个快捷键各自默认 key + enabled=true；除 toggleWindow 外
 /// foreground_only=true，toggleWindow 默认 false（全局生效，窗口隐藏时
 /// 也要能呼出）。与 DEFAULT_*_KEY 常量保持一致；cycleApiProfile 的 key
 /// 平台相关，动态构造。
 fn default_keyboard_shortcuts_value() -> String {
     format!(
-        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}},"toggleMessageTime":{{"key":"mod+shift+y","enabled":true,"foregroundOnly":true}},"uiZoomIn":{{"key":"mod+=","enabled":true,"foregroundOnly":true}},"uiZoomOut":{{"key":"mod+-","enabled":true,"foregroundOnly":true}},"uiZoomReset":{{"key":"mod+0","enabled":true,"foregroundOnly":true}},"newChatInNewWindow":{{"key":"mod+shift+n","enabled":true,"foregroundOnly":true}},"cycleDetachedWindow":{{"key":"mod+shift+w","enabled":true,"foregroundOnly":true}}}}"#
+        r#"{{"cancelSession":{{"key":"escape","enabled":true,"foregroundOnly":true}},"openSearch":{{"key":"mod+f","enabled":true,"foregroundOnly":true}},"openMemo":{{"key":"mod+b","enabled":true,"foregroundOnly":true}},"openTodo":{{"key":"mod+t","enabled":true,"foregroundOnly":true}},"cycleProject":{{"key":"mod+backtick","enabled":true,"foregroundOnly":true}},"openProjectExplorer":{{"key":"mod+d","enabled":true,"foregroundOnly":true}},"openProjectMemory":{{"key":"mod+shift+m","enabled":true,"foregroundOnly":true}},"openScheduledTasks":{{"key":"mod+shift+t","enabled":true,"foregroundOnly":true}},"openPlugins":{{"key":"mod+shift+x","enabled":true,"foregroundOnly":true}},"cycleApiProfile":{{"key":"{DEFAULT_CYCLE_API_PROFILE_KEY}","enabled":true,"foregroundOnly":true}},"toggleWindow":{{"key":"mod+shift+h","enabled":true,"foregroundOnly":false}},"togglePet":{{"key":"mod+shift+p","enabled":true,"foregroundOnly":true}},"focusInput":{{"key":"mod+i","enabled":true,"foregroundOnly":true}},"toggleSidebar":{{"key":"mod+shift+l","enabled":true,"foregroundOnly":true}},"toggleRightPanel":{{"key":"mod+shift+r","enabled":true,"foregroundOnly":true}},"newChat":{{"key":"mod+n","enabled":true,"foregroundOnly":true}},"sendMessage":{{"key":"mod+enter","enabled":true,"foregroundOnly":true}},"stopGeneration":{{"key":"mod+.","enabled":true,"foregroundOnly":true}},"prevConversation":{{"key":"alt+left","enabled":true,"foregroundOnly":true}},"nextConversation":{{"key":"alt+right","enabled":true,"foregroundOnly":true}},"scrollToTop":{{"key":"mod+up","enabled":true,"foregroundOnly":true}},"scrollToBottom":{{"key":"mod+down","enabled":true,"foregroundOnly":true}},"openSettings":{{"key":"mod+,","enabled":true,"foregroundOnly":true}},"copyLastResponse":{{"key":"mod+shift+c","enabled":true,"foregroundOnly":true}},"toggleRightPanelFullscreen":{{"key":"mod+shift+f","enabled":true,"foregroundOnly":true}},"showShortcutHelp":{{"key":"mod+/","enabled":true,"foregroundOnly":true}},"toggleMessageTime":{{"key":"mod+shift+y","enabled":true,"foregroundOnly":true}},"uiZoomIn":{{"key":"mod+=","enabled":true,"foregroundOnly":true}},"uiZoomOut":{{"key":"mod+-","enabled":true,"foregroundOnly":true}},"uiZoomReset":{{"key":"mod+0","enabled":true,"foregroundOnly":true}},"newChatInNewWindow":{{"key":"mod+shift+n","enabled":true,"foregroundOnly":true}},"cycleDetachedWindow":{{"key":"mod+shift+w","enabled":true,"foregroundOnly":true}},"browserToggleShareWithAgent":{{"key":"mod+shift+a","enabled":true,"foregroundOnly":true}},"browserPickElement":{{"key":"mod+shift+e","enabled":true,"foregroundOnly":true}}}}"#
     )
 }
 

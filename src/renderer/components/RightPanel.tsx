@@ -1186,6 +1186,24 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [tabs, isDetachedWindow],
     );
 
+    // 快捷键切换资源管理器：折叠时先展开；已停在该 tab 时关闭（切到相邻 tab）。
+    useEffect(() => {
+      return rightPanelEvents.on("toggle-explorer", (payload) => {
+        if (isCollapsed) {
+          rightPanelEvents.emit("request-expand");
+          if (activeTabId !== EXPLORER_TAB_ID) {
+            handleOpenExplorerTab(payload.directoryId);
+          }
+          return;
+        }
+        if (activeTabId === EXPLORER_TAB_ID) {
+          handleCloseTab(EXPLORER_TAB_ID);
+          return;
+        }
+        handleOpenExplorerTab(payload.directoryId);
+      });
+    }, [activeTabId, isCollapsed, handleCloseTab, handleOpenExplorerTab]);
+
     // 关闭所有可关闭的 tab（Git 为固定 tab，始终保留），回到 Git 视图。
     const handleCloseAllTabs = useCallback(() => {
       terminalPtyIdsRef.current.clear();
@@ -1792,6 +1810,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               instanceId={(tab.data as BrowserTabData).instanceId}
               initialUrl={(tab.data as BrowserTabData).url}
               isActive={activeTabId === tab.id}
+              isPanelCollapsed={isCollapsed && !isDetachedWindow}
               projectId={activeDirectory?.directoryId}
               agentAccess={(tab.data as BrowserTabData).agentAccess}
               detached={isDetachedWindow}

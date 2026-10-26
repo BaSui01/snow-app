@@ -34,6 +34,9 @@ import type {
 import { useI18n } from "../../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { EditContextMenu } from "../../common/EditContextMenu";
+import { resolveEditableTarget } from "../../common/GlobalEditContextMenu";
+import { useEditContextMenu } from "../../../hooks/useEditContextMenu";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
 import { rightPanelEvents } from "../rightPanelEvents";
 import { GitControl } from "./GitControl";
@@ -163,6 +166,13 @@ export const BranchSelector = ({
     y: number;
     branch: GitBranchType;
   } | null>(null);
+
+  // 输入框右键：统一走通用编辑菜单（剪切 / 复制 / 粘贴 / 全选）
+  const { editMenu, openEditMenuForElement, runEditCommand, closeEditMenu } =
+    useEditContextMenu();
+  // 编辑菜单 Portal 挂在 body，下拉的外部点击判定需单独识别
+  const editMenuOpenRef = useRef(false);
+  editMenuOpenRef.current = editMenu !== null;
 
   const [searchQuery, setSearchQuery] = useState("");
   // 弹出层宽度上限：按「按钮左边缘到视口右侧」的可用空间收敛。仅靠 CSS 的
@@ -386,9 +396,17 @@ export const BranchSelector = ({
       insideMouseDownRef.current = false;
     };
 
-    const handleClickOutside = (): void => {
+    const handleClickOutside = (event: MouseEvent): void => {
       // 内部点击（根容器 or Portal 弹层）已由 onMouseDown 标记为 true
       if (insideMouseDownRef.current) return;
+      // 编辑菜单（Portal 到 body）内的点击不能收起下拉，否则粘贴 / 全选落空
+      if (
+        editMenuOpenRef.current &&
+        event.target instanceof Element &&
+        event.target.closest(".context-menu")
+      ) {
+        return;
+      }
       setIsOpen(false);
       setCreateMode(null);
       setNewBranchName("");
@@ -405,6 +423,11 @@ export const BranchSelector = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
+
+  // 下拉收起时一并关闭输入框编辑菜单，避免悬浮残留
+  useEffect(() => {
+    if (!isOpen) closeEditMenu();
+  }, [isOpen, closeEditMenu]);
 
   // 布局阶段测量，避免先左对齐绘制一帧再翻转的闪烁
   useLayoutEffect(() => {
@@ -797,6 +820,25 @@ export const BranchSelector = ({
     },
   ];
 
+  /**
+   * 下拉层右键：输入框统一弹通用编辑菜单；其余区域拦下事件，
+   * 避免冒泡到 TopBar 容器弹出项目菜单。
+   */
+  const handleDropdownContextMenu = (event: React.MouseEvent): void => {
+    event.stopPropagation();
+    const target = resolveEditableTarget(event.target, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+    if (!target) {
+      return;
+    }
+    event.preventDefault();
+    setContextMenu(null);
+    setBranchItemContextMenu(null);
+    openEditMenuForElement(target, event.clientX, event.clientY);
+  };
+
   // 错误提示自动在 6 秒后淡出清除
   useEffect(() => {
     if (!createError) return;
@@ -905,6 +947,7 @@ export const BranchSelector = ({
           className={`branch-dropdown${
             currentTab === "changes" ? " is-changes-tab" : ""
           }`}
+          onContextMenu={handleDropdownContextMenu}
           style={
             dropdownWidthCap === null
               ? undefined
@@ -1810,6 +1853,14 @@ export const BranchSelector = ({
           y={branchItemContextMenu.y}
           items={buildBranchItemMenuItems(branchItemContextMenu.branch)}
           onClose={() => setBranchItemContextMenu(null)}
+        />
+      )}
+      {/* 输入框右键：通用编辑菜单 */}
+      {editMenu && (
+        <EditContextMenu
+          menu={editMenu}
+          onCommand={runEditCommand}
+          onClose={closeEditMenu}
         />
       )}
     </div>

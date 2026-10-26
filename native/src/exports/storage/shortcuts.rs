@@ -3,7 +3,7 @@
 use super::*;
 
 // ============================================================================
-// Keyboard shortcuts — 快捷键设置，30 个快捷键各自 enabled + foregroundOnly。
+// Keyboard shortcuts — 快捷键设置，32 个快捷键各自 enabled + foregroundOnly。
 // ============================================================================
 
 #[napi(object)]
@@ -71,6 +71,8 @@ pub struct KeyboardShortcutsSettingsNapi {
     pub ui_zoom_reset: KeyboardShortcutConfigNapi,
     pub new_chat_in_new_window: KeyboardShortcutConfigNapi,
     pub cycle_detached_window: KeyboardShortcutConfigNapi,
+    pub browser_toggle_share_with_agent: KeyboardShortcutConfigNapi,
+    pub browser_pick_element: KeyboardShortcutConfigNapi,
 }
 
 impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
@@ -110,6 +112,8 @@ impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSetting
             ui_zoom_reset: s.ui_zoom_reset.into(),
             new_chat_in_new_window: s.new_chat_in_new_window.into(),
             cycle_detached_window: s.cycle_detached_window.into(),
+            browser_toggle_share_with_agent: s.browser_toggle_share_with_agent.into(),
+            browser_pick_element: s.browser_pick_element.into(),
         }
     }
 }
@@ -151,6 +155,8 @@ impl From<KeyboardShortcutsSettingsNapi>
             ui_zoom_reset: s.ui_zoom_reset.into(),
             new_chat_in_new_window: s.new_chat_in_new_window.into(),
             cycle_detached_window: s.cycle_detached_window.into(),
+            browser_toggle_share_with_agent: s.browser_toggle_share_with_agent.into(),
+            browser_pick_element: s.browser_pick_element.into(),
         }
     }
 }

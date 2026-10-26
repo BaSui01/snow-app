@@ -525,6 +525,8 @@ export type KeyboardShortcutsSettings = {
   uiZoomReset: KeyboardShortcutConfig;
   newChatInNewWindow: KeyboardShortcutConfig;
   cycleDetachedWindow: KeyboardShortcutConfig;
+  browserToggleShareWithAgent: KeyboardShortcutConfig;
+  browserPickElement: KeyboardShortcutConfig;
 };
 
 export type CodebaseEmbedProgress = {

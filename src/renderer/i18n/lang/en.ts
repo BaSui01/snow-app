@@ -4174,7 +4174,7 @@ export const en = {
   "settings.shortcutOpenMemo": "Open memos",
   "settings.shortcutOpenTodo": "Open todo list",
   "settings.shortcutCycleProject": "Cycle through projects",
-  "settings.shortcutOpenExplorer": "Open current project explorer",
+  "settings.shortcutOpenExplorer": "Toggle current project explorer",
   "settings.shortcutOpenProjectMemory": "Open project memory",
   "settings.shortcutOpenScheduledTasks": "Open scheduled tasks",
   "settings.shortcutOpenPlugins": "Open plugins",
@@ -4202,6 +4202,9 @@ export const en = {
     "Toggle right panel fullscreen",
   "settings.shortcutShowShortcutHelp": "Show shortcut cheat sheet",
   "settings.shortcutToggleMessageTime": "Show/hide message timestamps",
+  "settings.shortcutBrowserToggleShareWithAgent":
+    "Share current browser tab with the agent",
+  "settings.shortcutBrowserPickElement": "Pick an element on the browser page",
   "settings.shortcutToggleToolCardStyle":
     "Switch tool card style (classic / chips)",
   "settings.shortcutUiZoomIn": "Increase UI font size",
@@ -4209,6 +4212,7 @@ export const en = {
   "settings.shortcutUiZoomReset": "Reset UI font size",
   "settings.shortcutGroupConversation": "Conversation",
   "settings.shortcutGroupNavigation": "Navigation",
+  "settings.shortcutGroupBrowser": "Browser panel",
   "settings.shortcutGroupWindow": "Window & global",
   "settings.shortcutHelpTitle": "Keyboard shortcuts",
   "settings.shortcutHelpSearchPlaceholder": "Search shortcuts",

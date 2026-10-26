@@ -56,6 +56,9 @@ export const Sidebar = ({
   onOpenFile,
 }: SidebarProps): React.JSX.Element => {
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
+  // 快捷键回调读取最新侧栏内容（effect 只绑定一次）。
+  const activeContentRef = useRef(activeContent);
+  activeContentRef.current = activeContent;
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
     null,
   );
@@ -134,13 +137,23 @@ export const Sidebar = ({
     rightPanelEvents.emit("open-explorer", { directoryId });
   }, []);
 
-  // 订阅快捷键事件：Ctrl/Cmd+D 打开当前项目明细（按偏好落在侧栏或右侧面板）。
-  // 使用当前激活的工作区目录作为 explorer 目标。
+  // 订阅快捷键事件：Ctrl/Cmd+D 切换当前项目明细（按偏好落在侧栏或右侧面板）。
+  // 已在资源管理器视图时再次按下回到主侧栏 / 关闭对应 tab。
   useEffect(() => {
     return shortcutEvents.on("open-project-explorer", () => {
-      if (activeDirectory?.directoryId) {
-        handleSwitchToExplorer(activeDirectory.directoryId);
+      const directoryId = activeDirectory?.directoryId;
+      if (!directoryId) {
+        return;
       }
+      if (explorerPlacementStore.get() === "sidebar") {
+        if (activeContentRef.current === "explorer") {
+          setActiveContent("main");
+          return;
+        }
+        handleSwitchToExplorer(directoryId);
+        return;
+      }
+      rightPanelEvents.emit("toggle-explorer", { directoryId });
     });
   }, [activeDirectory, handleSwitchToExplorer]);
 

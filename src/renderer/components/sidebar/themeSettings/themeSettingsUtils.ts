@@ -907,9 +907,10 @@ export function syncMacTrafficLightPosition(): void {
   }
   // 取顶栏卡片中心而非 .top-bar 整体中心：层叠风格顶栏上留白 10px、下留白 0，
   // 两者中心相差 5px，用整条顶栏居中会让红绿灯比图标偏上。
+  // 独立面板窗口没有 .top-bar，改用其顶部操作栏（DetachedPanelTitleBar）。
   const anchor =
     document.querySelector<HTMLElement>(
-      ".top-bar-main, .top-bar-left, .top-bar-right",
+      ".top-bar-main, .top-bar-left, .top-bar-right, .detached-panel-titlebar",
     ) ?? document.querySelector<HTMLElement>(".top-bar");
   const barRect = anchor?.getBoundingClientRect();
   const centerY =

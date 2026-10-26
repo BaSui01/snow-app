@@ -64,7 +64,18 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   uiZoomReset: "mod+0",
   newChatInNewWindow: "mod+shift+n",
   cycleDetachedWindow: "mod+shift+w",
+  browserToggleShareWithAgent: "mod+shift+a",
+  browserPickElement: "mod+shift+e",
 };
+
+/**
+ * 面板内动作：快捷键由对应面板在激活时接管，不参与全局注册，
+ * 因此「仅前台」开关对它无意义（不展示）。
+ */
+const PANEL_SCOPED_ACTIONS = new Set<KeyboardShortcutAction>([
+  "browserToggleShareWithAgent",
+  "browserPickElement",
+]);
 
 export function KeyboardShortcutsSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
@@ -245,38 +256,39 @@ export function KeyboardShortcutsSettingsPanel(): React.JSX.Element {
                 {/* 仅前台开关 + 恢复默认。
                     toggleWindow 不显示"仅前台"开关：它由主进程 globalShortcut
                     注册，本质就是全局生效（窗口隐藏时也要能呼出），
-                    该开关对它无意义。
+                    该开关对它无意义；面板内动作（PANEL_SCOPED_ACTIONS）同样不显示。
                     键位无法全局注册（单键如 escape）时开关禁用。 */}
                 <div className="shortcut-toggles">
-                  {action !== "toggleWindow" && (
-                    <label
-                      className="toggle-switch shortcut-foreground-switch"
-                      title={
-                        !isGlobalCapableKey(config.key)
-                          ? t("settings.shortcutGlobalUnavailable", {
-                              defaultValue:
-                                "Single-key bindings cannot work globally",
-                            })
-                          : undefined
-                      }
-                    >
-                      <input
-                        type="checkbox"
-                        checked={config.foregroundOnly}
-                        onChange={handleForegroundOnlyChange(action)}
-                        disabled={
-                          !config.enabled || !isGlobalCapableKey(config.key)
+                  {action !== "toggleWindow" &&
+                    !PANEL_SCOPED_ACTIONS.has(action) && (
+                      <label
+                        className="toggle-switch shortcut-foreground-switch"
+                        title={
+                          !isGlobalCapableKey(config.key)
+                            ? t("settings.shortcutGlobalUnavailable", {
+                                defaultValue:
+                                  "Single-key bindings cannot work globally",
+                              })
+                            : undefined
                         }
-                        hidden
-                      />
-                      <span className="toggle-slider" />
-                      <span>
-                        {t("settings.shortcutForegroundOnly", {
-                          defaultValue: "Foreground only",
-                        })}
-                      </span>
-                    </label>
-                  )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={config.foregroundOnly}
+                          onChange={handleForegroundOnlyChange(action)}
+                          disabled={
+                            !config.enabled || !isGlobalCapableKey(config.key)
+                          }
+                          hidden
+                        />
+                        <span className="toggle-slider" />
+                        <span>
+                          {t("settings.shortcutForegroundOnly", {
+                            defaultValue: "Foreground only",
+                          })}
+                        </span>
+                      </label>
+                    )}
                   {config.key !== DEFAULT_KEYS[action] && (
                     <button
                       className="icon-btn ghost shortcut-reset-btn"

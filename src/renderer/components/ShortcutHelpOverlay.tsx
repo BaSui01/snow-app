@@ -25,6 +25,10 @@ const GROUP_TITLE_KEYS: Record<
     key: "settings.shortcutGroupNavigation",
     fallback: "Navigation",
   },
+  browser: {
+    key: "settings.shortcutGroupBrowser",
+    fallback: "Browser panel",
+  },
   window: {
     key: "settings.shortcutGroupWindow",
     fallback: "Window & global",

@@ -51,6 +51,7 @@ import {
 } from "./terminal/terminalMonitor";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
 import { requestOpenProjectMcpPanel } from "../mainContent/chatInput/projectMcpNavigation";
+import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { useI18n } from "../../i18n";
 import {
   BROWSER_MCP_SERVER_ID,
@@ -68,6 +69,8 @@ export type BrowserPanelContentProps = {
   instanceId: string;
   initialUrl: string;
   isActive: boolean;
+  /** 所在右面板是否已折叠：折叠时面板不可见，面板内快捷键不接管 */
+  isPanelCollapsed?: boolean;
   onTitleChange?: (title: string) => void;
   /** 页面每次导航（含页面内跳转）后的最新 URL 回调，用于上层同步 tab 数据 */
   onUrlChange?: (url: string) => void;
@@ -267,6 +270,7 @@ export const BrowserPanelContent = ({
   instanceId,
   initialUrl,
   isActive,
+  isPanelCollapsed = false,
   onTitleChange,
   onUrlChange,
   onOpenNewTab,
@@ -276,6 +280,7 @@ export const BrowserPanelContent = ({
   agentAccess,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const { t } = useI18n();
+  const { registerScopedHandler } = useKeyboardShortcutsSettings();
   // onTitleChange / onUrlChange / onOpenNewTab 由 RightPanel 内联传入,每次
   // 父组件 render 都是新引用。通过 ref 持有,事件监听 effect 只需依赖
   // instanceId,监听器只绑定一次,避免每次父组件重渲染都反复卸载/重建
@@ -303,6 +308,8 @@ export const BrowserPanelContent = ({
   activeDeviceSizeRef.current = activeDeviceSize;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+  const isPanelCollapsedRef = useRef(isPanelCollapsed);
+  isPanelCollapsedRef.current = isPanelCollapsed;
 
   // 单页面状态：本实例唯一 <webview> 的导航状态。src 驱动 <webview src>
   // 属性（仅在显式导航时更新），addressInput 跟随页面内导航实时更新。
@@ -324,6 +331,10 @@ export const BrowserPanelContent = ({
   const [isLoading, setIsLoading] = useState<boolean>(
     () => !!computeStartUrl(),
   );
+  // 元素选择快捷键与工具栏按钮同条件：加载完成且存在实际页面。
+  const canPickElement = !isLoading && !!src;
+  const canPickElementRef = useRef(canPickElement);
+  canPickElementRef.current = canPickElement;
   // 本实例唯一 webview（工具栏操作 / MCP / 截图 / 元素选择都作用于它）。
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   // 本实例 webview 的 guest webContents id：主进程 browser:open-tab 事件
@@ -747,6 +758,31 @@ export const BrowserPanelContent = ({
     }
     setBrowserTabShared(instanceId, !access.shared);
   }, [instanceId]);
+
+  // 浏览器面板内快捷键：仅所在标签页激活且面板可见时接管，避免多个
+  // 浏览器 tab 同时响应、面板折叠时静默触发；其它面板下不拦截。
+  useEffect(
+    () =>
+      registerScopedHandler(
+        "browserToggleShareWithAgent",
+        handleToggleShareWithAgent,
+        () => isActiveRef.current && !isPanelCollapsedRef.current,
+      ),
+    [registerScopedHandler, handleToggleShareWithAgent],
+  );
+
+  useEffect(
+    () =>
+      registerScopedHandler(
+        "browserPickElement",
+        togglePicker,
+        () =>
+          isActiveRef.current &&
+          !isPanelCollapsedRef.current &&
+          canPickElementRef.current,
+      ),
+    [registerScopedHandler, togglePicker],
+  );
 
   // MCP 命令桥：所有页面级操作（navigate/click/devtools 等）作用于本实例
   // 唯一的 webview；get_tab_content 提取页面正文。标签页的增删切换由上层
@@ -1235,7 +1271,7 @@ export const BrowserPanelContent = ({
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         isLoading={isLoading}
-        canPickElement={!isLoading && !!src}
+        canPickElement={canPickElement}
         addressInput={addressInput}
         isCapturing={isCapturing}
         isPickingElement={isPicking}

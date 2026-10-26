@@ -16,7 +16,11 @@ import {
   killAllPtyForWebContents,
   reservePtyForHandoff,
 } from "../pty/ptyManager";
-import { APP_ICON_PATH, isMacOS } from "./constants";
+import {
+  APP_ICON_PATH,
+  isMacOS,
+  macDetachedPanelTrafficLightPosition,
+} from "./constants";
 import {
   getRememberedDetachedPanelSize,
   trackDetachedPanelWindowSize,
@@ -37,8 +41,6 @@ import { safeSend } from "../utils/safeSend";
 
 const MIN_WINDOW_WIDTH = 420;
 const MIN_WINDOW_HEIGHT = 320;
-/** macOS 红绿灯位置：与 44px 顶部操作栏垂直居中。 */
-const TRAFFIC_LIGHT_POSITION = { x: 16, y: 16 };
 
 type DetachedPanelEntry = {
   payload: DetachedPanelPayload;
@@ -167,7 +169,9 @@ export const openDetachedPanelWindow = (
     // 隐藏系统标题栏：macOS 保留原生红绿灯（与主窗口同一组配置），其余平台无边框。
     frame: false,
     titleBarStyle: isMacOS ? "hidden" : "default",
-    ...(isMacOS ? { trafficLightPosition: TRAFFIC_LIGHT_POSITION } : {}),
+    ...(isMacOS
+      ? { trafficLightPosition: macDetachedPanelTrafficLightPosition }
+      : {}),
     show: false,
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/index.cjs"),

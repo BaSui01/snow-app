@@ -12,6 +12,7 @@ import {
   APP_ICON_PATH,
   APP_WINDOW_ICON_PATH,
   isMacOS,
+  macDetachedPanelTrafficLightPosition,
   macTrafficLightPosition,
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
@@ -27,7 +28,10 @@ import {
 import { safeSend } from "../utils/safeSend";
 import { snowLog } from "../../utils/snowLogger";
 import { closeAllBrowserPopups } from "../browser/browserPopupWindow";
-import { closeAllDetachedPanelWindows } from "./detachedPanelWindow";
+import {
+  closeAllDetachedPanelWindows,
+  isDetachedPanelWebContents,
+} from "./detachedPanelWindow";
 
 // 模块级关闭确认标志：渲染进程确认关闭后置为 true，使 close 事件不再被拦截。
 // 这样可以统一覆盖所有关闭路径（自定义标题栏按钮、Alt+F4、任务栏关闭等）。
@@ -138,19 +142,24 @@ registerThemeBackgroundSync();
 
 const registerTrafficLightPositionSync = (): void => {
   ipcMain.handle("theme:set-traffic-light-y", (event, y: unknown) => {
-    const win = getMainWindow();
+    if (!isMacOS || typeof y !== "number" || !Number.isFinite(y)) {
+      return Promise.resolve();
+    }
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const isMainWindow = !!win && win === getMainWindow();
+    // 主窗口与独立面板窗口的顶栏高度不同，各自维护纵向位置。
     if (
-      !isMacOS ||
-      typeof y !== "number" ||
-      !Number.isFinite(y) ||
       !win ||
-      event.sender !== win.webContents
+      win.isDestroyed() ||
+      (!isMainWindow && !isDetachedPanelWebContents(event.sender))
     ) {
       return Promise.resolve();
     }
     const clamped = Math.min(Math.max(y, 0), 120);
     win.setWindowButtonPosition({
-      x: macTrafficLightPosition.x,
+      x: isMainWindow
+        ? macTrafficLightPosition.x
+        : macDetachedPanelTrafficLightPosition.x,
       y: Math.round(clamped),
     });
     return Promise.resolve();

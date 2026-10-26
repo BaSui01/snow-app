@@ -10,6 +10,7 @@ import {
   RotateCw,
 } from "lucide-react";
 import { Tooltip } from "../../common/Tooltip";
+import { ShortcutHint } from "../../ShortcutHint";
 import type {
   BrowserBookmark,
   BrowserDownloadItemEvent,
@@ -132,17 +133,22 @@ export type BrowserToolbarProps = {
   onDownloadCancel: (id: number) => void;
 };
 
-/** 工具栏提示内容：主标题 + 可选说明行（说明行解释按钮的实际作用）。 */
+/** 工具栏提示内容：主标题 + 可选说明行 + 可选快捷键键帽。 */
 const ToolbarTooltip = ({
   title,
   hint,
+  shortcut,
 }: {
   title: string;
   hint?: string;
+  shortcut?: React.ReactNode;
 }): React.JSX.Element => (
   <span className="browser-tooltip-content">
     <span className="browser-tooltip-title">{title}</span>
     {hint ? <span className="browser-tooltip-hint">{hint}</span> : null}
+    {shortcut ? (
+      <span className="browser-tooltip-shortcut">{shortcut}</span>
+    ) : null}
   </span>
 );
 
@@ -479,6 +485,7 @@ export const BrowserToolbar = ({
                 ? t("browser.unshareFromAgentTitle")
                 : t("browser.shareWithAgentTitle")
             }
+            shortcut={<ShortcutHint action="browserToggleShareWithAgent" />}
           />
         }
         placement="top"
@@ -510,6 +517,7 @@ export const BrowserToolbar = ({
             <ToolbarTooltip
               title={t("browser.pickElement")}
               hint={t("browser.pickElementTitle")}
+              shortcut={<ShortcutHint action="browserPickElement" />}
             />
           }
           placement="top"

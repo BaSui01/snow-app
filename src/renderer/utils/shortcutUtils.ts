@@ -215,7 +215,7 @@ export const shouldPreventDefault = (key: string): boolean => {
 };
 
 /**
- * 30 个快捷键动作的有序列表。
+ * 32 个快捷键动作的有序列表。
  * 排列规则：台前生效的快捷键在前（默认 foregroundOnly=true），
  * 全局生效的 toggleWindow（默认 foregroundOnly=false）放最后。
  */
@@ -252,16 +252,19 @@ export const SHORTCUT_ACTIONS: KeyboardShortcutAction[] = [
   "uiZoomIn",
   "uiZoomOut",
   "uiZoomReset",
+  "browserToggleShareWithAgent",
+  "browserPickElement",
 ];
 
 /**
  * 快捷键动作的静态元数据：描述文案 key + 描述默认值 + 帮助浮层分组。
- * group: conversation（会话操作）/ navigation（界面导航）/ window（窗口与全局）。
+ * group: conversation（会话操作）/ navigation（界面导航）/
+ * browser（浏览器面板）/ window（窗口与全局）。
  */
 type ShortcutMeta = {
   descKey: string;
   descDefault: string;
-  group: "conversation" | "navigation" | "window";
+  group: "conversation" | "navigation" | "browser" | "window";
 };
 
 export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
@@ -342,7 +345,7 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
   },
   openProjectExplorer: {
     descKey: "settings.shortcutOpenExplorer",
-    descDefault: "Open current project explorer",
+    descDefault: "Toggle current project explorer",
     group: "navigation",
   },
   openProjectMemory: {
@@ -425,6 +428,16 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
     descDefault: "Reset UI font size",
     group: "window",
   },
+  browserToggleShareWithAgent: {
+    descKey: "settings.shortcutBrowserToggleShareWithAgent",
+    descDefault: "Share current browser tab with the agent",
+    group: "browser",
+  },
+  browserPickElement: {
+    descKey: "settings.shortcutBrowserPickElement",
+    descDefault: "Pick an element on the browser page",
+    group: "browser",
+  },
 };
 
 /**
@@ -433,6 +446,7 @@ export const SHORTCUT_META: Record<KeyboardShortcutAction, ShortcutMeta> = {
 export const SHORTCUT_GROUP_ORDER = [
   "conversation",
   "navigation",
+  "browser",
   "window",
 ] as const;
 

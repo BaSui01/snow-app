@@ -656,7 +656,9 @@ export type KeyboardShortcutAction =
   | "uiZoomOut"
   | "uiZoomReset"
   | "newChatInNewWindow"
-  | "cycleDetachedWindow";
+  | "cycleDetachedWindow"
+  | "browserToggleShareWithAgent"
+  | "browserPickElement";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -702,6 +704,10 @@ export type KeyboardShortcutsSettings = {
   uiZoomReset: KeyboardShortcutConfig;
   newChatInNewWindow: KeyboardShortcutConfig;
   cycleDetachedWindow: KeyboardShortcutConfig;
+  /** 共享当前浏览器标签页给 Agent（仅浏览器面板激活时生效） */
+  browserToggleShareWithAgent: KeyboardShortcutConfig;
+  /** 选择浏览器页面元素（仅浏览器面板激活且有页面时生效） */
+  browserPickElement: KeyboardShortcutConfig;
 };
 
 // ===== App lock =====

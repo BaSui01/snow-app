@@ -4,6 +4,8 @@ import { app } from "electron";
 export const isMacOS = process.platform === "darwin";
 export const isWindows = process.platform === "win32";
 export const macTrafficLightPosition = { x: 18, y: 28 };
+/** 独立面板窗口红绿灯：与 44px 顶部操作栏垂直居中（按钮组高 16px）。 */
+export const macDetachedPanelTrafficLightPosition = { x: 16, y: 14 };
 
 // 图标资源根目录：
 // - 打包后由 electron-builder extraResources 复制到 process.resourcesPath

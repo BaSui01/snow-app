@@ -15134,6 +15134,16 @@ body.is-panel-resizing * {
   outline: 2px solid var(--accent-blue);
   outline-offset: 1px;
 }
+/* 预览已展开：眼睛图标切成斜线态，按钮用主题色高亮，提示再点一次收起 */
+.tcn-html-preview-btn[data-preview-open="true"] {
+  color: var(--accent-color);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 40%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-secondary));
+}
 
 /* 工具调用被用户拒绝时的理由提示条：常驻显示（不随卡片展开状态隐藏），
    让用户回看历史时仍能知道当时为什么拒绝。 */

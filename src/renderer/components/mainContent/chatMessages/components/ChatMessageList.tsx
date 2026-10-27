@@ -22,6 +22,7 @@ import {
   createChatFileArtifactCollector,
   type ChatFileArtifact,
 } from "./chatFileArtifacts";
+import { ChatFileArtifactRevealProvider } from "./ChatFileArtifactRevealContext";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
@@ -538,52 +539,61 @@ export const ChatMessageList = ({
     );
   };
 
+  // 已展开的卡片 key 集合 + 工作目录：供工具卡片上的预览按钮显示开合状态
+  const artifactRevealValue = useMemo(
+    () => ({ revealed: revealedArtifacts, workspace: artifactWorkspace }),
+    [revealedArtifacts, artifactWorkspace],
+  );
+
   // 消息区分两层：平滑视口（轨道内是全部消息流内容，高度由
   // streamGrowthSmoother 平滑过渡）+ 视口之外的会话级流式指示槽。
   // 指示槽不随内容增长移动，始终停在可视底部。
   return (
-    <div className="chat-message-list">
-      <div className="chat-message-viewport" ref={streamViewportRef}>
-        <div className="chat-message-track">
-          {renderTriggeredByTaskBanner()}
-          {showForkDivider ? (
-            <>
-              {messages
-                .slice(0, forkDividerIndex)
-                .map((message, index) => renderItem(message, index))}
-              {renderForkDivider()}
-              {messages
-                .slice(forkDividerIndex)
-                .map((message, index) =>
-                  renderItem(message, forkDividerIndex + index),
-                )}
-            </>
-          ) : (
-            <>
-              {messages.map((message, index) => renderItem(message, index))}
-              {forkDividerIndex === messages.length && forkedFromConversationId
-                ? renderForkDivider()
-                : null}
-            </>
-          )}
-          {renderVisionStatusCard()}
-          <ChatRunSummary
-            messages={messages}
-            isStreaming={isStreaming}
-            isAborting={isAborting}
-            isRunActive={isRunActive}
-            tokenUsage={conversationTokenUsage}
-            durationMs={lastRunDurationMs}
-            ttftSumMs={conversationTtftSumMs}
-            requestCount={conversationRequestCount}
-          />
+    <ChatFileArtifactRevealProvider value={artifactRevealValue}>
+      <div className="chat-message-list">
+        <div className="chat-message-viewport" ref={streamViewportRef}>
+          <div className="chat-message-track">
+            {renderTriggeredByTaskBanner()}
+            {showForkDivider ? (
+              <>
+                {messages
+                  .slice(0, forkDividerIndex)
+                  .map((message, index) => renderItem(message, index))}
+                {renderForkDivider()}
+                {messages
+                  .slice(forkDividerIndex)
+                  .map((message, index) =>
+                    renderItem(message, forkDividerIndex + index),
+                  )}
+              </>
+            ) : (
+              <>
+                {messages.map((message, index) => renderItem(message, index))}
+                {forkDividerIndex === messages.length &&
+                forkedFromConversationId
+                  ? renderForkDivider()
+                  : null}
+              </>
+            )}
+            {renderVisionStatusCard()}
+            <ChatRunSummary
+              messages={messages}
+              isStreaming={isStreaming}
+              isAborting={isAborting}
+              isRunActive={isRunActive}
+              tokenUsage={conversationTokenUsage}
+              durationMs={lastRunDurationMs}
+              ttftSumMs={conversationTtftSumMs}
+              requestCount={conversationRequestCount}
+            />
+          </div>
         </div>
+        <ChatStreamIndicator
+          active={isStreaming}
+          isAborting={isAborting}
+          isRetrying={isLastAssistantRetrying}
+        />
       </div>
-      <ChatStreamIndicator
-        active={isStreaming}
-        isAborting={isAborting}
-        isRetrying={isLastAssistantRetrying}
-      />
-    </div>
+    </ChatFileArtifactRevealProvider>
   );
 };

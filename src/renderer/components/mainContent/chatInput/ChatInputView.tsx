@@ -938,6 +938,11 @@ export const ChatInputView = ({
           onWithdraw={handleWithdrawPending}
           onSendNow={handleSendPendingNow}
         />
+        {/* 插件按钮层：压在输入框上沿、位于 Pending 之下 */}
+        <div
+          className="snow-client-slot chat-input-slot"
+          data-snow-slot="chat.input.actions"
+        />
         <div className="input-box">
           <div
             ref={textareaRef}

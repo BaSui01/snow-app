@@ -682,10 +682,6 @@ const ChatContentBody = ({
           ) : null}
 
           <div className="chat-input-region" data-snow-anchor="chat.input">
-            <div
-              className="snow-client-slot"
-              data-snow-slot="chat.input.actions"
-            />
             {showScrollToBottom && hasMessages ? (
               <button
                 className={`chat-scroll-to-bottom${

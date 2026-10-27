@@ -198,6 +198,13 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         ctx.pendingToRealConversationIdRef.current.set(oldKey, newKey);
       }
 
+      // 暂停控制器随会话 key 迁移，否则循环检查点与按钮读取的 key 不一致
+      const pauseController = ctx.pauseControllerRef.current.get(oldKey);
+      if (pauseController) {
+        ctx.pauseControllerRef.current.set(newKey, pauseController);
+        ctx.pauseControllerRef.current.delete(oldKey);
+      }
+
       const pendingQueue = ctx.pendingQueueRef.current.get(oldKey);
       if (pendingQueue?.length) {
         const existingPendingQueue =
@@ -229,6 +236,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
     },
     [
       ctx.sessionsRefData,
+      ctx.pauseControllerRef,
       ctx.pendingQueueRef,
       ctx.setSessions,
       ctx.setStreamingConversationIds,

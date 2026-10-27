@@ -9736,7 +9736,7 @@ body.is-panel-resizing * {
   scrollbar-color: transparent transparent;
   /* Bottom padding matches the mask fade height so the latest message rests
      fully above the fade zone when stuck to the bottom. */
-  padding: 16px 20px 48px;
+  padding: 16px 20px 35px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -25082,14 +25082,14 @@ button.user-message-source:hover {
   margin: 0 auto;
 }
 
-/* 待发送消息：贴合在输入框顶边的标签页式卡片，左右内缩、仅顶部圆角、无底边 */
+/* 待发送消息：位于输入区层叠栈第二层（指标标签之下、插件按钮条之上） */
 .pending-messages-area {
-  margin: 0 18px;
-  padding: 4px 6px;
+  margin: 0 44px;
+  padding: 3px 6px;
   background: var(--surface-island);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-color);
   border-bottom: none;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   position: relative;
   z-index: 1;
 }
@@ -60431,6 +60431,72 @@ img.plugin-icon {
 
 .snow-client-slot:empty {
   display: none;
+}
+
+/* 输入区层叠栈（自上而下）：StreamMetrics 标签 → Pending 消息 → 插件按钮条
+   → 输入框，宽度逐层加宽（下宽上窄）。上层只保留顶部圆角与上/左边框、不留
+   底边框，接缝由下一层的顶边框接续，栈内不会出现双线或断层。 */
+.chat-input-region .input-content > .stream-metrics-bar {
+  /* 窄屏按可用宽度收缩，@container 断点据此隐藏次要指标 */
+  width: min(420px, calc(100% - 120px));
+  margin: 0 auto;
+  padding: 0;
+}
+
+.chat-input-region .input-content > .stream-metrics-bar > .stream-metrics {
+  width: 100%;
+  justify-content: center;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface-island);
+}
+
+/* 插件按钮层：压在输入框上沿、位于 Pending 之下 */
+.input-content > .chat-input-slot {
+  margin: 0 20px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface-island);
+}
+
+/* 无类名按钮给一套默认胶囊外观，脚本自带 class 的元素不受影响 */
+.chat-input-slot > button:not([class]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.chat-input-slot > button:not([class]):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-input-slot > button:not([class]):focus-visible {
+  outline: 2px solid var(--text-tertiary);
+  outline-offset: 2px;
+}
+
+.chat-input-slot > button:not([class]) > svg {
+  flex-shrink: 0;
 }
 
 .plugin-script-badges {

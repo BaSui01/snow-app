@@ -1205,11 +1205,12 @@ export const useChatConversation = (
   const handleResume = useCallback((): void => {
     const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const controller = ctx.pauseControllerRef.current.get(key);
-    if (!controller || !controller.paused) {
+    // 控制器缺失时（循环未在检查点阻塞）也要清除展示态，避免按钮卡在暂停
+    ctx.updateSessionField(key, "isPaused", false);
+    if (!controller) {
       return;
     }
     controller.paused = false;
-    ctx.updateSessionField(key, "isPaused", false);
     const resolve = controller.resolve;
     controller.resolve = null;
     if (resolve) {

@@ -8,9 +8,13 @@ import type {
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
   directoryIdToPath,
+  hasValidConversationWorktree,
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
-import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
+import {
+  PENDING_SESSION_KEY,
+  isPendingSessionKey,
+} from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
 
 /** 权限面板增删项目级免审批工具后派发，授权流程据此重新加载合并列表。 */
@@ -504,8 +508,25 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
 
       ctx.setIsUpdatingWorktreeMode(true);
       try {
-        applyWorktreeMode(enabled);
         const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
+        // 已有会话必须先绑定工作树再开启，否则发送时会 fail-closed
+        if (enabled && !isPendingSessionKey(key)) {
+          const directoryId =
+            ctx.sessionsRefData.current.get(key)?.directoryId ??
+            ctx.directoryId;
+          const bound = await hasValidConversationWorktree(
+            key,
+            directoryId,
+          ).catch(() => false);
+          if (!bound) {
+            if (ctx.activeSessionKeyRef.current === key) {
+              ctx.setWorktreeModeNotice(t("git.worktreesBindRequiredHint"));
+            }
+            return;
+          }
+          if (ctx.activeSessionKeyRef.current !== key) return;
+        }
+        applyWorktreeMode(enabled);
         let ref = ctx.sessionsRefData.current.get(key);
         if (!ref) {
           ctx.ensureSession(key, ctx.directoryId);
@@ -533,10 +554,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       applyWorkflowMode,
       ctx.isUpdatingWorktreeMode,
       ctx.setIsUpdatingWorktreeMode,
+      ctx.setWorktreeModeNotice,
       ctx.ensureSession,
       ctx.directoryId,
       ctx.activeConversationIdRef,
       ctx.sessionsRefData,
+      t,
     ],
   );
 

@@ -27,6 +27,14 @@ export const zhTW = {
   "chatInput.pendingSource.userQueue": "你的排隊訊息",
   "chat.rollbackRetryRequired":
     "回滾已進入復原階段，無法直接取消。請保留此預覽並重試完成復原；失敗狀態不會被隱藏。",
+  "chat.rollbackWorktreeBindingMissing":
+    "此會話已開啟 WorkTree 模式，但工作樹綁定遺失或已失效，且存在需要復原的檔案檢查點，無法回滾。請先重新綁定原工作樹後再試。",
+  "chat.rollbackBoundaryChanged":
+    "此輪對話剛剛完成儲存，回滾邊界已變化。請關閉此彈窗後重新回滾。",
+  "chat.error.worktreeBindingMissing":
+    "WorkTree 模式已開啟，但目前會話未綁定有效的工作樹，請求未送出。請在輸入框下方的工作樹選擇器中綁定工作樹，或關閉 WorkTree 模式後重新傳送。",
+  "git.worktreesBindRequiredHint":
+    "目前會話尚未綁定工作樹。請先在輸入框下方的工作樹選擇器中綁定工作樹（沒有工作樹時請先在 Git 面板建立），再開啟 WorkTree 模式。",
   "chat.promptPreview.label": "提示詞",
   "chat.promptPreview.stats": "{{chars}} 字 · {{lines}} 行",
   "toolCall.subAgentComms.queuedAt": "入隊 {{time}}",

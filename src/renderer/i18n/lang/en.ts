@@ -29,6 +29,14 @@ export const en = {
   "chatInput.pendingSource.userQueue": "Your queued message",
   "chat.rollbackRetryRequired":
     "Rollback has entered restoration and cannot be dismissed. Keep this preview and retry to complete recovery; the failed state will remain visible.",
+  "chat.rollbackWorktreeBindingMissing":
+    "This conversation has WorkTree mode enabled, but its worktree binding is missing or invalid and there are file checkpoints to restore, so it cannot be rolled back. Rebind the original worktree and try again.",
+  "chat.rollbackBoundaryChanged":
+    "This turn was just saved and the rollback boundary changed. Close this dialog and roll back again.",
+  "chat.error.worktreeBindingMissing":
+    "WorkTree mode is enabled but this conversation has no valid worktree binding, so the request was not sent. Bind a worktree in the selector below the input box, or turn off WorkTree mode and send again.",
+  "git.worktreesBindRequiredHint":
+    "This conversation has no worktree bound yet. Bind one in the worktree selector below the input box first (create one in the Git panel if none exist), then enable WorkTree mode.",
   "chat.promptPreview.label": "Prompt",
   "chat.promptPreview.stats": "{{chars}} chars · {{lines}} lines",
   "toolCall.subAgentComms.queuedAt": "Queued at {{time}}",

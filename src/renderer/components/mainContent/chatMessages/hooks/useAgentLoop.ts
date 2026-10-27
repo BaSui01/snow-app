@@ -41,6 +41,9 @@ import {
   formatMessageTime,
   formatToolResultsContent,
   getErrorMessage,
+  getRunFailureReason,
+  hasValidConversationWorktree,
+  isWorktreeBindingError,
   parseToolCalls,
   resolveConversationWorkspacePath,
   updateFirstMatchingToolCall,
@@ -154,6 +157,18 @@ const persistConversationSelection = async (
       );
     }
     if (sessionRef) {
+      // WorkTree 开启却无绑定时不落库模式，避免留下 worktree_mode=1 + 无绑定的脏状态
+      const worktreeUnbound =
+        sessionRef.worktreeMode &&
+        !sessionRef.worktreeId &&
+        !(await hasValidConversationWorktree(
+          conversationId,
+          sessionRef.directoryId,
+        ));
+      if (worktreeUnbound) {
+        recordFailure(new Error("WorkTree mode enabled without a binding"));
+        return;
+      }
       await window.snow.setConversationModes(
         conversationId,
         sessionRef.planMode,
@@ -1989,20 +2004,28 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       };
 
       let runFailed = false;
-      const reportRunError = (): void => {
+      const reportRunError = (error?: unknown): void => {
         runFailed = true;
         if (isRunCancelled(finalSessionKey)) return;
         const ref = ctx.sessionsRefData.current.get(finalSessionKey);
         if (ref) ref.streamId = null;
+        // 本地异常（如 WorkTree 绑定缺失）保留可读原因，不再抹成空
+        const failureReason =
+          error === undefined ? undefined : getRunFailureReason(error);
+        if (
+          isWorktreeBindingError(error) &&
+          failureReason &&
+          ctx.activeSessionKeyRef.current === finalSessionKey
+        ) {
+          ctx.setWorktreeModeNotice(failureReason);
+        }
         ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
           currentMessages.map((currentMessage) =>
             currentMessage.role === "assistant" &&
             currentMessage.status === "sending"
               ? {
                   ...currentMessage,
-                  // Unexpected rejections have no normalized provider reason.
-                  // Keep generated content and let the UI show its dictionary fallback.
-                  failureReason: undefined,
+                  failureReason,
                   htmlPreviewEligible: false,
                   toolCalls: undefined,
                   timestamp: formatMessageTime(),
@@ -2077,8 +2100,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 steering.checkpointId,
               );
             }
-          } catch {
-            reportRunError();
+          } catch (error) {
+            reportRunError(error);
           }
           if (!ref || ref.runId !== currentRunId) {
             await finalizeTaskHistory();

@@ -75,6 +75,44 @@ export const directoryIdToPath = (
   return directoryId;
 };
 
+/** WorkTree 绑定缺失/失效（fail-closed），UI 据 code 映射为可读提示。 */
+export class WorktreeBindingError extends Error {
+  readonly code = "WORKTREE_BINDING_MISSING";
+  constructor(message: string) {
+    super(message);
+    this.name = "WorktreeBindingError";
+  }
+}
+
+export const isWorktreeBindingError = (
+  error: unknown,
+): error is WorktreeBindingError =>
+  error instanceof WorktreeBindingError ||
+  (typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "WORKTREE_BINDING_MISSING");
+
+/** 本地运行失败原因：WorkTree 绑定错误走本地化文案，其余保留原始错误。 */
+export const getRunFailureReason = (error: unknown): string =>
+  isWorktreeBindingError(error)
+    ? tGlobal("chat.error.worktreeBindingMissing")
+    : getErrorMessage(error);
+
+/** 会话是否持有属于该项目的有效 WorkTree 绑定。 */
+export const hasValidConversationWorktree = async (
+  conversationId: string,
+  directoryId: string | undefined,
+): Promise<boolean> => {
+  if (!conversationId.trim() || !directoryId?.trim()) return false;
+  const binding = await window.snow.getConversationWorktree(conversationId);
+  return Boolean(
+    binding &&
+    binding.isValid &&
+    binding.directoryId === directoryId &&
+    binding.worktreePath.trim(),
+  );
+};
+
 /** Resolve the immutable execution/checkpoint root for a conversation. */
 export const resolveConversationWorkspacePath = async (
   conversationId: string,
@@ -100,7 +138,7 @@ export const resolveConversationWorkspacePath = async (
       return matched.worktreePath;
     }
     if (worktreeMode) {
-      throw new Error(
+      throw new WorktreeBindingError(
         "WorkTree binding is missing, invalid, or belongs to a different project directory",
       );
     }
@@ -118,7 +156,7 @@ export const resolveConversationWorkspacePath = async (
       return binding.worktreePath;
     }
     if (worktreeMode) {
-      throw new Error(
+      throw new WorktreeBindingError(
         "WorkTree binding is missing, invalid, or belongs to a different project directory",
       );
     }
@@ -126,7 +164,7 @@ export const resolveConversationWorkspacePath = async (
 
   // 3. 仅在显式开启 worktreeMode 且既无预选也无会话绑定时抛出错误
   if (worktreeMode) {
-    throw new Error(
+    throw new WorktreeBindingError(
       "WorkTree execution requires a conversation or preselected worktree, and project directory",
     );
   }

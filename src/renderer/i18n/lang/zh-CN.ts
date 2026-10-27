@@ -27,6 +27,14 @@ export const zhCN = {
   "chatInput.pendingSource.userQueue": "你的排队消息",
   "chat.rollbackRetryRequired":
     "回滚已进入恢复阶段，不能直接取消。请保留此预览并重试完成恢复；失败状态不会被隐藏。",
+  "chat.rollbackWorktreeBindingMissing":
+    "该会话已开启 WorkTree 模式，但工作树绑定缺失或已失效，且存在需要恢复的文件检查点，无法回滚。请先重新绑定原工作树后再试。",
+  "chat.rollbackBoundaryChanged":
+    "该轮对话刚刚完成保存，回滚边界已变化。请关闭此弹窗后重新回滚。",
+  "chat.error.worktreeBindingMissing":
+    "WorkTree 模式已开启，但当前会话未绑定有效的工作树，请求未发出。请在输入框下方的工作树选择器中绑定工作树，或关闭 WorkTree 模式后重新发送。",
+  "git.worktreesBindRequiredHint":
+    "当前会话尚未绑定工作树。请先在输入框下方的工作树选择器中绑定工作树（没有工作树时请先在 Git 面板创建），再开启 WorkTree 模式。",
   "chat.promptPreview.label": "提示词",
   "chat.promptPreview.stats": "{{chars}} 字 · {{lines}} 行",
   "toolCall.subAgentComms.queuedAt": "入队 {{time}}",

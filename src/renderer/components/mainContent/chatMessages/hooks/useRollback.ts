@@ -21,6 +21,7 @@ import {
   deleteCheckpoints,
   directoryIdToPath,
   getErrorMessage,
+  isWorktreeBindingError,
   killRunningToolExecutions,
   resolveConversationWorkspacePath,
   tokenUsageFromMessageRecords,
@@ -189,9 +190,23 @@ export const useRollback = (ctx: ConversationContextValue) => {
         }
       }
       if (!responseId && !persistedMessageId) {
+        // 目标未落库：取其后第一个已持久化边界（用户消息 DB id 或助手 responseId）；
+        // 均无则整段尾部只存在于内存，按本地回滚处理。
         for (let i = targetIndex + 1; i < messages.length; i++) {
-          if (messages[i].role === "assistant" && messages[i].responseId) {
-            responseId = messages[i].responseId;
+          const candidate = messages[i];
+          if (
+            candidate.role === "user" &&
+            !candidate.isContextCompaction &&
+            Number.isInteger(Number(candidate.id))
+          ) {
+            persistedMessageId = candidate.id;
+            break;
+          }
+          if (
+            (candidate.role === "assistant" || candidate.isContextCompaction) &&
+            candidate.responseId
+          ) {
+            responseId = candidate.responseId;
             break;
           }
         }
@@ -201,13 +216,23 @@ export const useRollback = (ctx: ConversationContextValue) => {
       // we set the preview state once the diff is ready.
       const computeAndPreview = async (): Promise<void> => {
         try {
-          sessionWorkDir =
-            (await resolveConversationWorkspacePath(
-              convId ?? "",
-              capturedSessionRef?.directoryId ?? ctx.directoryId,
-              projectSessionWorkDir,
-              capturedWorktreeMode,
-            )) ?? "";
+          // 绑定失效时暂存错误：无任何检查点（无文件可恢复）仍允许仅回滚会话
+          let workspaceError: unknown;
+          try {
+            sessionWorkDir =
+              (await resolveConversationWorkspacePath(
+                convId ?? "",
+                capturedSessionRef?.directoryId ?? ctx.directoryId,
+                projectSessionWorkDir,
+                capturedWorktreeMode,
+              )) ?? "";
+          } catch (error) {
+            workspaceError = error;
+            sessionWorkDir = "";
+          }
+          if (workspaceError && initialCheckpointIds.length > 0) {
+            throw workspaceError;
+          }
           // WorkFlow 级联终止：中止运行中的节点（流/工具授权/子进程）并结算
           // 挂起的 workflow-generate，随后等待节点 runLoop 退出。回滚的数据
           // 删除与文件恢复绝不能与仍在写入工作区/数据库的节点并发执行。
@@ -328,6 +353,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
           const previewCheckpointIds = [
             ...new Set([...checkpointIds, ...flowCheckpointIds]),
           ];
+          // 存在需恢复的检查点时绝不降级到项目根目录
+          if (workspaceError && previewCheckpointIds.length > 0) {
+            throw workspaceError;
+          }
           const loadChanges = async (): Promise<CheckpointFileChange[]> => {
             if (previewCheckpointIds.length === 0 || !sessionWorkDir) {
               return [];
@@ -444,6 +473,14 @@ export const useRollback = (ctx: ConversationContextValue) => {
           // the project root. Keep rollback closed and leave diagnostics in app logs.
           if (rollbackRequestIdRef.current === requestId) {
             ctx.setRollbackPreview(null);
+            if (
+              isWorktreeBindingError(error) &&
+              ctx.activeSessionKeyRef.current === key
+            ) {
+              ctx.setWorktreeModeNotice(
+                t("chat.rollbackWorktreeBindingMissing"),
+              );
+            }
             void window.snow.writeLog("WARN", {
               module: "checkpoint",
               func: "handleRollback",
@@ -476,6 +513,8 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.globalModeDefaultsRef,
       ctx.setRollbackPreview,
       ctx.abortWorkflowNodes,
+      ctx.setWorktreeModeNotice,
+      t,
     ],
   );
 
@@ -530,6 +569,24 @@ export const useRollback = (ctx: ConversationContextValue) => {
         if (rollbackRequestIdRef.current !== preview.requestId) {
           return;
         }
+        // 本地回滚前确认目标仍未落库：在途流可能刚完成保存并替换了消息 id
+        const localOnly =
+          !persistedMessageId &&
+          !responseId &&
+          !(isFirstMessage && !isContextCompaction);
+        if (
+          localOnly &&
+          convId &&
+          !ctx.sessionsRef.current[key]?.messages.some(
+            (message) => message.id === messageId,
+          )
+        ) {
+          ctx.setRollbackPreview({
+            ...preview,
+            error: t("chat.rollbackBoundaryChanged"),
+          });
+          return;
+        }
 
         // Close durable admission and drain every local delegated owner BEFORE
         // either filesystem restore or SQLite truncation. A remote live owner or
@@ -541,7 +598,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
             };
             if (isFirstMessage && !isContextCompaction) {
               await prepareSubAgentDeletion(ctx, convId, stopParent);
-            } else {
+            } else if (persistedMessageId || responseId) {
               await prepareSubAgentRollback(
                 convId,
                 persistedMessageId
@@ -552,6 +609,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
                   rollbackIdentityRef.current = identity;
                 },
               );
+            } else {
+              // 尾部从未落库：无 DB 边界可截断，仅停止运行并本地移除
+              stopParent();
             }
           }
         } catch (error) {
@@ -866,9 +926,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.goalModeRef,
       ctx.worktreeModeRef,
       ctx.sessionsRefData,
+      ctx.sessionsRef,
       ctx.setSessions,
       ctx.activeSessionKeyRef,
       ctx.pendingSessionSeqRef,
+      t,
     ],
   );
 

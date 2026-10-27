@@ -213,21 +213,56 @@ pub(super) fn message_source(db: &Connection, message_id: &str, message: &mut Va
     Ok(())
 }
 
-pub(super) fn has_capacity(db: &Connection) -> Result<bool> {
-    let raw: Option<String> = db.query_row(
-        "SELECT setting_value FROM system_settings WHERE setting_code='sub_agent_max_concurrency'",
-        [], |row| row.get(0),
-    ).optional().map_err(persistence)?;
-    let max = raw
+/// 读取并发上限：缺省或非法值回退默认，并夹到 [min, max]。
+fn limit_setting(
+    db: &Connection,
+    code: &str,
+    fallback: i64,
+    min: i64,
+    max: i64,
+) -> Result<i64> {
+    let raw: Option<String> = db
+        .query_row(
+            "SELECT setting_value FROM system_settings WHERE setting_code=?1",
+            [code],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(persistence)?;
+    Ok(raw
         .as_deref()
         .and_then(|value| value.trim().parse::<i64>().ok())
-        .unwrap_or(3)
-        .clamp(1, 16);
+        .unwrap_or(fallback)
+        .clamp(min, max))
+}
+
+/// 两层限制：单会话上限 + 跨会话全局上限（0 表示不限制）。
+/// 单会话上限不允许超过全局上限，实际生效取两者较小值。
+pub(super) fn has_capacity(db: &Connection, project: &str, parent: &str) -> Result<bool> {
+    let global_max = limit_setting(db, "sub_agent_global_max_concurrency", 0, 0, 2000)?;
+    let session_max = limit_setting(db, "sub_agent_max_concurrency", 3, 1, 16)?;
+    let session_limit = if global_max > 0 {
+        session_max.min(global_max)
+    } else {
+        session_max
+    };
     let occupied: i64 = db.query_row(
+        "SELECT COUNT(*) FROM sub_agent_runs WHERE project_id=?1 AND parent_conversation_id=?2
+         AND status IN ('running','finalizing','cancelling')",
+        params![project, parent],
+        |row| row.get(0),
+    ).map_err(persistence)?;
+    if occupied >= session_limit {
+        return Ok(false);
+    }
+    if global_max == 0 {
+        return Ok(true);
+    }
+    let total: i64 = db.query_row(
         "SELECT COUNT(*) FROM sub_agent_runs WHERE status IN ('running','finalizing','cancelling')",
         [], |row| row.get(0),
     ).map_err(persistence)?;
-    Ok(occupied < max)
+    Ok(total < global_max)
 }
 
 pub(super) fn close_if_idle(db: &Connection, command: &Value) -> Result<Value> {

@@ -11,12 +11,14 @@ import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { formatMcpError } from "./mcpSettings/mcpErrorMessages";
 import {
-  clampSubAgentMaxConcurrency,
-  loadSubAgentMaxConcurrency,
-  saveSubAgentMaxConcurrency,
-  SUB_AGENT_MAX_CONCURRENCY_DEFAULT,
-  SUB_AGENT_MAX_CONCURRENCY_MAX,
-  SUB_AGENT_MAX_CONCURRENCY_MIN,
+  loadSubAgentConcurrencyLimits,
+  saveSubAgentConcurrencyLimits,
+  sessionConcurrencyUpperBound,
+  SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT,
+  SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MAX,
+  SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MIN,
+  SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT,
+  SUB_AGENT_SESSION_MAX_CONCURRENCY_MIN,
 } from "../mainContent/chatMessages/hooks/subAgentRunControl";
 import {
   SubAgentEditor,
@@ -75,23 +77,40 @@ export function SubAgentSettingsPanel({
   /** 当前作用域对应的 projectId：全局 Tab 为 undefined，项目 Tab 为当前项目。 */
   const scopeProjectId = isGlobalScope ? undefined : projectId;
   const isBusy = isLoading || isSaving;
-  // 并发上限为全局唯一设置，不随全局/项目 Tab 切换。
-  const [maxConcurrency, setMaxConcurrency] = useState(
-    String(SUB_AGENT_MAX_CONCURRENCY_DEFAULT),
+  // 全局/单会话两层上限共享一份持久化设置，运行时分别计算占用。
+  const [globalMaxConcurrency, setGlobalMaxConcurrency] = useState(
+    String(SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT),
+  );
+  const [sessionMaxConcurrency, setSessionMaxConcurrency] = useState(
+    String(SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT),
+  );
+  // 单会话上限不得超过全局上限；全局为 0（不限制）时按 1-16 取值。
+  const sessionUpperBound = sessionConcurrencyUpperBound(
+    Number.parseInt(globalMaxConcurrency, 10) || 0,
   );
 
   useEffect(() => {
-    void loadSubAgentMaxConcurrency().then((value) =>
-      setMaxConcurrency(String(value)),
-    );
+    void loadSubAgentConcurrencyLimits().then((limits) => {
+      setGlobalMaxConcurrency(String(limits.global));
+      setSessionMaxConcurrency(String(limits.session));
+    });
   }, []);
 
-  const saveMaxConcurrency = async (): Promise<void> => {
-    const next = clampSubAgentMaxConcurrency(maxConcurrency);
-    setMaxConcurrency(String(next));
-    if (next === (await loadSubAgentMaxConcurrency())) return;
+  const saveMaxConcurrency = async (
+    field: "global" | "session",
+  ): Promise<void> => {
+    const before = await loadSubAgentConcurrencyLimits();
     try {
-      await saveSubAgentMaxConcurrency(next);
+      const next = await saveSubAgentConcurrencyLimits(
+        field === "global"
+          ? { global: globalMaxConcurrency }
+          : { session: sessionMaxConcurrency },
+      );
+      setGlobalMaxConcurrency(String(next.global));
+      setSessionMaxConcurrency(String(next.session));
+      if (next.global === before.global && next.session === before.session) {
+        return;
+      }
       setStatus(
         t("settings.subAgentConcurrencySaved", {
           defaultValue: "Saved sub-agent concurrency limit.",
@@ -105,7 +124,9 @@ export function SubAgentSettingsPanel({
               defaultValue: "Failed to save sub-agent concurrency limit",
             }),
       );
-      setMaxConcurrency(String(await loadSubAgentMaxConcurrency()));
+      const current = await loadSubAgentConcurrencyLimits();
+      setGlobalMaxConcurrency(String(current.global));
+      setSessionMaxConcurrency(String(current.session));
     }
   };
 
@@ -449,7 +470,7 @@ export function SubAgentSettingsPanel({
           <span>
             {t("settings.subAgentConcurrencyInfo", {
               defaultValue:
-                "Applies to all projects. Sub-agents beyond the limit wait in a queue and start when a running one finishes.",
+                "Two layers: the global limit caps sub-agents running across all conversations (0 = unlimited); the per-conversation limit caps each conversation and never exceeds the global limit. Extra sub-agents queue and start when a slot frees up.",
             })}
           </span>
         </div>
@@ -460,20 +481,40 @@ export function SubAgentSettingsPanel({
           />
           <label className="api-settings-field">
             <span>
-              {t("settings.subAgentConcurrencyLabel", {
-                defaultValue: "Max concurrent sub-agents",
+              {t("settings.subAgentGlobalConcurrencyLabel", {
+                defaultValue: "Global concurrency limit (0 = unlimited)",
               })}
             </span>
             <input
               type="number"
-              min={SUB_AGENT_MAX_CONCURRENCY_MIN}
-              max={SUB_AGENT_MAX_CONCURRENCY_MAX}
+              min={SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MIN}
+              max={SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MAX}
               step={1}
-              value={maxConcurrency}
-              onChange={(event) => setMaxConcurrency(event.target.value)}
-              onBlur={() => void saveMaxConcurrency()}
-              title={t("settings.subAgentConcurrencyHint", {
-                defaultValue: "Range 1-16, default 3.",
+              value={globalMaxConcurrency}
+              onChange={(event) => setGlobalMaxConcurrency(event.target.value)}
+              onBlur={() => void saveMaxConcurrency("global")}
+              title={t("settings.subAgentGlobalConcurrencyHint", {
+                defaultValue: "Range 0-2000; 0 means unlimited.",
+              })}
+            />
+          </label>
+          <label className="api-settings-field">
+            <span>
+              {t("settings.subAgentSessionConcurrencyLabel", {
+                defaultValue: "Per-conversation concurrency limit",
+              })}
+            </span>
+            <input
+              type="number"
+              min={SUB_AGENT_SESSION_MAX_CONCURRENCY_MIN}
+              max={sessionUpperBound}
+              step={1}
+              value={sessionMaxConcurrency}
+              onChange={(event) => setSessionMaxConcurrency(event.target.value)}
+              onBlur={() => void saveMaxConcurrency("session")}
+              title={t("settings.subAgentSessionConcurrencyHint", {
+                defaultValue:
+                  "Range 1-16, default 3; never above the global limit.",
               })}
             />
           </label>

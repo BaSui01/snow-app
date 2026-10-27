@@ -148,7 +148,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       // A successful capacity-setting commit must wake durable waiters in every
       // execution window. Reuse the original host invalidation, never a model
       // polling request. A same-value save is a harmless extra invalidation.
-      if (settingCode === "sub_agent_max_concurrency") {
+      if (
+        settingCode === "sub_agent_max_concurrency" ||
+        settingCode === "sub_agent_global_max_concurrency"
+      ) {
         notifySubAgentCapacityChanged();
       }
       // 语言设置变化后刷新主进程文案缓存（托盘等原生菜单随之重建）。

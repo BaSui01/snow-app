@@ -909,7 +909,11 @@ fn transition(db: &Connection, command: &Value) -> Result<Value> {
     }
     if to == "running"
         && matches!(current, "queued" | "waiting_input")
-        && !lifecycle::has_capacity(db)?
+        && !lifecycle::has_capacity(
+            db,
+            id(&previous, "projectId")?,
+            id(&previous, "parentConversationId")?,
+        )?
     {
         return Ok(json!({"success":true,"kind":"transition","changed":false,
             "waitingForCapacity":true,"run":previous}));

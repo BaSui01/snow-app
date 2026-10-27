@@ -1,58 +1,137 @@
 import { useSyncExternalStore } from "react";
 
-/** 子代理运行控制：全局并发设置与失败挂起决策（重试/放弃）。
- *  仅存在于渲染进程内存；并发上限持久化在 system_settings（全局唯一）。 */
+/** 子代理运行控制：全局/单会话两层并发设置与失败挂起决策（重试/放弃）。
+ *  仅存在于渲染进程内存；上限持久化在 system_settings，单会话上限不超过全局上限。 */
 
-const SUB_AGENT_MAX_CONCURRENCY_SETTING = "sub_agent_max_concurrency";
-export const SUB_AGENT_MAX_CONCURRENCY_DEFAULT = 3;
-export const SUB_AGENT_MAX_CONCURRENCY_MIN = 1;
-export const SUB_AGENT_MAX_CONCURRENCY_MAX = 16;
+const SUB_AGENT_GLOBAL_MAX_CONCURRENCY_SETTING =
+  "sub_agent_global_max_concurrency";
+export const SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT = 0;
+export const SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MIN = 0;
+export const SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MAX = 2000;
+const SUB_AGENT_SESSION_MAX_CONCURRENCY_SETTING = "sub_agent_max_concurrency";
+export const SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT = 3;
+export const SUB_AGENT_SESSION_MAX_CONCURRENCY_MIN = 1;
+export const SUB_AGENT_SESSION_MAX_CONCURRENCY_MAX = 16;
 
-export const clampSubAgentMaxConcurrency = (value: unknown): number => {
+export type SubAgentConcurrencyLimits = {
+  /** 所有会话合计上限；0 表示不限制。 */
+  global: number;
+  /** 单会话上限，恒不大于全局上限。 */
+  session: number;
+};
+
+const parseLimit = (value: unknown, fallback: number): number => {
   const parsed =
     typeof value === "number"
       ? value
       : Number.parseInt(String(value ?? "").trim(), 10);
-  if (!Number.isFinite(parsed)) return SUB_AGENT_MAX_CONCURRENCY_DEFAULT;
-  return Math.min(
-    SUB_AGENT_MAX_CONCURRENCY_MAX,
-    Math.max(SUB_AGENT_MAX_CONCURRENCY_MIN, Math.round(parsed)),
-  );
+  return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
 };
 
-let maxConcurrency = SUB_AGENT_MAX_CONCURRENCY_DEFAULT;
+export const clampSubAgentGlobalMaxConcurrency = (value: unknown): number =>
+  Math.min(
+    SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MAX,
+    Math.max(
+      SUB_AGENT_GLOBAL_MAX_CONCURRENCY_MIN,
+      parseLimit(value, SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT),
+    ),
+  );
+
+/** 全局不限制（0）时不设额外约束，否则单会话上限不得超过全局上限。 */
+export const sessionConcurrencyUpperBound = (globalMax: number): number =>
+  globalMax > 0
+    ? Math.min(SUB_AGENT_SESSION_MAX_CONCURRENCY_MAX, globalMax)
+    : SUB_AGENT_SESSION_MAX_CONCURRENCY_MAX;
+
+export const clampSubAgentSessionMaxConcurrency = (
+  value: unknown,
+  globalMax: number,
+): number =>
+  Math.min(
+    sessionConcurrencyUpperBound(globalMax),
+    Math.max(
+      SUB_AGENT_SESSION_MAX_CONCURRENCY_MIN,
+      parseLimit(value, SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT),
+    ),
+  );
+
+let limits: SubAgentConcurrencyLimits = {
+  global: SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT,
+  session: SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT,
+};
 let loading: Promise<void> | null = null;
 
 const ensureLoaded = (): Promise<void> => {
   if (!loading) {
-    loading = window.snow
-      .getSystemSettingValue(SUB_AGENT_MAX_CONCURRENCY_SETTING)
-      .then((value) => {
-        if (value != null && value.trim()) {
-          maxConcurrency = clampSubAgentMaxConcurrency(value);
-        }
-      });
+    loading = Promise.all([
+      window.snow.getSystemSettingValue(
+        SUB_AGENT_GLOBAL_MAX_CONCURRENCY_SETTING,
+      ),
+      window.snow.getSystemSettingValue(
+        SUB_AGENT_SESSION_MAX_CONCURRENCY_SETTING,
+      ),
+    ]).then(([global, session]) => {
+      const global_max =
+        global != null && global.trim()
+          ? clampSubAgentGlobalMaxConcurrency(global)
+          : SUB_AGENT_GLOBAL_MAX_CONCURRENCY_DEFAULT;
+      limits = {
+        global: global_max,
+        session:
+          session != null && session.trim()
+            ? clampSubAgentSessionMaxConcurrency(session, global_max)
+            : clampSubAgentSessionMaxConcurrency(
+                SUB_AGENT_SESSION_MAX_CONCURRENCY_DEFAULT,
+                global_max,
+              ),
+      };
+    });
   }
   return loading;
 };
 
-export const loadSubAgentMaxConcurrency = async (): Promise<number> => {
-  await ensureLoaded();
-  return maxConcurrency;
-};
+export const loadSubAgentConcurrencyLimits =
+  async (): Promise<SubAgentConcurrencyLimits> => {
+    await ensureLoaded();
+    return { ...limits };
+  };
 
-export const saveSubAgentMaxConcurrency = async (
-  value: number,
-): Promise<number> => {
+/** 局部更新两层上限；任一层变化都会重新收敛单会话上限，保证不超过全局上限。 */
+export const saveSubAgentConcurrencyLimits = async (patch: {
+  global?: unknown;
+  session?: unknown;
+}): Promise<SubAgentConcurrencyLimits> => {
   await ensureLoaded();
-  const next = clampSubAgentMaxConcurrency(value);
-  await window.snow.setSystemSetting(
-    "子代理最大并发数",
-    SUB_AGENT_MAX_CONCURRENCY_SETTING,
-    String(next),
-  );
-  maxConcurrency = next;
-  return next;
+  const global =
+    patch.global === undefined
+      ? limits.global
+      : clampSubAgentGlobalMaxConcurrency(patch.global);
+  const session =
+    patch.session === undefined
+      ? clampSubAgentSessionMaxConcurrency(limits.session, global)
+      : clampSubAgentSessionMaxConcurrency(patch.session, global);
+  try {
+    if (global !== limits.global) {
+      await window.snow.setSystemSetting(
+        "子代理全局最大并发数",
+        SUB_AGENT_GLOBAL_MAX_CONCURRENCY_SETTING,
+        String(global),
+      );
+    }
+    if (session !== limits.session) {
+      await window.snow.setSystemSetting(
+        "子代理单会话最大并发数",
+        SUB_AGENT_SESSION_MAX_CONCURRENCY_SETTING,
+        String(session),
+      );
+    }
+  } catch (error) {
+    // 写入可能只成功一半：丢弃缓存，下次读取回源数据库。
+    loading = null;
+    throw error;
+  }
+  limits = { global, session };
+  return { ...limits };
 };
 
 // ---------------------------------------------------------------------------

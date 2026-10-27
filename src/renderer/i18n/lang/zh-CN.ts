@@ -3344,9 +3344,12 @@ export const zhCN = {
   "settings.subAgentManageTitle": "管理子代理",
   "settings.subAgentConcurrencyTitle": "运行限制",
   "settings.subAgentConcurrencyInfo":
-    "对所有项目生效。超出上限的子代理会排队，待运行中的子代理结束后自动启动。",
-  "settings.subAgentConcurrencyLabel": "子代理最大并发数",
-  "settings.subAgentConcurrencyHint": "范围 1-16，默认 3。",
+    "两层限制：全局上限限制所有会话合计运行的子代理数（0 表示不限制），单会话上限限制每个会话内的并发且不会超过全局上限。超出的子代理排队，有空位时自动启动。",
+  "settings.subAgentGlobalConcurrencyLabel": "全局并发上限（0 = 不限制）",
+  "settings.subAgentGlobalConcurrencyHint": "范围 0-2000，0 表示不限制。",
+  "settings.subAgentSessionConcurrencyLabel": "单会话并发上限",
+  "settings.subAgentSessionConcurrencyHint":
+    "范围 1-16，默认 3；不得大于全局上限。",
   "settings.subAgentConcurrencySaved": "已保存子代理并发上限。",
   "settings.subAgentConcurrencySaveError": "保存子代理并发上限失败",
   "settings.subAgentManageInfo": "子代理配置保存在本地数据库中。",

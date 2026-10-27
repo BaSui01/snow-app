@@ -3543,9 +3543,14 @@ export const en = {
   "settings.subAgentManageTitle": "Manage sub-agents",
   "settings.subAgentConcurrencyTitle": "Run limits",
   "settings.subAgentConcurrencyInfo":
-    "Applies to all projects. Sub-agents beyond the limit wait in a queue and start when a running one finishes.",
-  "settings.subAgentConcurrencyLabel": "Max concurrent sub-agents",
-  "settings.subAgentConcurrencyHint": "Range 1-16, default 3.",
+    "Two layers: the global limit caps sub-agents running across all conversations (0 = unlimited); the per-conversation limit caps each conversation and never exceeds the global limit. Extra sub-agents queue and start when a slot frees up.",
+  "settings.subAgentGlobalConcurrencyLabel":
+    "Global concurrency limit (0 = unlimited)",
+  "settings.subAgentGlobalConcurrencyHint": "Range 0-2000; 0 means unlimited.",
+  "settings.subAgentSessionConcurrencyLabel":
+    "Per-conversation concurrency limit",
+  "settings.subAgentSessionConcurrencyHint":
+    "Range 1-16, default 3; never above the global limit.",
   "settings.subAgentConcurrencySaved": "Saved sub-agent concurrency limit.",
   "settings.subAgentConcurrencySaveError":
     "Failed to save sub-agent concurrency limit",

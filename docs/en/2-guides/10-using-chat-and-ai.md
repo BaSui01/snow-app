@@ -131,6 +131,32 @@ The pending-message area is capped at `min(144px, 20vh)` and scrolls internally 
 
 See [Plugin development and installation, section 6.1](24-plugin-development-and-installation.md) for the contract. Source anchors: `src/renderer/components/mainContent/chatInput/ChatInputPluginAction.tsx`, `src/renderer/plugins/pluginDraft.ts`, and `src/renderer/styles.css`.
 
+### 2.6 Manual WorkFlow Composition
+
+With WorkFlow mode enabled, a composer entry appears in the mode-indicator area right of the divider in the input toolbar (WorkFlow icon, tooltip **Compose a WorkFlow**; it replaces the former static WorkFlow mode badge with one clickable entry), and clicking it opens the **WorkFlow composer** dialog, where you draw a workflow graph yourself. The entry is only shown while WorkFlow mode is on and disappears from the toolbar once the mode is turned off; the button is disabled in sub-agent conversations.
+
+1. The canvas opens with one empty node (prompt still blank) that you can edit right away; place further nodes with **Add node** on the canvas toolbar or from the canvas right-click menu, and consecutive additions are offset so they do not overlap;
+2. Click or right-click a node and choose **Edit node** to set its name and prompt, plus a per-node API config (default **Inherit task run config**) and advanced model;
+3. Drag from a node's right handle to another node's left handle to connect them. Self-loops, duplicate edges and cycles are rejected outright, so the connection cannot be dropped. Right-clicking a connection offers **Delete connection**, right-clicking a node offers **Delete node**, and `Backspace` / `Delete` removes the selection;
+4. Use **Enlarge canvas** when you need more room. **Flow name** may stay empty, and the note is sent together with the flow;
+5. **Send** validates the graph first: at least one node and at least one non-empty node prompt (otherwise you get "Add at least one node" / "fill in at least one node prompt"), followed by a topology check ("Invalid workflow: ...").
+
+What happens after you send:
+
+- The dialog closes and the graph is embedded in that user message as a JSON payload, and **WorkFlow mode is forced for that turn**. This affects only that request; the conversation's own WorkFlow mode switch is never rewritten. The message shows the instruction and the payload verbatim in its bubble;
+- The model submits the payload verbatim to `workflow-workflow-generate`, so a workflow card (**Generate workflow**) appears in the conversation. Its canvas stays editable, and the flow runs only after you press **Execute**;
+- Node status, failure resume (**Resume execution**), and every other runtime behavior match the existing WorkFlow card;
+- Pressing **Send** while the conversation is running does not interrupt the current run: the message joins the pending queue (see section 2.4) and is sent with the same graph once that run finishes.
+
+Difference from AI-designed flows:
+
+| Entry                                  | Who decides the flow                                         | When to use it                                                         |
+| -------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| WorkFlow mode in the plus menu         | The model decomposes the request into nodes and dependencies | The request is still exploratory and you want a proposal first         |
+| WorkFlow composer in the input toolbar | You pin every step's prompt, model and dependencies          | The steps and ownership are clear, or you want a fixed, reusable graph |
+
+Both end up on the same workflow card and the same execution pipeline: both wait for your confirmation before running, and share node conversations, statuses, and failure-resume semantics. The composer asks the model to submit your graph verbatim; if the card's flow differs from what you drew, edit it on the card canvas before executing. Closing the dialog does not keep the drawing: the next open starts from a blank canvas.
+
 ## 3. Complete Slash Command List
 
 Type `/` to open the command palette. The current version has exactly twelve commands:

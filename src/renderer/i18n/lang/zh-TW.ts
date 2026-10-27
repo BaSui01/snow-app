@@ -1330,6 +1330,22 @@ export const zhTW = {
   "toolCall.workflow.deleteConfirmCancel": "取消",
   "toolCall.workflow.deletedToast": "已刪除 · {{shortcut}} 可復原",
   "toolCall.workflow.undoDelete": "復原",
+  // 輸入區 WorkFlow 手動編排器
+  "workflowComposer.tooltip": "手動編排 WorkFlow",
+  "workflowComposer.title": "WorkFlow 編排器",
+  "workflowComposer.subtitle":
+    "在畫布上繪製流程並填寫節點提示詞，送出後在會話卡片上確認執行。",
+  "workflowComposer.titlePlaceholder": "流程名稱（可選）",
+  "workflowComposer.notePlaceholder": "備註（隨流程一起送出，可留空）",
+  "workflowComposer.send": "送出",
+  "workflowComposer.cancel": "取消",
+  "workflowComposer.close": "關閉",
+  "workflowComposer.emptyHint":
+    "新增節點、填寫每步提示詞並連線；送出後在會話卡片上確認執行。",
+  "workflowComposer.invalidNoNode": "請至少新增一個節點",
+  "workflowComposer.invalidEmptyPrompt": "請至少填寫一個節點的提示詞",
+  "workflowComposer.invalidGraph": "流程無效：{{reason}}",
+  "workflowComposer.defaultNote": "請依繪製的流程執行",
   // 系統通知
   "notification.aiComplete.title": "AI 任務已完成",
   "notification.aiComplete.bodyWithTitle": "會話「{{title}}」已結束",

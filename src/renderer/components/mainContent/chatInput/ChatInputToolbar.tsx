@@ -66,6 +66,8 @@ type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
     commandTriggerRef: RefObject<HTMLButtonElement | null>;
     isCommandOpen: boolean;
     handleToggleCommand: () => void;
+    /** 打开输入区 WorkFlow 手动编排器弹窗。 */
+    onOpenWorkflowComposer?: () => void;
     sessionKey?: string;
     conversationId?: string | null;
   };
@@ -78,6 +80,7 @@ export const ChatInputToolbar = ({
   commandTriggerRef,
   isCommandOpen,
   handleToggleCommand,
+  onOpenWorkflowComposer,
   value,
   tokenUsage,
   isAborting,
@@ -218,14 +221,19 @@ export const ChatInputToolbar = ({
             </span>
           </Tooltip>
         )}
+        {/* WorkFlow 模式开启时才提供手动编排入口：复用原 WorkFlow 模式徽标的位置，
+            按钮本身即模式指示（原静态徽标已移除）。 */}
         {workflowMode && (
-          <Tooltip content={t("plusMenu.workflowModeDescription")}>
-            <span
-              className="mode-badge"
-              aria-label={t("plusMenu.workflowModeDescription")}
+          <Tooltip content={t("workflowComposer.tooltip")}>
+            <button
+              className="toolbar-btn workflow-composer-trigger"
+              aria-label={t("workflowComposer.tooltip")}
+              disabled={isSubAgentConversation}
+              onClick={onOpenWorkflowComposer}
+              type="button"
             >
-              <Workflow size={14} />
-            </span>
+              <Workflow size={15} />
+            </button>
           </Tooltip>
         )}
         {yoloMode && (

@@ -1329,6 +1329,22 @@ export const zhCN = {
   "toolCall.workflow.deleteConfirmCancel": "取消",
   "toolCall.workflow.deletedToast": "已删除 · {{shortcut}} 可撤销",
   "toolCall.workflow.undoDelete": "撤销",
+  // 输入区 WorkFlow 手动编排器
+  "workflowComposer.tooltip": "手动编排 WorkFlow",
+  "workflowComposer.title": "WorkFlow 编排器",
+  "workflowComposer.subtitle":
+    "在画布上绘制流程并填写节点提示词，发送后在会话卡片上确认执行。",
+  "workflowComposer.titlePlaceholder": "流程名称（可选）",
+  "workflowComposer.notePlaceholder": "备注（随流程一起发送，可留空）",
+  "workflowComposer.send": "发送",
+  "workflowComposer.cancel": "取消",
+  "workflowComposer.close": "关闭",
+  "workflowComposer.emptyHint":
+    "添加节点、填写每步提示词并连线；发送后在会话卡片上确认执行。",
+  "workflowComposer.invalidNoNode": "请至少添加一个节点",
+  "workflowComposer.invalidEmptyPrompt": "请至少填写一个节点的提示词",
+  "workflowComposer.invalidGraph": "流程无效：{{reason}}",
+  "workflowComposer.defaultNote": "请按绘制的流程执行",
   // 系统通知
   "notification.aiComplete.title": "AI 任务已完成",
   "notification.aiComplete.bodyWithTitle": "会话「{{title}}」已结束",

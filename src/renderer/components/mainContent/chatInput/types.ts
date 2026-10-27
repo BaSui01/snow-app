@@ -15,13 +15,33 @@ export type ConversationRuntimeConfigOverride = {
   responsesFastMode: string | null;
 };
 
+/** 输入区 WorkFlow 手动编排器画布上的一个节点（用户自己绘制，非 AI 生成）。 */
+export type WorkflowComposerNode = {
+  id: string;
+  label: string;
+  prompt: string;
+  description?: string;
+  apiProfile?: string;
+  model?: string;
+};
+
+/** 输入区 WorkFlow 手动编排器画布：一张由用户绘制、随消息提交的编排图。 */
+export type WorkflowComposerGraph = {
+  title: string;
+  nodes: WorkflowComposerNode[];
+  edges: { source: string; target: string }[];
+};
+
 export type ChatInputSendOptions = {
   /** Manual busy-send intent. Omitted programmatic sends always queue. */
   deliveryMode?: "queue" | "steer";
   model?: string;
   apiProfile?: string;
-  /** 回合类型：review 表示代码审查任务（桌面宠物播放 review 专属动画）。 */
-  kind?: "chat" | "review";
+  /** 回合类型：review = 代码审查；workflow = 用户手动编排的 WorkFlow 提交。 */
+  kind?: "chat" | "review" | "workflow";
+  /** 内部字段：手动编排的工作流图（仅输入区编排器弹窗设置）。存在时本次发送
+   *  会强制启用 WorkFlow 模式，并把编排载荷内嵌进用户消息。 */
+  workflowGraph?: WorkflowComposerGraph;
   /** Optional one-shot basic-model snapshot used only for the first title
    *  generation. It is never forwarded to the main Provider request. */
   basicModel?: string;

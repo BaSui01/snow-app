@@ -16964,6 +16964,69 @@ body.is-panel-resizing * {
   pointer-events: none;
 }
 
+/* ===== 输入区 WorkFlow 手动编排器弹窗（复用定时任务画布） ===== */
+.workflow-composer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 画布容器给显式高度，保证 React Flow 有可测量的绘制区域 */
+.workflow-composer-canvas {
+  display: flex;
+  height: min(60vh, 560px);
+  min-height: 0;
+}
+
+.workflow-composer-canvas > .st-workflow-canvas-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 画布高度撑满容器（定时任务画布默认固定 420px） */
+.workflow-composer-canvas .workflow-canvas.st-workflow-canvas {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+/* 备注输入区 */
+.workflow-composer-note {
+  min-height: 52px;
+  resize: vertical;
+}
+
+/* 空画布轻提示 */
+.workflow-composer-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 发送前校验错误 */
+.workflow-composer-error {
+  margin: 0;
+  color: var(--accent-red-text);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* 输入工具栏的手动编排入口：仅在 WorkFlow 模式开启时出现，视觉对齐模式徽标口径
+   （26×26 紧凑方形 + 强调色）。选择器带 .toolbar-btn 提升特异性，避免被
+   后面定义的 .toolbar-btn 基础样式（padding/color）覆盖。 */
+.toolbar-btn.workflow-composer-trigger {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.toolbar-btn.workflow-composer-trigger:hover {
+  color: var(--accent);
+}
+
 .st-workflow-node .workflow-node-description {
   white-space: pre-wrap;
 }

@@ -77,6 +77,10 @@ type ScheduledTaskWorkflowCanvasProps = {
   readOnly?: boolean;
   /** 点击带会话的节点时打开会话。 */
   onOpenConversation?: (conversationId: string) => void;
+  /** 画布用途：scheduled = 定时任务画布（默认，含连线延时编辑与展示）；
+   *  chat = 聊天输入区手动编排器（隐藏定时任务专属 UI：连线延时入口与展示，
+   *  延时恒为 0）。节点增删改、连线与环校验、节点编辑浮层保持一致。 */
+  variant?: "scheduled" | "chat";
 };
 
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
@@ -294,6 +298,8 @@ type DelayEdgeData = {
   delayMs: number;
   label: string;
   readOnly: boolean;
+  /** 是否展示延时标签（同时是延时编辑入口）：chat 变体隐藏。 */
+  showDelay: boolean;
   onEdit: (edgeId: string, clientX: number, clientY: number) => void;
 };
 
@@ -322,25 +328,27 @@ const DelayEdge = memo(function DelayEdge({
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
-      <EdgeLabelRenderer>
-        <button
-          className={`st-workflow-edge-label nodrag nopan${
-            data?.delayMs ? " has-delay" : ""
-          }`}
-          disabled={data?.readOnly}
-          onClick={(event) => {
-            event.stopPropagation();
-            data?.onEdit(id, event.clientX, event.clientY);
-          }}
-          style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-          }}
-          type="button"
-        >
-          <Timer size={11} />
-          <span>{data?.label}</span>
-        </button>
-      </EdgeLabelRenderer>
+      {data?.showDelay && (
+        <EdgeLabelRenderer>
+          <button
+            className={`st-workflow-edge-label nodrag nopan${
+              data?.delayMs ? " has-delay" : ""
+            }`}
+            disabled={data?.readOnly}
+            onClick={(event) => {
+              event.stopPropagation();
+              data?.onEdit(id, event.clientX, event.clientY);
+            }}
+            style={{
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            }}
+            type="button"
+          >
+            <Timer size={11} />
+            <span>{data?.label}</span>
+          </button>
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 });
@@ -380,12 +388,15 @@ const CanvasInner = forwardRef<
     run,
     readOnly = false,
     onOpenConversation,
+    variant = "scheduled",
     expanded,
     onToggleExpand,
   },
   ref,
 ): React.JSX.Element {
   const { locale, t } = useI18n();
+  /** chat 变体（输入区手动编排器）：隐藏定时任务专属 UI。 */
+  const isChatVariant = variant === "chat";
   const { screenToFlowPosition } = useReactFlow();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const valueRef = useRef(value);
@@ -582,13 +593,14 @@ const CanvasInner = forwardRef<
             (targetState === "scheduled" || targetState === "running"),
           data: {
             delayMs: edge.delayMs,
-            label: formatWorkflowDelay(edge.delayMs, t),
+            label: isChatVariant ? "" : formatWorkflowDelay(edge.delayMs, t),
             readOnly,
+            showDelay: !isChatVariant,
             onEdit: openEdgeEditor,
           },
         };
       }),
-    [openEdgeEditor, readOnly, run, t, value.edges],
+    [isChatVariant, openEdgeEditor, readOnly, run, t, value.edges],
   );
 
   // ---- 编辑操作 ----
@@ -968,19 +980,25 @@ const CanvasInner = forwardRef<
         >
           {menu.edgeId ? (
             <>
-              <button
-                onClick={() =>
-                  openEdgeEditor(menu.edgeId ?? "", menu.clientX, menu.clientY)
-                }
-                type="button"
-              >
-                <Clock size={13} />
-                <span>
-                  {t("scheduledTask.workflow.editDelay", {
-                    defaultValue: "Set delay",
-                  })}
-                </span>
-              </button>
+              {!isChatVariant && (
+                <button
+                  onClick={() =>
+                    openEdgeEditor(
+                      menu.edgeId ?? "",
+                      menu.clientX,
+                      menu.clientY,
+                    )
+                  }
+                  type="button"
+                >
+                  <Clock size={13} />
+                  <span>
+                    {t("scheduledTask.workflow.editDelay", {
+                      defaultValue: "Set delay",
+                    })}
+                  </span>
+                </button>
+              )}
               <button
                 onClick={() => removeEdges([menu.edgeId ?? ""])}
                 type="button"
@@ -1153,7 +1171,7 @@ const CanvasInner = forwardRef<
         </div>
       )}
 
-      {editingEdgeId && !readOnly && (
+      {editingEdgeId && !readOnly && !isChatVariant && (
         <div
           className="workflow-editor workflow-editor-overlay st-workflow-delay-editor"
           onKeyDown={(event) => {

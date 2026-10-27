@@ -95,6 +95,7 @@ import {
   parseWorkflowGraph,
   registerWorkflowRunner,
 } from "../workflow/workflowRunner";
+import { buildWorkflowComposerMessage } from "../../chatInput/workflowComposer/workflowComposerPayload";
 import { createToolExecutor } from "./toolExecution";
 import { ReadonlyCallGuard } from "./readonlyCallGuard";
 import { resolveGoalContinuation } from "./goalContinuation";
@@ -236,6 +237,26 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         });
       };
       let capturedOptions = captureChatInputSendOptions(sendOptions);
+      // 手动编排提交（workflowGraph）的空图守卫：编排图必须至少有一个带提示词
+      // 的节点，否则本回合没有任何可执行内容。复用 WorkTree 前置条件拦截所用的
+      // 内置提示弹窗告知用户，然后直接结束本次发送（不进入排队/占位逻辑）。
+      if (
+        capturedOptions.workflowGraph &&
+        !capturedOptions.workflowGraph.nodes.some(
+          (node) => node.prompt.trim().length > 0,
+        )
+      ) {
+        ctx.setWorktreeModeNotice(t("scheduledTask.workflow.errorNoNodes"));
+        rejectRun("Workflow composer graph has no executable node");
+        return;
+      }
+      // 手动编排提交：把编排图作为结构化载荷内嵌进写入会话的用户消息内容，模型
+      // 按指令把它原样转交 workflow-workflow-generate 工具。守卫、排队、日志与
+      // 标题摘要仍用原始文本 trimmed —— 队列项被冲刷重入本函数时会用同一份图
+      // （options.workflowGraph 随 options 一起入队/回传）重新构建载荷。
+      const userMessageContent = capturedOptions.workflowGraph
+        ? buildWorkflowComposerMessage(capturedOptions.workflowGraph, trimmed)
+        : trimmed;
       // 程序化发送（pending 队列自动冲刷）携带目标会话 key：消息必须发到
       // 队列所属的会话，而不是用户当前停留的视图会话。
       const sessionKey =
@@ -403,7 +424,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.runId = currentRunId;
         sessionRef.activeSendOptions = capturedOptions;
         if (!internalSubAgentInput)
-          sessionRef.activeTaskMessages = [{ role: "user", content: trimmed }];
+          sessionRef.activeTaskMessages = [
+            { role: "user", content: userMessageContent },
+          ];
         if (capturedOptions.imageGenerationBatchId) {
           imageGenerationRuntime(ctx).notificationSent(
             sessionKey,
@@ -431,7 +454,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const userMessage: ChatConversationMessage = {
         id: createMessageId("user"),
         role: "user",
-        content: trimmed,
+        content: userMessageContent,
         timestamp: formatMessageTime(),
         status: "sent",
       };
@@ -941,6 +964,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             effectiveWorktreeMode,
             effectiveWorktreeId,
           );
+        // 手动编排提交（kind === "workflow" 且带编排图）本回合强制启用 WorkFlow
+        // 模式，让模型按 workflow 系统提示词把消息里的编排载荷原样交给
+        // workflow-workflow-generate。只影响本回合请求：会话自身的 workflowMode
+        // 状态（session ref / 持久化）不被改写，run 内所有迭代沿用同一判定。
+        const effectiveWorkflowMode =
+          capturedOptions.kind === "workflow" && capturedOptions.workflowGraph
+            ? true
+            : (iterRef?.workflowMode ?? ctx.workflowModeRef.current);
         const chunkHandler = createStreamChunkHandler(
           ctx,
           effectiveKey,
@@ -967,7 +998,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               .join("\n\n"),
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
             worktreeMode: effectiveWorktreeMode,
-            workflowMode: iterRef?.workflowMode ?? ctx.workflowModeRef.current,
+            workflowMode: effectiveWorkflowMode,
             executionWorkspaceRoot: effectiveExecutionWorkspaceRoot,
             worktreeId: effectiveWorktreeId ?? undefined,
           },
@@ -1955,22 +1986,22 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               return;
             }
 
-            await startInitialLoop(trimmed);
+            await startInitialLoop(userMessageContent);
             return;
           }
 
-          let effectiveMessage = trimmed;
+          let effectiveMessage = userMessageContent;
           if (outcome.kind === "warn") {
-            effectiveMessage = `${trimmed}\n\n[Hook Warning]\n${outcome.message}`;
+            effectiveMessage = `${userMessageContent}\n\n[Hook Warning]\n${outcome.message}`;
           } else if (outcome.kind === "pass" && outcome.context) {
-            effectiveMessage = `${trimmed}\n\n[Hook Context]\n${outcome.context}`;
+            effectiveMessage = `${userMessageContent}\n\n[Hook Context]\n${outcome.context}`;
           }
 
           await startInitialLoop(effectiveMessage);
         } catch (hookError) {
           if (agentLoopStarted) throw hookError;
           // Only hook execution failures may fall back to the original input.
-          await startInitialLoop(trimmed);
+          await startInitialLoop(userMessageContent);
         }
       };
 

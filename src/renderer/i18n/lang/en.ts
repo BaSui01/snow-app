@@ -1431,6 +1431,23 @@ export const en = {
   "toolCall.workflow.deleteConfirmCancel": "Cancel",
   "toolCall.workflow.deletedToast": "Deleted · {{shortcut}} to undo",
   "toolCall.workflow.undoDelete": "Undo",
+  // WorkFlow composer in the chat input
+  "workflowComposer.tooltip": "Compose a WorkFlow",
+  "workflowComposer.title": "WorkFlow composer",
+  "workflowComposer.subtitle":
+    "Draw the flow on the canvas and fill in each node prompt; after sending, confirm execution on the chat card.",
+  "workflowComposer.titlePlaceholder": "Flow name (optional)",
+  "workflowComposer.notePlaceholder": "Note (sent with the flow, optional)",
+  "workflowComposer.send": "Send",
+  "workflowComposer.cancel": "Cancel",
+  "workflowComposer.close": "Close",
+  "workflowComposer.emptyHint":
+    "Add nodes, fill in each step prompt and connect them; confirm execution on the chat card after sending.",
+  "workflowComposer.invalidNoNode": "Add at least one node",
+  "workflowComposer.invalidEmptyPrompt":
+    "Fill in the prompt of at least one node",
+  "workflowComposer.invalidGraph": "Invalid workflow: {{reason}}",
+  "workflowComposer.defaultNote": "Run the workflow as drawn",
   // System notifications
   "notification.aiComplete.title": "AI task completed",
   "notification.aiComplete.bodyWithTitle":

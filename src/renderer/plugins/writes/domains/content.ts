@@ -7,6 +7,7 @@ import {
 import {
   activateConversationById,
   createConversationInDirectory,
+  setConversationApiProfile,
 } from "../conversationOps";
 import {
   bumpRevision,
@@ -540,9 +541,9 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     action: "create",
     scope: "conversations",
     summary: l10n(
-      "Create a conversation in a project, optionally with initial text",
-      "在项目中新建会话，可携带初始内容",
-      "在專案中新增工作階段，可附帶初始內容",
+      "Create a conversation in a project, optionally with initial text and a bound API profile",
+      "在项目中新建会话，可携带初始内容并绑定 API 档案",
+      "在專案中新增工作階段，可附帶初始內容並綁定 API 檔案",
     ),
     invoke: async ({ params }) => {
       return await createConversationInDirectory({
@@ -550,7 +551,31 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
         title: requireString(params, "title"),
         text: optionalString(params, "text"),
         autoReply: optionalBoolean(params, "autoReply") ?? false,
+        apiProfile: optionalString(params, "apiProfile"),
       });
+    },
+  },
+  {
+    domain: "conversations",
+    action: "setApiProfile",
+    scope: "conversations",
+    summary: l10n(
+      "Bind a conversation to an API profile (empty to follow the active profile)",
+      "改绑会话的 API 档案（传空串恢复跟随当前启用档案）",
+      "改綁工作階段的 API 檔案（傳空字串恢復跟隨目前啟用檔案）",
+    ),
+    invoke: async ({ params }) => {
+      const conversationId = requireString(params, "conversationId");
+      const apiProfile = params.apiProfile;
+      if (typeof apiProfile !== "string") {
+        throw new Error("Parameter 'apiProfile' must be a string");
+      }
+      const result = await setConversationApiProfile(
+        conversationId,
+        apiProfile,
+      );
+      commitConversationListChange();
+      return result;
     },
   },
   {

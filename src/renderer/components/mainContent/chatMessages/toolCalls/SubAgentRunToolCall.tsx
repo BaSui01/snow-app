@@ -397,7 +397,6 @@ const SubAgentRunToolCallView = ({
           : undefined
       }
       status={toolCall.status}
-      activityIndicator="single"
       defaultOpen={parsed.kind === "error" || toolCall.status === "running"}
       lazyBody
     >

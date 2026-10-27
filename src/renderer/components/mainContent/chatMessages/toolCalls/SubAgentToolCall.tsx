@@ -513,7 +513,6 @@ export const SubAgentToolCall = ({
       }
       displayNameTitle={headSummary || undefined}
       status={toolCall.status}
-      activityIndicator="single"
       meta={
         run || queryStatus || totalCount > 0 || unmetAcceptanceCount > 0 ? (
           <>

@@ -15020,7 +15020,7 @@ body.is-panel-resizing * {
   background: var(--accent-blue, #3b82f6);
   box-shadow: 0 0 0 2px
     color-mix(in srgb, var(--accent-blue, #3b82f6) 25%, transparent);
-  /* 运行中状态点呼吸光晕，与旋转图标一起表达"进行中" */
+  /* 运行中状态点呼吸光晕表达"进行中" */
   animation: tcn-dot-pulse 1.4s ease-in-out infinite;
 }
 
@@ -15051,34 +15051,6 @@ body.is-panel-resizing * {
   align-items: center;
   flex-shrink: 0;
   color: var(--text-tertiary);
-}
-
-.tcn-icon-spin {
-  animation: tcn-spin 0.8s linear infinite;
-}
-
-@keyframes tcn-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tcn-icon-spin {
-    animation: none;
-  }
-}
-
-/* Running-state spinner shown after the tool name badge while a call is in flight. */
-.tcn-running-spinner {
-  flex-shrink: 0;
-  color: var(--accent-blue, #3b82f6);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tcn-running-spinner {
-    animation: none;
-  }
 }
 
 .tcn-provider {

@@ -279,9 +279,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
       });
 
-    // Plan/Goal Mode 是严格按会话隔离的：开关只写当前会话的 ref 和
+    // Goal Mode 等模式开关严格按会话隔离：开关只写当前会话的 ref 和
     // 会话级 DB 记录，从不读写全局设置。因此这里无需（也不应）从
-    // 磁盘加载全局模式——冷会话一律使用中性默认值（Plan/Goal 关、
+    // 磁盘加载全局模式——冷会话一律使用中性默认值（模式全关、
     // 预算 2000000），已打开会话的模式由各自的 session ref 恢复。
 
     // 历史遗留工具名别名：MCP server "bash" 的内部工具名是 `terminal-execute`，

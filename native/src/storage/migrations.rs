@@ -859,12 +859,12 @@ fn migrate_legacy_imported_system_prompts(connection: &Connection) -> rusqlite::
     Ok(())
 }
 
-/// Adds the per-conversation Plan/Goal Mode override columns to
-/// `chat_conversations` for databases created by older app versions.
+/// Adds the per-conversation mode override columns to `chat_conversations`
+/// for databases created by older app versions.
 ///
 /// The mode flags are 0/1 booleans and the token budget is an integer.
 /// Existing rows keep NULL flags; reads treat NULL as disabled
-/// (synonymous with 0) so legacy conversations open with both modes off.
+/// (synonymous with 0) so legacy conversations open with all modes off.
 ///
 /// Idempotent: no-op when the columns are already present (fresh databases
 /// get them from the `CREATE TABLE` statement in `create_schema`).

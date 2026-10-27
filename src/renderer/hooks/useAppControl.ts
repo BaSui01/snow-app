@@ -230,7 +230,7 @@ export const useAppControl = ({
           case "set_mode": {
             const mode = payload.mode as string;
             const enabled = payload.enabled as boolean;
-            // Plan/Goal Mode is strictly per-conversation: the persisted
+            // Mode toggles are strictly per-conversation: the persisted
             // global settings are never written here. Replaying through the
             // session-aware path applies the change to the ACTIVE
             // conversation only (its session ref + per-conversation DB

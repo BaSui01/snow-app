@@ -111,7 +111,7 @@ pub(crate) struct ActiveRole {
     /// "Override built-in prompt" switch (`role.overrideRoleIds` contains the
     /// active role id). Only the normal-mode prompt honors it (the role
     /// content replaces the whole built-in template there); mode prompts
-    /// (Plan / Goal / WorkFlow / WorkTree) carry mandatory guidance and
+    /// (Goal / WorkFlow / WorkTree) carry mandatory guidance and
     /// always inline the role via `render_role_prompt`.
     pub overrides_builtin: bool,
 }

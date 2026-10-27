@@ -1187,8 +1187,8 @@ CREATE TABLE IF NOT EXISTS app_plugins (
 
     // Post-schema migrations run AFTER CREATE TABLE to add columns that
     // older databases lack but fresh databases already have. Each migration
-    // is idempotent. Includes the local per-conversation Plan/Goal Mode
-    // columns and the sub-agent project_id rebuild (see migrations.rs).
+    // is idempotent. Includes the local per-conversation mode columns and
+    // the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
     services::chat_conversations::ensure_sub_agent_run_tables(connection)?;
 

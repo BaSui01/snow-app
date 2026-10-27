@@ -39,7 +39,7 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 - **Hooks** - Lifecycle hooks that run custom commands or prompts before/after events like requests and compression
 - **Sub-Agents** - Independent AI execution loops for parallel, complex multi-step tasks
 - **Codebase Semantic Search** - Embedding-index-based code search plus LSP-based multi-language code symbol location
-- **Plan / Goal Modes** - Plan-first and autonomous long-running task execution modes
+- **Goal Mode** - autonomous long-running task execution mode
 - **Interactive Terminal Sessions** - The AI can drive persistent PTY sessions for long-running and interactive commands
 - **Codebase Explorer** - Project file tree with workspace directory management
 - **i18n** - Multi-language support with a locale system
@@ -103,7 +103,7 @@ snow-app/
 │       ├── exports/     # napi-rs export bindings
 │       ├── hooks/       # Lifecycle hook execution
 │       ├── mcp/         # MCP protocol implementation (built-in servers + external client)
-│       ├── prompt/      # System prompt handling (incl. Plan/Goal modes)
+│       ├── prompt/      # System prompt handling (incl. mode prompts)
 │       └── storage/     # SQLite persistence
 ├── scripts/             # Build & utility scripts
 ├── resources/           # App icons & static assets

@@ -262,7 +262,7 @@ pub(crate) async fn build_builtin_system_prompt(
     // 并行多次调用是唯一多图路径（≥2 个并行调用由 UI 自动合并为
     // ImageGenGallery 统一网格）。查询失败返回空字符串（静默降级，不打断
     // 请求）。追加在末尾：与 LSP 章节同理，最小化 prompt cache 前缀失效
-    // 范围。普通 / Plan / Goal 三种模式统一注入。
+    // 范围。各模式统一注入。
     let imagegen_section =
         crate::mcp::servers::imagegen::build_system_prompt_section(request.directory_id).await;
     let system_prompt = if imagegen_section.is_empty() {

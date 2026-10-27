@@ -377,7 +377,7 @@ export const ProjectRoleEditor = ({
             checked={overrideBuiltinPrompt}
             description={t("personalization.overrideBuiltinDesc", {
               defaultValue:
-                "When enabled, the rules replace the built-in prompt in normal mode; Plan / Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
+                "When enabled, the rules replace the built-in prompt in normal mode; Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
             })}
             disabled={isLoading || isSaving}
             onChange={(checked) => {

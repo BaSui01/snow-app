@@ -50,10 +50,6 @@ export type PlusMenuProps = {
   isUpdatingLiteMode: boolean;
   onLiteModeChange?: (enabled: boolean) => void;
   onRefreshLiteMode?: () => void | Promise<boolean | void>;
-  planMode: boolean;
-  isUpdatingPlanMode: boolean;
-  onPlanModeChange?: (enabled: boolean) => void;
-  onRefreshPlanMode?: () => void | Promise<boolean | void>;
   goalMode: boolean;
   isUpdatingGoalMode: boolean;
   onGoalModeChange?: (enabled: boolean) => void;
@@ -136,10 +132,6 @@ export const PlusMenu = ({
   isUpdatingLiteMode,
   onLiteModeChange,
   onRefreshLiteMode,
-  planMode,
-  isUpdatingPlanMode,
-  onPlanModeChange,
-  onRefreshPlanMode,
   goalMode,
   isUpdatingGoalMode,
   onGoalModeChange,
@@ -214,7 +206,6 @@ export const PlusMenu = ({
         // Re-read the persisted app setting whenever the menu opens.
         void onRefreshYoloMode?.();
         void onRefreshLiteMode?.();
-        void onRefreshPlanMode?.();
         void onRefreshGoalMode?.();
         void onRefreshWorktreeMode?.();
         void onRefreshWorkflowMode?.();
@@ -226,7 +217,6 @@ export const PlusMenu = ({
   }, [
     onRefreshYoloMode,
     onRefreshLiteMode,
-    onRefreshPlanMode,
     onRefreshGoalMode,
     onRefreshWorktreeMode,
     onRefreshWorkflowMode,
@@ -317,7 +307,6 @@ export const PlusMenu = ({
   const activeModeLabels = [
     yoloMode ? t("plusMenu.yoloMode") : null,
     liteMode ? t("plusMenu.liteMode") : null,
-    planMode ? t("plusMenu.planMode") : null,
     worktreeMode ? t("plusMenu.worktreeMode") : null,
     workflowMode ? t("plusMenu.workflowMode") : null,
     goalMode ? t("plusMenu.goalMode") : null,
@@ -508,20 +497,6 @@ export const PlusMenu = ({
                     lockedTitle={modeItemTitle}
                     onChange={() => {
                       void onLiteModeChange?.(!liteMode);
-                    }}
-                  />
-                  <PlusToggleRow
-                    icon={ClipboardList}
-                    label={t("plusMenu.planMode")}
-                    description={t("plusMenu.planModeDescription")}
-                    checked={planMode}
-                    disabled={
-                      modesLocked || isUpdatingPlanMode || !onPlanModeChange
-                    }
-                    locked={modesLocked}
-                    lockedTitle={modeItemTitle}
-                    onChange={() => {
-                      void onPlanModeChange?.(!planMode);
                     }}
                   />
                   <PlusToggleRow

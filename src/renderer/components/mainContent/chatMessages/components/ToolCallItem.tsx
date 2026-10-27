@@ -6,7 +6,6 @@ import type {
 } from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
-  PlanModeApprovalToolCall,
   BashToolCall,
   FilesystemReadToolCall,
   FilesystemEditToolCall,
@@ -65,10 +64,6 @@ const renderToolCall = ({
   // Delegate to specialized renderers based on tool name
   if (toolCall.name === "user-interaction-askUserQuestion") {
     return <AskUserQuestionToolCall toolCall={toolCall} />;
-  }
-
-  if (toolCall.name === "app-control-requestApproval") {
-    return <PlanModeApprovalToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name === "workflow-workflow-generate") {

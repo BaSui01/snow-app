@@ -189,7 +189,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     (
       _event,
       conversationId: string,
-      planMode: boolean | null,
       goalMode: boolean | null,
       worktreeMode: boolean | null,
       workflowMode: boolean | null,
@@ -197,7 +196,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     ) =>
       native.setConversationModes(
         conversationId,
-        planMode,
         goalMode,
         worktreeMode,
         workflowMode,
@@ -1267,8 +1265,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       streamId: unknown,
       interactionId: unknown,
       subAgentAllowedTools: unknown,
-      planMode: unknown,
-      planApproved: unknown,
       conversationId: unknown,
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
@@ -1310,12 +1306,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof interactionId !== "string" || !interactionId.trim()) {
         throw new Error("Tool interaction ID is required");
-      }
-      if (planMode !== undefined && typeof planMode !== "boolean") {
-        throw new Error("Plan Mode state must be a boolean");
-      }
-      if (planApproved !== undefined && typeof planApproved !== "boolean") {
-        throw new Error("Plan approval state must be a boolean");
       }
       if (
         conversationId !== undefined &&
@@ -1389,8 +1379,6 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         (command: TerminalCommand) =>
           dispatchTerminalCommand(event.sender, command),
         normalizedSubAgentAllowedTools,
-        planMode as boolean | undefined,
-        planApproved as boolean | undefined,
         normalizedConversationId,
       );
 

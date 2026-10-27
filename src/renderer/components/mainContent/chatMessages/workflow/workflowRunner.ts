@@ -379,11 +379,7 @@ export function abandonWorkflow(interactionId: string): void {
 /** 节点内禁止的交互式工具：节点后台串行执行，无法也不应请求用户交互。
  *  子代理（sub-agents-）除外：节点是真实主会话，允许派生子代理，
  *  其交互在子代理会话内处理，侧边栏以 节点 → 子代理 树形展示。 */
-const INTERACTIVE_TOOL_PREFIXES = [
-  "user-interaction-",
-  "workflow-",
-  "app-control-requestApproval",
-];
+const INTERACTIVE_TOOL_PREFIXES = ["user-interaction-", "workflow-"];
 
 type RunnerOptions = {
   parentConversationId: string;
@@ -512,7 +508,6 @@ type WorkflowRunnerDeps = {
     conversationId: string,
     projectId?: string,
   ) => Promise<ToolAuthorizationDecision[]>;
-  planApprovedSessionKeysRef: { current: Set<string> };
   /** 子代理激活执行器（渲染进程异步运行时）：节点内允许派生子代理，
    *  子代理在节点会话下运行，交互与授权在子代理会话内处理。
    *  节点只允许同步子代理：默认执行方式固定传 sync。 */
@@ -828,7 +823,6 @@ export function createWorkflowRunner(
   const {
     ctx,
     requestToolAuthorizations,
-    planApprovedSessionKeysRef,
     executeSubAgentActivation,
     executeSubAgentMainTool,
   } = deps;
@@ -1806,14 +1800,6 @@ export function createWorkflowRunner(
         role: "user" as const,
         content,
       }));
-      // Steering and queued follow-ups change the parent's approved constraints.
-      // Initial node prompts and compaction handoffs do not use this helper.
-      if (
-        texts.length &&
-        ctx.sessionsRefData.current.get(parentConversationId)?.planMode
-      ) {
-        planApprovedSessionKeysRef.current.delete(parentConversationId);
-      }
       const ref = ctx.sessionsRefData.current.get(conversationId);
       if (ref) {
         ref.activeTaskMessages = [
@@ -2015,7 +2001,6 @@ export function createWorkflowRunner(
               model: effectiveModel || undefined,
               thinkingStrength,
               responsesFastMode,
-              planMode: false,
               goalMode: false,
               worktreeMode: nodeWorktreeMode,
               workflowMode: false,
@@ -2509,9 +2494,6 @@ export function createWorkflowRunner(
                 },
                 toolCall.interactionId,
                 undefined,
-                ctx.sessionsRefData.current.get(parentConversationId)
-                  ?.planMode ?? false,
-                planApprovedSessionKeysRef.current.has(parentConversationId),
                 // 会话溯源：节点内 memory-save 由 Rust 分发层注入节点会话 ID。
                 conversationId,
               );

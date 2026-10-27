@@ -5,17 +5,12 @@ use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
-use super::user_interaction::{UserQuestionCallback, UserQuestionCommand};
 
 pub const SERVER_ID: &str = "app-control";
 
 const TOOL_SET_MODE: &str = "setMode";
 const TOOL_OPEN_SETTINGS: &str = "openSettings";
 const TOOL_CONVERSATION: &str = "conversation";
-const TOOL_REQUEST_APPROVAL: &str = "requestApproval";
-
-const APPROVE_OPTION: &str = "Approve and execute the plan";
-const KEEP_PLANNING_OPTION: &str = "Keep planning";
 
 #[napi(object)]
 pub struct AppControlCommand {
@@ -40,12 +35,7 @@ impl AppControlService {
         tool_name: &str,
         args: &Value,
         on_app_control: &AppControlCallback,
-        on_user_question: &UserQuestionCallback,
     ) -> napi::Result<Value> {
-        if tool_name == TOOL_REQUEST_APPROVAL {
-            return execute_request_approval(args, on_user_question).await;
-        }
-
         let (action, payload) = match tool_name {
             TOOL_SET_MODE => validate_set_mode_args(args)?,
             TOOL_OPEN_SETTINGS => validate_open_settings_args(args)?,
@@ -110,14 +100,14 @@ impl McpService for AppControlService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET_MODE.to_string(),
-                description: "Enable or disable WorkTree Mode, Plan Mode, or Goal Mode in the Snow App. WorkTree Mode isolates implementation on a local Git branch or worktree. Plan Mode makes the agent plan before executing. Goal Mode enables autonomous long-running execution with a token budget. The three modes are mutually exclusive.".to_string(),
+                description: "Enable or disable WorkTree Mode or Goal Mode in the Snow App. WorkTree Mode isolates implementation on a local Git branch or worktree. Goal Mode enables autonomous long-running execution with a token budget. The two modes are mutually exclusive.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "string",
-                            "enum": ["plan", "goal", "worktree"],
-                            "description": "Which mode to toggle: \"plan\" for Plan Mode, \"goal\" for Goal Mode, or \"worktree\" for WorkTree Mode. The three modes are mutually exclusive."
+                            "enum": ["goal", "worktree"],
+                            "description": "Which mode to toggle: \"goal\" for Goal Mode or \"worktree\" for WorkTree Mode. The two modes are mutually exclusive."
                         },
                         "enabled": {
                             "type": "boolean",
@@ -198,34 +188,11 @@ impl McpService for AppControlService {
                     "required": ["action"]
                 }),
             },
-            McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_REQUEST_APPROVAL.to_string(),
-                description: "Request the user's explicit approval to execute the completed implementation plan. In Plan Mode, call this dedicated tool after the plan is ready and before calling filesystem-replace_edit or filesystem-create. The tool returns a structured `approved` boolean; no wording or keyword in a normal chat response can unlock file editing. Call this tool by itself and wait for the user's decision."
-                    .to_string(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "planSummary": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "A concise summary of the complete plan, including key changes and important risks, shown to the user before approval."
-                        }
-                    },
-                    "required": ["planSummary"]
-                }),
-            },
         ]
     }
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            TOOL_REQUEST_APPROVAL => Err(Error::new(
-                Status::GenericFailure,
-                format!(
-                    "{SERVER_ID}-{TOOL_REQUEST_APPROVAL} must be executed through the asynchronous Electron interaction bridge"
-                ),
-            )),
             TOOL_SET_MODE | TOOL_OPEN_SETTINGS | TOOL_CONVERSATION => Err(Error::new(
                 Status::GenericFailure,
                 format!(
@@ -235,83 +202,6 @@ impl McpService for AppControlService {
             _ => Err(unknown_tool_error(tool_name)),
         }
     }
-}
-
-/// Execute the Plan Mode approval flow: show the plan summary to the user via
-/// the interaction bridge and return a structured `approved` boolean.
-async fn execute_request_approval(
-    args: &Value,
-    on_question: &UserQuestionCallback,
-) -> napi::Result<Value> {
-    let plan_summary = required_plan_summary(args)?;
-    let command = UserQuestionCommand {
-        question: plan_summary.clone(),
-        options: vec![APPROVE_OPTION.to_string(), KEEP_PLANNING_OPTION.to_string()],
-    };
-
-    let promise = on_question
-        .call_async_catch(command)
-        .await
-        .map_err(|error| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to dispatch Plan Mode approval to Electron: {error}"),
-            )
-        })?;
-    let answer_json = promise.await.map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Plan Mode approval failed: {error}"),
-        )
-    })?;
-    let answer: Value = serde_json::from_str(&answer_json).map_err(|error| {
-        Error::new(
-            Status::InvalidArg,
-            format!("Plan Mode approval result must be valid JSON: {error}"),
-        )
-    })?;
-    let answer = answer.as_object().ok_or_else(|| {
-        Error::new(
-            Status::InvalidArg,
-            "Plan Mode approval result must be a JSON object".to_string(),
-        )
-    })?;
-    let cancelled = answer
-        .get("cancelled")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let selected_options = answer
-        .get("selectedOptions")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let approved = !cancelled
-        && selected_options
-            .iter()
-            .any(|option| option.as_str() == Some(APPROVE_OPTION));
-
-    Ok(json!({
-        "approved": approved,
-        "cancelled": cancelled,
-        "planSummary": plan_summary,
-    }))
-}
-
-fn required_plan_summary(args: &Value) -> napi::Result<String> {
-    let summary = args
-        .as_object()
-        .and_then(|object| object.get("planSummary"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "planSummary is required for app-control-requestApproval".to_string(),
-            )
-        })?;
-
-    Ok(summary.to_string())
 }
 
 /// config-set 中必须由渲染层执行的目标，命中时返回 (action, payload)，否则交给 config 服务。
@@ -414,14 +304,14 @@ fn validate_set_mode_args(args: &Value) -> napi::Result<(String, Value)> {
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "mode is required for setMode (\"plan\", \"goal\", or \"worktree\")".to_string(),
+                "mode is required for setMode (\"goal\" or \"worktree\")".to_string(),
             )
         })?;
 
-    if mode != "plan" && mode != "goal" && mode != "worktree" {
+    if mode != "goal" && mode != "worktree" {
         return Err(Error::new(
             Status::InvalidArg,
-            format!("mode must be \"plan\", \"goal\", or \"worktree\", received \"{mode}\""),
+            format!("mode must be \"goal\" or \"worktree\", received \"{mode}\""),
         ));
     }
 
@@ -1084,7 +974,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CONVERSATION}, {SERVER_ID}-{TOOL_REQUEST_APPROVAL}]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_SET_MODE}, {SERVER_ID}-{TOOL_OPEN_SETTINGS}, {SERVER_ID}-{TOOL_CONVERSATION}]"
         ),
     )
 }

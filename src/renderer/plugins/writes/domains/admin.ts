@@ -2,7 +2,6 @@ import { pluginStore } from "../../pluginStore";
 import {
   callSnow,
   l10n,
-  optionalBoolean,
   optionalNumber,
   optionalRecord,
   optionalString,
@@ -1113,8 +1112,6 @@ export const ADMIN_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
         undefined,
         optionalString(params, "interactionId"),
         optionalStringArray(params, "subAgentAllowedTools"),
-        optionalBoolean(params, "planMode"),
-        optionalBoolean(params, "planApproved"),
         optionalString(params, "conversationId"),
       );
     },

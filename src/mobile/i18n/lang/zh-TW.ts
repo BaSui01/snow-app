@@ -148,7 +148,6 @@ export const zhTW: Record<string, string> = {
   "remote.modes.sectionTitle": "模式",
   "remote.modes.yolo": "YOLO",
   "remote.modes.lite": "精簡",
-  "remote.modes.plan": "計畫",
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "目標",

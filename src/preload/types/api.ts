@@ -221,7 +221,6 @@ export type ResponsesApiRequest = {
    * provider system instructions, never persisted as a conversation message.
    */
   internalRecoveryPrompt?: string | null;
-  planMode?: boolean | null;
   goalMode?: boolean | null;
   worktreeMode?: boolean | null;
   workflowMode?: boolean | null;

@@ -164,24 +164,18 @@ export const useConversationManagement = (
       const cachedRef = ctx.sessionsRefData.current.get(trimmedId);
       const defaults = ctx.globalModeDefaultsRef.current;
       let targetWorktreeMode = cachedRef?.worktreeMode ?? defaults.worktreeMode;
-      let targetPlanMode = cachedRef?.planMode ?? defaults.planMode;
       let targetGoalMode = cachedRef?.goalMode ?? defaults.goalMode;
       let targetWorkflowMode = cachedRef?.workflowMode ?? defaults.workflowMode;
       const targetBudget =
         cachedRef?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
       if (targetWorkflowMode) {
         targetWorktreeMode = false;
-        targetPlanMode = false;
         targetGoalMode = false;
       } else if (targetWorktreeMode) {
-        targetPlanMode = false;
-        targetGoalMode = false;
-      } else if (targetPlanMode) {
         targetGoalMode = false;
       }
       if (cachedRef) {
         cachedRef.worktreeMode = targetWorktreeMode;
-        cachedRef.planMode = targetPlanMode;
         cachedRef.goalMode = targetGoalMode;
         cachedRef.workflowMode = targetWorkflowMode;
       }
@@ -190,10 +184,6 @@ export const useConversationManagement = (
         ctx.setWorktreeModeState(targetWorktreeMode);
       }
       ctx.setPendingWorktreeId(null);
-      if (ctx.planModeRef.current !== targetPlanMode) {
-        ctx.planModeRef.current = targetPlanMode;
-        ctx.setPlanModeState(targetPlanMode);
-      }
       if (ctx.goalModeRef.current !== targetGoalMode) {
         ctx.goalModeRef.current = targetGoalMode;
         ctx.setGoalModeState(targetGoalMode);
@@ -251,35 +241,27 @@ export const useConversationManagement = (
             let baselineCheckpointId = checkpointIds[0];
 
             // Resolve effective modes with stable conflict priority:
-            // WorkFlow > WorkTree > Plan > Goal. Repair a conflicting database row
+            // WorkFlow > WorkTree > Goal. Repair a conflicting database row
             // asynchronously after choosing the effective state.
             let storedWorktreeMode =
               storedModes?.worktreeMode ?? defaults.worktreeMode;
-            let storedPlanMode = storedModes?.planMode ?? defaults.planMode;
             let storedGoalMode = storedModes?.goalMode ?? defaults.goalMode;
             let storedWorkflowMode =
               storedModes?.workflowMode ?? defaults.workflowMode;
             let storedBudget =
               storedModes?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
             const hasModeConflict =
-              (storedWorkflowMode &&
-                (storedWorktreeMode || storedPlanMode || storedGoalMode)) ||
-              (storedWorktreeMode && (storedPlanMode || storedGoalMode)) ||
-              (storedPlanMode && storedGoalMode);
+              (storedWorkflowMode && (storedWorktreeMode || storedGoalMode)) ||
+              (storedWorktreeMode && storedGoalMode);
             if (storedWorkflowMode) {
               storedWorktreeMode = false;
-              storedPlanMode = false;
               storedGoalMode = false;
             } else if (storedWorktreeMode) {
-              storedPlanMode = false;
-              storedGoalMode = false;
-            } else if (storedPlanMode) {
               storedGoalMode = false;
             }
             if (hasModeConflict) {
               void window.snow.setConversationModes(
                 trimmedId,
-                storedPlanMode,
                 storedGoalMode,
                 storedWorktreeMode,
                 storedWorkflowMode,
@@ -436,7 +418,6 @@ export const useConversationManagement = (
                   directoryId: conversationDirId,
                   checkpointIds,
                   childSubAgentIds: new Set(),
-                  planMode: storedPlanMode,
                   worktreeMode: storedWorktreeMode,
                   goalMode: storedGoalMode,
                   workflowMode: storedWorkflowMode,
@@ -546,10 +527,6 @@ export const useConversationManagement = (
             ctx.worktreeModeRef.current = settledRef.worktreeMode;
             ctx.setWorktreeModeState(settledRef.worktreeMode);
           }
-          if (ctx.planModeRef.current !== settledRef.planMode) {
-            ctx.planModeRef.current = settledRef.planMode;
-            ctx.setPlanModeState(settledRef.planMode);
-          }
           if (ctx.goalModeRef.current !== settledRef.goalMode) {
             ctx.goalModeRef.current = settledRef.goalMode;
             ctx.setGoalModeState(settledRef.goalMode);
@@ -603,8 +580,6 @@ export const useConversationManagement = (
       ctx.sessionsRefData,
       ctx.worktreeModeRef,
       ctx.setWorktreeModeState,
-      ctx.planModeRef,
-      ctx.setPlanModeState,
       ctx.goalModeRef,
       ctx.setGoalModeState,
       ctx.goalModeTokenBudget,
@@ -749,17 +724,11 @@ export const useConversationManagement = (
       // be reused for consecutive new chats, including across project switches.
       ctx.setNewChatGeneration((generation) => generation + 1);
 
-      // Reset Plan Mode so a new chat always starts with the GLOBAL default
-      // (not the previous conversation's mode — real per-conversation
+      // Reset WorkTree Mode so a new chat always starts with the GLOBAL
+      // default (not the previous conversation's mode — real per-conversation
       // isolation). The global defaults are only mutated by explicit user
       // toggles, so no persisted write is needed here.
       const defaults = ctx.globalModeDefaultsRef.current;
-      if (ctx.planModeRef.current !== defaults.planMode) {
-        ctx.planModeRef.current = defaults.planMode;
-        ctx.setPlanModeState(defaults.planMode);
-      }
-
-      // Reset WorkTree Mode so a new chat starts with the global default.
       if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
         ctx.worktreeModeRef.current = defaults.worktreeMode;
         ctx.setWorktreeModeState(defaults.worktreeMode);
@@ -770,19 +739,6 @@ export const useConversationManagement = (
       if (ctx.workflowModeRef.current !== defaults.workflowMode) {
         ctx.workflowModeRef.current = defaults.workflowMode;
         ctx.setWorkflowModeState(defaults.workflowMode);
-      }
-
-      // A new chat starts a brand-new task. Each pending slot's approval is
-      // cleared ONLY when that slot's session is not running in the
-      // background — a streaming pending conversation keeps its approved plan
-      // (it will be migrated to its real id). handleSendMessage resets the
-      // new task's own approval on first send, so no other cleanup is needed.
-      for (const pendingKey of Array.from(ctx.sessionsRefData.current.keys())) {
-        if (!isPendingSessionKey(pendingKey)) continue;
-        const pendingSlotRef = ctx.sessionsRefData.current.get(pendingKey);
-        if (!pendingSlotRef?.isSending) {
-          ctx.planApprovedSessionKeysRef.current.delete(pendingKey);
-        }
       }
 
       // Reset Goal Mode so a new chat always starts with the global default.
@@ -839,13 +795,10 @@ export const useConversationManagement = (
       ctx.setNewChatRequested,
       ctx.setRollbackNewChatState,
       ctx.setNewChatGeneration,
-      ctx.planModeRef,
-      ctx.setPlanModeState,
       ctx.worktreeModeRef,
       ctx.setWorktreeModeState,
       ctx.goalModeRef,
       ctx.setGoalModeState,
-      ctx.planApprovedSessionKeysRef,
       ctx.globalModeDefaultsRef,
       ctx.goalModeTokenBudget,
       ctx.setGoalModeTokenBudgetState,
@@ -1083,10 +1036,6 @@ export const useConversationManagement = (
         if (ctx.worktreeModeRef.current !== defaults.worktreeMode) {
           ctx.worktreeModeRef.current = defaults.worktreeMode;
           ctx.setWorktreeModeState(defaults.worktreeMode);
-        }
-        if (ctx.planModeRef.current !== defaults.planMode) {
-          ctx.planModeRef.current = defaults.planMode;
-          ctx.setPlanModeState(defaults.planMode);
         }
         if (ctx.goalModeRef.current !== defaults.goalMode) {
           ctx.goalModeRef.current = defaults.goalMode;

@@ -33,7 +33,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
 
   // 保持 ref 与 state 同步
   ctx.yoloModeRef.current = ctx.yoloMode;
-  ctx.planModeRef.current = ctx.planMode;
   ctx.goalModeRef.current = ctx.goalMode;
   ctx.worktreeModeRef.current = ctx.worktreeMode;
   ctx.workflowModeRef.current = ctx.workflowMode;
@@ -126,46 +125,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [applyLiteMode, ctx.isUpdatingLiteMode, ctx.setIsUpdatingLiteMode],
   );
 
-  // 模式（Plan/Goal/WorkTree/WorkFlow）只保存在内存 session ref 中，内存态是
+  // 模式（Goal/WorkTree/WorkFlow）只保存在内存 session ref 中，内存态是
   // 运行时权威；切换模式本身不再写库，选择随下一次发送统一落库
   // （useAgentLoop 的 persistConversationSelection），避免"只切了一下"就写库。
-
-  const applyPlanMode = useCallback(
-    (enabled: boolean): void => {
-      ctx.planModeRef.current = enabled;
-      ctx.setPlanModeState(enabled);
-      if (!enabled) {
-        // Plan Mode off = this conversation's approval is invalidated (user
-        // toggle, Goal Mode mutual exclusion, or external sync). Per-session
-        // scope: other conversations keep their independently approved plans,
-        // including ones still executing in the background. Switching
-        // conversations restores the target session's mode without going
-        // through applyPlanMode, so it never clears approvals here — an
-        // approved plan survives navigating away and back.
-        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
-        ctx.planApprovedSessionKeysRef.current.delete(key);
-      }
-    },
-    [ctx.planModeRef, ctx.setPlanModeState, ctx.planApprovedSessionKeysRef],
-  );
-
-  const refreshPlanMode = useCallback(async (): Promise<boolean> => {
-    // Per-conversation isolation: the session's own ref is the runtime
-    // authority, falling back to the neutral default (disabled) for cold
-    // sessions. Plan/Goal Mode toggles never touch the persisted global
-    // settings, so there is nothing global to re-read here.
-    const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
-    const ref = ctx.sessionsRefData.current.get(key);
-    const effective =
-      ref?.planMode ?? ctx.globalModeDefaultsRef.current.planMode;
-    applyPlanMode(effective);
-    return effective;
-  }, [
-    applyPlanMode,
-    ctx.globalModeDefaultsRef,
-    ctx.activeConversationIdRef,
-    ctx.sessionsRefData,
-  ]);
 
   const applyGoalMode = useCallback(
     (enabled: boolean): void => {
@@ -176,8 +138,10 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   );
 
   const refreshGoalMode = useCallback(async (): Promise<boolean> => {
-    // Per-conversation isolation: see refreshPlanMode. Cold sessions fall
-    // back to the neutral default (disabled).
+    // Per-conversation isolation: the session's own ref is the runtime
+    // authority, falling back to the neutral default (disabled) for cold
+    // sessions. Mode toggles never touch the persisted global settings, so
+    // there is nothing global to re-read here.
     const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
     const ref = ctx.sessionsRefData.current.get(key);
     const effective =
@@ -412,50 +376,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     [applyYoloMode, ctx.isUpdatingYoloMode, ctx.setIsUpdatingYoloMode],
   );
 
-  const setPlanMode = useCallback(
-    async (enabled: boolean): Promise<void> => {
-      if (ctx.isUpdatingPlanMode) {
-        return;
-      }
-
-      ctx.setIsUpdatingPlanMode(true);
-      try {
-        applyPlanMode(enabled);
-        const key = ctx.activeSessionKeyRef.current ?? PENDING_SESSION_KEY;
-        let ref = ctx.sessionsRefData.current.get(key);
-        if (!ref) {
-          ctx.ensureSession(key, ctx.directoryId);
-          ref = ctx.sessionsRefData.current.get(key);
-        }
-        if (ref) {
-          ref.planMode = enabled;
-          if (enabled) {
-            ref.goalMode = false;
-            ref.worktreeMode = false;
-            ref.workflowMode = false;
-            applyGoalMode(false);
-            applyWorktreeMode(false);
-            applyWorkflowMode(false);
-          }
-        }
-      } finally {
-        ctx.setIsUpdatingPlanMode(false);
-      }
-    },
-    [
-      applyPlanMode,
-      applyGoalMode,
-      applyWorktreeMode,
-      applyWorkflowMode,
-      ctx.isUpdatingPlanMode,
-      ctx.setIsUpdatingPlanMode,
-      ctx.ensureSession,
-      ctx.directoryId,
-      ctx.activeConversationIdRef,
-      ctx.sessionsRefData,
-    ],
-  );
-
   const setGoalMode = useCallback(
     async (enabled: boolean): Promise<void> => {
       if (ctx.isUpdatingGoalMode) {
@@ -474,10 +394,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         if (ref) {
           ref.goalMode = enabled;
           if (enabled) {
-            ref.planMode = false;
             ref.worktreeMode = false;
             ref.workflowMode = false;
-            applyPlanMode(false);
             applyWorktreeMode(false);
             applyWorkflowMode(false);
           }
@@ -488,7 +406,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     },
     [
       applyGoalMode,
-      applyPlanMode,
       applyWorktreeMode,
       applyWorkflowMode,
       ctx.isUpdatingGoalMode,
@@ -535,10 +452,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         if (ref) {
           ref.worktreeMode = enabled;
           if (enabled) {
-            ref.planMode = false;
             ref.goalMode = false;
             ref.workflowMode = false;
-            applyPlanMode(false);
             applyGoalMode(false);
             applyWorkflowMode(false);
           }
@@ -549,7 +464,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     },
     [
       applyWorktreeMode,
-      applyPlanMode,
       applyGoalMode,
       applyWorkflowMode,
       ctx.isUpdatingWorktreeMode,
@@ -580,12 +494,10 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
         if (ref) {
           ref.workflowMode = enabled;
-          // WorkFlow Mode is mutually exclusive with Plan / Goal / WorkTree.
+          // WorkFlow Mode is mutually exclusive with Goal / WorkTree.
           if (enabled) {
-            ref.planMode = false;
             ref.goalMode = false;
             ref.worktreeMode = false;
-            applyPlanMode(false);
             applyGoalMode(false);
             applyWorktreeMode(false);
           }
@@ -596,7 +508,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     },
     [
       applyWorkflowMode,
-      applyPlanMode,
       applyGoalMode,
       applyWorktreeMode,
       ctx.isUpdatingWorkflowMode,
@@ -1179,9 +1090,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       if (!detail || typeof detail.enabled !== "boolean") {
         return;
       }
-      if (detail.mode === "plan") {
-        void setPlanMode(detail.enabled);
-      } else if (detail.mode === "goal") {
+      if (detail.mode === "goal") {
         void setGoalMode(detail.enabled);
       } else if (detail.mode === "worktree") {
         void setWorktreeMode(detail.enabled);
@@ -1191,7 +1100,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     return () => {
       window.removeEventListener(APP_CONTROL_MODE_CHANGED_EVENT, onModeChanged);
     };
-  }, [setPlanMode, setGoalMode, setWorktreeMode]);
+  }, [setGoalMode, setWorktreeMode]);
 
   return {
     approveAllPendingToolAuthorizations,
@@ -1201,9 +1110,6 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     applyLiteMode,
     refreshLiteMode,
     setLiteMode,
-    applyPlanMode,
-    refreshPlanMode,
-    setPlanMode,
     applyGoalMode,
     refreshGoalMode,
     setGoalMode,

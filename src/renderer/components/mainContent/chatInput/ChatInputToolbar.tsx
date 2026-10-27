@@ -1,5 +1,4 @@
 import {
-  ClipboardList,
   Command,
   Feather,
   GitBranch,
@@ -40,10 +39,6 @@ type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
     | "isUpdatingLiteMode"
     | "onLiteModeChange"
     | "onRefreshLiteMode"
-    | "planMode"
-    | "isUpdatingPlanMode"
-    | "onPlanModeChange"
-    | "onRefreshPlanMode"
     | "goalMode"
     | "isUpdatingGoalMode"
     | "onGoalModeChange"
@@ -103,10 +98,6 @@ export const ChatInputToolbar = ({
     isUpdatingLiteMode,
     onLiteModeChange,
     onRefreshLiteMode,
-    planMode,
-    isUpdatingPlanMode,
-    onPlanModeChange,
-    onRefreshPlanMode,
     goalMode,
     isUpdatingGoalMode,
     onGoalModeChange,
@@ -159,12 +150,6 @@ export const ChatInputToolbar = ({
           isUpdatingLiteMode={isUpdatingLiteMode}
           onLiteModeChange={onLiteModeChange}
           onRefreshLiteMode={onRefreshLiteMode}
-          planMode={planMode}
-          isUpdatingPlanMode={isUpdatingPlanMode}
-          onPlanModeChange={
-            isSubAgentConversation ? undefined : onPlanModeChange
-          }
-          onRefreshPlanMode={onRefreshPlanMode}
           goalMode={goalMode}
           isUpdatingGoalMode={isUpdatingGoalMode}
           onGoalModeChange={
@@ -210,28 +195,13 @@ export const ChatInputToolbar = ({
         >
           <Command size={15} />
         </button>
-        {(planMode ||
-          goalMode ||
-          worktreeMode ||
-          yoloMode ||
-          liteMode ||
-          workflowMode) && (
+        {(goalMode || worktreeMode || yoloMode || liteMode || workflowMode) && (
           <span className="toolbar-divider" aria-hidden="true" />
-        )}
-        {planMode && (
-          <Tooltip content={t("plusMenu.planModeDescription")}>
-            <span
-              className="plan-mode-badge"
-              aria-label={t("plusMenu.planModeDescription")}
-            >
-              <ClipboardList size={14} />
-            </span>
-          </Tooltip>
         )}
         {goalMode && (
           <Tooltip content={t("plusMenu.goalModeDescription")}>
             <span
-              className="plan-mode-badge"
+              className="mode-badge"
               aria-label={t("plusMenu.goalModeDescription")}
             >
               <Target size={14} />
@@ -241,7 +211,7 @@ export const ChatInputToolbar = ({
         {worktreeMode && (
           <Tooltip content={t("plusMenu.worktreeModeDescription")}>
             <span
-              className="plan-mode-badge"
+              className="mode-badge"
               aria-label={t("plusMenu.worktreeModeDescription")}
             >
               <GitBranch size={14} />
@@ -251,7 +221,7 @@ export const ChatInputToolbar = ({
         {workflowMode && (
           <Tooltip content={t("plusMenu.workflowModeDescription")}>
             <span
-              className="plan-mode-badge"
+              className="mode-badge"
               aria-label={t("plusMenu.workflowModeDescription")}
             >
               <Workflow size={14} />
@@ -261,7 +231,7 @@ export const ChatInputToolbar = ({
         {yoloMode && (
           <Tooltip content={t("plusMenu.yoloModeActive")}>
             <span
-              className="plan-mode-badge yolo-mode-badge"
+              className="mode-badge yolo-mode-badge"
               aria-label={t("plusMenu.yoloModeActive")}
             >
               <ShieldAlert size={14} />
@@ -271,7 +241,7 @@ export const ChatInputToolbar = ({
         {liteMode && (
           <Tooltip content={t("plusMenu.liteModeActive")}>
             <span
-              className="plan-mode-badge lite-mode-badge"
+              className="mode-badge lite-mode-badge"
               aria-label={t("plusMenu.liteModeActive")}
             >
               <Feather size={14} />

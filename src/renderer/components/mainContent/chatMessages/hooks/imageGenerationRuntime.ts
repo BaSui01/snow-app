@@ -503,7 +503,6 @@ class ImageGenerationRuntime {
         this.ctx.ensureSession(conversationId, record.directoryId || undefined);
         const ref = this.ctx.sessionsRefData.current.get(conversationId);
         if (ref && modes && !ref.isSending) {
-          ref.planMode = modes.planMode ?? ref.planMode;
           ref.goalMode = modes.goalMode ?? ref.goalMode;
           ref.worktreeMode = modes.worktreeMode ?? ref.worktreeMode;
           ref.workflowMode = modes.workflowMode ?? ref.workflowMode;

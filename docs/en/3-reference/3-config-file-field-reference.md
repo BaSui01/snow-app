@@ -22,7 +22,6 @@ Global config shared with Snow CLI. Top-level fields are detailed in
 | `codebase`                 | object  | Codebase semantic-search config                                            |
 | `sensitiveCommands`        | array   | Sensitive-command interception rules                                       |
 | `yoloMode`                 | boolean | No-confirmation mode                                                       |
-| `planMode`                 | boolean | Plan mode                                                                  |
 | `vulnerabilityHuntingMode` | boolean | Vulnerability-hunting mode                                                 |
 | `toolSearchEnabled`        | boolean | Tool search toggle                                                         |
 | `hybridCompressEnabled`    | boolean | Hybrid compression toggle                                                  |

@@ -422,8 +422,6 @@ export type ConversationSessionRef = {
    *  Used to propagate an abort from the main flow down to every running
    *  sub-agent (and, recursively, their own sub-agents). */
   childSubAgentIds: Set<string>;
-  /** Whether Plan Mode was active when this session was last used. */
-  planMode: boolean;
   /** 本次 run 的累计 token 用量（ref 同步镜像，供收尾持久化读取；
    *  state 的 runTokenUsage 因 setState 异步可能滞后一个渲染周期）。 */
   runTokenUsage: TokenUsage | null;
@@ -464,12 +462,11 @@ export type ConversationSessionRef = {
   forceSendAbort?: boolean;
 };
 
-/** Global Plan/Goal Mode defaults loaded from persisted settings. These are
+/** Global Goal/WorkTree/WorkFlow Mode defaults loaded from persisted settings. These are
  *  the values new/never-configured conversations inherit. They are only
  *  mutated by explicit user toggles — never by conversation switches — so
  *  each conversation's mode stays fully isolated. */
 export type GlobalModeDefaults = {
-  planMode: boolean;
   goalMode: boolean;
   worktreeMode: boolean;
   workflowMode: boolean;
@@ -500,7 +497,6 @@ export type RollbackMemoryItem = {
 export type RollbackMode = "conversation-only" | "conversation-and-files";
 
 export type RollbackConversationState = ConversationInputRuntimeState & {
-  planMode: boolean;
   goalMode: boolean;
   worktreeMode: boolean;
   workflowMode: boolean;
@@ -751,8 +747,6 @@ export type ConversationContextValue = {
    *  MCP 服务以节约上下文。 */
   liteMode: boolean;
   isUpdatingLiteMode: boolean;
-  planMode: boolean;
-  isUpdatingPlanMode: boolean;
   goalMode: boolean;
   isUpdatingGoalMode: boolean;
   worktreeMode: boolean;
@@ -833,20 +827,14 @@ export type ConversationContextValue = {
     ) => Promise<CompactionResult | null>
   >;
   yoloModeRef: RefValue<boolean>;
-  planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
   worktreeModeRef: RefValue<boolean>;
   pendingWorktreeIdRef: RefValue<string | null>;
   workflowModeRef: RefValue<boolean>;
-  /** Global Plan/Goal Mode defaults (persisted settings). New and
+  /** Global Goal/WorkTree/WorkFlow Mode defaults (persisted settings). New and
    *  never-configured conversations inherit these; switches never write them. */
   globalModeDefaultsRef: RefValue<GlobalModeDefaults>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
-  /** Per-conversation Plan Mode approval keys. Cleared only when Plan Mode is
-   *  genuinely turned off (user toggle, Goal Mode mutual exclusion, new chat)
-   *  — NOT on conversation switches, so an approved plan survives switching
-   *  away and back. */
-  planApprovedSessionKeysRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
   pendingHookDecisionRef: RefValue<Map<string, PendingHookDecision>>;
@@ -895,8 +883,6 @@ export type ConversationContextValue = {
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
   setLiteModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingLiteMode: Dispatch<SetStateAction<boolean>>;
-  setPlanModeState: Dispatch<SetStateAction<boolean>>;
-  setIsUpdatingPlanMode: Dispatch<SetStateAction<boolean>>;
   setGoalModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingGoalMode: Dispatch<SetStateAction<boolean>>;
   setWorktreeModeState: Dispatch<SetStateAction<boolean>>;
@@ -1177,10 +1163,6 @@ export type UseChatConversationResult = {
   isUpdatingLiteMode: boolean;
   setLiteMode: (enabled: boolean) => Promise<void>;
   refreshLiteMode: () => Promise<boolean>;
-  planMode: boolean;
-  isUpdatingPlanMode: boolean;
-  setPlanMode: (enabled: boolean) => Promise<void>;
-  refreshPlanMode: () => Promise<boolean>;
   goalMode: boolean;
   isUpdatingGoalMode: boolean;
   setGoalMode: (enabled: boolean) => Promise<void>;

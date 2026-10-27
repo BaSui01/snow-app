@@ -148,7 +148,6 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-conversation-modes", conversationId),
   setConversationModes: (
     conversationId: string,
-    planMode: boolean | null,
     goalMode: boolean | null,
     worktreeMode: boolean | null,
     workflowMode: boolean | null,
@@ -157,7 +156,6 @@ export const apiConfigApi = {
     ipcRenderer.invoke(
       "settings:set-conversation-modes",
       conversationId,
-      planMode,
       goalMode,
       worktreeMode,
       workflowMode,

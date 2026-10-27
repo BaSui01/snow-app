@@ -33,7 +33,6 @@ type ProjectMcpPanelProps = {
   /** 非空时只展示该服务器（右侧面板横幅「去开启」的定向入口） */
   focusServerId?: string | null;
   workflowMode: boolean;
-  planMode: boolean;
   /** 清除定向展示，恢复完整列表 */
   onClearFocus?: () => void;
   onClose: () => void;
@@ -44,8 +43,6 @@ type ToolErrorsByServerId = Record<string, string>;
 /// Codebase 服务器的「模式可用性」状态：只有当项目 Codebase 索引已启用
 /// 且向量表中至少有一个分片时，codebase-* 工具才会真正进入请求体。
 type CodebaseModeStatus = "loading" | "disabled" | "noIndex" | "active";
-
-const REQUEST_APPROVAL_TOOL_NAME = "app-control-requestApproval";
 
 const toolDisplayName = (fullName: string): string => {
   const parts = fullName.split("__");
@@ -71,7 +68,6 @@ export const ProjectMcpPanel = ({
   projectName,
   focusServerId,
   workflowMode,
-  planMode,
   onClearFocus,
   onClose,
 }: ProjectMcpPanelProps): React.JSX.Element => {
@@ -597,8 +593,7 @@ export const ProjectMcpPanel = ({
                   ) : (
                     tools.map((tool) => {
                       // 工具级「模式未启用」徽章：与服务器行提示互补，在
-                      // 工具列表里也一眼可见（如 app-control 下只有
-                      // requestApproval 一个工具受 Plan Mode 限制）。
+                      // 工具列表里也一眼可见。
                       let toolModeBadge: string | null = null;
                       if (!tool.globalEnabled) {
                         // 全局禁用优先：项目层开关无法覆盖，工具只读展示为关闭。
@@ -616,11 +611,6 @@ export const ProjectMcpPanel = ({
                             "projectMcp.modeBadgeCodebaseNoIndex",
                           );
                         }
-                      } else if (
-                        tool.name === REQUEST_APPROVAL_TOOL_NAME &&
-                        !planMode
-                      ) {
-                        toolModeBadge = t("projectMcp.modeBadgePlan");
                       }
                       return (
                         <div className="project-mcp-tool-row" key={tool.name}>

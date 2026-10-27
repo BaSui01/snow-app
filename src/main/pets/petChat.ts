@@ -823,8 +823,6 @@ const executePetToolCalls = async (
         (command) => dispatchRemoteWorkspaceCommand(command),
         (command) => unsupported(`terminal-${command.operation}`),
         undefined,
-        undefined,
-        undefined,
         // 无会话上下文：工具的项目/路径解析由 directoryId 承担。
         undefined,
       );

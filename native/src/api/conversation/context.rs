@@ -5,7 +5,6 @@ use napi::bindgen_prelude::*;
 
 use crate::prompt::common::read_active_role;
 use crate::prompt::goal_mode_system_prompt::build_goal_mode_system_prompt;
-use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::prompt::workflow_mode_system_prompt::build_workflow_mode_system_prompt;
 use crate::prompt::worktree_mode_system_prompt::build_worktree_mode_system_prompt;
@@ -44,26 +43,36 @@ pub struct PreparedConversationRequest {
     pub host_system_prompts: Vec<String>,
 }
 
+/// 子代理与主流程使用同一套「替换 + 降级」：请求档案配置了系统提示词时由它们
+/// 独占系统槽，Snow 内置协议与子代理自身提示词合并为一段返回，由调用方作为
+/// system 消息交给各 provider 降级成开头的 user 消息；未配置时两者按顺序留在
+/// 系统槽。返回 `(系统槽提示词, 待降级的内置提示词)`，全程按内容去重。
 pub(crate) fn compose_sub_agent_system_prompts(
     builtin: &str,
     api_prompts: &[String],
     sub_agent_prompt: Option<&str>,
-) -> Vec<String> {
+) -> (Vec<String>, Option<String>) {
     let mut seen = HashSet::new();
-    let candidates = std::iter::once(builtin)
-        .chain(api_prompts.iter().map(String::as_str))
-        .chain(sub_agent_prompt);
+    let mut keep = |prompt: &str| {
+        let normalized = prompt.trim();
+        (!normalized.is_empty() && seen.insert(normalized.to_string()))
+            .then(|| normalized.to_string())
+    };
+    let configured: Vec<String> = api_prompts
+        .iter()
+        .filter_map(|p| keep(p.as_str()))
+        .collect();
+    let own: Vec<String> = std::iter::once(builtin)
+        .chain(sub_agent_prompt)
+        .filter_map(|p| keep(p))
+        .collect();
 
-    candidates
-        .filter_map(|prompt| {
-            let normalized = prompt.trim();
-            if normalized.is_empty() || !seen.insert(normalized.to_string()) {
-                None
-            } else {
-                Some(normalized.to_string())
-            }
-        })
-        .collect()
+    if configured.is_empty() {
+        (own, None)
+    } else {
+        let demoted = (!own.is_empty()).then(|| own.join("\n\n"));
+        (configured, demoted)
+    }
 }
 
 /// Renders the markdown list of currently usable sub-agents for injection into
@@ -164,17 +173,15 @@ pub(crate) async fn build_builtin_system_prompt(
         }
     };
 
-    // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
-    // that instructs the AI to analyze, plan, and get user approval before
-    // executing any changes.
+    // Goal Mode / WorkFlow Mode: replace the built-in system prompt with the
+    // mode-specific prompt that carries its own execution guidance.
     let shell_type = resolve_default_shell(request.database_path);
     let sub_agents_section = build_sub_agents_section(request.database_path, request.directory_id);
     // The final request list already includes project switches, sub-agent
     // whitelist and tool-less modes. Do not independently rediscover tools.
     let tool_snapshot =
         crate::mcp::servers::lsp::prompt_context::ToolSnapshot::from_tools(request.allowed_tools);
-    let analysis_tools_section = if request.plan_mode || request.goal_mode || request.workflow_mode
-    {
+    let analysis_tools_section = if request.goal_mode || request.workflow_mode {
         crate::prompt::tool_hints::analysis_tools_lines(&tool_snapshot).join("\n")
     } else {
         String::new()
@@ -197,14 +204,6 @@ pub(crate) async fn build_builtin_system_prompt(
             &working_directory,
             &shell_type,
             active_role.as_ref(),
-            &analysis_tools_section,
-        )
-    } else if request.plan_mode {
-        build_plan_mode_system_prompt(
-            &working_directory,
-            &shell_type,
-            active_role.as_ref(),
-            &sub_agents_section,
             &analysis_tools_section,
         )
     } else if request.goal_mode {
@@ -523,14 +522,14 @@ pub async fn prepare_context_request(
             .iter()
             .any(|tool| tool.full_name() == "sub-agents-sendMessage"),
     );
-    let user_system_prompts = if request.is_sub_agent {
+    let (user_system_prompts, demoted_sub_agent_prompt) = if request.is_sub_agent {
         compose_sub_agent_system_prompts(
             &system_prompt,
             &user_system_prompts,
             request.sub_agent_system_prompt,
         )
     } else {
-        user_system_prompts
+        (user_system_prompts, None)
     };
     // Distinct host context is volatile by design (run status / delivery change on
     // every transition), so it is emitted as request-only tail input instead of a
@@ -540,9 +539,10 @@ pub async fn prepare_context_request(
     let host_system_prompts: Vec<String> = Vec::new();
 
     // Main conversations retain the existing provider-specific built-in prompt
-    // behavior. Sub-agents pass the unified ordered prompt list directly to
-    // providers, so inserting the built-in system message again would duplicate
-    // Snow's protocol.
+    // behavior. Sub-agents without configured prompts pass the unified ordered
+    // prompt list directly to providers; with configured prompts their built-in
+    // protocol becomes a system message that providers demote to a leading user
+    // message, exactly like the main conversation.
     if !request.is_sub_agent {
         let has_existing_system = messages
             .iter()
@@ -561,6 +561,18 @@ pub async fn prepare_context_request(
                 },
             );
         }
+    } else if let Some(demoted) = demoted_sub_agent_prompt {
+        messages.insert(
+            0,
+            ChatContextMessage {
+                role: "system".to_string(),
+                content: demoted,
+                tool_calls_json: None,
+                tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
+            },
+        );
     }
 
     // --- Conversation context attachments: 历史会话引用以 `@@conversation:`

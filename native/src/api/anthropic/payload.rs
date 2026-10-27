@@ -194,7 +194,10 @@ pub(super) fn build_anthropic_payload(
                     }
                     tool_result_blocks.push(json!({
                         "type": "tool_result",
-                        "tool_use_id": tool_result.call_id,
+                        "tool_use_id":
+                            crate::api::conversation::tool_messages::anthropic_tool_id(
+                                &tool_result.call_id,
+                            ),
                         "content": if blocks.is_empty() {
                             Value::String(String::new())
                         } else {

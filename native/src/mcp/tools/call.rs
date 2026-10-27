@@ -26,7 +26,6 @@ use super::super::servers::todo::TodoService;
 use super::super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
 use super::super::servers::websearch::{WebSearchCommandCallback, WebSearchService};
 use super::collect::ensure_project_tool_enabled;
-use super::plan_write::is_allowed_plan_document_write;
 use super::result_limit::limit_tool_result;
 use super::worktree_execution::{
     force_worktree_execution_args, is_builtin_mcp_tool, load_conversation_worktree_binding,
@@ -104,7 +103,6 @@ impl SubAgentToolFeedback for napi::Result<Value> {
         let protected = [
             "[SELF-PROTECTION]",
             "PERMISSION_DENIED",
-            "PARENT_PLAN_APPROVAL_REQUIRED",
             "TOOL_EXECUTION_DENIED",
             "SENSITIVE_COMMAND_DETECTED",
             "OWNER_MISMATCH",
@@ -161,8 +159,6 @@ pub async fn call_mcp_tool(
     on_remote_workspace_command: RemoteWorkspaceCallback,
     on_terminal_command: TerminalCommandCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
-    plan_mode: bool,
-    plan_approved: bool,
     conversation_id: Option<String>,
 ) -> napi::Result<String> {
     // Sanitize: AI may copy "[Tool: server-tool#callId]" from conversation
@@ -197,23 +193,6 @@ pub async fn call_mcp_tool(
             Status::GenericFailure,
             "Workspace tool execution requires a conversation id or project id; refusing to use the process working directory".to_string(),
         ));
-    }
-
-    if tool_full_name == REQUEST_APPROVAL_FULL_NAME {
-        if is_sub_agent_call {
-            return Err(Error::new(
-                Status::GenericFailure,
-                "app-control-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
-                    .to_string(),
-            ));
-        }
-        if !plan_mode {
-            return Err(Error::new(
-                Status::GenericFailure,
-                "app-control-requestApproval is only available while Plan Mode is active"
-                    .to_string(),
-            ));
-        }
     }
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
@@ -293,26 +272,6 @@ pub async fn call_mcp_tool(
         .as_ref()
         .map(|binding| binding.path.clone())
         .or(checkpoint_work_dir);
-    if plan_mode
-        && !plan_approved
-        && matches!(
-            tool_full_name.as_str(),
-            "filesystem-replace_edit" | "filesystem-create" | "filesystem-copy"
-        )
-        && (is_sub_agent_call
-            || !is_allowed_plan_document_write(project_id.as_deref(), &args).await?)
-    {
-        let message = if is_sub_agent_call {
-            format!(
-                "PARENT_PLAN_APPROVAL_REQUIRED: {tool_full_name} cannot run because the main conversation has not approved its Plan Mode plan. Stop this sub-agent task and return control to the main conversation. Do not retry this write and do not request approval from the sub-agent."
-            )
-        } else {
-            format!(
-                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call app-control-requestApproval first, and retry project-file writes only when that tool returns approved=true."
-            )
-        };
-        return Err(Error::new(Status::GenericFailure, message));
-    }
 
     // 子代理白名单中显式列出的工具豁免项目级启停（通配符不豁免）；
     // 保留工具任何情况下都不对子代理开放。
@@ -693,7 +652,7 @@ pub async fn call_mcp_tool(
         })??
     } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
         AppControlService::new()
-            .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
+            .execute_async(app_control_tool, &args, &on_app_control)
             .await
             .tool_feedback(is_sub_agent_call)?
     } else if let Some(routed) = match tool_full_name.as_str() {

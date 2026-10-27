@@ -348,17 +348,16 @@ export type SnowRemoteChatInputState = {
 
 /**
  * 可远程切换的代理行为模式。
- * 与桌面 PlusMenu 的开关一一对应：Plan / Goal / YOLO / WorkTree / WorkFlow /
+ * 与桌面 PlusMenu 的开关一一对应：Goal / YOLO / WorkTree / WorkFlow /
  * Lite 全部由手机端直接启停，复用同一套真实 setter。
- * Plan/Goal/Worktree/Workflow 为会话级；YOLO / Lite 为应用级设置。
+ * Goal/Worktree/Workflow 为会话级；YOLO / Lite 为应用级设置。
  * 安全边界：YOLO 只影响“普通 pending 工具授权自动批准”，
  * 敏感命令仍需桌面端独立确认；YOLO 与远控鉴权无关。
  */
 export type SnowRemoteModeId =
-  "plan" | "goal" | "worktree" | "workflow" | "yolo" | "lite";
+  "goal" | "worktree" | "workflow" | "yolo" | "lite";
 
 export type SnowRemoteModesState = {
-  plan: boolean;
   goal: boolean;
   worktree: boolean;
   workflow: boolean;

@@ -158,7 +158,7 @@ export function LspStatusBadge({
       <button
         ref={triggerRef}
         type="button"
-        className={`plan-mode-badge lsp-status-badge${current?.stale || problemCount > 0 ? " has-problems" : runningCount > 0 ? " is-active" : " is-idle"}`}
+        className={`mode-badge lsp-status-badge${current?.stale || problemCount > 0 ? " has-problems" : runningCount > 0 ? " is-active" : " is-idle"}`}
         aria-label={title}
         title={title}
         aria-expanded={open}

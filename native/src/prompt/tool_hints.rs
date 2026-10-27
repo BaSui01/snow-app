@@ -13,7 +13,6 @@ pub(crate) async fn build_analysis_tools_lines(
         project_id,
         project_root,
         false,
-        false,
     )
     .await
     .unwrap_or_default();

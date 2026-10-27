@@ -19,7 +19,6 @@ The file is shared with Snow CLI. After modifying it, some settings (such as `mc
 | `mcpServers`               | object  | Global MCP server configuration, keyed by server name |
 | `sensitiveCommands`        | array   | Sensitive command interception rules                  |
 | `yoloMode`                 | boolean | No-confirmation mode                                  |
-| `planMode`                 | boolean | Plan mode                                             |
 | `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode                            |
 | `toolSearchEnabled`        | boolean | Tool search toggle                                    |
 | `hybridCompressEnabled`    | boolean | Hybrid compression toggle                             |
@@ -158,7 +157,6 @@ Array elements are used for sensitive command interception (GUI: **Settings → 
 | Field                      | Type    | Description                                                   |
 | -------------------------- | ------- | ------------------------------------------------------------- |
 | `yoloMode`                 | boolean | No-confirmation mode, skips dangerous operation confirmations |
-| `planMode`                 | boolean | Plan mode, plans before executing                             |
 | `vulnerabilityHuntingMode` | boolean | Vulnerability hunting mode                                    |
 | `toolSearchEnabled`        | boolean | Tool search toggle                                            |
 | `hybridCompressEnabled`    | boolean | Hybrid compression toggle                                     |
@@ -267,7 +265,6 @@ The following is a combined example containing `mcpServers`, `codebase`, `sensit
     }
   ],
   "yoloMode": false,
-  "planMode": false,
   "vulnerabilityHuntingMode": false,
   "toolSearchEnabled": false,
   "hybridCompressEnabled": false,

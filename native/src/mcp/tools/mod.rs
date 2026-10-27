@@ -48,7 +48,7 @@ use super::servers::remote_workspace::{
 pub(crate) mod file_tracking;
 mod call;
 mod collect;
-mod plan_write;
+mod remote_path;
 mod result_limit;
 mod serialize;
 mod worktree_execution;
@@ -138,9 +138,6 @@ impl McpTool {
     }
 }
 
-/// requestApproval 工具全名（隶属于 app-control 服务器，仅 Plan Mode 下暴露）。
-const REQUEST_APPROVAL_FULL_NAME: &str = "app-control-requestApproval";
-
 /// 项目 MCP 服务器工具发现的并发度：外部服务器并行连接发现，
 /// 避免串行等待（与 external 模块的 DISCOVERY_CONCURRENCY 一致）。
 const PROJECT_SERVER_DISCOVERY_CONCURRENCY: usize = 4;
@@ -198,7 +195,7 @@ pub fn split_tool_full_name(full_name: &str) -> Option<(&str, &str)> {
 }
 
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
-    let tools = collect_all_mcp_tools(None, false, false).await?;
+    let tools = collect_all_mcp_tools(None, false).await?;
     Ok(to_tool_definitions(&tools))
 }
 
@@ -874,14 +871,14 @@ async fn prepare_remote_workspace_args(
             };
             let in_workspace = matches!(
                 (
-                    plan_write::normalize_ssh_path(workspace_path),
-                    plan_write::normalize_ssh_path(path),
+                    remote_path::normalize_ssh_path(workspace_path),
+                    remote_path::normalize_ssh_path(path),
                 ),
                 (
                     Some((workspace_authority, workspace_segments)),
                     Some((candidate_authority, candidate_segments)),
                 ) if workspace_authority == candidate_authority
-                    && plan_write::remote_segments_start_with(
+                    && remote_path::remote_segments_start_with(
                         &candidate_segments,
                         &workspace_segments,
                     )
@@ -1947,7 +1944,7 @@ fn remote_bash_checkpoint_skip_reason(
     args: &Value,
     work_dir: &str,
 ) -> Option<crate::i18n::CheckpointSkipReason> {
-    let Some((workspace_authority, workspace_segments)) = plan_write::normalize_ssh_path(work_dir)
+    let Some((workspace_authority, workspace_segments)) = remote_path::normalize_ssh_path(work_dir)
     else {
         return None; // 工作区无法解析时保守保留扫描
     };
@@ -1965,11 +1962,11 @@ fn remote_bash_checkpoint_skip_reason(
                 dir: working_directory.to_string(),
             });
         }
-        let Some((authority, segments)) = plan_write::normalize_ssh_path(working_directory) else {
+        let Some((authority, segments)) = remote_path::normalize_ssh_path(working_directory) else {
             return None; // 无法解析时保守保留扫描
         };
         if authority != workspace_authority
-            || !plan_write::remote_segments_start_with(&segments, &workspace_segments)
+            || !remote_path::remote_segments_start_with(&segments, &workspace_segments)
         {
             return Some(crate::i18n::CheckpointSkipReason::WorkingDirOutside {
                 dir: working_directory.to_string(),
@@ -2020,7 +2017,7 @@ fn command_targets_outside_workspace(
         // 可能写入的语句：按 cwd 位置与绝对路径证据判断写入位置。
         let cwd_inside_or_uncertain = match &cwd {
             None => true,
-            Some(segments) => plan_write::remote_segments_start_with(segments, workspace_segments),
+            Some(segments) => remote_path::remote_segments_start_with(segments, workspace_segments),
         };
         let Some(tokens) = tokenize_shell_tokens(statement) else {
             return false; // 无法解析 → 保守保留扫描
@@ -2030,7 +2027,7 @@ fn command_targets_outside_workspace(
         for token in &tokens {
             if token.starts_with('/') {
                 let segments = resolve_cd_target(&[], token);
-                if plan_write::remote_segments_start_with(&segments, workspace_segments) {
+                if remote_path::remote_segments_start_with(&segments, workspace_segments) {
                     absolute_inside = true;
                 } else {
                     absolute_outside = true;

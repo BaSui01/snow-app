@@ -9991,14 +9991,14 @@ body.is-panel-resizing * {
 }
 
 .sub-agent-finished-bar-back.is-primary {
-  background: var(--color-primary, #4c9aff);
-  color: #fff;
+  background: var(--text-primary);
+  color: var(--on-solid);
 }
 
 .sub-agent-finished-bar-back.is-primary:hover {
-  background: var(--color-primary, #4c9aff);
-  color: #fff;
-  filter: brightness(1.08);
+  background: var(--text-primary);
+  color: var(--on-solid);
+  opacity: 0.88;
 }
 
 /* ===== User Message Rail (hover axis) =====
@@ -24789,6 +24789,17 @@ button.user-message-source:hover {
   gap: 6px;
 }
 
+.tool-call-sub-agent-retry-actions .tool-call-sub-agent-jump.is-primary,
+.tool-call-sub-agent-retry-actions .tool-call-sub-agent-jump.is-primary:hover {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--on-solid);
+}
+
+.tool-call-sub-agent-retry-actions .tool-call-sub-agent-jump.is-primary:hover {
+  opacity: 0.88;
+}
+
 .sub-agent-concurrency-row {
   display: flex;
   align-items: center;
@@ -25102,7 +25113,7 @@ button.user-message-source:hover {
   background: var(--border-subtle);
 }
 
-.plan-mode-badge {
+.mode-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -30730,7 +30741,7 @@ button.user-message-source:hover {
    - 440px：收起左组模式徽章与分隔线（模式状态仍可在 PlusMenu 中查看/切换）
    - 300px：收起 Token 用量环，保证极窄输入框下发送按钮不被挤出 */
 @container (max-width: 440px) {
-  .toolbar-left .plan-mode-badge,
+  .toolbar-left .mode-badge,
   .toolbar-left .toolbar-divider {
     display: none;
   }
@@ -39083,7 +39094,7 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 }
 
 /* 「特殊模式未启用」提示条：服务器开关可开，但对应模式（WorkFlow /
-   Codebase 索引 / Plan Mode）未生效时工具不会进入模型请求，此处醒目说明。 */
+   Codebase 索引）未生效时工具不会进入模型请求，此处醒目说明。 */
 .project-mcp-mode-note {
   display: flex;
   align-items: center;

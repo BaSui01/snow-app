@@ -21,7 +21,6 @@
 | `mcpServers`               | object  | 全局 MCP 服务器配置，键为服务器名 |
 | `sensitiveCommands`        | array   | 敏感命令拦截规则                  |
 | `yoloMode`                 | boolean | 无确认模式                        |
-| `planMode`                 | boolean | 计划模式                          |
 | `vulnerabilityHuntingMode` | boolean | 漏洞狩猎模式                      |
 | `toolSearchEnabled`        | boolean | 工具搜索开关                      |
 | `hybridCompressEnabled`    | boolean | 混合压缩开关                      |
@@ -160,7 +159,6 @@
 | 字段                       | 类型    | 说明                                 |
 | -------------------------- | ------- | ------------------------------------ |
 | `yoloMode`                 | boolean | 无确认模式，跳过危险操作确认         |
-| `planMode`                 | boolean | 计划模式，执行前先规划               |
 | `vulnerabilityHuntingMode` | boolean | 漏洞狩猎模式                         |
 | `toolSearchEnabled`        | boolean | 工具搜索开关                         |
 | `hybridCompressEnabled`    | boolean | 混合压缩开关                         |
@@ -271,7 +269,6 @@ JSON 中的反斜杠必须写成 `\\`，否则 `\f`、`\n`、`\v` 会被当作�
     }
   ],
   "yoloMode": false,
-  "planMode": false,
   "vulnerabilityHuntingMode": false,
   "toolSearchEnabled": false,
   "hybridCompressEnabled": false,

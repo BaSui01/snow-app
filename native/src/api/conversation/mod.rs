@@ -46,8 +46,6 @@ pub struct ConversationContextRequest<'a> {
     /// system prompt. Used by lightweight single-shot completions such as the
     /// AI commit-message generator.
     pub skip_context: bool,
-    /// When true, replace the built-in system prompt with the Plan Mode prompt.
-    pub plan_mode: bool,
     /// When true, replace the built-in system prompt with the Goal Mode prompt.
     pub goal_mode: bool,
     /// When true, replace the built-in system prompt with the WorkTree prompt.

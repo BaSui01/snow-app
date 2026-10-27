@@ -875,7 +875,6 @@ fn migrate_chat_conversations_modes(connection: &Connection) -> rusqlite::Result
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let missing: Vec<(&str, &str)> = [
-        ("plan_mode", "INTEGER"),
         ("goal_mode", "INTEGER"),
         ("worktree_mode", "INTEGER"),
         ("workflow_mode", "INTEGER"),

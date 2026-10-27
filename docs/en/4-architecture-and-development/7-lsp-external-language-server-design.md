@@ -15,7 +15,7 @@ All five providers (Chat, Responses, Anthropic, Gemini and Interactions) resolve
 
 - The final set includes global/project server and tool switches, language capabilities, installation/stack conditions and the sub-agent `tools_json` whitelist. A handful of representative tools must not decide availability of the entire LSP domain.
 - Every recommended tool is checked individually; a hover-only request may recommend only hover. The grep description is generated after final whitelist filtering; grep result hints also intersect current call-time scope with the existing allowed-tools list.
-- Plan / Goal / WorkFlow analysis lists conditionally include grep, read and codebase too; there is no unconditional baseline. Compaction, disabled-tools, lightweight requests and collection failures must not rediscover and advertise LSP tools independently.
+- Goal / WorkFlow analysis lists conditionally include grep, read and codebase too; there is no unconditional baseline. Compaction, disabled-tools, lightweight requests and collection failures must not rediscover and advertise LSP tools independently.
 - Uncovered languages, extensions or operations have no extra static-analysis fallback service; the model uses the visible `grep-search` / `filesystem-read` without broadening scope.
 - No cross-session tool-snapshot cache is introduced. Exposure does not prove a process has started or an index is ready; prompts promise neither completed prewarming nor instantaneous responses.
 
@@ -524,12 +524,12 @@ Output (hover content is itself Markdown; pass through + wrap):
 
 The historical “active LSP domain implies a fixed recommendation list” is replaced by final-request-tool rendering. All five providers collect once and pass the same list to payload and context construction; `ToolSnapshot` neither queries nor caches a separate visibility decision.
 
-| Text surface                         | Current source                                               | Boundary                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Language Servers section             | `ToolSnapshot::system_prompt_section`                        | Filter each tool; omit an empty LSP set; no runtime/prewarm/latency promise                         |
-| Plan / Goal / WorkFlow analysis list | LSP, grep, read and codebase in the final snapshot           | Disabled tools have no line; no fixed baseline                                                      |
-| Grep description                     | Pure routing renderer after final filtering in `collect.rs`  | Explicit and wildcard sub-agents both render after final set formation                              |
-| Grep result hint                     | Current exposure/scope intersected with caller allowed-tools | A bare identifier is only a heuristic; recommend available alternatives rather than force rerouting |
+| Text surface                  | Current source                                               | Boundary                                                                                            |
+| ----------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Language Servers section      | `ToolSnapshot::system_prompt_section`                        | Filter each tool; omit an empty LSP set; no runtime/prewarm/latency promise                         |
+| Goal / WorkFlow analysis list | LSP, grep, read and codebase in the final snapshot           | Disabled tools have no line; no fixed baseline                                                      |
+| Grep description              | Pure routing renderer after final filtering in `collect.rs`  | Explicit and wildcard sub-agents both render after final set formation                              |
+| Grep result hint              | Current exposure/scope intersected with caller allowed-tools | A bare identifier is only a heuristic; recommend available alternatives rather than force rerouting |
 
 #### 8.10.1 Core LSP tool matrix and three-tier argument contracts (11 tools)
 

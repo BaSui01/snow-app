@@ -61,9 +61,7 @@ flowchart TD
     F -->|Reject| X
     H --> G
     G -->|Hook blocks or user rejects decision| X
-    G -->|Pass| I{Plan Mode unapproved and write is restricted?}
-    I -->|Yes| J[Allow plan directories only; Rust blocks other writes]
-    I -->|No| K[Invoke tool]
+    G -->|Pass| K[Invoke tool]
 ```
 
 `beforeToolCall` runs before actual execution even when YOLO auto-approves a tool. In non-YOLO mode, a `toolConfirmation` Hook also runs before the authorization UI. Because some paths continue with normal authorization if a Hook itself fails, a Hook must not be the sole security control.
@@ -89,7 +87,6 @@ YOLO **does not bypass every security control**:
 
 - a non-interactive Bash command that matches a sensitive-command rule still requires explicit confirmation;
 - `beforeToolCall` Hooks still run;
-- the Rust Plan Mode write boundary still runs;
 - tool argument validation, project enablement, and sub-agent tool allowlists remain effective.
 
 Interactive terminal commands are **checked by the sensitive-command gate too**: the `isInteractive` flag only controls how the terminal session is presented (input box, no timeout) and is no longer a bypass channel; legitimate interactive commands such as `npm init` or `git add -i` that match no rule are unaffected.
@@ -110,22 +107,9 @@ Important limitations:
 - interactive commands require the same authorization token (`isInteractive` is a presentation hint and never bypasses the check);
 - the sensitive-command gate is an additional control, not proof that a shell command is safe.
 
-## 7. Enforced Plan Mode boundary
+## 7. Hooks and external MCP servers
 
-Plan Mode is strictly isolated per conversation and mutually exclusive with Goal Mode in that conversation. Switching conversations does not clear approvals independently granted to other conversations. Turning Plan Mode off revokes that conversation's approval state.
-
-Plan Mode is more than a prompt: every tool call passes `planMode` and `planApproved` to the Rust tool layer. Before approval:
-
-- ordinary project-file writes through `filesystem-create` and `filesystem-replace_edit` are blocked;
-- plan documents may be written under `.snow/plan` or `.trellis/tasks`;
-- a sub-agent cannot request or grant approval for the main conversation;
-- only a structured `approved=true` result from the dedicated approval tool marks the current conversation as approved.
-
-Approval widens the write scope, but Plan Mode does not replace sensitive-command matching, tool authorization, Hooks, project permissions, or human review. Nor is it a complete sandbox for every possible tool side effect.
-
-## 8. Hooks and external MCP servers
-
-### 8.1 Hooks
+### 7.1 Hooks
 
 Hooks can run shell commands, inject context, and change the tool-call flow. Command exit codes are generally interpreted as follows:
 
@@ -137,13 +121,13 @@ Hooks can run shell commands, inject context, and change the tool-call flow. Com
 
 Fire-and-forget Hooks such as `onStop` and `onSessionStart` cannot truly block the originating flow; pending decisions are reduced to ordinary warnings. Treat every Hook script and dependency as a local automation program with its own supply-chain trust.
 
-### 8.2 External MCP servers
+### 7.2 External MCP servers
 
 An external MCP server may launch a local process over stdio or connect to an HTTP service. Its tool declarations, network endpoints, authentication, and side effects come from the external implementation. Snow's authorization controls whether Snow initiates a call; it does not prove that the service is internally safe or prevent it from retaining, forwarding, or misusing data within its granted reach.
 
 See [Configure MCP Servers](1-configure-mcp.md) and [Configure Hooks and Sub-agents](5-configure-hooks-and-subagents.md).
 
-## 9. App lock (PIN + Google Authenticator)
+## 8. App lock (PIN + Google Authenticator)
 
 The app lock under **General settings -> Privacy** covers the whole interface behind a PIN so that nobody walking by can read your sessions. Locking **only blocks viewing**: running sessions, streaming generations, terminals, the embedded browser, scheduled tasks, and mobile remote control all keep working in the background.
 
@@ -158,18 +142,17 @@ The app lock under **General settings -> Privacy** covers the whole interface be
 
 The app lock protects what is visible on screen, not the data on disk; the local database is not encrypted. For encryption at rest, rely on full-disk encryption of the operating system.
 
-## 10. Recommended security baseline
+## 9. Recommended security baseline
 
 1. Leave YOLO off by default and retain per-call approval for writes, terminal commands, and external tools.
 2. Permanently approve the smallest project-specific tool set and revoke approvals that are no longer needed.
 3. Define specific, testable sensitive-command regexes for destructive operations while retaining human review.
 4. Prefer local privacy filtering for highly sensitive projects; review an API endpoint's data policy before choosing API mode.
 5. Do not give a page, Hook, or MCP server credentials beyond the current task.
-6. Read a Plan Mode plan before approval and continue reviewing high-impact operations afterward.
-7. Verify the publisher, source, and permission changes before installing or updating third-party extensions.
-8. Periodically review logs, project approvals, and enabled Hooks/MCP servers; disable suspicious components and rotate exposed credentials immediately.
+6. Verify the publisher, source, and permission changes before installing or updating third-party extensions.
+7. Periodically review logs, project approvals, and enabled Hooks/MCP servers; disable suspicious components and rotate exposed credentials immediately.
 
-## 11. Misconceptions and troubleshooting
+## 10. Misconceptions and troubleshooting
 
 | Misconception/symptom                                    | Correct interpretation or action                                                                         |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -177,7 +160,6 @@ The app lock protects what is visible on screen, not the data on disk; the local
 | “Browser popups do not share login state”                | OAuth popups share the opener webview's session and cookies                                              |
 | “A privacy API failure passes the original text through” | API failures fall back to local rules; local-task failures and rule misses still matter                  |
 | “YOLO bypasses sensitive commands”                       | Matching non-interactive commands still require confirmation                                             |
-| “Permanent approval applies to every project”            | Approval is bound to the active project/workspace                                                        |
-| “Plan Mode is prompt-only”                               | The Rust layer blocks unapproved ordinary file creation and replacement edits                            |
+| “Permanent approval applies to every project”            | Approval is bound to the current project/workspace                                                       |
 
 For browser credentials and login state, continue with [Browser Settings, Passwords, and Data Import](17-browser-settings-passwords-and-import.md). For the complete boundary matrix, see [Security and Trust Boundaries](../3-reference/5-security-and-trust-boundaries.md).

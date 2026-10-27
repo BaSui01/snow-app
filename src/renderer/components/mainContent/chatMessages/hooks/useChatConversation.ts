@@ -285,8 +285,6 @@ export const useChatConversation = (
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [liteMode, setLiteModeState] = useState(false);
   const [isUpdatingLiteMode, setIsUpdatingLiteMode] = useState(false);
-  const [planMode, setPlanModeState] = useState(false);
-  const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
   const [goalMode, setGoalModeState] = useState(false);
   const [isUpdatingGoalMode, setIsUpdatingGoalMode] = useState(false);
   const [worktreeMode, setWorktreeModeState] = useState(false);
@@ -425,17 +423,15 @@ export const useChatConversation = (
     ) => Promise<CompactionResult | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
-  const planModeRef = useRef(planMode);
   const goalModeRef = useRef(goalMode);
   const worktreeModeRef = useRef(worktreeMode);
   const workflowModeRef = useRef(workflowMode);
-  // Neutral Plan/Goal Mode defaults for cold (never-toggled) conversations.
-  // Plan/Goal Mode is strictly per-conversation: toggles write only the
-  // active session's ref and its per-conversation DB record, never this
-  // value — so cold conversations always start disabled and never inherit
-  // another conversation's (or another project's) mode.
+  // Neutral Goal/WorkTree/WorkFlow Mode defaults for cold (never-toggled)
+  // conversations. These modes are strictly per-conversation: toggles write
+  // only the active session's ref and its per-conversation DB record, never
+  // this value — so cold conversations always start disabled and never
+  // inherit another conversation's (or another project's) mode.
   const globalModeDefaultsRef = useRef<GlobalModeDefaults>({
-    planMode: false,
     goalMode: false,
     worktreeMode: false,
     workflowMode: false,
@@ -446,8 +442,8 @@ export const useChatConversation = (
   // ChatConversationProvider 跨项目常驻挂载（只有 directoryId prop 变化），
   // 而 PENDING_SESSION_KEY 是全局共享的"新对话"槽位：A 项目新对话里开过
   // Goal 模式的 pending 会话若不清除，切到 B 项目后仍会以 Goal 模式运行。
-  // 此处丢弃旧项目的 pending 会话（未在后台流式运行时）并把显示的 Plan/
-  // Goal 模式重置为中性默认值，保证新项目的新对话从干净状态开始。真实
+  // 此处丢弃旧项目的 pending 会话（未在后台流式运行时）并把显示的
+  // Goal 等模式重置为中性默认值，保证新项目的新对话从干净状态开始。真实
   // 会话（有独立 conversationId）的模式由各自的 session ref 恢复，不受影响。
   const lastDirectoryIdRef = useRef(directoryId);
   useEffect(() => {
@@ -476,8 +472,6 @@ export const useChatConversation = (
       activeConversationIdRef.current === undefined &&
       !Array.from(sessionsRefData.current.keys()).some(isPendingSessionKey)
     ) {
-      planModeRef.current = false;
-      setPlanModeState(false);
       goalModeRef.current = false;
       setGoalModeState(false);
       worktreeModeRef.current = false;
@@ -494,8 +488,6 @@ export const useChatConversation = (
     pendingToRealConversationIdRef,
     setSessions,
     activeConversationIdRef,
-    planModeRef,
-    setPlanModeState,
     goalModeRef,
     setGoalModeState,
     worktreeModeRef,
@@ -695,7 +687,6 @@ export const useChatConversation = (
     >(),
   );
   yoloModeRef.current = yoloMode;
-  planModeRef.current = planMode;
   goalModeRef.current = goalMode;
   worktreeModeRef.current = worktreeMode;
   workflowModeRef.current = workflowMode;
@@ -704,11 +695,6 @@ export const useChatConversation = (
   // Per-session pause flags. When paused, the agent loop awaits the
   // `resolve` callback before proceeding to the next iteration.
   const pauseControllerRef = useRef<Map<string, PauseController>>(new Map());
-
-  // Per-conversation Plan Mode approval keys (see
-  // ConversationContextValue.planApprovedSessionKeysRef). Owned here so every
-  // mode-management hook can clear it when Plan Mode is genuinely turned off.
-  const planApprovedSessionKeysRef = useRef<Set<string>>(new Set());
 
   // --- Active API config accessor ---
   // Fetches the active config fresh from storage on every call so that user
@@ -770,8 +756,6 @@ export const useChatConversation = (
     isUpdatingYoloMode,
     liteMode,
     isUpdatingLiteMode,
-    planMode,
-    isUpdatingPlanMode,
     goalMode,
     isUpdatingGoalMode,
     worktreeMode,
@@ -808,14 +792,12 @@ export const useChatConversation = (
     handleSendMessageRef,
     performCompactionRef,
     yoloModeRef,
-    planModeRef,
     goalModeRef,
     worktreeModeRef,
     pendingWorktreeIdRef,
     workflowModeRef,
     globalModeDefaultsRef,
     alwaysApprovedToolsRef,
-    planApprovedSessionKeysRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
     pendingHookDecisionRef,
@@ -844,8 +826,6 @@ export const useChatConversation = (
     setIsUpdatingYoloMode,
     setLiteModeState,
     setIsUpdatingLiteMode,
-    setPlanModeState,
-    setIsUpdatingPlanMode,
     setGoalModeState,
     setIsUpdatingGoalMode,
     setWorktreeModeState,
@@ -920,7 +900,6 @@ export const useChatConversation = (
     ctx,
     {
       requestToolAuthorizations: toolAuthApi.requestToolAuthorizations,
-      planApprovedSessionKeysRef: ctx.planApprovedSessionKeysRef,
     },
     true,
     isDetachedWindow,
@@ -1545,10 +1524,6 @@ export const useChatConversation = (
       isUpdatingLiteMode,
       setLiteMode: toolAuthApi.setLiteMode,
       refreshLiteMode: toolAuthApi.refreshLiteMode,
-      planMode,
-      isUpdatingPlanMode,
-      setPlanMode: toolAuthApi.setPlanMode,
-      refreshPlanMode: toolAuthApi.refreshPlanMode,
       goalMode,
       isUpdatingGoalMode,
       setGoalMode: toolAuthApi.setGoalMode,
@@ -1624,8 +1599,6 @@ export const useChatConversation = (
       isUpdatingYoloMode,
       liteMode,
       isUpdatingLiteMode,
-      planMode,
-      isUpdatingPlanMode,
       goalMode,
       isUpdatingGoalMode,
       worktreeMode,
@@ -1674,8 +1647,6 @@ export const useChatConversation = (
       toolAuthApi.refreshYoloMode,
       toolAuthApi.setLiteMode,
       toolAuthApi.refreshLiteMode,
-      toolAuthApi.setPlanMode,
-      toolAuthApi.refreshPlanMode,
       toolAuthApi.setGoalMode,
       toolAuthApi.refreshGoalMode,
       setPendingWorktreeId,

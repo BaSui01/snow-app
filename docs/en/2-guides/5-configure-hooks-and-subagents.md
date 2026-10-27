@@ -327,7 +327,7 @@ accepted/message_queued does not prove completion, consumption or understanding.
 
 requestId identifies one logical operation. Unknown-receipt retries reuse the same ID and business input; settings changes do not reinterpret admitted mode or duplicate dispatch. Use a new ID only for a new operation. Current global/project configuration precedence remains unchanged.
 
-A busy parent admits results at a complete tool boundary. An idle parent may receive an internal round only while the original task is open. Stop, close or new user input never revives an old task. Internal results are not user authorization or Plan approval; UI reads do not receive events or acknowledge wakes. Sync and observed getResult deduplicate by exact event identity. Internal event-based sync waiting remains, but no public wait tool exists.
+A busy parent admits results at a complete tool boundary. An idle parent may receive an internal round only while the original task is open. Stop, close or new user input never revives an old task. Internal results are not user authorization; UI reads do not receive events or acknowledge wakes. Sync and observed getResult deduplicate by exact event identity. Internal event-based sync waiting remains, but no public wait tool exists.
 
 Restart/owner loss marks nonterminal runs interrupted, not user-cancelled, with no replay. Archive retains complete identities without reopening tasks. Delete/rollback retain admission gates, cancellation and owner drain. After filesystem restoration begins, rollback requires explicit recovery/retry rather than a no-effects claim.
 

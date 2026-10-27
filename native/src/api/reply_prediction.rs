@@ -397,7 +397,6 @@ async fn send(
         skip_context: Some(true),
         disable_tools: Some(true),
         internal_recovery_prompt: None,
-        plan_mode: None,
         goal_mode: None,
         worktree_mode: None,
         workflow_mode: None,

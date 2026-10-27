@@ -202,7 +202,6 @@ export const inheritConversationWorktreeBinding = async (
     await window.snow.setConversationModes(
       childConversationId,
       false,
-      false,
       true,
       false,
       null,

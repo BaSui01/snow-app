@@ -168,7 +168,6 @@ export const en: Record<string, string> = {
   "remote.modes.sectionTitle": "Modes",
   "remote.modes.yolo": "YOLO",
   "remote.modes.lite": "Lite",
-  "remote.modes.plan": "Plan",
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "Goal",

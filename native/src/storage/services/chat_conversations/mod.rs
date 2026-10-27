@@ -1071,21 +1071,20 @@ pub fn set_conversation_runtime_config(
         })
 }
 
-/// Per-conversation Plan/Goal Mode overrides. `None` means the conversation
-/// row does not exist and the caller follows the global default. Rows whose
-/// stored flags are NULL (legacy data) are read as `Some(false)` — NULL is
-/// synonymous with 0 (disabled).
+/// Per-conversation Goal/WorkTree/WorkFlow Mode overrides. `None` means the
+/// conversation row does not exist and the caller follows the global default.
+/// Rows whose stored flags are NULL (legacy data) are read as `Some(false)` —
+/// NULL is synonymous with 0 (disabled).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ConversationModes {
-    pub plan_mode: Option<bool>,
     pub goal_mode: Option<bool>,
     pub worktree_mode: Option<bool>,
     pub workflow_mode: Option<bool>,
     pub goal_mode_token_budget: Option<i64>,
 }
 
-/// Read a conversation's Plan/Goal Mode overrides. Returns an all-`None`
-/// record when the conversation row does not exist.
+/// Read a conversation's Goal/WorkTree/WorkFlow Mode overrides. Returns an
+/// all-`None` record when the conversation row does not exist.
 ///
 /// Legacy compatibility: rows created before per-conversation modes existed
 /// (or before the mode columns were backfilled) carry NULL flags. NULL is
@@ -1100,34 +1099,29 @@ pub fn get_conversation_modes(
         .and_then(|connection| {
             connection
                 .query_row(
-                    "SELECT plan_mode, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget
+                    "SELECT goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget
                        FROM chat_conversations
                       WHERE conversation_id = ?1
                       LIMIT 1",
                     params![conversation_id],
                     |row| {
                         Ok(ConversationModes {
-                            plan_mode: Some(
+                            goal_mode: Some(
                                 row.get::<_, Option<i64>>(0)?
                                     .map(|v| v != 0)
                                     .unwrap_or(false),
                             ),
-                            goal_mode: Some(
+                            worktree_mode: Some(
                                 row.get::<_, Option<i64>>(1)?
                                     .map(|v| v != 0)
                                     .unwrap_or(false),
                             ),
-                            worktree_mode: Some(
+                            workflow_mode: Some(
                                 row.get::<_, Option<i64>>(2)?
                                     .map(|v| v != 0)
                                     .unwrap_or(false),
                             ),
-                            workflow_mode: Some(
-                                row.get::<_, Option<i64>>(3)?
-                                    .map(|v| v != 0)
-                                    .unwrap_or(false),
-                            ),
-                            goal_mode_token_budget: row.get::<_, Option<i64>>(4)?,
+                            goal_mode_token_budget: row.get::<_, Option<i64>>(3)?,
                         })
                     },
                 )
@@ -1137,8 +1131,9 @@ pub fn get_conversation_modes(
         .map_err(|error| database::database_error(database_path, "get conversation modes", error))
 }
 
-/// Upsert a conversation's Plan/Goal Mode overrides. Only the columns whose
-/// value is `Some` are updated; `None` leaves the stored override untouched.
+/// Upsert a conversation's Goal/WorkTree/WorkFlow Mode overrides. Only the
+/// columns whose value is `Some` are updated; `None` leaves the stored
+/// override untouched.
 /// The row is created on first write (all other columns fall back to their
 /// defaults) so a mode can be recorded even before the first exchange.
 ///
@@ -1149,7 +1144,6 @@ pub fn get_conversation_modes(
 pub fn set_conversation_modes(
     database_path: &Path,
     conversation_id: &str,
-    plan_mode: Option<bool>,
     goal_mode: Option<bool>,
     worktree_mode: Option<bool>,
     workflow_mode: Option<bool>,
@@ -1160,14 +1154,13 @@ pub fn set_conversation_modes(
             // 已删除 / 归档的会话（存在墓碑）不再按 upsert 重建会话行。
             connection.execute(
                 "INSERT INTO chat_conversations (
-                   id, conversation_id, plan_mode, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget
+                   id, conversation_id, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget
                  )
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6
                   WHERE NOT EXISTS (
                     SELECT 1 FROM deleted_conversations WHERE conversation_id = ?2
                   )
                  ON CONFLICT(conversation_id) DO UPDATE SET
-                   plan_mode = COALESCE(excluded.plan_mode, chat_conversations.plan_mode),
                    goal_mode = COALESCE(excluded.goal_mode, chat_conversations.goal_mode),
                    worktree_mode = COALESCE(excluded.worktree_mode, chat_conversations.worktree_mode),
                    workflow_mode = COALESCE(excluded.workflow_mode, chat_conversations.workflow_mode),
@@ -1175,7 +1168,6 @@ pub fn set_conversation_modes(
                 params![
                     database::create_snowflake_id(),
                     conversation_id,
-                    plan_mode.map(|v| if v { 1 } else { 0 }),
                     goal_mode.map(|v| if v { 1 } else { 0 }),
                     worktree_mode.map(|v| if v { 1 } else { 0 }),
                     workflow_mode.map(|v| if v { 1 } else { 0 }),

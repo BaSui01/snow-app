@@ -1,6 +1,6 @@
 //! Shared helpers for system prompt builders.
 //!
-//! Every prompt template (normal / plan mode / goal mode) reuses the same
+//! Every prompt template (normal / goal mode) reuses the same
 //! ROLE.md resolution pipeline and the same dynamic-context sections
 //! (current date, working directory, platform command guidance). Keeping them
 //! here avoids duplicating the logic across prompt variants — future prompts

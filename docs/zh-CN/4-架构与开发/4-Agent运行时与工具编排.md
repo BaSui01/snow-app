@@ -123,7 +123,7 @@ sequenceDiagram
 
 适配器共同负责 provider payload、规范化消息转换、SSE 或等价流解析、文本/thinking/tool calls/usage 累积及 `store_chat_exchange`。工具定义分别由 `tools_as_openai_chat_json`、`tools_as_openai_responses_json`、`tools_as_anthropic_json`、`tools_as_gemini_json`、`tools_as_interactions_json` 生成；工具历史跨协议转换集中在 `api/conversation/tool_messages.rs`。各协议流中断时均由 `api/retry.rs` 提供统一的指数退避重试与 Partial 截断保留保护。
 
-API profile 解析优先考虑请求显式 profile、会话绑定 profile，再回退全局 active profile。子代理始终使用其配置 profile，并强制关闭主会话专属的 Plan/Goal Mode。
+API profile 解析优先考虑请求显式 profile、会话绑定 profile，再回退全局 active profile。子代理始终使用其配置 profile，并强制关闭主会话专属的 Goal Mode。
 
 ### 2.1 动态上下文组装与系统提示词注入流水线
 
@@ -132,7 +132,7 @@ API profile 解析优先考虑请求显式 profile、会话绑定 profile，再�
 ```mermaid
 flowchart TD
     Req["ConversationContextRequest 调度进入"] --> ModeCheck{"当前会话模式判定"}
-    ModeCheck -->|Plan / Goal / Worktree / Workflow| ModePrompt["模式专属系统提示词模板<br/>(native/src/prompt/)"]
+    ModeCheck -->|Goal / Worktree / Workflow| ModePrompt["模式专属系统提示词模板<br/>(native/src/prompt/)"]
     ModeCheck -->|普通对话| BasePrompt["基础系统提示词 + 用户个性化 ~/.snow/ROLE.md"]
 
     ModePrompt --> InjectChapters["动态工具域指引章节按需注入"]
@@ -470,7 +470,7 @@ flowchart TD
 1. 解析全局 scope 与项目 scope。
 2. 仅当项目存在、启用 codebase 且已有向量 chunk 时暴露 codebase 工具。
 3. 仅当至少一个 imagegen channel 启用时暴露 imagegen。
-4. 按固定顺序读取 14 个内置服务；Plan approval 只在 Plan Mode 请求中出现。
+4. 按固定顺序读取 14 个内置服务。
 5. 应用全局与项目级 server/tool enable 状态（全局禁用优先）；terminal 默认禁用，须项目显式开启。
 6. 动态加入 Skills 工具。
 7. 并行发现外部 MCP 的 stdio/HTTP 工具；单个服务失败只记录错误，不使全部发现失败。
@@ -483,7 +483,7 @@ flowchart TD
     C --> D{至少一个 imagegen channel 启用?}
     D -- 是 --> E[暴露 imagegen]
     D -- 否 --> F
-    E --> F[按固定顺序读取 14 个内置服务<br/>Plan approval 只在 Plan Mode 请求中出现]
+    E --> F[按固定顺序读取 14 个内置服务]
     F --> G[应用全局与项目级 enable 状态<br/>全局禁用优先，terminal 默认禁用]
     G --> H[动态加入 Skills 工具]
     H --> I[并行发现外部 MCP stdio/HTTP 工具<br/>单服务失败只记录错误]
@@ -495,7 +495,7 @@ flowchart TD
 
 - **`## Language Servers`**：五个 provider 先收集最终 `allowed_tools`，再让 `ConversationContextRequest` 与 payload 序列化复用同一列表。`native/src/mcp/servers/lsp/prompt_context.rs::ToolSnapshot` 按全局/项目开关、能力与子代理白名单过滤后的实际名称逐项生成章节；不再用四个代表工具判断整个域，不独立重新发现工具。grep 描述也在最终列表形成后生成，结果提示与调用阶段 scope/allowed-tools 求交。可用不代表 running，更不代表索引 ready；提示词不保证预热完成、瞬时响应或诊断等价于构建通过。
 - **`## Image Generation`**（imagegen 域，`native/src/mcp/servers/imagegen/mod.rs` 的 `build_system_prompt_section`）：配置了至少一个可用生图渠道且域 scope 允许时注入。列出可用渠道（id / 名称 / 协议，非敏感摘要），并强制多图 MUST 并行多次调用 `imagegen-generate`（一次一图，legacy 的 `prompts` / `n>1` 不是多图路径）；连续 ≥2 个并行调用由 UI 自动合并为 `ImageGenGallery` 统一网格。
-- **调查阶段工具清单**：`native/src/prompt/tool_hints.rs` 读取同一个请求级快照，替换 Plan / Goal / WorkFlow 模板的 `__ANALYSIS_TOOLS_LINES__`。LSP、codebase、grep、filesystem-read 都逐项判断；禁用底行不出现，工具为空时清单也为空。未覆盖语言/扩展名/操作时没有额外静态分析服务，改用可见的检索/读取工具。
+- **调查阶段工具清单**：`native/src/prompt/tool_hints.rs` 读取同一个请求级快照，替换 Goal / WorkFlow 模板的 `__ANALYSIS_TOOLS_LINES__`。LSP、codebase、grep、filesystem-read 都逐项判断；禁用底行不出现，工具为空时清单也为空。未覆盖语言/扩展名/操作时没有额外静态分析服务，改用可见的检索/读取工具。
 - LSP 章节追加在提示词末尾，稳定顺序避免不必要的前缀变化；工具收集失败时沿用请求的无工具结果，不重新查询放大权限。主请求和子代理使用同一套纯路由生成器，不新增跨会话可见性缓存。
 
 LSP 文档同步与结果可信度是另一层边界：`ensure_open` 比较实际磁盘全文并同步 didOpen/didChange；诊断不再读写持久结果缓存（不删除旧数据）。工作区搜索可用 `workspaceRoot` 显式指定绝对本地目录，完整候选与 `partial_symbol_search` 等元数据约束自动寻址；UI 的 partial/warnings 与 running 徽章都不应被解释为已完整验证。详见 [LSP 当前行为与待验收矩阵](7-LSP外部语言服务器接入设计.md)。
@@ -510,20 +510,18 @@ LSP 文档同步与结果可信度是另一层边界：`ensure_open` 比较实�
 
 ## 6. 工具调用与 checkpoint
 
-`call_mcp_tool` 依次执行：清洗污染工具名、校验 Plan 特殊工具、阻止未批准 Plan 的写入、校验全局与项目 enable 状态、校验子代理白名单、解析本地/SSH workspace、把本地相对路径落到项目根、补充工具前 checkpoint、按工具类型路由、隐私掩码输出、更新工具后 checkpoint。
+`call_mcp_tool` 依次执行：清洗污染工具名、校验全局与项目 enable 状态、校验子代理白名单、解析本地/SSH workspace、把本地相对路径落到项目根、补充工具前 checkpoint、按工具类型路由、隐私掩码输出、更新工具后 checkpoint。
 
 ```mermaid
 flowchart TD
-    A[清洗污染工具名] --> B[校验 Plan 特殊工具]
-    B --> C[阻止未批准 Plan 的写入]
-    C --> D[校验全局与项目 enable 状态]
-    D --> E[校验子代理白名单]
-    E --> F[解析本地/SSH workspace]
-    F --> G[本地相对路径落到项目根]
-    G --> H[补充工具前 checkpoint]
-    H --> I[按工具类型路由]
-    I --> J[隐私掩码输出]
-    J --> K[更新工具后 checkpoint]
+    A[清洗污染工具名] --> B[校验全局与项目 enable 状态]
+    B --> C[校验子代理白名单]
+    C --> D[解析本地/SSH workspace]
+    D --> E[本地相对路径落到项目根]
+    E --> F[补充工具前 checkpoint]
+    F --> G[按工具类型路由]
+    G --> H[隐私掩码输出]
+    H --> I[更新工具后 checkpoint]
 ```
 
 路由包含 bash、grep、remote filesystem、browser、user interaction、app control、terminal、imagegen、external MCP 和普通 builtin。可取消的远程执行通过 `tool_execution` chunk 返回 execution ID。checkpoint capture 使主代理与子代理的文件修改可被统一预览和恢复。
@@ -539,7 +537,7 @@ Renderer `useToolAuthorization.ts` 组合以下策略：
 - `toolConfirmation` Hook 可在普通用户确认之前放行或拒绝。
 - 待确认请求使用 Promise 挂起，直到用户选择。
 
-Rust 侧是第二道边界：`bash.rs` 对敏感命令验证短期单次 authorization token，`call_mcp_tool` 强制 Plan Mode 和子代理 allowed-tools。前端便捷策略不能替代后端强制检查。
+Rust 侧是第二道边界：`bash.rs` 对敏感命令验证短期单次 authorization token，`call_mcp_tool` 强制子代理 allowed-tools。前端便捷策略不能替代后端强制检查。
 
 ```mermaid
 flowchart TD
@@ -557,7 +555,7 @@ flowchart TD
     H -- 否 --> I[Promise 挂起等待用户确认]
     I -- 批准 --> G
     I -- 拒绝 --> K
-    G --> L[Rust 第二道边界<br/>Plan Mode 写入拦截 + 子代理白名单]
+    G --> L[Rust 第二道边界<br/>子代理白名单]
 ```
 
 ## 8. Hooks
@@ -597,9 +595,9 @@ sequenceDiagram
 
 主会话构建系统提示词时，会从 `sub_agent_configs` 查询并**动态注入可用子代理清单**（`agentId`、名称、用途描述）与选择规则——主 Agent 据此挑选最匹配的 `agentId`，而不是默认使用内置 `agent_general`。清单解析与激活一致：**当前项目（`directory_id`）的项目级子代理优先**，同 `agentId` 覆盖全局；其他项目的子代理不注入。
 
-子代理继承父会话 checkpoint IDs，使文件改动纳入父会话回滚范围；Rust 同时限制 allowed-tools，并在父 Plan 尚未批准时阻止写入。子代理不能调用或授予 Plan approval。完成后会话标记终态（`completed`、`failed`、`cancelled` 或 `interrupted`），执行 `onSubAgentComplete`，随后变为只读；子会话自身的待处理队列保留在该子会话，不转交父会话。父 abort 会传播到活动子代理，应用启动把遗留非终态运行置为 `interrupted`（`OWNER_LOST`），不自动重放。
+子代理继承父会话 checkpoint IDs，使文件改动纳入父会话回滚范围；Rust 同时限制 allowed-tools。完成后会话标记终态（`completed`、`failed`、`cancelled` 或 `interrupted`），执行 `onSubAgentComplete`，随后变为只读；子会话自身的待处理队列保留在该子会话，不转交父会话。父 abort 会传播到活动子代理，应用启动把遗留非终态运行置为 `interrupted`（`OWNER_LOST`），不自动重放。
 
-激活与主代理并行执行（渲染进程预启动）。同步模式在结束时以结构化 JSON 作为工具结果回传主代理，主代理不做自动重试，由模型根据结果决定下一步：正常完成返回 `{success: true, conversationId, agentName, summary}`（`onSubAgentComplete` 可 pass 追加上下文、warn 追加警告或 abort 替换 summary）；API 流失败时把失败内容作为最终输出并标记消息为 error；异常时返回 `{success: false, error}` 并持久化 `failed`；用户中断返回 "Sub-agent interrupted by user"；父会话 Plan 未批准时立即停止并把控制权交还主循环。子代理没有独立的全局超时（只有单工具层超时）；停止主代理会通过 `childSubAgentIds` 递归级联取消全部后代子代理（中止流、拒绝挂起授权、杀掉 bash 子进程）。异步模式不经过该工具结果，而由 §9.4 的事件投递唤醒父会话。
+激活与主代理并行执行（渲染进程预启动）。同步模式在结束时以结构化 JSON 作为工具结果回传主代理，主代理不做自动重试，由模型根据结果决定下一步：正常完成返回 `{success: true, conversationId, agentName, summary}`（`onSubAgentComplete` 可 pass 追加上下文、warn 追加警告或 abort 替换 summary）；API 流失败时把失败内容作为最终输出并标记消息为 error；异常时返回 `{success: false, error}` 并持久化 `failed`；用户中断返回 "Sub-agent interrupted by user"。子代理没有独立的全局超时（只有单工具层超时）；停止主代理会通过 `childSubAgentIds` 递归级联取消全部后代子代理（中止流、拒绝挂起授权、杀掉 bash 子进程）。异步模式不经过该工具结果，而由 §9.4 的事件投递唤醒父会话。
 
 ### 9.1 运行模型与状态机
 
@@ -669,12 +667,10 @@ flowchart TD
     F -->|API 流失败| H[失败内容作为最终输出，消息标记 error]
     F -->|异常| I[持久化 failed 并广播失败事件]
     F -->|用户中断| J[返回 Sub-agent interrupted by user]
-    F -->|父会话 Plan 未批准| K[立即停止，交还控制权]
     G --> L[结构化 JSON 工具结果回传主代理]
     H --> L
     I --> L
     J --> L
-    K --> L
     L --> M[主代理模型决策下一步，不自动重试]
 ```
 
@@ -835,7 +831,6 @@ sequenceDiagram
 - chunk 必须按 `streamId` 过滤；完成或 abort 后移除监听。
 - 同一会话只接受当前 `runId` 的更新，旧 Promise 不得覆盖新运行。
 - 子代理权限不得超过显式 allowed-tools 和项目启用范围。
-- Plan 未批准时，Renderer UX 与 Rust 写入拦截必须同时成立。
 - 模型交换先落库，工具结果在下一轮作为结构化 tool-role 历史进入。
 - 回滚前必须等待仍可能写库的异步任务收敛。
 - 工作树执行域一致性：处于工作树模式（WorkTree Mode）时，会话的物理执行根目录（`executionWorkspaceRoot`）必须在请求契约中自包含传递，并与底层 Checkpoint 记录目录（`manifest.work_dir`）及前端变更面板保持 100% 对称；系统提示词中的工作目录必须等于真实物理根目录。

@@ -667,7 +667,7 @@ export const SubAgentToolCall = ({
               </button>
               <button
                 type="button"
-                className="tool-call-sub-agent-jump active"
+                className="tool-call-sub-agent-jump is-primary"
                 onClick={() =>
                   resolveSubAgentFailureDecision(subConversationId, "retry")
                 }

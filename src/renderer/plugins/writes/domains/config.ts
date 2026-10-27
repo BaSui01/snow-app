@@ -851,7 +851,6 @@ export const CONFIG_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
     ),
     invoke: async ({ params }) => {
       const conversationId = requireString(params, "conversationId");
-      const planMode = optionalBoolean(params, "planMode") ?? null;
       const goalMode = optionalBoolean(params, "goalMode") ?? null;
       const worktreeMode = optionalBoolean(params, "worktreeMode") ?? null;
       const workflowMode = optionalBoolean(params, "workflowMode") ?? null;
@@ -860,7 +859,6 @@ export const CONFIG_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       await callSnow(
         "setConversationModes",
         conversationId,
-        planMode,
         goalMode,
         worktreeMode,
         workflowMode,
@@ -868,7 +866,6 @@ export const CONFIG_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
       );
       return {
         conversationId,
-        planMode,
         goalMode,
         worktreeMode,
         workflowMode,

@@ -1,9 +1,8 @@
 /**
- * ops 工具族卡片：配置 / 应用控制（含计划审批）/ 数据库（外部 MCP）与
+ * ops 工具族卡片：配置 / 应用控制 / 数据库（外部 MCP）与
  * user-interaction 提问的移动端只读复盘视图。
  *
  * 归口工具：
- * - 精确名 `app-control-requestApproval` → 审批块（方案内容 + 批准/拒绝结论 + 理由）；
  * - 精确名 `user-interaction-askUserQuestion` → 提问卡片（问题 + 选项勾选态 + 作答结论）；
  * - 前缀 `config-` / `app-control-` / `dbx-` / `dbx_` → 对应工具族卡片：
  *   config-* 头部为「操作 · scope/key = 值」摘要，正文含参数、变更结果与影响范围；
@@ -19,8 +18,8 @@
  * - 数据一律 createElement + textContent，只有静态图标标记走 innerHTML；
  * - 远控桥全量下发 arguments / result（不截断）；旧版快照可能是半截 JSON，
  *   解析全部走容错路径：JSON 不可解析 → 原文回退，字段缺失 → 该行不渲染；
- * - 提问 / 审批的提交动作在手机端独立交互区（interactions.ts）完成，本模块只做
- *   时间线内的只读复盘（等待中 / 已回答 / 已取消 / 已批准或拒绝）；
+ * - 提问的提交动作在手机端独立交互区（interactions.ts）完成，本模块只做
+ *   时间线内的只读复盘（等待中 / 已回答 / 已取消）；
  * - 参数与结果都解析不出、也没有提问快照时返回 null，交由 generic 兜底卡展示
  *   参数原文与流式输出（避免出现空壳的模块卡）；
  * - 结果表（dbx）优先结构化 rows，其次 Markdown 表格，都没有才回退原文。
@@ -686,81 +685,6 @@ const renderAppTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
   });
 };
 
-// ── 计划审批（app-control-requestApproval） ─────────────────────────────
-
-const renderPlanApproval = (tool: SnowRemoteToolCall): HTMLElement | null => {
-  const args = parseJsonRecord(tool.arguments);
-  const result = parseJsonRecord(tool.result);
-  if (isOpaqueTool(tool, args, result)) return null;
-  const snapshot = tool.userQuestion;
-
-  /* 审批内容：方案摘要优先，其次快照问题（桌面端沿用提问通道下发），再退正文。 */
-  const summary =
-    (args ? asString(args.planSummary) : undefined) ??
-    (snapshot?.question?.trim() ? snapshot.question : undefined) ??
-    (args ? asString(args.content) : undefined) ??
-    "";
-  const hasVerdict = result !== null && typeof result.approved === "boolean";
-  const approved = hasVerdict && result?.approved === true;
-  const declined =
-    hasVerdict && result?.approved === false && result?.cancelled !== true;
-  const cancelled = result?.cancelled === true;
-  const reason = result
-    ? (asString(result.reason) ?? asString(result.message))
-    : undefined;
-  /* 已作答但结果未回传时，用快照里的选择说明决策（批准 / 继续计划）。 */
-  const choice =
-    !hasVerdict && snapshot?.status === "answered"
-      ? (snapshot.selectedOptions ?? []).filter((item) => item.trim() !== "")
-      : [];
-  const error = errorTextOf(tool, result);
-
-  const body = document.createDocumentFragment();
-  if (summary)
-    body.append(tcSection(tr("plan.summary"), tcPre(readable(summary))));
-
-  if (approved)
-    body.append(statusRow("circle-check", tr("plan.approved"), "ok"));
-  else if (declined)
-    body.append(statusRow("circle-x", tr("plan.declined"), "warn"));
-  else if (cancelled)
-    body.append(statusRow("x", tr("plan.cancelled"), "muted"));
-  else if (!result && !error) {
-    body.append(statusRow("clock", tr("plan.waiting"), "muted"));
-    body.append(
-      noteRow(
-        "note",
-        "user-cog",
-        snapshot ? tr("plan.waitingHint") : tr("plan.preparing"),
-      ),
-    );
-  }
-  if (choice.length) body.append(tcKv(tr("plan.choice"), choice.join("、")));
-  if (reason) body.append(tcKv(tr("plan.reason"), reason));
-
-  if (error) body.append(tcErrorRow(readable(error)));
-  if (result && !hasVerdict && !error) {
-    const fallback = rawFallback(tool.result);
-    if (fallback) body.append(fallback);
-  }
-  const meta: HTMLElement[] = [];
-  if (approved) meta.push(tcBadge(tr("plan.approved"), "ok"));
-  else if (declined) meta.push(tcBadge(tr("plan.declined"), "warn"));
-  else if (cancelled) meta.push(tcBadge(tr("plan.cancelled"), "muted"));
-  else if (error) meta.push(tcBadge(tr("plan.failed"), "err"));
-
-  return createToolNode({
-    tool,
-    status: resolveStatus(tool),
-    badge: tr("plan.name"),
-    display: summary ? clip(summary) : argsSummary(tool.arguments),
-    meta,
-    className: "tc-ops-plan",
-    bodyClass: "tc-ops",
-    body,
-  });
-};
-
 // ── 用户提问（user-interaction-askUserQuestion） ────────────────────────
 
 /** 提问终态（与桌面 shared/userQuestionView 的枚举一致）。 */
@@ -1390,13 +1314,12 @@ const renderDbxTool = (tool: SnowRemoteToolCall): HTMLElement | null => {
 // ── 模块装配 ────────────────────────────────────────────────────────────
 
 /**
- * ops 族注册：精确名（计划审批 / 用户提问）+ 前缀（config / app-control / dbx）。
+ * ops 族注册：精确名（用户提问）+ 前缀（config / app-control / dbx）。
  * 精确名优先于前缀，由 tools/index.ts 派发时保证。
  * 待办与记忆族由 tools/agents.ts 承担（本模块不再注册，避免同名覆盖）。
  */
 export const opsModule: ToolModule = {
   renderers: {
-    "app-control-requestApproval": renderPlanApproval,
     "user-interaction-askUserQuestion": renderAskTool,
   },
   prefixes: [

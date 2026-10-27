@@ -15,8 +15,8 @@ use super::common::{
 /// `active_role` is the resolved ROLE.md rules (see `common::read_active_role`),
 /// always inlined into the template (the override switch is normal-mode only).
 /// `analysis_tools_lines` is the dynamically built investigation-phase tool
-/// list - only tools actually callable in the current project (same policy as
-/// the Plan Mode list; see `prompt::tool_hints`). It replaces the
+/// list - only tools actually callable in the current project (see
+/// `prompt::tool_hints`). It replaces the
 /// `ANALYSIS_TOOLS_MARKER` placeholder in the template.
 pub(crate) fn build_goal_mode_system_prompt(
     working_directory: &str,

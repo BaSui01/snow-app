@@ -148,6 +148,7 @@ export const registerSubAgentRunControl = (
 };
 export const unregisterSubAgentRunControl = (ownerId: string): void => {
   ownerConversations.delete(ownerId);
+  if (abandonedOwners.delete(ownerId)) emit();
 };
 const uiKey = (ownerId: string): string =>
   ownerConversations.get(ownerId) ?? ownerId;
@@ -156,6 +157,7 @@ const ownerKey = (key: string): string =>
     ([, conversationId]) => conversationId === key,
   )?.[0] ?? key;
 let pendingDecisionSnapshot: ReadonlySet<string> = new Set();
+let abandonedSnapshot: ReadonlySet<string> = new Set();
 
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
@@ -164,6 +166,9 @@ const subscribe = (listener: () => void): (() => void) => {
 const emit = (): void => {
   pendingDecisionSnapshot = new Set(
     Array.from(decisionResolvers.keys()).flatMap((key) => [key, uiKey(key)]),
+  );
+  abandonedSnapshot = new Set(
+    Array.from(abandonedOwners).flatMap((key) => [key, uiKey(key)]),
   );
   listeners.forEach((listener) => listener());
 };
@@ -178,6 +183,8 @@ const decisionResolvers = new Map<
   string,
   (decision: SubAgentFailureDecision) => void
 >();
+/** 用户已选择放弃、运行尚未收尾的 owner：期间输入区保持只读，收尾注销时清除。 */
+const abandonedOwners = new Set<string>();
 
 /** 挂起直到用户选择重试或放弃。 */
 export const awaitSubAgentFailureDecision = (
@@ -189,22 +196,28 @@ export const awaitSubAgentFailureDecision = (
     emit();
   });
 
-export const resolveSubAgentFailureDecision = (
+const settleSubAgentFailureDecision = (
   key: string,
   decision: SubAgentFailureDecision,
+  userChoice: boolean,
 ): void => {
   key = ownerKey(key);
   const resolve = decisionResolvers.get(key);
   if (!resolve) return;
   decisionResolvers.delete(key);
+  if (userChoice && decision === "abandon") abandonedOwners.add(key);
   emit();
   resolve(decision);
 };
 
+export const resolveSubAgentFailureDecision = (
+  key: string,
+  decision: SubAgentFailureDecision,
+): void => settleSubAgentFailureDecision(key, decision, true);
+
 /** 中止时唤醒该子代理的排队与待决策等待。 */
 export const cancelSubAgentRunWaits = (key: string): void => {
-  key = ownerKey(key);
-  resolveSubAgentFailureDecision(key, "abandon");
+  settleSubAgentFailureDecision(key, "abandon", false);
 };
 
 export const useSubAgentFailurePending = (key: string | undefined): boolean => {
@@ -212,5 +225,13 @@ export const useSubAgentFailurePending = (key: string | undefined): boolean => {
     subscribe,
     () => pendingDecisionSnapshot,
   );
+  return Boolean(key && snapshot.has(key));
+};
+
+/** 已放弃但运行仍在收尾（尚未落终态）。 */
+export const useSubAgentFailureAbandoned = (
+  key: string | undefined,
+): boolean => {
+  const snapshot = useSyncExternalStore(subscribe, () => abandonedSnapshot);
   return Boolean(key && snapshot.has(key));
 };

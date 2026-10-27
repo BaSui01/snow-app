@@ -132,7 +132,6 @@ import {
 } from "./subAgentRunRegistry";
 import type { SubAgentRunPersistence } from "./subAgentRunRegistry";
 import {
-  PARENT_PLAN_APPROVAL_REQUIRED,
   accumulateConversationRunStats,
   accumulateRunTokenUsage,
   createStreamChunkHandler,
@@ -188,7 +187,6 @@ export type SubAgentActivationDeps = {
   parentThinkingStrength?: string | null;
   /** Effective Fast Mode captured by the parent run; an explicit tier is valid. */
   parentResponsesFastMode?: string | null;
-  planApprovedSessionKeysRef: { current: Set<string> };
   runPersistence?: {
     command(command: SubAgentRunCommand): Promise<SubAgentRunCommandResult>;
     onCommitted(run: SubAgentRunRecord): void;
@@ -237,12 +235,10 @@ type SubAgentRunLoopDeps = {
   parentCheckpointIdsRef: CheckpointIdsRef;
   subCheckpointWorkDir: string | undefined;
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"];
-  planApprovedSessionKeysRef: { current: Set<string> };
   isSubCancelled: () => boolean;
   slotOwner: string;
   taskHistory: ReturnType<typeof currentAgentTask>;
   worktreeMode: boolean;
-  parentPlanMode: boolean;
   withWaiting: <T>(
     reason: NonNullable<SubAgentRunRecord["waitingReason"]>,
     action: () => Promise<T>,
@@ -266,12 +262,10 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
     parentCheckpointIdsRef,
     subCheckpointWorkDir,
     requestToolAuthorizations,
-    planApprovedSessionKeysRef,
     isSubCancelled,
     slotOwner,
     taskHistory,
     worktreeMode,
-    parentPlanMode,
     withWaiting,
     takeRunMessages,
     retainedPending,
@@ -326,14 +320,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       role: "user" as const,
       content,
     }));
-    // Only newly consumed pending input changes the approved constraints;
-    // the original delegated task never passes through this helper.
-    if (
-      texts.length &&
-      ctx.sessionsRefData.current.get(parentConversationId)?.planMode
-    ) {
-      planApprovedSessionKeysRef.current.delete(parentConversationId);
-    }
     const ref = ctx.sessionsRefData.current.get(subConvId);
     if (ref) {
       ref.activeTaskMessages = [...(ref.activeTaskMessages ?? []), ...messages];
@@ -529,7 +515,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         subAgentSystemPrompt: subAgentSystemPrompt || undefined,
         // Sub-agents always use their own normal-mode prompt and tool set;
         // WorkTree Mode only carries the parent's persisted workspace binding.
-        planMode: false,
         goalMode: false,
         worktreeMode,
       },
@@ -934,7 +919,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       callId: string;
       result: string;
     }[] = [];
-    let parentPlanApprovalRequired = false;
     for (
       let subToolIndex = 0;
       subToolIndex < dispatchToolCalls.length;
@@ -1166,13 +1150,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
               },
               subToolCall.interactionId,
               allowedTools,
-              // These booleans carry only the parent conversation's Rust
-              // write-gate state; they do not enable Plan Mode for the sub-agent.
-              // Read from the parent session's own ref so a background parent
-              // keeps its gate even after the user switches conversations.
-              ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
-                parentPlanMode,
-              planApprovedSessionKeysRef.current.has(parentConversationId),
               // 会话溯源：子代理内 memory-save 溯源到子代理会话（删除主会话
               // 时级联子会话一并清理）。
               subConvId,
@@ -1213,9 +1190,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
             decision: "stop",
             elapsedMs: Math.max(0, Date.now() - toolStartedAt),
           });
-          if (errorMessage.includes(PARENT_PLAN_APPROVAL_REQUIRED)) {
-            parentPlanApprovalRequired = true;
-          }
         }
         subResult = JSON.stringify({ success: false, error: errorMessage });
       }
@@ -1325,7 +1299,7 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         result: subModelResult,
       });
 
-      if (stopped || parentPlanApprovalRequired || isSubCancelled()) {
+      if (stopped || isSubCancelled()) {
         break;
       }
     }
@@ -1367,22 +1341,6 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
       return "Sub-agent interrupted by user";
     }
     // Permission and fatal gates take precedence over the next model round.
-    if (parentPlanApprovalRequired) {
-      stopped = true;
-      onExecutionError({
-        category: "permission",
-        code: "PERMISSION_DENIED",
-        message: PARENT_PLAN_APPROVAL_REQUIRED,
-        retryable: false,
-      });
-      logSubAgentDiagnostic("fatal", {
-        ...diagnosticScope,
-        reasonCode: "PERMISSION_DENIED",
-        decision: "stop",
-      });
-      return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
-    }
-
     if (subAllToolsRejected && !subHasContinuableRejection) {
       stopped = true;
       onExecutionError({
@@ -1613,7 +1571,6 @@ type PreparedRun = {
   prompt: string;
   checkpointIds: string[];
   taskHistory: ReturnType<typeof currentAgentTask>;
-  parentPlanMode: boolean;
   options: RunOptions;
 };
 
@@ -2395,7 +2352,6 @@ const dispatchPreparedSubAgentRun = async (
           ref.subAgentTerminated = false;
           ref.isSending = true;
           ref.isAbortRequested = state.cancelled;
-          ref.planMode = false;
           ref.goalMode = false;
           ref.worktreeMode = snapshot.worktreeMode;
           demotePendingSteering(ctx, actualConversationId);
@@ -2462,12 +2418,10 @@ const dispatchPreparedSubAgentRun = async (
                 parentCheckpointIdsRef: { current: prepared.checkpointIds },
                 subCheckpointWorkDir: snapshot.workspacePath,
                 requestToolAuthorizations: deps.requestToolAuthorizations,
-                planApprovedSessionKeysRef: deps.planApprovedSessionKeysRef,
                 isSubCancelled: cancelled,
                 slotOwner: ownerId,
                 taskHistory,
                 worktreeMode: snapshot.worktreeMode,
-                parentPlanMode: prepared.parentPlanMode,
                 withWaiting,
                 retainedPending,
                 runPersistence,
@@ -2665,10 +2619,6 @@ const createSubAgentResume =
       checkpointIds: checkpointIds ?? [],
       options,
       taskHistory,
-      parentPlanMode:
-        deps.ctx.sessionsRefData.current.get(
-          prepared.scope.parentConversationId,
-        )?.planMode ?? false,
     };
     const hook = await executeSubAgentHook(
       deps.ctx,
@@ -2702,7 +2652,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     const taskHistory = currentAgentTask(parentConversationId);
     const parent = deps.ctx.sessionsRefData.current.get(parentConversationId);
     const worktreeMode = parent?.worktreeMode ?? false;
-    const parentPlanMode = parent?.planMode ?? false;
     try {
       const args = parseToolArgs(argsJson);
       // The model chooses per call; the user setting is only the fallback.
@@ -2834,7 +2783,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             prompt,
             checkpointIds: [...activeCheckpointIds],
             taskHistory,
-            parentPlanMode,
             options,
           };
           const hook = await executeSubAgentHook(
@@ -2931,7 +2879,6 @@ const restoreSubAgentResumer = async (
     prompt: "",
     checkpointIds: [...checkpointIds],
     taskHistory: undefined,
-    parentPlanMode: false,
     options: { executionMode: "sync" },
   });
 };
@@ -2968,9 +2915,7 @@ export const createSubAgentMainToolExecutor = (
   ctx: ConversationContextValue,
   deps: Pick<
     SubAgentActivationDeps,
-    | "requestToolAuthorizations"
-    | "planApprovedSessionKeysRef"
-    | "runPersistence"
+    "requestToolAuthorizations" | "runPersistence"
   > & {
     parentThinkingStrength?: string | null;
     parentResponsesFastMode?: string | null;

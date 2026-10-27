@@ -11,7 +11,6 @@ export const SUB_AGENT_RESERVED_TOOL_NAMES = new Set<string>([
   "sub-agents-listSubAgents",
   "sub-agents-listTeammates",
   "sub-agents-wait",
-  "app-control-requestApproval",
   "app-control-conversation",
   "workflow-workflow-generate",
   "workflow-workflow-resume",

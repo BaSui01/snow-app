@@ -176,7 +176,7 @@ sequenceDiagram
     L->>L: run onStop and refresh UI state
 ```
 
-Checkpoints are supplemented around tool calls. Plan Mode, sub-agent allowed-tools, and sensitive bash authorization also have Rust-side enforcement. Parallel image generation and parallel sub-agents use dedicated orchestration and must not be modeled as universally serial tool execution.
+Checkpoints are supplemented around tool calls. Sub-agent allowed-tools and sensitive bash authorization also have Rust-side enforcement. Parallel image generation and parallel sub-agents use dedicated orchestration and must not be modeled as universally serial tool execution.
 
 ## 8. Key Design Decisions and Source Anchors
 

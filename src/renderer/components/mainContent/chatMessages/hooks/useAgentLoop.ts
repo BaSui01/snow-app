@@ -171,7 +171,6 @@ const persistConversationSelection = async (
       }
       await window.snow.setConversationModes(
         conversationId,
-        sessionRef.planMode,
         sessionRef.goalMode,
         sessionRef.worktreeMode,
         sessionRef.workflowMode,
@@ -207,14 +206,6 @@ export type UseAgentLoopParams = {
 export const useAgentLoop = (params: UseAgentLoopParams) => {
   const { ctx, requestToolAuthorizations } = params;
 
-  // Plan approval is isolated per main-conversation session so parallel chats
-  // cannot borrow each other's approval. The key set lives on ctx
-  // (planApprovedSessionKeysRef) so it is cleared only when Plan Mode is
-  // genuinely turned off (user toggle / Goal Mode mutual exclusion / new
-  // chat). Switching conversations restores the target session's mode via
-  // setPlanModeState directly and must NOT clear it — otherwise an approved
-  // plan is lost when the user navigates away and back.
-  const planApprovedSessionKeysRef = ctx.planApprovedSessionKeysRef;
   const { t } = useI18n();
 
   const handleSendMessage = useCallback(
@@ -367,11 +358,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         targetDirectoryId ??
         pendingDirId ??
         ctx.directoryId;
-
-      // Reset only this session's approval for the new user task. Other
-      // conversations may still be executing their independently approved plan.
-      if (!internalSubAgentInput)
-        planApprovedSessionKeysRef.current.delete(sessionKey);
 
       // Sending a new message cancels any prior "new chat" intent — the
       // user is now interacting with this session, so the UI should follow
@@ -630,9 +616,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ...(steeringRef.activeTaskMessages ?? []),
             ...messages,
           ];
-          // New constraints cannot inherit authorization for a broader changed plan.
-          if (steeringRef.planMode)
-            planApprovedSessionKeysRef.current.delete(key);
         }
         ctx.updateSessionMessages(key, (currentMessages) => [
           ...currentMessages,
@@ -674,7 +657,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         parentModel: capturedOptions.model,
         parentThinkingStrength: capturedOptions.thinkingStrength,
         parentResponsesFastMode: capturedOptions.responsesFastMode,
-        planApprovedSessionKeysRef,
         runPersistence: sessionDirId
           ? createSubAgentRunPersistence(
               ctx,
@@ -688,7 +670,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         createWorkflowRunner({
           ctx,
           requestToolAuthorizations,
-          planApprovedSessionKeysRef,
           executeSubAgentActivation: createSubAgentActivation({
             ctx,
             requestToolAuthorizations,
@@ -696,14 +677,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             parentModel: capturedOptions.model,
             parentThinkingStrength: capturedOptions.thinkingStrength,
             parentResponsesFastMode: capturedOptions.responsesFastMode,
-            planApprovedSessionKeysRef,
             runPersistence: sessionDirId
               ? createSubAgentRunPersistence(ctx)
               : undefined,
           }),
           executeSubAgentMainTool: createSubAgentMainToolExecutor(ctx, {
             requestToolAuthorizations,
-            planApprovedSessionKeysRef,
             parentThinkingStrength: capturedOptions.thinkingStrength,
             parentResponsesFastMode: capturedOptions.responsesFastMode,
             runPersistence: sessionDirId
@@ -825,7 +804,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // 恢复器时（应用重启后）自动从 DB 重建。
       const executeSubAgentMainTool = createSubAgentMainToolExecutor(ctx, {
         requestToolAuthorizations,
-        planApprovedSessionKeysRef,
         parentThinkingStrength: capturedOptions.thinkingStrength,
         parentResponsesFastMode: capturedOptions.responsesFastMode,
         runPersistence: sessionDirId
@@ -987,7 +965,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ]
               .filter(Boolean)
               .join("\n\n"),
-            planMode: iterRef?.planMode ?? ctx.planModeRef.current,
             goalMode: iterRef?.goalMode ?? ctx.goalModeRef.current,
             worktreeMode: effectiveWorktreeMode,
             workflowMode: iterRef?.workflowMode ?? ctx.workflowModeRef.current,
@@ -1067,10 +1044,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // 在 migrateSession 之后会被赋值为真实 conversationId）。
             const migratingPendingKey = effectiveKey;
 
-            if (planApprovedSessionKeysRef.current.has(effectiveKey)) {
-              planApprovedSessionKeysRef.current.delete(effectiveKey);
-              planApprovedSessionKeysRef.current.add(response.conversationId);
-            }
             migrateSubAgentParentTask(effectiveKey, response.conversationId);
             ctx.migrateSession(effectiveKey, response.conversationId);
             const currentSession = ctx.sessionsRefData.current.get(
@@ -1593,8 +1566,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           executeSubAgentMainTool,
           executeWorkflowGenerate,
           executeWorkflowResume,
-          planApprovedSessionKeysRef,
-          planModeRef: ctx.planModeRef,
         });
         const toolExecResult = await toolExecutor(
           executableToolCalls,

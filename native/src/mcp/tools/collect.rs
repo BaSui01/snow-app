@@ -13,27 +13,18 @@ use crate::storage::services::system_settings::{McpGlobalScopeSettings, McpProje
 
 pub async fn collect_all_mcp_tools(
     project_id: Option<&str>,
-    include_plan_mode_tool: bool,
     include_workflow_tool: bool,
 ) -> Result<Vec<McpTool>> {
-    collect_all_mcp_tools_for_workspace(
-        project_id,
-        None,
-        include_plan_mode_tool,
-        include_workflow_tool,
-    )
-    .await
+    collect_all_mcp_tools_for_workspace(project_id, None, include_workflow_tool).await
 }
 
 pub async fn collect_all_mcp_tools_for_workspace(
     project_id: Option<&str>,
     analysis_root: Option<&Path>,
-    include_plan_mode_tool: bool,
     include_workflow_tool: bool,
 ) -> Result<Vec<McpTool>> {
     let mut tools = collect_mcp_tools(
         project_id,
-        include_plan_mode_tool,
         include_workflow_tool,
         None,
         analysis_root,
@@ -54,7 +45,6 @@ fn apply_semantic_routing(tools: &mut [McpTool]) {
 /// `project_override`：子代理显式白名单，豁免项目级启停（仅保留全局黑名单）。
 async fn collect_mcp_tools(
     project_id: Option<&str>,
-    include_plan_mode_tool: bool,
     include_workflow_tool: bool,
     allowed_names: Option<&std::collections::HashSet<String>>,
     analysis_root: Option<&Path>,
@@ -106,8 +96,6 @@ async fn collect_mcp_tools(
     // 内置服务器（browser / app-control / terminal）整体排除在请求上下文
     // 之外，为上下文窗口较短的模型节约 token。用户在 MCP 面板手动重新
     // 启用任一服务器时会自动关闭该模式（见 set_mcp_project_server_enabled）。
-    // app-control-requestApproval 豁免此限制（Plan Mode 审批必需，仅
-    // Plan Mode 请求中暴露，见下方判定）。
     let lite_mode = with_database_path(|database_path| {
         crate::storage::services::system_settings::get_lite_mode(&database_path)
     })
@@ -121,18 +109,12 @@ async fn collect_mcp_tools(
             if allowed_names.is_some_and(|names| !names.contains(&tool.full_name())) {
                 return false;
             }
-            // The dedicated approval tool is request-scoped: it must only be
-            // exposed to the model while the current request is in Plan Mode.
-            if tool.full_name() == REQUEST_APPROVAL_FULL_NAME {
-                return include_plan_mode_tool;
-            }
             // The WorkFlow graph tool is request-scoped: it only exists while
             // the current request is in WorkFlow Mode.
             if tool.server_id == "workflow" {
                 return include_workflow_tool;
             }
-            // 精简模式：LITE_MODE_DISABLED_SERVER_IDS 中的服务器整体禁用
-            // （requestApproval 已在上方先行处理，保持 Plan Mode 审批可用）。
+            // 精简模式：LITE_MODE_DISABLED_SERVER_IDS 中的服务器整体禁用。
             if lite_mode && LITE_MODE_DISABLED_SERVER_IDS.contains(&tool.server_id.as_str()) {
                 return false;
             }
@@ -306,7 +288,6 @@ pub(crate) async fn collect_allowed_mcp_tools_with_report(
     let all_tools = collect_mcp_tools(
         project_id,
         false,
-        false,
         if wildcard_enabled {
             None
         } else {
@@ -467,7 +448,6 @@ pub async fn collect_restricted_mcp_tools_for_workspace(
     }
     let all_tools = collect_mcp_tools(
         project_id,
-        false,
         false,
         Some(&configured_names),
         analysis_root,
@@ -673,9 +653,8 @@ pub(crate) async fn ensure_project_tool_enabled(
 ) -> Result<()> {
     // 精简模式执行层（与 collect 阶段排除保持一致）：Lite Mode 禁用的
     // browser / app-control / terminal 工具即使出现在陈旧工具列表中也
-    // 拒绝执行。app-control-requestApproval 豁免——Plan Mode 审批必须
-    // 始终可用，且 call_mcp_tool 已用 plan_mode 前置条件守卫该工具。
-    if tool_name != REQUEST_APPROVAL_FULL_NAME {
+    // 拒绝执行。
+    {
         let lite_mode = with_database_path(|database_path| {
             crate::storage::services::system_settings::get_lite_mode(&database_path)
         })
@@ -711,11 +690,10 @@ pub(crate) async fn ensure_project_tool_enabled(
             format!("Invalid MCP tool name: {tool_name}"),
         ));
     };
-    // 全局服务器总闸（requestApproval 与精简模式同样豁免）。
-    if tool_name != REQUEST_APPROVAL_FULL_NAME
-        && global_scope
-            .as_ref()
-            .is_some_and(|scope| scope.is_server_disabled(&builtin_scope_server_id(server_id)))
+    // 全局服务器总闸。
+    if global_scope
+        .as_ref()
+        .is_some_and(|scope| scope.is_server_disabled(&builtin_scope_server_id(server_id)))
     {
         return Err(Error::new(
             Status::GenericFailure,

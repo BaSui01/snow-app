@@ -1365,26 +1365,6 @@ export const en = {
   "toolCall.userQuestion.group.fallbackLabel": "Question {{index}}",
   "toolCall.userQuestion.group.previous": "Previous question",
   "toolCall.userQuestion.group.next": "Next question",
-  "toolCall.planApproval.name": "plan approval",
-  "toolCall.planApproval.action": "Request plan execution",
-  "toolCall.planApproval.title": "Approve execution of the current plan?",
-  "toolCall.planApproval.description":
-    "Approval unlocks file creation and replacement edits for this task.",
-  "toolCall.planApproval.status.waiting": "Waiting for approval",
-  "toolCall.planApproval.status.approved": "Approved",
-  "toolCall.planApproval.status.declined": "Keep planning",
-  "toolCall.planApproval.status.error": "Approval failed",
-  "toolCall.planApproval.interruptedHint":
-    "The approval was interrupted; the AI continued without a decision",
-  "toolCall.planApproval.preparing": "Preparing approval request...",
-  "toolCall.planApproval.waitingHint":
-    "The AI can modify project files only after explicit approval.",
-  "toolCall.planApproval.approvedHint":
-    "This task is approved and the plan can now be executed.",
-  "toolCall.planApproval.declinedHint":
-    "The plan was not approved; the AI will keep planning without modifying project files.",
-  "toolCall.planApproval.continuePlanning": "Keep planning",
-  "toolCall.planApproval.approve": "Approve and execute",
   "toolCall.workflow.name": "workflow",
   "toolCall.workflow.action": "Generate workflow",
   "toolCall.workflow.status.idle": "Idle",
@@ -1928,7 +1908,6 @@ export const en = {
   "toolNames.app-control-sendConversationMessage": "Send to conversation",
   "toolNames.app-control-activateConversation": "Open conversation",
   "toolNames.app-control-conversation": "Conversation",
-  "toolNames.app-control-requestApproval": "Plan approval",
   "toolNames.app-control-getMemo": "Read memo",
   "toolNames.app-control-listMemos": "List memos",
   "toolNames.app-control-updateMemoStatus": "Update memo status",
@@ -4515,9 +4494,6 @@ export const en = {
   "plusMenu.liteModeDescription": "Disable extra services to save context",
   "plusMenu.liteModeActive":
     "Lite Mode active, Browser, App Control and Terminal Control MCP servers are disabled",
-  "plusMenu.planMode": "Plan Mode",
-  "plusMenu.planModeDescription": "Plan first, then execute",
-  "plusMenu.planModeActive": "Plan Mode active",
   "plusMenu.worktreeMode": "WorkTree Mode",
   "plusMenu.worktreeModeDescription": "Develop in an isolated git branch",
   "plusMenu.worktreeModeActive": "WorkTree Mode active",
@@ -4780,7 +4756,7 @@ export const en = {
     "Keep shared preferences active in this project, then add project-specific rules.",
   "personalization.overrideBuiltinTitle": "Override built-in prompt",
   "personalization.overrideBuiltinDesc":
-    "When enabled, the rules replace the built-in prompt in normal mode; Plan / Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
+    "When enabled, the rules replace the built-in prompt in normal mode; Goal / WorkFlow / WorkTree modes keep their own built-in guidance. System prompts bound in the API profile still apply.",
   "personalization.projectSaved": "Project rules saved.",
   "personalization.projectPlaceholder":
     "Enter rules for this project here, e.g. code style, architecture conventions, tech stack notes...",
@@ -4848,7 +4824,6 @@ export const en = {
   "projectMcp.modeBadgeWorkflow": "WorkFlow Mode off",
   "projectMcp.modeBadgeCodebase": "Index not enabled",
   "projectMcp.modeBadgeCodebaseNoIndex": "No index data",
-  "projectMcp.modeBadgePlan": "Plan Mode off",
   "projectMcp.toolGlobalDisabled": "Disabled globally",
   "mcpBuiltinServer.desc.filesystem": "Read, create, and edit local files",
   "mcpBuiltinServer.desc.bash": "Run one-shot shell commands",

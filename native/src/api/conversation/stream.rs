@@ -141,11 +141,10 @@ pub async fn create_response_stream(
 ) -> Result<ResponsesApiResult> {
     let is_sub_agent = request.is_sub_agent_request();
     if is_sub_agent {
-        // Plan Mode, Goal Mode, WorkTree Mode, and WorkFlow Mode belong exclusively to the main conversation.
+        // Goal Mode, WorkTree Mode, and WorkFlow Mode belong exclusively to the main conversation.
         // Keep the provider prompt and request-scoped tool injection in normal
         // mode for every sub-agent, even if a caller accidentally forwards
         // any mode flag.
-        request.plan_mode = Some(false);
         request.goal_mode = Some(false);
         request.worktree_mode = Some(false);
         request.workflow_mode = Some(false);

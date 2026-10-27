@@ -374,10 +374,9 @@ export type PrivacyRuleInfo = {
   example: string;
 };
 
-/** Per-conversation Plan/Goal Mode overrides. `null` means the conversation
- *  has never been configured and follows the global default. */
+/** Per-conversation Goal/WorkTree/WorkFlow Mode overrides. `null` means the
+ *  conversation has never been configured and follows the global default. */
 export type ConversationModesResult = {
-  planMode: boolean | null;
   goalMode: boolean | null;
   worktreeMode: boolean | null;
   workflowMode: boolean | null;
@@ -1603,7 +1602,6 @@ export type ResponsesApiRequest = {
   disableTools?: boolean;
   /** Request-local recovery instruction. Never persisted as a chat message. */
   internalRecoveryPrompt?: string;
-  planMode?: boolean;
   goalMode?: boolean;
   worktreeMode?: boolean;
   workflowMode?: boolean;
@@ -2202,7 +2200,6 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<ConversationModesResult>;
   setConversationModes: (
     conversationId: string,
-    planMode: boolean | null,
     goalMode: boolean | null,
     worktreeMode: boolean | null,
     workflowMode: boolean | null,
@@ -2983,8 +2980,6 @@ export type NativeBridge = ImageGenerationNativeApi & {
     ) => Promise<string>,
     onTerminalCommand: (command: TerminalCommand) => Promise<string>,
     subAgentAllowedTools: string[] | undefined,
-    planMode: boolean | undefined,
-    planApproved: boolean | undefined,
     conversationId: string | undefined,
   ) => Promise<string>;
   engineInfo: () => string;

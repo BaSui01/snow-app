@@ -113,7 +113,7 @@ While busy, the send button and the preferred send key use the saved behavior. T
 
 `Shift+Enter` still inserts a newline, and IME composition does not trigger sending. Idle conversations send normally. Programmatic messages from plugins or scheduled tasks do not inherit the manual Steer preference.
 
-Queues stay scoped to their owning conversation. A user stop, terminal failure, or non-continuable authorization rejection retains pending messages without automatically starting the next task; unconsumed steers become queued follow-ups. A steer requesting incompatible runtime settings, such as another model or API profile, also becomes a follow-up. Sub-agents and Workflow nodes retain unsupported configuration changes with an explanatory message rather than forwarding them to the parent. Consuming new requirements in Plan Mode conservatively resets the applicable approval, so changed writes require approval again.
+Queues stay scoped to their owning conversation. A user stop, terminal failure, or non-continuable authorization rejection retains pending messages without automatically starting the next task; unconsumed steers become queued follow-ups. A steer requesting incompatible runtime settings, such as another model or API profile, also becomes a follow-up. Sub-agents and Workflow nodes retain unsupported configuration changes with an explanatory message rather than forwarding them to the parent.
 
 **Pending queues are in-memory state for the current app run, with no promise of restoration after closing or restarting the app.** Only the send-behavior preference is persisted. A queued or pending steer can be withdrawn to the composer before consumption; an already-consumed instruction must be corrected by another message.
 
@@ -154,21 +154,11 @@ While the AI is running, `/compact`, `/role`, `/sensitive-commands`, `/skills`, 
 
 To get started, use the "User guide" button at the bottom of the sidebar, click "Ask" under the greeting on an empty chat, or type `/help`. Each one only places the question in the input, so you can review it before sending. Choose "Don't show again" to hide the greeting hint for good. These entries rely on the built-in `snow-app-docs` skill: if that skill is turned off in Skills settings, a dialog asks you to turn it on first, and no prompt is added.
 
-## 4. Plan, Goal, and YOLO
+## 4. Goal and YOLO
 
-### 4.1 Plan Mode
+### 4.1 Goal Mode
 
-Plan Mode separates investigation and planning from execution:
-
-- Plan and Goal are mutually exclusive within a conversation. Their state is isolated and persisted per conversation, then restored when you switch back;
-- Project writes are hard-gated during planning. Before approval, only plan documents inside the plan directory may be written; other project writes are blocked;
-- After finishing the plan, the AI must call `app-control-requestApproval` separately. Words such as "approved" in ordinary chat text do not unlock writes;
-- Explicit approval allows project writes only for the current conversation and task. A new user task resets that conversation's approval state;
-- A sub-agent cannot approve its own plan. Its writes remain blocked while the parent conversation is unapproved.
-
-### 4.2 Goal Mode
-
-Goal Mode runs a continuing, goal-driven autonomous loop within its token budget and stop conditions. Adjust the per-conversation token budget from the plus menu (including an **Unlimited** option). Goal is mutually exclusive with Plan, and both the enabled state and budget are saved per conversation.
+Goal Mode runs a continuing, goal-driven autonomous loop within its token budget and stop conditions. Adjust the per-conversation token budget from the plus menu (including an **Unlimited** option). Both the enabled state and the budget are saved per conversation.
 
 Two constraints are enforced at runtime:
 
@@ -177,7 +167,7 @@ Two constraints are enforced at runtime:
 
 That continuation message is stored as a regular user message, so every automatic continuation is visible in the conversation and in the user-message rail, and it can be rolled back like any other turn. An explicit user stop (cancel) is never re-activated. The number of iterations is therefore bounded by the token budget: with an **Unlimited** budget the loop only ends when all TODOs are complete or the user stops it.
 
-### 4.3 YOLO Mode
+### 4.2 YOLO Mode
 
 YOLO is a **global, persisted authorization policy**, not a conversation mode:
 
@@ -190,16 +180,8 @@ YOLO is a **global, persisted authorization policy**, not a conversation mode:
 ```mermaid
 stateDiagram-v2
     [*] --> Normal
-    Normal --> Planning: Enable Plan
-    Planning --> WaitingApproval: Plan completed
-    WaitingApproval --> PlanApproved: Explicit approval
-    PlanApproved --> Planning: New user task
-    Planning --> Normal: Disable Plan
-    PlanApproved --> Normal: Disable Plan
     Normal --> GoalRunning: Enable Goal
     GoalRunning --> Normal: Stop or disable Goal
-    Planning --> GoalRunning: Switch to Goal
-    GoalRunning --> Planning: Switch to Plan
     note right of Normal
       YOLO is a global authorization policy,
       not a conversation state.
@@ -230,12 +212,8 @@ sequenceDiagram
     User->>UI: Send task
     UI->>AI: Conversation context and tool definitions
     AI-->>UI: Stream text and request a tool
-    UI->>Policy: Check Plan gate, ordinary approval, sensitive rules
-    alt Project write before Plan approval
-        Policy-->>UI: Block and wait for Plan approval
-        UI-->>User: Show approval request
-        User->>UI: Explicitly approve or deny
-    else Ordinary tool needs approval
+    UI->>Policy: Check ordinary approval and sensitive rules
+    alt Ordinary tool needs approval
         UI-->>User: Show authorization card
         User->>UI: Allow once, deny, or always allow
     else Sensitive command matched
@@ -299,7 +277,7 @@ Compaction is **not absolutely irreversible**. The compaction message is a `cont
 | Symptom                                                                 | Resolution                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The AI has no tools                                                     | Check the API profile, model, and tool-specific configuration; image generation requires a separate channel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Tools never start                                                       | Check for another pending approval in the same batch or a Plan write gate waiting for explicit approval                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Tools never start                                                       | Check for another pending approval in the same batch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | YOLO still asks about a command                                         | The command matched a sensitive-command rule; this is expected safety behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `/review` is unavailable                                                | It requires a new conversation and a project directory                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Earlier context disappears after compaction                             | The model context now uses the summary; roll back from the compaction boundary if needed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

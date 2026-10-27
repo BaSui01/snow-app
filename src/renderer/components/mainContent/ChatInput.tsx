@@ -40,10 +40,6 @@ export const ChatInput = ({
   isUpdatingLiteMode = false,
   onLiteModeChange,
   onRefreshLiteMode,
-  planMode = false,
-  isUpdatingPlanMode = false,
-  onPlanModeChange,
-  onRefreshPlanMode,
   goalMode = false,
   isUpdatingGoalMode = false,
   onGoalModeChange,
@@ -112,10 +108,6 @@ export const ChatInput = ({
       isUpdatingLiteMode={isUpdatingLiteMode}
       onLiteModeChange={onLiteModeChange}
       onRefreshLiteMode={onRefreshLiteMode}
-      planMode={planMode}
-      isUpdatingPlanMode={isUpdatingPlanMode}
-      onPlanModeChange={onPlanModeChange}
-      onRefreshPlanMode={onRefreshPlanMode}
       goalMode={goalMode}
       isUpdatingGoalMode={isUpdatingGoalMode}
       onGoalModeChange={onGoalModeChange}

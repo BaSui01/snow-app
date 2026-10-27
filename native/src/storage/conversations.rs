@@ -31,7 +31,6 @@ pub fn get_conversation_modes(
 
 pub fn set_conversation_modes(
     conversation_id: &str,
-    plan_mode: Option<bool>,
     goal_mode: Option<bool>,
     worktree_mode: Option<bool>,
     workflow_mode: Option<bool>,
@@ -41,7 +40,6 @@ pub fn set_conversation_modes(
     services::chat_conversations::set_conversation_modes(
         &database_path,
         conversation_id,
-        plan_mode,
         goal_mode,
         worktree_mode,
         workflow_mode,

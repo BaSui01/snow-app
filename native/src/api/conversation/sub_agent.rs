@@ -41,7 +41,6 @@ pub async fn resolve_request_tools(request: &ResponsesApiRequest) -> Result<Vec<
                 let mut tools = collect_all_mcp_tools_for_workspace(
                     request.directory_id.as_deref(),
                     analysis_root,
-                    request.plan_mode.unwrap_or(false),
                     request.workflow_mode.unwrap_or(false),
                 )
                 .await?;

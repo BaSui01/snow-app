@@ -15,28 +15,9 @@ import { appendHookExecutionToMessage } from "./hookOutcome";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const PLAN_APPROVAL_TOOL_NAME = "app-control-requestApproval";
-export const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
-
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-export const isStructuredPlanApproval = (
-  toolName: string,
-  result: string,
-): boolean => {
-  if (toolName !== PLAN_APPROVAL_TOOL_NAME) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(result) as Record<string, unknown>;
-    return parsed.approved === true;
-  } catch {
-    return false;
-  }
-};
 
 // ---------------------------------------------------------------------------
 // Factory: isRunCancelled

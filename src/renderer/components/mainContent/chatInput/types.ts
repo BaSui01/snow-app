@@ -126,10 +126,6 @@ export type ChatInputProps = {
   isUpdatingLiteMode?: boolean;
   onLiteModeChange?: (enabled: boolean) => void;
   onRefreshLiteMode?: () => Promise<boolean | void>;
-  planMode?: boolean;
-  isUpdatingPlanMode?: boolean;
-  onPlanModeChange?: (enabled: boolean) => void;
-  onRefreshPlanMode?: () => Promise<boolean | void>;
   goalMode?: boolean;
   isUpdatingGoalMode?: boolean;
   onGoalModeChange?: (enabled: boolean) => void;
@@ -281,10 +277,6 @@ export type ChatInputViewProps = ChatInputState &
     isUpdatingLiteMode: boolean;
     onLiteModeChange?: (enabled: boolean) => void;
     onRefreshLiteMode?: () => Promise<boolean | void>;
-    planMode: boolean;
-    isUpdatingPlanMode: boolean;
-    onPlanModeChange?: (enabled: boolean) => void;
-    onRefreshPlanMode?: () => Promise<boolean | void>;
     goalMode: boolean;
     isUpdatingGoalMode: boolean;
     onGoalModeChange?: (enabled: boolean) => void;

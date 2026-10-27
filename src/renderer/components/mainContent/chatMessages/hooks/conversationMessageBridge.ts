@@ -81,7 +81,6 @@ const prepareBackgroundSession = async (
   // 模式回写，若仍是全局默认值就会覆盖用户在该会话里设置的模式。
   const ref = ctx.sessionsRefData.current.get(conversationId);
   if (ref && modes) {
-    ref.planMode = modes.planMode ?? ref.planMode;
     ref.goalMode = modes.goalMode ?? ref.goalMode;
     ref.worktreeMode = modes.worktreeMode ?? ref.worktreeMode;
     ref.workflowMode = modes.workflowMode ?? ref.workflowMode;

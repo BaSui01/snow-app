@@ -27,7 +27,6 @@ pub const SUB_AGENT_RESERVED_TOOL_FULL_NAMES: &[&str] = &[
     "sub-agents-getResult",
     "sub-agents-wait",
     "sub-agents-cancel",
-    "app-control-requestApproval",
     "app-control-conversation",
     "workflow-workflow-generate",
     "workflow-workflow-resume",

@@ -319,13 +319,6 @@ details.tool.tcn > .tc-body.tc-ops {
   gap: 8px;
 }
 
-/* ── 审批块（app-control-requestApproval） ─────────────────────────────── */
-details.tool.tcn.tc-ops-plan > .tc-body {
-  border-color: rgba(242, 198, 109, 0.26);
-  background:
-    linear-gradient(180deg, rgba(242, 198, 109, 0.06), transparent 46%), #111216;
-}
-
 /* ── 浅色主题 ─────────────────────────────────────────────────────────── */
 html[data-theme="light"] .tc-ops-option-selected {
   color: #28364f;
@@ -354,9 +347,4 @@ html[data-theme="light"] .tc-ops-ask-tab.is-active {
 }
 html[data-theme="light"] .tc-ops-ask-tab-status-error {
   color: #b42318;
-}
-html[data-theme="light"] details.tool.tcn.tc-ops-plan > .tc-body {
-  border-color: rgba(176, 124, 20, 0.26);
-  background:
-    linear-gradient(180deg, rgba(176, 124, 20, 0.07), transparent 46%), #f0f2f5;
 }

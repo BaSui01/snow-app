@@ -885,8 +885,6 @@ export const RemoteControlBridge = ({
         undefined,
         undefined,
         undefined,
-        undefined,
-        undefined,
         conversationId,
       );
       const items = (parseTodoResult(result)?.todos ?? [])
@@ -1287,8 +1285,6 @@ export const RemoteControlBridge = ({
           "todo-todo-manage",
           JSON.stringify(args),
           stateRef.current.activeDirectory?.directoryId,
-          undefined,
-          undefined,
           undefined,
           undefined,
           undefined,
@@ -1926,7 +1922,6 @@ export const RemoteControlBridge = ({
           // 会话待办（会话隔离）：按激活会话读取，切换会话后随快照一起切换。
           todos: await resolveTodos(activeConversationId),
           modes: {
-            plan: current.conversation.planMode,
             goal: current.conversation.goalMode,
             worktree: current.conversation.worktreeMode,
             workflow: current.conversation.workflowMode,
@@ -2176,10 +2171,10 @@ export const RemoteControlBridge = ({
         return { ok: true };
       },
 
-      // 真实模式 setter 链：toolAuthApi.setPlanMode / setGoalMode /
+      // 真实模式 setter 链：toolAuthApi.setGoalMode /
       // setWorktreeMode / setWorkflowMode / setYoloMode / setLiteMode。
       // 语义与桌面 PlusMenu 完全一致（布尔开关，可关闭）；
-      // Plan/Goal/Worktree/Workflow 的互斥由这些 setter 自身保证。
+      // Goal/Worktree/Workflow 的互斥由这些 setter 自身保证。
       // 与桌面一致：没有活动会话（新会话视图）时切换同样合法——
       // 会话级模式写入 pending session、应用级设置直接落库，
       // 都随首次发送 / 立即生效，因此这里不要求 activeConversationId。
@@ -2203,9 +2198,6 @@ export const RemoteControlBridge = ({
           throw new Error("会话进行中，暂不可切换模式");
         }
         switch (mode) {
-          case "plan":
-            await current.setPlanMode(enabled);
-            break;
           case "goal":
             await current.setGoalMode(enabled);
             break;

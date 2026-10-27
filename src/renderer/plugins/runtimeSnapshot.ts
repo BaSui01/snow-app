@@ -36,7 +36,6 @@ export type RuntimeConversationState = {
   runTtftMs: number;
   lastRunDurationMs: number;
   streamTokenCount: number;
-  planMode: boolean;
   goalMode: boolean;
   liteMode: boolean;
   yoloMode: boolean;

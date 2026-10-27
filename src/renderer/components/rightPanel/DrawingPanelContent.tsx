@@ -1535,8 +1535,6 @@ export function DrawingPanelContent({
         },
         undefined, // interactionId：工作台独立生成，不挂接会话
         undefined, // subAgentAllowedTools
-        false, // planMode
-        false, // planApproved
       );
       if (cancelledRef.current || genSeqRef.current !== mySeq) {
         return; // 已取消或已被新生成取代：丢弃结果，不更新 UI

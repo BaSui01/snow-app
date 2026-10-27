@@ -56,10 +56,10 @@ flowchart TD
     builtin["14 fixed-order built-in services"] --> discover
     skills["Dynamic Skills tool"] --> discover
     external["External MCP stdio and HTTP discovery"] --> discover
-    flags["Project enablement codebase index imagegen config Plan Mode"] --> discover
+    flags["Project enablement codebase index imagegen config"] --> discover
     discover --> model["Provider-specific tool JSON"]
     model --> callNode["call_mcp_tool"]
-    callNode --> policy["Plan project and sub-agent checks"]
+    callNode --> policy["Sub-agent and authorization checks"]
     policy --> route["Built-in remote external or special route"]
     route --> mask["Privacy-masked result"]
 ```

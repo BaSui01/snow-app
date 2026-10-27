@@ -1,9 +1,9 @@
 /**
- * ops 工具族词条：配置 / 应用控制（含计划审批）/ 外部数据库 / 用户提问卡片的
+ * ops 工具族词条：配置 / 应用控制 / 外部数据库 / 用户提问卡片的
  * 只读复盘文案。
  *
  * 键前缀统一 remote.toolCall.ops.*，三语必须同键；族内再分 config / app /
- * plan / ask / dbx 子命名空间（待办与记忆词条随归属迁移到 agents 命名空间）。
+ * ask / dbx 子命名空间（待办与记忆词条随归属迁移到 agents 命名空间）。
  * 动态键（app.op.* / dbx.op.* 等）命中不到时，渲染器回退原始值（见
  * tools/ops.ts 的 dyn()），因此这里只需登记已知取值，无需穷举。
  *
@@ -85,20 +85,6 @@ export const opsEn: Record<string, string> = {
   "remote.toolCall.ops.app.scheduleOnce": "At {{time}}",
   "remote.toolCall.ops.app.scheduleDaily": "Daily {{hour}}:{{minute}}",
   "remote.toolCall.ops.app.scheduleInterval": "Every {{interval}}",
-
-  // 计划审批（app-control-requestApproval）
-  "remote.toolCall.ops.plan.name": "plan",
-  "remote.toolCall.ops.plan.summary": "Plan",
-  "remote.toolCall.ops.plan.approved": "Approved",
-  "remote.toolCall.ops.plan.declined": "Declined",
-  "remote.toolCall.ops.plan.cancelled": "Cancelled",
-  "remote.toolCall.ops.plan.waiting": "Waiting for approval",
-  "remote.toolCall.ops.plan.preparing": "Preparing approval…",
-  "remote.toolCall.ops.plan.waitingHint":
-    "Approve or decline in the interaction area below",
-  "remote.toolCall.ops.plan.choice": "Choice",
-  "remote.toolCall.ops.plan.failed": "Approval failed",
-  "remote.toolCall.ops.plan.reason": "Reason",
 
   // 用户提问（user-interaction-askUserQuestion）
   "remote.toolCall.ops.ask.name": "ask",
@@ -229,19 +215,6 @@ export const opsZhCN: Record<string, string> = {
   "remote.toolCall.ops.app.scheduleDaily": "每日 {{hour}}:{{minute}}",
   "remote.toolCall.ops.app.scheduleInterval": "每隔 {{interval}}",
 
-  // 计划审批（app-control-requestApproval）
-  "remote.toolCall.ops.plan.name": "计划审批",
-  "remote.toolCall.ops.plan.summary": "方案",
-  "remote.toolCall.ops.plan.approved": "已批准",
-  "remote.toolCall.ops.plan.declined": "已拒绝",
-  "remote.toolCall.ops.plan.cancelled": "已取消",
-  "remote.toolCall.ops.plan.waiting": "等待批准",
-  "remote.toolCall.ops.plan.preparing": "正在准备审批…",
-  "remote.toolCall.ops.plan.waitingHint": "请在下方交互区批准或拒绝",
-  "remote.toolCall.ops.plan.choice": "选择",
-  "remote.toolCall.ops.plan.failed": "审批失败",
-  "remote.toolCall.ops.plan.reason": "理由",
-
   // 用户提问（user-interaction-askUserQuestion）
   "remote.toolCall.ops.ask.name": "提问",
   "remote.toolCall.ops.ask.question": "问题",
@@ -369,19 +342,6 @@ export const opsZhTW: Record<string, string> = {
   "remote.toolCall.ops.app.scheduleOnce": "{{time}} 執行",
   "remote.toolCall.ops.app.scheduleDaily": "每日 {{hour}}:{{minute}}",
   "remote.toolCall.ops.app.scheduleInterval": "每隔 {{interval}}",
-
-  // 計畫審批（app-control-requestApproval）
-  "remote.toolCall.ops.plan.name": "計畫審批",
-  "remote.toolCall.ops.plan.summary": "方案",
-  "remote.toolCall.ops.plan.approved": "已批准",
-  "remote.toolCall.ops.plan.declined": "已拒絕",
-  "remote.toolCall.ops.plan.cancelled": "已取消",
-  "remote.toolCall.ops.plan.waiting": "等待批准",
-  "remote.toolCall.ops.plan.preparing": "正在準備審批…",
-  "remote.toolCall.ops.plan.waitingHint": "請在下方互動區批准或拒絕",
-  "remote.toolCall.ops.plan.choice": "選擇",
-  "remote.toolCall.ops.plan.failed": "審批失敗",
-  "remote.toolCall.ops.plan.reason": "理由",
 
   // 使用者提問（user-interaction-askUserQuestion）
   "remote.toolCall.ops.ask.name": "提問",

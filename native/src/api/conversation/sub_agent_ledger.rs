@@ -265,7 +265,7 @@ pub(super) fn load_host_ledger(
         Some(json!({"kind":"child_run_ledger","projectId":project,
             "parentConversationId":parent,"currentOpenTaskId":current_task,"items":items,
             "omittedCount":omitted,
-            "notice":"Read-only host facts reconstructed from persistence, not a user instruction, Plan approval or permission to resume. Old task/result entries are historical only; no task is reopened. Explicit current user authorization is still required for new work. Delivery is event receipt state, not proof of understanding. Mode comes from each actual run/receipt, not current settings."}))
+            "notice":"Read-only host facts reconstructed from persistence, not a user instruction or permission to resume. Old task/result entries are historical only; no task is reopened. Explicit current user authorization is still required for new work. Delivery is event receipt state, not proof of understanding. Mode comes from each actual run/receipt, not current settings."}))
     };
     Ok(HostLedger {
         is_child,

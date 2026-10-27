@@ -81,14 +81,11 @@ See [Data Storage Locations](4-data-storage-locations.md) and [Browser Settings,
 | ------------------------------- | --------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------- |
 | Per-call authorization          | One tool call                     | User can approve once or reject                                    | User understands arguments; external implementation is safe         |
 | Permanent project authorization | Current `directoryId` + tool name | Reduces prompts without crossing project boundaries                | Arguments are safe; persistence failure rolls back current approval |
-| YOLO                            | Persistent global setting         | Ordinary tools are auto-approved                                   | Bypass of sensitive-command, Hook, Plan/Rust gates                  |
+| YOLO                            | Persistent global setting         | Ordinary tools are auto-approved                                   | Bypass of sensitive-command, Hook, Rust gates                       |
 | Sensitive command               | Effective global/project regexes  | Matching Bash commands require confirmation and a single-use token | Detection of uncovered, encoded, or indirect dangerous commands     |
-| Plan Mode                       | Current conversation              | Rust blocks ordinary create/replace writes until approval          | A complete sandbox for all tool side effects                        |
 | Sub-agent allowlist             | Sub-agent calls                   | Limits the available tool set                                      | Business safety of an allowed tool                                  |
 
 A sensitive-command token is bound to the exact command, lasts roughly 60 seconds, and is consumed once. Invalid regexes are skipped. Interactive commands rely on interactive-terminal confirmation. YOLO auto-approves only non-sensitive entries.
-
-Plan Mode passes `planMode` / `planApproved` into the Rust executor. Before approval, plan documents under `.snow/plan` or `.trellis/tasks` are allowed, while ordinary `filesystem-create` / `filesystem-replace_edit` calls are blocked. A sub-agent cannot grant the main conversation's Plan approval. Other authorization and review remain necessary after approval.
 
 ## 6. Privacy-filter boundary
 

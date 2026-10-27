@@ -4,11 +4,6 @@ use super::*;
 
 #[napi(object)]
 pub struct ConversationModesResult {
-    /// Whether Plan Mode is enabled (true) or disabled (false) for this
-    /// conversation. Legacy rows with a NULL flag are read as disabled;
-    /// null is only returned when the conversation row does not exist
-    /// (follow the global default).
-    pub plan_mode: Option<bool>,
     /// Whether Goal Mode is enabled (true) or disabled (false) for this
     /// conversation. Legacy rows with a NULL flag are read as disabled;
     /// null is only returned when the conversation row does not exist
@@ -36,7 +31,6 @@ pub async fn get_conversation_modes(
     tokio::task::spawn_blocking(move || {
         crate::storage::get_conversation_modes(&conversation_id).map(|modes| {
             ConversationModesResult {
-                plan_mode: modes.plan_mode,
                 goal_mode: modes.goal_mode,
                 worktree_mode: modes.worktree_mode,
                 workflow_mode: modes.workflow_mode,
@@ -51,7 +45,6 @@ pub async fn get_conversation_modes(
 #[napi]
 pub async fn set_conversation_modes(
     conversation_id: String,
-    plan_mode: Option<bool>,
     goal_mode: Option<bool>,
     worktree_mode: Option<bool>,
     workflow_mode: Option<bool>,
@@ -60,7 +53,6 @@ pub async fn set_conversation_modes(
     tokio::task::spawn_blocking(move || {
         crate::storage::set_conversation_modes(
             &conversation_id,
-            plan_mode,
             goal_mode,
             worktree_mode,
             workflow_mode,

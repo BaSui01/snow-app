@@ -136,8 +136,6 @@ export const ImageGenToolCall = ({
           },
           toolCall.interactionId, // 沿用原调用 ID，chunk 路由到同一卡片
           undefined, // subAgentAllowedTools
-          false, // planMode：生图不涉及写门
-          false, // planApproved
         );
         setRetry({ status: "done", result });
       } catch (error) {

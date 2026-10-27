@@ -59,10 +59,9 @@ export type PrivacyRuleInfo = {
   example: string;
 };
 
-/** Per-conversation Plan/Goal Mode overrides. `null` means the conversation
- *  has never been configured and follows the global default. */
+/** Per-conversation Goal/WorkTree/WorkFlow Mode overrides. `null` means the
+ *  conversation has never been configured and follows the global default. */
 export type ConversationModesResult = {
-  planMode: boolean | null;
   goalMode: boolean | null;
   worktreeMode: boolean | null;
   workflowMode: boolean | null;

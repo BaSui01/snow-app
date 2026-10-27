@@ -19,8 +19,6 @@ export const readSessionTodos = async (
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
       conversationId,
     );
     const timeout = new Promise<null>((resolve) => {

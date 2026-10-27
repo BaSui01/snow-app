@@ -139,20 +139,15 @@ export const useRollback = (ctx: ConversationContextValue) => {
       const defaults = ctx.globalModeDefaultsRef.current;
       let capturedWorktreeMode =
         capturedSessionRef?.worktreeMode ?? defaults.worktreeMode;
-      let capturedPlanMode = capturedSessionRef?.planMode ?? defaults.planMode;
       let capturedGoalMode = capturedSessionRef?.goalMode ?? defaults.goalMode;
-      let capturedWorkflowMode =
+      const capturedWorkflowMode =
         capturedSessionRef?.workflowMode ?? defaults.workflowMode;
       const capturedGoalModeTokenBudget =
         capturedSessionRef?.goalModeTokenBudget ?? defaults.goalModeTokenBudget;
       if (capturedWorkflowMode) {
         capturedWorktreeMode = false;
-        capturedPlanMode = false;
         capturedGoalMode = false;
       } else if (capturedWorktreeMode) {
-        capturedPlanMode = false;
-        capturedGoalMode = false;
-      } else if (capturedPlanMode) {
         capturedGoalMode = false;
       }
 
@@ -287,7 +282,6 @@ export const useRollback = (ctx: ConversationContextValue) => {
             responsesFastMode: capturedInputState
               ? capturedInputState.responsesFastMode
               : (runtimeConfig?.responsesFastMode ?? null),
-            planMode: capturedPlanMode,
             goalMode: capturedGoalMode,
             worktreeMode: capturedWorktreeMode,
             workflowMode: capturedWorkflowMode,
@@ -862,7 +856,6 @@ export const useRollback = (ctx: ConversationContextValue) => {
             ctx.ensureSession(pendingKey, directoryId ?? ctx.directoryId);
             const pendingRef = ctx.sessionsRefData.current.get(pendingKey);
             if (pendingRef) {
-              pendingRef.planMode = rollbackState.planMode;
               pendingRef.goalMode = rollbackState.goalMode;
               pendingRef.worktreeMode = rollbackState.worktreeMode;
               pendingRef.workflowMode = rollbackState.workflowMode;
@@ -875,11 +868,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
               thinkingStrength: rollbackState.thinkingStrength,
               responsesFastMode: rollbackState.responsesFastMode,
             };
-            ctx.planModeRef.current = rollbackState.planMode;
             ctx.goalModeRef.current = rollbackState.goalMode;
             ctx.worktreeModeRef.current = rollbackState.worktreeMode;
             ctx.workflowModeRef.current = rollbackState.workflowMode;
-            ctx.setPlanModeState(rollbackState.planMode);
             ctx.setGoalModeState(rollbackState.goalMode);
             ctx.setWorktreeModeState(rollbackState.worktreeMode);
             ctx.setWorkflowModeState(rollbackState.workflowMode);
@@ -917,12 +908,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.setRollbackPreview,
       ctx.setRollbackNewChatState,
       ctx.ensureSession,
-      ctx.setPlanModeState,
       ctx.setGoalModeState,
       ctx.setWorktreeModeState,
       ctx.setGoalModeTokenBudgetState,
       ctx.runtimeInputStateRef,
-      ctx.planModeRef,
       ctx.goalModeRef,
       ctx.worktreeModeRef,
       ctx.sessionsRefData,

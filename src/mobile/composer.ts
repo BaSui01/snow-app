@@ -166,7 +166,6 @@ const addFiles = (files: FileList | null, kind: AttachmentKind): void => {
 const MODE_IDS: SnowRemoteModeId[] = [
   "yolo",
   "lite",
-  "plan",
   "worktree",
   "workflow",
   "goal",
@@ -177,11 +176,10 @@ const isModeAction = (action: string): action is SnowRemoteModeId =>
 
 /**
  * 会话运行中锁定、不允许启停的模式（与桌面 PlusMenu 的 modesLocked 一致：
- * 精简 / 计划 / WorkTree / WorkFlow / 目标；YOLO 不受限）。
+ * 精简 / WorkTree / WorkFlow / 目标；YOLO 不受限）。
  */
 const LOCKED_MODE_IDS: readonly SnowRemoteModeId[] = [
   "lite",
-  "plan",
   "worktree",
   "workflow",
   "goal",
@@ -201,8 +199,6 @@ const modeLabel = (mode: SnowRemoteModeId): string => {
   switch (mode) {
     case "goal":
       return t("remote.modes.goal");
-    case "plan":
-      return t("remote.modes.plan");
     case "worktree":
       return t("remote.modes.worktree");
     case "workflow":

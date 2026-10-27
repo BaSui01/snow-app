@@ -8,10 +8,6 @@ import {
   updateFirstMatchingToolCall,
   validateToolCall,
 } from "../utils/conversationHelpers";
-import {
-  PLAN_APPROVAL_TOOL_NAME,
-  isStructuredPlanApproval,
-} from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 import {
   ToolWatchdogTimeoutError,
@@ -186,8 +182,6 @@ export type ToolExecutorDeps = {
     parentConversationId: string,
     toolCallInteractionId: string,
   ) => Promise<string>;
-  planApprovedSessionKeysRef: { current: Set<string> };
-  planModeRef: { current: boolean };
 };
 
 export function createToolExecutor(
@@ -212,8 +206,6 @@ export function createToolExecutor(
     executeSubAgentMainTool: dispatchSubAgentMainTool,
     executeWorkflowGenerate,
     executeWorkflowResume,
-    planApprovedSessionKeysRef,
-    planModeRef,
   } = deps;
 
   const subAgentArgs = (call: ToolCallInfo, argsJson: string): string => {
@@ -277,11 +269,6 @@ export function createToolExecutor(
       targetSession?.worktreeMode ?? false,
       targetSession?.worktreeId,
     );
-    // Per-conversation mode snapshot: the Rust write gate must see THIS
-    // session's Plan Mode, never the live global ref (another conversation
-    // toggling its modes must not weaken or strengthen this session's gate).
-    const sessionPlanMode = (key: string): boolean =>
-      ctx.sessionsRefData.current.get(key)?.planMode ?? planModeRef.current;
     const runtime = imageGenerationRuntime(ctx);
     const imageMembers = toolCalls.filter(
       (call, index) =>
@@ -547,8 +534,6 @@ export function createToolExecutor(
             buildToolChunkHandler(correctedCall),
             correctedCall.interactionId,
             undefined,
-            sessionPlanMode(effectiveKey),
-            planApprovedSessionKeysRef.current.has(effectiveKey),
             isPendingSessionKey(effectiveKey) ? undefined : effectiveKey,
           ),
           resolveToolWatchdogMs(correctedCall.name, preparedArgs),
@@ -783,8 +768,7 @@ export function createToolExecutor(
           }
         };
         const isInteractiveQuestionTool =
-          parallelToolCall.name === "user-interaction-askUserQuestion" ||
-          parallelToolCall.name === PLAN_APPROVAL_TOOL_NAME;
+          parallelToolCall.name === "user-interaction-askUserQuestion";
         if (isInteractiveQuestionTool) {
           ctx.userQuestionTargetRef.current.set(
             parallelToolCall.interactionId,
@@ -1013,8 +997,6 @@ export function createToolExecutor(
                     buildToolChunkHandler(parallelToolCall),
                     parallelToolCall.interactionId,
                     undefined,
-                    sessionPlanMode(effectiveKey),
-                    planApprovedSessionKeysRef.current.has(effectiveKey),
                     // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
                     // PENDING 会话没有真实会话 id，传 undefined。
                     isPendingSessionKey(effectiveKey)
@@ -1510,8 +1492,7 @@ export function createToolExecutor(
               }
 
               const isInteractiveQuestionTool =
-                toolCall.name === "user-interaction-askUserQuestion" ||
-                toolCall.name === PLAN_APPROVAL_TOOL_NAME;
+                toolCall.name === "user-interaction-askUserQuestion";
               if (isInteractiveQuestionTool) {
                 ctx.userQuestionTargetRef.current.set(toolCall.interactionId, {
                   sessionKey: effectiveKey,
@@ -1570,7 +1551,7 @@ export function createToolExecutor(
                       hookAbortMessage = outcome.message;
                     }
 
-                    // Interactive tools (askUserQuestion / plan approval) can be
+                    // Interactive tools (askUserQuestion) can be
                     // auto-answered by the hook's stdout when the hook passes,
                     // bypassing the blocking user-interaction round-trip.
                     if (
@@ -1701,8 +1682,6 @@ export function createToolExecutor(
                       buildToolChunkHandler(toolCall),
                       toolCall.interactionId,
                       undefined,
-                      sessionPlanMode(effectiveKey),
-                      planApprovedSessionKeysRef.current.has(effectiveKey),
                       // 会话溯源（memory-save 由 Rust 分发层注入会话 ID）：
                       // PENDING 会话没有真实会话 id，传 undefined。
                       isPendingSessionKey(effectiveKey)
@@ -1879,16 +1858,6 @@ export function createToolExecutor(
 
         if (toolCall.name === "user-interaction-askUserQuestion") {
           registerUserQuestionSettlement(toolIndex, result!);
-        }
-
-        // Only the dedicated Plan Mode tool's structured approved=true result
-        // can unlock Rust filesystem writes for this conversation's task.
-        if (
-          sessionPlanMode(effectiveKey) &&
-          !planApprovedSessionKeysRef.current.has(effectiveKey) &&
-          isStructuredPlanApproval(toolCall.name, result!)
-        ) {
-          planApprovedSessionKeysRef.current.add(effectiveKey);
         }
 
         // Cover rejections and thrown errors, without double-recording execution.

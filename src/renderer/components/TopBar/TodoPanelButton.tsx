@@ -187,8 +187,6 @@ export const TodoPanelButton = ({
         undefined,
         undefined,
         undefined,
-        undefined,
-        undefined,
         conversationId,
       )
       .then((result) => {
@@ -293,8 +291,6 @@ export const TodoPanelButton = ({
         undefined,
         undefined,
         undefined,
-        undefined,
-        undefined,
         conversationId,
       );
       const newTodos = parseTodos(result);
@@ -331,8 +327,6 @@ export const TodoPanelButton = ({
           undefined,
           undefined,
           undefined,
-          undefined,
-          undefined,
           conversationId,
         );
         const newTodos = parseTodos(result);
@@ -360,8 +354,6 @@ export const TodoPanelButton = ({
           "todo-todo-manage",
           JSON.stringify({ action: "delete", todoId: todoIds }),
           projectId,
-          undefined,
-          undefined,
           undefined,
           undefined,
           undefined,

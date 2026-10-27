@@ -252,7 +252,7 @@ code: 'InvalidArg'
 | 10       | `onAppControl`                                                              | async function | App-control commands                                                           |
 | 11       | `onRemoteWorkspaceCommand`                                                  | async function | Remote (SSH) command forwarding                                                |
 | 12       | `onTerminalCommand`                                                         | async function | **Terminal PTY command forwarding (newest callback, most commonly forgotten)** |
-| 13–15    | subAgentAllowedTools / planMode / planApproved                              | optional       | `undefined` is fine                                                            |
+| 13–14    | subAgentAllowedTools / conversationId                                       | optional       | `undefined` is fine                                                            |
 
 Placeholder pattern for standalone Node scripts (see `scripts/e2e-verify-config.cjs`):
 
@@ -273,8 +273,7 @@ const result = await native.callMcpTool(
   asyncNoop, // onRemoteWorkspaceCommand
   asyncNoop, // onTerminalCommand ← required, 6 callbacks in total
   undefined,
-  undefined,
-  undefined, // subAgentAllowedTools / planMode / planApproved
+  undefined, // subAgentAllowedTools / conversationId
 );
 // Resolves to a Promise<string> — the tool result as a JSON string
 ```

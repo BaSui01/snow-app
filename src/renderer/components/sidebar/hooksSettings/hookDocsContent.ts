@@ -123,7 +123,7 @@ const enDocs: Record<string, HookDocContent> = {
     description:
       "Runs before a tool is executed. The context includes the tool name and parsed arguments. " +
       "Supports tool matchers — only runs when the matcher matches the tool name. " +
-      "On exit 0, stdout can auto-answer interactive tools (askUserQuestion / plan approval). " +
+      "On exit 0, stdout can auto-answer interactive tools (askUserQuestion). " +
       "On exit 2+, the AI loop is fully interrupted.",
     contextFields: [
       {
@@ -146,7 +146,7 @@ const enDocs: Record<string, HookDocContent> = {
       {
         code: "0",
         meaning:
-          "Pass — stdout can auto-answer interactive tools (askUserQuestion / plan approval). For normal tools, stdout is ignored.",
+          "Pass — stdout can auto-answer interactive tools (askUserQuestion). For normal tools, stdout is ignored.",
       },
       {
         code: "1",
@@ -565,7 +565,7 @@ const zhCNDocs: Record<string, HookDocContent> = {
     description:
       "工具执行前触发。上下文包含工具名称和解析后的参数。" +
       "支持工具匹配器 — 仅在匹配器匹配工具名时运行。" +
-      "退出码 0 时，stdout 可自动回答交互式工具（askUserQuestion / plan approval）。" +
+      "退出码 0 时，stdout 可自动回答交互式工具（askUserQuestion）。" +
       "退出码 2+ 时，AI 流程完全中断。",
     contextFields: [
       {
@@ -917,7 +917,7 @@ const zhTWDocs: Record<string, HookDocContent> = {
     description:
       "工具執行前觸發。上下文包含工具名稱和解析後的參數。" +
       "支援工具匹配器 — 僅在匹配器匹配工具名時執行。" +
-      "退出碼 0 時，stdout 可自動回答互動式工具（askUserQuestion / plan approval）。" +
+      "退出碼 0 時，stdout 可自動回答互動式工具（askUserQuestion）。" +
       "退出碼 2+ 時，AI 流程完全中斷。",
     contextFields: [
       {
@@ -1216,20 +1216,20 @@ const decisionConfirmationLocaleMap: Record<
 
 /** Get the unified exit-1 decision confirmation documentation. */
 export const getHookDecisionConfirmationDoc = (
-  locale: Locale
+  locale: Locale,
 ): HookDecisionConfirmationDoc => {
   return decisionConfirmationLocaleMap[locale] ?? enDecisionConfirmationDoc;
 };
 
 export const getHookDocs = (
   locale: Locale,
-  hookType: string
+  hookType: string,
 ): HookDocContent | null => {
   return localeMap[locale]?.[hookType] ?? enDocs[hookType] ?? null;
 };
 
 export const getAllHookDocs = (
-  locale: Locale
+  locale: Locale,
 ): Record<string, HookDocContent> => {
   return localeMap[locale] ?? enDocs;
 };

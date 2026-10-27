@@ -30,7 +30,6 @@ export const renderControls = (next: SnowRemoteState | null): void => {
   const activeModes: string[] = [];
   if (modes?.yolo) activeModes.push(t("remote.modes.yolo"));
   if (modes?.lite) activeModes.push(t("remote.modes.lite"));
-  if (modes?.plan) activeModes.push(t("remote.modes.plan"));
   if (modes?.worktree) activeModes.push(t("remote.modes.worktree"));
   if (modes?.workflow) activeModes.push(t("remote.modes.workflow"));
   if (modes?.goal) activeModes.push(t("remote.modes.goal"));

@@ -27,7 +27,6 @@ export type ChatInputPanelsProps = {
   isReviewOpen: boolean;
   isCustomCommandsOpen: boolean;
   workflowMode: boolean;
-  planMode: boolean;
   conversationFileChanges: ComponentProps<typeof FileChangesPanel>["changes"];
   reviewWorkDir: string;
   onStartReview: ComponentProps<typeof ReviewPanel>["onStartReview"];
@@ -59,7 +58,6 @@ export const ChatInputPanels = ({
   isReviewOpen,
   isCustomCommandsOpen,
   workflowMode,
-  planMode,
   conversationFileChanges,
   reviewWorkDir,
   onStartReview,
@@ -81,7 +79,6 @@ export const ChatInputPanels = ({
       projectName={projectName}
       focusServerId={projectMcpFocusServerId}
       workflowMode={workflowMode}
-      planMode={planMode}
       onClearFocus={onClearProjectMcpFocus}
       onClose={onCloseProjectMcp}
     />

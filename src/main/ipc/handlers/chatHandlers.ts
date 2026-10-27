@@ -132,8 +132,6 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       source.internalRecoveryPrompt.trim()
         ? source.internalRecoveryPrompt
         : undefined,
-    planMode:
-      typeof source.planMode === "boolean" ? source.planMode : undefined,
     goalMode:
       typeof source.goalMode === "boolean" ? source.goalMode : undefined,
     worktreeMode:

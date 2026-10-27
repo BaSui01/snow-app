@@ -48,6 +48,7 @@ import {
 import { registerSessionDraftSaver } from "./chatInput/chatInputDraftBridge";
 import {
   resolveSubAgentFailureDecision,
+  useSubAgentFailureAbandoned,
   useSubAgentFailurePending,
 } from "./chatMessages/hooks/subAgentRunControl";
 
@@ -110,10 +111,6 @@ const ChatContentBody = ({
     isUpdatingLiteMode,
     setLiteMode,
     refreshLiteMode,
-    planMode,
-    isUpdatingPlanMode,
-    setPlanMode,
-    refreshPlanMode,
     goalMode,
     isUpdatingGoalMode,
     setGoalMode,
@@ -326,6 +323,11 @@ const ChatContentBody = ({
     (isWorkflowNodeConversation && !isWorkflowNodeFinished);
   const isSubAgentFailurePending =
     useSubAgentFailurePending(activeConversationId ?? undefined) &&
+    isSubAgentConversation &&
+    !isSubAgentFinished;
+  // 放弃后运行仍要收尾才落终态：期间直接展示失败收尾栏，输入框不再闪现。
+  const isSubAgentAbandoning =
+    useSubAgentFailureAbandoned(activeConversationId ?? undefined) &&
     isSubAgentConversation &&
     !isSubAgentFinished;
 
@@ -701,9 +703,9 @@ const ChatContentBody = ({
             ) : null}
             {isSubAgentFailurePending && activeConversationId ? (
               <SubAgentRetryBar conversationId={activeConversationId} />
-            ) : isSubAgentFinished ? (
+            ) : isSubAgentFinished || isSubAgentAbandoning ? (
               <SubAgentFinishedNotice
-                status={subAgentRunStatus}
+                status={isSubAgentFinished ? subAgentRunStatus : "failed"}
                 parentConversationId={subAgentParentConversationId}
                 onBackToParent={handleSelectConversation}
               />
@@ -752,10 +754,6 @@ const ChatContentBody = ({
                 isUpdatingLiteMode={isUpdatingLiteMode}
                 onLiteModeChange={setLiteMode}
                 onRefreshLiteMode={refreshLiteMode}
-                planMode={planMode}
-                isUpdatingPlanMode={isUpdatingPlanMode}
-                onPlanModeChange={setPlanMode}
-                onRefreshPlanMode={refreshPlanMode}
                 goalMode={goalMode}
                 isUpdatingGoalMode={isUpdatingGoalMode}
                 onGoalModeChange={setGoalMode}

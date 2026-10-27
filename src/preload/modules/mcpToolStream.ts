@@ -341,8 +341,6 @@ export const callMcpTool = async (
   onChunk?: (chunk: BashStreamChunk) => void,
   interactionId?: string,
   subAgentAllowedTools?: string[],
-  planMode?: boolean,
-  planApproved?: boolean,
   conversationId?: string,
 ): Promise<string> => {
   const streamId = `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -377,8 +375,6 @@ export const callMcpTool = async (
       streamId,
       interactionId ?? streamId,
       subAgentAllowedTools,
-      planMode,
-      planApproved,
       conversationId,
     );
     const pending = state.imageGeneration ? readPendingReceipt(result) : null;

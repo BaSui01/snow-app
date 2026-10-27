@@ -25,10 +25,26 @@ pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
         .map(|entry| {
             serde_json::json!({
                 "type": "tool_use",
-                "id": entry.id,
+                "id": anthropic_tool_id(&entry.id),
                 "name": entry.name,
                 "input": entry.input,
             })
+        })
+        .collect()
+}
+
+/// Anthropic 要求 `tool_use.id` / `tool_result.tool_use_id` 匹配
+/// `^[a-zA-Z0-9_-]+$`。历史中可能存在其他来源的调用 id（如子代理结果送达
+/// 时写入的合成调用 `sub-agent-event:<eventId>`），发送前把不合法字符替换为
+/// `_`；tool_use 与 tool_result 走同一映射，配对关系不变。
+pub(crate) fn anthropic_tool_id(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
         })
         .collect()
 }

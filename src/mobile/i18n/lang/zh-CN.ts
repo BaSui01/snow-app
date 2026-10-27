@@ -153,7 +153,6 @@ export const zhCN: Record<string, string> = {
   "remote.modes.sectionTitle": "模式",
   "remote.modes.yolo": "YOLO",
   "remote.modes.lite": "精简",
-  "remote.modes.plan": "计划",
   "remote.modes.worktree": "WorkTree",
   "remote.modes.workflow": "WorkFlow",
   "remote.modes.goal": "目标",

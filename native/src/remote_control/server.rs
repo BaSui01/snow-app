@@ -51,7 +51,7 @@ const MAX_TODO_CONTENT_LENGTH: usize = 500;
 /// WorkFlow 反馈内容长度上限（与 Renderer 桥、移动端输入框 maxlength 保持一致）。
 const MAX_WORKFLOW_REPLY_LENGTH: usize = 2_000;
 /// 可远程切换的代理行为模式白名单（必须与 renderer/types/remoteControl.ts 一致）。
-const REMOTE_MODES: [&str; 6] = ["plan", "goal", "worktree", "workflow", "yolo", "lite"];
+const REMOTE_MODES: [&str; 5] = ["goal", "worktree", "workflow", "yolo", "lite"];
 /// 已完成 send 请求的去重缓存容量。
 const COMPLETED_SEND_CAPACITY: usize = 200;
 /// 等待 send 派发空窗的上限（轮换凭据 / 停止服务时使用）。

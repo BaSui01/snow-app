@@ -81,8 +81,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       if (!ctx.sessionsRefData.current.has(key)) {
         // New sessions inherit the GLOBAL defaults — not the currently
         // displayed session's mode. This is what keeps conversations fully
-        // isolated: creating a chat in session A with Plan Mode on does not
-        // leak Plan Mode into a fresh chat.
+        // isolated: creating a chat in session A with a mode on does not
+        // leak that mode into a fresh chat.
         const defaults = ctx.globalModeDefaultsRef.current;
         ctx.sessionsRefData.current.set(key, {
           streamId: null,
@@ -96,7 +96,6 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           directoryId: dirId,
           checkpointIds: [],
           childSubAgentIds: new Set(),
-          planMode: defaults.planMode,
           worktreeMode: defaults.worktreeMode,
           goalMode: defaults.goalMode,
           workflowMode: defaults.workflowMode,

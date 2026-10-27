@@ -9,7 +9,7 @@ export const TOOL_CORRECTION_MAX_ATTEMPTS = 3;
 /**
  * 交互类、运行时类与长任务工具不参与自动纠错：
  * - bash 的失败语义不稳定（超时、部分输出、交互会话），无法可靠判断；
- * - 用户问答 / 计划审批不是执行失败；
+ * - 用户问答不是执行失败；
  * - 子代理 / Workflow / 生图有独立生命周期或副作用，重放代价高。
  */
 const EXCLUDED_TOOL_NAMES = new Set([
@@ -17,7 +17,6 @@ const EXCLUDED_TOOL_NAMES = new Set([
   "terminal-execute",
   "mcp__bash__terminal-execute",
   "user-interaction-askUserQuestion",
-  "app-control-requestApproval",
   "sub-agents-activate",
   "sub-agents-continue",
   "sub-agents-sendMessage",

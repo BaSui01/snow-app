@@ -61,10 +61,7 @@ export const isDurableSubAgentConversation = (
 let runtime:
   | {
       getCtx(): ConversationContextValue;
-      deps(): Pick<
-        SubAgentActivationDeps,
-        "requestToolAuthorizations" | "planApprovedSessionKeysRef"
-      >;
+      deps(): Pick<SubAgentActivationDeps, "requestToolAuthorizations">;
     }
   | undefined;
 const command = windowCommand;
@@ -869,10 +866,7 @@ const observeOwnedCancellations = (
 };
 export const useSubAgentParentInbox = (
   ctx: ConversationContextValue,
-  deps: Pick<
-    SubAgentActivationDeps,
-    "requestToolAuthorizations" | "planApprovedSessionKeysRef"
-  >,
+  deps: Pick<SubAgentActivationDeps, "requestToolAuthorizations">,
   enabled = true,
   isDetachedWindow = false,
 ): void => {
@@ -907,7 +901,6 @@ export const useSubAgentParentInbox = (
         const modes = await window.snow.getConversationModes(parentId);
         const ref = current.sessionsRefData.current.get(parentId);
         if (ref && !ref.isSending) {
-          ref.planMode = modes.planMode ?? false;
           ref.goalMode = modes.goalMode ?? false;
           ref.worktreeMode = modes.worktreeMode ?? false;
         }
@@ -919,8 +912,6 @@ export const useSubAgentParentInbox = (
           ? undefined
           : startAgentTask(parentId);
         if (temporaryTask) {
-          // A new UI task is not approval for the previous delegation's plan.
-          owner.deps().planApprovedSessionKeysRef.current.delete(parentId);
           beginSubAgentParentTask(parentId, temporaryTask.id, {
             apiProfile: parent.apiProfileName || undefined,
             model: parent.model || undefined,

@@ -114,10 +114,6 @@ export const ChatInputView = ({
   isUpdatingLiteMode,
   onLiteModeChange,
   onRefreshLiteMode,
-  planMode,
-  isUpdatingPlanMode,
-  onPlanModeChange,
-  onRefreshPlanMode,
   goalMode,
   isUpdatingGoalMode,
   onGoalModeChange,
@@ -829,7 +825,6 @@ export const ChatInputView = ({
         isReviewOpen={isReviewOpen}
         isCustomCommandsOpen={isCustomCommandsOpen}
         workflowMode={workflowMode}
-        planMode={planMode}
         conversationFileChanges={conversationFileChanges}
         reviewWorkDir={reviewWorkDir ?? ""}
         onStartReview={(prompt) => {
@@ -1048,10 +1043,6 @@ export const ChatInputView = ({
             isUpdatingLiteMode={isUpdatingLiteMode}
             onLiteModeChange={onLiteModeChange}
             onRefreshLiteMode={onRefreshLiteMode}
-            planMode={planMode}
-            isUpdatingPlanMode={isUpdatingPlanMode}
-            onPlanModeChange={onPlanModeChange}
-            onRefreshPlanMode={onRefreshPlanMode}
             goalMode={goalMode}
             isUpdatingGoalMode={isUpdatingGoalMode}
             onGoalModeChange={onGoalModeChange}

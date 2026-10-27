@@ -897,6 +897,7 @@ pub(crate) async fn capture_checkpoint_worktree_before_remote(
         return Ok(None);
     }
 
+    let object_guard = super::gc::object_writer_guard();
     let tree = filter_remote_tree(client, &root).await?;
     let mut before_paths = HashSet::new();
     let mut before_states = HashMap::new();
@@ -979,6 +980,7 @@ pub(crate) async fn capture_checkpoint_worktree_before_remote(
         work_dir,
         before_paths,
         before_states,
+        _object_guard: object_guard,
     }))
 }
 
@@ -1236,6 +1238,7 @@ pub(crate) async fn record_checkpoint_file_remote(
 
     // before 内容只采样一次；无论该文件是否已有条目都必须登记"正在追捕"
     // （与本地一致），否则本轮编辑期间并行 bash 的全树对比会误记变化。
+    let _object_guard = super::gc::object_writer_guard();
     let original = current_state_remote(client, &absolute).await?;
     register_file_capture_start(&work_dir, &path, original_object_id(&original));
 
@@ -1280,6 +1283,7 @@ pub(crate) async fn record_checkpoint_file_after_remote(
         return Ok(());
     }
 
+    let _object_guard = super::gc::object_writer_guard();
     for checkpoint_id in checkpoint_ids {
         with_manifest_lock_async(&checkpoint_id, || async {
             let mut manifest = read_manifest(&checkpoint_id)?;

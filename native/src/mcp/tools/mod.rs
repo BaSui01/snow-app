@@ -1311,9 +1311,32 @@ fn capture_checkpoint_before_tool(
     }
 }
 
-/// 远程 checkpoint 阶段软超时上限（毫秒），超时跳过快照/变更记录，
+/// 远程 checkpoint 阶段软超时上限（秒），超时跳过快照/变更记录，
 /// 避免工具调用卡死（快照仅用于回滚保护，跳过只损失回滚能力）。
-const REMOTE_CHECKPOINT_TIMEOUT_MS: u64 = 30_000;
+/// 实际值由通用设置写入 system_settings，读取失败回落默认值。
+const REMOTE_CHECKPOINT_TIMEOUT_SETTING: &str = "checkpoint_remote_scan_timeout_secs";
+const REMOTE_CHECKPOINT_TIMEOUT_DEFAULT_SECS: u64 = 30;
+const REMOTE_CHECKPOINT_TIMEOUT_MIN_SECS: u64 = 5;
+const REMOTE_CHECKPOINT_TIMEOUT_MAX_SECS: u64 = 600;
+
+/// 读取远程 checkpoint 扫描超时（毫秒）；缺失或非法回落默认值，越界截断。
+async fn remote_checkpoint_timeout_ms() -> u64 {
+    let raw = tokio::task::spawn_blocking(|| {
+        crate::storage::get_system_setting_value(REMOTE_CHECKPOINT_TIMEOUT_SETTING.to_string())
+    })
+    .await
+    .ok()
+    .and_then(|result| result.ok())
+    .flatten();
+    let secs = raw
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(REMOTE_CHECKPOINT_TIMEOUT_DEFAULT_SECS)
+        .clamp(
+            REMOTE_CHECKPOINT_TIMEOUT_MIN_SECS,
+            REMOTE_CHECKPOINT_TIMEOUT_MAX_SECS,
+        );
+    secs * 1000
+}
 
 /// 远程（SSH）工具的 checkpoint before 捕获：文件 IO 经 Electron SFTP 完成，
 /// 与本地版本行为一致（filesystem 工具记录单文件，bash 记录整个工作区）。
@@ -1389,6 +1412,7 @@ async fn capture_checkpoint_before_tool_remote(
             };
             // SFTP 遍历可能很慢：使用独立超时上限（不与命令 timeout 挂钩），
             // 超时/失败软失败降级，并通知 Electron 中止仍在进行的扫描。
+            let timeout_ms = remote_checkpoint_timeout_ms().await;
             let scan_id = uuid::Uuid::new_v4().to_string();
             let client = RemoteCheckpointClient::with_scan_id(on_remote_workspace_command, scan_id);
             let started = Instant::now();
@@ -1401,7 +1425,7 @@ async fn capture_checkpoint_before_tool_remote(
                 ),
             );
             let captured = tokio::time::timeout(
-                Duration::from_millis(REMOTE_CHECKPOINT_TIMEOUT_MS),
+                Duration::from_millis(timeout_ms),
                 crate::storage::services::checkpoint::remote::capture_checkpoint_worktree_before_remote(
                     &client,
                     checkpoint_ids,
@@ -1440,7 +1464,7 @@ async fn capture_checkpoint_before_tool_remote(
                         "stdout",
                         crate::i18n::fill(
                             locale.checkpoint_text(crate::i18n::CheckpointText::BeforeTimeout),
-                            &[&REMOTE_CHECKPOINT_TIMEOUT_MS],
+                            &[&timeout_ms],
                         ),
                     );
                     Ok(ToolCheckpointCapture::Worktree(None))
@@ -1488,6 +1512,7 @@ async fn capture_checkpoint_after_tool_remote(
         ToolCheckpointCapture::Worktree(Some(capture)) => {
             // 命令已结束：after 失败只意味着变更记录不完整，软失败降级，
             // 不能把已成功的命令结果覆盖为失败（避免模型重试）。
+            let timeout_ms = remote_checkpoint_timeout_ms().await;
             let scan_id = uuid::Uuid::new_v4().to_string();
             let client = RemoteCheckpointClient::with_scan_id(on_remote_workspace_command, scan_id);
             let started = Instant::now();
@@ -1498,7 +1523,7 @@ async fn capture_checkpoint_after_tool_remote(
                 ));
             }
             let recorded = tokio::time::timeout(
-                Duration::from_millis(REMOTE_CHECKPOINT_TIMEOUT_MS),
+                Duration::from_millis(timeout_ms),
                 crate::storage::services::checkpoint::remote::record_checkpoint_worktree_after_remote(
                     &client, capture,
                 ),
@@ -1524,7 +1549,7 @@ async fn capture_checkpoint_after_tool_remote(
                     client.abort_scan().await;
                     warn(crate::i18n::fill(
                         locale.checkpoint_text(crate::i18n::CheckpointText::AfterTimeout),
-                        &[&REMOTE_CHECKPOINT_TIMEOUT_MS],
+                        &[&timeout_ms],
                     ));
                     Ok(())
                 }

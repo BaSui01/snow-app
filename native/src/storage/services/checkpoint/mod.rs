@@ -15,12 +15,14 @@ use tokio::sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
 use super::checkpoint_skip::should_skip_pending_copy;
 use super::gitignore::GitignoreMatcher;
 
+mod gc;
 mod git;
 mod manifest;
 mod migrate;
 mod paths;
 pub(crate) mod remote;
 
+use self::gc::{object_writer_guard, release_objects, ObjectWriterGuard};
 use self::git::{read_git_object, update_checkpoint_git_ref};
 use self::manifest::{read_manifest, write_manifest};
 use self::paths::{
@@ -29,6 +31,7 @@ use self::paths::{
     resolve_manifest_path, should_skip_manifest_path,
 };
 
+pub use self::gc::schedule_orphan_object_sweep;
 pub use self::migrate::migrate_checkpoint_layout;
 
 /// 内容寻址对象库目录名：对象按 id 前两位十六进制分片存放
@@ -265,6 +268,8 @@ pub struct CheckpointWorktreeCapture {
     /// 捕获时的回滚纪元：命令执行期间若有回滚改写了工作树，after 捕获
     /// 据此跳过变更记录，避免把其他会话回滚的内容误记到本会话。
     restore_epoch: u64,
+    /// before 指纹引用的对象尚未写入 manifest：持有期间禁止对象回收。
+    _object_guard: ObjectWriterGuard,
 }
 fn checkpoint_root() -> Result<PathBuf> {
     super::storage_locations::checkpoint_root()
@@ -623,6 +628,7 @@ pub(crate) fn record_formatted_file(file_path: &str, previous_object_id: &str) -
     if path.is_empty() || should_skip_manifest_path(&path) {
         return Ok(());
     }
+    let _object_guard = object_writer_guard();
     let expected = current_state(&absolute)?;
     for checkpoint_id in &checkpoint_ids {
         with_manifest_lock(checkpoint_id, || {
@@ -1208,6 +1214,7 @@ pub fn record_checkpoint_file(
     // before 内容只采样一次；无论该文件是否已有条目（同一文件在本会话
     // 后续轮次再次被编辑时，manifest 里已存在记录）都必须登记"正在追捕"，
     // 否则本轮编辑执行期间并行 bash 的全树对比会把变化误记到自己名下。
+    let _object_guard = object_writer_guard();
     let original = current_state(&absolute)?;
     register_local_file_capture_start(
         &absolute,
@@ -1261,6 +1268,7 @@ pub fn record_checkpoint_file_after(
         return Ok(());
     }
 
+    let _object_guard = object_writer_guard();
     for checkpoint_id in checkpoint_ids {
         with_manifest_lock(&checkpoint_id, || {
             let mut manifest = read_manifest(&checkpoint_id)?;
@@ -1355,6 +1363,7 @@ pub fn capture_checkpoint_worktree_before(
 
     // 全量遍历（跳过 SKIP_DIRS / gitignore / 符号链接），逐文件记录
     // mtime+size 与内容对象 id。指纹缓存命中时零内容 IO。
+    let object_guard = object_writer_guard();
     let before_paths = collect_worktree_file_paths(&root)?;
 
     let mut before_states = HashMap::new();
@@ -1399,6 +1408,7 @@ pub fn capture_checkpoint_worktree_before(
         work_dir,
         before_paths,
         before_states,
+        _object_guard: object_guard,
     }))
 }
 
@@ -1780,11 +1790,18 @@ pub(crate) fn checkpoint_directory(checkpoint_id: &str) -> Result<PathBuf> {
     checkpoint_dir(checkpoint_id)
 }
 
-/// Delete a checkpoint and release its Git reference. Content-addressed
-/// objects are intentionally retained: eager global garbage collection scanned
-/// every checkpoint after each best-effort delete and raced concurrent writers.
-/// Existing objects are deduplicated by BLAKE3, so retaining them keeps deletes
-/// constant-time and avoids re-copying identical file contents later.
+/// manifest 引用的全部内容对象 id。
+fn manifest_object_ids(manifest: &CheckpointManifest) -> Vec<String> {
+    manifest
+        .entries
+        .iter()
+        .flat_map(|entry| std::iter::once(&entry.original).chain(entry.expected.as_ref()))
+        .filter_map(original_object_id)
+        .collect()
+}
+
+/// Delete a checkpoint and release its Git reference. 其引用的内容对象交给
+/// 后台回收：仍被其他 manifest 引用的对象保留，其余随之删除。
 pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
     let manifest_lock = manifest_lock(&checkpoint_id)?;
     let _manifest_guard = manifest_lock.blocking_lock();
@@ -1793,10 +1810,9 @@ pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
         return Ok(());
     }
 
-    if let Ok(manifest) = read_manifest(&checkpoint_id) {
-        if let Some(baseline) = manifest.git.as_ref() {
-            update_checkpoint_git_ref(&checkpoint_id, baseline, true)?;
-        }
+    let manifest = read_manifest(&checkpoint_id).ok();
+    if let Some(baseline) = manifest.as_ref().and_then(|manifest| manifest.git.as_ref()) {
+        update_checkpoint_git_ref(&checkpoint_id, baseline, true)?;
     }
     fs::remove_dir_all(&directory).map_err(|error| {
         Error::from_reason(format!(
@@ -1804,6 +1820,9 @@ pub fn delete_checkpoint(checkpoint_id: String) -> Result<()> {
             checkpoint_id
         ))
     })?;
+    if let Some(manifest) = manifest.as_ref() {
+        release_objects(manifest_object_ids(manifest));
+    }
     // 日期分片目录清空后一并移除（非空时 remove_dir 自然失败；旧扁平布局
     // 的父目录就是根目录，跳过避免误删）。
     if let Some(parent) = directory.parent() {

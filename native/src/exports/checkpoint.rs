@@ -245,8 +245,10 @@ pub async fn migrate_checkpoint_layout() -> napi::Result<u32> {
         crate::storage::services::checkpoint::migrate_checkpoint_layout,
     )
     .await
-    .map_err(map_spawn_error)??;
-    Ok(moved as u32)
+    .map_err(map_spawn_error)?;
+    // 布局整理后调度一次未引用对象清理（后台线程，不阻塞启动）
+    crate::storage::services::checkpoint::schedule_orphan_object_sweep();
+    Ok(moved? as u32)
 }
 
 /// Convert a tokio JoinError into a napi Error.

@@ -65,6 +65,20 @@ import {
   CONVERSATION_CACHE_TTL_SETTING_NAME,
   normalizeConversationCacheTtlMinutes,
 } from "../../constants/conversationCache";
+import {
+  CHECKPOINT_ORPHAN_RETENTION_DEFAULT_DAYS,
+  CHECKPOINT_ORPHAN_RETENTION_MAX_DAYS,
+  CHECKPOINT_ORPHAN_RETENTION_MIN_DAYS,
+  CHECKPOINT_ORPHAN_RETENTION_SETTING,
+  CHECKPOINT_ORPHAN_RETENTION_SETTING_NAME,
+  CHECKPOINT_REMOTE_SCAN_TIMEOUT_DEFAULT_SECS,
+  CHECKPOINT_REMOTE_SCAN_TIMEOUT_MAX_SECS,
+  CHECKPOINT_REMOTE_SCAN_TIMEOUT_MIN_SECS,
+  CHECKPOINT_REMOTE_SCAN_TIMEOUT_SETTING,
+  CHECKPOINT_REMOTE_SCAN_TIMEOUT_SETTING_NAME,
+  normalizeCheckpointOrphanRetentionDays,
+  normalizeCheckpointRemoteScanTimeoutSecs,
+} from "../../constants/checkpointRetention";
 import type {
   CleanupCategoryId,
   CleanupCategoryStats,
@@ -381,6 +395,12 @@ export function GeneralSettingsPanel(): React.JSX.Element {
   // 会话消息缓存 TTL（分钟；超过该时长未被查看的会话会从内存释放）
   const [conversationCacheTtlMinutes, setConversationCacheTtlMinutes] =
     useState<string>(String(CONVERSATION_CACHE_TTL_DEFAULT_MINUTES));
+  // 检查点未引用快照保留天数（启动清理时只删除超过该天数的数据）
+  const [checkpointRetentionDays, setCheckpointRetentionDays] =
+    useState<string>(String(CHECKPOINT_ORPHAN_RETENTION_DEFAULT_DAYS));
+  // 远程检查点扫描超时（秒；超过该时长中止扫描并跳过本次快照）
+  const [checkpointRemoteScanTimeoutSecs, setCheckpointRemoteScanTimeoutSecs] =
+    useState<string>(String(CHECKPOINT_REMOTE_SCAN_TIMEOUT_DEFAULT_SECS));
   const [sessionSettingsSaved, setSessionSettingsSaved] = useState(false);
 
   // 团队协作启停开关（默认关闭；写入 system_settings，Rust 侧据此放行）
@@ -449,10 +469,14 @@ export function GeneralSettingsPanel(): React.JSX.Element {
 
   useEffect(() => {
     void (async () => {
-      const [single, total, ttl] = await Promise.all([
+      const [single, total, ttl, retention, scanTimeout] = await Promise.all([
         window.snow.getSystemSettingValue(ATTACH_CONTEXT_SINGLE_BUDGET_SETTING),
         window.snow.getSystemSettingValue(ATTACH_CONTEXT_TOTAL_BUDGET_SETTING),
         window.snow.getSystemSettingValue(CONVERSATION_CACHE_TTL_SETTING),
+        window.snow.getSystemSettingValue(CHECKPOINT_ORPHAN_RETENTION_SETTING),
+        window.snow.getSystemSettingValue(
+          CHECKPOINT_REMOTE_SCAN_TIMEOUT_SETTING,
+        ),
       ]);
       setAttachSingleBudget(
         single ?? String(ATTACH_CONTEXT_SINGLE_BUDGET_DEFAULT),
@@ -462,6 +486,12 @@ export function GeneralSettingsPanel(): React.JSX.Element {
       );
       setConversationCacheTtlMinutes(
         String(normalizeConversationCacheTtlMinutes(ttl)),
+      );
+      setCheckpointRetentionDays(
+        String(normalizeCheckpointOrphanRetentionDays(retention)),
+      );
+      setCheckpointRemoteScanTimeoutSecs(
+        String(normalizeCheckpointRemoteScanTimeoutSecs(scanTimeout)),
       );
     })().catch(() => undefined);
   }, []);
@@ -552,6 +582,56 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         setSessionSettingsSaved(true);
       })
       .catch(() => undefined);
+  };
+
+  /** 写入检查点快照保留天数（下次启动清理时生效）。 */
+  const writeCheckpointRetention = (days: number): void => {
+    const normalized = String(days);
+    setCheckpointRetentionDays(normalized);
+    void window.snow
+      .setSystemSetting(
+        CHECKPOINT_ORPHAN_RETENTION_SETTING_NAME,
+        CHECKPOINT_ORPHAN_RETENTION_SETTING,
+        normalized,
+      )
+      .then(() => setSessionSettingsSaved(true))
+      .catch(() => undefined);
+  };
+
+  /** 保存保留天数；非法值不保存，越界截断。 */
+  const saveCheckpointRetention = (): void => {
+    const parsed = Number.parseInt(checkpointRetentionDays, 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    writeCheckpointRetention(
+      normalizeCheckpointOrphanRetentionDays(String(parsed)),
+    );
+  };
+
+  /** 写入远程检查点扫描超时秒数（下一次远程扫描生效）。 */
+  const writeCheckpointRemoteScanTimeout = (secs: number): void => {
+    const normalized = String(secs);
+    setCheckpointRemoteScanTimeoutSecs(normalized);
+    void window.snow
+      .setSystemSetting(
+        CHECKPOINT_REMOTE_SCAN_TIMEOUT_SETTING_NAME,
+        CHECKPOINT_REMOTE_SCAN_TIMEOUT_SETTING,
+        normalized,
+      )
+      .then(() => setSessionSettingsSaved(true))
+      .catch(() => undefined);
+  };
+
+  /** 保存远程扫描超时；非法值不保存，越界截断。 */
+  const saveCheckpointRemoteScanTimeout = (): void => {
+    const parsed = Number.parseInt(checkpointRemoteScanTimeoutSecs, 10);
+    if (!Number.isFinite(parsed)) {
+      return;
+    }
+    writeCheckpointRemoteScanTimeout(
+      normalizeCheckpointRemoteScanTimeoutSecs(String(parsed)),
+    );
   };
 
   // 图片库存储位置（独立于 checkpoint / upload 的迁移流程）
@@ -2278,7 +2358,8 @@ export function GeneralSettingsPanel(): React.JSX.Element {
             </strong>
             <span>
               {t("settings.sessionSectionInfo", {
-                defaultValue: "会话消息缓存的保活时长与会话上下文注入预算。",
+                defaultValue:
+                  "会话消息缓存的保活时长、会话上下文注入预算与检查点快照保留时长。",
               })}
             </span>
           </div>
@@ -2409,6 +2490,123 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                   <button
                     className="nav-item"
                     onClick={resetConversationCacheTtl}
+                    type="button"
+                  >
+                    <RotateCcw size={14} strokeWidth={1.8} />
+                    <span>
+                      {t("settings.attachContextReset", {
+                        defaultValue: "恢复默认",
+                      })}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="api-settings-form-section">
+              <div className="api-settings-form-section-header">
+                <span className="api-settings-form-section-title">
+                  {t("settings.checkpointRetentionTitle", {
+                    defaultValue: "Checkpoint snapshot retention",
+                  })}
+                </span>
+              </div>
+              <span className="settings-item-description">
+                {t("settings.checkpointRetentionInfo", {
+                  defaultValue:
+                    "Snapshots of deleted conversations are removed right away. On startup, unreferenced snapshot content older than this is cleaned up; recent content is kept as a cache to speed up terminal commands.",
+                })}
+              </span>
+              <div className="settings-about-row">
+                <span className="settings-item-description">
+                  {t("settings.checkpointRetentionLabel", {
+                    defaultValue: "Retention (days)",
+                  })}
+                </span>
+                <input
+                  className="settings-number-input"
+                  type="number"
+                  min={CHECKPOINT_ORPHAN_RETENTION_MIN_DAYS}
+                  max={CHECKPOINT_ORPHAN_RETENTION_MAX_DAYS}
+                  step={1}
+                  value={checkpointRetentionDays}
+                  onChange={(event) =>
+                    setCheckpointRetentionDays(event.target.value)
+                  }
+                  onBlur={saveCheckpointRetention}
+                  title={t("settings.checkpointRetentionHint", {
+                    defaultValue:
+                      "Range 1-365 days; out-of-range values are clamped.",
+                  })}
+                />
+              </div>
+              <div className="settings-update-actions">
+                <div className="settings-attach-budget-actions">
+                  <button
+                    className="nav-item"
+                    onClick={() =>
+                      writeCheckpointRetention(
+                        CHECKPOINT_ORPHAN_RETENTION_DEFAULT_DAYS,
+                      )
+                    }
+                    type="button"
+                  >
+                    <RotateCcw size={14} strokeWidth={1.8} />
+                    <span>
+                      {t("settings.attachContextReset", {
+                        defaultValue: "恢复默认",
+                      })}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="api-settings-form-section">
+              <div className="api-settings-form-section-header">
+                <span className="api-settings-form-section-title">
+                  {t("settings.checkpointRemoteScanTimeoutTitle", {
+                    defaultValue: "Remote checkpoint scan timeout",
+                  })}
+                </span>
+              </div>
+              <span className="settings-item-description">
+                {t("settings.checkpointRemoteScanTimeoutInfo", {
+                  defaultValue:
+                    "Timeout for creating checkpoints on SSH projects. If a scan exceeds it, the scan is aborted and this invocation loses rollback protection.",
+                })}
+              </span>
+              <div className="settings-about-row">
+                <span className="settings-item-description">
+                  {t("settings.checkpointRemoteScanTimeoutLabel", {
+                    defaultValue: "Timeout (seconds)",
+                  })}
+                </span>
+                <input
+                  className="settings-number-input"
+                  type="number"
+                  min={CHECKPOINT_REMOTE_SCAN_TIMEOUT_MIN_SECS}
+                  max={CHECKPOINT_REMOTE_SCAN_TIMEOUT_MAX_SECS}
+                  step={5}
+                  value={checkpointRemoteScanTimeoutSecs}
+                  onChange={(event) =>
+                    setCheckpointRemoteScanTimeoutSecs(event.target.value)
+                  }
+                  onBlur={saveCheckpointRemoteScanTimeout}
+                  title={t("settings.checkpointRemoteScanTimeoutHint", {
+                    defaultValue:
+                      "Range 5-600 seconds; out-of-range values are clamped.",
+                  })}
+                />
+              </div>
+              <div className="settings-update-actions">
+                <div className="settings-attach-budget-actions">
+                  <button
+                    className="nav-item"
+                    onClick={() =>
+                      writeCheckpointRemoteScanTimeout(
+                        CHECKPOINT_REMOTE_SCAN_TIMEOUT_DEFAULT_SECS,
+                      )
+                    }
                     type="button"
                   >
                     <RotateCcw size={14} strokeWidth={1.8} />

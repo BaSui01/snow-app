@@ -3810,7 +3810,19 @@ export const en = {
   "settings.generalSettingsClosePanel": "Close general settings",
   "settings.sessionSectionTitle": "Sessions",
   "settings.sessionSectionInfo":
-    "Cache lifetime for conversation messages and context injection budgets.",
+    "Cache lifetime for conversation messages, context injection budgets, checkpoint snapshot retention and the remote checkpoint scan timeout.",
+  "settings.checkpointRetentionTitle": "Checkpoint snapshot retention",
+  "settings.checkpointRetentionInfo":
+    "Snapshots of deleted conversations are removed right away. On startup, unreferenced snapshot content older than this is cleaned up; recent content is kept as a cache to speed up terminal commands.",
+  "settings.checkpointRetentionLabel": "Retention (days)",
+  "settings.checkpointRetentionHint":
+    "Range 1-365 days; out-of-range values are clamped.",
+  "settings.checkpointRemoteScanTimeoutTitle": "Remote checkpoint scan timeout",
+  "settings.checkpointRemoteScanTimeoutInfo":
+    "Timeout for creating checkpoints on SSH projects. If a scan exceeds it, the scan is aborted and this invocation loses rollback protection.",
+  "settings.checkpointRemoteScanTimeoutLabel": "Timeout (seconds)",
+  "settings.checkpointRemoteScanTimeoutHint":
+    "Range 5-600 seconds; out-of-range values are clamped.",
   "settings.sessionCacheTtlTitle": "TTL",
   "settings.sessionCacheTtlInfo":
     "Conversations not viewed within this duration are released from the in-memory cache. The conversation being viewed and running conversations are never released.",

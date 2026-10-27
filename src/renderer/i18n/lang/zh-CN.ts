@@ -3587,7 +3587,18 @@ export const zhCN = {
   "settings.cleanupCategoryAppLogsInfo": "~/.snow/log 下的运行日志文件。",
   "settings.generalSettingsClosePanel": "关闭通用设置",
   "settings.sessionSectionTitle": "会话",
-  "settings.sessionSectionInfo": "会话消息缓存的保活时长与会话上下文注入预算。",
+  "settings.sessionSectionInfo":
+    "会话消息缓存的保活时长、会话上下文注入预算、检查点快照保留时长与远程检查点扫描超时。",
+  "settings.checkpointRetentionTitle": "检查点快照保留",
+  "settings.checkpointRetentionInfo":
+    "删除会话时其快照会立即清理；应用启动时会清理超过该天数且已无会话引用的快照内容，较新的内容保留为缓存以加快终端命令。",
+  "settings.checkpointRetentionLabel": "保留时长（天）",
+  "settings.checkpointRetentionHint": "范围 1-365 天，超出自动截断。",
+  "settings.checkpointRemoteScanTimeoutTitle": "远程检查点扫描超时",
+  "settings.checkpointRemoteScanTimeoutInfo":
+    "SSH 项目创建检查点快照的超时时间；扫描超过该时长会被中止，本次调用失去回滚保护。",
+  "settings.checkpointRemoteScanTimeoutLabel": "超时时长（秒）",
+  "settings.checkpointRemoteScanTimeoutHint": "范围 5-600 秒，超出自动截断。",
   "settings.sessionCacheTtlTitle": "TTL",
   "settings.sessionCacheTtlInfo":
     "自最后一次查看起算，超过该时长未再查看的会话会从内存缓存中释放；正在查看或运行中的会话不受影响。",

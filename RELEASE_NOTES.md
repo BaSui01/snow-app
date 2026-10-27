@@ -1,5 +1,32 @@
 # Release Notes
 
+## v0.5.7
+
+## New Features
+
+- **WorkFlow Composer**: with WorkFlow mode on, the input toolbar opens a composer where you draw nodes and edges and fill in node prompts; the graph is sent as a JSON payload in your message, the turn is forced into WorkFlow mode and forwarded verbatim to `workflow-workflow-generate`, reusing the existing workflow card and execution pipeline.
+- **Sub-Agent Concurrency Limits**: a global cap across all conversations (0 = unlimited) plus a per-conversation cap that never exceeds it; capacity checks count both the conversation's own occupancy and the total running runs, and the settings panel exposes both.
+- **Browser History Pagination**: browser history switches from "load more" to page pagination - the list fills the available height and scrolls internally, deleting the last item of a page steps back one page, and clearing resets to the first page. Auto-scroll is now enabled by default.
+- **Checkpoint Snapshot Reclaim**: deleted checkpoints log their object references for background recycling instead of retaining every content object, and write leases avoid competing with snapshot capture; a full cleanup runs at startup and only removes unused objects past the retention period, while newer content is still reused as cache. The remote checkpoint scan timeout and the snapshot retention days are now editable settings.
+- **Plugin Conversation API Profile Binding (restored)**: `conversations.setApiProfile` and the `apiProfile` option of `conversations.create` return after their removal in v0.5.6 (write actions 210 -> 212). `create` can bind a new conversation to a profile name and rejects an unknown profile before any conversation exists; `setApiProfile` re-binds an existing top-level conversation (an empty string unbinds it, the change applies from the next request, and sub-agent / WorkFlow node conversations are rejected).
+
+## Improvements
+
+- The HTML file preview button now reflects the card's expanded state.
+- Spin animations are composited on an inline-flex wrapper instead of the SVG element, so loaders stay smooth at DPR > 1.
+- Sub-agent built-in prompts are demoted when configured prompts are present, and the sub-agent failure bar stays visible while an abandoned run winds down.
+- The input area plugin slot (`chat.input.actions`) moves into the chat input view with a layered stack style.
+
+## Breaking Changes
+
+- Plan Mode is removed: its system prompt, approval tool, per-conversation storage column and write gate are gone, along with the related UI, i18n, docs and remote-control entries.
+
+## Bug Fixes
+
+- Pause controller: the session-key migration is synchronized so the button no longer gets stuck in the paused state, and the paused display state is cleared when the controller is missing during recovery.
+- WorkTree: sending with WorkTree enabled but no valid binding now fails closed with a prompt instead of falling back to dirty mode; execution failures keep a readable `WorktreeBindingError` reason, rollback takes the first persistent boundary after an uncommitted target and refuses to descend to the project root when checkpoints exist, and a local rollback re-checks whether saving moved the boundary to avoid truncation misalignment.
+- Anthropic tool call IDs now satisfy the provider's charset.
+
 ## v0.5.6
 
 ## New Features

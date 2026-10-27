@@ -171,7 +171,11 @@ const StatusIcon = ({
 }): React.JSX.Element | null => {
   switch (status) {
     case "running":
-      return <Loader2 size={13} className="tool-call-icon-spinning" />;
+      return (
+        <span className="spin-layer">
+          <Loader2 size={13} />
+        </span>
+      );
     case "completed":
       return <Check size={13} className="workflow-node-icon-completed" />;
     case "failed":

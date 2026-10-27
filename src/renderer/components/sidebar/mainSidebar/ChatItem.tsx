@@ -564,13 +564,14 @@ export function ChatItem({
           onKeyDown={(event) => event.stopPropagation()}
         >
           {isArchiving ? (
-            <Loader2
-              size={14}
-              className="spin"
-              aria-label={t("sidebar.chatActionArchiving", {
-                defaultValue: "Archiving...",
-              })}
-            />
+            <span className="spin-layer">
+              <Loader2
+                size={14}
+                aria-label={t("sidebar.chatActionArchiving", {
+                  defaultValue: "Archiving...",
+                })}
+              />
+            </span>
           ) : (
             <>
               {onArchive ? (

@@ -93,7 +93,9 @@ const WorkflowCardNode = memo(function WorkflowCardNode({
       <div className="workflow-node-header">
         <span className="workflow-node-title">{node.label || node.name}</span>
         {isRunning ? (
-          <Loader2 size={13} className="tool-call-icon-spinning" />
+          <span className="spin-layer">
+            <Loader2 size={13} />
+          </span>
         ) : node.runStatus === "completed" ? (
           <Check size={13} className="workflow-node-icon-completed" />
         ) : node.runStatus === "failed" ? (
@@ -1445,11 +1447,9 @@ const WorkflowToolCallInner = ({
 
         {canvasLoading && (
           <div className="workflow-canvas-empty">
-            <Loader2
-              className="tool-call-icon-spinning"
-              size={13}
-              aria-hidden="true"
-            />
+            <span className="spin-layer">
+              <Loader2 size={13} aria-hidden="true" />
+            </span>
           </div>
         )}
         {!hasCanvas && !canvasLoading && (

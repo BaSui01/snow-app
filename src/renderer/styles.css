@@ -9329,6 +9329,13 @@ body.is-panel-resizing * {
   will-change: transform;
 }
 
+/* Loader2 等图标的旋转同样只能放在 HTML 包裹层（子代理 / Workflow 节点列表） */
+.spin-layer {
+  display: inline-flex;
+  animation: snow-spin 0.85s linear infinite;
+  will-change: transform;
+}
+
 @keyframes snow-spin {
   from {
     transform: rotate(0deg);

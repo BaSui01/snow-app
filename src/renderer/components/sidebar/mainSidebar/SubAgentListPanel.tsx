@@ -28,7 +28,11 @@ function renderStatusIcon(
     status === "finalizing" ||
     status === "cancelling"
   ) {
-    return <Loader2 size={11} className="spin sub-agent-status-running" />;
+    return (
+      <span className="spin-layer">
+        <Loader2 size={11} className="sub-agent-status-running" />
+      </span>
+    );
   }
   const statusClass =
     status === "completed"

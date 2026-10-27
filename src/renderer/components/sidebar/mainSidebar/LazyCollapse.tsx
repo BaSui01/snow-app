@@ -79,7 +79,9 @@ export function LazyCollapse({
         renderContent()
       ) : (
         <span className="sidebar-collapse-loading">
-          <Loader2 size={12} className="spin" />
+          <span className="spin-layer">
+            <Loader2 size={12} />
+          </span>
           {t("sidebar.loadingPanel", { defaultValue: "Loading..." })}
         </span>
       )}

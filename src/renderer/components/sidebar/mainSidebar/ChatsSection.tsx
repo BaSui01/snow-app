@@ -421,7 +421,9 @@ export function ChatsSection({
           />
         ) : showLoading ? (
           <span className="empty-text loading">
-            <Loader2 className="spin" size={13} />
+            <span className="spin-layer">
+              <Loader2 size={13} />
+            </span>
             {t("sidebar.loadingWorkspaceContent", {
               defaultValue: "Loading workspace content...",
             })}

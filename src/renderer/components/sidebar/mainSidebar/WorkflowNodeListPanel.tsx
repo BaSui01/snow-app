@@ -34,7 +34,11 @@ function renderNodeIcon(
     return <CircleAlert size={11} className="sub-agent-attention" />;
   }
   if (runStatus === "running") {
-    return <Loader2 size={11} className="spin workflow-node-status-running" />;
+    return (
+      <span className="spin-layer">
+        <Loader2 size={11} className="workflow-node-status-running" />
+      </span>
+    );
   }
   const statusClass =
     runStatus === "completed"

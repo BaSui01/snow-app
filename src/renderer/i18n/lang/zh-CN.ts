@@ -4945,7 +4945,10 @@ export const zhCN = {
   "settings.browserHistoryClearTitle": "清空历史记录",
   "settings.browserHistoryClearMessage":
     "确定清空全部访问记录吗？此操作无法撤销。",
-  "settings.browserHistoryLoadMore": "加载更多",
+  "settings.browserHistoryTotal": "共 {{count}} 条",
+  "settings.browserHistoryPageInfo": "第 {{current}} / {{total}} 页",
+  "settings.browserHistoryPrevPage": "上一页",
+  "settings.browserHistoryNextPage": "下一页",
   "settings.browserHomepage": "起始页",
   "settings.browserHomepagePlaceholder": "输入网址，留空为空白页",
   "settings.browserHomepageHint": "留空表示空白页",

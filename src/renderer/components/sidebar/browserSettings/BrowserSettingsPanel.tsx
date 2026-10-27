@@ -627,7 +627,12 @@ export function BrowserSettingsPanel({
   };
 
   return (
-    <div className="api-settings-page" role="region">
+    <div
+      className={`api-settings-page${
+        activeTab === "history" ? " browser-history-page" : ""
+      }`}
+      role="region"
+    >
       {/* 顶部 Tab：浏览器设置 / 显示尺寸设备 / 用户脚本 */}
       <div className="import-settings-tabs" role="tablist">
         <button

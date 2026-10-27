@@ -4889,7 +4889,10 @@ export const zhTW = {
   "settings.browserHistoryClearTitle": "清空瀏覽記錄",
   "settings.browserHistoryClearMessage":
     "確定要清空全部瀏覽記錄嗎？此操作無法復原。",
-  "settings.browserHistoryLoadMore": "載入更多",
+  "settings.browserHistoryTotal": "共 {{count}} 筆",
+  "settings.browserHistoryPageInfo": "第 {{current}} / {{total}} 頁",
+  "settings.browserHistoryPrevPage": "上一頁",
+  "settings.browserHistoryNextPage": "下一頁",
   "settings.browserHomepage": "起始頁",
   "settings.browserHomepagePlaceholder": "輸入網址，留空為空白頁",
   "settings.browserHomepageHint": "留空表示空白頁",

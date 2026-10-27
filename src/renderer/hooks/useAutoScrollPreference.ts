@@ -2,15 +2,16 @@ import { useCallback, useState } from "react";
 
 export const AUTO_SCROLL_STORAGE_KEY = "snow.chat.autoScroll";
 
+// 默认开启，仅显式记录为 "false" 时关闭
 const readAutoScrollPreference = (): boolean => {
   if (typeof window === "undefined") {
-    return false;
+    return true;
   }
 
   try {
-    return window.localStorage.getItem(AUTO_SCROLL_STORAGE_KEY) === "true";
+    return window.localStorage.getItem(AUTO_SCROLL_STORAGE_KEY) !== "false";
   } catch {
-    return false;
+    return true;
   }
 };
 
@@ -22,7 +23,7 @@ const writeAutoScrollPreference = (enabled: boolean): void => {
   try {
     window.localStorage.setItem(
       AUTO_SCROLL_STORAGE_KEY,
-      enabled ? "true" : "false"
+      enabled ? "true" : "false",
     );
   } catch {
     // Ignore storage access errors. Preference still works for current session.
@@ -34,7 +35,7 @@ export const useAutoScrollPreference = (): {
   setAutoScrollEnabled: (enabled: boolean) => void;
 } => {
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(
-    readAutoScrollPreference
+    readAutoScrollPreference,
   );
 
   const setAutoScrollEnabled = useCallback((enabled: boolean) => {

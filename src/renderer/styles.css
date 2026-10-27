@@ -288,6 +288,9 @@ body.is-panel-resizing * {
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) var(
       --right-panel-width
     );
+  /* 行轨固定为可用高度：下拉展开把卡片 overflow 切成 visible 后，
+     卡片内容（标题+副标题）的最小高度不再把整行撑高 */
+  grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   height: calc(var(--header-height) + 20px);
   min-height: calc(var(--header-height) + 20px);
@@ -47115,6 +47118,95 @@ body.ctrl-held [data-path] {
 
 .browser-history-visits {
   color: var(--text-muted);
+}
+
+/* 历史记录 tab：整页不滚动，列表撑满可用高度并在表格内部滚动 */
+.api-settings-page.browser-history-page {
+  overflow: hidden;
+}
+
+.browser-history-section {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.browser-history-section > .api-settings-manual-form {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.browser-history-section > .api-settings-manual-form > .api-settings-form-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.browser-history-table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  transition: opacity 0.12s;
+}
+
+.browser-history-table-wrap.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.browser-history-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.browser-history-total {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.browser-history-pagination {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.browser-history-page-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.browser-history-page-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.browser-history-page-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.browser-history-page-info {
+  min-width: 66px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .browser-settings-batch-bar {

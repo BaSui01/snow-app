@@ -5288,7 +5288,10 @@ export const en = {
   "settings.browserHistoryClearTitle": "Clear history",
   "settings.browserHistoryClearMessage":
     "Clear all browsing history? This action cannot be undone.",
-  "settings.browserHistoryLoadMore": "Load more",
+  "settings.browserHistoryTotal": "{{count}} entries",
+  "settings.browserHistoryPageInfo": "Page {{current}} / {{total}}",
+  "settings.browserHistoryPrevPage": "Previous page",
+  "settings.browserHistoryNextPage": "Next page",
   "settings.browserHomepage": "Homepage",
   "settings.browserHomepagePlaceholder":
     "Enter URL, leave empty for blank page",

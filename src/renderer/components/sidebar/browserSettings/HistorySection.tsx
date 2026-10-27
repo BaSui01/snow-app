@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Loader2, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { WebsiteFavicon } from "../../rightPanel/browser/WebsiteFavicon";
@@ -7,11 +15,13 @@ import type { BrowserHistoryEntry } from "../../../../preload/modules/systemApi"
 
 /**
  * 浏览器设置面板「历史记录」tab：
- *  - 搜索（标题 / 地址，由 Rust 侧检索排序）+ 分页加载；
+ *  - 搜索（标题 / 地址，由 Rust 侧检索排序）+ 页码分页；
+ *  - 列表撑满可用高度，内部滚动；
  *  - 单条删除与「全部清空」（二次确认）；
  *  - 点击地址在内置浏览器打开。
  */
 
+/** 每页条数 */
 const PAGE_SIZE = 50;
 /** 输入防抖：避免逐字符触发检索 */
 const SEARCH_DEBOUNCE_MS = 200;
@@ -24,54 +34,51 @@ export function HistorySection(): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<BrowserHistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   // 连续输入时丢弃过期查询结果（只认最后一次请求）。
   const requestRef = useRef(0);
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(
-    async (searchQuery: string, offset: number): Promise<void> => {
+    async (searchQuery: string, targetPage: number): Promise<void> => {
       const requestId = requestRef.current + 1;
       requestRef.current = requestId;
-      if (offset === 0) {
-        setLoading(true);
-      } else {
-        setLoadingMore(true);
-      }
-      let page: { items: BrowserHistoryEntry[]; total: number } = {
+      setBusy(true);
+      let result: { items: BrowserHistoryEntry[]; total: number } = {
         items: [],
         total: 0,
       };
       try {
-        page = await window.snow.browserHistoryList(
+        result = await window.snow.browserHistoryList(
           searchQuery,
-          offset,
+          (targetPage - 1) * PAGE_SIZE,
           PAGE_SIZE,
         );
       } catch {
-        page = { items: [], total: 0 };
+        result = { items: [], total: 0 };
       }
       if (requestId !== requestRef.current) {
         return;
       }
-      setEntries((prev) =>
-        offset === 0 ? page.items : [...prev, ...page.items],
-      );
-      setTotal(page.total);
+      setEntries(result.items);
+      setTotal(result.total);
       setLoading(false);
-      setLoadingMore(false);
+      setBusy(false);
     },
     [],
   );
 
-  // 打开 tab 立即加载；查询变化防抖后重新检索。
+  // 打开 tab 立即加载；查询变化防抖后回到第一页重新检索。
   useEffect(() => {
     const timer = window.setTimeout(
       () => {
-        void load(query, 0);
+        setPage(1);
+        void load(query, 1);
       },
       query ? SEARCH_DEBOUNCE_MS : 0,
     );
@@ -79,6 +86,20 @@ export function HistorySection(): React.JSX.Element {
       window.clearTimeout(timer);
     };
   }, [query, load]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const goToPage = (targetPage: number): void => {
+    const clamped = Math.min(Math.max(1, targetPage), totalPages);
+    if (clamped === page) {
+      return;
+    }
+    if (tableWrapRef.current) {
+      tableWrapRef.current.scrollTop = 0;
+    }
+    setPage(clamped);
+    void load(query, clamped);
+  };
 
   const handleDelete = (entry: BrowserHistoryEntry): void => {
     setDeletingId(entry.id);
@@ -88,8 +109,13 @@ export function HistorySection(): React.JSX.Element {
         if (!removed) {
           return;
         }
-        setEntries((prev) => prev.filter((item) => item.id !== entry.id));
+        const remaining = entries.filter((item) => item.id !== entry.id);
+        setEntries(remaining);
         setTotal((prev) => Math.max(0, prev - 1));
+        // 本页删空且不是第一页：退回上一页重新加载。
+        if (remaining.length === 0 && page > 1) {
+          goToPage(page - 1);
+        }
       })
       .catch(() => {})
       .finally(() => setDeletingId(null));
@@ -101,6 +127,7 @@ export function HistorySection(): React.JSX.Element {
       await window.snow.browserHistoryClear();
       setEntries([]);
       setTotal(0);
+      setPage(1);
     } catch {
       // 清空失败：保留现有列表，用户可重试
     } finally {
@@ -114,7 +141,7 @@ export function HistorySection(): React.JSX.Element {
   };
 
   return (
-    <div className="browser-settings-section">
+    <div className="browser-settings-section browser-history-section">
       <div className="api-settings-form-section-header">
         <span className="api-settings-form-section-title">
           {t("settings.browserHistory")}
@@ -123,7 +150,7 @@ export function HistorySection(): React.JSX.Element {
           type="button"
           className="browser-settings-scan-action"
           onClick={() => setClearConfirm(true)}
-          disabled={total === 0 || clearing}
+          disabled={total === 0 || clearing || busy}
         >
           <Trash2 size={13} strokeWidth={1.8} />
           <span>{t("settings.browserHistoryClearAll")}</span>
@@ -177,7 +204,12 @@ export function HistorySection(): React.JSX.Element {
                   {t("settings.browserHistorySearchEmpty")}
                 </div>
               ) : (
-                <div className="browser-settings-table-wrap">
+                <div
+                  className={`browser-settings-table-wrap browser-history-table-wrap${
+                    busy ? " is-busy" : ""
+                  }`}
+                  ref={tableWrapRef}
+                >
                   <table className="browser-settings-table">
                     <thead>
                       <tr>
@@ -258,19 +290,50 @@ export function HistorySection(): React.JSX.Element {
                 </div>
               )}
 
-              {entries.length < total && (
-                <div className="api-settings-actions browser-settings-actions">
-                  <button
-                    type="button"
-                    className="api-settings-action-btn"
-                    onClick={() => void load(query, entries.length)}
-                    disabled={loadingMore}
-                  >
-                    {loadingMore ? (
-                      <Loader2 size={15} className="spin" />
-                    ) : null}
-                    <span>{t("settings.browserHistoryLoadMore")}</span>
-                  </button>
+              {entries.length > 0 && (
+                <div className="browser-history-footer">
+                  <span className="browser-history-total">
+                    {t("settings.browserHistoryTotal", {
+                      values: { count: total },
+                      defaultValue: "{{count}} entries",
+                    })}
+                  </span>
+                  <div className="browser-history-pagination">
+                    <button
+                      type="button"
+                      className="browser-history-page-btn"
+                      onClick={() => goToPage(page - 1)}
+                      disabled={busy || page <= 1}
+                      aria-label={t("settings.browserHistoryPrevPage", {
+                        defaultValue: "Previous page",
+                      })}
+                      title={t("settings.browserHistoryPrevPage", {
+                        defaultValue: "Previous page",
+                      })}
+                    >
+                      <ChevronLeft size={13} strokeWidth={1.8} />
+                    </button>
+                    <span className="browser-history-page-info">
+                      {t("settings.browserHistoryPageInfo", {
+                        values: { current: page, total: totalPages },
+                        defaultValue: "Page {{current}} / {{total}}",
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      className="browser-history-page-btn"
+                      onClick={() => goToPage(page + 1)}
+                      disabled={busy || page >= totalPages}
+                      aria-label={t("settings.browserHistoryNextPage", {
+                        defaultValue: "Next page",
+                      })}
+                      title={t("settings.browserHistoryNextPage", {
+                        defaultValue: "Next page",
+                      })}
+                    >
+                      <ChevronRight size={13} strokeWidth={1.8} />
+                    </button>
+                  </div>
                 </div>
               )}
             </>

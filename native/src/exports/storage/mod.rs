@@ -2,7 +2,9 @@ pub(crate) use napi::bindgen_prelude::*;
 pub(crate) use napi_derive::napi;
 
 pub(crate) use crate::hooks::{HookExecuteInput, HookExecuteResult};
-pub(crate) use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
+pub(crate) use crate::storage::services::fs_explorer::{
+    DirectoryEntry, FileContentResult, FilePreviewResult, FileSearchResult,
+};
 pub(crate) use crate::storage::services::app_lock::{
     AppLockState, AppLockTotpBinding, AppLockVerifyResult,
 };

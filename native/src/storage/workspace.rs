@@ -291,6 +291,13 @@ pub fn read_file_content(file_path: String) -> Result<services::fs_explorer::Fil
     services::fs_explorer::read_file_content(&file_path)
 }
 
+pub fn read_file_preview(
+    file_path: String,
+    section: Option<String>,
+) -> services::fs_explorer::FilePreviewResult {
+    services::fs_explorer::read_file_preview(&file_path, section.as_deref())
+}
+
 pub fn write_file_content(file_path: String, content: String) -> Result<()> {
     services::fs_explorer::write_file_content(&file_path, &content)
 }

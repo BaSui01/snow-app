@@ -23,6 +23,7 @@ import {
 
 import { useI18n } from "../../i18n";
 import { getFileTypeIcon } from "../../utils/fileIcons";
+import { isPdfFilePath } from "../../utils/browserFileOpen";
 import { localizeSshError } from "../../utils/sshErrorMessages";
 import type {
   DirectoryEntry,
@@ -1915,9 +1916,23 @@ export function ProjectExplorerContent({
           }
           onClick={(event) => handleTreeRowClick(event, node, hasChildren)}
           onDoubleClick={() => {
-            if (!node.isDirectory) {
-              setEditingEntry({ path: node.path, name: node.name });
+            if (node.isDirectory) {
+              return;
             }
+            // 本地 PDF 不可编辑：双击直接在内置浏览器中打开。
+            if (!isSsh && isPdfFilePath(node.path)) {
+              onOpenFile?.(
+                node.path,
+                node.name,
+                isSsh,
+                sshProfileIdRef.current,
+                undefined,
+                rootPath ?? undefined,
+                directoryId ?? undefined,
+              );
+              return;
+            }
+            setEditingEntry({ path: node.path, name: node.name });
           }}
           onContextMenu={(event) => handleEntryContextMenu(event, node)}
           style={{
@@ -2446,6 +2461,19 @@ export function ProjectExplorerContent({
                       }
                       onClick={() => handleSearchFileNameClick(result)}
                       onDoubleClick={() => {
+                        // 本地 PDF 不可编辑：双击直接在内置浏览器中打开。
+                        if (!isSsh && isPdfFilePath(result.path)) {
+                          onOpenFile?.(
+                            result.path,
+                            result.name,
+                            isSsh,
+                            sshProfileIdRef.current,
+                            undefined,
+                            rootPath ?? undefined,
+                            directoryId ?? undefined,
+                          );
+                          return;
+                        }
                         setEditingEntry({
                           path: result.path,
                           name: result.name,

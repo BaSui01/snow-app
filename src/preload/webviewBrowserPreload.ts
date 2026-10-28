@@ -309,24 +309,39 @@ const setup = (): void => {
   }, 800);
 };
 
-contextBridge.exposeInMainWorld("snowPasswordBridge", {
-  /** 查询当前页面 origin 已保存的凭据（供页面脚本手动触发填充）。 */
-  find: (): Promise<{ username: string; password: string } | null> =>
-    ipcRenderer.invoke("browser-passwords:find", {
-      origin: getOrigin(),
-    }),
-  /** 保存凭据（供页面脚本自定义逻辑调用）。 */
-  save: (payload: {
-    origin: string;
-    username: string;
-    password: string;
-  }): Promise<{ id: string; updated: boolean }> =>
-    ipcRenderer.invoke("browser-passwords:save", payload),
-});
+/**
+ * 浏览器内置查看器页面（PDF 等）：整段 preload 逻辑必须跳过。
+ * 这类页面由 Chromium 的查看器插件渲染，而用户脚本注入会在顶层同步调用
+ * ipcRenderer.sendSync——同步 IPC 会阻塞查看器插件的初始化，页面停在空白。
+ */
+const isBuiltinViewerDocument = (): boolean => {
+  try {
+    return document.contentType === "application/pdf";
+  } catch {
+    return false;
+  }
+};
 
-// 用户脚本注入：必须在顶层同步调用。内部经 sendSync 同步匹配 +
-// executeJavaScript 同步排队注入，确保脚本早于页面首个脚本执行
-//（document-start 语义，h5player 等脚本依赖此前置劫持 MediaSource）。
-injectUserscripts();
+if (!isBuiltinViewerDocument()) {
+  contextBridge.exposeInMainWorld("snowPasswordBridge", {
+    /** 查询当前页面 origin 已保存的凭据（供页面脚本手动触发填充）。 */
+    find: (): Promise<{ username: string; password: string } | null> =>
+      ipcRenderer.invoke("browser-passwords:find", {
+        origin: getOrigin(),
+      }),
+    /** 保存凭据（供页面脚本自定义逻辑调用）。 */
+    save: (payload: {
+      origin: string;
+      username: string;
+      password: string;
+    }): Promise<{ id: string; updated: boolean }> =>
+      ipcRenderer.invoke("browser-passwords:save", payload),
+  });
 
-setup();
+  // 用户脚本注入：必须在顶层同步调用。内部经 sendSync 同步匹配 +
+  // executeJavaScript 同步排队注入，确保脚本早于页面首个脚本执行
+  //（document-start 语义，h5player 等脚本依赖此前置劫持 MediaSource）。
+  injectUserscripts();
+
+  setup();
+}

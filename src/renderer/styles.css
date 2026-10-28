@@ -1488,9 +1488,7 @@ body.is-panel-resizing * {
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+  /* 背景不做过渡：切换会话时选中态必须立刻变色，0.15s 渐变会被看成"延迟" */
   position: relative;
 }
 .chat-item:hover,
@@ -10139,20 +10137,31 @@ body.is-panel-resizing * {
   align-items: flex-end;
 }
 
+/* 流光走 transform（合成线程驱动）而非 background-position（主线程逐帧重绘）：
+   骨架屏出现时主线程往往正忙于翻页挂载与布局（定位遮罩、首屏历史加载），
+   重绘驱动的动画会随之卡顿，失去加载反馈的意义。底色在行本身，高光是
+   ::after 上的一条渐变带，整体平移扫过。 */
 .chat-message-skeleton-line {
+  position: relative;
   height: 12px;
+  overflow: hidden;
   border-radius: var(--radius-sm);
+  background-color: var(--bg-hover);
+}
+
+.chat-message-skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background-image: linear-gradient(
     90deg,
-    var(--bg-hover) 0%,
-    var(--bg-hover) 42%,
+    transparent 34%,
     var(--border-subtle) 50%,
-    var(--bg-hover) 58%,
-    var(--bg-hover) 100%
+    transparent 66%
   );
-  background-size: 200% 100%;
-  background-repeat: repeat;
-  animation: skeleton-shimmer 1.5s linear infinite;
+  transform: translateX(-100%);
+  animation: chat-skeleton-sweep 1.5s linear infinite;
+  will-change: transform;
 }
 
 .chat-message-skeleton-line.is-primary {
@@ -10168,14 +10177,7 @@ body.is-panel-resizing * {
 }
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line {
-  background-image: linear-gradient(
-    90deg,
-    var(--bg-tertiary) 0%,
-    var(--bg-tertiary) 42%,
-    var(--border-subtle) 50%,
-    var(--bg-tertiary) 58%,
-    var(--bg-tertiary) 100%
-  );
+  background-color: var(--bg-tertiary);
 }
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line.is-primary {
@@ -10184,6 +10186,15 @@ body.is-panel-resizing * {
 
 .chat-message-skeleton.is-user .chat-message-skeleton-line.is-secondary {
   width: 28%;
+}
+
+@keyframes chat-skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes skeleton-shimmer {
@@ -14339,7 +14350,12 @@ body.is-panel-resizing * {
   }
 }
 
-/* 思考统计（时长 · token 数）：后端实时统计，思考中与结束后都显示 */
+/* 思考统计（时长 · token 数）：后端实时统计，思考中与结束后都显示。
+   注意：思考中头部整行流光靠 background-clip: text 裁切，而自身形成绘制层
+   （opacity < 1、或处于运行/填充态的动画）的后代会脱离这层裁切——文字只剩
+   透明的 text-fill、拿不到父级渐变，等于整段消失。所以这里与
+   .thinking-block-preview 都不能加入场动画或 opacity；需要压暗的子元素改用
+   color-mix 降低颜色透明度（见 -sep / -label）。 */
 .thinking-block-meta {
   display: inline-flex;
   align-items: center;
@@ -14349,7 +14365,6 @@ body.is-panel-resizing * {
   font-size: 11.5px;
   line-height: 1.4;
   white-space: nowrap;
-  animation: thinking-meta-in 0.24s ease-out both;
 }
 
 .thinking-block-meta-icon {
@@ -14362,16 +14377,17 @@ body.is-panel-resizing * {
 }
 
 .thinking-block-meta-sep {
-  opacity: 0.55;
+  color: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
 }
 
 .thinking-block-meta-label {
-  opacity: 0.75;
+  color: color-mix(in srgb, var(--text-tertiary) 75%, transparent);
 }
 
 /* 单行思考内容预览：取尾部文本，纯文本展示，自动后滚
    （流式输出时 content 增长，尾部自然更新展示最新片段）。
-   white-space: nowrap + overflow: hidden 保证永远单行不折行。 */
+   white-space: nowrap + overflow: hidden 保证永远单行不折行。
+   同样不能加 opacity / 入场动画，原因见 .thinking-block-meta。 */
 .thinking-block-preview {
   flex: 1;
   min-width: 0;
@@ -14381,26 +14397,18 @@ body.is-panel-resizing * {
   color: var(--text-tertiary);
   font-size: 12px;
   line-height: 1.4;
-  opacity: 0.85;
-  animation: thinking-meta-in 0.24s ease-out both;
 }
 
-@keyframes thinking-meta-in {
-  from {
-    opacity: 0;
-    transform: translateX(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* 流光文字（思考中 / 运行中）：高对比扫光。低谷把基色按半透明压暗，
+/* 流光文字（思考中）：高对比扫光。低谷把基色按半透明压暗，
    峰值用 --text-primary，靠亮度差而非颜色区分；两端同为低谷色，
-   配合 repeat 平铺在任意 background-position 下都不会出现断层。 */
-.thinking-block-title--shimmer,
-.chat-item-title-text--shimmer {
+   配合 repeat 平铺在任意 background-position 下都不会出现断层。
+   思考块头部整行共用这一层背景：渐变裁切到头部内的全部文字（标题、
+   时长/token 统计、思考内容预览条），一次扫光横跨整行。这里刻意不写
+   color: transparent——图标以 currentColor 描边，-webkit-text-fill-color
+   不作用于 SVG，故图标保持常亮，只有文字参与流光。
+   注意：background-position 每帧都要重绘，必须跑在主线程；会话标题的
+   同款流光走下面的合成器实现，不再使用这条规则。 */
+.thinking-block-header--shimmer {
   --shimmer-base: var(--text-tertiary);
   --shimmer-dim: color-mix(in srgb, var(--shimmer-base) 50%, transparent);
   background-image: linear-gradient(
@@ -14416,14 +14424,79 @@ body.is-panel-resizing * {
   background-repeat: repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  color: transparent;
   -webkit-text-fill-color: transparent;
   animation: text-shimmer 1.15s linear infinite;
 }
 
-/* 会话标题：基色取二级文字，比思考块稍亮 */
+/* 会话标题流光：纯合成器动画（切换会话等长任务期间也不停转）。
+   background-position 每帧都要重绘文字，只能跑主线程，主线程一忙就整段
+   停转；这里改成「窗口平移 + 文字静止」：底层是压暗的标题文字，上层是
+   同一文本的亮色副本，装在一条带柔边的裁切窗口里——窗口平移、副本反向
+   平移（两者位移任何时刻都互为相反数，文字停在原地），观感就是柔边亮带
+   扫过文字。柔边由静态 mask 提供，整帧只有 transform 变化，全部交给
+   合成器。副本宽度与标题盒子一致，截断（省略号）位置与底层严格对齐。 */
 .chat-item-title-text--shimmer {
-  --shimmer-base: var(--text-secondary);
+  --shimmer-dim: color-mix(in srgb, var(--text-secondary) 50%, transparent);
+  position: relative;
+  color: var(--shimmer-dim);
+}
+
+.chat-item-title-shimmer-window {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 16%,
+    #000 46%,
+    #000 54%,
+    transparent 84%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 16%,
+    #000 46%,
+    #000 54%,
+    transparent 84%
+  );
+  animation: chat-title-shimmer-sweep 1.15s linear infinite;
+}
+
+.chat-item-title-shimmer-text {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  overflow: hidden;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  will-change: transform;
+  animation: chat-title-shimmer-counter 1.15s linear infinite;
+}
+
+/* 亮带从标题左缘之外扫到右缘之外，与思考块流光同速同向 */
+@keyframes chat-title-shimmer-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes chat-title-shimmer-counter {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(-100%);
+  }
 }
 
 @keyframes text-shimmer {
@@ -48249,9 +48322,7 @@ pre.file-viewer-code {
 }
 
 .file-viewer-loading,
-.file-viewer-error,
-.file-viewer-empty,
-.file-viewer-binary {
+.file-viewer-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -48261,8 +48332,477 @@ pre.file-viewer-code {
   color: var(--text-tertiary);
   font-size: 12.5px;
 }
-.file-viewer-error {
+
+/* ===== File Viewer Structured Preview ===== */
+/* 不可预览面板：原因 + 文件信息 + 操作出口，原始错误折叠展示。 */
+.file-preview-unavailable {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 20px;
+  background: var(--bg-primary);
+}
+
+.file-preview-unavailable-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+
+.file-preview-unavailable-reason {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.file-preview-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.file-preview-meta dt {
+  color: var(--text-muted);
+}
+
+.file-preview-meta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.file-preview-mono {
+  font-family: var(--font-mono);
+}
+
+.file-preview-path {
+  user-select: text;
+}
+
+.file-preview-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.file-preview-detail summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-preview-detail pre,
+.file-preview-inline-error pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.file-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-preview-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.file-preview-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.file-preview-action-error {
+  font-size: 12px;
   color: var(--accent-red);
+  overflow-wrap: anywhere;
+}
+
+.file-preview-loading,
+.file-preview-empty {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+}
+
+.file-preview-inline-error {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  font-size: 12.5px;
+  color: var(--accent-red);
+}
+
+.file-preview-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border-light);
+  background: var(--surface-island-muted);
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.file-preview-status-warn {
+  color: var(--accent-amber-text, #d97706);
+  font-size: 11px;
+}
+
+/* 工作表页签 */
+.file-preview-sheet,
+.file-preview-db-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.file-preview-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface-island-muted);
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.file-preview-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.file-preview-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-tab:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.file-preview-tab.active {
+  border-color: var(--border-light);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  margin-bottom: -1px;
+}
+
+.file-preview-tab:disabled {
+  cursor: default;
+}
+
+/* 只读数据表格：粘性表头与行号列，固定列宽，单元格单行省略 */
+.file-preview-grid-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+
+.file-preview-grid {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.file-preview-grid th,
+.file-preview-grid td {
+  height: 24px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  user-select: text;
+}
+
+.file-preview-grid td[rowspan] {
+  vertical-align: middle;
+}
+
+.file-preview-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.file-preview-grid-row-header {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 400;
+  text-align: right !important;
+}
+
+.file-preview-grid thead .file-preview-grid-corner {
+  left: 0;
+  z-index: 3;
+}
+
+.file-preview-grid-null {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.file-preview-grid-spacer td {
+  height: auto;
+  padding: 0;
+  border: none;
+}
+
+/* SQLite：左侧表清单 + 右侧结构与数据，窄面板改为上下结构 */
+.file-preview-db {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  container-type: inline-size;
+  background: var(--bg-primary);
+}
+
+.file-preview-db-tables {
+  width: 180px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 6px;
+  border-right: 1px solid var(--border-light);
+  background: var(--surface-island-muted);
+}
+
+.file-preview-db-table {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-preview-db-table span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-db-table svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.file-preview-db-table:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.file-preview-db-table.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.file-preview-db-table:disabled {
+  cursor: default;
+}
+
+.file-preview-db-truncated {
+  padding: 6px 8px;
+}
+
+.file-preview-db-schema {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 12px;
+}
+
+.file-preview-db-schema summary {
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-preview-db-columns {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+}
+
+.file-preview-db-columns th,
+.file-preview-db-columns td {
+  padding: 3px 12px;
+  text-align: left;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  user-select: text;
+}
+
+.file-preview-db-columns th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+@container (max-width: 520px) {
+  .file-preview-db {
+    flex-direction: column;
+  }
+
+  .file-preview-db-tables {
+    width: auto;
+    max-height: 132px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-light);
+  }
+}
+
+/* 演示文稿大纲卡片 */
+.file-preview-slides {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 24px;
+  background: var(--bg-primary);
+}
+
+.file-preview-slide {
+  padding: 10px 14px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-secondary);
+  user-select: text;
+}
+
+.file-preview-slide-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.file-preview-slide-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.file-preview-slide-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.file-preview-slide-block {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.file-preview-slide-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.file-preview-slides-truncated {
+  padding: 0 2px;
+}
+
+/* DOCX：Shadow DOM 宿主，文档样式与应用样式隔离 */
+.file-preview-docx {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  background: var(--bg-secondary);
+}
+
+.file-preview-docx-loading {
+  position: absolute;
+  inset: 0;
+}
+
+.file-preview-docx-host {
+  display: block;
+  width: 100%;
 }
 
 /* ===== File Viewer Edit Mode ===== */

@@ -489,6 +489,18 @@ export function ChatItem({
                   }`}
                 >
                   {displayName}
+                  {/* 亮色副本 + 柔边裁切窗口：只有 transform 动画，走合成器，
+                      切换会话时不会像 background-position 那样停转 */}
+                  {showTitleShimmer ? (
+                    <span
+                      className="chat-item-title-shimmer-window"
+                      aria-hidden="true"
+                    >
+                      <span className="chat-item-title-shimmer-text">
+                        {displayName}
+                      </span>
+                    </span>
+                  ) : null}
                 </span>
               </span>
               {statusLabel && (

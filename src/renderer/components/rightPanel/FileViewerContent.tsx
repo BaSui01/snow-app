@@ -74,7 +74,13 @@ import {
   type FileReviewDraftAnchor,
   type FileReviewLocation,
 } from "./fileViewer/fileReviewAnchors";
-import type { FileContentResult } from "./types";
+import { FilePreviewView } from "./fileViewer/FilePreviewView";
+import { formatSize } from "./fileViewer/formatSize";
+import {
+  PreviewUnavailable,
+  type PreviewUnavailableInfo,
+} from "./fileViewer/PreviewUnavailable";
+import type { FileContentResult, FilePreviewResult } from "./types";
 
 type FileViewerContentProps = {
   filePath: string;
@@ -217,12 +223,6 @@ const isComposingKeyboardEvent = (
   return nativeEvent.isComposing || nativeEventWithKeyCode.keyCode === 229;
 };
 
-const formatSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
 // Extracted documents and text that cannot round-trip to its original encoding
 // are searchable/copyable previews, never editable source files.
 const isReadOnlyPreview = (content: FileContentResult): boolean =>
@@ -231,6 +231,21 @@ const isReadOnlyPreview = (content: FileContentResult): boolean =>
 
 const isEditable = (content: FileContentResult): boolean =>
   !content.isBinary && !content.isImage && !isReadOnlyPreview(content);
+
+/** Rust 预览结果转不可预览面板信息；不存在的文件不显示大小。 */
+const toUnavailableInfo = (
+  result: FilePreviewResult,
+): PreviewUnavailableInfo => ({
+  reason: result.reason || "read_failed",
+  kind: result.kind,
+  size: result.reason === "not_found" ? null : result.size,
+  limit: result.limit,
+  signature: result.signature,
+  detail: result.detail,
+});
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 const serializeRemoteVersion = (
   version: FileContentResult["remoteVersion"] | undefined,
@@ -315,7 +330,29 @@ export function FileViewerContent({
   const editTextareaId = useId();
   const [content, setContent] = useState<FileContentResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // 不可预览（文件缺失 / 超限 / 格式不符 / 读取失败）：显示本地化面板与可操作出口。
+  const [unavailable, setUnavailable] = useState<PreviewUnavailableInfo | null>(
+    null,
+  );
+  // 本地文件的结构化只读预览（表格 / SQLite / 幻灯片大纲 / DOCX）。
+  const [preview, setPreview] = useState<FilePreviewResult | null>(null);
+  const previewRef = useRef<FilePreviewResult | null>(null);
+  previewRef.current = preview;
+  // 结构化预览与「抽取文本」视图切换；抽取文本复用 readFileContent 的文档文本，
+  // 搜索、复制与审阅标注都在抽取文本上进行。
+  const [previewMode, setPreviewMode] = useState<"preview" | "text">("preview");
+  const previewModeRef = useRef(previewMode);
+  previewModeRef.current = previewMode;
+  // 当前请求的工作表 / 数据表（null = 第一个），外部修改重载时保持不变。
+  const [previewSection, setPreviewSection] = useState<string | null>(null);
+  const previewSectionRef = useRef(previewSection);
+  previewSectionRef.current = previewSection;
+  const [loadingSection, setLoadingSection] = useState<string | null>(null);
+  // DOCX 在渲染层解析失败。
+  const [previewFailure, setPreviewFailure] =
+    useState<PreviewUnavailableInfo | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [textError, setTextError] = useState<string | null>(null);
   const [svgMode, setSvgMode] = useState<"image" | "code">("image");
   // Markdown 文件阅读模式：preview = 渲染预览（标题/列表/链接/代码块），
   // code = 源码视图（保留行号与文内搜索）。
@@ -433,7 +470,12 @@ export function FileViewerContent({
 
   const loadFile = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setUnavailable(null);
+    setPreview(null);
+    setPreviewMode("preview");
+    setPreviewSection(null);
+    setPreviewFailure(null);
+    setTextError(null);
     setEditMode(false);
     setDirty(false);
     setSaveError(null);
@@ -460,6 +502,18 @@ export function FileViewerContent({
       } else if (isSsh && sshSessionId) {
         result = await window.snow.sshReadFile(sshSessionId, filePath);
       } else {
+        // 本地文件先由 Rust 判定：结构化预览 / 不可预览原因 / 继续按文本读取。
+        const previewResult = await window.snow.readFilePreview(filePath);
+        if (previewResult.status !== "passthrough") {
+          setContent(null);
+          originalContentRef.current = "";
+          if (previewResult.status === "ready") {
+            setPreview(previewResult);
+          } else {
+            setUnavailable(toUnavailableInfo(previewResult));
+          }
+          return;
+        }
         result = await window.snow.readFileContent(filePath);
       }
       setContent(result);
@@ -509,13 +563,13 @@ export function FileViewerContent({
         }
       }
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : t("rightPanel.fileViewerLoadError", {
-              defaultValue: "Failed to load file",
-            }),
-      );
+      setContent(null);
+      setUnavailable({
+        reason: "read_failed",
+        kind: "",
+        size: null,
+        detail: errorMessage(err),
+      });
     } finally {
       setLoading(false);
     }
@@ -533,8 +587,13 @@ export function FileViewerContent({
     void loadFile();
   }, [loadFile]);
 
+  // 结构化预览布局：预览模式，或切到抽取文本但文本尚未就绪（加载中 / 失败）。
+  const showPreviewLayout =
+    preview != null && (previewMode === "preview" || content == null);
+
   const showCodeView =
     content != null &&
+    !showPreviewLayout &&
     !content.isBinary &&
     !content.isImage &&
     !editMode &&
@@ -688,10 +747,11 @@ export function FileViewerContent({
 
   // 组件宽度决定审阅面板是左右还是上下结构（与 fileReview.css 断点一致），
   // 拖拽方向随之切换：窄宽度下改为调整面板高度。
-  // 依赖 loading/error：首屏走 loading 分支时根节点尚未挂载（rootRef 为空），
-  // 此时建立 observer 会静默失败，导致上下结构下拖拽方向判错。
+  // 依赖 loading/unavailable/showPreviewLayout：首屏走 loading、不可预览或结构化
+  // 预览分支时根节点尚未挂载（rootRef 为空），此时建立 observer 会静默失败，
+  // 导致上下结构下拖拽方向判错。
   useEffect(() => {
-    if (loading || error) return;
+    if (loading || unavailable || showPreviewLayout) return;
     const root = rootRef.current;
     if (!root || typeof ResizeObserver === "undefined") return;
     const apply = (width: number): void => {
@@ -705,7 +765,7 @@ export function FileViewerContent({
     });
     observer.observe(root);
     return () => observer.disconnect();
-  }, [loading, error]);
+  }, [loading, unavailable, showPreviewLayout]);
 
   /**
    * 拖拽左右模式的分隔条调整审阅面板宽度：宽度取「工作区右缘 - 指针」，
@@ -1303,6 +1363,65 @@ export function FileViewerContent({
     [editTextareaId],
   );
 
+  /** 切换工作表 / 数据表：Rust 按需读取该分区，列表与结构随结果一并刷新。 */
+  const handleSelectSection = useCallback(
+    (name: string): void => {
+      setLoadingSection(name);
+      void window.snow
+        .readFilePreview(filePath, name)
+        .then((next) => {
+          if (next.status === "ready") {
+            setPreview(next);
+            setPreviewSection(name);
+          } else {
+            setPreview(null);
+            setUnavailable(toUnavailableInfo(next));
+          }
+        })
+        .catch((err: unknown) => {
+          setPreview(null);
+          setUnavailable({
+            reason: "read_failed",
+            kind: "",
+            size: null,
+            detail: errorMessage(err),
+          });
+        })
+        .finally(() => setLoadingSection(null));
+    },
+    [filePath],
+  );
+
+  /** DOCX 渲染失败：保留头部（可切到抽取文本），正文显示不可预览面板。 */
+  const handlePreviewFailure = useCallback(
+    (info: Omit<PreviewUnavailableInfo, "size">): void => {
+      setPreviewFailure({ ...info, size: previewRef.current?.size ?? null });
+    },
+    [],
+  );
+
+  /** 切到抽取文本：首次切换时读取文档文本，之后复用缓存。 */
+  const handleShowExtractedText = useCallback((): void => {
+    setSearchOpen(false);
+    setPreviewMode("text");
+    if (contentRef.current) return;
+    setTextLoading(true);
+    setTextError(null);
+    void window.snow
+      .readFileContent(filePath)
+      .then((result) => {
+        setContent(result);
+        originalContentRef.current = result.content;
+      })
+      .catch((err: unknown) => setTextError(errorMessage(err)))
+      .finally(() => setTextLoading(false));
+  }, [filePath]);
+
+  const handleShowStructuredPreview = useCallback((): void => {
+    setSearchOpen(false);
+    setPreviewMode("preview");
+  }, []);
+
   /**
    * SSH 手动刷新：重新读取远端文件并原地应用（仅预览模式使用）。
    * 内容未变则无操作；会话断开或文件暂不可读时保留当前内容，可稍后重试。
@@ -1625,6 +1744,46 @@ export function FileViewerContent({
     let pending = false;
 
     // 读取磁盘内容并原地应用；读取期间再次收到事件则排队重读一次。
+    const reloadContent = async (): Promise<void> => {
+      const next = await window.snow.readFileContent(filePath);
+      if (disposed) {
+        return;
+      }
+      const current = contentRef.current;
+      // 内容未变（自身保存或无关事件）时不重渲染。
+      if (!current || next.content === current.content) {
+        return;
+      }
+      if (editModeRef.current && dirtyRef.current) {
+        // 有未保存修改：不覆盖，提示用户重新加载。
+        setExternalChange(next);
+        return;
+      }
+      applyExternalContent(next);
+    };
+
+    // 结构化预览：保持当前工作表 / 数据表重新生成；已缓存的抽取文本在
+    // 文本视图下原地刷新，预览视图下作废，下次切换时重新抽取。
+    const reloadPreview = async (): Promise<void> => {
+      const next = await window.snow.readFilePreview(
+        filePath,
+        previewSectionRef.current,
+      );
+      if (disposed || next.status !== "ready") {
+        return;
+      }
+      setPreview(next);
+      setPreviewFailure(null);
+      if (!contentRef.current) {
+        return;
+      }
+      if (previewModeRef.current === "text") {
+        await reloadContent();
+      } else {
+        setContent(null);
+      }
+    };
+
     const reload = (): void => {
       if (disposed) {
         return;
@@ -1634,24 +1793,8 @@ export function FileViewerContent({
         return;
       }
       reading = true;
-      void window.snow
-        .readFileContent(filePath)
-        .then((next) => {
-          if (disposed) {
-            return;
-          }
-          const current = contentRef.current;
-          // 内容未变（自身保存或无关事件）时不重渲染。
-          if (!current || next.content === current.content) {
-            return;
-          }
-          if (editModeRef.current && dirtyRef.current) {
-            // 有未保存修改：不覆盖，提示用户重新加载。
-            setExternalChange(next);
-            return;
-          }
-          applyExternalContent(next);
-        })
+      const task = previewRef.current ? reloadPreview() : reloadContent();
+      void task
         .catch(() => {
           // 文件被删除或暂时不可读：保留当前内容。
         })
@@ -1837,6 +1980,7 @@ export function FileViewerContent({
 
   const canSearch =
     content != null &&
+    !showPreviewLayout &&
     !content.isBinary &&
     !content.isImage &&
     // markdown 渲染预览没有可定位的文本节点，搜索仅源码视图可用。
@@ -2657,7 +2801,38 @@ export function FileViewerContent({
     );
   }
 
-  if (error) {
+  const isLocalFile = !isSsh && !virtualSource;
+
+  /** 结构化预览 / 抽取文本视图切换（仅可抽取文本的文档显示）。 */
+  const renderPreviewModeToggle = (): React.JSX.Element | null =>
+    preview?.textAvailable ? (
+      <div className="file-viewer-svg-toggle">
+        <button
+          type="button"
+          className={`file-viewer-toggle-btn ${
+            previewMode === "preview" ? "active" : ""
+          }`}
+          onClick={handleShowStructuredPreview}
+          title={t("rightPanel.filePreview.modePreview")}
+          aria-label={t("rightPanel.filePreview.modePreview")}
+        >
+          <Eye size={13} />
+        </button>
+        <button
+          type="button"
+          className={`file-viewer-toggle-btn ${
+            previewMode === "text" ? "active" : ""
+          }`}
+          onClick={handleShowExtractedText}
+          title={t("rightPanel.filePreview.modeText")}
+          aria-label={t("rightPanel.filePreview.modeText")}
+        >
+          <FileText size={13} />
+        </button>
+      </div>
+    ) : null;
+
+  if (unavailable) {
     return (
       <div className="file-viewer">
         <div className="file-viewer-header">
@@ -2665,9 +2840,72 @@ export function FileViewerContent({
             {fileName}
           </span>
         </div>
-        <div className="file-viewer-error">
-          <AlertCircle size={20} />
-          <span>{error}</span>
+        <div className="file-viewer-body">
+          <PreviewUnavailable
+            {...unavailable}
+            fileName={fileName}
+            filePath={filePath}
+            local={isLocalFile}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (showPreviewLayout && preview) {
+    const activeSection =
+      previewSection ??
+      preview.grid?.name ??
+      preview.sheets[0] ??
+      preview.tables[0]?.name ??
+      "";
+    return (
+      <div className="file-viewer">
+        <div className="file-viewer-header">
+          <span className="file-viewer-file-name" title={filePath}>
+            {fileName}
+          </span>
+          <span className="file-viewer-file-size">
+            {formatSize(preview.size)}
+          </span>
+          <span className="file-viewer-edit-status">
+            {t("rightPanel.fileViewerReadOnlyPreview")}
+          </span>
+          {renderPreviewModeToggle()}
+        </div>
+        <div className="file-viewer-body">
+          {previewMode === "text" ? (
+            textError && !textLoading ? (
+              <PreviewUnavailable
+                reason="parse_failed"
+                kind={preview.kind}
+                size={preview.size}
+                detail={textError}
+                fileName={fileName}
+                filePath={filePath}
+                local={isLocalFile}
+              />
+            ) : (
+              <div className="file-viewer-loading">
+                <Loader2 className="spin" size={20} />
+              </div>
+            )
+          ) : previewFailure ? (
+            <PreviewUnavailable
+              {...previewFailure}
+              fileName={fileName}
+              filePath={filePath}
+              local={isLocalFile}
+            />
+          ) : (
+            <FilePreviewView
+              preview={preview}
+              activeSection={activeSection}
+              loadingSection={loadingSection}
+              onSelectSection={handleSelectSection}
+              onFailure={handlePreviewFailure}
+            />
+          )}
         </div>
       </div>
     );
@@ -2738,6 +2976,7 @@ export function FileViewerContent({
             {t("rightPanel.fileViewerReadOnlyPreview")}
           </span>
         ) : null}
+        {renderPreviewModeToggle()}
         {editMode ? (
           <span
             className={`file-viewer-edit-status ${dirty ? "dirty" : ""} ${
@@ -3112,14 +3351,14 @@ export function FileViewerContent({
           )}
           {isSvg && svgMode === "code" && renderCodeBlock()}
           {isBinary && (
-            <div className="file-viewer-binary">
-              <ImageIcon size={32} />
-              <span>
-                {t("rightPanel.binaryFile", {
-                  defaultValue: "Binary file",
-                })}
-              </span>
-            </div>
+            <PreviewUnavailable
+              reason="unsupported"
+              kind=""
+              size={content.size}
+              fileName={fileName}
+              filePath={filePath}
+              local={isLocalFile}
+            />
           )}
           {!content.isBinary && !isImage && editMode && renderEditBlock()}
           {!content.isBinary &&

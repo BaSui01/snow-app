@@ -98,19 +98,17 @@ export function ExplorerEntryContextMenu({
   // 系统默认应用仅面向文件；目录已由「在系统文件管理器中显示」覆盖。
   const canOpenWithSystemApp = canOpenWith && !isDirectory;
 
-  // 测量菜单实际高度，避免超出窗口底部；三种模式高度不同，切换时重新测量。
+  // 三种模式（操作 / 重命名 / 删除确认）高度差异很大：每次切换都以右键点为锚
+  // 重新计算纵向位置。只在上一次高度基础上做溢出修正会让变矮后的内容滞留在
+  // 上一个更高的菜单被顶起后的位置（表现为确认框离鼠标很远），因此必须重锚。
   useLayoutEffect(() => {
     const menu = menuRef.current;
     if (!menu) {
       return;
     }
-    const rect = menu.getBoundingClientRect();
-    if (rect.bottom > window.innerHeight) {
-      setTop(Math.max(8, window.innerHeight - rect.height - 8));
-    } else if (rect.top < 8) {
-      setTop(8);
-    }
-  }, [mode]);
+    const { height } = menu.getBoundingClientRect();
+    setTop(Math.max(8, Math.min(position.y, window.innerHeight - height - 8)));
+  }, [mode, position.y]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent): void => {

@@ -1195,8 +1195,7 @@
   background: var(--accent-blue-bg);
 }
 
-:root[data-theme-preset="google"]
-  :is(.tool-call-error, .file-viewer-error, .git-control-error) {
+:root[data-theme-preset="google"] :is(.tool-call-error, .git-control-error) {
   color: var(--google-red);
 }
 

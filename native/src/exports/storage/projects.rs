@@ -426,6 +426,18 @@ pub async fn read_file_content(file_path: String) -> napi::Result<FileContentRes
         .map_err(map_spawn_error)?
 }
 
+/// 文件查看器结构化预览（表格 / SQLite / 幻灯片大纲 / PDF / DOCX 字节），
+/// 失败以判别式结果返回而非抛错；`section` 为工作表名或数据表名。
+#[napi]
+pub async fn read_file_preview(
+    file_path: String,
+    section: Option<String>,
+) -> napi::Result<FilePreviewResult> {
+    tokio::task::spawn_blocking(move || crate::storage::read_file_preview(file_path, section))
+        .await
+        .map_err(map_spawn_error)
+}
+
 #[napi]
 pub async fn write_file_content(file_path: String, content: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::write_file_content(file_path, content))

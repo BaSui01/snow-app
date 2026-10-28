@@ -73,6 +73,7 @@ import {
   type OpenTerminalCommandPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "../utils/generateComparePatch";
+import { isPdfFilePath, openBrowserFile } from "../utils/browserFileOpen";
 import { hasCustomWindowFrame } from "../utils/platform";
 import { getFileTypeIcon } from "../utils/fileIcons";
 import { buildSshConnectParams } from "./sidebar/personalization/roleFileUtils";
@@ -782,6 +783,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         sshWorkspaceRoot?: string,
         sshWorkspaceId?: string,
       ) => {
+        // 本地 PDF 交给内置浏览器自带的查看器渲染，不进文件阅读器：
+        // 渲染层 pdf.js 预览需要额外的解析器与字体资源，且容易停在加载态。
+        // 远端 PDF 无法用 file:// 打开，仍由文件阅读器抽取文本展示。
+        if (!isSsh && isPdfFilePath(filePath) && openBrowserFile(filePath)) {
+          return;
+        }
         const tabId = isSsh
           ? `file:ssh:${sshSessionId ?? "unknown"}:${filePath}`
           : `file:${filePath}`;

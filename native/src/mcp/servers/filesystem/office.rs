@@ -465,8 +465,8 @@ fn extract_pdf_text(path: &Path) -> napi::Result<String> {
     }
 }
 
-/// 打开 OOXML 文档（zip 容器）。
-fn open_ooxml_archive(path: &Path) -> napi::Result<zip::ZipArchive<std::io::BufReader<fs::File>>> {
+/// 打开 OOXML 文档（zip 容器）。文件查看器的幻灯片大纲预览复用。
+pub(crate) fn open_ooxml_archive(path: &Path) -> napi::Result<zip::ZipArchive<std::io::BufReader<fs::File>>> {
     let file = fs::File::open(path).map_err(|error| {
         Error::new(
             Status::GenericFailure,
@@ -726,7 +726,7 @@ fn extract_csv_text(path: &Path) -> napi::Result<String> {
 }
 
 /// 还原 XML 实体引用（命名实体与十进制/十六进制数字实体）。
-fn unescape_xml_entities(text: &str) -> String {
+pub(crate) fn unescape_xml_entities(text: &str) -> String {
     if !text.contains('&') {
         return text.to_string();
     }

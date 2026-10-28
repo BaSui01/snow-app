@@ -416,7 +416,9 @@ export const RollbackConfirmDialog = ({
                 onClick={() => void handleConfirm("conversation-only")}
               >
                 {confirmingMode === "conversation-only" && (
-                  <Loader2 size={15} className="spin" />
+                  <span className="spin-layer">
+                    <Loader2 size={15} />
+                  </span>
                 )}
                 {confirmingMode !== "conversation-only" && <FileX2 size={14} />}
                 {confirmingMode === "conversation-only"
@@ -431,7 +433,9 @@ export const RollbackConfirmDialog = ({
               onClick={() => void handleConfirm("conversation-and-files")}
             >
               {confirmingMode === "conversation-and-files" && (
-                <Loader2 size={15} className="spin" />
+                <span className="spin-layer">
+                  <Loader2 size={15} />
+                </span>
               )}
               {confirmingMode === "conversation-and-files"
                 ? t("chat.rollbackInProgress")

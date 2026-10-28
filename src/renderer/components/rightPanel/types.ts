@@ -1,5 +1,6 @@
 import type {
   FileContentResult,
+  FilePreviewResult,
   GitDiffResult,
   GitFileStatus,
   GitImageDiff,
@@ -155,4 +156,4 @@ export type OpenFileTabCallback = (
   sshWorkspaceRoot?: string,
 ) => void;
 
-export type { FileContentResult };
+export type { FileContentResult, FilePreviewResult };

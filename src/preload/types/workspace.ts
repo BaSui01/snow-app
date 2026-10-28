@@ -164,6 +164,93 @@ export type FileContentResult = {
   remoteVersion?: SshFileVersion;
 };
 
+export type PreviewColumn = {
+  name: string;
+  dataType: string;
+  notNull: boolean;
+  primaryKey: boolean;
+};
+
+export type PreviewTable = {
+  name: string;
+  kind: "table" | "view";
+  columns: PreviewColumn[];
+};
+
+/** 合并区域：坐标相对于 PreviewGrid.rows（已裁剪到可见窗口）。 */
+export type PreviewMerge = {
+  row: number;
+  column: number;
+  rowSpan: number;
+  columnSpan: number;
+};
+
+export type PreviewGrid = {
+  name: string;
+  /** 数据库列名；工作表为空数组（按列号生成 A/B/C 表头）。 */
+  headers: string[];
+  /** 数据区左上角在表内的绝对行/列（0 起）。 */
+  rowOffset: number;
+  columnOffset: number;
+  rows: (string | null)[][];
+  /** 工作表数据区总行数；数据库不统计，固定为 -1。 */
+  totalRows: number;
+  totalColumns: number;
+  truncatedRows: boolean;
+  truncatedColumns: boolean;
+  /** 本次读取的行数上限（工作表 500，数据表 200）。 */
+  rowLimit: number;
+  merges: PreviewMerge[];
+};
+
+export type PreviewSlide = {
+  index: number;
+  title: string;
+  blocks: string[];
+  hidden: boolean;
+};
+
+export type FilePreviewKind = "spreadsheet" | "database" | "slides" | "docx";
+
+/** 不可预览的原因枚举（渲染层据此本地化，不解析原始错误文本）。 */
+export type FilePreviewReason =
+  | "not_found"
+  | "unsupported"
+  | "too_large"
+  | "format_mismatch"
+  | "parse_failed"
+  | "read_failed";
+
+/**
+ * 文件查看器结构化预览的判别式结果：
+ * ready = 已生成结构化预览（或 DOCX 原始字节）；
+ * unavailable = 不可预览（reason + 原始 detail）；
+ * passthrough = 不属于结构化预览范围，继续走 readFileContent。
+ */
+export type FilePreviewResult = {
+  status: "ready" | "unavailable" | "passthrough";
+  kind: FilePreviewKind | "";
+  reason: FilePreviewReason | "";
+  detail: string;
+  /** 文件头前 16 字节十六进制（format_mismatch 时提供）。 */
+  signature: string;
+  size: number;
+  /** too_large 时对应的上限字节数。 */
+  limit: number;
+  /** 可切换到「抽取文本」视图。 */
+  textAvailable: boolean;
+  sheets: string[];
+  tables: PreviewTable[];
+  truncatedTables: boolean;
+  grid?: PreviewGrid | null;
+  gridError: string;
+  slides: PreviewSlide[];
+  truncatedSlides: boolean;
+  /** SQLite 存在未合并的 -wal 文件。 */
+  walPending: boolean;
+  data?: Uint8Array | null;
+};
+
 /**
  * 从外部拖入编辑区的文件解析结果。
  *

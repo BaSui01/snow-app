@@ -36,6 +36,10 @@ const mimeByExtension = new Map(
 export const getBrowserFileMimeType = (path: string): string | undefined =>
   mimeByExtension.get(path.match(/\.([^./\\]+)$/)?.[1].toLowerCase() ?? "");
 
+/** 本地 PDF：交给内置浏览器自带的查看器渲染，文件阅读器不再解析 PDF。 */
+export const isPdfFilePath = (path: string): boolean =>
+  getBrowserFileMimeType(path) === "application/pdf";
+
 /** No remote authorities, device paths, or implicit resolution against the app URL. */
 export const localPathToFileUrl = (path: string): string | undefined => {
   if (!path || /[\u0000-\u001f]/.test(path) || /^[\\/]{2}/.test(path)) return;

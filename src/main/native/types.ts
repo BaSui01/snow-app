@@ -838,6 +838,78 @@ export type FileContentResult = {
   size: number;
 };
 
+export type PreviewColumn = {
+  name: string;
+  dataType: string;
+  notNull: boolean;
+  primaryKey: boolean;
+};
+
+export type PreviewTable = {
+  name: string;
+  kind: "table" | "view";
+  columns: PreviewColumn[];
+};
+
+export type PreviewMerge = {
+  row: number;
+  column: number;
+  rowSpan: number;
+  columnSpan: number;
+};
+
+export type PreviewGrid = {
+  name: string;
+  headers: string[];
+  rowOffset: number;
+  columnOffset: number;
+  rows: (string | null)[][];
+  totalRows: number;
+  totalColumns: number;
+  truncatedRows: boolean;
+  truncatedColumns: boolean;
+  rowLimit: number;
+  merges: PreviewMerge[];
+};
+
+export type PreviewSlide = {
+  index: number;
+  title: string;
+  blocks: string[];
+  hidden: boolean;
+};
+
+export type FilePreviewKind = "spreadsheet" | "database" | "slides" | "docx";
+
+export type FilePreviewReason =
+  | "not_found"
+  | "unsupported"
+  | "too_large"
+  | "format_mismatch"
+  | "parse_failed"
+  | "read_failed";
+
+/** 文件查看器结构化预览的判别式结果（Rust read_file_preview）。 */
+export type FilePreviewResult = {
+  status: "ready" | "unavailable" | "passthrough";
+  kind: FilePreviewKind | "";
+  reason: FilePreviewReason | "";
+  detail: string;
+  signature: string;
+  size: number;
+  limit: number;
+  textAvailable: boolean;
+  sheets: string[];
+  tables: PreviewTable[];
+  truncatedTables: boolean;
+  grid?: PreviewGrid | null;
+  gridError: string;
+  slides: PreviewSlide[];
+  truncatedSlides: boolean;
+  walPending: boolean;
+  data?: Uint8Array | null;
+};
+
 export type ResolvedFileLink = {
   path: string;
   isDirectory: boolean;
@@ -2545,6 +2617,11 @@ export type NativeBridge = ImageGenerationNativeApi & {
     replaceExisting: boolean,
   ) => Promise<BatchWorkspaceCopyResult>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
+  /** 结构化只读预览；section 为工作表名或数据表名，缺省取第一个。 */
+  readFilePreview: (
+    filePath: string,
+    section: string | null,
+  ) => Promise<FilePreviewResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   /** 解析聊天正文中的文件路径引用（绝对 / 相对项目根 / 项目内后缀查找），找不到返回 null。 */
   resolveFileLink: (

@@ -5,6 +5,7 @@ import type {
   DirectoryEntry,
   DroppedPathEntry,
   FileContentResult,
+  FilePreviewResult,
   FileSearchAgentProgress,
   FileSearchResult,
   GitCloneProgress,
@@ -293,6 +294,16 @@ export const workspaceApi = {
     ),
   readFileContent: (filePath: string): Promise<FileContentResult> =>
     ipcRenderer.invoke("workspace-directories:read-file", filePath),
+  /** 结构化只读预览；section 为工作表名或数据表名，缺省取第一个。 */
+  readFilePreview: (
+    filePath: string,
+    section?: string | null,
+  ): Promise<FilePreviewResult> =>
+    ipcRenderer.invoke(
+      "workspace-directories:read-file-preview",
+      filePath,
+      section ?? null,
+    ),
   writeFileContent: (filePath: string, content: string): Promise<void> =>
     ipcRenderer.invoke("workspace-directories:write-file", filePath, content),
   /** 解析正文中的文件路径引用：返回磁盘上真实存在的条目，找不到为 null。 */

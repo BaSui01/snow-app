@@ -57,6 +57,7 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "deleteWorkspaceEntries",
   "copyFilesIntoDirectory",
   "readFileContent",
+  "readFilePreview",
   "writeFileContent",
   "searchFiles",
   "searchFileContents",

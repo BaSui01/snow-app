@@ -1748,6 +1748,14 @@ const RAW_GROUPS: RawGroup[] = [
         ["sensitiveCommand.tab.assist"],
         ["delegate", "自动放行"],
       ],
+      [
+        "sensitiveCommand.field.assistAskOnDeny",
+        "field",
+        "settings.sensitiveCommandAssistAskOnDeny",
+        "Still ask me when denied",
+        ["sensitiveCommand.tab.assist"],
+        ["ask on deny", "拒绝时确认", "人工复核"],
+      ],
     ],
   },
   {

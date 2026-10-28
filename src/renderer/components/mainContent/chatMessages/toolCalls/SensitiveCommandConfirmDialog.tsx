@@ -61,6 +61,7 @@ const SensitiveCommandItem = ({
   toolCall,
   matches,
   decision,
+  isDenyReview,
   isSubmitting,
   onApprove,
   onReject,
@@ -68,6 +69,8 @@ const SensitiveCommandItem = ({
   toolCall: ToolCallInfo;
   matches: SensitiveCommandMatch[];
   decision?: SensitiveCommandDecision;
+  /** 决策模型托管判定拒绝、转人工复核：用户确认执行即覆盖该判定。 */
+  isDenyReview: boolean;
   isSubmitting: boolean;
   onApprove: (toolCall: ToolCallInfo) => void;
   onReject: (
@@ -190,7 +193,7 @@ const SensitiveCommandItem = ({
         <div
           className={`sensitive-command-decision ${
             decision.allow ? "is-allow" : "is-confirm"
-          }`}
+          }${isDenyReview ? " is-override" : ""}`}
         >
           <span className="tool-authorization-tool-label">
             {t("sensitiveCommand.decisionLabel")}
@@ -205,7 +208,9 @@ const SensitiveCommandItem = ({
               <strong>
                 {decision.allow
                   ? t("sensitiveCommand.decisionAllow")
-                  : t("sensitiveCommand.decisionConfirm")}
+                  : isDenyReview
+                    ? t("sensitiveCommand.decisionDeny")
+                    : t("sensitiveCommand.decisionConfirm")}
               </strong>
               {decision.confidence > 0 ? (
                 <small>
@@ -225,6 +230,12 @@ const SensitiveCommandItem = ({
                 {t("sensitiveCommand.decisionModel", {
                   values: { name: decision.modelName },
                 })}
+              </span>
+            ) : null}
+            {isDenyReview ? (
+              <span className="sensitive-command-decision-override">
+                <AlertTriangle size={12} strokeWidth={2} aria-hidden="true" />
+                {t("sensitiveCommand.decisionOverrideNotice")}
               </span>
             ) : null}
           </div>
@@ -313,6 +324,14 @@ export const SensitiveCommandConfirmDialog = ({
           // 决策模型辅助的判定（未启用辅助 / 请求失败时为空，只显示规则命中）。
           const decision: SensitiveCommandDecision | undefined =
             toolCall.sensitiveCommandDecision;
+          // 托管拒绝转人工复核（「拒绝时仍让我确认」）：待授权项带托管标记
+          // 且判定为有效拒绝。按钮顺序与默认焦点保持不变，偏向安全。
+          const isDenyReview = Boolean(
+            toolCall.sensitiveCommandDelegated &&
+            decision &&
+            !decision.allow &&
+            !decision.error,
+          );
 
           return (
             <SensitiveCommandItem
@@ -320,6 +339,7 @@ export const SensitiveCommandConfirmDialog = ({
               toolCall={toolCall}
               matches={matches}
               decision={decision}
+              isDenyReview={isDenyReview}
               isSubmitting={submittingId === id}
               onApprove={(item) => {
                 setSubmittingId(id);

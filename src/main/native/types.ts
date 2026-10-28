@@ -1129,6 +1129,8 @@ export type SensitiveCommandDecisionRecord = {
   confidence: number;
   /** 决策模型托管：判定直接生效，不再弹拦截提示。 */
   delegate: boolean;
+  /** 托管下判定拒绝时转人工确认（已与 delegate 合并：托管关闭时恒为 false）。 */
+  askOnDeny: boolean;
   /** 参与判定的决策模型名称。 */
   modelName: string;
   /** 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）的原因；此时回退人工确认。 */

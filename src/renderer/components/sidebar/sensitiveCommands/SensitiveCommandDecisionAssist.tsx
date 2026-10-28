@@ -23,6 +23,8 @@ type SensitiveCommandDecisionAssistProps = {
  * - 决策模型：判定用的模型，只能从已启用的决策模型中选择。
  * - 托管开关：默认关闭。开启后判定直接生效（允许则放行、拒绝则拒绝）；
  *   关闭时判定只在拦截提示中作为建议展示，是否执行仍由用户决定。
+ * - 拒绝时仍让我确认：默认关闭，仅托管开启时可用。开启后允许仍直接放行，
+ *   拒绝则转为人工确认，由用户复核后决定是否执行。
  */
 export function SensitiveCommandDecisionAssist({
   settings,
@@ -120,6 +122,7 @@ export function SensitiveCommandDecisionAssist({
                   enabled: event.target.checked,
                   // 辅助关闭后托管不再有意义，一并关闭以免留下悬空状态。
                   delegate: event.target.checked ? settings.delegate : false,
+                  askOnDeny: event.target.checked ? settings.askOnDeny : false,
                 })
               }
             />
@@ -180,7 +183,49 @@ export function SensitiveCommandDecisionAssist({
                 defaultValue: "Let the decision model handle the gate",
               })}
               onChange={(event) =>
-                onChange({ ...settings, delegate: event.target.checked })
+                onChange({
+                  ...settings,
+                  delegate: event.target.checked,
+                  // 「拒绝时仍让我确认」只在托管下生效，托管关闭时一并关闭。
+                  askOnDeny: event.target.checked ? settings.askOnDeny : false,
+                })
+              }
+            />
+            <span className="toggle-slider" aria-hidden="true" />
+          </span>
+        </label>
+
+        <label className="sensitive-command-assist-row">
+          <span className="sensitive-command-assist-row-copy">
+            <strong>
+              {t("settings.sensitiveCommandAssistAskOnDeny", {
+                defaultValue: "Still ask me when denied",
+              })}
+            </strong>
+            <small>
+              {t("settings.sensitiveCommandAssistAskOnDenyInfo", {
+                defaultValue:
+                  "After a delegated deny verdict, still show the confirmation prompt and let you decide whether to run it. Turning this on weakens automatic blocking.",
+              })}
+            </small>
+          </span>
+          <span className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={
+                settings.enabled && settings.delegate && settings.askOnDeny
+              }
+              disabled={
+                isBusy ||
+                !settings.enabled ||
+                settings.modelId === "" ||
+                !settings.delegate
+              }
+              aria-label={t("settings.sensitiveCommandAssistAskOnDeny", {
+                defaultValue: "Still ask me when denied",
+              })}
+              onChange={(event) =>
+                onChange({ ...settings, askOnDeny: event.target.checked })
               }
             />
             <span className="toggle-slider" aria-hidden="true" />

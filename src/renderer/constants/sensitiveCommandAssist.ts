@@ -2,13 +2,15 @@
  * 敏感命令的决策模型辅助配置。
  *
  * 真源是 system_settings 的 `sensitive_command_assist`，JSON 形如
- * `{ enabled, modelId, delegate }`。Rust 侧（native/src/api/jev.rs +
+ * `{ enabled, modelId, delegate, askOnDeny }`。Rust 侧（native/src/api/jev.rs +
  * native/src/exports/api.rs）按同一份 JSON 解析，字段名必须保持 camelCase 一致。
  *
  * - enabled：总开关，默认关闭。关闭时不请求决策模型，敏感命令照常弹确认。
  * - modelId：参与判定的决策模型 id（「API 配置 → 决策模型」中已启用的条目）。
  * - delegate：托管，默认关闭。开启后判定直接生效（允许则放行、拒绝则拒绝）；
  *   关闭时判定只在敏感命令拦截提示中作为建议展示。
+ * - askOnDeny：拒绝时仍让我确认，默认关闭，仅在托管开启时生效。开启后允许
+ *   仍直接放行，拒绝则转为人工确认，由用户决定是否执行。
  */
 
 export const SENSITIVE_COMMAND_ASSIST_SETTING_NAME =
@@ -20,6 +22,7 @@ export type SensitiveCommandAssistSettings = {
   enabled: boolean;
   modelId: string;
   delegate: boolean;
+  askOnDeny: boolean;
 };
 
 export const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTINGS: SensitiveCommandAssistSettings =
@@ -27,6 +30,7 @@ export const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTINGS: SensitiveCommandAssistSe
     enabled: false,
     modelId: "",
     delegate: false,
+    askOnDeny: false,
   };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -51,6 +55,7 @@ export const readSensitiveCommandAssistSettings = (
       enabled: parsed.enabled === true,
       modelId: typeof parsed.modelId === "string" ? parsed.modelId.trim() : "",
       delegate: parsed.delegate === true,
+      askOnDeny: parsed.askOnDeny === true,
     };
   } catch {
     return { ...DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTINGS };
@@ -65,4 +70,5 @@ export const toSensitiveCommandAssistJson = (
     enabled: settings.enabled,
     modelId: settings.modelId.trim(),
     delegate: settings.delegate,
+    askOnDeny: settings.askOnDeny,
   });

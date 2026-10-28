@@ -161,8 +161,11 @@ export type ToolCallInfo = {
     /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
     error?: string;
   };
-  /** 判定由决策模型托管生效（未弹拦截提示，直接放行或拒绝）。 */
+  /** 判定由决策模型托管生效（未弹拦截提示，直接放行或拒绝）。待授权项上
+   *  同时带 allow=false 时表示托管拒绝已转人工复核（「拒绝时仍让我确认」）。 */
   sensitiveCommandDelegated?: boolean;
+  /** 决策模型托管判定拒绝，但用户复核后仍确认执行（覆盖了模型判定）。 */
+  sensitiveCommandDenyOverridden?: boolean;
   /** Epoch milliseconds when the tool transitioned to "running".
    *  Used by the Bash tool UI to render a live timeout countdown. */
   startedAt?: number;

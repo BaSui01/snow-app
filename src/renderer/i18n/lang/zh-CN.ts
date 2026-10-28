@@ -984,6 +984,7 @@ export const zhCN = {
   "toolCall.bash.decisionTitle": "决策模型判定",
   "toolCall.bash.decisionAllow": "决策模型放行",
   "toolCall.bash.decisionDeny": "决策模型拒绝",
+  "toolCall.bash.decisionDenyOverridden": "模型拒绝，用户已确认",
   "toolCall.bash.decisionDelegated": "托管判定",
   "toolCall.bash.decisionHumanConfirmed": "人工确认",
   "toolCall.bash.status.pending": "等待中",
@@ -3305,6 +3306,9 @@ export const zhCN = {
   "settings.sensitiveCommandAssistDelegate": "由决策模型托管",
   "settings.sensitiveCommandAssistDelegateInfo":
     "开启后：判定允许将直接执行；判定拒绝则只拒绝这条命令并把理由交回模型，AI 流程继续，不再弹出拦截提示。关闭时判定仅作为建议展示，是否执行仍由用户决定。",
+  "settings.sensitiveCommandAssistAskOnDeny": "拒绝时仍让我确认",
+  "settings.sensitiveCommandAssistAskOnDenyInfo":
+    "托管判定拒绝后仍弹出确认，由你决定是否执行。开启会降低自动拦截强度。",
   "settings.sensitiveCommandAssistSaveSuccess": "已保存决策模型辅助设置。",
   "settings.sensitiveCommandAssistSaveError": "保存决策模型辅助设置失败",
   "settings.subAgentSettings": "子代理设置",
@@ -4263,6 +4267,9 @@ export const zhCN = {
   "sensitiveCommand.decisionLabel": "决策模型判定",
   "sensitiveCommand.decisionAllow": "允许执行",
   "sensitiveCommand.decisionConfirm": "建议人工确认",
+  "sensitiveCommand.decisionDeny": "判定拒绝",
+  "sensitiveCommand.decisionOverrideNotice":
+    "决策模型判定拒绝，确认执行即表示你正在覆盖该判定。",
   "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
   "sensitiveCommand.decisionModel": "判定模型：{{name}}",
   "sensitiveCommand.decisionRejectedReason":

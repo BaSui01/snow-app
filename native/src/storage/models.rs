@@ -667,6 +667,8 @@ pub struct SensitiveCommandDecisionRecord {
     pub confidence: f64,
     /// 决策模型托管：判定直接生效（放行 / 拒绝），不再弹拦截提示。
     pub delegate: bool,
+    /// 托管下判定拒绝时转人工确认（已与 `delegate` 合并：托管关闭时恒为 false）。
+    pub ask_on_deny: bool,
     /// 参与判定的决策模型名称（用于展示）。
     pub model_name: String,
     /// 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）时的原因：

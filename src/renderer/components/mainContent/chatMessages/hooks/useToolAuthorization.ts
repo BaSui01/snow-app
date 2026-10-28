@@ -16,6 +16,10 @@ import {
   isPendingSessionKey,
 } from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
+import { writeRendererLog } from "../../../../utils/rendererLog";
+
+/** 敏感命令复核日志里命令文本的最大长度（超出截断）。 */
+const SENSITIVE_COMMAND_LOG_MAX_CHARS = 200;
 
 /** 权限面板增删项目级免审批工具后派发，授权流程据此重新加载合并列表。 */
 export const TOOL_APPROVALS_CHANGED_EVENT = "tool-approvals:changed";
@@ -542,6 +546,15 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       // 敏感命令的决策模型判定只存在于待授权项上（拦截提示里展示），
       // 结算时回写到工具卡片，让用户在卡片上也能看到判定与置信度。
       const decisionInfo = toolCall.sensitiveCommandDecision;
+      // 托管拒绝转人工复核（「拒绝时仍让我确认」）：用户确认执行即覆盖了
+      // 模型判定，卡片据此区分「模型拒绝但用户已确认」。
+      const isDenyReview = Boolean(
+        toolCall.sensitiveCommandDelegated &&
+        decisionInfo &&
+        !decisionInfo.allow &&
+        !decisionInfo.error,
+      );
+      const isDenyOverridden = isDenyReview && decision.status === "approved";
       if (decisionInfo) {
         ctx.updateSessionMessages(
           toolCall.authorizationConversationId ?? "",
@@ -559,12 +572,49 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                         sensitiveCommandMatches:
                           toolCall.sensitiveCommandMatches,
                         sensitiveCommandDecision: decisionInfo,
+                        ...(isDenyOverridden
+                          ? { sensitiveCommandDenyOverridden: true }
+                          : {}),
                       }),
                     ),
                   }
                 : currentMessage,
             ),
         );
+      }
+
+      // 记录用户对模型拒绝的复核结果，便于统计「模型拒绝但用户放行」的比例，
+      // 反推是模型提示词过于保守还是敏感规则写得太宽。命令文本截断避免日志过长。
+      if (isDenyReview && decisionInfo) {
+        let command = "";
+        try {
+          const parsed = JSON.parse(toolCall.arguments || "{}");
+          if (typeof parsed?.command === "string") {
+            command = parsed.command;
+          }
+        } catch {
+          // ignore parse error
+        }
+        writeRendererLog("INFO", {
+          module: "sensitive_command",
+          func: "settleToolAuthorization",
+          message: isDenyOverridden
+            ? "Decision model deny overridden by user"
+            : "Decision model deny upheld by user",
+          context: JSON.stringify({
+            ruleIds: (toolCall.sensitiveCommandMatches ?? []).map(
+              (match) => match.commandId,
+            ),
+            model: decisionInfo.modelName,
+            reason: decisionInfo.reason,
+            confidence: decisionInfo.confidence,
+            userChoice: decision.status,
+            command:
+              command.length > SENSITIVE_COMMAND_LOG_MAX_CHARS
+                ? `${command.slice(0, SENSITIVE_COMMAND_LOG_MAX_CHARS)}...`
+                : command,
+          }),
+        });
       }
 
       pending.resolve(decision);
@@ -647,6 +697,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           reason: "unclear",
           confidence: 0,
           delegate: false,
+          askOnDeny: false,
           modelName: "",
           error: error instanceof Error ? error.message : String(error),
         })),
@@ -735,7 +786,15 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             // 用户点了「确认执行」）；拒绝则只拒绝这条命令并把模型的理由交回
             // AI，AI 流程继续（模型可换一种做法），任何情况下都不中断会话。
             // 决策模型不可用（error）时判定无效，必须回退人工确认。
-            if (decision?.delegate && !decision.error) {
+            // 开启「拒绝时仍让我确认」（askOnDeny）时，托管拒绝不直接生效，
+            // 而是落到下方的人工确认，由用户复核模型的拒绝后决定是否执行。
+            const isDenyReview = Boolean(
+              decision?.delegate &&
+              !decision.error &&
+              !decision.allow &&
+              decision.askOnDeny,
+            );
+            if (decision?.delegate && !decision.error && !isDenyReview) {
               // 判定不经过拦截提示，直接回写到工具卡片上，让用户能看到
               // 这条命令是被决策模型放行/拒绝的、置信度与理由。
               const delegatedDecision = {
@@ -802,6 +861,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
               authorizationId,
               authorizationConversationId: conversationId,
               sensitiveCommandMatches: matches,
+              // 托管拒绝转人工复核：拦截提示据此标注「你正在覆盖模型判定」，
+              // 结算时据此记录覆盖行为。
+              ...(isDenyReview ? { sensitiveCommandDelegated: true } : {}),
               // 非托管时判定只作为建议，连同拦截提示一起展示给用户；决策模型
               // 不可用时展示回退原因。
               ...(decision

@@ -41,11 +41,12 @@ const DEFAULT_DECISION_MODELS_SETTING_VALUE: &str = "{\"models\":[]}";
 
 // 敏感命令的决策模型辅助（全局）：命中敏感规则的命令在弹出确认前先请决策
 // 模型判定是否可直接放行（`enabled`）。`delegate` 打开时判定直接生效
-// （允许则放行、拒绝则拒绝），关闭时只在拦截提示中作为建议展示。
+// （允许则放行、拒绝则拒绝），关闭时只在拦截提示中作为建议展示；托管下
+// `askOnDeny` 打开时拒绝改为弹出人工确认。
 const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_NAME: &str = "Sensitive command decision assist";
 const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_CODE: &str = "sensitive_command_assist";
 const DEFAULT_SENSITIVE_COMMAND_ASSIST_SETTING_VALUE: &str =
-    "{\"enabled\":false,\"modelId\":\"\",\"delegate\":false}";
+    "{\"enabled\":false,\"modelId\":\"\",\"delegate\":false,\"askOnDeny\":false}";
 
 const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
 const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
@@ -334,6 +335,9 @@ pub struct SensitiveCommandAssistSettings {
     pub model_id: String,
     /// 托管：判定直接生效（允许则放行、拒绝则拒绝），默认关闭（仅展示建议）。
     pub delegate: bool,
+    /// 托管下判定拒绝时仍弹出人工确认，由用户决定是否执行；默认关闭，
+    /// 仅在 `delegate` 打开时生效。
+    pub ask_on_deny: bool,
 }
 
 pub fn seed_default_settings(database_path: &Path) -> Result<()> {

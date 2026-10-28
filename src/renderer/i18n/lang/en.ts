@@ -1052,6 +1052,7 @@ export const en = {
   "toolCall.bash.decisionTitle": "Decision model verdict",
   "toolCall.bash.decisionAllow": "Allowed by decision model",
   "toolCall.bash.decisionDeny": "Denied by decision model",
+  "toolCall.bash.decisionDenyOverridden": "Model denied, confirmed by user",
   "toolCall.bash.decisionDelegated": "Delegated",
   "toolCall.bash.decisionHumanConfirmed": "Human confirmed",
   "toolCall.bash.status.pending": "Pending",
@@ -3500,6 +3501,9 @@ export const en = {
     "Let the decision model handle the gate",
   "settings.sensitiveCommandAssistDelegateInfo":
     "When on, an allow verdict runs the command directly; a deny verdict rejects that command and hands the reason back to the model (the AI flow continues), without showing the prompt.",
+  "settings.sensitiveCommandAssistAskOnDeny": "Still ask me when denied",
+  "settings.sensitiveCommandAssistAskOnDenyInfo":
+    "After a delegated deny verdict, still show the confirmation prompt and let you decide whether to run it. Turning this on weakens automatic blocking.",
   "settings.sensitiveCommandAssistSaveSuccess":
     "Saved decision model assist settings.",
   "settings.sensitiveCommandAssistSaveError":
@@ -4541,6 +4545,9 @@ export const en = {
   "sensitiveCommand.decisionLabel": "Decision model verdict",
   "sensitiveCommand.decisionAllow": "Allow",
   "sensitiveCommand.decisionConfirm": "Confirm first",
+  "sensitiveCommand.decisionDeny": "Deny",
+  "sensitiveCommand.decisionOverrideNotice":
+    "The decision model denied this command. Confirming execution overrides that verdict.",
   "sensitiveCommand.decisionConfidence": "Confidence {{value}}%",
   "sensitiveCommand.decisionModel": "Judged by {{name}}",
   "sensitiveCommand.decisionRejectedReason":

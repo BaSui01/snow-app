@@ -547,6 +547,19 @@ export const BashToolCall = ({
         defaultValue: decision.reason,
       })
     : "";
+  // 三种判定结论：模型放行 / 模型拒绝 / 模型拒绝但用户复核后已确认执行。
+  const isDenyOverridden = Boolean(
+    decision && !decision.allow && toolCall.sensitiveCommandDenyOverridden,
+  );
+  const decisionVerdictLabel = !decision
+    ? ""
+    : decision.allow
+      ? t("toolCall.bash.decisionAllow", { defaultValue: "决策模型放行" })
+      : isDenyOverridden
+        ? t("toolCall.bash.decisionDenyOverridden", {
+            defaultValue: "模型拒绝，用户已确认",
+          })
+        : t("toolCall.bash.decisionDeny", { defaultValue: "决策模型拒绝" });
 
   return (
     <ToolCallNode
@@ -591,7 +604,9 @@ export const BashToolCall = ({
                 className={`tool-call-bash-decision-badge ${
                   decision.allow
                     ? "tool-call-bash-decision-allow"
-                    : "tool-call-bash-decision-deny"
+                    : isDenyOverridden
+                      ? "tool-call-bash-decision-overridden"
+                      : "tool-call-bash-decision-deny"
                 }`}
               >
                 {decision.allow ? (
@@ -599,13 +614,7 @@ export const BashToolCall = ({
                 ) : (
                   <ShieldAlert size={11} aria-hidden="true" />
                 )}
-                {decision.allow
-                  ? t("toolCall.bash.decisionAllow", {
-                      defaultValue: "决策模型放行",
-                    })
-                  : t("toolCall.bash.decisionDeny", {
-                      defaultValue: "决策模型拒绝",
-                    })}
+                {decisionVerdictLabel}
                 {decision.confidence > 0 ? (
                   <em>
                     {t("sensitiveCommand.decisionConfidence", {
@@ -731,7 +740,9 @@ export const BashToolCall = ({
             className={`tool-call-bash-decision ${
               decision.allow
                 ? "tool-call-bash-decision-is-allow"
-                : "tool-call-bash-decision-is-deny"
+                : isDenyOverridden
+                  ? "tool-call-bash-decision-is-overridden"
+                  : "tool-call-bash-decision-is-deny"
             }`}
           >
             <div className="tool-call-bash-decision-head">
@@ -741,15 +752,7 @@ export const BashToolCall = ({
                 ) : (
                   <ShieldAlert size={13} strokeWidth={2} aria-hidden="true" />
                 )}
-                <strong>
-                  {decision.allow
-                    ? t("toolCall.bash.decisionAllow", {
-                        defaultValue: "决策模型放行",
-                      })
-                    : t("toolCall.bash.decisionDeny", {
-                        defaultValue: "决策模型拒绝",
-                      })}
-                </strong>
+                <strong>{decisionVerdictLabel}</strong>
               </span>
               <span className="tool-call-bash-decision-tag">
                 {toolCall.sensitiveCommandDelegated

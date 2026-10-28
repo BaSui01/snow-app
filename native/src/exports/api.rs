@@ -494,11 +494,15 @@ pub async fn evaluate_sensitive_command_decision(
         return Ok(None);
     }
 
+    // 拒绝转人工只在托管下有意义：合并后下发，渲染层无需二次读取设置。
+    let ask_on_deny = assist.delegate && assist.ask_on_deny;
+
     let unavailable = |model_name: String, error: String| SensitiveCommandDecisionRecord {
         allow: false,
         reason: "unclear".to_string(),
         confidence: 0.0,
         delegate: assist.delegate,
+        ask_on_deny,
         model_name,
         error: Some(error),
     };
@@ -534,6 +538,7 @@ pub async fn evaluate_sensitive_command_decision(
             reason: verdict.reason,
             confidence: verdict.confidence,
             delegate: assist.delegate,
+            ask_on_deny,
             model_name,
             error: None,
         },

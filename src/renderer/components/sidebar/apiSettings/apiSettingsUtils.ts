@@ -441,6 +441,9 @@ export function toApiConfigPayload(
   const advancedModel = data.advancedModel.trim();
   const basicModel = data.basicModel.trim();
   const visionRequestMethod = data.visionRequestMethod.trim() || requestMethod;
+  // 后端 upsert 对 config_json 深合并，省略的键会保留旧值；
+  // 因此 responses 渠道的「默认/关闭」档位必须显式写入，不能省略键。
+  const isResponses = normalizeRequestMethod(requestMethod) === "responses";
   const autoCompressThresholdPercent = normalizeAutoCompressThresholdPercent(
     data.autoCompressThreshold,
   );
@@ -470,8 +473,12 @@ export function toApiConfigPayload(
       toolResultTokenLimit: normalizeToolResultLimitPercent(
         data.toolResultTokenLimit,
       ),
-      responsesVerbosity: data.responsesVerbosity || undefined,
-      responsesFastMode: data.responsesServiceTier || undefined,
+      responsesVerbosity: isResponses
+        ? data.responsesVerbosity || ""
+        : undefined,
+      responsesFastMode: isResponses
+        ? data.responsesServiceTier || "off"
+        : undefined,
       responsesWebSocket: data.responsesWebSocket,
       googleSearch: data.googleSearch,
       enable1mContext: data.oneMContext,

@@ -117,33 +117,6 @@ export const getResponsesFastModeFromConfig = (
   return value === true ? "fast" : "off";
 };
 
-const buildConfigJsonWithResponsesFastMode = (
-  config: ApiConfigRecord,
-  tier: string,
-): string => {
-  const parsedConfig = parseConfigJson(config.configJson);
-  const snowcfg = {
-    ...(isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {}),
-    responsesFastMode: tier || undefined,
-  };
-
-  return JSON.stringify({
-    ...parsedConfig,
-    snowcfg,
-  });
-};
-
-export const toResponsesFastModeUpdatePayload = (
-  config: ApiConfigRecord,
-  tier: string,
-): ApiConfigRecord => ({
-  ...config,
-  apiKey: "",
-  visionApiKey: "",
-  visionBaseUrlMode: config.visionBaseUrlMode || "auto",
-  configJson: buildConfigJsonWithResponsesFastMode(config, tier),
-});
-
 const buildConfigJsonWithThinking = (
   config: ApiConfigRecord,
   thinkingValue: string,

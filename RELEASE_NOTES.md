@@ -2,9 +2,20 @@
 
 ## v0.5.8
 
+## New Features
+
+- **Sidebar Conversation Hover Card**: hovering a conversation opens a card with its full title, pin state, relative time and project, replacing the title marquee; the card hides while any modal is open. Titles of running conversations get a shimmer, and sidebar badges stay visible when the sidebar is collapsed.
+- **Resizable Input Composer**: drag the handle above the input to set its height, and keep dragging up to expand it into a large-screen composer (drag the handle down or press Esc to collapse).
+- **Structured Read-Only File Previews**: spreadsheets (calamine) and SQLite databases preview with their real structure - windowed rows, column types and merge regions - PPTX extracts titles and text blocks in slide order, and DOCX is rendered from its original bytes; files that cannot be previewed show a localized reason with "open with system app" / "show in folder" exits, while the extract-text view stays available.
+- **Sensitive Command Denial Review**: with decision-model hosting on, a new "let me confirm when denied" option turns a model denial into a manual confirmation instead of an automatic rejection; the card marks that you are overriding the model's verdict and the outcome is written to the system log.
+
 ## Improvements
 
 - **WorkFlow Composer runs without an AI hop**: sending from the composer no longer asks the model to forward the graph. The app writes the user message and a `workflow-workflow-generate` tool call directly (no authorization prompt), so the workflow card appears immediately and you just press "Run"; the execution result is still returned to the AI for summary or resume. The user message is now a collapsed WorkFlow chip (flow name plus node/edge counts, hover to see the node list) followed by your note, instead of the instruction text and JSON payload. The conversation title is generated once the real reply after the workflow finishes arrives, and the summary input collapses chip tags instead of feeding base64 payloads to the title model. Rolling back a composer submission no longer injects an unreadable tag into the input box: the WorkFlow composer reopens with the canvas, flow name and note restored from the graph snapshot.
+
+## Bug Fixes
+
+- Fixed the Responses channel's default / off tier not taking effect: the backend deep-merges `config_json`, so verbosity and fast mode are now written explicitly instead of being omitted.
 
 ## v0.5.7
 

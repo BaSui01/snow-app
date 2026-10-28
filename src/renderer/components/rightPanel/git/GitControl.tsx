@@ -59,6 +59,25 @@ const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
 // 切回时从缓存回显；空草稿直接从缓存移除，避免 Map 无限增长。
 const commitMessageDrafts = new Map<string, string>();
 
+// 草稿变更广播：右面板与分支下拉“变更”页可能各自挂载一个 GitControl，
+// 发起生成的实例被卸载（如收起右面板）后，流式分片仍需送达其他实例。
+type CommitMessageDraftListener = (repo: string, value: string) => void;
+const commitMessageDraftListeners = new Set<CommitMessageDraftListener>();
+
+// 统一写入草稿：先写模块级缓存（按仓库路径隔离），再广播给所有挂载中的
+// 实例，由各实例只同步自己当前显示的仓库。切换项目后，旧项目迟到的 AI
+// 流式分片只会进入旧项目的缓存，不会污染新项目的输入框。
+const applyCommitMessage = (repo: string, value: string): void => {
+  if (value) {
+    commitMessageDrafts.set(repo, value);
+  } else {
+    commitMessageDrafts.delete(repo);
+  }
+  for (const listener of commitMessageDraftListeners) {
+    listener(repo, value);
+  }
+};
+
 // 正在生成提交消息的仓库 → 流 ID。生成状态同样放在模块级：用户切换
 // 项目后旧仓库的 AI 生成在后台继续，迟到的流式分片写入旧仓库缓存，
 // 切回时能看到完整结果；并发流（切走后新仓库再生成）互不干扰。
@@ -304,22 +323,19 @@ export const GitControl = ({
     }
   }, [isGeneratingCommitMsg, displayedCommitMessage]);
 
-  // 统一写入草稿：先写模块级缓存（按仓库路径隔离），仅当目标仓库
-  // 仍是当前显示的仓库时才同步 UI。切换项目后，旧项目迟到的 AI
-  // 流式分片只会进入旧项目的缓存，不会污染新项目的输入框。
-  const applyCommitMessage = useCallback(
-    (repo: string, value: string): void => {
-      if (value) {
-        commitMessageDrafts.set(repo, value);
-      } else {
-        commitMessageDrafts.delete(repo);
-      }
+  // 订阅模块级草稿广播：任意实例（含已卸载实例发起的后台生成）写入
+  // 草稿时，仅当目标仓库是本实例当前显示的仓库才同步 UI。
+  useEffect(() => {
+    const listener = (repo: string, value: string): void => {
       if (repo === currentRepoRef.current) {
         setCommitMessage(value);
       }
-    },
-    [],
-  );
+    };
+    commitMessageDraftListeners.add(listener);
+    return () => {
+      commitMessageDraftListeners.delete(listener);
+    };
+  }, []);
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
   useEffect(() => {
@@ -662,15 +678,7 @@ export const GitControl = ({
         }
       })();
     },
-    [
-      repoPath,
-      applyCommitMessage,
-      refresh,
-      loadRemotes,
-      t,
-      reportGitError,
-      onHistoryRefresh,
-    ],
+    [repoPath, refresh, loadRemotes, t, reportGitError, onHistoryRefresh],
   );
 
   const handleCommit = useCallback(
@@ -1121,7 +1129,7 @@ export const GitControl = ({
       .finally(() => {
         endCommitMsgGeneration(targetRepo);
       });
-  }, [repoPath, applyCommitMessage]);
+  }, [repoPath]);
 
   const handleAbortCommitMessage = useCallback(() => {
     const repo = currentRepoRef.current;

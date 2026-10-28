@@ -7,6 +7,7 @@ import {
 import type { SensitiveCommandAssistSettings } from "../../../constants/sensitiveCommandAssist";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
+import { Tooltip } from "../../common/Tooltip";
 
 type SensitiveCommandDecisionAssistProps = {
   settings: SensitiveCommandAssistSettings;
@@ -66,6 +67,46 @@ export function SensitiveCommandDecisionAssist({
   const selectedModel = findDecisionModel(decisionModels, settings.modelId);
   const isModelUnavailable = settings.modelId !== "" && !isSelectionAvailable;
   const isActive = settings.enabled && settings.modelId !== "";
+
+  // 「拒绝时仍让我确认」只在托管下才有意义：被禁用时用 Tooltip 说明当前缺的前置开关。
+  const isAskOnDenyDisabled =
+    isBusy ||
+    !settings.enabled ||
+    settings.modelId === "" ||
+    !settings.delegate;
+  const askOnDenyHint = !isAskOnDenyDisabled
+    ? ""
+    : !settings.enabled
+      ? t("settings.sensitiveCommandAssistAskOnDenyNeedAssist", {
+          defaultValue: "Enable decision model assist first.",
+        })
+      : settings.modelId === ""
+        ? t("settings.sensitiveCommandAssistAskOnDenyNeedModel", {
+            defaultValue: "Select a decision model first.",
+          })
+        : !settings.delegate
+          ? t("settings.sensitiveCommandAssistAskOnDenyNeedDelegate", {
+              defaultValue:
+                "Enable “Let the decision model handle the gate” first.",
+            })
+          : "";
+
+  const askOnDenyToggle = (
+    <span className="toggle-switch">
+      <input
+        type="checkbox"
+        checked={settings.enabled && settings.delegate && settings.askOnDeny}
+        disabled={isAskOnDenyDisabled}
+        aria-label={t("settings.sensitiveCommandAssistAskOnDeny", {
+          defaultValue: "Still ask me when denied",
+        })}
+        onChange={(event) =>
+          onChange({ ...settings, askOnDeny: event.target.checked })
+        }
+      />
+      <span className="toggle-slider" aria-hidden="true" />
+    </span>
+  );
 
   return (
     <section
@@ -209,27 +250,11 @@ export function SensitiveCommandDecisionAssist({
               })}
             </small>
           </span>
-          <span className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={
-                settings.enabled && settings.delegate && settings.askOnDeny
-              }
-              disabled={
-                isBusy ||
-                !settings.enabled ||
-                settings.modelId === "" ||
-                !settings.delegate
-              }
-              aria-label={t("settings.sensitiveCommandAssistAskOnDeny", {
-                defaultValue: "Still ask me when denied",
-              })}
-              onChange={(event) =>
-                onChange({ ...settings, askOnDeny: event.target.checked })
-              }
-            />
-            <span className="toggle-slider" aria-hidden="true" />
-          </span>
+          {askOnDenyHint === "" ? (
+            askOnDenyToggle
+          ) : (
+            <Tooltip content={askOnDenyHint}>{askOnDenyToggle}</Tooltip>
+          )}
         </label>
       </div>
 

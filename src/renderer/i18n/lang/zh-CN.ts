@@ -776,6 +776,7 @@ export const zhCN = {
     "确定从归档中永久删除选中的 {{count}} 个会话吗？此操作不可恢复。",
   "sidebar.subAgent": "子代理",
   "sidebar.workflowNode": "Workflow 节点",
+  "sidebar.workflowMode": "Workflow 模式",
   "chat.greetingWithProject": "想在 {{name}} 中做些什么？",
   "chat.greetingNoProject": "请选择一个工作区项目以开始对话。",
   "chat.quote.addToInput": "添加到输入框",
@@ -3309,6 +3310,11 @@ export const zhCN = {
   "settings.sensitiveCommandAssistAskOnDeny": "拒绝时仍让我确认",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "托管判定拒绝后仍弹出确认，由你决定是否执行。开启会降低自动拦截强度。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
+    "请先启用决策模型辅助。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedModel": "请先选择决策模型。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedDelegate":
+    "请先启用「由决策模型托管」。",
   "settings.sensitiveCommandAssistSaveSuccess": "已保存决策模型辅助设置。",
   "settings.sensitiveCommandAssistSaveError": "保存决策模型辅助设置失败",
   "settings.subAgentSettings": "子代理设置",

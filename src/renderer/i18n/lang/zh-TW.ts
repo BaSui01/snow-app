@@ -777,6 +777,7 @@ export const zhTW = {
     "確定從歸檔中永久刪除選中的 {{count}} 個對話嗎？此操作不可復原。",
   "sidebar.subAgent": "子代理",
   "sidebar.workflowNode": "Workflow 節點",
+  "sidebar.workflowMode": "Workflow 模式",
   "chat.greetingWithProject": "想在 {{name}} 中做些什麼？",
   "chat.greetingNoProject": "請選擇一個工作區專案以開始對話。",
   "chat.quote.addToInput": "加入輸入框",
@@ -3309,6 +3310,11 @@ export const zhTW = {
   "settings.sensitiveCommandAssistAskOnDeny": "拒絕時仍讓我確認",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "託管判定拒絕後仍彈出確認，由你決定是否執行。開啟會降低自動攔截強度。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
+    "請先啟用決策模型輔助。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedModel": "請先選擇決策模型。",
+  "settings.sensitiveCommandAssistAskOnDenyNeedDelegate":
+    "請先啟用「由決策模型託管」。",
   "settings.sensitiveCommandAssistSaveSuccess": "已儲存決策模型輔助設定。",
   "settings.sensitiveCommandAssistSaveError": "儲存決策模型輔助設定失敗",
   "settings.subAgentSettings": "子代理設定",

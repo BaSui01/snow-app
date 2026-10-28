@@ -821,6 +821,7 @@ export const en = {
     "Permanently delete {{count}} selected archived conversations? This cannot be undone.",
   "sidebar.subAgent": "Sub-agent",
   "sidebar.workflowNode": "Workflow node",
+  "sidebar.workflowMode": "Workflow mode",
   "chat.greetingWithProject": "What would you like to work on in {{name}}?",
   "chat.greetingNoProject": "Select a workspace project to get started.",
   "chat.quote.addToInput": "Add to input",
@@ -3504,6 +3505,12 @@ export const en = {
   "settings.sensitiveCommandAssistAskOnDeny": "Still ask me when denied",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "After a delegated deny verdict, still show the confirmation prompt and let you decide whether to run it. Turning this on weakens automatic blocking.",
+  "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
+    "Enable decision model assist first.",
+  "settings.sensitiveCommandAssistAskOnDenyNeedModel":
+    "Select a decision model first.",
+  "settings.sensitiveCommandAssistAskOnDenyNeedDelegate":
+    "Enable “Let the decision model handle the gate” first.",
   "settings.sensitiveCommandAssistSaveSuccess":
     "Saved decision model assist settings.",
   "settings.sensitiveCommandAssistSaveError":

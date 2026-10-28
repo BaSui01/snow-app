@@ -107,18 +107,31 @@ export const formatTimeLabel = (
 
 /** 相对时间单位由粗到细，命中第一个不超过差值的单位。 */
 const RELATIVE_TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["year", 365 * 24 * 60 * 60],
-  ["month", 30 * 24 * 60 * 60],
-  ["day", 24 * 60 * 60],
   ["hour", 60 * 60],
   ["minute", 60],
   ["second", 1],
 ];
 
-/** 相对时间（如「3 个月前」），按界面语言本地化；时间无效返回空串。 */
-export const formatRelativeTimeLabel = (
+/** 超过 1 小时不再显示相对时间，改用具体时刻。 */
+const ABSOLUTE_TIME_THRESHOLD_SECONDS = 60 * 60;
+
+/** 是否与 now 处于同一个自然日（本地时区）。 */
+const isSameLocalDay = (date: Date, now: Date): boolean =>
+  date.getFullYear() === now.getFullYear() &&
+  date.getMonth() === now.getMonth() &&
+  date.getDate() === now.getDate();
+
+/**
+ * 悬浮卡片上的会话时间标签，按界面语言本地化：
+ * - 1 小时内：相对时间（如「5 分钟前」）；
+ * - 1 小时前但仍在当天：「今天 14:30」；
+ * - 更早：绝对时间（如「2026年10月28日 14:30」）；
+ * - 时间无效返回空串。
+ */
+export const formatTooltipTimeLabel = (
   date: Date,
   locale: string,
+  t: TimeTranslate,
   now: Date = new Date(),
 ): string => {
   const time = date.getTime();
@@ -126,6 +139,19 @@ export const formatRelativeTimeLabel = (
     return "";
   }
   const diffSeconds = Math.round((time - now.getTime()) / 1000);
+  if (Math.abs(diffSeconds) >= ABSOLUTE_TIME_THRESHOLD_SECONDS) {
+    const clock = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
+    if (isSameLocalDay(date, now)) {
+      return `${t("sidebar.chatTimeToday", { defaultValue: "Today" })} ${clock}`;
+    }
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  }
   const formatter = new Intl.RelativeTimeFormat(locale, {
     numeric: "auto",
     style: "long",

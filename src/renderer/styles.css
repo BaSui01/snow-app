@@ -1481,7 +1481,7 @@ body.is-panel-resizing * {
   width: 100%;
   /* 锁定行高：hover 出现的 22px 操作按钮不再把行撑高 */
   min-height: 30px;
-  padding: 4px 0 4px 6px;
+  padding: 4px 4px 4px 6px;
   margin-bottom: 1px;
   border: none;
   border-radius: var(--radius-sm, 6px);
@@ -2507,6 +2507,34 @@ body.is-panel-resizing * {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* 会话形态标记（Workflow 模式 / 有子代理），配色与列表行类型图标一致 */
+.chat-item-tooltip-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--text-secondary);
+}
+
+.chat-item-tooltip-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chat-item-tooltip-kind svg {
+  flex-shrink: 0;
+}
+
+.chat-item-tooltip-kind.workflow {
+  color: var(--accent, #3b82f6);
+}
+
+.chat-item-tooltip-kind.sub-agent {
+  color: var(--accent-secondary, #8b5cf6);
 }
 
 .chat-item-title-row {

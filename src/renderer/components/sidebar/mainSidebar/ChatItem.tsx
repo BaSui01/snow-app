@@ -25,7 +25,7 @@ import {
   type ConversationDragPayload,
 } from "./conversationDrag";
 import { setChatDragData } from "./chatDrag";
-import { formatRelativeTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
+import { formatTooltipTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 import { useDirectoryInfo } from "./useDirectoryInfo";
 import { getDirectoryIcon } from "./WorkspaceDirectoryRow";
 
@@ -223,9 +223,10 @@ export function ChatItem({
     ? t("sidebar.chatStatusPaused", { defaultValue: "Paused" })
     : t("sidebar.chatStatusRunning", { defaultValue: "Running" });
 
-  const relativeTimeLabel = formatRelativeTimeLabel(
+  const relativeTimeLabel = formatTooltipTimeLabel(
     parseDbTimestamp(conversation.updatedAt),
     locale,
+    t,
   );
   // 拖拽、编辑、多选、弹窗和菜单打开期间不显示悬浮详情，避免遮挡操作
   const showHoverTooltip =
@@ -651,6 +652,24 @@ export function ChatItem({
                   <span className="chat-item-tooltip-project-name">
                     {directoryInfo.name}
                   </span>
+                </div>
+              ) : null}
+              {isWorkflow || hasSubAgents ? (
+                <div className="chat-item-tooltip-kinds">
+                  {isWorkflow ? (
+                    <span className="chat-item-tooltip-kind workflow">
+                      <Workflow size={11} aria-hidden="true" />
+                      {t("sidebar.workflowMode", {
+                        defaultValue: "Workflow mode",
+                      })}
+                    </span>
+                  ) : null}
+                  {hasSubAgents ? (
+                    <span className="chat-item-tooltip-kind sub-agent">
+                      <Waypoints size={11} aria-hidden="true" />
+                      {t("sidebar.subAgent", { defaultValue: "Sub-agent" })}
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>

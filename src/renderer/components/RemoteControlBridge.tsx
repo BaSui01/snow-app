@@ -46,6 +46,7 @@ import {
 import {
   formatAnnotationLabel,
   formatFileLinesLabel,
+  formatWorkflowTagLabel,
   parseContentSegments,
 } from "./mainContent/chatInput/fileTagUtils";
 import type {
@@ -254,7 +255,9 @@ const toRemoteContentBlocks = (
                                   segment.tag.startLine,
                                   segment.tag.endLine,
                                 )
-                              : segment.tag.name || "Skill";
+                              : segment.type === "workflow"
+                                ? formatWorkflowTagLabel(segment.tag)
+                                : segment.tag.name || "Skill";
       const detail =
         segment.type === "text-snippet" ||
         segment.type === "quote" ||
@@ -268,7 +271,9 @@ const toRemoteContentBlocks = (
                 ? segment.tag.content
                 : segment.type === "file-selection"
                   ? segment.tag.content
-                  : undefined;
+                  : segment.type === "workflow"
+                    ? segment.tag.outline
+                    : undefined;
       return [
         {
           type: "reference",
@@ -318,6 +323,9 @@ const toRemotePreview = (content: string | undefined): string => {
           segment.tag.startLine,
           segment.tag.endLine,
         )}]`;
+      }
+      if (segment.type === "workflow") {
+        return `[${formatWorkflowTagLabel(segment.tag)}]`;
       }
       return `[文本片段 ${segment.tag.summary}]`;
     })
@@ -426,7 +434,6 @@ const toRemoteConversation = (
   directoryId: item.directoryId,
   workspaceName,
   updatedAt: item.updatedAt,
-  emoji: item.emoji,
   conversationType: item.conversationType,
   isForked: item.forkedFromConversationId !== "",
   subAgentName: item.subAgentName,

@@ -345,7 +345,6 @@ export const en = {
   "sidebar.openWithFileManager": "Open in File Manager",
   "sidebar.openInFileManagerError": "Failed to open in file manager",
   "sidebar.openInIdeError": "Failed to open project in IDE",
-  "sidebar.directoryKindLocal": "Local",
   "sidebar.directoryPathMissing": "Location not found",
   "sidebar.directoryPathOffline": "Disk not mounted",
   "sidebar.directoryPathOfflineMessage":
@@ -377,7 +376,6 @@ export const en = {
   "sidebar.relinkHistoryUndoConfirm":
     "Undo this relocation? The project and its history move back to the previous location.",
   "sidebar.relinkHistoryUndone": "Undone",
-  "sidebar.directoryKindSsh": "SSH",
   "sidebar.explorerBack": "Back to main sidebar",
   "sidebar.explorerTitle": "Explorer",
   "sidebar.explorerMoveToRightPanel": "Move to right panel",
@@ -687,6 +685,8 @@ export const en = {
   "sidebar.chatStatusNeedsAction": "Needs action",
   "sidebar.chatStatusWaitingForReviewOrInput": "Waiting for review or input",
   "sidebar.chatStatusCompleted": "Completed",
+  "sidebar.chatStatusRunning": "Running",
+  "sidebar.chatStatusPaused": "Paused",
   "sidebar.crossProjectNotificationsTitle": "Other projects",
   "sidebar.crossProjectNotificationOpenTitle":
     "Open {{conversation}} in {{project}}",
@@ -701,7 +701,6 @@ export const en = {
   "sidebar.chatActionCopyConversationId": "Copy conversation ID",
   "sidebar.chatActionArchive": "Archive",
   "sidebar.chatActionExport": "Export",
-  "sidebar.chatActionIcon": "Icon",
   "sidebar.chatDeleteConfirm":
     "Are you sure you want to delete this conversation?",
   "sidebar.chatDeleteConfirmTitle": "Confirm deletion",
@@ -822,22 +821,6 @@ export const en = {
     "Permanently delete {{count}} selected archived conversations? This cannot be undone.",
   "sidebar.subAgent": "Sub-agent",
   "sidebar.workflowNode": "Workflow node",
-  "sidebar.emojiPickerLabel": "Select an emoji",
-  "sidebar.emojiPickerTitle": "Choose icon",
-  "sidebar.emojiClear": "Clear emoji",
-  "sidebar.emojiSearchPlaceholder": "Search emoji...",
-  "sidebar.emojiClearSearch": "Clear search",
-  "sidebar.emojiSearchResults": "Search results",
-  "sidebar.emojiNoResults": "No emoji found",
-  "sidebar.emojiGroupStatus": "Status",
-  "sidebar.emojiGroupSmileys": "Smileys",
-  "sidebar.emojiGroupGestures": "Gestures",
-  "sidebar.emojiGroupAnimals": "Animals",
-  "sidebar.emojiGroupActivities": "Activities",
-  "sidebar.emojiGroupTravel": "Travel",
-  "sidebar.emojiGroupObjects": "Objects",
-  "sidebar.emojiGroupSymbols": "Symbols",
-  "sidebar.emojiGroupTech": "Tech",
   "chat.greetingWithProject": "What would you like to work on in {{name}}?",
   "chat.greetingNoProject": "Select a workspace project to get started.",
   "chat.quote.addToInput": "Add to input",
@@ -1447,7 +1430,6 @@ export const en = {
   "workflowComposer.invalidEmptyPrompt":
     "Fill in the prompt of at least one node",
   "workflowComposer.invalidGraph": "Invalid workflow: {{reason}}",
-  "workflowComposer.defaultNote": "Run the workflow as drawn",
   // System notifications
   "notification.aiComplete.title": "AI task completed",
   "notification.aiComplete.bodyWithTitle":
@@ -5392,6 +5374,7 @@ export const en = {
   "markdown.downloadTable": "Download table",
   "markdown.filePathNotFound": "File not found in the current project",
   "chat.message.collapse": "Collapse",
+  "chat.message.workflowChipStats": "{{nodes}} nodes · {{edges}} edges",
   "chat.message.expand": "Expand",
   "toolCall.lsp.multiFileSummary": "{{file}} and {{count}} more files",
   "toolCall.common.sortBy": "Click to sort: {{column}}",

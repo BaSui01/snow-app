@@ -1,15 +1,13 @@
 import {
   Archive,
   Check,
-  CheckCircle2,
   ChevronRight,
-  CircleAlert,
   GitFork,
   Loader2,
-  MessageSquareMore,
   Pause,
   Pin,
   Snowflake,
+  Waypoints,
   Workflow,
 } from "lucide-react";
 import {
@@ -61,7 +59,6 @@ type ChatItemProps = {
   isDraggable?: boolean;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
-  onSetEmoji: (emoji: string) => Promise<void>;
   /** 确认删除；deleteImages=true 同时级联删除图库图片，deleteMemories=true 同时删除该会话保存的项目记忆 */
   onDelete: (deleteImages: boolean, deleteMemories: boolean) => void;
   onExport: (format: ExportFormat) => void;
@@ -96,7 +93,6 @@ export function ChatItem({
   isDraggable = false,
   onPin,
   onRename,
-  onSetEmoji,
   onDelete,
   onExport,
   onFork,
@@ -197,7 +193,6 @@ export function ChatItem({
     subAgentAttentionRequiredIds.has(sub.conversationId),
   );
   const isForked = conversation.forkedFromConversationId !== "";
-  const hasEmoji = conversation.emoji.trim() !== "";
   const displayName =
     conversation.summary ||
     conversation.title ||
@@ -211,8 +206,6 @@ export function ChatItem({
     !showAttentionStatus &&
     !showStreamingStatus &&
     isCompleted;
-  const showDefaultIcon =
-    !showAttentionStatus && !showStreamingStatus && !showCompletedStatus;
   const statusLabel = showAttentionStatus
     ? t("sidebar.chatStatusNeedsAction", { defaultValue: "Needs action" })
     : showCompletedStatus
@@ -223,6 +216,9 @@ export function ChatItem({
         defaultValue: "Waiting for review or input",
       })
     : (statusLabel ?? "");
+  const runningDescription = isPaused
+    ? t("sidebar.chatStatusPaused", { defaultValue: "Paused" })
+    : t("sidebar.chatStatusRunning", { defaultValue: "Running" });
 
   const now = new Date();
   const parsedDate = parseDbTimestamp(conversation.updatedAt);
@@ -327,7 +323,6 @@ export function ChatItem({
       conversationId: conversation.conversationId,
       directoryId: conversation.directoryId,
       title: displayName,
-      emoji: conversation.emoji,
     };
     beginConversationDrag(event.dataTransfer, payload);
     setChatDragData(event, {
@@ -415,51 +410,7 @@ export function ChatItem({
         >
           {isSelected ? <Check size={12} strokeWidth={3} /> : null}
         </span>
-      ) : (
-        <span
-          className={`chat-item-icon${
-            showAttentionStatus
-              ? " attention-required"
-              : showStreamingStatus
-                ? isPaused
-                  ? " streaming paused"
-                  : " streaming"
-                : showCompletedStatus
-                  ? " completed"
-                  : ""
-          }${showDefaultIcon && isForked ? " forked" : ""}${
-            showDefaultIcon && hasSubAgents ? " has-sub-agents" : ""
-          }${showDefaultIcon && isWorkflow ? " workflow" : ""}${
-            showDefaultIcon && hasEmoji ? " has-emoji" : ""
-          }`}
-          onClick={(event) => {
-            event.stopPropagation();
-            handleSelectClick(event);
-          }}
-        >
-          {showAttentionStatus ? (
-            <CircleAlert size={12} aria-hidden="true" />
-          ) : showStreamingStatus ? (
-            isPaused ? (
-              <Pause size={11} aria-hidden="true" />
-            ) : (
-              <span className="snowflake-spin">
-                <Snowflake size={11} aria-hidden="true" />
-              </span>
-            )
-          ) : showCompletedStatus ? (
-            <CheckCircle2 size={12} aria-hidden="true" />
-          ) : hasEmoji ? (
-            <span className="chat-item-emoji">{conversation.emoji}</span>
-          ) : isWorkflow ? (
-            <Workflow size={11} />
-          ) : isForked ? (
-            <GitFork size={11} />
-          ) : (
-            <MessageSquareMore size={11} />
-          )}
-        </span>
-      )}
+      ) : null}
       <div className="chat-item-content">
         {isEditing ? (
           <input
@@ -477,6 +428,25 @@ export function ChatItem({
         ) : (
           <>
             <div className="chat-item-title-row">
+              {isWorkflow || hasSubAgents || isForked ? (
+                <span className="chat-item-kind-icons" aria-hidden="true">
+                  {isWorkflow ? (
+                    <Workflow
+                      size={11}
+                      className="chat-item-kind-icon workflow"
+                    />
+                  ) : null}
+                  {hasSubAgents ? (
+                    <Waypoints
+                      size={11}
+                      className="chat-item-kind-icon sub-agent"
+                    />
+                  ) : null}
+                  {isForked ? (
+                    <GitFork size={11} className="chat-item-kind-icon forked" />
+                  ) : null}
+                </span>
+              ) : null}
               {hasTreeChildren && (
                 <span
                   className="chat-item-expand-toggle"
@@ -552,7 +522,25 @@ export function ChatItem({
                   {attentionRequiredSubAgentCount}
                 </span>
               )}
-              <span className="chat-item-time">{timeLabel}</span>
+              {showStreamingStatus ? (
+                <span
+                  className={`chat-item-time chat-item-time-loading${
+                    isPaused ? " paused" : ""
+                  }`}
+                  title={runningDescription}
+                  aria-label={runningDescription}
+                >
+                  {isPaused ? (
+                    <Pause size={11} aria-hidden="true" />
+                  ) : (
+                    <span className="snowflake-spin">
+                      <Snowflake size={11} aria-hidden="true" />
+                    </span>
+                  )}
+                </span>
+              ) : isRunning ? null : (
+                <span className="chat-item-time">{timeLabel}</span>
+              )}
             </div>
           </>
         )}
@@ -607,10 +595,8 @@ export function ChatItem({
               <ChatItemMenu
                 conversationId={conversation.conversationId}
                 isPinned={isPinned}
-                emoji={conversation.emoji}
                 onPin={onPin}
                 onRename={handleRenameStart}
-                onSetEmoji={onSetEmoji}
                 onDelete={onDelete}
                 isDeleting={isDeleting}
                 onExport={onExport}

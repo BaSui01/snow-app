@@ -9,6 +9,7 @@ use super::super::ChatConversationRecord;
 use crate::api::conversation::tags::expand_display_tags_in_content;
 
 mod fork_truncate;
+mod manual_exchange;
 mod messages;
 mod task_history;
 pub use self::task_history::*;
@@ -19,6 +20,7 @@ mod tombstones;
 mod workflow;
 
 pub use self::fork_truncate::*;
+pub use self::manual_exchange::*;
 pub use self::messages::*;
 pub use self::query::*;
 pub use self::sub_agent::*;
@@ -922,7 +924,7 @@ pub(crate) fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatC
         last_message_preview: row.get(3)?,
         message_count: row.get(4)?,
         model: row.get(5)?,
-        api_profile_name: row.get(24)?,
+        api_profile_name: row.get(23)?,
         status: row.get(6)?,
         directory_id: row.get(7)?,
         forked_from_conversation_id: row.get(8)?,
@@ -940,14 +942,13 @@ pub(crate) fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatC
         sub_agent_status: row.get(20)?,
         sub_agent_error: row.get(21)?,
         total_duration_ms: row.get(22)?,
-        emoji: row.get(23)?,
-        run_input_tokens: row.get(25)?,
-        run_output_tokens: row.get(26)?,
-        run_cache_creation_input_tokens: row.get(27)?,
-        run_cache_read_input_tokens: row.get(28)?,
-        last_run_duration_ms: row.get(29)?,
-        run_ttft_sum_ms: row.get(30)?,
-        run_request_count: row.get(31)?,
+        run_input_tokens: row.get(24)?,
+        run_output_tokens: row.get(25)?,
+        run_cache_creation_input_tokens: row.get(26)?,
+        run_cache_read_input_tokens: row.get(27)?,
+        last_run_duration_ms: row.get(28)?,
+        run_ttft_sum_ms: row.get(29)?,
+        run_request_count: row.get(30)?,
     })
 }
 

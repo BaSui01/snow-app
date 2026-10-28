@@ -10,6 +10,7 @@ import type {
 import type {
   AutoSendRequest,
   ConversationInputRuntimeState,
+  RollbackWorkflowComposerState,
 } from "../../chatInput/types";
 import type {
   ApiConfigRecord,
@@ -257,6 +258,9 @@ export const useChatConversation = (
   ] = useState<Set<string>>(new Set());
   const [isLoadingInitialHistory, setIsLoadingInitialHistory] = useState(false);
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
+  // 回滚编排提交消息：编排图无法写进输入框，改为回填编排器弹窗。
+  const [rollbackWorkflowComposer, setRollbackWorkflowComposer] =
+    useState<RollbackWorkflowComposerState | null>(null);
   // buildFromContent 的前台自动发送队列：队首（activeAutoSend）被输入区发送后
   // 才激活下一条，多次请求不会互相覆盖。
   const [activeAutoSend, setActiveAutoSend] = useState<AutoSendRequest | null>(
@@ -747,6 +751,7 @@ export const useChatConversation = (
     attentionRequiredConversationIds,
     isLoadingInitialHistory,
     draftToRestore,
+    rollbackWorkflowComposer,
     rollbackPreview,
     rollbackNewChatState,
     newChatRequested,
@@ -817,6 +822,7 @@ export const useChatConversation = (
     setPendingUserQuestionConversationIds,
     setIsLoadingInitialHistory,
     setDraftToRestore,
+    setRollbackWorkflowComposer,
     setRollbackPreview,
     setRollbackNewChatState,
     setNewChatRequested,
@@ -1497,6 +1503,8 @@ export const useChatConversation = (
       handleForkConversation: conversationManagementApi.handleForkConversation,
       draftToRestore,
       clearDraftToRestore: rollbackApi.clearDraftToRestore,
+      rollbackWorkflowComposer,
+      clearRollbackWorkflowComposer: rollbackApi.clearRollbackWorkflowComposer,
       saveInputDraft,
       getInputDraft,
       clearInputDraft,
@@ -1591,6 +1599,7 @@ export const useChatConversation = (
       isCompacting,
       compactingConversationId,
       draftToRestore,
+      rollbackWorkflowComposer,
       activeAutoSend,
       rollbackApi.preparingMessageId,
       rollbackPreview,

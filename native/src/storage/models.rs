@@ -777,7 +777,6 @@ pub struct ChatConversationRecord {
     pub last_run_duration_ms: i64,
     pub run_ttft_sum_ms: i64,
     pub run_request_count: i64,
-    pub emoji: String,
 }
 
 #[napi(object)]

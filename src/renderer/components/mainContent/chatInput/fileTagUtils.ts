@@ -113,8 +113,6 @@ export type ConversationTag = {
   directoryId: string;
   /** 会话显示名（chip 显示） */
   title: string;
-  /** 会话 emoji（可选，chip 显示） */
-  emoji?: string;
 };
 
 export type QuoteTag = {
@@ -154,6 +152,17 @@ export type FileSelectionTag = {
   content: string;
   /** 行号口径：源码文件 / 文档提取正文 */
   representation: "source" | "extracted-text";
+};
+
+/** WorkFlow 手动编排提交的折叠标签：完整图在随后的工具调用里，这里只存概要。 */
+export type WorkflowTag = {
+  title: string;
+  nodeCount: number;
+  edgeCount: number;
+  /** 节点清单文本（悬停预览与 AI 概要共用） */
+  outline: string;
+  /** 编排图快照（JSON 文本），回滚时还原到编排器画布 */
+  graphJson?: string;
 };
 
 /**
@@ -220,7 +229,8 @@ export type ContentSegment =
   | { type: "command"; tag: CommandTag }
   | { type: "skill"; tag: SkillTag }
   | { type: "annotation"; tag: AnnotationTag }
-  | { type: "file-selection"; tag: FileSelectionTag };
+  | { type: "file-selection"; tag: FileSelectionTag }
+  | { type: "workflow"; tag: WorkflowTag };
 
 /**
  * 将行号数组格式化为紧凑的字符串表示，连续区间合并为范围。
@@ -421,7 +431,6 @@ export const encodeConversationTag = (tag: ConversationTag): string =>
     conversationId: tag.conversationId,
     directoryId: tag.directoryId,
     title: utf8ToBase64(tag.title),
-    emoji: tag.emoji,
   })}@@`;
 
 /**
@@ -479,6 +488,20 @@ export const encodeFileSelectionTag = (tag: FileSelectionTag): string =>
     content: utf8ToBase64(tag.content),
     representation: tag.representation,
   })}@@`;
+
+/** title / outline / graph 为自由文本（可能含 `@@`），以 base64 承载。 */
+export const encodeWorkflowTag = (tag: WorkflowTag): string =>
+  `@@workflow:${JSON.stringify({
+    title: utf8ToBase64(tag.title),
+    nodeCount: tag.nodeCount,
+    edgeCount: tag.edgeCount,
+    outline: utf8ToBase64(tag.outline),
+    graph: tag.graphJson ? utf8ToBase64(tag.graphJson) : undefined,
+  })}@@`;
+
+/** WorkFlow 标签的 chip 文本：`WorkFlow: 流程名`（无名称时仅 WorkFlow）。 */
+export const formatWorkflowTagLabel = (tag: WorkflowTag): string =>
+  tag.title.trim() ? `WorkFlow: ${tag.title.trim()}` : "WorkFlow";
 
 /**
  * 将浏览器元素选择器选取的元素编码为 element 标签。
@@ -562,7 +585,7 @@ export const buildTextSnippetSummary = (text: string, maxLen = 30): string => {
 };
 
 const contentTagPattern =
-  /@@(file-selection|file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill|annotation):(.+?)@@/g;
+  /@@(file-selection|file|dir|image|commit|change|text-snippet|review|element|web|conversation|quote|command|skill|annotation|workflow):(.+?)@@/g;
 
 /** Treat chips as opaque encoded spans: no attachment loading or re-encoding. */
 export const splitDraftText = (
@@ -739,10 +762,6 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
               directoryId:
                 typeof data.directoryId === "string" ? data.directoryId : "",
               title: data.title ? base64ToUtf8(data.title) : "",
-              emoji:
-                typeof data.emoji === "string" && data.emoji.length > 0
-                  ? data.emoji
-                  : undefined,
             },
           });
         }
@@ -821,6 +840,36 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
             },
           });
         }
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "workflow") {
+      try {
+        const data = JSON.parse(value) as Partial<
+          Record<keyof WorkflowTag | "graph", unknown>
+        >;
+        let graphJson: string | undefined;
+        if (typeof data.graph === "string") {
+          try {
+            graphJson = base64ToUtf8(data.graph);
+          } catch {
+            graphJson = undefined;
+          }
+        }
+        segments.push({
+          type: "workflow",
+          tag: {
+            title:
+              typeof data.title === "string" ? base64ToUtf8(data.title) : "",
+            nodeCount: typeof data.nodeCount === "number" ? data.nodeCount : 0,
+            edgeCount: typeof data.edgeCount === "number" ? data.edgeCount : 0,
+            outline:
+              typeof data.outline === "string"
+                ? base64ToUtf8(data.outline)
+                : "",
+            graphJson,
+          },
+        });
       } catch {
         segments.push({ type: "text", content: match[0] });
       }
@@ -974,6 +1023,8 @@ export const summarizeContentAsPlainText = (content: string): string => {
       parts.push(segment.tag.name);
     } else if (segment.type === "command") {
       parts.push(`/${segment.tag.name}`);
+    } else if (segment.type === "workflow") {
+      parts.push(formatWorkflowTagLabel(segment.tag));
     } else {
       const { tag } = segment;
       const linesStr = tag.isDirectory
@@ -1038,6 +1089,8 @@ export const getChipDisplayLabel = (segment: ChipSegment): string => {
         segment.tag.startLine,
         segment.tag.endLine,
       );
+    case "workflow":
+      return formatWorkflowTagLabel(segment.tag);
     default: {
       const { tag } = segment;
       const linesStr = tag.isDirectory
@@ -1221,7 +1274,7 @@ export const createWebTagChipHtml = (tag: WebTag): string => {
 };
 
 /**
- * 生成历史会话引用 chip HTML。显示 emoji（可选）+ 会话标题；
+ * 生成历史会话引用 chip HTML。显示会话标题；
  * 完整会话信息存放在 data-conversation-data 中，供序列化（发送时转为
  * 上下文附件）与剪贴板复制/粘贴还原使用。悬停时由 useChipInteractions
  * 异步加载并预览实际注入的上下文内容，故不再设置原生 title 提示。
@@ -1232,12 +1285,10 @@ export const createConversationChipHtml = (tag: ConversationTag): string => {
       conversationId: tag.conversationId,
       directoryId: tag.directoryId,
       title: utf8ToBase64(tag.title),
-      emoji: tag.emoji,
     }),
   );
-  const icon = tag.emoji
-    ? `<span class="conversation-chip-emoji">${escapeHtml(tag.emoji)}</span>`
-    : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>';
+  const icon =
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>';
   return `<span class="file-chip conversation-chip" contenteditable="false" data-conversation-tag="true" data-conversation-data="${conversationData}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
     tag.title,
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
@@ -1387,6 +1438,10 @@ export const buildSegmentsHtml = (segments: ContentSegment[]): string =>
       }
       if (segment.type === "file-selection") {
         return createFileSelectionChipHtml(segment.tag);
+      }
+      // 编排图无法从标签还原，回填输入框时丢弃（只保留备注文本）
+      if (segment.type === "workflow") {
+        return "";
       }
       return createChipHtml(segment.tag);
     })
@@ -1554,10 +1609,6 @@ const readEditableContentWith = (
               directoryId:
                 typeof data.directoryId === "string" ? data.directoryId : "",
               title: data.title ? base64ToUtf8(data.title) : "",
-              emoji:
-                typeof data.emoji === "string" && data.emoji.length > 0
-                  ? data.emoji
-                  : undefined,
             });
           }
         } catch {

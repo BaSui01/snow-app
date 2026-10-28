@@ -18,14 +18,12 @@ export type ConversationDragPayload = {
   directoryId: string;
   /** 被拖拽会话 A 的显示名（用于拖影） */
   title: string;
-  /** 被拖拽会话 A 的 emoji（用于拖影） */
-  emoji?: string;
 };
 
 let activeConversationDragPayload: ConversationDragPayload | null = null;
 
 const parseConversationDragPayload = (
-  raw: string
+  raw: string,
 ): ConversationDragPayload | null => {
   try {
     const parsed = JSON.parse(raw) as Partial<ConversationDragPayload>;
@@ -38,7 +36,6 @@ const parseConversationDragPayload = (
         conversationId: parsed.conversationId,
         directoryId: parsed.directoryId,
         title: typeof parsed.title === "string" ? parsed.title : "",
-        emoji: typeof parsed.emoji === "string" ? parsed.emoji : "",
       };
     }
     return null;
@@ -50,7 +47,7 @@ const parseConversationDragPayload = (
 /** 开始应用内会话拖拽，并缓存 payload 供 dragover 阶段校验。 */
 export const beginConversationDrag = (
   dataTransfer: DataTransfer,
-  payload: ConversationDragPayload
+  payload: ConversationDragPayload,
 ): void => {
   activeConversationDragPayload = payload;
   dataTransfer.setData(CONVERSATION_DRAG_MIME, JSON.stringify(payload));
@@ -70,7 +67,7 @@ export const endConversationDrag = (): void => {
  * 否则输入框无法完成前置校验、preventDefault()，浏览器也不会派发 drop。
  */
 export const readConversationDragPayload = (
-  dataTransfer: DataTransfer
+  dataTransfer: DataTransfer,
 ): ConversationDragPayload | null => {
   const raw = dataTransfer.getData(CONVERSATION_DRAG_MIME);
   if (raw) {

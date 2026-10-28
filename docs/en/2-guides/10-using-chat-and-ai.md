@@ -143,9 +143,10 @@ With WorkFlow mode enabled, a composer entry appears in the mode-indicator area 
 
 What happens after you send:
 
-- The dialog closes and the graph is embedded in that user message as a JSON payload, and **WorkFlow mode is forced for that turn**. This affects only that request; the conversation's own WorkFlow mode switch is never rewritten. The message shows the instruction and the payload verbatim in its bubble;
-- The model submits the payload verbatim to `workflow-workflow-generate`, so a workflow card (**Generate workflow**) appears in the conversation. Its canvas stays editable, and the flow runs only after you press **Execute**;
-- Node status, failure resume (**Resume execution**), and every other runtime behavior match the existing WorkFlow card;
+- The dialog closes **without an AI hop**: the app writes a user message and an assistant message carrying the `workflow-workflow-generate` call directly, and **WorkFlow mode is forced for that run** (the conversation's own WorkFlow mode switch is never rewritten);
+- The user message shows a collapsed WorkFlow chip ("WorkFlow: flow name" plus node/edge counts, hover to see the node list) followed by your note, with no JSON;
+- A workflow card (**Generate workflow**) appears immediately, with no tool authorization prompt. Its canvas stays editable, and the flow runs only after you press **Execute**;
+- Node status, failure resume (**Resume execution**), and every other runtime behavior match the existing WorkFlow card; the execution result is returned to the AI as usual, which summarizes it or asks whether to resume a failed node;
 - Pressing **Send** while the conversation is running does not interrupt the current run: the message joins the pending queue (see section 2.4) and is sent with the same graph once that run finishes.
 
 Difference from AI-designed flows:
@@ -155,7 +156,7 @@ Difference from AI-designed flows:
 | WorkFlow mode in the plus menu         | The model decomposes the request into nodes and dependencies | The request is still exploratory and you want a proposal first         |
 | WorkFlow composer in the input toolbar | You pin every step's prompt, model and dependencies          | The steps and ownership are clear, or you want a fixed, reusable graph |
 
-Both end up on the same workflow card and the same execution pipeline: both wait for your confirmation before running, and share node conversations, statuses, and failure-resume semantics. The composer asks the model to submit your graph verbatim; if the card's flow differs from what you drew, edit it on the card canvas before executing. Closing the dialog does not keep the drawing: the next open starts from a blank canvas.
+Both end up on the same workflow card and the same execution pipeline: both wait for your confirmation before running, and share node conversations, statuses, and failure-resume semantics. The composer submits exactly the graph you drew; the model never rewrites it. Closing the dialog does not keep the drawing: the next open starts from a blank canvas.
 
 ## 3. Complete Slash Command List
 
@@ -277,6 +278,8 @@ Before rolling back from an AI message or compaction boundary, preview its diff.
 - **Rollback conversation and files**: also restore files recorded by the checkpoint and remove associated TODOs.
 
 Recovery has limits. A missing or cleaned checkpoint, or an external change not covered by the checkpoint, cannot be guaranteed to restore. Rollback is not a substitute for a general backup.
+
+Rolling back a **composer submission** cannot write the graph into the input box: the app reopens the WorkFlow composer with the canvas, flow name and note restored from the graph snapshot stored in that message, so you can adjust and send again. Older messages without a snapshot only restore their note into the input box.
 
 ## 8. Context Compaction
 

@@ -1280,7 +1280,7 @@ body.is-panel-resizing * {
 /* Sidebar Sections */
 .sidebar-section {
   margin-top: 10px;
-  padding: 0 8px;
+  padding: 0 4px 0 8px;
   flex-shrink: 0;
 }
 
@@ -1457,12 +1457,6 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
-.list-meta {
-  color: var(--text-muted);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
 .empty-text {
   padding: 6px 8px;
   color: var(--text-muted);
@@ -1485,7 +1479,9 @@ body.is-panel-resizing * {
   flex-wrap: wrap;
   gap: 8px;
   width: 100%;
-  padding: 4px 6px;
+  /* 锁定行高：hover 出现的 22px 操作按钮不再把行撑高 */
+  min-height: 30px;
+  padding: 4px 0 4px 6px;
   margin-bottom: 1px;
   border: none;
   border-radius: var(--radius-sm, 6px);
@@ -1534,11 +1530,6 @@ body.is-panel-resizing * {
   color: var(--accent, #3b82f6);
 }
 
-.chat-item-icon.streaming.paused {
-  border-color: var(--warning, #f59e0b);
-  color: var(--warning, #f59e0b);
-}
-
 .chat-item-icon.completed {
   border-color: var(--accent, #3b82f6);
   background: color-mix(
@@ -1549,39 +1540,20 @@ body.is-panel-resizing * {
   color: var(--accent, #3b82f6);
 }
 
-.chat-item-icon.forked {
-  border-color: var(--text-muted);
+.chat-item-kind-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
   color: var(--text-muted);
 }
 
-.chat-item-icon.has-sub-agents {
-  border-color: var(--accent-secondary, #8b5cf6);
-  color: var(--accent-secondary, #8b5cf6);
-}
-
-/* Workflow 主会话图标：蓝色调，与子代理（紫色）区分 */
-.chat-item-icon.workflow {
-  border-color: var(--accent, #3b82f6);
+.chat-item-kind-icon.workflow {
   color: var(--accent, #3b82f6);
 }
 
-.chat-item-icon.has-emoji {
-  border-color: var(--border-light, var(--border-color));
-  cursor: pointer;
-}
-
-.chat-item-icon.has-emoji:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent, #3b82f6);
-}
-
-.chat-item-emoji {
-  font-size: 13px;
-  line-height: 1;
-  font-family:
-    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
-    "Twemoji Mozilla", sans-serif;
-  user-select: none;
+.chat-item-kind-icon.sub-agent {
+  color: var(--accent-secondary, #8b5cf6);
 }
 
 .chat-item-expand-toggle {
@@ -2008,10 +1980,6 @@ body.is-panel-resizing * {
   color: var(--text-secondary);
 }
 
-.chat-item.archived .chat-item-icon.archived {
-  color: var(--text-tertiary);
-}
-
 /* 归档条目 hover 操作按钮（还原 / 删除） */
 .archived-chat-item-actions {
   display: none;
@@ -2154,212 +2122,6 @@ body.is-panel-resizing * {
   max-height: none;
 }
 
-/* ============================================================
- * Emoji Picker 面板（会话列表 icon 更换）
- * 通过 createPortal 渲染到 document.body，position: fixed 定位。
- * 使用主题 CSS 变量，自动适配明暗主题。
- * ============================================================ */
-
-.emoji-picker {
-  position: fixed;
-  width: 280px;
-  max-height: 380px;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg, 8px);
-  background: var(--bg-secondary);
-  box-shadow: var(--island-shadow, 0 4px 16px rgba(0, 0, 0, 0.12));
-  z-index: 9999;
-  overflow: hidden;
-  animation: emoji-picker-appear 0.12s ease-out;
-}
-
-/* 仅淡入，不做任何位移/缩放：面板出现时即处于最终定位 */
-@keyframes emoji-picker-appear {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.emoji-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px 6px;
-  border-bottom: 1px solid var(--border-subtle, var(--border-color));
-  flex-shrink: 0;
-}
-
-.emoji-picker-search {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  margin: 4px 0 2px;
-  border-radius: var(--radius-sm, 6px);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle, var(--border-color));
-  flex-shrink: 0;
-  transition:
-    border-color 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.emoji-picker-search:focus-within {
-  border-color: var(--accent-color);
-}
-
-.emoji-picker-search-icon {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-.emoji-picker-search-input {
-  flex: 1;
-  min-width: 0;
-  padding: 2px 0;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  color: var(--text-primary);
-  font-size: 12px;
-  outline: none !important;
-}
-
-.emoji-picker-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.emoji-picker-search-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background 0.1s ease,
-    color 0.1s ease;
-}
-
-.emoji-picker-search-clear:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.emoji-picker-no-results {
-  padding: 24px 8px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.emoji-picker-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary, var(--text-primary));
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.emoji-picker-clear-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background 0.1s ease,
-    color 0.1s ease;
-}
-
-.emoji-picker-clear-btn:hover {
-  background: var(--bg-hover);
-  color: var(--danger, #e5484d);
-}
-
-.emoji-picker-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 2px;
-  scrollbar-gutter: stable;
-}
-
-.emoji-picker-group {
-  margin-bottom: 4px;
-}
-
-.emoji-picker-group-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 4px 6px 2px;
-  position: sticky;
-  top: 0;
-  background: var(--bg-secondary);
-  z-index: 1;
-}
-
-.emoji-picker-grid {
-  display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 1px;
-  padding: 0 2px;
-}
-
-.emoji-picker-item {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm, 6px);
-  background: transparent;
-  font-size: 16px;
-  line-height: 1;
-  font-family:
-    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
-    "Twemoji Mozilla", sans-serif;
-  cursor: pointer;
-  transition:
-    background 0.08s ease,
-    transform 0.08s ease;
-  user-select: none;
-}
-
-.emoji-picker-item:hover {
-  background: var(--bg-hover);
-  transform: scale(1.12);
-}
-
-.emoji-picker-item.selected {
-  background: var(--accent-blue-bg, rgba(59, 130, 246, 0.15));
-  box-shadow: inset 0 0 0 1px var(--accent-blue, #3b82f6);
-}
-
 .chat-item-menu {
   position: fixed;
   min-width: 140px;
@@ -2406,14 +2168,6 @@ body.is-panel-resizing * {
   margin-left: auto;
   color: var(--text-tertiary, var(--text-secondary));
   flex-shrink: 0;
-}
-
-.chat-item-menu-emoji {
-  font-size: 14px;
-  line-height: 1;
-  font-family:
-    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
-    "Twemoji Mozilla", sans-serif;
 }
 
 .chat-item-export-panel {
@@ -2678,6 +2432,18 @@ body.is-panel-resizing * {
   color: var(--text-muted);
   white-space: nowrap;
   margin-left: 4px;
+}
+
+/* 运行中 loading 占据时间位；圆环不再出现 */
+.chat-item-time-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent, #3b82f6);
+}
+
+.chat-item-time-loading.paused {
+  color: var(--warning, #f59e0b);
 }
 
 .chat-item-title-row {
@@ -3029,25 +2795,6 @@ body.is-panel-resizing * {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding-left: 10px;
-  padding-right: 2px;
-}
-
-.workspace-directory-list-inner::before {
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: 5px;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--border-color) 14px,
-    var(--border-color) calc(100% - 14px),
-    transparent
-  );
-  content: "";
-  pointer-events: none;
 }
 
 .workspace-directory-row {
@@ -3093,34 +2840,6 @@ body.is-panel-resizing * {
 
 .workspace-directory-list .list-item:not(:disabled) {
   cursor: pointer;
-}
-
-.workspace-directory-guide {
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 7px;
-  height: 7px;
-  transform: translateY(-50%);
-}
-
-.workspace-directory-guide-dot {
-  width: 5px;
-  height: 5px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: var(--bg-primary);
-  transition:
-    border-color 0.12s,
-    background 0.12s;
-}
-
-.workspace-directory-list .list-item.active .workspace-directory-guide-dot {
-  border-color: var(--text-muted);
-  background: var(--text-muted);
 }
 
 .workspace-directory-index {
@@ -3241,30 +2960,11 @@ body.is-panel-resizing * {
   color: var(--accent-red);
 }
 
-/* 合集成员项目列表：缩进 + 左侧引导线 */
+/* 合集成员项目列表：缩进 */
 .project-collection-members {
   display: flex;
   flex-direction: column;
   position: relative;
-  margin-left: 14px;
-  padding-left: 8px;
-}
-
-.project-collection-members::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--border-color) 10px,
-    var(--border-color) calc(100% - 10px),
-    transparent
-  );
-  content: "";
-  pointer-events: none;
 }
 
 .project-collection-empty {
@@ -4195,7 +3895,6 @@ body.is-panel-resizing * {
 .workspace-directory-row:hover .workspace-directory-actions,
 .workspace-directory-row.menu-open .workspace-directory-actions {
   display: flex;
-  background: var(--surface-island-strong);
   color: var(--text-secondary);
 }
 
@@ -12614,7 +12313,7 @@ body.is-panel-resizing * {
 }
 
 .stream-retry-notice-preview {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--text-tertiary);
@@ -12629,7 +12328,6 @@ body.is-panel-resizing * {
   flex-shrink: 0;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
   padding: 1px 4px;
   border: none;
   border-radius: var(--radius-sm);
@@ -28745,11 +28443,6 @@ button.user-message-source:hover {
   color: var(--accent-color, #4a9eff);
 }
 
-.conversation-chip-emoji {
-  font-size: 12px;
-  line-height: 1;
-}
-
 /* ===== Skill Chip（技能引用） ===== */
 .skill-chip:hover {
   border-color: #a855f7;
@@ -29019,12 +28712,6 @@ button.user-message-source:hover {
   color: var(--text-primary);
 }
 
-.conversation-chip-preview-emoji {
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1;
-}
-
 .conversation-chip-preview-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -29178,6 +28865,14 @@ button.user-message-source:hover {
   text-overflow: ellipsis;
   min-width: 0;
   flex: 1;
+}
+
+/* WorkFlow 编排标签的节点/连线计数 */
+.user-message-file-chip-meta {
+  flex-shrink: 0;
+  margin-left: 4px;
+  opacity: 0.65;
+  font-size: 0.92em;
 }
 
 .file-chip-icon,
@@ -30813,6 +30508,11 @@ button.user-message-source:hover {
   z-index: 100;
   transform-origin: top right;
   animation: dropdown-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.25, 1.15);
+}
+
+/* 渠道视图固定宽度，避免搜索过滤/悬停展开按钮时容器宽度跳动 */
+.model-dropdown.is-api-profile-view {
+  width: 340px;
 }
 
 /* Default: drop up (backward compatible) */
@@ -36602,7 +36302,6 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 
 .branch-selector-btn:hover {
   background: var(--bg-hover);
-  border-color: var(--border-hover);
   color: var(--text-primary);
 }
 
@@ -55531,12 +55230,6 @@ pre.file-viewer-code {
   flex-shrink: 0;
 }
 
-.detached-chat-titlebar-emoji {
-  font-size: 14px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
 .detached-chat-titlebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -55607,11 +55300,6 @@ pre.file-viewer-code {
   background: var(--surface-island-strong);
   color: var(--text-primary);
   box-shadow: var(--island-shadow);
-}
-
-.detached-chat-tab-emoji {
-  font-size: 13px;
-  line-height: 1;
 }
 
 .detached-chat-tab-label {
@@ -61455,28 +61143,10 @@ img.plugin-icon {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin-left: 8px;
   padding-left: 4px;
   padding-top: 1px;
   /* 合集内项目行的吸顶偏移（排在合集行下方） */
   --tree-sticky-depth: 1;
-}
-
-.tree-collection-members::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--border-color) 10px,
-    var(--border-color) calc(100% - 10px),
-    transparent
-  );
-  content: "";
-  pointer-events: none;
 }
 
 .tree-project-node {
@@ -61562,7 +61232,6 @@ img.plugin-icon {
 
 .tree-chevron-btn:hover {
   color: var(--text-primary);
-  background: var(--bg-active);
 }
 
 .tree-project-row {
@@ -61608,27 +61277,9 @@ img.plugin-icon {
   position: relative;
   display: flex;
   flex-direction: column;
-  margin-left: 8px;
   padding-left: 4px;
   padding-top: 2px;
   padding-bottom: 2px;
-}
-
-.tree-project-chats::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    var(--border-color) 8px,
-    var(--border-color) calc(100% - 8px),
-    transparent
-  );
-  content: "";
-  pointer-events: none;
 }
 
 /* 多选操作栏吸顶（与项目行吸顶同一套偏移）：树列表整体滚动，
@@ -61664,6 +61315,12 @@ img.plugin-icon {
 .tree-project-chats .workflow-node-list-panel {
   margin-left: 8px;
   padding-left: 4px;
+  /* 树模式不画连线 */
+  border-left: 0;
+}
+
+.tree-project-chats .sidebar-collapse-loading {
+  border-left: 0;
 }
 
 .tree-project-chats .workflow-node-list-panel .sub-agent-list-panel {

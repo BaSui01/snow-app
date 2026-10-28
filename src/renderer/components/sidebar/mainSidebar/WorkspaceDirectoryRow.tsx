@@ -231,9 +231,6 @@ export function WorkspaceDirectoryRow({
     >
       {isEditing ? (
         <div className="list-item">
-          <span className="workspace-directory-guide" aria-hidden="true">
-            <span className="workspace-directory-guide-dot" />
-          </span>
           {getDirectoryIcon(directory)}
           <input
             ref={editInputRef}
@@ -265,9 +262,6 @@ export function WorkspaceDirectoryRow({
           title={directory.path}
           type="button"
         >
-          <span className="workspace-directory-guide" aria-hidden="true">
-            <span className="workspace-directory-guide-dot" />
-          </span>
           {collectionColor && memberLinked ? (
             <span
               aria-hidden="true"
@@ -281,15 +275,6 @@ export function WorkspaceDirectoryRow({
           ) : null}
           {getDirectoryIcon(directory)}
           <span className="list-label">{displayName ?? directory.name}</span>
-          <span className="list-meta">
-            {directory.kind === "ssh"
-              ? t("sidebar.directoryKindSsh", {
-                  defaultValue: "SSH",
-                })
-              : t("sidebar.directoryKindLocal", {
-                  defaultValue: "Local",
-                })}
-          </span>
           {pathStateBadge ? (
             <span
               className={`workspace-directory-path-badge ${pathStateBadge.className}`}

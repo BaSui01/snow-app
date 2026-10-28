@@ -55,10 +55,6 @@ type ChatConversationRowProps = {
     conversation: ChatConversationRecord,
     newTitle: string,
   ) => Promise<void>;
-  onSetEmoji: (
-    conversation: ChatConversationRecord,
-    emoji: string,
-  ) => Promise<void>;
   onDelete: (
     conversation: ChatConversationRecord,
     deleteImages: boolean,
@@ -101,7 +97,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
   onPin,
   onUnpin,
   onRename,
-  onSetEmoji,
   onDelete,
   onExport,
   onFork,
@@ -162,10 +157,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
     (newTitle: string): Promise<void> => onRename(conversation, newTitle),
     [conversation, onRename],
   );
-  const handleSetEmoji = useCallback(
-    (emoji: string): Promise<void> => onSetEmoji(conversation, emoji),
-    [conversation, onSetEmoji],
-  );
   const handleDelete = useCallback(
     (deleteImages: boolean, deleteMemories: boolean): void =>
       onDelete(conversation, deleteImages, deleteMemories),
@@ -221,7 +212,6 @@ export const ChatConversationRow = memo(function ChatConversationRow({
         onEnterMultiSelect={onEnterMultiSelect}
         onPin={handlePin}
         onRename={handleRename}
-        onSetEmoji={handleSetEmoji}
         onDelete={handleDelete}
         onExport={handleExport}
         onFork={handleFork}

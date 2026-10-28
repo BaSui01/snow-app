@@ -1,10 +1,4 @@
-import {
-  ArchiveRestore,
-  Check,
-  Loader2,
-  MessageSquareMore,
-  Trash2,
-} from "lucide-react";
+import { ArchiveRestore, Check, Loader2, Trash2 } from "lucide-react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
@@ -41,7 +35,6 @@ export function ArchivedChatItem({
 }: ArchivedChatItemProps): React.JSX.Element {
   const { t } = useI18n();
 
-  const hasEmoji = conversation.emoji.trim() !== "";
   const displayName =
     conversation.summary ||
     conversation.title ||
@@ -101,15 +94,7 @@ export function ArchivedChatItem({
         >
           {isSelected ? <Check size={12} strokeWidth={3} /> : null}
         </span>
-      ) : (
-        <span className="chat-item-icon archived">
-          {hasEmoji ? (
-            <span className="chat-item-emoji">{conversation.emoji}</span>
-          ) : (
-            <MessageSquareMore size={11} />
-          )}
-        </span>
-      )}
+      ) : null}
       <div className="chat-item-content">
         <div className="chat-item-title-row">
           <span className="chat-item-title">

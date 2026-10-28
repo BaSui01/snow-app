@@ -16,6 +16,8 @@ export const ChatInput = ({
   tokenUsage = null,
   draftToRestore = null,
   onDraftRestored,
+  rollbackWorkflowComposer = null,
+  onRollbackWorkflowRestored,
   autoSendRequest = null,
   claimAutoSend,
   completeAutoSend,
@@ -92,6 +94,8 @@ export const ChatInput = ({
       projectName={projectName}
       onNavigateToView={onNavigateToView}
       {...controller}
+      rollbackWorkflowComposer={rollbackWorkflowComposer}
+      onRollbackWorkflowRestored={onRollbackWorkflowRestored}
       tokenUsage={tokenUsage}
       loadOlderMessages={loadOlderMessages}
       pendingMessages={pendingMessages}

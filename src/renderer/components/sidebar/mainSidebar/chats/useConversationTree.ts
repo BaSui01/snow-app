@@ -1,10 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
 import type { SubAgentSessionEvent } from "../../../mainContent/chatMessages/utils/conversationTypes";
 
 type SubAgentMap = Record<string, ChatConversationRecord[]>;
+
+/** 子代理执行中的状态：首次出现或由终态重新进入时自动展开所属会话树 */
+const ACTIVE_SUB_AGENT_STATUSES = new Set([
+  "queued",
+  "running",
+  "waiting_input",
+  "finalizing",
+  "cancelling",
+]);
+
+/** 合并 id 集合：无新增时返回原引用，避免无谓重渲染 */
+function mergeConversationIds(
+  prev: Set<string>,
+  ids: Set<string>,
+): Set<string> {
+  let next: Set<string> | null = null;
+  for (const id of ids) {
+    if (prev.has(id)) {
+      continue;
+    }
+    next ??= new Set(prev);
+    next.add(id);
+  }
+  return next ?? prev;
+}
 
 type UseConversationTreeOptions = {
   conversationsRef: RefObject<ChatConversationRecord[]>;
@@ -66,19 +91,12 @@ export function useConversationTree({
   // 保证会话较多时用户不会漏掉被暂停等待确认的子代理
   const surfacedConversationIds = useMemo(() => {
     const next = new Set(runningConversationIds);
-    const activeStatuses = new Set([
-      "queued",
-      "running",
-      "waiting_input",
-      "finalizing",
-      "cancelling",
-    ]);
     for (const [parentId, subs] of Object.entries(subAgentMap)) {
       if (
         subs.some(
           (sub) =>
             attentionRequiredConversationIds.has(sub.conversationId) ||
-            activeStatuses.has(sub.subAgentStatus),
+            ACTIVE_SUB_AGENT_STATUSES.has(sub.subAgentStatus),
         )
       ) {
         // 子代理挂在 workflow 节点会话下时，需要继续提升到
@@ -271,7 +289,6 @@ export function useConversationTree({
           lastRunDurationMs: 0,
           runTtftSumMs: 0,
           runRequestCount: 0,
-          emoji: "",
         };
 
         if (existingIndex >= 0) {
@@ -367,6 +384,77 @@ export function useConversationTree({
       return changed ? next : prev;
     });
   }, [subAgentMap, workflowNodeMap, activeConversationId]);
+
+  // 子代理被调用、Workflow 节点开始执行时自动展开所属会话树：
+  // 只需比较上一次观察到的运行状态，状态刷新不会把用户手动收起的树重新弹开。
+  const childRunStatusRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    const previous = childRunStatusRef.current;
+    const nextStatuses = new Map<string, string>();
+    // 节点会话 id -> workflow 主会话 id：挂在节点下的子代理需要向上提升两层
+    const nodeOwners = new Map<string, string>();
+    const directParents = new Set<string>();
+    const workflowRoots = new Set<string>();
+    const workflowNodes = new Set<string>();
+
+    for (const [workflowId, nodes] of Object.entries(workflowNodeMap)) {
+      for (const node of nodes) {
+        const status = node.subAgentStatus;
+        nodeOwners.set(node.conversationId, workflowId);
+        nextStatuses.set(node.conversationId, status);
+        if (
+          status === "running" &&
+          previous.get(node.conversationId) !== status
+        ) {
+          workflowRoots.add(workflowId);
+        }
+      }
+    }
+
+    for (const [parentId, subs] of Object.entries(subAgentMap)) {
+      for (const sub of subs) {
+        const status = sub.subAgentStatus;
+        nextStatuses.set(sub.conversationId, status);
+        if (!ACTIVE_SUB_AGENT_STATUSES.has(status)) {
+          continue;
+        }
+        // 仅在从非执行态进入执行态时展开：运行中的状态推进（如收尾）不再打扰
+        if (
+          ACTIVE_SUB_AGENT_STATUSES.has(previous.get(sub.conversationId) ?? "")
+        ) {
+          continue;
+        }
+        const workflowId = nodeOwners.get(parentId);
+        if (workflowId) {
+          workflowRoots.add(workflowId);
+          workflowNodes.add(parentId);
+        } else {
+          directParents.add(parentId);
+        }
+      }
+    }
+
+    childRunStatusRef.current = nextStatuses;
+
+    if (directParents.size > 0) {
+      setExpandedSubAgentConversationIds((prev) =>
+        mergeConversationIds(prev, directParents),
+      );
+    }
+    if (workflowRoots.size > 0) {
+      setExpandedWorkflowConversationIds((prev) =>
+        mergeConversationIds(prev, workflowRoots),
+      );
+      setExpandedSubAgentConversationIds((prev) =>
+        mergeConversationIds(prev, workflowRoots),
+      );
+    }
+    if (workflowNodes.size > 0) {
+      setExpandedWorkflowNodeConversationIds((prev) =>
+        mergeConversationIds(prev, workflowNodes),
+      );
+    }
+  }, [subAgentMap, workflowNodeMap]);
 
   /** 会话树（Workflow 节点 + 子代理）是否已展开：两者共用单一展开按钮 */
   const isConversationTreeExpanded = useCallback(

@@ -80,10 +80,12 @@ const ChatContentBody = ({
     handleAbort,
     tokenUsage,
     draftToRestore,
+    clearDraftToRestore,
+    rollbackWorkflowComposer,
+    clearRollbackWorkflowComposer,
     autoSendRequest,
     claimAutoSend,
     completeAutoSend,
-    clearDraftToRestore,
     saveInputDraft,
     getInputDraft,
     clearInputDraft,
@@ -730,6 +732,8 @@ const ChatContentBody = ({
                 tokenUsage={tokenUsage}
                 draftToRestore={draftToRestore}
                 onDraftRestored={clearDraftToRestore}
+                rollbackWorkflowComposer={rollbackWorkflowComposer}
+                onRollbackWorkflowRestored={clearRollbackWorkflowComposer}
                 autoSendRequest={autoSendRequest}
                 claimAutoSend={claimAutoSend}
                 completeAutoSend={completeAutoSend}

@@ -1036,16 +1036,14 @@ textarea:focus-visible {
   min-width: 0;
 }
 .thread-item-status,
-.thread-item-toggle,
-.thread-item-emoji {
+.thread-item-toggle {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
 }
 /* 状态徽标：圆形描边 + 状态色，一眼可辨会话是否在跑 / 需要处理 */
-.thread-item-status,
-.thread-item-emoji {
+.thread-item-status {
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1056,10 +1054,6 @@ textarea:focus-visible {
 .thread-item-status .icn {
   width: 11px;
   height: 11px;
-}
-.thread-item-emoji {
-  font-size: 12px;
-  line-height: 1;
 }
 /* 需处理：唯一的「黄色实底」状态，配合文案胶囊最醒目 */
 .thread-item-status.attention {

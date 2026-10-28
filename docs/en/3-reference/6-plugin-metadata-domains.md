@@ -383,7 +383,7 @@ No declaration · Not live · Parameters: `projectId`
 | `pinned`      | object[] \| null | Pinned conversations                                                    |
 | `active`      | object \| null   | Live state of the focused conversation (same as `runtime.conversation`) |
 
-Conversation record fields: `conversationId`, `title`, `summary`, `lastMessagePreview`, `messageCount`, `model`, `apiProfileName`, `status`, `directoryId`, `forkedFromConversationId`, `forkMessageCount`, `conversationType`, `parentConversationId`, `subAgentId`, `subAgentName`, `subAgentStatus`, `subAgentError`, `createdAt`, `updatedAt`, `inputTokens`, `outputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`, `totalDurationMs`, `runInputTokens`, `runOutputTokens`, `runCacheCreationInputTokens`, `runCacheReadInputTokens`, `lastRunDurationMs`, `runTtftSumMs`, `runRequestCount`, `emoji`.
+Conversation record fields: `conversationId`, `title`, `summary`, `lastMessagePreview`, `messageCount`, `model`, `apiProfileName`, `status`, `directoryId`, `forkedFromConversationId`, `forkMessageCount`, `conversationType`, `parentConversationId`, `subAgentId`, `subAgentName`, `subAgentStatus`, `subAgentError`, `createdAt`, `updatedAt`, `inputTokens`, `outputTokens`, `cacheCreationInputTokens`, `cacheReadInputTokens`, `totalDurationMs`, `runInputTokens`, `runOutputTokens`, `runCacheCreationInputTokens`, `runCacheReadInputTokens`, `lastRunDurationMs`, `runTtftSumMs`, `runRequestCount`.
 
 #### 4.3.2 `messages`
 

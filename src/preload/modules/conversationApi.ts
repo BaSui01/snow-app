@@ -7,6 +7,8 @@ import type {
   ConversationImportProgress,
   ConversationImportSummary,
   ConversationSearchResult,
+  ManualToolExchangeRequest,
+  ResponsesApiResult,
   UserMessageSummary,
   SubAgentRunCommand,
   SubAgentRunCommandResult,
@@ -164,15 +166,6 @@ export const conversationApi = {
     ),
   renameConversation: (conversationId: string, title: string): Promise<void> =>
     ipcRenderer.invoke("chat-conversations:rename", conversationId, title),
-  updateConversationEmoji: (
-    conversationId: string,
-    emoji: string,
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "chat-conversations:update-emoji",
-      conversationId,
-      emoji,
-    ),
   updateConversationApiProfile: (
     conversationId: string,
     profileName: string,
@@ -256,6 +249,13 @@ export const conversationApi = {
       "chat-conversations:append-tool-message",
       conversationId,
       content,
+    ),
+  storeManualToolExchange: (
+    request: ManualToolExchangeRequest,
+  ): Promise<ResponsesApiResult> =>
+    ipcRenderer.invoke(
+      "chat-conversations:store-manual-tool-exchange",
+      request,
     ),
   updateToolCallArguments: (
     conversationId: string,

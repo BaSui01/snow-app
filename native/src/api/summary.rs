@@ -6,6 +6,7 @@ use crate::api::config::{
     resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
 use crate::api::conversation::context::apply_configured_system_prompts;
+use crate::api::conversation::tags::expand_display_tags_in_content;
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::initialize_app_storage;
 use crate::storage::services::app_logs::{log_api_error, log_api_warning};
@@ -281,8 +282,16 @@ fn build_conversation_text(
             if content.is_empty() {
                 return None;
             }
+            // chip 标签折叠为人类可读文本（与标题/预览同一套语义）：编码外壳
+            // （路径、base64、JSON）对标题模型没有意义，还会污染生成的标题。
+            let readable = expand_display_tags_in_content(content)
+                .unwrap_or_else(|| content.to_string());
+            let readable = readable.trim();
+            if readable.is_empty() {
+                return None;
+            }
             let role = normalize_role(&message.role);
-            Some(format!("{}: {}", role, content))
+            Some(format!("{}: {}", role, readable))
         })
         .collect::<Vec<_>>()
         .join("\n")

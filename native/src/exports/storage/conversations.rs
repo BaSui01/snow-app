@@ -485,15 +485,6 @@ pub async fn rename_conversation(conversation_id: String, title: String) -> napi
 }
 
 #[napi]
-pub async fn update_conversation_emoji(conversation_id: String, emoji: String) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::update_conversation_emoji(conversation_id, emoji)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
 pub async fn update_conversation_api_profile(
     conversation_id: String,
     profile_name: String,
@@ -553,6 +544,63 @@ pub async fn list_task_history(conversation_id: String) -> napi::Result<Vec<Stri
 pub async fn append_tool_message(conversation_id: String, content: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::append_tool_message(conversation_id, content)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi(object)]
+pub struct ManualToolExchangeRequest {
+    /// 为空时新建会话
+    pub conversation_id: Option<String>,
+    pub directory_id: Option<String>,
+    pub model: Option<String>,
+    pub api_profile: Option<String>,
+    pub checkpoint_id: Option<String>,
+    pub user_content: String,
+    pub tool_name: String,
+    pub arguments_json: String,
+}
+
+/// 业务逻辑直接生成一次工具调用（不请求模型），返回与模型响应同构的结果，
+/// 渲染端据此复用工具执行与续跑链路。
+#[napi(ts_return_type = "Promise<ResponsesApiResult>")]
+pub async fn store_manual_tool_exchange(
+    request: ManualToolExchangeRequest,
+) -> napi::Result<crate::api::responses::ResponsesApiResult> {
+    tokio::task::spawn_blocking(move || {
+        let model = request.model.unwrap_or_default();
+        let exchange = crate::storage::store_manual_tool_exchange(
+            &crate::storage::services::chat_conversations::ManualToolExchangeInput {
+                conversation_id: request.conversation_id.as_deref(),
+                directory_id: request.directory_id.as_deref().unwrap_or(""),
+                model: &model,
+                api_profile_name: request.api_profile.as_deref().unwrap_or(""),
+                checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
+                user_content: &request.user_content,
+                tool_name: &request.tool_name,
+                arguments_json: &request.arguments_json,
+            },
+        )?;
+        Ok(crate::api::responses::ResponsesApiResult {
+            id: exchange.response_id,
+            conversation_id: exchange.conversation_id,
+            content: String::new(),
+            thinking: String::new(),
+            model,
+            status: "completed".to_string(),
+            interruption_reason: None,
+            recovery_outcome: None,
+            failure_reason: None,
+            tool_calls_json: exchange.tool_calls_json,
+            token_usage: crate::api::responses::TokenUsage {
+                input_tokens: 0,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+            },
+            persisted_user_message_ids: exchange.persisted_user_message_ids,
+        })
     })
     .await
     .map_err(map_spawn_error)?

@@ -1,9 +1,10 @@
 // 聊天输入区 WorkFlow 手动编排器弹窗。
 //
 // 复用定时任务工作流画布（variant="chat"）作为手动画布：用户自己绘制节点与
-// 连线、填写节点提示词与模型，点「发送」后编排图随本条消息进入当前会话的
-// WorkFlow 流程（由既有 WorkFlow 卡片确认执行）。本组件只负责画布宿主、流程名
+// 连线、填写节点提示词与模型，点「发送」后直接生成一次工作流工具调用（不经
+// AI 转交），由既有 WorkFlow 卡片确认执行。本组件只负责画布宿主、流程名
 // 与备注输入、发送前校验与载荷转换，不直接发起任何 AI 调用。
+// 关闭弹窗不清空草稿，重新打开继续编辑（发送成功或回滚还原才重置）。
 
 import { Loader2, Send, X } from "lucide-react";
 import {
@@ -25,7 +26,10 @@ import {
   ScheduledTaskWorkflowCanvas,
   type ScheduledTaskWorkflowCanvasHandle,
 } from "../../../sidebar/scheduledTasks/ScheduledTaskWorkflowCanvas";
-import type { WorkflowComposerGraph } from "../types";
+import type {
+  WorkflowComposerGraph,
+  RollbackWorkflowComposerState,
+} from "../types";
 
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -33,6 +37,8 @@ export type WorkflowComposerDialogProps = {
   open: boolean;
   onClose: () => void;
   apiConfigs: ApiConfigRecord[];
+  /** 回滚编排提交消息时的还原状态：打开即填充画布、流程名与备注。 */
+  initial?: RollbackWorkflowComposerState | null;
   /** 发送：graph 为编排图，note 为用户备注（可为空字符串）。会话正在运行时
    *  不在这里拦截：发送链路按既有排队语义暂存本回合（编排图随 options 入队，
    *  队列冲刷时用同一张图重建载荷），因此无需禁用发送。 */
@@ -99,6 +105,7 @@ const toComposerGraph = (
     prompt: node.prompt,
     apiProfile: node.apiProfile ?? "",
     model: node.model ?? "",
+    position: node.position,
   }));
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges = workflow.edges
@@ -107,10 +114,31 @@ const toComposerGraph = (
   return { title: title.trim(), nodes, edges };
 };
 
+/** 回滚还原：编排图 → 画布工作流（连线延时恒为 0）。 */
+const toScheduledWorkflow = (
+  graph: WorkflowComposerGraph,
+): ScheduledTaskWorkflow => ({
+  contextMode: "handoff",
+  nodes: graph.nodes.map((node, index) => ({
+    id: node.id,
+    label: node.label,
+    prompt: node.prompt,
+    apiProfile: node.apiProfile || undefined,
+    model: node.model || undefined,
+    position: node.position ?? { x: 80 + index * 260, y: 120 },
+  })),
+  edges: graph.edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+    delayMs: 0,
+  })),
+});
+
 export function WorkflowComposerDialog({
   open,
   onClose,
   apiConfigs,
+  initial,
   onSend,
 }: WorkflowComposerDialogProps): React.JSX.Element {
   const { t } = useI18n();
@@ -122,16 +150,29 @@ export function WorkflowComposerDialog({
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 草稿：普通关闭不清空，重开继续编辑；发送成功后才重置。
+  const sentRef = useRef(false);
+  // 回滚还原只应用一次，避免重开弹窗时覆盖用户改过的内容。
+  const appliedRestoreRef = useRef<RollbackWorkflowComposerState | null>(null);
 
-  // 每次打开都重置为初始值：画布不保留上一次绘制的图，流程名/备注/错误一并清空。
   useEffect(() => {
     if (!open) return;
+    setError(null);
+    setIsSubmitting(false);
+    if (!sentRef.current) return;
+    sentRef.current = false;
     setWorkflow(createEmptyWorkflow(t));
     setTitle("");
     setNote("");
-    setError(null);
-    setIsSubmitting(false);
   }, [open, t]);
+
+  useEffect(() => {
+    if (!open || !initial || appliedRestoreRef.current === initial) return;
+    appliedRestoreRef.current = initial;
+    setWorkflow(toScheduledWorkflow(initial.graph));
+    setTitle(initial.graph.title.trim());
+    setNote(initial.note);
+  }, [open, initial]);
 
   /**
    * ESC 语义：先让画布关掉自己的浮层（节点/连线编辑、放大视图），画布没有浮层
@@ -186,6 +227,7 @@ export function WorkflowComposerDialog({
       setIsSubmitting(false);
     }
 
+    sentRef.current = true;
     onSend(toComposerGraph(workflow, title), note);
   }, [note, onSend, t, title, workflow]);
 

@@ -1,15 +1,20 @@
 // 输入区 WorkFlow 手动编排器的发送载荷（纯函数，无 React 依赖）。
 //
-// 现有 IPC 没有「追加 assistant 消息 / 合成 tool call」的能力，因此手动编排
-// 的图不能凭空注入一条带工具调用的助手消息。这里的做法是：把编排图作为
-// 结构化 JSON 载荷内嵌进本次用户消息文本，并在本回合强制启用 WorkFlow 模式，
-// 让模型把载荷原样交给 `workflow-workflow-generate` 工具——从而完全复用既有
-// 的 WorkflowToolCall 卡片、runner、落库与结算链路。
+// 编排图由用户画好，不再经模型转交：发送时直接落库一条用户消息（折叠的
+// @@workflow 标签 + 备注）和一条带 workflow-workflow-generate 调用的助手消息，
+// 复用既有 WorkflowToolCall 卡片、执行与结算链路。
 
-import type { WorkflowComposerGraph, WorkflowComposerNode } from "../types";
+import {
+  encodeWorkflowTag,
+  parseContentSegments,
+  type WorkflowTag,
+} from "../fileTagUtils";
+import type { WorkflowComposerGraph } from "../types";
 
-/** 用户消息里包裹编排载荷的标签名（开闭标签成对出现）。 */
-export const WORKFLOW_COMPOSER_TAG = "workflow-composer";
+export const WORKFLOW_GENERATE_TOOL_NAME = "workflow-workflow-generate";
+
+/** 节点 prompt 在概要里的截断长度。 */
+const OUTLINE_PROMPT_MAX_CHARS = 120;
 
 /** `workflow-workflow-generate` 工具的参数结构（与 Rust 侧校验保持一致）。 */
 export type WorkflowGenerateArgs = {
@@ -29,8 +34,7 @@ export type WorkflowGenerateArgs = {
 /**
  * 把编排器画布的图转成 `workflow-workflow-generate` 的工具参数：
  * - 节点：`name` 缺省用 label 兜底（空 label 时用 id），可选字段填空字符串；
- * - 边：丢弃端点不存在的边、自环边与重复边，保持原有顺序；
- * - `title` 为空时回退为空字符串（与 `parseWorkflowGraph` 的口径一致）。
+ * - 边：丢弃端点不存在的边、自环边与重复边，保持原有顺序。
  */
 export function toWorkflowGenerateArgs(
   graph: WorkflowComposerGraph,
@@ -63,76 +67,66 @@ export function toWorkflowGenerateArgs(
   return { title: graph.title ?? "", nodes, edges };
 }
 
-/**
- * 生成随用户消息发送的编排提交文本：一段中英双语指令 + 载荷块（+ 可选备注）。
- * 指令文本是给模型看的（不参与 i18n），标签内必须是合法 JSON。
- */
-export function buildWorkflowComposerMessage(
-  graph: WorkflowComposerGraph,
-  note: string,
-): string {
-  const payload = JSON.stringify(toWorkflowGenerateArgs(graph), null, 2);
-  const lines = [
-    "用户已使用聊天输入区的 WorkFlow 编排器手动绘制好本流程，下面的编排图必须原样提交。",
-    "The user has already drawn this workflow with the WorkFlow composer; submit the graph below verbatim.",
-    "",
-    `请把下方 ${WORKFLOW_COMPOSER_TAG} 载荷块内的 JSON 原样作为 workflow-workflow-generate 的参数传入：不要重新设计流程，不要增删节点，不要改动任何节点的 prompt / model / 依赖关系，也不要改变节点顺序。`,
-    "Submit the JSON below verbatim via the workflow-workflow-generate tool. Do not redesign, add, remove, or reorder nodes, and do not modify any node prompt, model, or dependency.",
-    "",
-    "本回合只调用 workflow-workflow-generate，不要调用其它任何工具；工具返回后按工具结果继续（等待用户在卡片上确认执行，或按用户的修改意见重新提交）。",
-    "In this turn call only workflow-workflow-generate — no other tools. After the tool returns, follow the tool result: wait for the user to confirm execution on the card, or resubmit according to the user's feedback.",
-    "",
-    `<${WORKFLOW_COMPOSER_TAG}>`,
-    payload,
-    `</${WORKFLOW_COMPOSER_TAG}>`,
-  ];
-  const trimmedNote = note.trim();
-  if (trimmedNote) {
-    lines.push("", `用户备注：${trimmedNote}`);
-  }
-  return lines.join("\n");
-}
-
-/** 判断文本中是否含编排载荷标签。 */
-export function hasWorkflowComposerPayload(text: string): boolean {
-  return text.includes(`<${WORKFLOW_COMPOSER_TAG}>`);
-}
-
-/**
- * 从载荷标签内的 JSON 反解回编排图（供验证与后续复用）。
- * 标签缺失、JSON 损坏或结构不符时一律返回 null，绝不抛错；节点 prompt 里若
- * 恰好出现标签文本，会继续尝试下一对标签，只接受真正能解析成图的那一段。
- */
-export function parseWorkflowComposerPayload(
-  text: string,
-): WorkflowComposerGraph | null {
-  const openTag = `<${WORKFLOW_COMPOSER_TAG}>`;
-  const closeTag = `</${WORKFLOW_COMPOSER_TAG}>`;
-  let cursor = 0;
-  while (cursor <= text.length) {
-    const start = text.indexOf(openTag, cursor);
-    if (start < 0) {
-      return null;
-    }
-    const end = text.indexOf(closeTag, start + openTag.length);
-    if (end > start) {
-      const graph = parseWorkflowComposerGraphJson(
-        text.slice(start + openTag.length, end).trim(),
-      );
-      if (graph) {
-        return graph;
+/** 节点清单：`序号. 名称 <- 上游` + 缩进的 prompt 摘要（单行截断）。 */
+const buildWorkflowOutline = (args: WorkflowGenerateArgs): string => {
+  const nameById = new Map(args.nodes.map((node) => [node.id, node.name]));
+  return args.nodes
+    .map((node, index) => {
+      const upstream = args.edges
+        .filter((edge) => edge.target === node.id)
+        .map((edge) => nameById.get(edge.source) ?? edge.source);
+      const head = `${index + 1}. ${node.name}${
+        upstream.length > 0 ? ` <- ${upstream.join(", ")}` : ""
+      }`;
+      const prompt = node.prompt.replace(/\s+/g, " ").trim();
+      if (!prompt) {
+        return head;
       }
-    }
-    // 这一段不是合法载荷：跳过本开标签，继续找下一对。
-    cursor = start + openTag.length;
-  }
-  return null;
-}
+      const clipped =
+        prompt.length > OUTLINE_PROMPT_MAX_CHARS
+          ? `${prompt.slice(0, OUTLINE_PROMPT_MAX_CHARS)}…`
+          : prompt;
+      return `${head}\n   ${clipped}`;
+    })
+    .join("\n");
+};
 
-/** 解析载荷 JSON 文本；任何异常或结构不符都返回 null。 */
-function parseWorkflowComposerGraphJson(
+/** 编排图对应的折叠标签数据。 */
+export const buildWorkflowTag = (graph: WorkflowComposerGraph): WorkflowTag => {
+  const args = toWorkflowGenerateArgs(graph);
+  return {
+    title: args.title.trim(),
+    nodeCount: args.nodes.length,
+    edgeCount: args.edges.length,
+    outline: buildWorkflowOutline(args),
+    graphJson: JSON.stringify(snapshotComposerGraph(graph)),
+  };
+};
+
+/** 标签快照：去掉空字段，保留节点坐标，便于回滚还原画布。 */
+const snapshotComposerGraph = (
+  graph: WorkflowComposerGraph,
+): WorkflowComposerGraph => ({
+  title: graph.title.trim(),
+  nodes: graph.nodes.map((node) => ({
+    id: node.id,
+    label: node.label,
+    prompt: node.prompt,
+    ...(node.description ? { description: node.description } : {}),
+    ...(node.apiProfile ? { apiProfile: node.apiProfile } : {}),
+    ...(node.model ? { model: node.model } : {}),
+    ...(node.position ? { position: node.position } : {}),
+  })),
+  edges: graph.edges.map((edge) => ({
+    source: edge.source,
+    target: edge.target,
+  })),
+});
+
+/** 解析标签快照；结构不符时返回 null。 */
+const parseComposerGraphSnapshot = (
   raw: string,
-): WorkflowComposerGraph | null {
+): WorkflowComposerGraph | null => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -147,55 +141,101 @@ function parseWorkflowComposerGraphJson(
     nodes?: unknown;
     edges?: unknown;
   };
-
-  const rawNodes: unknown[] = Array.isArray(source.nodes) ? source.nodes : [];
-  const nodes: WorkflowComposerNode[] = [];
-  for (const rawNode of rawNodes) {
-    if (!rawNode || typeof rawNode !== "object") {
-      continue;
-    }
-    const node = rawNode as Record<string, unknown>;
+  const nodes: WorkflowComposerGraph["nodes"] = [];
+  for (const item of Array.isArray(source.nodes) ? source.nodes : []) {
+    if (!item || typeof item !== "object") continue;
+    const node = item as Record<string, unknown>;
     const id = typeof node.id === "string" ? node.id : "";
-    const name = typeof node.name === "string" ? node.name : "";
-    const label = typeof node.label === "string" ? node.label : "";
+    if (!id) continue;
+    const position =
+      node.position &&
+      typeof node.position === "object" &&
+      typeof (node.position as { x?: unknown }).x === "number" &&
+      typeof (node.position as { y?: unknown }).y === "number"
+        ? {
+            x: (node.position as { x: number }).x,
+            y: (node.position as { y: number }).y,
+          }
+        : undefined;
     nodes.push({
       id,
-      label: label || name || id,
+      label: typeof node.label === "string" ? node.label : id,
       prompt: typeof node.prompt === "string" ? node.prompt : "",
-      description: typeof node.description === "string" ? node.description : "",
-      apiProfile: typeof node.apiProfile === "string" ? node.apiProfile : "",
-      model: typeof node.model === "string" ? node.model : "",
+      ...(typeof node.description === "string" && node.description
+        ? { description: node.description }
+        : {}),
+      ...(typeof node.apiProfile === "string"
+        ? { apiProfile: node.apiProfile }
+        : {}),
+      ...(typeof node.model === "string" ? { model: node.model } : {}),
+      ...(position ? { position } : {}),
     });
   }
-
+  if (nodes.length === 0) {
+    return null;
+  }
   const nodeIds = new Set(nodes.map((node) => node.id));
-  const rawEdges: unknown[] = Array.isArray(source.edges) ? source.edges : [];
-  const seenEdges = new Set<string>();
-  const edges: { source: string; target: string }[] = [];
-  for (const rawEdge of rawEdges) {
-    if (!rawEdge || typeof rawEdge !== "object") {
-      continue;
-    }
-    const edge = rawEdge as Record<string, unknown>;
+  const edges: WorkflowComposerGraph["edges"] = [];
+  for (const item of Array.isArray(source.edges) ? source.edges : []) {
+    if (!item || typeof item !== "object") continue;
+    const edge = item as Record<string, unknown>;
     const edgeSource = typeof edge.source === "string" ? edge.source : "";
     const edgeTarget = typeof edge.target === "string" ? edge.target : "";
-    if (!nodeIds.has(edgeSource) || !nodeIds.has(edgeTarget)) {
+    if (
+      !nodeIds.has(edgeSource) ||
+      !nodeIds.has(edgeTarget) ||
+      edgeSource === edgeTarget
+    ) {
       continue;
     }
-    if (edgeSource === edgeTarget) {
-      continue;
-    }
-    const key = `${edgeSource}->${edgeTarget}`;
-    if (seenEdges.has(key)) {
-      continue;
-    }
-    seenEdges.add(key);
     edges.push({ source: edgeSource, target: edgeTarget });
   }
-
   return {
     title: typeof source.title === "string" ? source.title : "",
     nodes,
     edges,
   };
+};
+
+/**
+ * 从一条已发送的用户消息内容里还原编排图与备注（回滚编排提交时用）。
+ * 内容里没有 `@@workflow` 标签时返回 null；旧数据缺少图快照时 graph 为 null，
+ * 调用方只回填备注（绝不把标签原文塞进输入框）。
+ */
+export function parseWorkflowComposerContent(
+  content: string,
+): { graph: WorkflowComposerGraph | null; note: string } | null {
+  let graph: WorkflowComposerGraph | null = null;
+  let hasWorkflowTag = false;
+  const noteParts: string[] = [];
+  for (const segment of parseContentSegments(content)) {
+    if (segment.type === "text") {
+      const text = segment.content.trim();
+      if (text) noteParts.push(text);
+    } else if (segment.type === "workflow") {
+      hasWorkflowTag = true;
+      if (!graph && segment.tag.graphJson) {
+        graph = parseComposerGraphSnapshot(segment.tag.graphJson);
+      }
+    }
+  }
+  if (!hasWorkflowTag) {
+    return null;
+  }
+  return { graph, note: noteParts.join("\n").trim() };
 }
+
+/** 写入会话的用户消息：折叠标签在前，备注（可空）另起一行。 */
+export function buildWorkflowComposerContent(
+  graph: WorkflowComposerGraph,
+  note: string,
+): string {
+  const tag = encodeWorkflowTag(buildWorkflowTag(graph));
+  const trimmedNote = note.trim();
+  return trimmedNote ? `${tag}\n${trimmedNote}` : tag;
+}
+
+/** 合成工具调用的参数 JSON。 */
+export const buildWorkflowGenerateArgumentsJson = (
+  graph: WorkflowComposerGraph,
+): string => JSON.stringify(toWorkflowGenerateArgs(graph));

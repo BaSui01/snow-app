@@ -255,6 +255,38 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     },
   );
   ipcMain.handle(
+    "chat-conversations:store-manual-tool-exchange",
+    (_event, request: unknown) => {
+      const source = (request ?? {}) as Record<string, unknown>;
+      const optionalText = (value: unknown): string | undefined =>
+        typeof value === "string" && value.trim() ? value.trim() : undefined;
+      if (
+        typeof source.userContent !== "string" ||
+        !source.userContent.trim()
+      ) {
+        throw new Error("User content is required for a manual tool exchange");
+      }
+      if (typeof source.toolName !== "string" || !source.toolName.trim()) {
+        throw new Error("Tool name is required for a manual tool exchange");
+      }
+      if (typeof source.argumentsJson !== "string") {
+        throw new Error(
+          "Tool arguments are required for a manual tool exchange",
+        );
+      }
+      return native.storeManualToolExchange({
+        conversationId: optionalText(source.conversationId),
+        directoryId: optionalText(source.directoryId),
+        model: optionalText(source.model),
+        apiProfile: optionalText(source.apiProfile),
+        checkpointId: optionalText(source.checkpointId),
+        userContent: source.userContent,
+        toolName: source.toolName.trim(),
+        argumentsJson: source.argumentsJson,
+      });
+    },
+  );
+  ipcMain.handle(
     "chat-conversations:update-tool-call-arguments",
     async (
       _event,
@@ -490,19 +522,6 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       }
 
       await native.renameConversation(conversationId.trim(), title.trim());
-    },
-  );
-  ipcMain.handle(
-    "chat-conversations:update-emoji",
-    async (_event, conversationId: unknown, emoji: unknown) => {
-      if (typeof conversationId !== "string" || !conversationId.trim()) {
-        throw new Error("Conversation ID is required to update emoji");
-      }
-      if (typeof emoji !== "string") {
-        throw new Error("Emoji is required to update conversation emoji");
-      }
-
-      await native.updateConversationEmoji(conversationId.trim(), emoji.trim());
     },
   );
   ipcMain.handle(

@@ -868,8 +868,7 @@ CREATE TABLE IF NOT EXISTS app_plugins (
              run_request_count INTEGER NOT NULL DEFAULT 0,
              directory_id TEXT NOT NULL DEFAULT '',
              forked_from_conversation_id TEXT NOT NULL DEFAULT '',
-             fork_message_count INTEGER NOT NULL DEFAULT 0,
-              emoji TEXT NOT NULL DEFAULT '',
+              fork_message_count INTEGER NOT NULL DEFAULT 0,
               -- Per-conversation Goal/WorkTree/WorkFlow Mode overrides. NULL
               -- flags are legacy/unset rows and are read as disabled
               -- (synonymous with 0); a NULL goal_mode_token_budget falls back
@@ -1197,9 +1196,27 @@ CREATE TABLE IF NOT EXISTS app_plugins (
     Ok(())
 }
 
+/// 修复时清理已废弃的会话列（旧库保留备份，仅在用户主动修复时删除）。
+fn drop_legacy_conversation_columns(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    if columns.iter().any(|column| column == "emoji") {
+        connection.execute("ALTER TABLE chat_conversations DROP COLUMN emoji", [])?;
+    }
+
+    Ok(())
+}
+
 /// 对数据库执行「修复」：先做 `PRAGMA integrity_check` 完整性检查；完好则
-/// 执行 `VACUUM` 压缩优化，发现损坏则调用 [recover_database] 恢复数据。
-/// 返回修复结果（是否实际执行了数据恢复）。
+/// 补齐 schema/迁移并执行 `VACUUM` 压缩优化，发现损坏则调用 [recover_database]
+/// 恢复数据。返回修复结果（是否实际执行了数据恢复）。
+///
+/// 修复期间的写操作全程持有全局写锁，避免与并发写事务互抢锁；
+/// busy_timeout 与 `open_connection` 对齐（30 秒），大库 VACUUM 不误报超时。
 ///
 /// 注意：这里刻意不切换 journal_mode（`open_connection` 会强制 WAL）——
 /// 归档库必须保持 rollback journal 模式，所以仅设置外键与 busy timeout。
@@ -1213,7 +1230,7 @@ pub(crate) fn repair_database(
         .pragma_update(None, "foreign_keys", "ON")
         .map_err(|error| database_error(database_path, "repair", error))?;
     connection
-        .busy_timeout(Duration::from_secs(5))
+        .busy_timeout(Duration::from_secs(30))
         .map_err(|error| database_error(database_path, "repair", error))?;
 
     // 1) 完整性检查：所有输出行均为 "ok" 才视为健康。检查本身无法执行
@@ -1239,13 +1256,19 @@ pub(crate) fn repair_database(
     };
 
     if integrity_lines.iter().all(|line| line.trim() == "ok") {
-        // 2a) 完好 → VACUUM 压缩优化（重组文件、回收空闲页）。
-        connection
-            .execute_batch("VACUUM")
-            .map_err(|error| database_error(database_path, "vacuum during repair", error))?;
+        // 2a) 完好 → 先补 schema/迁移（缺列、缺表、过期的 user_version），
+        // 清理废弃列后 VACUUM 压缩优化。整段写操作持有全局写锁。
+        with_write_lock(|| -> rusqlite::Result<()> {
+            schema_builder(&connection)?;
+            drop_legacy_conversation_columns(&connection)?;
+            connection.execute_batch("VACUUM")?;
+            Ok(())
+        })
+        .map_err(|error| database_error(database_path, "repair", error))?;
         return Ok(DatabaseRepairResult {
             repaired: false,
-            message: "Integrity check passed; database optimized via VACUUM.".to_string(),
+            message: "Integrity check passed; schema repaired and database optimized via VACUUM."
+                .to_string(),
         });
     }
 
@@ -1257,7 +1280,8 @@ pub(crate) fn repair_database(
         database_path.display(),
         detail
     );
-    recover_database(database_path, schema_builder)?;
+    // 恢复过程会重命名数据库文件，同样持有全局写锁，避免与并发写交叉。
+    with_write_lock(|| recover_database(database_path, schema_builder))?;
     Ok(DatabaseRepairResult {
         repaired: true,
         message: format!("Database was damaged and has been recovered. Detected issues: {detail}"),

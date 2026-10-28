@@ -8,7 +8,10 @@ import {
   useState,
 } from "react";
 import { useI18n } from "../../../i18n";
-import type { ChatInputViewProps } from "./types";
+import type {
+  ChatInputViewProps,
+  RollbackWorkflowComposerState,
+} from "./types";
 import { InputOverlayLayer } from "./InputOverlayLayer";
 import { TerminalMonitorBar } from "./TerminalMonitorBar";
 import { ChatInputPanels } from "./ChatInputPanels";
@@ -42,6 +45,7 @@ import {
 } from "../../../constants/helpGuide";
 import { HelpSkillDisabledDialog } from "../../common/HelpSkillDisabledDialog";
 import { WorkflowComposerDialog } from "./workflowComposer/WorkflowComposerDialog";
+import { buildWorkflowComposerContent } from "./workflowComposer/workflowComposerPayload";
 import {
   applyCustomCommandArguments,
   type EffectiveCustomCommand,
@@ -101,6 +105,8 @@ export const ChatInputView = ({
   setSendKeyMode,
   tokenUsage,
   loadOlderMessages,
+  rollbackWorkflowComposer,
+  onRollbackWorkflowRestored,
   pendingMessages,
   pendingMessageModes,
 
@@ -233,6 +239,20 @@ export const ChatInputView = ({
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
   const [isCustomCommandsOpen, setIsCustomCommandsOpen] = useState(false);
   const [isWorkflowComposerOpen, setIsWorkflowComposerOpen] = useState(false);
+  // 回滚编排提交：把还原图暂存在视图内，打开弹窗后再清掉 ctx 的一次性状态。
+  const [composerRestore, setComposerRestore] =
+    useState<RollbackWorkflowComposerState | null>(null);
+  const closeWorkflowComposer = useCallback(() => {
+    setIsWorkflowComposerOpen(false);
+    setComposerRestore(null);
+  }, []);
+  // 回滚后回填编排器：编排图不能写进输入框，改为打开编排器并还原画布。
+  useEffect(() => {
+    if (!rollbackWorkflowComposer) return;
+    setComposerRestore(rollbackWorkflowComposer);
+    setIsWorkflowComposerOpen(true);
+    onRollbackWorkflowRestored?.();
+  }, [rollbackWorkflowComposer, onRollbackWorkflowRestored]);
   // 稳定引用：供 StreamMetricsWorkSummary memo 使用，避免父组件重渲染时
   // 传入新的 inline lambda 导致文件统计区域失效重绘（P0-1 性能优化）。
   const handleOpenFileChanges = useCallback(() => {
@@ -1032,7 +1052,10 @@ export const ChatInputView = ({
             commandTriggerRef={commandTriggerRef}
             isCommandOpen={isCommandOpen}
             handleToggleCommand={handleToggleCommand}
-            onOpenWorkflowComposer={() => setIsWorkflowComposerOpen(true)}
+            onOpenWorkflowComposer={() => {
+              setComposerRestore(null);
+              setIsWorkflowComposerOpen(true);
+            }}
             onNavigateToView={onNavigateToView}
             value={value}
             tokenUsage={tokenUsage}
@@ -1119,11 +1142,12 @@ export const ChatInputView = ({
       />
       <WorkflowComposerDialog
         apiConfigs={apiConfigs}
-        onClose={() => setIsWorkflowComposerOpen(false)}
+        initial={composerRestore}
+        onClose={closeWorkflowComposer}
         onSend={(graph, note) => {
-          setIsWorkflowComposerOpen(false);
-          // 备注为空时用默认文案兜底：handleSendMessage 会丢弃空文本。
-          handleSendMessage(note.trim() || t("workflowComposer.defaultNote"), {
+          closeWorkflowComposer();
+          // 用户消息 = 折叠的 WorkFlow 标签 + 备注；图随 options 直接生成工具调用
+          handleSendMessage(buildWorkflowComposerContent(graph, note), {
             kind: "workflow",
             workflowGraph: graph,
             model: selectedModel || undefined,

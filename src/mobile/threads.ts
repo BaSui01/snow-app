@@ -114,7 +114,6 @@ const conversationDigest = (conversation: SnowRemoteConversation): string =>
     conversation.title,
     conversation.summary,
     conversation.lastMessagePreview,
-    conversation.emoji,
     conversation.conversationType,
     conversation.subAgentName,
     conversation.runStatus,
@@ -318,7 +317,7 @@ const conversationTypeBadgeHtml = (
 
 /**
  * 会话徽标：与桌面 .chat-item-icon 同构——带描边与底色的圆形图标，
- * 优先级为「运行状态 > 自定义 emoji > 会话类型」。
+ * 优先级为「运行状态 > 会话类型」。
  * 子会话的静态图标由 childStatus 提供（bot / workflow），不会落到类型图标。
  */
 const statusBadgeHtml = (
@@ -327,9 +326,6 @@ const statusBadgeHtml = (
 ): string => {
   if (status) {
     return badgeMarkup(status.icon, status.tone, "", status.label);
-  }
-  if (conversation.emoji) {
-    return `<span class="thread-item-emoji">${escapeHtml(conversation.emoji)}</span>`;
   }
   return conversationTypeBadgeHtml(conversation);
 };

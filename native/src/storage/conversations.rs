@@ -352,15 +352,6 @@ pub fn rename_conversation(conversation_id: String, title: String) -> Result<()>
     services::chat_conversations::rename_conversation(&database_path, &conversation_id, &title)
 }
 
-pub fn update_conversation_emoji(conversation_id: String, emoji: String) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::chat_conversations::update_conversation_emoji(
-        &database_path,
-        &conversation_id,
-        &emoji,
-    )
-}
-
 pub fn update_conversation_api_profile(
     conversation_id: String,
     profile_name: String,
@@ -450,6 +441,14 @@ pub fn list_task_history(conversation_id: String) -> Result<Vec<String>> {
 pub fn append_tool_message(conversation_id: String, content: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::append_tool_message(&database_path, &conversation_id, &content)
+}
+
+/// 不经模型请求，直接落库「用户消息 + 助手工具调用」交换。
+pub fn store_manual_tool_exchange(
+    input: &services::chat_conversations::ManualToolExchangeInput<'_>,
+) -> Result<services::chat_conversations::ManualToolExchange> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::store_manual_tool_exchange(&database_path, input)
 }
 
 /// 用纠错成功后的参数替换已持久化的助手工具调用参数。返回是否命中并更新。

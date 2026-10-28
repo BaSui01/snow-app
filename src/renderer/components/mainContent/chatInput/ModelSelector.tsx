@@ -483,8 +483,8 @@ export const ModelSelector = ({
       {(isModelMenuOpen || isMenuClosing) && (
         <div
           className={`model-dropdown drop-${modelDropdownDir}${
-            isMenuClosing ? " is-closing" : ""
-          }`}
+            displayView === "apiProfile" ? " is-api-profile-view" : ""
+          }${isMenuClosing ? " is-closing" : ""}`}
           onKeyDown={handleDropdownKeyDown}
         >
           {displayView === "root" && (

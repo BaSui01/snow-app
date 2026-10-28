@@ -1658,6 +1658,17 @@ export type ResponsesApiResult = {
   failureReason?: string | null;
 };
 
+export type ManualToolExchangeRequest = {
+  conversationId?: string;
+  directoryId?: string;
+  model?: string;
+  apiProfile?: string;
+  checkpointId?: string;
+  userContent: string;
+  toolName: string;
+  argumentsJson: string;
+};
+
 export type ResponsesApiStreamChunk = {
   contentDelta: string;
   thinkingDelta: string;
@@ -2722,10 +2733,6 @@ export type NativeBridge = ImageGenerationNativeApi & {
     status: string,
   ) => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
-  updateConversationEmoji: (
-    conversationId: string,
-    emoji: string,
-  ) => Promise<void>;
   updateConversationApiProfile: (
     conversationId: string,
     profileName: string,
@@ -2765,6 +2772,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<void>;
   listTaskHistory: (conversationId: string) => Promise<string[]>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
+  /** 不请求模型，直接落库「用户消息 + 助手工具调用」交换。 */
+  storeManualToolExchange: (
+    request: ManualToolExchangeRequest,
+  ) => Promise<ResponsesApiResult>;
   /** 用纠错成功后的参数替换已持久化的助手工具调用参数。 */
   updateToolCallArguments: (
     conversationId: string,

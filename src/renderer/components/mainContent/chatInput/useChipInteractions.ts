@@ -787,7 +787,7 @@ export const useChipInteractions = ({
         hideConversationPreview();
         return;
       }
-      let parsed: { conversationId?: string; title?: string; emoji?: string };
+      let parsed: { conversationId?: string; title?: string };
       try {
         parsed = JSON.parse(rawData) as typeof parsed;
       } catch {
@@ -810,11 +810,6 @@ export const useChipInteractions = ({
           title = "";
         }
       }
-      const emoji =
-        typeof parsed.emoji === "string" && parsed.emoji.length > 0
-          ? parsed.emoji
-          : undefined;
-
       const anchor = (): { x: number; y: number } => {
         const rect = chip.getBoundingClientRect();
         const halfW = CONVERSATION_PREVIEW_WIDTH / 2;
@@ -832,7 +827,6 @@ export const useChipInteractions = ({
       ) {
         const { x, y } = anchor();
         applyConversationPreview(conversationId, {
-          emoji,
           title,
           content: cached.content,
           x,
@@ -849,7 +843,6 @@ export const useChipInteractions = ({
         }
         const { x, y } = anchor();
         applyConversationPreview(conversationId, {
-          emoji,
           title,
           content: null,
           x,
@@ -867,7 +860,6 @@ export const useChipInteractions = ({
             }
             const pos = anchor();
             applyConversationPreview(conversationId, {
-              emoji,
               title,
               content,
               x: pos.x,
@@ -880,7 +872,6 @@ export const useChipInteractions = ({
             }
             const pos = anchor();
             applyConversationPreview(conversationId, {
-              emoji,
               title,
               content: "",
               failed: true,

@@ -48,7 +48,7 @@ const ARCHIVE_SCHEMA_VERSION: i64 = 7;
 /// 与运行库 chat_conversations 完全一致的列（不含归档时间列）。
 /// 必须与运行库 create_schema 的 chat_conversations 列保持同步——
 /// 归档与还原都按此清单显式拷贝，漏列即静默丢数据。
-const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, run_input_tokens, run_output_tokens, run_cache_creation_input_tokens, run_cache_read_input_tokens, last_run_duration_ms, run_ttft_sum_ms, run_request_count, directory_id, forked_from_conversation_id, fork_message_count, emoji, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget, created_at, updated_at";
+const CONVERSATION_COLUMNS: &str = "id, conversation_id, title, summary, last_message_preview, message_count, model, api_profile_name, thinking_strength, responses_fast_mode, last_response_id, status, input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, total_duration_ms, run_input_tokens, run_output_tokens, run_cache_creation_input_tokens, run_cache_read_input_tokens, last_run_duration_ms, run_ttft_sum_ms, run_request_count, directory_id, forked_from_conversation_id, fork_message_count, goal_mode, worktree_mode, workflow_mode, goal_mode_token_budget, created_at, updated_at";
 
 /// 与运行库 chat_messages 完全一致的列。
 /// 必须与运行库 create_schema 的 chat_messages 列保持同步——
@@ -481,8 +481,7 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
-            emoji TEXT NOT NULL DEFAULT '',
-            goal_mode INTEGER,
+             goal_mode INTEGER,
             worktree_mode INTEGER,
             workflow_mode INTEGER,
             goal_mode_token_budget INTEGER,
@@ -610,6 +609,7 @@ pub(crate) fn create_archive_schema(connection: &Connection) -> rusqlite::Result
     )?;
     migrate_archive_chat_conversations(connection)?;
     migrate_archive_chat_messages(connection)?;
+    migrate_archive_runtime_config(connection)?;
     migrate_archive_sub_agent_parent_reference(connection)?;
     super::chat_conversations::ensure_sub_agent_run_data_tables(connection, true)
 }
@@ -770,9 +770,6 @@ pub fn ensure_archive_database(archive_path: &Path) -> Result<()> {
         return Ok(());
     }
     create_archive_schema(&connection).map_err(|error| {
-        database::database_error(archive_path, "initialize archive database", error)
-    })?;
-    migrate_archive_runtime_config(&connection).map_err(|error| {
         database::database_error(archive_path, "initialize archive database", error)
     })?;
     connection
@@ -1199,7 +1196,6 @@ pub fn list_archived_conversations_paginated(
                        '',
                        '',
                        0,
-                       COALESCE(emoji, ''),
                        api_profile_name,
                        conversation.run_input_tokens,
                        conversation.run_output_tokens,
@@ -1248,7 +1244,7 @@ fn map_archived_conversation_row(
         last_message_preview: row.get(3)?,
         message_count: row.get(4)?,
         model: row.get(5)?,
-        api_profile_name: row.get(24)?,
+        api_profile_name: row.get(23)?,
         status: row.get(6)?,
         directory_id: row.get(7)?,
         forked_from_conversation_id: row.get(8)?,
@@ -1266,14 +1262,13 @@ fn map_archived_conversation_row(
         sub_agent_status: row.get(20)?,
         sub_agent_error: row.get(21)?,
         total_duration_ms: row.get(22)?,
-        emoji: row.get(23)?,
-        run_input_tokens: row.get(25)?,
-        run_output_tokens: row.get(26)?,
-        run_cache_creation_input_tokens: row.get(27)?,
-        run_cache_read_input_tokens: row.get(28)?,
-        last_run_duration_ms: row.get(29)?,
-        run_ttft_sum_ms: row.get(30)?,
-        run_request_count: row.get(31)?,
+        run_input_tokens: row.get(24)?,
+        run_output_tokens: row.get(25)?,
+        run_cache_creation_input_tokens: row.get(26)?,
+        run_cache_read_input_tokens: row.get(27)?,
+        last_run_duration_ms: row.get(28)?,
+        run_ttft_sum_ms: row.get(29)?,
+        run_request_count: row.get(30)?,
     })
 }
 
@@ -1353,7 +1348,7 @@ pub fn restore_archived_conversations(
                             run_cache_creation_input_tokens, run_cache_read_input_tokens,
                             last_run_duration_ms, run_ttft_sum_ms,
                             run_request_count, directory_id,
-                            forked_from_conversation_id, fork_message_count, emoji,
+                            forked_from_conversation_id, fork_message_count,
                             goal_mode, worktree_mode, workflow_mode,
                             goal_mode_token_budget, created_at,
                             datetime('now', 'localtime')

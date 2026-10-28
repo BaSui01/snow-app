@@ -22,6 +22,7 @@ import {
   MousePointer2,
   ScanSearch,
   Wand2,
+  Workflow,
 } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import { HoverCopyButton } from "../../../common/HoverCopyButton";
@@ -33,6 +34,7 @@ import {
   formatFileChipLinesLabel,
   formatFileLinesLabel,
   formatLinesStr,
+  formatWorkflowTagLabel,
   parseContentSegments,
 } from "../../chatInput/fileTagUtils";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
@@ -457,20 +459,11 @@ export const UserMessage = memo(
                     key={index}
                     title={tag.title}
                   >
-                    {tag.emoji ? (
-                      <span
-                        className="user-message-file-chip-icon"
-                        style={{ fontSize: 12, lineHeight: 1 }}
-                      >
-                        {tag.emoji}
-                      </span>
-                    ) : (
-                      <Link2
-                        size={12}
-                        className="user-message-file-chip-icon"
-                        style={{ color: "var(--accent-color, #4a9eff)" }}
-                      />
-                    )}
+                    <Link2
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "var(--accent-color, #4a9eff)" }}
+                    />
                     <span className="user-message-file-chip-name">
                       {tag.title}
                     </span>
@@ -575,6 +568,40 @@ export const UserMessage = memo(
                     })}
                     <span className="user-message-file-chip-name">
                       {selectionLabel}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "workflow") {
+                const workflowStats = t("chat.message.workflowChipStats", {
+                  values: {
+                    nodes: segment.tag.nodeCount,
+                    edges: segment.tag.edgeCount,
+                  },
+                });
+                const workflowPreview = segment.tag.outline
+                  ? `${workflowStats}\n\n${segment.tag.outline}`
+                  : workflowStats;
+                return (
+                  <span
+                    className="user-message-file-chip workflow-chip"
+                    key={index}
+                    onMouseMove={(event) =>
+                      handleTextSnippetChipMouseMove(event, workflowPreview)
+                    }
+                    onMouseLeave={scheduleHideTextSnippetPreview}
+                  >
+                    <Workflow
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "var(--accent-color, #4a9eff)" }}
+                    />
+                    <span className="user-message-file-chip-name">
+                      {formatWorkflowTagLabel(segment.tag)}
+                    </span>
+                    <span className="user-message-file-chip-meta">
+                      {workflowStats}
                     </span>
                   </span>
                 );

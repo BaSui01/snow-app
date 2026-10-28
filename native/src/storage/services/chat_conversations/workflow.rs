@@ -168,7 +168,6 @@ pub fn list_workflow_node_sessions_by_parents(
                         workflow.run_status,
                         workflow.error_message,
                         COALESCE(conversation.total_duration_ms, 0),
-                        COALESCE(conversation.emoji, ''),
                         COALESCE(conversation.api_profile_name, ''),
                         COALESCE(conversation.run_input_tokens, 0),
                         COALESCE(conversation.run_output_tokens, 0),

@@ -3,6 +3,7 @@ import type {
   BackgroundRunResult,
   ChatInputSendOptions,
   ConversationInputRuntimeState,
+  RollbackWorkflowComposerState,
 } from "../../chatInput/types";
 import type {
   ApiConfigRecord,
@@ -724,6 +725,8 @@ export type ConversationContextValue = {
   attentionRequiredConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
   draftToRestore: string | null;
+  /** 回滚编排提交消息时回填编排器的一次性状态（编排图无法写进输入框）。 */
+  rollbackWorkflowComposer: RollbackWorkflowComposerState | null;
   rollbackPreview: RollbackPreview | null;
   /** 首条消息回滚删除后创建新会话时的一次性状态标识。 */
   rollbackNewChatState: RollbackConversationState | null;
@@ -872,6 +875,9 @@ export type ConversationContextValue = {
   setPendingUserQuestionConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
   setDraftToRestore: Dispatch<SetStateAction<string | null>>;
+  setRollbackWorkflowComposer: Dispatch<
+    SetStateAction<RollbackWorkflowComposerState | null>
+  >;
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
   setRollbackNewChatState: Dispatch<
     SetStateAction<RollbackConversationState | null>
@@ -1101,6 +1107,8 @@ export type UseChatConversationResult = {
   ) => Promise<void>;
   draftToRestore: string | null;
   clearDraftToRestore: () => void;
+  rollbackWorkflowComposer: RollbackWorkflowComposerState | null;
+  clearRollbackWorkflowComposer: () => void;
   /** 保存/读取/清除某会话的输入草稿（含图片 chip）。详见
    *  ConversationContextValue.inputDraftsRef 的注释。 */
   saveInputDraft: (conversationId: string | undefined, content: string) => void;

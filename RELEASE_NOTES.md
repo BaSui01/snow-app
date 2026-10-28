@@ -1,5 +1,11 @@
 # Release Notes
 
+## v0.5.8
+
+## Improvements
+
+- **WorkFlow Composer runs without an AI hop**: sending from the composer no longer asks the model to forward the graph. The app writes the user message and a `workflow-workflow-generate` tool call directly (no authorization prompt), so the workflow card appears immediately and you just press "Run"; the execution result is still returned to the AI for summary or resume. The user message is now a collapsed WorkFlow chip (flow name plus node/edge counts, hover to see the node list) followed by your note, instead of the instruction text and JSON payload. The conversation title is generated once the real reply after the workflow finishes arrives, and the summary input collapses chip tags instead of feeding base64 payloads to the title model. Rolling back a composer submission no longer injects an unreadable tag into the input box: the WorkFlow composer reopens with the canvas, flow name and note restored from the graph snapshot.
+
 ## v0.5.7
 
 ## New Features

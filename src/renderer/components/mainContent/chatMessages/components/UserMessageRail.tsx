@@ -101,6 +101,7 @@ const CHIP_TAG_MARKERS = [
   "@@command:",
   "@@annotation:",
   "@@skill:",
+  "@@workflow:",
 ];
 
 type RailItemData = {

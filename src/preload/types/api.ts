@@ -294,6 +294,19 @@ export type ResponsesApiResult = {
   failureReason?: string | null;
 };
 
+/** 业务逻辑直接生成的一次工具调用交换（不请求模型），返回值与模型响应同构。 */
+export type ManualToolExchangeRequest = {
+  /** 为空时新建会话 */
+  conversationId?: string;
+  directoryId?: string;
+  model?: string;
+  apiProfile?: string;
+  checkpointId?: string;
+  userContent: string;
+  toolName: string;
+  argumentsJson: string;
+};
+
 export type ResponsesApiStreamChunk = {
   contentDelta: string;
   thinkingDelta: string;

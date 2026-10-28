@@ -308,7 +308,6 @@ export const useContentEditableInteractions = ({
           conversationId: conversationPayload.conversationId,
           directoryId: conversationPayload.directoryId,
           title: conversationPayload.title,
-          emoji: conversationPayload.emoji,
         };
         textareaRef.current?.focus();
         insertHtmlAtSelection(createConversationChipHtml(conversationTag));

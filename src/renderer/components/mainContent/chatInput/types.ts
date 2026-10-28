@@ -23,6 +23,8 @@ export type WorkflowComposerNode = {
   description?: string;
   apiProfile?: string;
   model?: string;
+  /** 画布坐标（回滚还原时保持原布局）。 */
+  position?: { x: number; y: number };
 };
 
 /** 输入区 WorkFlow 手动编排器画布：一张由用户绘制、随消息提交的编排图。 */
@@ -30,6 +32,12 @@ export type WorkflowComposerGraph = {
   title: string;
   nodes: WorkflowComposerNode[];
   edges: { source: string; target: string }[];
+};
+
+/** 回滚编排提交消息时回填编排器的一次性状态（不写回输入框）。 */
+export type RollbackWorkflowComposerState = {
+  graph: WorkflowComposerGraph;
+  note: string;
 };
 
 export type ChatInputSendOptions = {
@@ -40,7 +48,7 @@ export type ChatInputSendOptions = {
   /** 回合类型：review = 代码审查；workflow = 用户手动编排的 WorkFlow 提交。 */
   kind?: "chat" | "review" | "workflow";
   /** 内部字段：手动编排的工作流图（仅输入区编排器弹窗设置）。存在时本次发送
-   *  会强制启用 WorkFlow 模式，并把编排载荷内嵌进用户消息。 */
+   *  不请求模型，直接生成 workflow-workflow-generate 调用，本轮强制 WorkFlow 模式。 */
   workflowGraph?: WorkflowComposerGraph;
   /** Optional one-shot basic-model snapshot used only for the first title
    *  generation. It is never forwarded to the main Provider request. */
@@ -101,6 +109,9 @@ export type ChatInputProps = {
   tokenUsage?: TokenUsage | null;
   draftToRestore?: string | null;
   onDraftRestored?: () => void;
+  /** 回滚编排提交消息：回填并打编排器（编排图无法写进输入框）。 */
+  rollbackWorkflowComposer?: RollbackWorkflowComposerState | null;
+  onRollbackWorkflowRestored?: () => void;
   /** 当前待投递的自动发送请求（buildFromContent 队首）。输入区先 claim
    *  （同一请求只会被一个输入区实例认领一次），发送后 complete 推进队列。 */
   autoSendRequest?: AutoSendRequest | null;
@@ -280,6 +291,9 @@ export type ChatInputViewProps = ChatInputState &
     tokenUsage: TokenUsage | null;
     /** 加载更早一页历史消息（保留聊天视口锚点）。 */
     loadOlderMessages: () => Promise<void>;
+    /** 回滚编排提交消息：回填并打开编排器（编排图无法写进输入框）。 */
+    rollbackWorkflowComposer?: RollbackWorkflowComposerState | null;
+    onRollbackWorkflowRestored?: () => void;
     pendingMessages: string[];
     pendingMessageModes?: ("queue" | "steer")[];
 

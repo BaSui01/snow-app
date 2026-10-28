@@ -134,7 +134,8 @@ export type SnowRemoteContentBlock =
         | "command"
         | "skill"
         | "annotation"
-        | "file-selection";
+        | "file-selection"
+        | "workflow";
       label: string;
       detail?: string;
     };
@@ -165,8 +166,6 @@ export type SnowRemoteConversation = {
   directoryId: string;
   workspaceName: string;
   updatedAt: string;
-  /** 桌面自定义会话图标（emoji）；空串 = 未设置。 */
-  emoji: string;
   /** 会话类型：main / sub_agent / workflow_node。 */
   conversationType: string;
   /** 分支会话（由 forkedFromConversationId 派生）：桌面侧边栏显示 GitFork 图标。 */

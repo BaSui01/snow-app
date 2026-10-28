@@ -103,38 +103,6 @@ export function useConversationActions({
     [refreshConversations, updateConversationSummary],
   );
 
-  const handleSetEmoji = useCallback(
-    async (
-      conversation: ChatConversationRecord,
-      emoji: string,
-    ): Promise<void> => {
-      // 乐观更新：直接修改本地 state，异步落库，不刷新列表
-      setConversations((prev) =>
-        prev.map((item) =>
-          item.conversationId === conversation.conversationId
-            ? { ...item, emoji }
-            : item,
-        ),
-      );
-      try {
-        await window.snow.updateConversationEmoji(
-          conversation.conversationId,
-          emoji,
-        );
-      } catch {
-        // 落库失败时回滚
-        setConversations((prev) =>
-          prev.map((item) =>
-            item.conversationId === conversation.conversationId
-              ? { ...item, emoji: conversation.emoji }
-              : item,
-          ),
-        );
-      }
-    },
-    [setConversations],
-  );
-
   const handleDelete = useCallback(
     async (
       conversation: ChatConversationRecord,
@@ -329,7 +297,6 @@ export function useConversationActions({
     handlePin,
     handleUnpin,
     handleRename,
-    handleSetEmoji,
     handleDelete,
     handleArchive,
     handleExport,

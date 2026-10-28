@@ -14,6 +14,7 @@ import {
   ScanSearch,
   Undo2,
   Wand2,
+  Workflow,
 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import {
@@ -22,6 +23,7 @@ import {
   formatFileChipLinesLabel,
   formatFileLinesLabel,
   formatLinesStr,
+  formatWorkflowTagLabel,
   parseContentSegments,
   type ContentSegment,
 } from "./fileTagUtils";
@@ -217,20 +219,11 @@ const renderSegments = (content: string): React.ReactNode => {
           className="user-message-file-chip conversation-chip"
           title={tag.title}
         >
-          {tag.emoji ? (
-            <span
-              className="user-message-file-chip-icon"
-              style={{ fontSize: 12, lineHeight: 1 }}
-            >
-              {tag.emoji}
-            </span>
-          ) : (
-            <Link2
-              size={12}
-              className="user-message-file-chip-icon"
-              style={{ color: "var(--accent-color, #4a9eff)" }}
-            />
-          )}
+          <Link2
+            size={12}
+            className="user-message-file-chip-icon"
+            style={{ color: "var(--accent-color, #4a9eff)" }}
+          />
           <span className="user-message-file-chip-name">{tag.title}</span>
         </span>
       );
@@ -313,6 +306,21 @@ const renderSegments = (content: string): React.ReactNode => {
               segment.tag.startLine,
               segment.tag.endLine,
             )}
+          </span>
+        </span>
+      );
+    }
+
+    if (segment.type === "workflow") {
+      return (
+        <span
+          key={index}
+          className="user-message-file-chip workflow-chip"
+          title={segment.tag.outline}
+        >
+          <Workflow size={12} className="user-message-file-chip-icon" />
+          <span className="user-message-file-chip-name">
+            {formatWorkflowTagLabel(segment.tag)}
           </span>
         </span>
       );

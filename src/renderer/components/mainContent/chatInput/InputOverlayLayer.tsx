@@ -41,7 +41,6 @@ export type ChipDetailsState = {
 };
 
 export type ConversationPreviewState = {
-  emoji?: string;
   title: string;
   /** null = 加载中；字符串 = 发送时实际注入的渲染内容 */
   content: string | null;
@@ -201,11 +200,6 @@ export const InputOverlayLayer = ({
           >
             <div className="conversation-chip-preview-header">
               <span className="conversation-chip-preview-title">
-                {conversationPreview.emoji ? (
-                  <span className="conversation-chip-preview-emoji">
-                    {conversationPreview.emoji}
-                  </span>
-                ) : null}
                 <span className="conversation-chip-preview-name">
                   {conversationPreview.title ||
                     t("chatInput.conversationPreviewUntitled", {

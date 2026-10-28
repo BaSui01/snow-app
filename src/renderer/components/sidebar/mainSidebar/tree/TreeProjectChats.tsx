@@ -279,7 +279,6 @@ export function TreeProjectChats({
         onSelectChildConversation={handleSelectChildConversation}
         onSelectConversation={handleSelectConversationFromList}
         onSelectionBlockedChange={selection.handleSelectionBlockedChange}
-        onSetEmoji={actions.handleSetEmoji}
         onToggleSelect={selection.handleToggleSelect}
         onToggleTree={tree.handleToggleConversationTree}
         onToggleWorkflowNode={tree.handleToggleWorkflowNode}

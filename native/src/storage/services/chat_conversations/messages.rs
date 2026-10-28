@@ -63,28 +63,6 @@ pub fn rename_conversation(database_path: &Path, conversation_id: &str, title: &
         .map(|_| ())
 }
 
-pub fn update_conversation_emoji(
-    database_path: &Path,
-    conversation_id: &str,
-    emoji: &str,
-) -> Result<()> {
-    let trimmed_emoji = emoji.trim();
-    database::open_connection(database_path)
-        .and_then(|connection| {
-            connection.execute(
-                "UPDATE chat_conversations
-                    SET emoji = ?2,
-                        updated_at = datetime('now', 'localtime')
-                  WHERE conversation_id = ?1",
-                params![conversation_id, trimmed_emoji],
-            )
-        })
-        .map_err(|error| {
-            database::database_error(database_path, "update conversation emoji", error)
-        })
-        .map(|_| ())
-}
-
 pub fn delete_conversation(database_path: &Path, conversation_id: &str, delete_memories: bool) -> Result<()> {
     let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;

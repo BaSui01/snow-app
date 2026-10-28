@@ -32,6 +32,7 @@ import {
   resolveWorkflowFlowImpact,
 } from "../utils/rollbackChain";
 import { getActiveWorkflowNodeIds } from "../workflow/workflowRunner";
+import { parseWorkflowComposerContent } from "../../chatInput/workflowComposer/workflowComposerPayload";
 import { abortConversationRun } from "./conversationMessageBridge";
 import {
   prepareSubAgentDeletion,
@@ -52,6 +53,9 @@ export const useRollback = (ctx: ConversationContextValue) => {
   const clearDraftToRestore = useCallback((): void => {
     ctx.setDraftToRestore(null);
   }, [ctx.setDraftToRestore]);
+  const clearRollbackWorkflowComposer = useCallback((): void => {
+    ctx.setRollbackWorkflowComposer(null);
+  }, [ctx.setRollbackWorkflowComposer]);
 
   /** 正在计算变更（弹窗弹出前）的消息 id：SSH 下 listCheckpointChanges
    *  经 SFTP 遍历可能较慢，入口按钮在此期间显示 loading。 */
@@ -886,7 +890,19 @@ export const useRollback = (ctx: ConversationContextValue) => {
         }
 
         if (!isContextCompaction && targetWasActive) {
-          ctx.setDraftToRestore(messageContent);
+          // 编排提交的消息内容是折叠标签 + 备注：图无法写进输入框，改回填编排器；
+          // 旧消息没有图快照时只回填备注，绝不把不可读的标签原文塞进输入框。
+          const workflowRestore = parseWorkflowComposerContent(messageContent);
+          if (workflowRestore?.graph) {
+            ctx.setRollbackWorkflowComposer({
+              graph: workflowRestore.graph,
+              note: workflowRestore.note,
+            });
+          } else {
+            ctx.setDraftToRestore(
+              workflowRestore ? workflowRestore.note : messageContent,
+            );
+          }
         }
         rollbackIdentityRef.current = null;
         ctx.setRollbackPreview((current) =>
@@ -905,6 +921,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.setConversationListVersion,
       ctx.setActiveId,
       ctx.setDraftToRestore,
+      ctx.setRollbackWorkflowComposer,
       ctx.setRollbackPreview,
       ctx.setRollbackNewChatState,
       ctx.ensureSession,
@@ -962,6 +979,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
 
   return {
     clearDraftToRestore,
+    clearRollbackWorkflowComposer,
     handleRollback,
     confirmRollback,
     cancelRollback,

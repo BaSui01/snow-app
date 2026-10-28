@@ -10,6 +10,7 @@ import {
   MousePointer2,
   ScanSearch,
   Wand2,
+  Workflow,
 } from "lucide-react";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
 import {
@@ -207,20 +208,11 @@ export const ContentChips = ({
             className="user-message-file-chip conversation-chip"
             title={tag.title}
           >
-            {tag.emoji ? (
-              <span
-                className="user-message-file-chip-icon"
-                style={{ fontSize: 12, lineHeight: 1 }}
-              >
-                {tag.emoji}
-              </span>
-            ) : (
-              <Link2
-                size={12}
-                className="user-message-file-chip-icon"
-                style={{ color: "var(--accent-color, #4a9eff)" }}
-              />
-            )}
+            <Link2
+              size={12}
+              className="user-message-file-chip-icon"
+              style={{ color: "var(--accent-color, #4a9eff)" }}
+            />
             <span className="user-message-file-chip-name">
               {getChipDisplayLabel(segment)}
             </span>
@@ -300,6 +292,21 @@ export const ContentChips = ({
               size: 12,
               className: "user-message-file-chip-icon",
             })}
+            <span className="user-message-file-chip-name">
+              {getChipDisplayLabel(segment)}
+            </span>
+          </span>
+        );
+      }
+
+      if (segment.type === "workflow") {
+        return (
+          <span
+            key={index}
+            className="user-message-file-chip workflow-chip"
+            title={segment.tag.outline}
+          >
+            <Workflow size={12} className="user-message-file-chip-icon" />
             <span className="user-message-file-chip-name">
               {getChipDisplayLabel(segment)}
             </span>

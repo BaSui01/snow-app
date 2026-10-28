@@ -7,7 +7,6 @@ import {
   Share,
   ChevronRight,
   ChevronLeft,
-  SmilePlus,
   ListChecks,
   Archive,
   GitFork,
@@ -20,17 +19,14 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import { ChatDeleteConfirmDialog } from "./ChatDeleteConfirmDialog";
 import { useMenuPosition } from "./useMenuPosition";
-import { EmojiPicker } from "./EmojiPicker";
 
 export type ExportFormat = "markdown" | "html" | "json" | "csv";
 
 type ChatItemMenuProps = {
   conversationId: string;
   isPinned: boolean;
-  emoji: string;
   onPin: () => void;
   onRename: () => void;
-  onSetEmoji: (emoji: string) => void | Promise<void>;
   /** 确认删除；deleteImages=true 同时级联删除图库图片，deleteMemories=true 同时删除该会话保存的项目记忆 */
   onDelete: (deleteImages: boolean, deleteMemories: boolean) => void;
   /** 删除进行中：确认框保持打开并显示 loading */
@@ -53,10 +49,8 @@ type ChatItemMenuProps = {
 export function ChatItemMenu({
   conversationId,
   isPinned,
-  emoji,
   onPin,
   onRename,
-  onSetEmoji,
   onDelete,
   onExport,
   onFork,
@@ -72,7 +66,6 @@ export function ChatItemMenu({
   const [isButtonOpen, setIsButtonOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showEmoji, setShowEmoji] = useState(false);
   // 删除会话确认：该会话引用的图库图片数（null = 未查询），
   // 以及用户是否选择级联删除图片
   const [imagesCount, setImagesCount] = useState<number | null>(null);
@@ -90,7 +83,6 @@ export function ChatItemMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const exportPanelRef = useRef<HTMLDivElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
-  const emojiTriggerRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
   const onContextMenuCloseRef = useRef(onContextMenuClose);
@@ -139,7 +131,6 @@ export function ChatItemMenu({
       onContextMenuCloseRef.current?.();
       setShowConfirm(false);
       setShowExport(false);
-      setShowEmoji(false);
     };
 
     const handleClickOutside = (event: MouseEvent): void => {
@@ -212,7 +203,6 @@ export function ChatItemMenu({
     onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setShowExport(false);
-    setShowEmoji(false);
   };
 
   const handlePin = (): void => {
@@ -254,7 +244,6 @@ export function ChatItemMenu({
     onContextMenuCloseRef.current?.();
     setShowConfirm(true);
     setShowExport(false);
-    setShowEmoji(false);
     // 打开确认框时查询该会话引用的图库图片数
     setImagesCount(null);
     setDeleteImages(false);
@@ -307,37 +296,12 @@ export function ChatItemMenu({
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
     setShowConfirm(false);
-    setShowEmoji(false);
   };
 
   const handleExportSelect = (format: ExportFormat): void => {
     onExport(format);
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
-    setShowExport(false);
-  };
-
-  const handleEmojiClick = (): void => {
-    setShowEmoji((prev) => !prev);
-    setShowConfirm(false);
-    setShowExport(false);
-  };
-
-  const handleEmojiSelect = (emoji: string): void => {
-    void onSetEmoji(emoji);
-    setIsButtonOpen(false);
-    onContextMenuCloseRef.current?.();
-    setShowEmoji(false);
-    setShowConfirm(false);
-    setShowExport(false);
-  };
-
-  // Escape / 焦点离开面板等场景：关闭整个菜单
-  const handleEmojiClose = (): void => {
-    setIsButtonOpen(false);
-    onContextMenuCloseRef.current?.();
-    setShowEmoji(false);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -414,28 +378,6 @@ export function ChatItemMenu({
                         defaultValue: "Copy conversation ID",
                       })}
                     </span>
-                  </button>
-                  <button
-                    type="button"
-                    ref={emojiTriggerRef}
-                    className={`chat-item-menu-item${showEmoji ? " active" : ""}`}
-                    onClick={handleEmojiClick}
-                    role="menuitem"
-                    aria-expanded={showEmoji}
-                    aria-haspopup="menu"
-                  >
-                    {emoji ? (
-                      <span className="chat-item-menu-emoji">{emoji}</span>
-                    ) : (
-                      <SmilePlus size={13} />
-                    )}
-                    <span>
-                      {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
-                    </span>
-                    <ChevronRight
-                      size={11}
-                      className="chat-item-menu-sub-arrow"
-                    />
                   </button>
                   {onFork ? (
                     <button
@@ -582,15 +524,6 @@ export function ChatItemMenu({
               document.body,
             )
           : null}
-        {isOpen && showEmoji && (
-          <EmojiPicker
-            triggerRef={emojiTriggerRef}
-            currentEmoji={emoji}
-            onSelect={handleEmojiSelect}
-            onClose={handleEmojiClose}
-            focusOutKeepRef={menuRef}
-          />
-        )}
       </span>
       <ChatDeleteConfirmDialog
         conversationCount={1}

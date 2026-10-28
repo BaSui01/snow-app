@@ -62,6 +62,5 @@ export const buildPendingConversationRecord = (
     lastRunDurationMs: 0,
     runTtftSumMs: 0,
     runRequestCount: 0,
-    emoji: "",
   };
 };

@@ -34,7 +34,6 @@ export type ChatConversationRecord = {
   /** 会话累计 TTFT 总和（ms）与产生 TTFT 的请求数。 */
   runTtftSumMs: number;
   runRequestCount: number;
-  emoji: string;
 };
 
 export type ChatConversationPage = {

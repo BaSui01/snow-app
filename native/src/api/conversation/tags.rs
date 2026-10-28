@@ -32,7 +32,8 @@ pub fn parse_chat_message_content(
     const ANNOTATION_TAG_PREFIX: &str = "@@annotation:";
     const FILE_SELECTION_TAG_PREFIX: &str = "@@file-selection:";
     const FILE_TAG_PREFIX: &str = "@@file:";
-    const TAG_PREFIXES: [&str; 8] = [
+    const WORKFLOW_TAG_PREFIX: &str = "@@workflow:";
+    const TAG_PREFIXES: [&str; 9] = [
         IMAGE_TAG_PREFIX,
         REVIEW_TAG_PREFIX,
         COMMAND_TAG_PREFIX,
@@ -41,6 +42,7 @@ pub fn parse_chat_message_content(
         ANNOTATION_TAG_PREFIX,
         FILE_SELECTION_TAG_PREFIX,
         FILE_TAG_PREFIX,
+        WORKFLOW_TAG_PREFIX,
     ];
 
     let mut parsed = ParsedChatMessageContent::default();
@@ -129,6 +131,13 @@ pub fn parse_chat_message_content(
             }
         } else if prefix == FILE_TAG_PREFIX {
             if let Some(text) = try_expand_file_reference_tag(value) {
+                parsed.text.push_str(&text);
+            } else {
+                parsed.text.push_str(&remaining[tag_start..full_tag_end]);
+            }
+        } else if prefix == WORKFLOW_TAG_PREFIX {
+            // workflow 标签：手动编排提交的流程概要，完整图在随后的工具调用里
+            if let Some(text) = try_expand_workflow_tag(value) {
                 parsed.text.push_str(&text);
             } else {
                 parsed.text.push_str(&remaining[tag_start..full_tag_end]);
@@ -369,6 +378,28 @@ fn try_expand_file_selection_tag(value: &str) -> Option<String> {
     Some(text)
 }
 
+/// 展开 `@@workflow:{"title":"<b64>","nodeCount":N,"edgeCount":M,"outline":"<b64>"}@@`
+/// 为流程概要；节点 prompt 等完整参数在紧随其后的 workflow-workflow-generate 调用里。
+fn try_expand_workflow_tag(value: &str) -> Option<String> {
+    let parsed: serde_json::Value = serde_json::from_str(value).ok()?;
+    let title = json_base64_text(&parsed, "title");
+    let title = if title.trim().is_empty() {
+        "未命名".to_string()
+    } else {
+        title.trim().to_string()
+    };
+    let node_count = json_u64(&parsed, "nodeCount");
+    let outline = json_base64_text(&parsed, "outline");
+    let mut text = format!(
+        "[WorkFlow 编排] 用户在 WorkFlow 编排器中手动绘制了工作流「{title}」（{node_count} 个节点），已直接以 workflow-workflow-generate 工具调用提交，无需重新设计。"
+    );
+    if !outline.trim().is_empty() {
+        text.push_str("\n节点：\n");
+        text.push_str(outline.trim_end());
+    }
+    Some(text)
+}
+
 const MAX_FILE_REFERENCE_FILE_SIZE: u64 = 8 * 1024 * 1024;
 const MAX_FILE_REFERENCE_LINES: usize = 80;
 const MAX_FILE_REFERENCE_LINE_CHARS: usize = 400;
@@ -508,7 +539,7 @@ fn truncate_line(text: &str, max_chars: usize) -> String {
 }
 
 /// 展示型 chip 标签前缀（与前端 fileTagUtils 的 encode* 编码格式一一对应）。
-const DISPLAY_TAG_PREFIXES: [&str; 15] = [
+const DISPLAY_TAG_PREFIXES: [&str; 16] = [
     "@@file-selection:",
     "@@file:",
     "@@dir:",
@@ -524,6 +555,7 @@ const DISPLAY_TAG_PREFIXES: [&str; 15] = [
     "@@command:",
     "@@skill:",
     "@@annotation:",
+    "@@workflow:",
 ];
 
 /// 把消息内容里的所有 chip 标签折叠为人类可读文本，用于会话标题、单行预览等
@@ -626,6 +658,14 @@ fn display_text_for_tag(prefix: &str, value: &str) -> Option<String> {
         }
         "@@annotation:" => display_annotation_reference(&parsed),
         "@@file-selection:" => display_file_selection_reference(&parsed),
+        "@@workflow:" => {
+            let title = json_base64_text(&parsed, "title");
+            Some(if title.trim().is_empty() {
+                "WorkFlow".to_string()
+            } else {
+                format!("WorkFlow: {}", title.trim())
+            })
+        }
         _ => None,
     }
 }

@@ -418,23 +418,6 @@ export const CONTENT_WRITE_ACTIONS: PluginWriteActionDefinition[] = [
   },
   {
     domain: "conversations",
-    action: "setEmoji",
-    scope: "conversations",
-    summary: l10n(
-      "Set a conversation emoji",
-      "设置会话 Emoji",
-      "設定工作階段 Emoji",
-    ),
-    invoke: async ({ params }) => {
-      const conversationId = requireString(params, "conversationId");
-      const emoji = requireString(params, "emoji");
-      await callSnow("updateConversationEmoji", conversationId, emoji);
-      commitConversationListChange();
-      return { conversationId, emoji };
-    },
-  },
-  {
-    domain: "conversations",
     action: "setStatus",
     scope: "conversations",
     summary: l10n(

@@ -102,6 +102,9 @@ export function TreeProjectNode({
   const isDragging = dragAndDrop.draggedDirectoryId === directoryId;
   const isDragOver = dragAndDrop.dragOverDirectoryId === directoryId;
   const isDraggable = !isActionLocked && !isEditing;
+  // 行尾状态指示占用右侧空间，菜单按钮需让位到其左侧
+  const hasSessionDot = hasActiveSession;
+  const hasNotificationBadge = notificationCount > 0;
 
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>): void => {
     event.dataTransfer.effectAllowed = "copyMove";
@@ -196,7 +199,9 @@ export function TreeProjectNode({
           isActive ? " active" : ""
         }${isMenuOpen ? " menu-open" : ""}${isEditing ? " editing" : ""}${
           isDragging ? " dragging" : ""
-        }${isDragOver ? " drag-over" : ""}`}
+        }${isDragOver ? " drag-over" : ""}${
+          hasSessionDot ? " has-status-dot" : ""
+        }${hasNotificationBadge ? " has-notification-badge" : ""}`}
         draggable={isDraggable}
         onContextMenu={handleContextMenu}
         onDragEnd={dragAndDrop.handleDirectoryDragEnd}

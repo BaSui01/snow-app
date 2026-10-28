@@ -105,6 +105,39 @@ export const formatTimeLabel = (
   return `${date.getMonth() + 1}/${date.getDate()}`;
 };
 
+/** 相对时间单位由粗到细，命中第一个不超过差值的单位。 */
+const RELATIVE_TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 365 * 24 * 60 * 60],
+  ["month", 30 * 24 * 60 * 60],
+  ["day", 24 * 60 * 60],
+  ["hour", 60 * 60],
+  ["minute", 60],
+  ["second", 1],
+];
+
+/** 相对时间（如「3 个月前」），按界面语言本地化；时间无效返回空串。 */
+export const formatRelativeTimeLabel = (
+  date: Date,
+  locale: string,
+  now: Date = new Date(),
+): string => {
+  const time = date.getTime();
+  if (!Number.isFinite(time) || time <= 0) {
+    return "";
+  }
+  const diffSeconds = Math.round((time - now.getTime()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto",
+    style: "long",
+  });
+  for (const [unit, unitSeconds] of RELATIVE_TIME_UNITS) {
+    if (Math.abs(diffSeconds) >= unitSeconds || unit === "second") {
+      return formatter.format(Math.round(diffSeconds / unitSeconds), unit);
+    }
+  }
+  return formatter.format(0, "second");
+};
+
 /**
  * Group a list of conversations into time-based sections.
  *

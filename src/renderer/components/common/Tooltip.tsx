@@ -12,11 +12,13 @@ import type {
   ReactNode,
 } from "react";
 
+export type TooltipPlacement = "top" | "bottom" | "right";
+
 export type TooltipProps = {
   content: ReactNode;
   children: ReactNode;
-  /** 浮层方向：top（默认，向上弹出）/ bottom（向下弹出）；对侧空间更充裕时自动反向。 */
-  placement?: "top" | "bottom";
+  /** 浮层方向：top（默认，向上弹出）/ bottom（向下弹出）/ right（向右弹出，无箭头）；top/bottom 对侧空间更充裕时自动反向。 */
+  placement?: TooltipPlacement;
   /** 受控显示：传入时忽略内部 hover 状态（供 DOM 注入内容外部驱动）。 */
   visible?: boolean;
 };
@@ -31,21 +33,41 @@ const ARROW_INSET = 12;
 type TooltipPos = {
   left: number;
   top: number;
-  placement: "top" | "bottom";
+  placement: TooltipPlacement;
   arrowX: number;
 };
 
 /**
  * 由触发元素与 Tooltip 的视口矩形计算 fixed 坐标：
- * - 垂直方向按 placement，空间不足且对侧更宽裕时反向，保证完整可见；
+ * - top/bottom 按 placement，空间不足且对侧更宽裕时反向；
+ * - right 贴触发器右侧、垂直居中，空间不足时夹紧到视口安全区；
  * - 水平方向以触发元素中心对齐，并夹紧到视口安全区内；
- * - 箭头（--tooltip-arrow-x）在夹紧后仍指向触发元素中心。
+ * - 箭头（--tooltip-arrow-x）在夹紧后仍指向触发元素中心（right 不使用箭头）。
  */
 const computePosition = (
   trigger: DOMRect,
   tooltip: DOMRect,
-  placement: "top" | "bottom",
+  placement: TooltipPlacement,
 ): TooltipPos => {
+  if (placement === "right") {
+    const left = Math.min(
+      trigger.right + GAP,
+      Math.max(
+        VIEWPORT_MARGIN,
+        window.innerWidth - VIEWPORT_MARGIN - tooltip.width,
+      ),
+    );
+    const centeredTop = trigger.top + (trigger.height - tooltip.height) / 2;
+    const top = Math.min(
+      Math.max(centeredTop, VIEWPORT_MARGIN),
+      Math.max(
+        VIEWPORT_MARGIN,
+        window.innerHeight - VIEWPORT_MARGIN - tooltip.height,
+      ),
+    );
+    return { left, top, placement, arrowX: 0 };
+  }
+
   const roomAbove = trigger.top - GAP;
   const roomBelow = window.innerHeight - trigger.bottom - GAP;
   let resolved = placement;

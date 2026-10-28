@@ -589,7 +589,7 @@ export function MainSidebarContent({
               </Tooltip>
             </span>
           )}
-          {/* 收起时悬停整行才淡入数值徽章：悬停说明含义，点击直达对应面板 */}
+          {/* 收起时数值徽章常驻显示：悬停可见含义，点击直达对应面板 */}
           {!isMoreExpanded &&
             (pendingMemoCount > 0 ||
               memoryCount > 0 ||

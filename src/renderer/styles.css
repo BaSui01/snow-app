@@ -1834,7 +1834,6 @@ body.is-panel-resizing * {
 }
 
 .chat-item-title {
-  --chat-title-marquee-gap: 32px;
   display: flex;
   align-items: center;
   font-size: 12.5px;
@@ -2446,6 +2445,72 @@ body.is-panel-resizing * {
   color: var(--warning, #f59e0b);
 }
 
+/* 会话行悬浮详情：锚点铺满整行只提供坐标，不参与交互 */
+.chat-item > .tooltip-wrapper:has(.chat-item-tooltip-anchor) {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+
+.chat-item-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(220px, 40vw);
+}
+
+.chat-item-tooltip-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 标题完整展示：允许换行，不做省略截断 */
+.chat-item-tooltip-title {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.chat-item-tooltip-pin {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--text-tertiary);
+}
+
+.chat-item-tooltip-time {
+  flex-shrink: 0;
+  margin-top: 1px;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-item-tooltip-project {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+/* 图标沿用目录列表配色（本地文件夹黄、SSH 红），不在此覆盖 color */
+.chat-item-tooltip-project svg {
+  flex-shrink: 0;
+}
+
+.chat-item-tooltip-project-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .chat-item-title-row {
   display: flex;
   align-items: center;
@@ -2504,57 +2569,6 @@ body.is-panel-resizing * {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.chat-item-title-text + .chat-item-title-text {
-  display: none;
-  margin-left: var(--chat-title-marquee-gap);
-}
-
-.chat-item-title[data-overflow="true"] {
-  -webkit-mask-image: linear-gradient(
-    to right,
-    #000 calc(100% - 20px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    #000 calc(100% - 20px),
-    transparent 100%
-  );
-}
-
-.chat-item-title[data-overflow="true"] .chat-item-title-text {
-  text-overflow: clip;
-}
-
-.chat-item:hover .chat-item-title[data-overflow="true"] {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.chat-item:hover .chat-item-title[data-overflow="true"] .chat-item-title-text {
-  flex: none;
-  width: max-content;
-  animation: chat-item-title-marquee var(--chat-title-marquee-duration, 10s)
-    linear infinite;
-  animation-delay: 0.8s;
-}
-
-.chat-item:hover
-  .chat-item-title[data-overflow="true"]
-  .chat-item-title-text
-  + .chat-item-title-text {
-  display: block;
-}
-
-@keyframes chat-item-title-marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(calc(-100% - var(--chat-title-marquee-gap, 32px)));
-  }
 }
 
 .chat-load-more {
@@ -14382,17 +14396,21 @@ body.is-panel-resizing * {
   }
 }
 
-/* 思考中标题流光：亮色高光从左向右扫过文字后短暂停顿，循环往复。
-   background-clip: text 把渐变裁剪进字形；两端均为基色，配合 repeat
-   平铺在任意 background-position 下都不会出现透明断层。 */
-.thinking-block-title--shimmer {
+/* 流光文字（思考中 / 运行中）：高对比扫光。低谷把基色按半透明压暗，
+   峰值用 --text-primary，靠亮度差而非颜色区分；两端同为低谷色，
+   配合 repeat 平铺在任意 background-position 下都不会出现断层。 */
+.thinking-block-title--shimmer,
+.chat-item-title-text--shimmer {
+  --shimmer-base: var(--text-tertiary);
+  --shimmer-dim: color-mix(in srgb, var(--shimmer-base) 50%, transparent);
   background-image: linear-gradient(
-    90deg,
-    var(--text-tertiary) 0%,
-    var(--text-tertiary) 42%,
-    var(--text-primary) 50%,
-    var(--text-tertiary) 58%,
-    var(--text-tertiary) 100%
+    100deg,
+    var(--shimmer-dim) 0%,
+    var(--shimmer-dim) 34%,
+    var(--text-primary) 47%,
+    var(--text-primary) 53%,
+    var(--shimmer-dim) 66%,
+    var(--shimmer-dim) 100%
   );
   background-size: 200% 100%;
   background-repeat: repeat;
@@ -14400,10 +14418,15 @@ body.is-panel-resizing * {
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: thinking-title-shimmer 1.5s linear infinite;
+  animation: text-shimmer 1.15s linear infinite;
 }
 
-@keyframes thinking-title-shimmer {
+/* 会话标题：基色取二级文字，比思考块稍亮 */
+.chat-item-title-text--shimmer {
+  --shimmer-base: var(--text-secondary);
+}
+
+@keyframes text-shimmer {
   from {
     background-position: 150% 0;
   }
@@ -25183,6 +25206,20 @@ button.user-message-source:hover {
   border-bottom-color: var(--tooltip-bg);
 }
 
+/* 向右弹出时自左侧浮入，贴近触发元素右侧、垂直居中；不使用箭头。 */
+.tooltip-right {
+  animation-name: tooltip-in-right;
+  /* 比普通提示宽：会话标题需完整换行展示 */
+  max-width: min(460px, 60vw);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.tooltip-right::before,
+.tooltip-right::after {
+  display: none;
+}
+
 @keyframes tooltip-in {
   from {
     opacity: 0;
@@ -25202,6 +25239,17 @@ button.user-message-source:hover {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes tooltip-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -26830,8 +26878,7 @@ button.user-message-source:hover {
 }
 
 /* 「更多」行容器：按钮为主点击区，数值徽章绝对定位叠在右侧（避开箭头），
-   悬停整行才淡入，徽章各自可点击直达对应面板；插件更新箭头不参与悬停淡入，
-   有更新即常亮显示 */
+   常驻显示；徽章各自可点击直达对应面板；插件更新箭头同样常亮 */
 .sidebar-more-row {
   position: relative;
   width: 100%;
@@ -26851,18 +26898,9 @@ button.user-message-source:hover {
   gap: 4px;
   max-width: calc(100% - 56px);
   overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
 }
 
-.sidebar-more-row:hover .sidebar-more-summary,
-.sidebar-more-row:focus-within .sidebar-more-summary {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* 常亮的更新箭头占据右侧时，悬停淡入的数值徽章整体左移让位，避免叠字 */
+/* 常亮的更新箭头占据右侧时，数值徽章整体左移让位，避免叠字 */
 .sidebar-more-summary.is-shifted {
   right: 48px;
 }
@@ -61261,6 +61299,27 @@ img.plugin-icon {
   box-shadow: 0 0 0 3px
     color-mix(in srgb, var(--accent-green-text) 16%, transparent);
   animation: tree-session-pulse 1.6s ease-in-out infinite;
+}
+
+/* 行尾状态指示（呼吸灯 / 通知角标）占住行右侧空间，
+   悬浮菜单按钮取消绝对定位的默认 right，让位到它们左侧 */
+:where(.sidebar-tree-list)
+  .tree-project-row-wrap.has-status-dot
+  .workspace-directory-actions-wrapper {
+  right: 20px;
+}
+
+:where(.sidebar-tree-list)
+  .tree-project-row-wrap.has-notification-badge
+  .workspace-directory-actions-wrapper {
+  right: 26px;
+}
+
+/* 呼吸灯与角标同时存在：角标在左、呼吸灯在最右 */
+:where(.sidebar-tree-list)
+  .tree-project-row-wrap.has-status-dot.has-notification-badge
+  .workspace-directory-actions-wrapper {
+  right: 38px;
 }
 
 @keyframes tree-session-pulse {

@@ -10,17 +10,12 @@ import {
   Waypoints,
   Workflow,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { Tooltip } from "../../common/Tooltip";
+import { useOverlayOpen } from "../../common/useOverlayOpen";
 import { isPendingSessionKey } from "../../mainContent/chatMessages/utils/conversationTypes";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
 import { openConversationInNewWindow } from "./openConversationInNewWindow";
@@ -30,9 +25,15 @@ import {
   type ConversationDragPayload,
 } from "./conversationDrag";
 import { setChatDragData } from "./chatDrag";
-import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
+import { formatRelativeTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
+import { useDirectoryInfo } from "./useDirectoryInfo";
+import { getDirectoryIcon } from "./WorkspaceDirectoryRow";
 
-const TITLE_MARQUEE_GAP = 32;
+/** 悬浮详情延迟：避免鼠标划过列表时不断弹出卡片。 */
+const HOVER_TOOLTIP_DELAY = 120;
+/** 相邻会话行之间切换的时间窗：窗内进入新行直接显示卡片，不再等待延迟。 */
+const ROW_SWITCH_WINDOW = 400;
+let lastRowLeaveAt = 0;
 
 type ChatItemProps = {
   conversation: ChatConversationRecord;
@@ -104,22 +105,22 @@ export function ChatItem({
   onSelect,
   onToggleTree,
 }: ChatItemProps): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [isEditing, setIsEditing] = useState(false);
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{
     x: number;
     y: number;
   } | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const tooltipTimerRef = useRef<number | null>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
   const [isDragSource, setIsDragSource] = useState(false);
-  const titleBoxRef = useRef<HTMLSpanElement>(null);
-  const titleTextRef = useRef<HTMLSpanElement>(null);
-  const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
-  const isTitleHoveredRef = useRef(false);
+  const directoryInfo = useDirectoryInfo(conversation.directoryId);
+  const overlayOpen = useOverlayOpen();
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -201,6 +202,8 @@ export function ChatItem({
     !isMultiSelectMode && (isAttentionRequired || hasAttentionRequiredSubAgent);
   const showStreamingStatus =
     !isMultiSelectMode && !showAttentionStatus && isStreaming;
+  // 正在输出（未暂停）的会话标题走流光，与雪花指示器状态一致
+  const showTitleShimmer = showStreamingStatus && !isPaused;
   const showCompletedStatus =
     !isMultiSelectMode &&
     !showAttentionStatus &&
@@ -220,62 +223,66 @@ export function ChatItem({
     ? t("sidebar.chatStatusPaused", { defaultValue: "Paused" })
     : t("sidebar.chatStatusRunning", { defaultValue: "Running" });
 
-  const now = new Date();
-  const parsedDate = parseDbTimestamp(conversation.updatedAt);
-  const rawTimeLabel = formatTimeLabel(parsedDate, now, t);
-  const timeLabel =
-    rawTimeLabel === "yesterday"
-      ? t("sidebar.chatTimeYesterday", { defaultValue: "Yesterday" })
-      : rawTimeLabel;
-
-  const measureTitleOverflow = useCallback((): void => {
-    const box = titleBoxRef.current;
-    const text = titleTextRef.current;
-    if (!box || !text || isTitleHoveredRef.current) {
-      return;
-    }
-    const textWidth = text.scrollWidth;
-    const overflows = textWidth > box.clientWidth + 1;
-    setIsTitleOverflowing(overflows);
-    if (!overflows) {
-      return;
-    }
-    const distance = textWidth + TITLE_MARQUEE_GAP;
-    box.style.setProperty(
-      "--chat-title-marquee-duration",
-      `${Math.min(40, Math.max(6, distance / 50))}s`,
-    );
-  }, []);
-
-  useLayoutEffect(() => {
-    if (isEditing) {
-      return;
-    }
-    measureTitleOverflow();
-  }, [displayName, isEditing, measureTitleOverflow]);
-
-  useEffect(() => {
-    const box = titleBoxRef.current;
-    if (!box) {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      measureTitleOverflow();
-    });
-    observer.observe(box);
-    return () => {
-      observer.disconnect();
-    };
-  }, [isEditing, measureTitleOverflow]);
+  const relativeTimeLabel = formatRelativeTimeLabel(
+    parseDbTimestamp(conversation.updatedAt),
+    locale,
+  );
+  // 拖拽、编辑、多选、弹窗和菜单打开期间不显示悬浮详情，避免遮挡操作
+  const showHoverTooltip =
+    isHovered &&
+    !overlayOpen &&
+    !isEditing &&
+    !isMultiSelectMode &&
+    !isDragSource &&
+    !isMenuOpen &&
+    contextMenuAnchor === null;
 
   const handleTitleHover = (): void => {
-    isTitleHoveredRef.current = true;
+    // 遮罩打开期间不安排显示，否则关闭弹窗后卡片会残留在行旁
+    if (overlayOpen) {
+      return;
+    }
+    if (tooltipTimerRef.current !== null) {
+      return;
+    }
+    // 刚从相邻会话行离开：直接显示，避免行间切换时反复等待延迟
+    if (Date.now() - lastRowLeaveAt <= ROW_SWITCH_WINDOW) {
+      setIsHovered(true);
+      return;
+    }
+    tooltipTimerRef.current = window.setTimeout(() => {
+      tooltipTimerRef.current = null;
+      setIsHovered(true);
+    }, HOVER_TOOLTIP_DELAY);
   };
 
   const handleTitleLeave = (): void => {
-    isTitleHoveredRef.current = false;
-    measureTitleOverflow();
+    lastRowLeaveAt = Date.now();
+    if (tooltipTimerRef.current !== null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+    setIsHovered(false);
   };
+
+  useEffect(
+    () => () => {
+      if (tooltipTimerRef.current !== null) {
+        window.clearTimeout(tooltipTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // 遮罩打开或关闭都重置：关闭后必须重新悬停才会再显示，避免取消弹窗后卡片残留
+  // 用 layout effect 保证在绘制前收起，关闭弹窗时不会闪一帧卡片
+  useLayoutEffect(() => {
+    if (tooltipTimerRef.current !== null) {
+      window.clearTimeout(tooltipTimerRef.current);
+      tooltipTimerRef.current = null;
+    }
+    setIsHovered(false);
+  }, [overlayOpen]);
 
   const isSelectionBlocked =
     isRunning || isPendingSessionKey(conversation.conversationId);
@@ -462,9 +469,7 @@ export function ChatItem({
                 </span>
               )}
               <span
-                ref={titleBoxRef}
                 className="chat-item-title"
-                data-overflow={isTitleOverflowing ? "true" : undefined}
                 onDoubleClick={(event) => {
                   event.stopPropagation();
                   if (
@@ -478,14 +483,13 @@ export function ChatItem({
                   handleRenameStart();
                 }}
               >
-                <span ref={titleTextRef} className="chat-item-title-text">
+                <span
+                  className={`chat-item-title-text${
+                    showTitleShimmer ? " chat-item-title-text--shimmer" : ""
+                  }`}
+                >
                   {displayName}
                 </span>
-                {isTitleOverflowing ? (
-                  <span className="chat-item-title-text" aria-hidden="true">
-                    {displayName}
-                  </span>
-                ) : null}
               </span>
               {statusLabel && (
                 <span
@@ -538,9 +542,7 @@ export function ChatItem({
                     </span>
                   )}
                 </span>
-              ) : isRunning ? null : (
-                <span className="chat-item-time">{timeLabel}</span>
-              )}
+              ) : null}
             </div>
           </>
         )}
@@ -612,6 +614,39 @@ export function ChatItem({
           )}
         </span>
       )}
+      {!isEditing && !isMultiSelectMode ? (
+        <Tooltip
+          placement="right"
+          visible={showHoverTooltip}
+          content={
+            <div className="chat-item-tooltip">
+              <div className="chat-item-tooltip-head">
+                <span className="chat-item-tooltip-title">{displayName}</span>
+                {isPinned ? (
+                  <span className="chat-item-tooltip-pin">
+                    <Pin size={11} />
+                  </span>
+                ) : null}
+                {relativeTimeLabel ? (
+                  <span className="chat-item-tooltip-time">
+                    {relativeTimeLabel}
+                  </span>
+                ) : null}
+              </div>
+              {directoryInfo ? (
+                <div className="chat-item-tooltip-project">
+                  {getDirectoryIcon(directoryInfo.record)}
+                  <span className="chat-item-tooltip-project-name">
+                    {directoryInfo.name}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          }
+        >
+          <span className="chat-item-tooltip-anchor" />
+        </Tooltip>
+      ) : null}
     </div>
   );
 }

@@ -5057,6 +5057,12 @@ export const en = {
   "chatInput.tokenUsage.context": "Context",
   "chatInput.textSnippetEditorTitle": "Text Snippet Editor",
   "chatInput.textSnippetEditorDescription": "{{count}} characters",
+  "chatInput.resizeHandle": "Drag to resize, keep dragging up to expand",
+  "chatInput.composerExpandHint": "Keep dragging up to expand the input",
+  "chatInput.composerExpandedTitle": "Expanded input",
+  "chatInput.composerExpandedHint":
+    "Drag the top handle down or press Esc to collapse",
+  "chatInput.composerCollapse": "Collapse",
   "chatInput.chipDetailsFile": "File",
   "chatInput.chipDetailsFolder": "Folder",
   "chatInput.chipDetailsLines": "Lines",

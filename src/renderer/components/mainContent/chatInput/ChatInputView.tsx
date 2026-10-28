@@ -1,4 +1,4 @@
-import { Plug, Settings } from "lucide-react";
+import { GripHorizontal, Minimize2, Plug, Settings } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -57,6 +57,7 @@ import {
   type SnowRemoteChatInputPublication,
 } from "./remoteControlChatInputRegistry";
 import { useChipInteractions } from "./useChipInteractions";
+import { useComposerResize } from "./useComposerResize";
 import { useContentEditableInteractions } from "./useContentEditableInteractions";
 import { useInputFileOperations } from "./useInputFileOperations";
 import { registerPluginDraftHost } from "../../../plugins/pluginDraft";
@@ -164,6 +165,17 @@ export const ChatInputView = ({
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
+  // 输入区高度：拖动把手调整高度，越过上限继续上拖撑满聊天区
+  const {
+    inputAreaRef,
+    composerExpanded,
+    isResizing,
+    collapseComposer,
+    handleResizePointerDown,
+    handleResizePointerMove,
+    handleResizePointerUp,
+    handleResizeKeyDown,
+  } = useComposerResize({ textareaRef });
   const {
     handleNewChat,
     handleSendMessage,
@@ -830,7 +842,12 @@ export const ChatInputView = ({
   ]);
 
   return (
-    <div className="input-area">
+    <div
+      ref={inputAreaRef}
+      className={`input-area${composerExpanded ? " is-composer-expanded" : ""}${
+        isResizing ? " is-resizing" : ""
+      }`}
+    >
       <ChatInputPanels
         projectId={projectId}
         projectName={projectName}
@@ -961,6 +978,54 @@ export const ChatInputView = ({
           data-snow-slot="chat.input.actions"
         />
         <div className="input-box">
+          <div
+            className="input-resize-handle"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={t("chatInput.resizeHandle", {
+              defaultValue: "拖动调整高度，继续上拖展开大屏",
+            })}
+            title={t("chatInput.resizeHandle", {
+              defaultValue: "拖动调整高度，继续上拖展开大屏",
+            })}
+            tabIndex={0}
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            onPointerCancel={handleResizePointerUp}
+            onLostPointerCapture={handleResizePointerUp}
+            onKeyDown={handleResizeKeyDown}
+          >
+            <GripHorizontal size={14} strokeWidth={2} aria-hidden="true" />
+          </div>
+          <div className="input-resize-hint" aria-hidden="true">
+            {t("chatInput.composerExpandHint", {
+              defaultValue: "继续上拖，展开大屏输入",
+            })}
+          </div>
+          <div className="input-composer-header">
+            <span className="input-composer-title">
+              {t("chatInput.composerExpandedTitle", {
+                defaultValue: "大屏输入",
+              })}
+            </span>
+            <span className="input-composer-hint">
+              {t("chatInput.composerExpandedHint", {
+                defaultValue: "向下拖拽顶部把手或按 Esc 收起",
+              })}
+            </span>
+            <button
+              type="button"
+              className="input-composer-collapse"
+              onClick={collapseComposer}
+              title={t("chatInput.composerCollapse", { defaultValue: "收起" })}
+              aria-label={t("chatInput.composerCollapse", {
+                defaultValue: "收起",
+              })}
+            >
+              <Minimize2 size={14} strokeWidth={1.9} aria-hidden="true" />
+            </button>
+          </div>
           <div
             ref={textareaRef}
             className="input-field input-field-editable"

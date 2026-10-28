@@ -28338,6 +28338,194 @@ button.user-message-source:hover {
   background: var(--focus-ring);
 }
 
+/* ===== 输入框手动高度 / 大屏输入 ===== */
+/* 顶部拖拽把手 */
+.input-resize-handle {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  width: 44px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: ns-resize;
+  opacity: 0.28;
+  touch-action: none;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.input-box:hover > .input-resize-handle,
+.input-resize-handle:focus-visible,
+.input-area.is-resizing .input-resize-handle {
+  opacity: 0.9;
+}
+
+.input-area.is-composer-expanded .input-resize-handle {
+  opacity: 0.6;
+}
+
+.input-resize-handle:hover,
+.input-area.is-resizing .input-resize-handle {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.input-resize-handle:focus-visible {
+  outline: 1px solid var(--border-color);
+  outline-offset: 1px;
+}
+
+.input-area.is-resizing {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 拖到高度上限时的提示 */
+.input-resize-hint {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  z-index: 4;
+  padding: 2px 9px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.input-area[data-resize-at-max="true"] .input-resize-hint {
+  opacity: 1;
+}
+
+/* 手动高度写在编辑器自身（变量由拖拽逻辑写入）；未设置时保持自动高度 */
+.input-field.input-field-editable {
+  height: var(--chat-input-manual-height, auto);
+  max-height: var(--chat-input-manual-height, 160px);
+}
+
+/* 大屏输入：标题行仅在展开时出现 */
+.input-composer-header {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.input-area.is-composer-expanded .input-composer-header {
+  display: flex;
+}
+
+/* 收起动画中提前隐藏标题行，避免缩到默认高度时挤压内容 */
+.input-area[data-composer-collapsing="true"] .input-composer-header {
+  display: none;
+}
+
+.input-composer-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.input-composer-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-composer-collapse {
+  flex: 0 0 auto;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.input-composer-collapse:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.input-composer-collapse:focus-visible {
+  outline: 1px solid var(--border-color);
+  outline-offset: 1px;
+}
+
+/* 撑满聊天区：高度向上长，负 margin 顶住布局，聊天区不重排 */
+.input-area.is-composer-expanded {
+  z-index: 30;
+  background: var(--surface-island-strong);
+}
+
+/* 拖拽期间与撑满状态下关掉呼吸彩虹环：大尺寸重绘会明显拖慢跟手 */
+.input-area.is-resizing .input-box::before,
+.input-area.is-composer-expanded .input-box::before {
+  animation: none;
+  opacity: 0;
+}
+
+.input-area.is-resizing {
+  will-change: height;
+}
+
+.input-area.is-composer-expanded .input-content {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.input-area.is-composer-expanded .input-box {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.input-area.is-composer-expanded .input-box .input-field.input-field-editable {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+
+/* 撑满后行内弹层（@ 提及 / 斜杠命令 / 回滚）改挂在面板顶部，避免被顶出视口 */
+.input-area.is-composer-expanded .input-content > .file-mention-popup,
+.input-area.is-composer-expanded .input-content > .chat-command-panel,
+.input-area.is-composer-expanded .input-content > .rollback-picker-popup {
+  top: 50px;
+  bottom: auto;
+}
+
 /* ===== File Chip (input + message) ===== */
 .file-chip,
 .user-message-file-chip {

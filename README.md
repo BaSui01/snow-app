@@ -8,6 +8,12 @@
   <img src="https://img.shields.io/badge/license-MIT-111827" alt="MIT license">
 </p>
 
+<p align="center">
+  QQ group: <a href="https://qm.qq.com/q/avnZQ7gw0M">910298558</a>
+  &nbsp;·&nbsp;
+  Friendly link: <a href="https://linux.do">Linux DO</a>
+</p>
+
 Snow App is a desktop workspace for developers: AI chat, an integrated terminal, SSH remote management, a Git panel and a built-in browser all live in one window, and the AI can drive them directly.
 
 [中文文档](./README_zh.md)
@@ -85,6 +91,4 @@ npm run build:app  # build a distributable package into release/
 ## More
 
 - Full documentation: [docs/](./docs/README.md)
-- QQ group: 910298558
-- Friendly link: [Linux DO](https://linux.do)
 - License: [MIT](./LICENSE) · Copyright (c) 2026 MayMay

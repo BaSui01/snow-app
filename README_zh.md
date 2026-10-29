@@ -5,7 +5,13 @@
 <p align="center">
   <a href="https://github.com/MayDay-wpf/snow-app/releases"><img src="https://img.shields.io/github/v/release/MayDay-wpf/snow-app?label=release&color=3b82f6" alt="最新版本"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-73afd1" alt="支持平台">
-  <img src="https://img.shields.io/badge/license-MIT-111827" alt="开源协议">
+  <img src="https://img.shields.io/badge/license-MIT-111827" alt="MIT license">
+</p>
+
+<p align="center">
+  QQ 群：<a href="https://qm.qq.com/q/avnZQ7gw0M">910298558</a>
+  &nbsp;·&nbsp;
+  友情链接：<a href="https://linux.do">Linux DO</a>
 </p>
 
 Snow App 是面向开发者的桌面工作区：AI 对话、集成终端、SSH 远程管理、Git 面板和内置浏览器都在同一个窗口里，AI 可以直接操作它们。
@@ -85,6 +91,4 @@ npm run build:app  # 打包可分发安装包，输出到 release/
 ## 更多
 
 - 完整文档：[docs/](./docs/README.md)
-- QQ 群：910298558
-- 友情链接：[Linux DO](https://linux.do)
 - 开源协议：[MIT](./LICENSE) · Copyright (c) 2026 MayMay

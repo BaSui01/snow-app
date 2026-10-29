@@ -8,7 +8,7 @@
 	# be copied into ordinary proxy logs.
 	reverse_proxy 127.0.0.1:18080 {
 		# Snow validates the configured public Host itself. Do not derive this
-		# value from X-Forwarded-* headers or expose the FRP port publicly.
+		# value from X-Forwarded-* headers or expose the loopback port publicly.
 		header_up Host {$SNOW_REMOTE_DOMAIN}
 		header_up -X-Forwarded-For
 		header_up -X-Forwarded-Host

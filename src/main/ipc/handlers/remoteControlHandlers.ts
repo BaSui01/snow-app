@@ -162,7 +162,6 @@ export const registerRemoteControlHandlers = (): void => {
       input: {
         serverIp: string;
         rootDomain: string;
-        transport?: "frp" | "ssh2";
       },
     ) => {
       assertMainFrame(event);

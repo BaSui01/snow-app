@@ -26,7 +26,7 @@ use server::{FailureGuard, ServerContext, ServerPolicy};
 
 /// 监听器关闭的等待上限（超过后强制中止任务）。
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
-/// 公网回环监听地址：只接受本机 frpc 转发过来的请求。
+/// 公网回环监听地址：只接受本机 SSH2 反向隧道转发过来的请求。
 const WAN_HOST: &str = "127.0.0.1";
 
 /// 启动参数（由 Node 侧解析环境变量与路径后传入）。

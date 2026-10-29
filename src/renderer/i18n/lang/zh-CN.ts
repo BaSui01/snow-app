@@ -6206,24 +6206,16 @@ export const zhCN = {
   "remoteControl.noticeTokenTooShort": "令牌至少需要 24 个字符",
   "remoteControl.tunnelTitle": "自建服务器公网连接",
   "remoteControl.tunnelDescription":
-    "安装包已内置并校验 frpc；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
-  "remoteControl.tunnelDescriptionSsh2":
     "Snow 会自动生成隧道专用密钥；部署失败时不会保存凭据，验证成功后才会在本机加密保存。",
   "remoteControl.statusLoading": "读取中",
   "remoteControl.statusUnknown": "未知",
   "remoteControl.localWan": "本机 WAN",
   "remoteControl.notListening": "未监听",
-  "remoteControl.frpTunnel": "FRP 隧道",
-  "remoteControl.transportMode": "隧道方式",
-  "remoteControl.transportFrp": "FRP",
-  "remoteControl.transportSsh2": "SSH2",
   "remoteControl.ssh2Tunnel": "SSH2 隧道",
-  "remoteControl.ssh2DeployHint":
-    "SSH2 模式无需第二条 frp 域名，也不需要 token 与 CA 证书；Snow 会自动生成专用密钥并只把公钥上传到服务器。",
   "remoteControl.ssh2NeedsAuthorization":
     "SSH2 配置已导入，但本机缺少隧道私钥；请使用“自动部署并连接”重新授权此设备。",
-  "remoteControl.switchTransportHint":
-    "切换隧道方式请重新运行部署并选择目标方式。",
+  "remoteControl.ssh2ManualUnavailable":
+    "SSH2 隧道信息由“自动部署并连接”自动生成；本机还没有配置，请先在“部署新服务器”中完成授权。",
   "remoteControl.ssh2SummaryTitle": "SSH2 隧道详情",
   "remoteControl.ssh2ServerAddr": "服务器地址",
   "remoteControl.ssh2TunnelPort": "SSH2 隧道端口",
@@ -6241,16 +6233,6 @@ export const zhCN = {
   "remoteControl.endpointFailed": "未通过",
   "remoteControl.secureStorageUnavailable":
     "系统安全存储不可用。为避免明文保存凭据，公网远控已禁用。",
-  "remoteControl.frpcBlockedTitle": "内置隧道组件被杀毒软件拦截",
-  "remoteControl.frpcBlockedDescription":
-    "公网连接依赖内置的 frpc 隧道组件；部分杀毒软件会把它误判为风险程序并拦截运行、删除或隔离。",
-  "remoteControl.frpcBlockedCopyPath": "复制路径",
-  "remoteControl.frpcBlockedStepTrust":
-    "在杀毒软件的信任区或排除项中添加上述目录；",
-  "remoteControl.frpcBlockedStepRestore":
-    "若组件已被删除或隔离，请重新运行 Snow 安装程序覆盖安装以恢复；",
-  "remoteControl.frpcBlockedStepRetry": "完成后点击「连接公网」重新建立隧道。",
-  "remoteControl.noticeFrpcDirCopied": "目录路径已复制",
   "remoteControl.noticeFingerprintCopied": "主机密钥指纹已复制",
   "remoteControl.guideSummary": "第一次公网部署（共 4 步，Snow 负责安装）",
   "remoteControl.guideCalloutTitle": "只在同一 Wi-Fi 使用时，不需要服务器。",
@@ -6258,10 +6240,8 @@ export const zhCN = {
     "直接扫描上方局域网二维码即可；下面的公网配置可以保持关闭。",
   "remoteControl.step1Title": "购买前确认：只需要服务器和域名",
   "remoteControl.step1ServerLabel": "Linux 公网服务器：",
-  "remoteControl.step1ServerTextSsh2":
-    "任意厂商，Ubuntu 22+、Debian 11+、Fedora 44+、CentOS Stream/RHEL/Rocky/AlmaLinux 9+，仅 x86_64/amd64、root 或免密码 sudo、systemd、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
   "remoteControl.step1ServerText":
-    "任意厂商，Ubuntu 22.04/24.04、Debian 11+、CentOS Stream/Rocky/AlmaLinux 8+ 等常见发行版、x86_64、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
+    "任意厂商，Ubuntu 22+、Debian 11+、Fedora 44+、CentOS Stream/RHEL/Rocky/AlmaLinux 9+，仅 x86_64/amd64、root 或免密码 sudo、systemd、独立公网 IPv4、长期运行；至少 1 核 1 GB。不要买抢占式、竞价、Windows、数据库、GPU 或预装面板套餐。",
   "remoteControl.step1DomainLabel": "一个付费域名：",
   "remoteControl.step1DomainText":
     "任意注册商和后缀均可。不需要购买 SSL 证书、CDN、云解析高级版、建站或企业邮箱。",
@@ -6276,12 +6256,9 @@ export const zhCN = {
   "remoteControl.dnsValue": "记录值",
   "remoteControl.serverIpLabel": "服务器公网 IP",
   "remoteControl.step2DnsHintPrefix": "主机记录只填",
-  "remoteControl.step2DnsHintAnd": "和",
   "remoteControl.step2DnsHintSuffix":
     "，不要填写完整域名；线路和 TTL 保持默认。",
-  "remoteControl.step2DnsHintDomains":
-    "保存后会得到 snow.{{rootDomain}} 和 frp.{{rootDomain}}。",
-  "remoteControl.step2DnsHintDomainsSsh2": "保存后会得到 snow.{{rootDomain}}。",
+  "remoteControl.step2DnsHintDomains": "保存后会得到 snow.{{rootDomain}}。",
   "remoteControl.step2FirewallLabel":
     "服务器控制台 → 防火墙/安全组 → 添加入站规则：",
   "remoteControl.portPurposeSsh": "Snow 登录服务器",
@@ -6305,12 +6282,6 @@ export const zhCN = {
   "remoteControl.sshPort": "SSH 端口",
   "remoteControl.sshPortHint":
     "服务器远程连接页面显示的端口，未修改时通常是 22。",
-  "remoteControl.frpBindPort": "FRP 控制端口",
-  "remoteControl.frpBindPortHint":
-    "服务器 frps 的控制端口，会写入客户端配置包；未修改时通常是 7000。",
-  "remoteControl.frpRemotePort": "FRP 隧道端口",
-  "remoteControl.frpRemotePortHint":
-    "服务器内部隧道端口，只由 Caddy 使用；无需在安全组放行。",
   "remoteControl.authMethod": "登录方式",
   "remoteControl.authMethodHint": "新手建议使用在服务器控制台设置的 SSH 密码。",
   "remoteControl.authPassword": "SSH 密码",
@@ -6326,8 +6297,6 @@ export const zhCN = {
   "remoteControl.passphrase": "私钥密码（没有可留空）",
   "remoteControl.step4Title": "检测成功后再自动部署",
   "remoteControl.step4Text":
-    "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
-  "remoteControl.step4TextSsh2":
     "先点“检测 DNS”。snow 解析通过后，再点“自动部署并连接”；之后受限 sshd、Caddy、证书与配置导入都由 Snow 处理。",
   "remoteControl.checkDns": "检测 DNS",
   "remoteControl.deployConnect": "自动部署并连接",
@@ -6338,8 +6307,6 @@ export const zhCN = {
   "remoteControl.configDisabledHint":
     "该配置当前已停用：在“编辑配置”中勾选“启用公网远控”并保存后即可连接。",
   "remoteControl.credentialsLabel": "加密凭据",
-  "remoteControl.credentialsSaved": "FRP 凭据与 CA 证书已保存",
-  "remoteControl.credentialsMissing": "缺少 FRP 凭据或 CA 证书",
   "remoteControl.credentialsSavedSsh2": "隧道私钥已保存",
   "remoteControl.credentialsMissingSsh2": "缺少隧道私钥",
   "remoteControl.autoConnectLabel": "启动时自动连接",
@@ -6352,8 +6319,6 @@ export const zhCN = {
   "remoteControl.removeConfig": "移除配置",
   "remoteControl.removeConfigConfirmTitle": "确认移除本机保存的公网配置？",
   "remoteControl.removeConfigConfirmText":
-    "将断开公网隧道并删除加密保存的 FRP 凭据与 CA 证书；服务器上的 FRP 与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
-  "remoteControl.removeConfigConfirmTextSsh2":
     "将断开公网隧道并删除加密保存的隧道私钥；服务器上的隧道服务与 Caddy 不受影响，重新部署或导入配置包后可再次连接。",
   "remoteControl.removeConfigConfirm": "确认移除",
   "remoteControl.configEmptyTitle": "还没有公网配置",
@@ -6365,36 +6330,22 @@ export const zhCN = {
     "更换服务器 / 重新部署（共 4 步，Snow 负责安装）",
   "remoteControl.manualFormTitleEdit": "编辑公网配置",
   "remoteControl.manualFormTitleNew": "填写公网连接信息",
-  "remoteControl.manualFormHint":
-    "FRP 凭据与 CA 证书会加密保存到本机；留空表示沿用已保存的值。",
   "remoteControl.importBundleHint":
     "已有其他 Snow 生成的配置包时，导入会覆盖本机保存的公网配置。",
   "remoteControl.noticeTunnelConnecting":
     "正在连接公网隧道，HTTPS 探测结果会自动刷新",
   "remoteControl.noticeConnectFailed": "连接公网失败",
   "remoteControl.noticeConfigRemoved":
-    "公网配置已移除，服务器上的 FRP 与 Caddy 不受影响",
-  "remoteControl.noticeConfigRemovedSsh2":
     "公网配置已移除，服务器上的隧道服务与 Caddy 不受影响",
   "remoteControl.noticeRemoveFailed": "移除公网配置失败",
   "remoteControl.exportBundle": "导出配置包",
   "remoteControl.noticeExported":
-    "配置包已导出到 {{path}}；文件包含 FRP 凭据，请妥善保管",
-  "remoteControl.noticeExportedSsh2":
     "配置包已导出到 {{path}}；SSH2 配置不含私钥，可安全传递",
   "remoteControl.noticeExportFailed": "导出配置包失败",
   "remoteControl.importBundle": "导入已有配置包",
   "remoteControl.tunnelEnabled": "启用公网远控",
   "remoteControl.tunnelAutoConnect": "Snow 启动后自动连接",
-  "remoteControl.frpServerAddr": "FRP 服务器地址",
-  "remoteControl.frpServerPort": "FRP 端口",
   "remoteControl.publicOrigin": "手机 HTTPS 地址",
-  "remoteControl.tlsServerName": "FRP TLS 服务器名称",
-  "remoteControl.frpToken": "FRP 凭据",
-  "remoteControl.tokenPlaceholderSaved": "已加密保存；留空保持不变",
-  "remoteControl.tokenPlaceholderNew": "至少 32 个字符",
-  "remoteControl.frpCa": "FRP CA 证书（PEM）",
-  "remoteControl.caPlaceholderSaved": "证书已加密保存；留空保持不变",
   "remoteControl.saveAndConnect": "保存并连接",
   "remoteControl.saveAndDisable": "保存并关闭公网",
   "remoteControl.disconnectWarningTitle": "“断开连接”不会撤销手机登录。",
@@ -6419,13 +6370,10 @@ export const zhCN = {
     "端口已保存为 {{port}}，服务已按新端口重启；已配对手机需要重新扫码",
   "remoteControl.noticePortSavedIdle": "端口已保存为 {{port}}，开启远控后生效",
   "remoteControl.noticePortFailed": "端口设置失败",
-  "remoteControl.noticeDnsReady": "两条 DNS 解析均已生效，可以开始自动部署",
+  "remoteControl.noticeDnsReady": "snow 解析已生效，可以开始自动部署",
   "remoteControl.noticeDnsPending":
-    "DNS 尚未生效，请核对下方两条 A 记录后稍等几分钟再检测",
-  "remoteControl.noticeDnsFailed": "DNS 检测失败",
-  "remoteControl.noticeDnsReadySsh2": "snow 解析已生效，可以开始自动部署",
-  "remoteControl.noticeDnsPendingSsh2":
     "DNS 尚未生效，请核对下方的 snow A 记录后稍等几分钟再检测",
+  "remoteControl.noticeDnsFailed": "DNS 检测失败",
   "remoteControl.privateKeyDialogTitle": "选择服务器 SSH 私钥",
   "remoteControl.deployStarting": "正在开始部署",
   "remoteControl.noticeDeploySuccess":
@@ -6441,8 +6389,6 @@ export const zhCN = {
     "公网隧道已断开，局域网远控保持可用",
   "remoteControl.noticeDisconnectFailed": "断开失败",
   "remoteControl.noticeImported":
-    "配置包已校验并加密保存，Snow 正在连接。导入包含 FRP 凭据，请从下载目录安全删除。",
-  "remoteControl.noticeImportedSsh2":
     "配置包已校验并加密保存，Snow 正在连接。SSH2 配置不含私钥，可安全传递。",
   "remoteControl.noticeImportFailed": "导入配置包失败",
   "remoteControl.tunnelStageStopped": "已关闭",
@@ -6451,22 +6397,18 @@ export const zhCN = {
   "remoteControl.tunnelStageOnline": "公网入口可用",
   "remoteControl.tunnelStageReconnecting": "网络中断，正在重连",
   "remoteControl.tunnelStageFailed": "连接失败",
-  "remoteControl.deployStage.checking_dns": "正在检查两条域名解析",
+  "remoteControl.deployStage.checking_dns": "正在检查 snow 域名解析",
   "remoteControl.deployStage.connecting_ssh": "正在安全连接服务器",
   "remoteControl.deployStage.checking_server":
     "正在检查发行版、架构和管理员权限",
-  "remoteControl.deployStage.uploading": "正在上传 Snow 内置部署程序",
+  "remoteControl.deployStage.uploading": "正在上传 SSH2 隧道部署程序与专用公钥",
   "remoteControl.deployStage.installing":
-    "正在安装并配置 FRP 与 HTTPS，通常需要 2–8 分钟",
-  "remoteControl.deployStage.importing":
-    "正在直接导入服务器配置；不会生成本机明文文件",
-  "remoteControl.deployStage.verifying": "正在连接 FRP 并验证公网 HTTPS",
-  "remoteControl.deployStage.completed": "公网远控部署完成，可以扫描公网二维码",
-  "remoteControl.deployStageSsh2.checking_dns": "正在检查 snow 域名解析",
-  "remoteControl.deployStageSsh2.installing":
     "正在安装受限 SSH 隧道服务，通常需要 1–4 分钟",
-  "remoteControl.deployStageSsh2.verifying":
-    "正在建立 SSH2 隧道并验证公网 HTTPS",
+  "remoteControl.deployStage.importing":
+    "正在读取服务器隧道信息；不会生成本机明文文件",
+  "remoteControl.deployStage.verifying": "正在建立 SSH2 隧道并验证公网 HTTPS",
+  "remoteControl.deployStage.completed":
+    "SSH2 公网远控部署完成，可以扫描公网二维码",
   "plugins.sidebarEntry": "插件",
   "plugins.updateAvailable": "有 {{count}} 个插件可更新",
   "plugins.title": "插件",

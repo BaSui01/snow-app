@@ -47,7 +47,6 @@ export const remoteControlApi = {
   checkRemoteServerDns: (input: {
     serverIp: string;
     rootDomain: string;
-    transport?: "frp" | "ssh2";
   }): Promise<RemoteServerDnsCheck> =>
     ipcRenderer.invoke("remote-control:server-check-dns", input),
   deployRemoteControlServer: (

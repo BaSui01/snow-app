@@ -350,7 +350,7 @@ ensure_download_tools() {
   fi
 }
 
-# 确保 Caddy 2.11.3 可用；缺失或版本不符时按 install-linux.sh 的下载与 SHA256 校验逻辑安装。
+# 确保 Caddy 2.11.3 可用；缺失或版本不符时按内置版本与 SHA256 校验安装。
 ensure_caddy_binary() {
   if resolve_caddy_binary && "$CADDY_BIN" version 2>/dev/null | grep -qF "$CADDY_VERSION"; then
     msg reuse_caddy "$CADDY_VERSION"
@@ -373,7 +373,7 @@ ensure_caddy_account() {
   install -d -m 0750 -o caddy -g caddy /etc/caddy /var/lib/caddy
 }
 
-# 生成与 install-linux.sh 完全相同的站点模板，只有回环上游端口按本次动作取值。
+# 生成站点模板，只有回环上游端口按本次动作取值。
 write_caddy_site() {
   local upstream_port="$1"
   local caddy_email_line=""
@@ -405,7 +405,7 @@ EOF
   chmod 0640 "$CADDYFILE"
 }
 
-# 仅在缺少 systemd 单元时按 install-linux.sh 的 snow-caddy.service 写法补齐，不覆盖已有单元。
+# 仅在缺少 systemd 单元时补齐 snow-caddy.service 写法，不覆盖已有单元。
 write_caddy_unit() {
   if systemctl cat "$CADDY_SERVICE" >/dev/null 2>&1; then
     return 0
@@ -413,7 +413,7 @@ write_caddy_unit() {
   cat > "$CADDY_UNIT" <<EOF
 [Unit]
 Description=Snow Remote HTTPS gateway
-After=network-online.target snow-frps.service
+After=network-online.target
 Wants=network-online.target
 [Service]
 Type=notify
@@ -714,7 +714,7 @@ PY
   chown root:root "$SERVER_METADATA"
   chmod 0600 "$SERVER_METADATA"
 
-  # 已安装 Caddy 但未运行时尽力拉起；失败仅警告，绝不触碰 snow-frp 相关服务。
+  # 已安装 Caddy 但未运行时尽力拉起；失败仅警告。
   if [[ -f "$CADDYFILE" ]] && systemctl cat "$CADDY_SERVICE" >/dev/null 2>&1 && ! systemctl is-active --quiet "$CADDY_SERVICE"; then
     if ! systemctl enable --now "$CADDY_SERVICE"; then
       msg caddy_enable_failed >&2
@@ -740,7 +740,7 @@ switch_caddy_upstream() {
   local effective_line
 
   if [[ ! -f "$CADDYFILE" ]]; then
-    # 没有 Caddyfile：按 install-linux.sh 的模板新建站点，再启动 Caddy。
+    # 没有 Caddyfile：按模板新建站点，再启动 Caddy。
     if [[ -z "$PUBLIC_DOMAIN" ]]; then
       msg switch_missing_domain >&2
       exit 1

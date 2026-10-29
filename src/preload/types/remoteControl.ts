@@ -41,19 +41,6 @@ export type ResolvedRemoteAttachment = {
   path?: string;
 };
 
-/** 活动传输类型：FRP（现有方案）或 SSH2（进程内反向隧道）。 */
-export type RemoteTransportKind = "frp" | "ssh2";
-
-export type FrpTransportConfigInput = {
-  serverAddr: string;
-  serverPort: number;
-  /** FRP 隧道远端端口（服务器 allowPorts 与 Caddy 反代目标）；缺省 18080。 */
-  remotePort?: number;
-  tlsServerName: string;
-  token?: string;
-  caCertificate?: string;
-};
-
 export type Ssh2TransportConfigInput = {
   serverAddr: string;
   serverPort: number;
@@ -70,10 +57,7 @@ export type Ssh2TransportConfigInput = {
 export type RemoteTunnelConfigInput = {
   enabled: boolean;
   autoConnect: boolean;
-  /** 本次保存 / 启用的活动传输。 */
-  transport: RemoteTransportKind;
   publicOrigin: string;
-  frp?: FrpTransportConfigInput;
   ssh2?: Ssh2TransportConfigInput;
 };
 
@@ -96,12 +80,6 @@ export type RemoteServerDeployInput = {
   password?: string;
   privateKeyPath?: string;
   passphrase?: string;
-  /** frps 控制端口（bindPort）；缺省 7000。 */
-  frpBindPort?: number;
-  /** FRP 隧道远端端口（allowPorts 与 Caddy 反代目标）；缺省 18080。 */
-  frpRemotePort?: number;
-  /** 隧道类型：缺省 frp 保持旧行为；ssh2 使用进程内反向隧道。 */
-  transport?: "frp" | "ssh2";
   /** SSH2 隧道服务端口（专用 snow-tunnel-sshd 实例）；缺省 7001。 */
   ssh2TunnelPort?: number;
   /** SSH2 隧道回环端口（PermitListen 与 Caddy 反代目标）；缺省 18080。 */
@@ -109,7 +87,7 @@ export type RemoteServerDeployInput = {
 };
 
 export type RemoteServerDnsRecord = {
-  host: "snow" | "frp";
+  host: "snow";
   name: string;
   expectedValue: string;
   resolvedValues: string[];
@@ -144,18 +122,8 @@ export type RemoteTunnelStatus = {
     configured: boolean;
     enabled: boolean;
     autoConnect: boolean;
-    activeTransport: RemoteTransportKind;
     publicOrigin: string;
     secureStorageAvailable: boolean;
-    frp: {
-      configured: boolean;
-      serverAddr: string;
-      serverPort: number;
-      remotePort: number;
-      tlsServerName: string;
-      hasToken: boolean;
-      hasCaCertificate: boolean;
-    };
     ssh2: {
       configured: boolean;
       serverAddr: string;
@@ -185,5 +153,4 @@ export type RemoteTunnelStatus = {
     checkedAt: number | null;
   };
   error: { code: string; message: string } | null;
-  frpc: { present: boolean; dir: string };
 };

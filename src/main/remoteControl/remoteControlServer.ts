@@ -256,7 +256,7 @@ export const setRemoteControlWanToken = async (
   return toPairingState(state, configuredPort, loadRemoteFixedTokens());
 };
 
-/** 启动 / 替换公网回环监听器（frpc 隧道入口）；服务未运行时抛出。 */
+/** 启动 / 替换公网回环监听器（SSH2 隧道入口）；服务未运行时抛出。 */
 export const startRemoteWanListener = async (
   publicOrigin: string,
   preferredPort = 0,

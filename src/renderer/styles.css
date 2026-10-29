@@ -5567,42 +5567,6 @@ body.is-panel-resizing * {
   color: var(--danger-color, #e75d6a);
 }
 
-.remote-frpc-blocked {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 38%, transparent);
-  border-radius: var(--radius-sm, 6px);
-  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
-}
-
-.remote-frpc-blocked-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--warning, #f59e0b);
-  font-size: 13px;
-}
-
-.remote-frpc-blocked > p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.remote-frpc-blocked-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin: 0;
-  padding-left: 18px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .remote-tunnel-card {
   display: flex;
   flex-direction: column;

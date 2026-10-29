@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { app } from "electron";
 import {
   connectSsh,
-  deleteSshFile,
   disconnectSsh,
   executeSshCommand,
   readSshFile,
@@ -16,8 +15,6 @@ import {
   type RemoteTunnelStatus,
 } from "./remoteTunnelManager";
 import {
-  FALLBACK_REMOTE_PORT,
-  parseRemoteTunnelImportBundle,
   toRemoteTunnelConfigInput,
   type RemoteTunnelConfigInput,
 } from "./remoteTunnelSchema";
@@ -27,10 +24,8 @@ import {
 } from "./remoteTunnelConfig";
 import { generateSsh2TunnelKeyPair, publicKeyFromPrivateKey } from "./ssh2Key";
 import {
-  buildRemoteInstallCommand,
   buildSsh2InstallCommand,
   buildSsh2SwitchUpstreamCommand,
-  deriveRemoteDomains,
   extractDohIpv4Answers,
   normalizeRemoteServerDeployInput,
   parseRemotePreflight,
@@ -70,7 +65,7 @@ const resolve4OverHttps = async (name: string): Promise<string[]> => {
 };
 
 export type RemoteServerDnsRecord = {
-  host: "snow" | "frp";
+  host: "snow";
   name: string;
   expectedValue: string;
   resolvedValues: string[];
@@ -103,7 +98,6 @@ export type RemoteServerDeployResult = {
 };
 
 const resolveRecord = async (
-  host: "snow" | "frp",
   name: string,
   expectedValue: string,
 ): Promise<RemoteServerDnsRecord> => {
@@ -127,7 +121,7 @@ const resolveRecord = async (
     }
   }
   return {
-    host,
+    host: "snow",
     name,
     expectedValue,
     resolvedValues,
@@ -138,22 +132,16 @@ const resolveRecord = async (
 export const checkRemoteServerDns = async (input: {
   serverIp: string;
   rootDomain: string;
-  transport?: "frp" | "ssh2";
 }): Promise<RemoteServerDnsCheck> => {
-  const transport: "frp" | "ssh2" = input.transport === "ssh2" ? "ssh2" : "frp";
   const normalized = normalizeRemoteServerDeployInput({
     ...input,
-    transport,
     sshPort: 22,
     sshUsername: "root",
     authMethod: "password",
     password: "dns-check-only",
   });
   const records = await Promise.all([
-    resolveRecord("snow", normalized.publicDomain, normalized.serverIp),
-    ...(transport === "frp"
-      ? [resolveRecord("frp", normalized.frpDomain, normalized.serverIp)]
-      : []),
+    resolveRecord(normalized.publicDomain, normalized.serverIp),
   ]);
   return { ready: records.every((record) => record.ready), records };
 };
@@ -208,161 +196,6 @@ const assertLoopbackOnlyPort = (
     throw new Error(
       `服务器端口检查失败：${remotePort} 必须且只能监听 127.0.0.1`,
     );
-  }
-};
-
-export const deployRemoteServer = async (
-  rawInput: RemoteServerDeployInput,
-  onProgress: (progress: RemoteServerDeployProgress) => void,
-): Promise<RemoteServerDeployResult> => {
-  if (activeDeployment) {
-    throw new Error("已有服务器部署正在进行，请等待或先取消");
-  }
-  const input = normalizeRemoteServerDeployInput(rawInput);
-  const controller = new AbortController();
-  activeDeployment = controller;
-  if (input.transport === "ssh2") {
-    return deploySsh2RemoteServer(input, onProgress, controller);
-  }
-  let sessionId: string | null = null;
-  let remoteScriptPath = "";
-  let useSudo = false;
-  let importedConfig: ReturnType<typeof parseRemoteTunnelImportBundle> | null =
-    null;
-  let completed = false;
-  const report = (stage: RemoteServerDeployStage, message: string): void =>
-    onProgress({ stage, message });
-
-  try {
-    report("checking_dns", "正在检查两条域名解析");
-    const dns = await checkRemoteServerDns(input);
-    if (!dns.ready) {
-      const missing = dns.records
-        .filter((record) => !record.ready)
-        .map((record) => `${record.host} → ${record.expectedValue}`)
-        .join("；");
-      throw new Error(
-        `DNS 尚未生效。请在域名解析中添加 A 记录：${missing}，然后重新检测`,
-      );
-    }
-
-    report("connecting_ssh", "正在安全连接服务器");
-    sessionId = await connectSsh(
-      {
-        host: input.serverIp,
-        port: input.sshPort,
-        username: input.sshUsername,
-        authMethod: input.authMethod,
-        ...(input.password ? { password: input.password } : {}),
-        ...(input.privateKeyPath
-          ? { privateKeyPath: input.privateKeyPath }
-          : {}),
-        ...(input.passphrase ? { passphrase: input.passphrase } : {}),
-      },
-      { signal: controller.signal },
-    );
-
-    report("checking_server", "正在检查发行版、架构和管理员权限");
-    const preflight = parseRemotePreflight(
-      await executeSshCommand(sessionId, preflightCommand, {
-        timeoutMs: 30_000,
-        signal: controller.signal,
-      }),
-    );
-    useSudo = preflight.useSudo;
-
-    const suffix = randomBytes(12).toString("hex");
-    remoteScriptPath = `/tmp/snow-remote-install-${suffix}.sh`;
-    report("uploading", "正在上传 Snow 内置部署程序");
-    const script = await readFile(deploymentScriptPath("install-linux.sh"));
-    await writeInternalSshFile(sessionId, remoteScriptPath, script, {
-      signal: controller.signal,
-      expectedVersion: { exists: false },
-    });
-
-    report("installing", "正在安装并配置 FRP 与 HTTPS，通常需要 2–8 分钟");
-    const installCommand = buildRemoteInstallCommand(
-      remoteScriptPath,
-      input,
-      useSudo,
-    );
-    await executeSshCommand(
-      sessionId,
-      `chmod 700 ${shellQuote(remoteScriptPath)} && ${installCommand}`,
-      { timeoutMs: 12 * 60_000, signal: controller.signal },
-    );
-
-    report("importing", "正在直接导入服务器配置；不会生成本机明文文件");
-    const privilege = useSudo ? "sudo -n " : "";
-    const bundleBytes = useSudo
-      ? Buffer.from(
-          await executeSshCommand(
-            sessionId,
-            `${privilege}cat /root/snow-remote-client.json`,
-            { timeoutMs: 30_000, signal: controller.signal },
-          ),
-          "utf8",
-        )
-      : await readSshFile(sessionId, "/root/snow-remote-client.json", {
-          signal: controller.signal,
-        });
-    if (bundleBytes.length > 96 * 1024) {
-      throw new Error("服务器返回的 Snow 配置包长度异常，已拒绝导入");
-    }
-    const config = parseRemoteTunnelImportBundle(
-      JSON.parse(bundleBytes.toString("utf8")) as unknown,
-    );
-    importedConfig = config;
-    report("verifying", "正在连接 FRP 并验证公网 HTTPS");
-    const tunnel = await remoteTunnelManager.connectTransient(config);
-    if (tunnel.stage !== "online" || tunnel.endpoint.stage !== "reachable") {
-      throw new Error(
-        tunnel.error?.message ??
-          `服务器已安装，但公网入口仍不可达；请确认安全组已放行 TCP 80、443、${input.frpBindPort}`,
-      );
-    }
-    const listenCheck = await readServiceListeners(
-      sessionId,
-      ["snow-frps.service", "snow-caddy.service"],
-      privilege,
-      controller.signal,
-    );
-    assertLoopbackOnlyPort(listenCheck, input.frpRemotePort);
-
-    // Persist only after the tunnel, HTTPS endpoint, and loopback isolation pass.
-    await remoteTunnelManager.save(config);
-
-    report("completed", "公网远控部署完成，可以扫描公网二维码");
-    completed = true;
-    return { dns, tunnel };
-  } finally {
-    if (importedConfig && !completed) {
-      await remoteTunnelManager.disconnect().catch(() => undefined);
-      await remoteTunnelManager.connect().catch(() => undefined);
-    }
-    if (sessionId) {
-      const privilege = useSudo ? "sudo -n " : "";
-      const paths = [remoteScriptPath, "/root/snow-remote-client.json"].filter(
-        Boolean,
-      );
-      if (paths.length > 0) {
-        try {
-          await executeSshCommand(
-            sessionId,
-            `${privilege}rm -f -- ${paths.map(shellQuote).join(" ")}`,
-            { timeoutMs: 30_000 },
-          );
-        } catch {
-          if (remoteScriptPath && !useSudo) {
-            await deleteSshFile(sessionId, remoteScriptPath).catch(
-              () => undefined,
-            );
-          }
-        }
-      }
-      disconnectSsh(sessionId);
-    }
-    if (activeDeployment === controller) activeDeployment = null;
   }
 };
 
@@ -463,9 +296,11 @@ const probePublicHealth = async (origin: string): Promise<boolean> => {
   }
 };
 
+const privilegeFor = (useSudo: boolean): string => (useSudo ? "sudo -n " : "");
+
 /**
  * SSH2 部署：安装受限隧道服务 → 候选端口验证 → 切换 Caddy 上游 → 保存配置。
- * 任一步失败都会尽力回滚 Caddy 上游与本机隧道配置；原有 FRP 方案保持可用。
+ * 任一步失败都会尽力回滚 Caddy 上游与本机隧道配置。
  */
 const deploySsh2RemoteServer = async (
   input: NormalizedRemoteServerDeployInput,
@@ -486,24 +321,15 @@ const deploySsh2RemoteServer = async (
     onProgress({ stage, message });
 
   try {
-    if (
-      previousStored?.frp &&
-      input.ssh2RemotePort === previousStored.frp.remotePort
-    ) {
-      throw new Error(
-        `SSH2 隧道回环端口 ${input.ssh2RemotePort} 与现有 FRP 隧道端口相同；切换期间两套隧道会同时存在，请改用其他端口（例如 ${FALLBACK_REMOTE_PORT}）`,
-      );
-    }
     report("checking_dns", "正在检查域名解析");
     const dns = await checkRemoteServerDns({
       serverIp: input.serverIp,
       rootDomain: input.rootDomain,
-      transport: "ssh2",
     });
     if (!dns.ready) {
       const missing = dns.records
         .filter((record) => !record.ready)
-        .map((record) => `${record.host} → ${record.expectedValue}`)
+        .map((record) => `${record.name} → ${record.expectedValue}`)
         .join("；");
       throw new Error(
         `DNS 尚未生效。请在域名解析中添加 A 记录：${missing}，然后重新检测`,
@@ -532,10 +358,9 @@ const deploySsh2RemoteServer = async (
         timeoutMs: 30_000,
         signal: controller.signal,
       }),
-      "ssh2",
     );
     useSudo = preflight.useSudo;
-    const privilege = useSudo ? "sudo -n " : "";
+    const privilege = privilegeFor(useSudo);
 
     const keyPair = generateSsh2TunnelKeyPair();
     const suffix = randomBytes(12).toString("hex");
@@ -603,7 +428,6 @@ const deploySsh2RemoteServer = async (
     const configInput: RemoteTunnelConfigInput = {
       enabled: true,
       autoConnect: true,
-      transport: "ssh2",
       publicOrigin: `https://${input.publicDomain}`,
       ssh2: {
         serverAddr: input.serverIp,
@@ -643,7 +467,7 @@ const deploySsh2RemoteServer = async (
       );
     }
 
-    // 与 FRP 部署一致：确认受限 sshd 与 Caddy 正在运行，且回环端口没有暴露到公网。
+    // 确认受限 sshd 与 Caddy 正在运行，且回环端口没有暴露到公网。
     const listenCheck = await readServiceListeners(
       sessionId,
       ["snow-tunnel-sshd.service", "snow-caddy.service"],
@@ -766,8 +590,22 @@ const deploySsh2RemoteServer = async (
       }
       disconnectSsh(sessionId);
     }
-    if (activeDeployment === controller) activeDeployment = null;
   }
 };
 
-const privilegeFor = (useSudo: boolean): string => (useSudo ? "sudo -n " : "");
+export const deployRemoteServer = async (
+  rawInput: RemoteServerDeployInput,
+  onProgress: (progress: RemoteServerDeployProgress) => void,
+): Promise<RemoteServerDeployResult> => {
+  if (activeDeployment) {
+    throw new Error("已有服务器部署正在进行，请等待或先取消");
+  }
+  const input = normalizeRemoteServerDeployInput(rawInput);
+  const controller = new AbortController();
+  activeDeployment = controller;
+  try {
+    return await deploySsh2RemoteServer(input, onProgress, controller);
+  } finally {
+    if (activeDeployment === controller) activeDeployment = null;
+  }
+};

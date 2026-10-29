@@ -155,7 +155,7 @@ pub async fn set_remote_control_wan_token(
     Ok(to_state(state))
 }
 
-/// 启动或替换公网回环监听器（frpc 隧道入口）。
+/// 启动或替换公网回环监听器（SSH2 隧道入口）。
 #[napi]
 pub async fn start_remote_wan_listener(
     public_origin: String,

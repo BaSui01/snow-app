@@ -10,7 +10,6 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
-  DEFAULT_FRP_SERVER_PORT,
   DEFAULT_REMOTE_PORT,
   DEFAULT_SSH2_TUNNEL_PORT,
   normalizeRemoteTunnelConfig,
@@ -37,7 +36,7 @@ const restrictPermissions = (path: string): void => {
 export const isRemoteTunnelSecureStorageAvailable = (): boolean =>
   safeStorage.isEncryptionAvailable();
 
-/** 读取并校验加密配置：version 1 旧配置会自动迁移为 v2 的 FRP 传输。 */
+/** 读取并校验加密配置；旧版 FRP 配置直接视为未配置。 */
 export const loadStoredRemoteTunnelConfig =
   (): StoredRemoteTunnelConfig | null => {
     const path = configPath();
@@ -66,25 +65,15 @@ export const loadStoredRemoteTunnelConfig =
     }
   };
 
-/** 状态视图：只暴露凭据是否存在，不包含 token / CA / 私钥正文。 */
+/** 状态视图：只暴露凭据是否存在，不包含私钥正文。 */
 export const toRemoteTunnelConfigView = (
   value: StoredRemoteTunnelConfig | null,
 ): RemoteTunnelConfigView => ({
   configured: Boolean(value),
   enabled: value?.enabled ?? false,
   autoConnect: value?.autoConnect ?? false,
-  activeTransport: value?.activeTransport ?? "frp",
   publicOrigin: value?.publicOrigin ?? "",
   secureStorageAvailable: safeStorage.isEncryptionAvailable(),
-  frp: {
-    configured: Boolean(value?.frp),
-    serverAddr: value?.frp?.serverAddr ?? "",
-    serverPort: value?.frp?.serverPort ?? DEFAULT_FRP_SERVER_PORT,
-    remotePort: value?.frp?.remotePort ?? DEFAULT_REMOTE_PORT,
-    tlsServerName: value?.frp?.tlsServerName ?? "",
-    hasToken: Boolean(value?.frp?.token),
-    hasCaCertificate: Boolean(value?.frp?.caCertificate),
-  },
   ssh2: {
     configured: Boolean(value?.ssh2),
     serverAddr: value?.ssh2?.serverAddr ?? "",

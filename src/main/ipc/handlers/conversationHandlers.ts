@@ -5,6 +5,11 @@ import type { NativeBridge } from "../../native/types";
 import { snowLog } from "../../../utils/snowLogger";
 import { safeSend } from "../../utils/safeSend";
 import { registerSubAgentRunHost } from "../../subAgents/subAgentRunHost";
+import {
+  getSshWorkspaceProfileId,
+  sshConnectionManager,
+  sshWorkspaceNotConnectedError,
+} from "../../ssh/sshConnectionManager";
 
 const EXPORT_FORMATS = ["markdown", "html", "json", "csv"] as const;
 type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -570,6 +575,16 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       }
       const normalizedDirectoryId = directoryId.trim();
       const normalizedInitialText = initialText?.trim() || undefined;
+      // SSH 工作区必须是已连接状态：未连接时不允许落库会话（与前端入口门禁同源）。
+      const directory = (await native.listWorkspaceDirectories()).find(
+        (item) => item.directoryId === normalizedDirectoryId,
+      );
+      if (directory?.kind === "ssh") {
+        const profileId = getSshWorkspaceProfileId(directory.path);
+        if (sshConnectionManager.get(profileId)?.status !== "connected") {
+          throw sshWorkspaceNotConnectedError("create_conversation");
+        }
+      }
       const conversationId = await native.createChatConversation(
         normalizedDirectoryId,
         title.trim(),

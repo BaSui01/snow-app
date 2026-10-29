@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 
 import { useI18n } from "../../../i18n";
+import { useSshConnectionStatus } from "../../../ssh/sshConnectionStore";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
 import type { WorkspaceDirectoryRecord } from "../../../../preload";
+import { SshConnectionBadge } from "./SshConnectionBadge";
 import { WorkspaceDirectoryMenu } from "./WorkspaceDirectoryMenu";
 
 type WorkspaceDirectoryRowProps = {
@@ -137,6 +139,8 @@ export function WorkspaceDirectoryRow({
   const isDragging = draggedDirectoryId === directory.directoryId;
   const isDragOver = dragOverDirectoryId === directory.directoryId;
   const isActive = directory.directoryId === activeDirectoryId;
+  // 非 SSH 目录返回 null，不渲染徽标
+  const sshStatus = useSshConnectionStatus(directory);
 
   // 路径健康徽标：仅在磁盘校验失败的状态下展示，点击行即可触发重新定位。
   const hasFailedPath =
@@ -275,6 +279,7 @@ export function WorkspaceDirectoryRow({
           ) : null}
           {getDirectoryIcon(directory)}
           <span className="list-label">{displayName ?? directory.name}</span>
+          {sshStatus ? <SshConnectionBadge status={sshStatus} /> : null}
           {pathStateBadge ? (
             <span
               className={`workspace-directory-path-badge ${pathStateBadge.className}`}

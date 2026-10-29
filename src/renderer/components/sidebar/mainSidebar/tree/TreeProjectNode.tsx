@@ -4,8 +4,10 @@ import type { RefObject } from "react";
 
 import type { WorkspaceDirectoryRecord } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
+import { useSshConnectionStatus } from "../../../../ssh/sshConnectionStore";
 import { Tooltip } from "../../../common/Tooltip";
 import { SidebarCollapse } from "../SidebarCollapse";
+import { SshConnectionBadge } from "../SshConnectionBadge";
 import { WorkspaceDirectoryMenu } from "../WorkspaceDirectoryMenu";
 import { getDirectoryIcon } from "../WorkspaceDirectoryRow";
 import type { DirectoryDragDropController } from "../projects/useDirectoryDragDrop";
@@ -73,6 +75,8 @@ export function TreeProjectNode({
   const { t } = useI18n();
   const directoryId = directory.directoryId;
   const isActive = directoryId === activeDirectoryId;
+  // 非 SSH 目录返回 null，不渲染徽标
+  const sshStatus = useSshConnectionStatus(directory);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{
@@ -276,6 +280,7 @@ export function TreeProjectNode({
               <span className="list-label">
                 {displayName ?? directory.name}
               </span>
+              {sshStatus ? <SshConnectionBadge status={sshStatus} /> : null}
               {hasActiveSession ? (
                 <span
                   className="tree-project-session-dot"

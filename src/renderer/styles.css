@@ -3043,6 +3043,96 @@ body.is-panel-resizing * {
   font-variant-numeric: tabular-nums;
 }
 
+/* SSH 连接状态徽标：状态点 + 本地化文案（项目列表 / 树视图共用） */
+.workspace-directory-ssh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 112px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.workspace-directory-ssh-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.workspace-directory-ssh-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-directory-ssh-badge.connected {
+  color: var(--accent-green);
+  background: color-mix(in srgb, var(--accent-green) 14%, transparent);
+}
+
+.workspace-directory-ssh-badge.connecting,
+.workspace-directory-ssh-badge.reconnecting,
+.workspace-directory-ssh-badge.degraded {
+  color: var(--accent-amber-text, #b45309);
+  background: color-mix(
+    in srgb,
+    var(--accent-amber-text, #b45309) 14%,
+    transparent
+  );
+}
+
+.workspace-directory-ssh-badge.connecting .workspace-directory-ssh-dot,
+.workspace-directory-ssh-badge.reconnecting .workspace-directory-ssh-dot {
+  animation: ssh-connection-pulse 1.2s ease-in-out infinite;
+}
+
+.workspace-directory-ssh-badge.offline,
+.workspace-directory-ssh-badge.auth_required,
+.workspace-directory-ssh-badge.host_key_changed {
+  color: var(--accent-red);
+  background: color-mix(in srgb, var(--accent-red) 14%, transparent);
+}
+
+@keyframes ssh-connection-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* SSH 项目未连接：新建会话入口被拦下（点击 = 显式重连） */
+.sidebar-new-chat-btn[aria-disabled="true"],
+.new-chat-btn[aria-disabled="true"] {
+  opacity: 0.55;
+}
+
+/* 带 SSH 连接徽标的行：只在悬停/菜单打开时左移让位，给悬浮 ⋯ 按钮腾出槽位
+   （22px 按钮 + 右侧 4px + 间隙），平时徽标保持贴右 */
+.workspace-directory-row:has(.workspace-directory-ssh-badge):is(
+    :hover,
+    .menu-open
+  )
+  .list-item,
+.tree-project-row-wrap:has(.workspace-directory-ssh-badge):is(
+    :hover,
+    .menu-open
+  )
+  .tree-project-row {
+  padding-right: 30px;
+}
+
 .workspace-directory-load-more,
 .workspace-directory-end-line {
   position: relative;
@@ -62185,6 +62275,15 @@ img.plugin-icon {
   .tree-project-row-wrap.has-status-dot.has-notification-badge
   .workspace-directory-actions-wrapper {
   right: 38px;
+}
+
+/* SSH 连接徽标已由行右内边距预留槽位：悬浮菜单回到默认位置，不再压住徽标/呼吸灯 */
+:where(.sidebar-tree-list)
+  .tree-project-row-wrap.workspace-directory-row:has(
+    .workspace-directory-ssh-badge
+  )
+  .workspace-directory-actions-wrapper {
+  right: 4px;
 }
 
 @keyframes tree-session-pulse {

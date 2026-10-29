@@ -41,6 +41,7 @@ const FileEditModal = lazy(() =>
 import type { FileTag } from "../mainContent/chatInput/fileTagUtils";
 import { INSERT_FILE_TAGS_EVENT } from "../mainContent/chatInput/fileTagUtils";
 import { buildSshConnectParams } from "../sidebar/personalization/roleFileUtils";
+import { getSshConnectionStatusLabel } from "../../ssh/sshConnectionStatus";
 import { explorerPlacementStore } from "../common/explorerPlacementStore";
 import {
   explorerRevealStore,
@@ -2413,8 +2414,8 @@ export function ProjectExplorerContent({
             {isSsh && sshConnectionStatus ? (
               <span
                 className={`explorer-connection-status-dot ${sshConnectionStatus}`}
-                title={sshConnectionStatus}
-                aria-label={sshConnectionStatus}
+                title={getSshConnectionStatusLabel(t, sshConnectionStatus)}
+                aria-label={getSshConnectionStatusLabel(t, sshConnectionStatus)}
               />
             ) : null}
           </div>

@@ -5,17 +5,14 @@ import {
 } from "../../shared/roleSettings";
 import { processFileContent } from "../utils/fileReader";
 import {
-  connectSsh,
   deleteSshFile,
-  disconnectSsh,
   executeSshCommand,
-  getSshProfileKey,
-  getSshSession,
   listSshDirectory,
   parseSshUrl,
   readSshFile,
   readSshFileWithVersion,
   removeEmptySshDirectory,
+  SshOperationError,
   statSshEntry,
   isSshOperationError,
   toSshOperationErrorResult,
@@ -30,6 +27,11 @@ import {
   getSshCredential,
   toSshJumpParams,
 } from "./sshCredentials";
+import {
+  getSshWorkspaceProfileId,
+  sshConnectionManager,
+  sshWorkspaceNotConnectedError,
+} from "./sshConnectionManager";
 import {
   abortCheckpointScan,
   registerCheckpointScanAbort,
@@ -190,78 +192,9 @@ export const buildSshConnectParams = (
 };
 
 // ============================================================================
-// 命令会话连接池：远程工作区命令（工具 IO、checkpoint 快照等）频率高且
-// 多为短操作，逐命令新建 SSH 连接（TCP + 密钥交换 + 认证 + SFTP 子系统）
-// 是 SSH 工作区最大的性能瓶颈。池按 host:port:user 复用会话，引用计数归
-// 零后保留一段空闲时间再断开；传输层意外断开时下一次 acquire 自动重连。
+// 远程工作区命令统一走工作区持有的 profile 连接：连接生命周期由活动工作区
+// （渲染层）与后台任务显式持有，这里不再按需建连——未连接直接失败。
 // ============================================================================
-
-type PooledCommandSession = {
-  sessionId?: string;
-  refs: number;
-  idleTimer?: NodeJS.Timeout;
-  connectPromise?: Promise<string>;
-};
-
-const COMMAND_SESSION_IDLE_TIMEOUT_MS = 60_000;
-const commandSessionPool = new Map<string, PooledCommandSession>();
-
-const releaseCommandSession = (profileKey: string): void => {
-  const entry = commandSessionPool.get(profileKey);
-  if (!entry) {
-    return;
-  }
-  entry.refs = Math.max(0, entry.refs - 1);
-  if (entry.refs > 0 || entry.idleTimer) {
-    return;
-  }
-  entry.idleTimer = setTimeout(() => {
-    entry.idleTimer = undefined;
-    if (entry.refs > 0) {
-      return;
-    }
-    if (entry.sessionId) {
-      disconnectSsh(entry.sessionId);
-    }
-    commandSessionPool.delete(profileKey);
-  }, COMMAND_SESSION_IDLE_TIMEOUT_MS);
-};
-
-const acquireCommandSession = async (
-  params: SshConnectParams,
-  options?: { signal?: AbortSignal },
-): Promise<{ profileKey: string; sessionId: string }> => {
-  const profileKey = getSshProfileKey(params);
-  let entry = commandSessionPool.get(profileKey);
-  if (!entry) {
-    entry = { refs: 0 };
-    commandSessionPool.set(profileKey, entry);
-  }
-  if (entry.idleTimer) {
-    clearTimeout(entry.idleTimer);
-    entry.idleTimer = undefined;
-  }
-  entry.refs += 1;
-  const poolEntry = entry;
-  try {
-    if (poolEntry.sessionId && getSshSession(poolEntry.sessionId)) {
-      return { profileKey, sessionId: poolEntry.sessionId };
-    }
-    // 会话不存在或传输层已断开：（并发安全地）发起一次重连。
-    poolEntry.sessionId = undefined;
-    if (!poolEntry.connectPromise) {
-      poolEntry.connectPromise = connectSsh(params, options).finally(() => {
-        poolEntry.connectPromise = undefined;
-      });
-    }
-    const sessionId = await poolEntry.connectPromise;
-    poolEntry.sessionId = sessionId;
-    return { profileKey, sessionId };
-  } catch (error) {
-    releaseCommandSession(profileKey);
-    throw error;
-  }
-};
 
 export const withSshSession = async <T>(
   workspacePath: string,
@@ -273,14 +206,24 @@ export const withSshSession = async <T>(
   options?: { signal?: AbortSignal },
 ): Promise<T> => {
   const parsedPath = parseSshUrl(workspacePath);
-  const { profileKey, sessionId } = await acquireCommandSession(
-    buildSshConnectParams(workspacePath),
-    options,
+  const profile = sshConnectionManager.retain(
+    getSshWorkspaceProfileId(workspacePath),
   );
+  if (!profile?.sessionId) {
+    throw sshWorkspaceNotConnectedError("remote_workspace");
+  }
+  if (options?.signal?.aborted) {
+    sshConnectionManager.release(profile.profileId);
+    throw new SshOperationError({
+      code: "SSH_OPERATION_CANCELLED",
+      operation: "remote_workspace",
+      message: "Remote workspace operation cancelled",
+    });
+  }
   try {
-    return await action(sessionId, parsedPath.remotePath, parsedPath);
+    return await action(profile.sessionId, parsedPath.remotePath, parsedPath);
   } finally {
-    releaseCommandSession(profileKey);
+    sshConnectionManager.release(profile.profileId);
   }
 };
 

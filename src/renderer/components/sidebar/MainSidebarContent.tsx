@@ -45,6 +45,8 @@ import { useShortcutLabel } from "../../hooks/useShortcutLabel";
 import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { ShortcutHint } from "../ShortcutHint";
 import { useScheduledTasks } from "../../hooks/useScheduledTasks";
+import { useSshWorkspaceGate } from "../../ssh/sshConnectionStore";
+import { getSshConnectionStatusLabel } from "../../ssh/sshConnectionStatus";
 import { isFeaturePageView, type FeaturePageView } from "../featurePages";
 import { emitNewChatRequested } from "../newChatEvents";
 import { SETTINGS_VIEW_IDS } from "./settingsItems";
@@ -113,6 +115,11 @@ export function MainSidebarContent({
   );
 
   const activeDirectoryId = activeDirectory?.directoryId ?? "";
+  // 活动 SSH 项目的连接门禁：未连接时新建会话入口只触发显式重连
+  const sshGate = useSshWorkspaceGate(activeDirectory);
+  const sshGateLabel = sshGate.status
+    ? getSshConnectionStatusLabel(t, sshGate.status)
+    : "";
 
   const handleNewChatInNewWindow = useCallback((): void => {
     openNewChatInNewWindow(
@@ -325,6 +332,11 @@ export function MainSidebarContent({
   // 新建会话前收回独立页面与设置页：新会话在聊天视图里创建，页面不应继续占用主区域。
   // 侧栏回到主内容由 Sidebar 监听新建会话事件统一处理。
   const handleNewChatFromSidebar = useCallback((): void => {
+    // SSH 项目未连接：拦下入口（不创建 pending 会话），点击即显式重连
+    if (sshGate.blocked) {
+      sshGate.requestConnection();
+      return;
+    }
     if (
       isFeaturePageView(activeMainView) ||
       SETTINGS_VIEW_IDS.has(activeMainView)
@@ -333,7 +345,13 @@ export function MainSidebarContent({
     }
     emitNewChatRequested();
     handleNewChat();
-  }, [activeMainView, handleNewChat, onSelectMainView]);
+  }, [
+    activeMainView,
+    handleNewChat,
+    onSelectMainView,
+    sshGate.blocked,
+    sshGate.requestConnection,
+  ]);
 
   const [isHelpSkillDialogOpen, setIsHelpSkillDialogOpen] = useState(false);
 
@@ -522,8 +540,13 @@ export function MainSidebarContent({
         <div className="sidebar-new-chat-row">
           <button
             className="nav-item sidebar-new-chat-btn"
+            aria-disabled={sshGate.blocked}
             onClick={handleNewChatFromSidebar}
-            title={`${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`}
+            title={
+              sshGate.blocked
+                ? sshGateLabel
+                : `${t("sidebar.newChat", { defaultValue: "New Chat" })} (${shortcutLabel})`
+            }
             type="button"
           >
             <AnimatedNewChatIcon size={16} strokeWidth={1.8} />

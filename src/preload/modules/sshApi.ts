@@ -94,6 +94,22 @@ export const sshApi = {
     ipcRenderer.invoke("ssh:profiles:get", profileId),
   sshReleaseProfile: (profileId: string): Promise<void> =>
     ipcRenderer.invoke("ssh:profiles:release", profileId),
+  /** 全部已知 profile 的状态快照（首次装载用，之后靠 onSshProfileConnection 增量更新）。 */
+  sshListProfiles: (): Promise<SshProfileConnection[]> =>
+    ipcRenderer.invoke("ssh:profiles:list"),
+  /** 工作区路径 → profile ID（解析规则只在主进程）。 */
+  sshResolveProfile: (workspacePath: string): Promise<string> =>
+    ipcRenderer.invoke("ssh:profiles:resolve", workspacePath),
+  /** 直接为工作区建立（并持有）profile 连接：凭据解析与建连都在主进程完成。 */
+  sshConnectWorkspaceProfile: (
+    workspacePath: string,
+  ): Promise<SshProfileConnection> =>
+    ipcRenderer.invoke("ssh:profiles:connect-workspace", workspacePath),
+  /** 对已有 profile 显式发起一次重连（不改引用计数）；未连接过返回 null。 */
+  sshReconnectProfile: (
+    profileId: string,
+  ): Promise<SshProfileConnection | null> =>
+    ipcRenderer.invoke("ssh:profiles:reconnect", profileId),
   sshListRemoteDrafts: (
     workspaceId: string,
     profileId?: string,

@@ -28,7 +28,11 @@ import {
   type SshFileVersion,
   type SshJumpHost,
 } from "../../ssh/sshManager";
-import { sshConnectionManager } from "../../ssh/sshConnectionManager";
+import {
+  getSshWorkspaceProfileId,
+  sshConnectionManager,
+  sshWorkspaceNotConnectedError,
+} from "../../ssh/sshConnectionManager";
 import {
   cancelSshTransfer,
   classifySshDownloadSources,
@@ -521,6 +525,30 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   ipcMain.handle("ssh:profiles:release", (_event, profileId: unknown) => {
     sshConnectionManager.release(normalizeProfileId(profileId));
   });
+  // 状态快照：渲染层首次装载时取一次，之后只消费 ssh:profile-state 广播。
+  ipcMain.handle("ssh:profiles:list", () => sshConnectionManager.list());
+  ipcMain.handle("ssh:profiles:resolve", (_event, workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !isSshPath(workspacePath.trim())) {
+      throw new Error("Remote workspace path is required");
+    }
+    return getSshWorkspaceProfileId(workspacePath.trim());
+  });
+  ipcMain.handle(
+    "ssh:profiles:connect-workspace",
+    (_event, workspacePath: unknown) => {
+      if (
+        typeof workspacePath !== "string" ||
+        !isSshPath(workspacePath.trim())
+      ) {
+        throw new Error("Remote workspace path is required");
+      }
+      const path = workspacePath.trim();
+      return sshConnectionManager.acquire(buildSshConnectParams(path));
+    },
+  );
+  ipcMain.handle("ssh:profiles:reconnect", (_event, profileId: unknown) =>
+    sshConnectionManager.reconnect(normalizeProfileId(profileId)),
+  );
   ipcMain.handle(
     "ssh:drafts:list",
     (_event, workspaceId: unknown, profileId: unknown) => {
@@ -670,9 +698,14 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
 
       const parsed = parseSshUrl(workspacePath.trim());
-      const sessionId = await connectSsh(
-        buildSshConnectParams(workspacePath.trim()),
+      // 连接由工作区持有：这里只借用现有连接，不再隐式建连。
+      const profile = sshConnectionManager.retain(
+        getSshWorkspaceProfileId(workspacePath.trim()),
       );
+      if (!profile?.sessionId) {
+        throw sshWorkspaceNotConnectedError("search_remote_workspace_files");
+      }
+      const sessionId = profile.sessionId;
       try {
         if (listChildren) {
           return (await listSshDirectory(sessionId, parsed.remotePath)).map(
@@ -696,7 +729,7 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
           parsed.remotePath,
         );
       } finally {
-        disconnectSsh(sessionId);
+        sshConnectionManager.release(profile.profileId);
       }
     },
   );
@@ -735,12 +768,13 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       // Workspace callers never receive or decrypt credentials in the renderer.
       // Existing session/profile handles continue through the same reader unchanged.
+      // 工作区读取要求连接已就绪（由活动工作区持有），不再隐式建连。
       const profile = workspaceRead
-        ? await sshConnectionManager.acquire(buildSshConnectParams(handle))
+        ? sshConnectionManager.retain(getSshWorkspaceProfileId(handle))
         : undefined;
       try {
-        if (profile && profile.status !== "connected") {
-          throw new Error("SSH workspace connection is unavailable");
+        if (workspaceRead && !profile) {
+          throw sshWorkspaceNotConnectedError("read_remote_file");
         }
         const file = await readSshFileWithVersion(
           profile?.profileId ?? handle,

@@ -3,6 +3,8 @@ import {
   disconnectSsh,
   getSshProfileKey,
   getSshSession,
+  parseSshUrl,
+  SshOperationError,
   setSshSessionHandleResolver,
   type SshConnectParams,
 } from "./sshManager";
@@ -48,6 +50,23 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
 export const getSshProfileId = (
   params: Pick<SshConnectParams, "host" | "port" | "username">,
 ): string => `ssh-profile:${getSshProfileKey(params)}`;
+
+/** 工作区路径 → profile ID：解析规则只保留在这里。 */
+export const getSshWorkspaceProfileId = (workspacePath: string): string =>
+  getSshProfileId(parseSshUrl(workspacePath));
+
+/** 工作区未连接时统一使用的错误码。 */
+export const SSH_WORKSPACE_NOT_CONNECTED = "SSH_WORKSPACE_NOT_CONNECTED";
+
+export const sshWorkspaceNotConnectedError = (
+  operation: string,
+): SshOperationError =>
+  new SshOperationError({
+    code: SSH_WORKSPACE_NOT_CONNECTED,
+    operation,
+    message:
+      "SSH workspace is not connected. Connect the project before running remote operations.",
+  });
 
 const clonePublicState = (entry: ProfileEntry): SshProfileConnection => ({
   profileId: entry.profileId,
@@ -108,6 +127,11 @@ export class SshConnectionManager {
   get(profileId: string): SshProfileConnection | null {
     const entry = this.entries.get(profileId);
     return entry ? clonePublicState(entry) : null;
+  }
+
+  /** 全部已知 profile 的状态快照（渲染层首次装载用）。 */
+  list(): SshProfileConnection[] {
+    return Array.from(this.entries.values(), clonePublicState);
   }
 
   resolveSessionId(profileIdOrSessionId: string): string | undefined {
@@ -171,6 +195,36 @@ export class SshConnectionManager {
         this.stop(entry, "idle");
       }
     }, this.idleTimeoutMs);
+  }
+
+  /**
+   * 显式重连：只对已存在的 profile 发起一次握手，不改变引用计数、不循环重试。
+   * 返回发起后的即时快照（状态通常已是 reconnecting）；未连接过该 profile 时返回 null。
+   */
+  reconnect(profileId: string): SshProfileConnection | null {
+    const entry = this.entries.get(profileId);
+    if (!entry) {
+      return null;
+    }
+    if (entry.connectPromise) {
+      return clonePublicState(entry);
+    }
+    if (
+      entry.status === "connected" &&
+      entry.sessionId &&
+      getSshSession(entry.sessionId)
+    ) {
+      return clonePublicState(entry);
+    }
+    // 显式重连取代等待中的自动重试，避免两条握手并发。
+    if (entry.reconnectTimer) {
+      clearTimeout(entry.reconnectTimer);
+      entry.reconnectTimer = undefined;
+    }
+    entry.connectPromise = this.connect(entry, true).finally(() => {
+      entry.connectPromise = undefined;
+    });
+    return clonePublicState(entry);
   }
 
   /**
@@ -293,7 +347,7 @@ export class SshConnectionManager {
     const delay = Math.floor(this.random() * (maxDelay + 1));
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined;
-      if (entry.references === 0 || entry.sessionId) {
+      if (entry.references === 0 || entry.sessionId || entry.connectPromise) {
         return;
       }
       void this.connect(entry, true).catch(() => {

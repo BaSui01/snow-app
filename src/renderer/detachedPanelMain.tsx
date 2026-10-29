@@ -54,6 +54,7 @@ import {
   type ElementTag,
 } from "./components/mainContent/chatInput/fileTagUtils";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "./hooks/useAppControl";
+import { setActiveSshWorkspace } from "./ssh/sshConnectionStore";
 
 // 与主窗口 main.tsx 一致：React 渲染前同步应用缓存的主题快照，避免首屏白闪。
 applyThemeCacheToDocument();
@@ -175,6 +176,16 @@ function DetachedPanelWindowApp(): React.JSX.Element | null {
 
   const activeDirectory = (payload?.activeDirectory ??
     null) as WorkspaceDirectoryRecord | null;
+
+  // 独立窗口同样持有其 SSH 项目的连接引用：文件解析与工具读取都依赖它。
+  const activeSshWorkspacePath =
+    activeDirectory?.kind === "ssh" ? activeDirectory.path : null;
+  useEffect(() => {
+    setActiveSshWorkspace(activeSshWorkspacePath);
+    return () => {
+      setActiveSshWorkspace(null);
+    };
+  }, [activeSshWorkspacePath]);
 
   // 快捷键在独立窗口内同样生效：新建会话沿用本窗口的项目，循环切换由主进程统一处理。
   useEffect(() => {

@@ -52,6 +52,7 @@ import {
   APP_CONTROL_RESPONSE_CHANNEL,
 } from "../appControlBroker";
 import { dispatchRemoteWorkspaceCommand } from "../../ssh/remoteWorkspaceCommand";
+import { dispatchBackgroundRemoteWorkspaceCommand } from "../../ssh/sshWorkspaceLease";
 import {
   abortSshCommand,
   registerSshCommandAbort,
@@ -100,10 +101,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   // SSH checkpoint 与仓库 Wiki 后台任务需要一个独立于工具调用链的远程命令
   // 通道：renderer 的 checkpoint 导出 API（create/restore/list）与 Wiki 任务
   // 都不经过 callMcpTool，无法把 onRemoteWorkspaceCommand 传入 Rust。这里注册
-  // 一次全局回调，复用与 callMcpTool 相同的 dispatchRemoteWorkspaceCommand
-  // （含 SFTP 会话建立）。
+  // 一次全局回调，复用同一套命令分发；后台通道在执行期间显式持有工作区连接，
+  // 结束后释放（工具调用通道仍要求工作区已连接）。
   native.setCheckpointRemoteCallback?.((command) =>
-    dispatchRemoteWorkspaceCommand(command),
+    dispatchBackgroundRemoteWorkspaceCommand(command),
   );
   ipcMain.handle("native:engine-info", () => native.engineInfo());
   // 「优化占用」的内存部分（仅 Windows 支持）：先触发主进程 V8 full GC 回收

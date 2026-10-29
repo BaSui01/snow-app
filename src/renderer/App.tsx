@@ -41,6 +41,7 @@ import {
   toggleMessageTimeVisible,
 } from "./components/mainContent/chatMessages/utils/messageTimeVisibility";
 import { useAppControl } from "./hooks/useAppControl";
+import { setActiveSshWorkspace } from "./ssh/sshConnectionStore";
 import { CONVERSATION_SELECTED_EVENT } from "./components/mainContent/chatMessages/hooks/useConversationManagement";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
@@ -429,6 +430,18 @@ export const App = (): React.JSX.Element => {
     },
     [],
   );
+
+  // 活动 SSH 项目持有 1 个连接引用：连接状态不再随右侧面板挂载/卸载在
+  // connected 与 idle 之间抖动，会话管理区看到的就是工作区真实状态。
+  const activeSshWorkspacePath =
+    activeDirectory?.kind === "ssh" ? activeDirectory.path : null;
+  useEffect(() => {
+    setActiveSshWorkspace(activeSshWorkspacePath);
+    return () => {
+      setActiveSshWorkspace(null);
+    };
+  }, [activeSshWorkspacePath]);
+
   // 左右面板的收起状态是全局偏好：首屏优先从 localStorage 恢复；
   // 首次使用层叠风格（尚无记忆）时沿用其右面板默认收起。
   const [initialPanelState] = useState(() => {

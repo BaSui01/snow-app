@@ -20,6 +20,7 @@ import {
   finishAgentTask,
 } from "./taskHistory";
 import { useI18n } from "../../../../i18n";
+import { acquireSshWorkspaceLease } from "../../../../ssh/sshConnectionStore";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import { summarizeContentAsPlainText } from "../../chatInput/fileTagUtils";
 import type {
@@ -2111,7 +2112,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             : undefined,
         });
       };
-      void initCheckpointAndRun()
+      // 运行期持有 SSH 工作区连接：定时任务、后台回合、切走项目后的工具调用
+      // 都依赖它；本地项目返回 null，不产生任何额外开销。
+      let releaseWorkspaceLease: (() => void) | null = null;
+      void (async (): Promise<void> => {
+        releaseWorkspaceLease = await acquireSshWorkspaceLease(
+          directoryIdToPath(sessionDirId) ?? ctx.directoryPath,
+        );
+        await initCheckpointAndRun();
+      })()
         .catch(reportRunError)
         .finally(async () => {
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
@@ -2277,6 +2286,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const ownsSession = !!ref && ref.runId === currentRunId;
           if (!ownsSession) {
             settleRun();
+            releaseWorkspaceLease?.();
             return;
           }
           if (ownsSession) {
@@ -2294,6 +2304,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
           // 解锁后再回调：续写同一会话的下游节点不会撞上 isSending
           settleRun();
+          // 本次回合结束：释放运行期持有的工作区连接（本地项目为 null）
+          releaseWorkspaceLease?.();
 
           if (!isPendingSessionKey(finalSessionKey)) {
             void window.snow
@@ -2370,6 +2382,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               title: sessionState?.summary || undefined,
             });
           }
+        })
+        .finally(() => {
+          // 兜底：收尾过程异常时也释放运行期租约（释放是幂等的）
+          releaseWorkspaceLease?.();
         });
     },
     [

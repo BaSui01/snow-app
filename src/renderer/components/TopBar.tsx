@@ -43,6 +43,8 @@ import { getSettingsPageMeta } from "./settingsPages";
 import { SETTINGS_VIEW_IDS } from "./sidebar/settingsItems";
 import type { MainContentView } from "./mainContent/types";
 import { hasCustomWindowFrame } from "../utils/platform";
+import { useSshWorkspaceGate } from "../ssh/sshConnectionStore";
+import { getSshConnectionStatusLabel } from "../ssh/sshConnectionStatus";
 
 type TopBarProps = {
   activeView: MainContentView;
@@ -84,6 +86,11 @@ export const TopBar = ({
   const hasCustomFrame = hasCustomWindowFrame();
   const isMacOS = navigator.userAgent.includes("Mac");
   const { t, locale } = useI18n();
+  // 活动 SSH 项目未连接时，顶栏新建会话入口只触发显式重连
+  const sshGate = useSshWorkspaceGate(activeDirectory);
+  const sshGateLabel = sshGate.status
+    ? getSshConnectionStatusLabel(t, sshGate.status)
+    : "";
   // 资源管理器显示位置偏好：仅“右侧面板”方案下提供 Plus 菜单入口。
   const [explorerPlacement, setExplorerPlacement] = useState(() =>
     explorerPlacementStore.get(),
@@ -817,8 +824,14 @@ export const TopBar = ({
         className="icon-btn new-chat-btn"
         type="button"
         aria-label="New chat"
-        title="New chat"
+        aria-disabled={sshGate.blocked}
+        title={sshGate.blocked ? sshGateLabel : "New chat"}
         onClick={() => {
+          // SSH 项目未连接：拦下入口，点击即显式重连
+          if (sshGate.blocked) {
+            sshGate.requestConnection();
+            return;
+          }
           // 新建会话时收回独立页面（备忘录 / 记忆 / 定时任务 / 插件）、
           // 团队协作视图与设置页，让新会话在聊天视图里立即可见。
           if (

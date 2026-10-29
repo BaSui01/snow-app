@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/xb0or/snow-app/releases"><img src="https://img.shields.io/github/v/release/xb0or/snow-app?label=release&color=3b82f6" alt="最新版本"></a>
+  <a href="https://github.com/MayDay-wpf/snow-app/releases"><img src="https://img.shields.io/github/v/release/MayDay-wpf/snow-app?label=release&color=3b82f6" alt="最新版本"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-73afd1" alt="支持平台">
   <img src="https://img.shields.io/badge/license-MIT-111827" alt="开源协议">
 </p>

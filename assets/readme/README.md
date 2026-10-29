@@ -4,19 +4,19 @@
 
 ## 目录结构
 
-| 路径                                | 用途                                                                 |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| `zh/hero.png`、`en/hero.png`        | 顶部横幅：像素字标、一句话定位与平台信息（SVG 排版 + 应用真实图标） |
-| `zh/features-workspace.svg`         | 功能板一：工作区面板（对话、终端、SSH、Git、浏览器、文件、检索、任务管理器） |
-| `zh/features-agent.svg`             | 功能板二：Agent 与协作（Skills、MCP、子代理、Hooks、Goal、定时任务与工作流、项目记忆、团队协作） |
-| `zh/features-extend.svg`            | 功能板三：扩展与内容（插件与市场、用户脚本、自定义命令、请求代理层、仓库 Wiki、绘图工作台、图像库、LSP） |
-| `zh/features-security.svg`          | 功能板四：安全与体验（应用锁、工具授权、隐私脱敏、检查点与回滚、用量与日志、主题、手机远控、桌面宠物） |
-| `zh/before-after.svg`               | 从分散工具到一个工作区的概念对比图                                   |
-| `en/…`                              | 以上素材的英文版本（文件名一致）                                     |
-| `screenshots/desktop-annotated.png` | 主界面截图与中文三栏标注                                             |
-| `screenshots/desktop-annotated.en.png` | 同一张主界面截图的英文三栏标注                                    |
-| `screenshots/mobile-pair.png`       | 手机远控截图并排（中英文 README 共用）                               |
-| `source/`                           | 生成脚本、Lucide 图标与调色板定义                                    |
+| 路径                                   | 用途                                                                                                     |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `zh/hero.png`、`en/hero.png`           | 顶部横幅：像素字标、一句话定位与平台信息（SVG 排版 + 应用真实图标）                                      |
+| `zh/features-workspace.svg`            | 功能板一：工作区面板（对话、终端、SSH、Git、浏览器、文件、检索、任务管理器）                             |
+| `zh/features-agent.svg`                | 功能板二：Agent 与协作（Skills、MCP、子代理、Hooks、Goal、定时任务与工作流、项目记忆、团队协作）         |
+| `zh/features-extend.svg`               | 功能板三：扩展与内容（插件与市场、用户脚本、自定义命令、请求代理层、仓库 Wiki、绘图工作台、图像库、LSP） |
+| `zh/features-security.svg`             | 功能板四：安全与体验（应用锁、工具授权、隐私脱敏、检查点与回滚、用量与日志、主题、手机远控、桌面宠物）   |
+| `zh/before-after.svg`                  | 从分散工具到一个工作区的概念对比图                                                                       |
+| `en/…`                                 | 以上素材的英文版本（文件名一致）                                                                         |
+| `screenshots/desktop-annotated.png`    | 主界面截图与中文三栏标注                                                                                 |
+| `screenshots/desktop-annotated.en.png` | 同一张主界面截图的英文三栏标注                                                                           |
+| `screenshots/mobile-pair.png`          | 手机远控截图并排（中英文 README 共用）                                                                   |
+| `source/`                              | 生成脚本、Lucide 图标与调色板定义                                                                        |
 
 ## 功能文案的依据
 
@@ -41,9 +41,8 @@
 
 ## 版本号
 
-`hero.png` 上的版本号在生成时从 `package.json` 的 `version` 字段读取，不写死在脚本或图片里；
-README 顶部的 release 徽章由 shields.io 实时拉取 GitHub Release，因此日常不需要重建素材。
-发版后如果想刷新横幅上的版本，重跑 `build_hero.py` 即可。
+`hero.png` 不显示版本号，README 顶部的 release 徽章由 shields.io 实时拉取 GitHub Release，
+因此发版后无需重建素材。
 
 ## 重新生成
 

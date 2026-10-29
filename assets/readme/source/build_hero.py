@@ -10,15 +10,28 @@ Usage: python build_hero.py [zh|en]
 """
 
 import base64
-import json
 import os
 import subprocess
 import sys
 import tempfile
 
-from theme import ASSETS, BRAND, FAINT, INK, LINE, MONO, PAPER, ROOT, SANS, TEXT_2
+from theme import ASSETS, BRAND, FAINT, INK, LINE, MONO, PAPER, SANS, TEXT_2
 
-CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+CHROME_CANDIDATES = [
+    os.environ.get("CHROME_PATH"),
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+]
+
+
+def chrome_binary():
+    """Locate a usable Chrome for headless rendering."""
+    for path in CHROME_CANDIDATES:
+        if path and os.path.exists(path):
+            return path
+    raise SystemExit("Chrome not found, set CHROME_PATH")
 
 GLYPHS = {
     "S": ["01110", "10000", "10000", "01110", "00001", "00001", "11110"],
@@ -70,16 +83,10 @@ def wordmark(text, x, y, cell=CELL, fill=INK):
     return "".join(out)
 
 
-def app_version():
-    """Read the version straight from package.json so the banner cannot drift from the release."""
-    with open(os.path.join(ROOT, "package.json"), "r", encoding="utf-8") as fh:
-        return json.load(fh)["version"]
-
-
-def build_hero_svg(lang, icon_b64, version):
+def build_hero_svg(lang, icon_b64):
     c = COPY[lang]
     marks = wordmark("SNOW APP", 56, 122)
-    meta_line = " · ".join([f"v{version}"] + c["meta"])
+    meta_line = " · ".join(c["meta"])
     eyebrow_face = MONO if lang == "en" else SANS
     eyebrow_spacing = "3" if lang == "en" else "1.2"
     eyebrow_size = 18 if lang == "en" else 19
@@ -118,7 +125,7 @@ def render(svg_path, png_path, width, height):
     os.makedirs(os.path.dirname(png_path), exist_ok=True)
     profile = tempfile.mkdtemp(prefix="snow-readme-chrome-")
     cmd = [
-        CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+        chrome_binary(), "--headless=new", "--disable-gpu", "--hide-scrollbars",
         "--default-background-color=00000000", "--force-device-scale-factor=2",
         f"--user-data-dir={profile}", f"--window-size={width},{height}",
         f"--screenshot={png_path}", "file:///" + svg_path.replace("\\", "/"),
@@ -135,12 +142,10 @@ def main():
     with open(icon_path, "rb") as fh:
         icon_b64 = base64.b64encode(fh.read()).decode("ascii")
     tmp = tempfile.mkdtemp(prefix="snow-readme-hero-")
-    version = app_version()
-    print("hero version", version)
     for lang in langs:
         layout = os.path.join(tmp, f"hero-layout.{lang}.svg")
         with open(layout, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(build_hero_svg(lang, icon_b64, version))
+            fh.write(build_hero_svg(lang, icon_b64))
         render(layout, os.path.join(ASSETS, lang, "hero.png"), 1200, 340)
 
 

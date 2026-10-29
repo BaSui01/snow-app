@@ -163,12 +163,12 @@ const RAW_GROUPS: RawGroup[] = [
         ["attachment", "预算", "合计"],
       ],
       [
-        "general.storage.resourceUsage",
+        "general.storage.maintenance",
         "section",
-        "settings.resourceUsage",
-        "Resource usage",
+        "settings.storageMaintenance",
+        "Optimization & cache",
         ["general.tab.storage"],
-        ["资源占用"],
+        ["资源占用", "优化与缓存", "磁盘优化", "缓存"],
       ],
       [
         "general.storage.optimize",

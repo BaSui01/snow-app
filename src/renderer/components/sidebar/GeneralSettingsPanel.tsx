@@ -160,6 +160,68 @@ const CLEANUP_DAY_OPTIONS = [7, 15, 30, 90];
 /** 数据清理：不限制时间的档位值 */
 const CLEANUP_AGE_ALL = "0";
 
+/** 存储页卡片面板 id（同一时间只展开一个面板） */
+type StorageSectionId = "cleanup" | "orphan" | "locations" | "maintenance";
+
+/** 存储概览分段：展示顺序、配色与文案（与下方卡片中的存储位置一一对应） */
+const STORAGE_OVERVIEW_ITEMS: {
+  id:
+    | "runtimeDb"
+    | "archiveDb"
+    | "checkpoints"
+    | "upload"
+    | "imageLibrary"
+    | "other";
+  labelKey: string;
+  labelFallback: string;
+  color: string;
+}[] = [
+  {
+    id: "runtimeDb",
+    labelKey: "settings.storageRuntimeDatabase",
+    labelFallback: "Runtime database",
+    color: "#e0b62a",
+  },
+  {
+    id: "archiveDb",
+    labelKey: "settings.storageArchiveDatabase",
+    labelFallback: "Archive database",
+    color: "#8b5cf6",
+  },
+  {
+    id: "checkpoints",
+    labelKey: "settings.storageCheckpoint",
+    labelFallback: "Checkpoints",
+    color: "#f0701a",
+  },
+  {
+    id: "upload",
+    labelKey: "settings.storageUpload",
+    labelFallback: "Uploaded images",
+    color: "#22c55e",
+  },
+  {
+    id: "imageLibrary",
+    labelKey: "settings.storageImageLibrary",
+    labelFallback: "Image library",
+    color: "#38bdf8",
+  },
+  {
+    id: "other",
+    labelKey: "settings.storageOther",
+    labelFallback: "Other",
+    color: "#9ca3af",
+  },
+];
+
+/** 数据清理分类中不属于存储位置路径的部分（计入概览的「其他」分段） */
+const STORAGE_OTHER_CATEGORY_IDS: CleanupCategoryId[] = [
+  "backgrounds",
+  "pets",
+  "browserState",
+  "appLogs",
+];
+
 /** 许可协议原文（MIT，与仓库 LICENSE 保持一致，不翻译） */
 const MIT_LICENSE_TEXT = `MIT License
 
@@ -358,6 +420,12 @@ export function GeneralSettingsPanel(): React.JSX.Element {
   const [isClearingCache, setIsClearingCache] = useState(false);
   /** 待确认清空应用缓存（true 表示弹窗打开） */
   const [pendingClearCache, setPendingClearCache] = useState(false);
+  /** 存储页当前展开的卡片面板（同一时间只展开一个） */
+  const [storageSection, setStorageSection] = useState<StorageSectionId | null>(
+    null,
+  );
+  /** 存储概览刷新中 */
+  const [storageRefreshing, setStorageRefreshing] = useState(false);
 
   // 数据清理（扫描各分类占用后由用户勾选删除）
   /** 扫描结果（null 表示尚未扫描） */
@@ -1088,6 +1156,25 @@ export function GeneralSettingsPanel(): React.JSX.Element {
     }
   }, [activeTab, runCleanupScan]);
 
+  /** 刷新存储概览：重新读取存储位置并重扫本地数据占用。 */
+  const handleRefreshStorage = async (): Promise<void> => {
+    if (storageRefreshing) {
+      return;
+    }
+    setStorageRefreshing(true);
+    try {
+      await loadLocations();
+      await runCleanupScan();
+    } finally {
+      setStorageRefreshing(false);
+    }
+  };
+
+  /** 展开 / 收起存储页的卡片面板。 */
+  const toggleStorageSection = (section: StorageSectionId): void => {
+    setStorageSection((prev) => (prev === section ? null : section));
+  };
+
   /** 勾选 / 取消勾选某个清理分类。 */
   const toggleCleanupCategory = (id: CleanupCategoryId): void => {
     setCleanupSelected((prev) =>
@@ -1269,10 +1356,42 @@ export function GeneralSettingsPanel(): React.JSX.Element {
     );
   };
 
-  /** 数据盘占用合计（各存储路径之和，忽略读取失败的项） */
-  const dataDiskBytes = Object.values(pathSizes)
-    .filter((bytes) => bytes >= 0)
-    .reduce((sum, bytes) => sum + bytes, 0);
+  /** 存储概览分段：各存储路径占用 + 其他（清理扫描中不属于上述路径的数据） */
+  const storageSegments = useMemo(() => {
+    const sizeOf = (path: string | undefined): number => {
+      if (!path) {
+        return 0;
+      }
+      const size = pathSizes[path] ?? -1;
+      return size > 0 ? size : 0;
+    };
+    const otherBytes = (cleanupScan?.categories ?? [])
+      .filter((category) => STORAGE_OTHER_CATEGORY_IDS.includes(category.id))
+      .reduce((sum, category) => sum + category.bytes, 0);
+    const bytesById: Record<string, number> = {
+      runtimeDb: sizeOf(locations?.databasePath),
+      archiveDb: sizeOf(locations?.archiveDbPath),
+      checkpoints: sizeOf(locations?.checkpointRoot),
+      upload: sizeOf(locations?.uploadRoot),
+      imageLibrary: sizeOf(imageLibraryRoot),
+      other: otherBytes,
+    };
+    return STORAGE_OVERVIEW_ITEMS.map((item) => ({
+      id: item.id,
+      label: t(item.labelKey, { defaultValue: item.labelFallback }),
+      color: item.color,
+      bytes: bytesById[item.id] ?? 0,
+    }));
+  }, [cleanupScan, imageLibraryRoot, locations, pathSizes, t]);
+
+  /** 存储占用合计（各分段之和） */
+  const storageTotalBytes = storageSegments.reduce(
+    (sum, segment) => sum + segment.bytes,
+    0,
+  );
+
+  /** 数据目录（运行数据库所在目录），概览底部展示 */
+  const storageDataDir = locations ? parentDirOf(locations.databasePath) : "";
 
   /** 渲染某存储路径的占用大小（未加载或读取失败时不显示）。 */
   const renderSize = (path: string | undefined): React.JSX.Element | null => {
@@ -1613,226 +1732,134 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         </div>
       )}
 
+      {/* 存储与资源：占用概览（分段进度条 + 图例 + 数据目录） */}
       {activeTab === "storage" && (
-        <div className="api-settings-manual-form">
-          <div className="api-settings-manual-header">
-            <strong>
-              {t("settings.resourceUsage", {
-                defaultValue: "Resource usage",
-              })}
-            </strong>
-            <span>
-              {t("settings.resourceUsageInfo", {
-                defaultValue: "Local data usage.",
-              })}
-            </span>
+        <div className="storage-overview">
+          <div className="storage-overview-head">
+            <div className="storage-overview-heading">
+              <span className="storage-overview-app">Snow App</span>
+              <span className="storage-overview-used">
+                {t("settings.storageSize", {
+                  values: { size: formatBytes(storageTotalBytes) },
+                  defaultValue: "Used: {{size}}",
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() => void handleRefreshStorage()}
+              disabled={storageRefreshing}
+            >
+              {storageRefreshing ? (
+                <LoaderCircle
+                  size={12}
+                  strokeWidth={1.8}
+                  className="tool-call-icon-spinning"
+                  aria-hidden="true"
+                />
+              ) : (
+                <RefreshCw size={12} strokeWidth={1.8} aria-hidden="true" />
+              )}
+              <span>
+                {t("settings.storageRefresh", { defaultValue: "Refresh" })}
+              </span>
+            </button>
           </div>
 
-          <div className="api-settings-form-body">
-            {/* 数据盘占用：下方各存储路径之和，随存储统计自动更新 */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <HardDrive
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.resourceDataDisk", {
-                      defaultValue: "Data on disk",
-                    })}
-                  </span>
-                  <span className="general-storage-size">
-                    {dataDiskBytes > 0 ? formatBytes(dataDiskBytes) : "—"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 磁盘空间优化：手动触发 VACUUM 回收已删除数据的空闲页 */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <Recycle
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.resourceOptimize", {
-                      defaultValue: "Optimize disk usage",
-                    })}
-                  </span>
-                  <span className="settings-item-description">
-                    {t("settings.resourceOptimizeInfo", {
-                      defaultValue:
-                        "Rebuild database files to reclaim disk space and compact process memory.",
-                    })}
-                  </span>
-                </div>
-              </div>
-              <div className="general-storage-actions">
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() => void handleOptimizeUsage()}
-                  disabled={isOptimizing || isMigrating || isImageLibraryBusy}
-                  title={t("settings.resourceOptimizeInfo", {
-                    defaultValue:
-                      "Rebuild database files to reclaim disk space and compact process memory.",
-                  })}
-                >
-                  {isOptimizing ? (
-                    <LoaderCircle
-                      size={11}
-                      strokeWidth={1.8}
-                      className="tool-call-icon-spinning"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Recycle size={11} strokeWidth={1.8} aria-hidden="true" />
-                  )}
-                  <span>
-                    {isOptimizing
-                      ? t("settings.resourceOptimizeWorking", {
-                          defaultValue: "Optimizing...",
-                        })
-                      : t("settings.resourceOptimize", {
-                          defaultValue: "Optimize disk usage",
-                        })}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* 清空应用缓存：清掉 HTTP / 代码缓存后强制重新加载界面 */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <Trash2
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.resourceClearCache", {
-                      defaultValue: "Clear app cache",
-                    })}
-                  </span>
-                  <span className="settings-item-description">
-                    {t("settings.resourceClearCacheInfo", {
-                      defaultValue:
-                        "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
-                    })}
-                  </span>
-                </div>
-              </div>
-              <div className="general-storage-actions">
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() => setPendingClearCache(true)}
-                  disabled={
-                    isClearingCache ||
-                    isOptimizing ||
-                    isMigrating ||
-                    isImageLibraryBusy
-                  }
-                  title={t("settings.resourceClearCacheInfo", {
-                    defaultValue:
-                      "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
-                  })}
-                >
-                  {isClearingCache ? (
-                    <LoaderCircle
-                      size={11}
-                      strokeWidth={1.8}
-                      className="tool-call-icon-spinning"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Trash2 size={11} strokeWidth={1.8} aria-hidden="true" />
-                  )}
-                  <span>
-                    {isClearingCache
-                      ? t("settings.resourceClearCacheWorking", {
-                          defaultValue: "Clearing...",
-                        })
-                      : t("settings.resourceClearCache", {
-                          defaultValue: "Clear app cache",
-                        })}
-                  </span>
-                </button>
-              </div>
-            </div>
+          <div className="storage-overview-bar" aria-hidden="true">
+            {storageTotalBytes > 0 ? (
+              storageSegments
+                .filter((segment) => segment.bytes > 0)
+                .map((segment) => (
+                  <span
+                    key={segment.id}
+                    className="storage-overview-segment"
+                    style={{
+                      width: `${(segment.bytes / storageTotalBytes) * 100}%`,
+                      background: segment.color,
+                    }}
+                  />
+                ))
+            ) : (
+              <span className="storage-overview-segment empty" />
+            )}
           </div>
+
+          <ul className="storage-overview-legend">
+            {storageSegments.map((segment) => (
+              <li key={segment.id} className="storage-overview-legend-item">
+                <span className="storage-overview-legend-name">
+                  <span
+                    className="storage-overview-dot"
+                    style={{ background: segment.color }}
+                    aria-hidden="true"
+                  />
+                  {segment.label}
+                </span>
+                <span className="storage-overview-legend-value">
+                  {formatBytes(segment.bytes)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {storageDataDir && (
+            <p className="storage-overview-path" title={storageDataDir}>
+              {storageDataDir}
+            </p>
+          )}
         </div>
       )}
 
-      {/* 数据清理：扫描各分类占用，按分类 + 时间档位选择性删除 */}
+      {/* 存储与资源：本地数据清理（展开后按分类 + 时间档位删除） */}
       {activeTab === "storage" && (
-        <div className="api-settings-manual-form">
-          <div className="api-settings-manual-header">
-            <strong>
-              {t("settings.cleanupTitle", { defaultValue: "Data cleanup" })}
-            </strong>
-            <span>
-              {t("settings.cleanupInfo", {
-                defaultValue:
-                  "Scan local data by category, then delete only the items you select.",
-              })}
-              {cleanupScan !== null
-                ? ` · ${t("settings.cleanupTotal", {
-                    values: { size: formatBytes(cleanupScan.totalBytes) },
-                    defaultValue: `Total ${formatBytes(cleanupScan.totalBytes)}`,
-                  })}`
-                : ""}
-            </span>
-          </div>
-
-          <div className="api-settings-form-body">
-            {/* 首次扫描中：占位提示（已有结果时保留旧数据，避免闪烁） */}
-            {cleanupScan === null && cleanupScanning && (
-              <div className="general-storage-row">
-                <div className="general-storage-info">
-                  <LoaderCircle
-                    size={14}
-                    strokeWidth={1.8}
-                    className="general-storage-icon tool-call-icon-spinning"
-                    aria-hidden="true"
-                  />
-                  <div className="general-storage-text">
-                    <span className="general-storage-label">
-                      {t("settings.cleanupScanning", {
-                        defaultValue: "Scanning...",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {cleanupScan !== null && (
-              <>
-                {/* 分类列表：勾选参与清理的分类 */}
-                {CLEANUP_CATEGORY_IDS.map((id) => {
-                  const category = cleanupScan.categories.find(
-                    (item) => item.id === id,
-                  );
-                  return category ? renderCleanupCategoryRow(category) : null;
+        <div className="storage-card">
+          <div className="storage-card-row">
+            <div className="storage-card-text">
+              <span className="storage-card-title">
+                {t("settings.cleanupTitle", { defaultValue: "Data cleanup" })}
+              </span>
+              <span className="storage-card-desc">
+                {t("settings.cleanupInfo", {
+                  defaultValue:
+                    "Scan local data by category, then delete only the items you select.",
                 })}
-
-                {cleanupAvailableIds.length === 0 && (
+                {cleanupScan !== null
+                  ? ` · ${t("settings.cleanupTotal", {
+                      values: { size: formatBytes(cleanupScan.totalBytes) },
+                      defaultValue: `Total ${formatBytes(cleanupScan.totalBytes)}`,
+                    })}`
+                  : ""}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() => toggleStorageSection("cleanup")}
+            >
+              {storageSection === "cleanup"
+                ? t("settings.storageCollapse", { defaultValue: "Collapse" })
+                : t("settings.storageView", { defaultValue: "View" })}
+            </button>
+          </div>
+          {storageSection === "cleanup" && (
+            <div className="storage-card-detail">
+              <div className="api-settings-form-body">
+                {/* 首次扫描中：占位提示（已有结果时保留旧数据，避免闪烁） */}
+                {cleanupScan === null && cleanupScanning && (
                   <div className="general-storage-row">
                     <div className="general-storage-info">
+                      <LoaderCircle
+                        size={14}
+                        strokeWidth={1.8}
+                        className="general-storage-icon tool-call-icon-spinning"
+                        aria-hidden="true"
+                      />
                       <div className="general-storage-text">
-                        <span className="settings-item-description">
-                          {t("settings.cleanupNoData", {
-                            defaultValue: "No local data to clean up.",
+                        <span className="general-storage-label">
+                          {t("settings.cleanupScanning", {
+                            defaultValue: "Scanning...",
                           })}
                         </span>
                       </div>
@@ -1840,172 +1867,233 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                   </div>
                 )}
 
-                {/* 时间档位：只删除早于该档位修改的文件 */}
-                <div className="settings-about-row">
-                  <span className="settings-item-description">
-                    {t("settings.cleanupAgeFilter", {
-                      defaultValue: "Time range",
+                {cleanupScan !== null && (
+                  <>
+                    {/* 分类列表：勾选参与清理的分类 */}
+                    {CLEANUP_CATEGORY_IDS.map((id) => {
+                      const category = cleanupScan.categories.find(
+                        (item) => item.id === id,
+                      );
+                      return category
+                        ? renderCleanupCategoryRow(category)
+                        : null;
                     })}
-                  </span>
-                  <div className="settings-close-behavior-select">
-                    <CustomSelect
-                      value={cleanupAgeDays}
-                      options={[
-                        {
-                          value: CLEANUP_AGE_ALL,
-                          label: t("settings.cleanupAgeAll", {
-                            defaultValue: "Any time",
-                          }),
-                        },
-                        ...CLEANUP_DAY_OPTIONS.map((days) => ({
-                          value: String(days),
-                          label: t("settings.cleanupAgeOlderThan", {
-                            values: { days },
-                            defaultValue: `Older than ${days} days`,
-                          }),
-                        })),
-                      ]}
-                      onChange={setCleanupAgeDays}
-                      disabled={isCleaningUp || cleanupScanning}
-                    />
-                  </div>
-                </div>
 
-                {/* 选中汇总 + 全选 / 清理 / 重新扫描 */}
-                <div className="general-storage-row">
-                  <div className="general-storage-info">
-                    <Trash2
-                      size={14}
-                      strokeWidth={1.8}
-                      className="general-storage-icon"
-                      aria-hidden="true"
-                    />
-                    <div className="general-storage-text">
-                      <span className="general-storage-label">
-                        {t("settings.cleanupSelected", {
-                          values: { count: cleanupSelected.length },
-                          defaultValue: "{{count}} selected",
-                        })}
-                        {` · ${cleanupAgeLabel}`}
-                      </span>
+                    {cleanupAvailableIds.length === 0 && (
+                      <div className="general-storage-row">
+                        <div className="general-storage-info">
+                          <div className="general-storage-text">
+                            <span className="settings-item-description">
+                              {t("settings.cleanupNoData", {
+                                defaultValue: "No local data to clean up.",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 时间档位：只删除早于该档位修改的文件 */}
+                    <div className="settings-about-row">
                       <span className="settings-item-description">
-                        {cleanupSelected.length > 0 && cleanupPlan.files > 0
-                          ? t("settings.cleanupWillFree", {
-                              values: {
-                                files: cleanupPlan.files,
-                                size: formatBytes(cleanupPlan.bytes),
-                              },
-                              defaultValue:
-                                "Will delete {{files}} file(s) and free {{size}}",
-                            })
-                          : t("settings.cleanupSelectHint", {
-                              defaultValue:
-                                "Select the categories you want to clean up.",
-                            })}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="general-storage-actions">
-                    <button
-                      type="button"
-                      className="general-storage-action"
-                      onClick={toggleCleanupSelectAll}
-                      disabled={
-                        cleanupScanning ||
-                        isCleaningUp ||
-                        cleanupAvailableIds.length === 0
-                      }
-                      title={t("settings.cleanupSelectAll", {
-                        defaultValue: "Select all",
-                      })}
-                    >
-                      <span>
-                        {cleanupAvailableIds.length > 0 &&
-                        cleanupSelected.length === cleanupAvailableIds.length
-                          ? t("settings.cleanupSelectNone", {
-                              defaultValue: "Clear selection",
-                            })
-                          : t("settings.cleanupSelectAll", {
-                              defaultValue: "Select all",
-                            })}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="general-storage-action danger"
-                      onClick={() => setPendingCleanup(true)}
-                      disabled={
-                        cleanupSelected.length === 0 ||
-                        cleanupPlan.files === 0 ||
-                        isCleaningUp
-                      }
-                      title={t("settings.cleanupDelete", {
-                        defaultValue: "Delete selected",
-                      })}
-                    >
-                      {isCleaningUp ? (
-                        <LoaderCircle
-                          size={11}
-                          strokeWidth={1.8}
-                          className="tool-call-icon-spinning"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <Trash2
-                          size={11}
-                          strokeWidth={1.8}
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span>
-                        {isCleaningUp
-                          ? t("settings.cleanupDeleting", {
-                              defaultValue: "Cleaning...",
-                            })
-                          : t("settings.cleanupDelete", {
-                              defaultValue: "Delete selected",
-                            })}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="general-storage-action"
-                      onClick={() => void runCleanupScan()}
-                      disabled={cleanupScanning || isCleaningUp}
-                      title={t("settings.cleanupRescan", {
-                        defaultValue: "Rescan",
-                      })}
-                    >
-                      {cleanupScanning ? (
-                        <LoaderCircle
-                          size={11}
-                          strokeWidth={1.8}
-                          className="tool-call-icon-spinning"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <RefreshCw
-                          size={11}
-                          strokeWidth={1.8}
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span>
-                        {t("settings.cleanupRescan", {
-                          defaultValue: "Rescan",
+                        {t("settings.cleanupAgeFilter", {
+                          defaultValue: "Time range",
                         })}
                       </span>
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+                      <div className="settings-close-behavior-select">
+                        <CustomSelect
+                          value={cleanupAgeDays}
+                          options={[
+                            {
+                              value: CLEANUP_AGE_ALL,
+                              label: t("settings.cleanupAgeAll", {
+                                defaultValue: "Any time",
+                              }),
+                            },
+                            ...CLEANUP_DAY_OPTIONS.map((days) => ({
+                              value: String(days),
+                              label: t("settings.cleanupAgeOlderThan", {
+                                values: { days },
+                                defaultValue: `Older than ${days} days`,
+                              }),
+                            })),
+                          ]}
+                          onChange={setCleanupAgeDays}
+                          disabled={isCleaningUp || cleanupScanning}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 选中汇总 + 全选 / 清理 / 重新扫描 */}
+                    <div className="general-storage-row">
+                      <div className="general-storage-info">
+                        <Trash2
+                          size={14}
+                          strokeWidth={1.8}
+                          className="general-storage-icon"
+                          aria-hidden="true"
+                        />
+                        <div className="general-storage-text">
+                          <span className="general-storage-label">
+                            {t("settings.cleanupSelected", {
+                              values: { count: cleanupSelected.length },
+                              defaultValue: "{{count}} selected",
+                            })}
+                            {` · ${cleanupAgeLabel}`}
+                          </span>
+                          <span className="settings-item-description">
+                            {cleanupSelected.length > 0 && cleanupPlan.files > 0
+                              ? t("settings.cleanupWillFree", {
+                                  values: {
+                                    files: cleanupPlan.files,
+                                    size: formatBytes(cleanupPlan.bytes),
+                                  },
+                                  defaultValue:
+                                    "Will delete {{files}} file(s) and free {{size}}",
+                                })
+                              : t("settings.cleanupSelectHint", {
+                                  defaultValue:
+                                    "Select the categories you want to clean up.",
+                                })}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="general-storage-actions">
+                        <button
+                          type="button"
+                          className="general-storage-action"
+                          onClick={toggleCleanupSelectAll}
+                          disabled={
+                            cleanupScanning ||
+                            isCleaningUp ||
+                            cleanupAvailableIds.length === 0
+                          }
+                          title={t("settings.cleanupSelectAll", {
+                            defaultValue: "Select all",
+                          })}
+                        >
+                          <span>
+                            {cleanupAvailableIds.length > 0 &&
+                            cleanupSelected.length ===
+                              cleanupAvailableIds.length
+                              ? t("settings.cleanupSelectNone", {
+                                  defaultValue: "Clear selection",
+                                })
+                              : t("settings.cleanupSelectAll", {
+                                  defaultValue: "Select all",
+                                })}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="general-storage-action danger"
+                          onClick={() => setPendingCleanup(true)}
+                          disabled={
+                            cleanupSelected.length === 0 ||
+                            cleanupPlan.files === 0 ||
+                            isCleaningUp
+                          }
+                          title={t("settings.cleanupDelete", {
+                            defaultValue: "Delete selected",
+                          })}
+                        >
+                          {isCleaningUp ? (
+                            <LoaderCircle
+                              size={11}
+                              strokeWidth={1.8}
+                              className="tool-call-icon-spinning"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Trash2
+                              size={11}
+                              strokeWidth={1.8}
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span>
+                            {isCleaningUp
+                              ? t("settings.cleanupDeleting", {
+                                  defaultValue: "Cleaning...",
+                                })
+                              : t("settings.cleanupDelete", {
+                                  defaultValue: "Delete selected",
+                                })}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="general-storage-action"
+                          onClick={() => void runCleanupScan()}
+                          disabled={cleanupScanning || isCleaningUp}
+                          title={t("settings.cleanupRescan", {
+                            defaultValue: "Rescan",
+                          })}
+                        >
+                          {cleanupScanning ? (
+                            <LoaderCircle
+                              size={11}
+                              strokeWidth={1.8}
+                              className="tool-call-icon-spinning"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <RefreshCw
+                              size={11}
+                              strokeWidth={1.8}
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span>
+                            {t("settings.cleanupRescan", {
+                              defaultValue: "Rescan",
+                            })}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* 孤儿项目数据：已移除项目残留的会话 / 归档 / 快照等 */}
-      {activeTab === "storage" && <OrphanProjectCleanupSection />}
+      {/* 存储与资源：已移除项目的残留数据（展开后按项目 / 分类删除） */}
+      {activeTab === "storage" && (
+        <div className="storage-card">
+          <div className="storage-card-row">
+            <div className="storage-card-text">
+              <span className="storage-card-title">
+                {t("settings.orphanTitle", {
+                  defaultValue: "Removed project data",
+                })}
+              </span>
+              <span className="storage-card-desc">
+                {t("settings.orphanInfo", {
+                  defaultValue:
+                    "Find chats, archives, snapshots and other data left behind by projects removed from the project list.",
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() => toggleStorageSection("orphan")}
+            >
+              {storageSection === "orphan"
+                ? t("settings.storageCollapse", { defaultValue: "Collapse" })
+                : t("settings.storageManage", { defaultValue: "Manage" })}
+            </button>
+          </div>
+          {storageSection === "orphan" && (
+            <div className="storage-card-detail">
+              <OrphanProjectCleanupSection embedded />
+            </div>
+          )}
+        </div>
+      )}
 
       {activeTab === "general" && (
         <div className="api-settings-manual-form">
@@ -2051,170 +2139,265 @@ export function GeneralSettingsPanel(): React.JSX.Element {
         </div>
       )}
 
+      {/* 存储与资源：存储位置（展开后查看 / 迁移各存储目录） */}
       {activeTab === "storage" && (
-        <div className="api-settings-manual-form">
-          <div className="api-settings-manual-header">
-            <strong>
-              {t("settings.storageLocations", {
-                defaultValue: "Storage locations",
-              })}
-            </strong>
-            <span>
-              {t("settings.storageLocationsInfo", {
-                defaultValue:
-                  "Where Snow App stores its database, checkpoints and uploaded images.",
-              })}
-            </span>
+        <div className="storage-card">
+          <div className="storage-card-row">
+            <div className="storage-card-text">
+              <span className="storage-card-title">
+                {t("settings.storageLocations", {
+                  defaultValue: "Storage locations",
+                })}
+              </span>
+              <span className="storage-card-desc">
+                {t("settings.storageLocationsInfo", {
+                  defaultValue:
+                    "Where Snow App stores its database, checkpoints and uploaded images.",
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() => toggleStorageSection("locations")}
+            >
+              {storageSection === "locations"
+                ? t("settings.storageCollapse", { defaultValue: "Collapse" })
+                : t("settings.storageManage", { defaultValue: "Manage" })}
+            </button>
           </div>
-
-          <div className="api-settings-form-body">
-            {/* 运行数据库位置 */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <Database
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.storageRuntimeDatabase", {
-                      defaultValue: "Runtime database",
-                    })}
-                  </span>
-                  <span
-                    className="general-storage-path"
-                    title={locations?.databasePath}
-                  >
-                    {locations?.databasePath ?? "—"}
-                  </span>
-                  {renderSize(locations?.databasePath)}
-                </div>
-              </div>
-              <div className="general-storage-actions">
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() =>
-                    locations &&
-                    void handleOpenDir(parentDirOf(locations.databasePath))
-                  }
-                  disabled={!locations || isMigrating}
-                  title={t("settings.storageOpenDir", {
-                    defaultValue: "Open folder",
-                  })}
-                >
-                  <FolderOpen size={11} aria-hidden="true" />
-                  <span>
-                    {t("settings.storageOpenDir", {
-                      defaultValue: "Open folder",
-                    })}
-                  </span>
-                </button>
-                {renderRepairButton("runtime")}
-              </div>
-            </div>
-
-            {/* 归档数据库位置（archive.db，存放归档会话） */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <DatabaseBackup
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.storageArchiveDatabase", {
-                      defaultValue: "Archive database",
-                    })}
-                  </span>
-                  <span
-                    className="general-storage-path"
-                    title={locations?.archiveDbPath}
-                  >
-                    {locations?.archiveDbPath ?? "—"}
-                  </span>
-                  {renderSize(locations?.archiveDbPath)}
-                </div>
-              </div>
-              <div className="general-storage-actions">
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() =>
-                    locations &&
-                    void handleOpenDir(parentDirOf(locations.archiveDbPath))
-                  }
-                  disabled={!locations || isMigrating}
-                  title={t("settings.storageOpenDir", {
-                    defaultValue: "Open folder",
-                  })}
-                >
-                  <FolderOpen size={11} aria-hidden="true" />
-                  <span>
-                    {t("settings.storageOpenDir", {
-                      defaultValue: "Open folder",
-                    })}
-                  </span>
-                </button>
-                {renderRepairButton("archive")}
-              </div>
-            </div>
-
-            {/* 检查点 / 上传图片位置 */}
-            {STORAGE_KINDS.map((kind) => {
-              const isCheckpoint = kind === "checkpoint";
-              const root = isCheckpoint
-                ? locations?.checkpointRoot
-                : locations?.uploadRoot;
-              const customDir = isCheckpoint
-                ? locations?.checkpointDir
-                : locations?.uploadDir;
-              const isCustom = (customDir ?? "") !== "";
-
-              return (
-                <div key={kind} className="general-storage-row">
+          {storageSection === "locations" && (
+            <div className="storage-card-detail">
+              <div className="api-settings-form-body">
+                {/* 运行数据库位置 */}
+                <div className="general-storage-row">
                   <div className="general-storage-info">
-                    {isCheckpoint ? (
-                      <Archive
-                        size={14}
-                        strokeWidth={1.8}
-                        className="general-storage-icon"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <ImageIcon
-                        size={14}
-                        strokeWidth={1.8}
-                        className="general-storage-icon"
-                        aria-hidden="true"
-                      />
-                    )}
+                    <Database
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
                     <div className="general-storage-text">
                       <span className="general-storage-label">
-                        {isCheckpoint
-                          ? t("settings.storageCheckpoint", {
-                              defaultValue: "Checkpoints",
-                            })
-                          : t("settings.storageUpload", {
-                              defaultValue: "Uploaded images",
-                            })}
+                        {t("settings.storageRuntimeDatabase", {
+                          defaultValue: "Runtime database",
+                        })}
                       </span>
-                      <span className="general-storage-path" title={root}>
-                        {root ?? "—"}
+                      <span
+                        className="general-storage-path"
+                        title={locations?.databasePath}
+                      >
+                        {locations?.databasePath ?? "—"}
                       </span>
-                      {renderSize(root)}
+                      {renderSize(locations?.databasePath)}
                     </div>
                   </div>
                   <div className="general-storage-actions">
                     <button
                       type="button"
                       className="general-storage-action"
-                      onClick={() => root && void handleOpenDir(root)}
-                      disabled={!root || isMigrating}
+                      onClick={() =>
+                        locations &&
+                        void handleOpenDir(parentDirOf(locations.databasePath))
+                      }
+                      disabled={!locations || isMigrating}
+                      title={t("settings.storageOpenDir", {
+                        defaultValue: "Open folder",
+                      })}
+                    >
+                      <FolderOpen size={11} aria-hidden="true" />
+                      <span>
+                        {t("settings.storageOpenDir", {
+                          defaultValue: "Open folder",
+                        })}
+                      </span>
+                    </button>
+                    {renderRepairButton("runtime")}
+                  </div>
+                </div>
+
+                {/* 归档数据库位置（archive.db，存放归档会话） */}
+                <div className="general-storage-row">
+                  <div className="general-storage-info">
+                    <DatabaseBackup
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t("settings.storageArchiveDatabase", {
+                          defaultValue: "Archive database",
+                        })}
+                      </span>
+                      <span
+                        className="general-storage-path"
+                        title={locations?.archiveDbPath}
+                      >
+                        {locations?.archiveDbPath ?? "—"}
+                      </span>
+                      {renderSize(locations?.archiveDbPath)}
+                    </div>
+                  </div>
+                  <div className="general-storage-actions">
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={() =>
+                        locations &&
+                        void handleOpenDir(parentDirOf(locations.archiveDbPath))
+                      }
+                      disabled={!locations || isMigrating}
+                      title={t("settings.storageOpenDir", {
+                        defaultValue: "Open folder",
+                      })}
+                    >
+                      <FolderOpen size={11} aria-hidden="true" />
+                      <span>
+                        {t("settings.storageOpenDir", {
+                          defaultValue: "Open folder",
+                        })}
+                      </span>
+                    </button>
+                    {renderRepairButton("archive")}
+                  </div>
+                </div>
+
+                {/* 检查点 / 上传图片位置 */}
+                {STORAGE_KINDS.map((kind) => {
+                  const isCheckpoint = kind === "checkpoint";
+                  const root = isCheckpoint
+                    ? locations?.checkpointRoot
+                    : locations?.uploadRoot;
+                  const customDir = isCheckpoint
+                    ? locations?.checkpointDir
+                    : locations?.uploadDir;
+                  const isCustom = (customDir ?? "") !== "";
+
+                  return (
+                    <div key={kind} className="general-storage-row">
+                      <div className="general-storage-info">
+                        {isCheckpoint ? (
+                          <Archive
+                            size={14}
+                            strokeWidth={1.8}
+                            className="general-storage-icon"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ImageIcon
+                            size={14}
+                            strokeWidth={1.8}
+                            className="general-storage-icon"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <div className="general-storage-text">
+                          <span className="general-storage-label">
+                            {isCheckpoint
+                              ? t("settings.storageCheckpoint", {
+                                  defaultValue: "Checkpoints",
+                                })
+                              : t("settings.storageUpload", {
+                                  defaultValue: "Uploaded images",
+                                })}
+                          </span>
+                          <span className="general-storage-path" title={root}>
+                            {root ?? "—"}
+                          </span>
+                          {renderSize(root)}
+                        </div>
+                      </div>
+                      <div className="general-storage-actions">
+                        <button
+                          type="button"
+                          className="general-storage-action"
+                          onClick={() => root && void handleOpenDir(root)}
+                          disabled={!root || isMigrating}
+                          title={t("settings.storageOpenDir", {
+                            defaultValue: "Open folder",
+                          })}
+                        >
+                          <FolderOpen size={11} aria-hidden="true" />
+                          <span>
+                            {t("settings.storageOpenDir", {
+                              defaultValue: "Open folder",
+                            })}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="general-storage-action"
+                          onClick={() => void handleChangeDir(kind)}
+                          disabled={!root || isMigrating}
+                          title={t("settings.storageChangeDir", {
+                            defaultValue: "Change folder",
+                          })}
+                        >
+                          <FolderCog size={11} aria-hidden="true" />
+                          <span>
+                            {t("settings.storageChangeDir", {
+                              defaultValue: "Change folder",
+                            })}
+                          </span>
+                        </button>
+                        {isCustom && (
+                          <button
+                            type="button"
+                            className="general-storage-action"
+                            onClick={() => handleResetDir(kind)}
+                            disabled={isMigrating}
+                            title={t("settings.storageResetDir", {
+                              defaultValue: "Use default",
+                            })}
+                          >
+                            <X size={11} aria-hidden="true" />
+                            <span>
+                              {t("settings.storageResetDir", {
+                                defaultValue: "Use default",
+                              })}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* 图片库存储位置 */}
+                <div className="general-storage-row">
+                  <div className="general-storage-info">
+                    <Images
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t("settings.storageImageLibrary", {
+                          defaultValue: "Image library",
+                        })}
+                      </span>
+                      <span
+                        className="general-storage-path"
+                        title={imageLibraryRoot}
+                      >
+                        {imageLibraryRoot || "—"}
+                      </span>
+                      {renderSize(imageLibraryRoot)}
+                    </div>
+                  </div>
+                  <div className="general-storage-actions">
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={() =>
+                        imageLibraryRoot && void handleOpenDir(imageLibraryRoot)
+                      }
+                      disabled={!imageLibraryRoot || isImageLibraryBusy}
                       title={t("settings.storageOpenDir", {
                         defaultValue: "Open folder",
                       })}
@@ -2229,8 +2412,8 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                     <button
                       type="button"
                       className="general-storage-action"
-                      onClick={() => void handleChangeDir(kind)}
-                      disabled={!root || isMigrating}
+                      onClick={() => void handleImageLibraryChangeDir()}
+                      disabled={!imageLibraryRoot || isImageLibraryBusy}
                       title={t("settings.storageChangeDir", {
                         defaultValue: "Change folder",
                       })}
@@ -2242,12 +2425,12 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                         })}
                       </span>
                     </button>
-                    {isCustom && (
+                    {imageLibraryCustomDir && (
                       <button
                         type="button"
                         className="general-storage-action"
-                        onClick={() => handleResetDir(kind)}
-                        disabled={isMigrating}
+                        onClick={handleImageLibraryResetDir}
+                        disabled={isImageLibraryBusy}
                         title={t("settings.storageResetDir", {
                           defaultValue: "Use default",
                         })}
@@ -2262,89 +2445,173 @@ export function GeneralSettingsPanel(): React.JSX.Element {
                     )}
                   </div>
                 </div>
-              );
-            })}
-
-            {/* 图片库存储位置 */}
-            <div className="general-storage-row">
-              <div className="general-storage-info">
-                <Images
-                  size={14}
-                  strokeWidth={1.8}
-                  className="general-storage-icon"
-                  aria-hidden="true"
-                />
-                <div className="general-storage-text">
-                  <span className="general-storage-label">
-                    {t("settings.storageImageLibrary", {
-                      defaultValue: "Image library",
-                    })}
-                  </span>
-                  <span
-                    className="general-storage-path"
-                    title={imageLibraryRoot}
-                  >
-                    {imageLibraryRoot || "—"}
-                  </span>
-                  {renderSize(imageLibraryRoot)}
-                </div>
-              </div>
-              <div className="general-storage-actions">
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() =>
-                    imageLibraryRoot && void handleOpenDir(imageLibraryRoot)
-                  }
-                  disabled={!imageLibraryRoot || isImageLibraryBusy}
-                  title={t("settings.storageOpenDir", {
-                    defaultValue: "Open folder",
-                  })}
-                >
-                  <FolderOpen size={11} aria-hidden="true" />
-                  <span>
-                    {t("settings.storageOpenDir", {
-                      defaultValue: "Open folder",
-                    })}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="general-storage-action"
-                  onClick={() => void handleImageLibraryChangeDir()}
-                  disabled={!imageLibraryRoot || isImageLibraryBusy}
-                  title={t("settings.storageChangeDir", {
-                    defaultValue: "Change folder",
-                  })}
-                >
-                  <FolderCog size={11} aria-hidden="true" />
-                  <span>
-                    {t("settings.storageChangeDir", {
-                      defaultValue: "Change folder",
-                    })}
-                  </span>
-                </button>
-                {imageLibraryCustomDir && (
-                  <button
-                    type="button"
-                    className="general-storage-action"
-                    onClick={handleImageLibraryResetDir}
-                    disabled={isImageLibraryBusy}
-                    title={t("settings.storageResetDir", {
-                      defaultValue: "Use default",
-                    })}
-                  >
-                    <X size={11} aria-hidden="true" />
-                    <span>
-                      {t("settings.storageResetDir", {
-                        defaultValue: "Use default",
-                      })}
-                    </span>
-                  </button>
-                )}
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* 存储与资源：优化与缓存（展开后优化磁盘占用 / 清空应用缓存） */}
+      {activeTab === "storage" && (
+        <div className="storage-card">
+          <div className="storage-card-row">
+            <div className="storage-card-text">
+              <span className="storage-card-title">
+                {t("settings.storageMaintenance", {
+                  defaultValue: "Optimization & cache",
+                })}
+              </span>
+              <span className="storage-card-desc">
+                {t("settings.storageMaintenanceInfo", {
+                  defaultValue:
+                    "Rebuild database files to reclaim disk space, compact process memory and clear the app cache.",
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="general-storage-action"
+              onClick={() => toggleStorageSection("maintenance")}
+            >
+              {storageSection === "maintenance"
+                ? t("settings.storageCollapse", { defaultValue: "Collapse" })
+                : t("settings.storageManage", { defaultValue: "Manage" })}
+            </button>
           </div>
+          {storageSection === "maintenance" && (
+            <div className="storage-card-detail">
+              <div className="api-settings-form-body">
+                {/* 磁盘空间优化：手动触发 VACUUM 回收已删除数据的空闲页 */}
+                <div className="general-storage-row">
+                  <div className="general-storage-info">
+                    <Recycle
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t("settings.resourceOptimize", {
+                          defaultValue: "Optimize disk usage",
+                        })}
+                      </span>
+                      <span className="settings-item-description">
+                        {t("settings.resourceOptimizeInfo", {
+                          defaultValue:
+                            "Rebuild database files to reclaim disk space and compact process memory.",
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="general-storage-actions">
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={() => void handleOptimizeUsage()}
+                      disabled={
+                        isOptimizing || isMigrating || isImageLibraryBusy
+                      }
+                      title={t("settings.resourceOptimizeInfo", {
+                        defaultValue:
+                          "Rebuild database files to reclaim disk space and compact process memory.",
+                      })}
+                    >
+                      {isOptimizing ? (
+                        <LoaderCircle
+                          size={11}
+                          strokeWidth={1.8}
+                          className="tool-call-icon-spinning"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Recycle
+                          size={11}
+                          strokeWidth={1.8}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>
+                        {isOptimizing
+                          ? t("settings.resourceOptimizeWorking", {
+                              defaultValue: "Optimizing...",
+                            })
+                          : t("settings.resourceOptimize", {
+                              defaultValue: "Optimize disk usage",
+                            })}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 清空应用缓存：清掉 HTTP / 代码缓存后强制重新加载界面 */}
+                <div className="general-storage-row">
+                  <div className="general-storage-info">
+                    <Trash2
+                      size={14}
+                      strokeWidth={1.8}
+                      className="general-storage-icon"
+                      aria-hidden="true"
+                    />
+                    <div className="general-storage-text">
+                      <span className="general-storage-label">
+                        {t("settings.resourceClearCache", {
+                          defaultValue: "Clear app cache",
+                        })}
+                      </span>
+                      <span className="settings-item-description">
+                        {t("settings.resourceClearCacheInfo", {
+                          defaultValue:
+                            "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="general-storage-actions">
+                    <button
+                      type="button"
+                      className="general-storage-action"
+                      onClick={() => setPendingClearCache(true)}
+                      disabled={
+                        isClearingCache ||
+                        isOptimizing ||
+                        isMigrating ||
+                        isImageLibraryBusy
+                      }
+                      title={t("settings.resourceClearCacheInfo", {
+                        defaultValue:
+                          "Clear cached app resources and reload the interface. Sign-in state and local data are kept.",
+                      })}
+                    >
+                      {isClearingCache ? (
+                        <LoaderCircle
+                          size={11}
+                          strokeWidth={1.8}
+                          className="tool-call-icon-spinning"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Trash2
+                          size={11}
+                          strokeWidth={1.8}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>
+                        {isClearingCache
+                          ? t("settings.resourceClearCacheWorking", {
+                              defaultValue: "Clearing...",
+                            })
+                          : t("settings.resourceClearCache", {
+                              defaultValue: "Clear app cache",
+                            })}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -3683,6 +3683,14 @@ export const en = {
   "settings.hooksDocsContextFields": "Context fields",
   "settings.hooksDocsExitCodes": "Exit codes",
   "settings.hooksDocsExamples": "Examples",
+  "settings.storageRefresh": "Refresh",
+  "settings.storageView": "View",
+  "settings.storageManage": "Manage",
+  "settings.storageCollapse": "Collapse",
+  "settings.storageOther": "Other",
+  "settings.storageMaintenance": "Optimization & cache",
+  "settings.storageMaintenanceInfo":
+    "Rebuild database files to reclaim disk space, compact process memory and clear the app cache.",
   "settings.storageLocations": "Storage locations",
   "settings.storageLocationsInfo":
     "Where Snow App stores its database, checkpoints, uploaded images and the image library.",
@@ -3724,9 +3732,6 @@ export const en = {
   "settings.remoteControl": "Mobile remote control",
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.storageTab": "Storage & resources",
-  "settings.resourceUsage": "Resource usage",
-  "settings.resourceUsageInfo": "Local data usage.",
-  "settings.resourceDataDisk": "Data on disk",
   "settings.resourceOptimize": "Optimize usage",
   "settings.resourceOptimizeInfo":
     "Rebuild database files to reclaim disk space and compact process memory.",

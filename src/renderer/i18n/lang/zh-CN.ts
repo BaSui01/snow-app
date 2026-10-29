@@ -3469,6 +3469,14 @@ export const zhCN = {
   "settings.hooksDocsContextFields": "上下文字段",
   "settings.hooksDocsExitCodes": "退出码",
   "settings.hooksDocsExamples": "示例",
+  "settings.storageRefresh": "刷新",
+  "settings.storageView": "查看",
+  "settings.storageManage": "管理",
+  "settings.storageCollapse": "收起",
+  "settings.storageOther": "其他",
+  "settings.storageMaintenance": "优化与缓存",
+  "settings.storageMaintenanceInfo":
+    "重建数据库文件回收磁盘空间、整理进程内存，并清空应用缓存。",
   "settings.storageLocations": "存储位置",
   "settings.storageLocationsInfo":
     "数据库、检查点、上传图片与图片库的保存位置。",
@@ -3508,9 +3516,6 @@ export const zhCN = {
   "settings.remoteControl": "手机远控",
   "settings.generalSettingsInfo": "语言、版本与更新管理。",
   "settings.storageTab": "存储与资源",
-  "settings.resourceUsage": "资源占用",
-  "settings.resourceUsageInfo": "本地数据占用统计。",
-  "settings.resourceDataDisk": "数据盘占用",
   "settings.resourceOptimize": "优化占用",
   "settings.resourceOptimizeInfo":
     "重建数据库文件回收磁盘空间，并整理进程内存。",

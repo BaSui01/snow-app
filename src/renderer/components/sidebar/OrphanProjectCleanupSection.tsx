@@ -67,8 +67,15 @@ const availableCategories = (
     return stats && stats.count > 0 ? [stats] : [];
   });
 
+type OrphanProjectCleanupSectionProps = {
+  /** 嵌入存储卡片内时隐藏自带标题与说明（标题由卡片行提供） */
+  embedded?: boolean;
+};
+
 /** 设置 → 存储与资源：扫描并清理已移除项目残留的数据。 */
-export function OrphanProjectCleanupSection(): React.JSX.Element {
+export function OrphanProjectCleanupSection({
+  embedded = false,
+}: OrphanProjectCleanupSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const [scan, setScan] = useState<OrphanProjectScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -354,33 +361,41 @@ export function OrphanProjectCleanupSection(): React.JSX.Element {
   );
 
   return (
-    <div className="api-settings-manual-form">
+    <div
+      className={
+        embedded ? "storage-embedded-section" : "api-settings-manual-form"
+      }
+    >
       <AutoDismissNotice
         message={notice?.message ?? ""}
         tone={notice?.tone ?? "success"}
         durationMs={notice?.tone === "error" ? 4000 : 2500}
         onDismiss={() => setNotice(null)}
       />
-      <div className="api-settings-manual-header">
-        <strong>
-          {t("settings.orphanTitle", { defaultValue: "Removed project data" })}
-        </strong>
-        <span>
-          {t("settings.orphanInfo", {
-            defaultValue:
-              "Find chats, archives, snapshots and other data left behind by projects removed from the project list. Re-adding the same folder reconnects its data, so only delete what you no longer need.",
-          })}
-          {scan !== null && projects.length > 0
-            ? ` · ${t("settings.orphanTotal", {
-                values: {
-                  count: projects.length,
-                  size: formatBytes(totalBytes),
-                },
-                defaultValue: `${projects.length} project(s) · snapshots ${formatBytes(totalBytes)}`,
-              })}`
-            : ""}
-        </span>
-      </div>
+      {!embedded && (
+        <div className="api-settings-manual-header">
+          <strong>
+            {t("settings.orphanTitle", {
+              defaultValue: "Removed project data",
+            })}
+          </strong>
+          <span>
+            {t("settings.orphanInfo", {
+              defaultValue:
+                "Find chats, archives, snapshots and other data left behind by projects removed from the project list. Re-adding the same folder reconnects its data, so only delete what you no longer need.",
+            })}
+            {scan !== null && projects.length > 0
+              ? ` · ${t("settings.orphanTotal", {
+                  values: {
+                    count: projects.length,
+                    size: formatBytes(totalBytes),
+                  },
+                  defaultValue: `${projects.length} project(s) · snapshots ${formatBytes(totalBytes)}`,
+                })}`
+              : ""}
+          </span>
+        </div>
+      )}
 
       <div className="api-settings-form-body">
         {scan === null && scanning && (

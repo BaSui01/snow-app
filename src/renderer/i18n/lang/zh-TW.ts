@@ -3470,6 +3470,14 @@ export const zhTW = {
   "settings.hooksDocsContextFields": "上下文字段",
   "settings.hooksDocsExitCodes": "退出碼",
   "settings.hooksDocsExamples": "範例",
+  "settings.storageRefresh": "重新整理",
+  "settings.storageView": "檢視",
+  "settings.storageManage": "管理",
+  "settings.storageCollapse": "收合",
+  "settings.storageOther": "其他",
+  "settings.storageMaintenance": "最佳化與快取",
+  "settings.storageMaintenanceInfo":
+    "重建資料庫檔案回收磁碟空間、整理行程記憶體，並清空應用程式快取。",
   "settings.storageLocations": "儲存位置",
   "settings.storageLocationsInfo":
     "資料庫、檢查點、上傳圖片與圖片庫的儲存位置。",
@@ -3510,9 +3518,6 @@ export const zhTW = {
   "settings.remoteControl": "手機遠控",
   "settings.generalSettingsInfo": "語言、版本與更新管理。",
   "settings.storageTab": "儲存與資源",
-  "settings.resourceUsage": "資源佔用",
-  "settings.resourceUsageInfo": "本機資料佔用統計。",
-  "settings.resourceDataDisk": "資料磁碟佔用",
   "settings.resourceOptimize": "最佳化佔用",
   "settings.resourceOptimizeInfo":
     "重建資料庫檔案回收磁碟空間，並整理行程記憶體。",

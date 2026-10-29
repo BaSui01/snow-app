@@ -4,12 +4,14 @@
  * 「仍在视口内绘制 + 置顶 + 全透明 + 不吃指针事件」的渲染态（见
  * styles.css 的 .right-panel-tab-pane.capture-render），用户看不到切换，
  * 结束后立即恢复 display:none。
+ *
+ * 就绪只等布局 + 两帧：真正的产帧确认交给主进程的帧探针，避免盲等
+ * 固定时长既慢又不保证首帧已就绪。
  */
 
 const CAPTURE_RENDER_CLASS = "capture-render";
-const LAYOUT_POLL_TIMEOUT_MS = 900;
-const LAYOUT_POLL_INTERVAL_MS = 60;
-const FRAME_SETTLE_MS = 400;
+const LAYOUT_POLL_TIMEOUT_MS = 600;
+const LAYOUT_POLL_INTERVAL_MS = 40;
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -47,12 +49,15 @@ const waitForPaneLayout = async (pane: HTMLElement): Promise<void> => {
 
 export type CaptureRenderLease = {
   ready: Promise<void>;
+  /** pane 原本不可见，租约临时把它切进了渲染态（后台 tab）。 */
+  background: boolean;
   release: () => void;
 };
 
 type PaneLeaseState = {
   references: number;
   ready: Promise<void>;
+  background: boolean;
   hadCaptureClass: boolean;
 };
 const paneLeases = new WeakMap<HTMLElement, PaneLeaseState>();
@@ -62,22 +67,24 @@ export const acquireCaptureRenderLease = (
   instanceId: string,
 ): CaptureRenderLease => {
   const pane = findBrowserPane(instanceId);
-  if (!pane) return { ready: Promise.resolve(), release: () => {} };
+  if (!pane)
+    return { ready: Promise.resolve(), background: false, release: () => {} };
   let state = paneLeases.get(pane);
   if (!state) {
+    const background = !pane.classList.contains("active");
     state = {
       references: 0,
       ready: Promise.resolve(),
+      background,
       hadCaptureClass: pane.classList.contains(CAPTURE_RENDER_CLASS),
     };
     paneLeases.set(pane, state);
     pane.classList.add(CAPTURE_RENDER_CLASS);
-    if (!pane.classList.contains("active")) {
+    if (background) {
       state.ready = (async () => {
         await waitForPaneLayout(pane);
         await nextFrame();
         await nextFrame();
-        await delay(FRAME_SETTLE_MS);
       })();
     }
   }
@@ -86,6 +93,7 @@ export const acquireCaptureRenderLease = (
   let released = false;
   return {
     ready: leaseState.ready,
+    background: leaseState.background,
     release: () => {
       if (released) return;
       released = true;
@@ -100,12 +108,12 @@ export const acquireCaptureRenderLease = (
 
 export const withCaptureRenderMode = async <T>(
   instanceId: string,
-  run: () => Promise<T>,
+  run: (background: boolean) => Promise<T>,
 ): Promise<T> => {
   const lease = acquireCaptureRenderLease(instanceId);
   try {
     await lease.ready;
-    return await run();
+    return await run(lease.background);
   } finally {
     lease.release();
   }

@@ -19,6 +19,8 @@ export type BrowserScreenshotRequest = {
     scale?: number;
   };
   filePath?: string;
+  /** 后台 tab 临时切入渲染态后，先等页面真正产帧再截图。 */
+  waitForFrame?: boolean;
 };
 
 export type BrowserScreenshotResult = {
@@ -36,13 +38,56 @@ const MIME_TYPES: Record<BrowserScreenshotFormat, string> = {
   webp: "image/webp",
 };
 
-// 页面不产帧（webview 被隐藏等）时 Page.captureScreenshot 永不返回，超时兜底
-// 避免工具调用一直 loading；调用方（渲染进程截图操作）据 timed out 重试。
-const CAPTURE_TIMEOUT_MS = 4_000;
+// 页面不产帧（webview 被隐藏、窗口被遮挡等）时 Page.captureScreenshot 会一直挂起。
+// 视口截图单次超时先等 1.5s 就重试，避免整次截图卡住十几秒；整页/元素裁剪
+// 需要 rasterize 整片内容，给足首轮时间，避免把正常的慢截图判成挂起。
+const CROP_TIMEOUT_STEPS_MS = [4_000, 8_000];
+const VIEWPORT_TIMEOUT_STEPS_MS = [1_500, 2_500];
+const CAPTURE_RETRY_DELAY_MS = 150;
+// 后台 tab 切回渲染态后合成器要过一会儿才产帧：用页面 rAF 作为产帧就绪信号，
+// 就绪即截图，不再盲等固定时长。
+const FRAME_PROBE_TIMEOUT_MS = 1_200;
+const FRAME_PROBE_EXPRESSION =
+  "new Promise((resolve) => requestAnimationFrame(() => resolve(true)))";
 
-const captureWithTimeout = async (
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const isTimeoutError = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes("timed out");
+
+/** 页面能跑 rAF 说明合成器已在产帧；超时返回 false，交给截图重试兜底。 */
+const waitForPageFrame = async (
+  contents: Electron.WebContents,
+  timeoutMs: number,
+): Promise<boolean> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const probe = contents.debugger
+    .sendCommand("Runtime.evaluate", {
+      expression: FRAME_PROBE_EXPRESSION,
+      awaitPromise: true,
+      returnByValue: true,
+    })
+    .then(() => true)
+    .catch(() => false);
+  try {
+    return await Promise.race([
+      probe,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+const captureOnce = async (
   contents: Electron.WebContents,
   params: Record<string, unknown>,
+  timeoutMs: number,
 ): Promise<{ data?: unknown }> => {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -52,10 +97,10 @@ const captureWithTimeout = async (
         timer = setTimeout(() => {
           reject(
             new Error(
-              `Browser screenshot timed out after ${CAPTURE_TIMEOUT_MS}ms: the page produced no frame (the tab may not be rendering)`,
+              `Browser screenshot timed out after ${timeoutMs}ms: the page produced no frame (the tab may not be rendering)`,
             ),
           );
-        }, CAPTURE_TIMEOUT_MS);
+        }, timeoutMs);
       }),
     ])) as { data?: unknown };
   } finally {
@@ -63,6 +108,44 @@ const captureWithTimeout = async (
       clearTimeout(timer);
     }
   }
+};
+
+/** 超时视为「暂未产帧」重试；其他错误立即抛出。 */
+const captureWithRetry = async (
+  contents: Electron.WebContents,
+  params: Record<string, unknown>,
+  timeouts: readonly number[],
+): Promise<{ data?: unknown }> => {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < timeouts.length; attempt += 1) {
+    try {
+      return await captureOnce(contents, params, timeouts[attempt]);
+    } catch (error) {
+      lastError = error;
+      if (!isTimeoutError(error) || attempt === timeouts.length - 1) {
+        break;
+      }
+      // 已超时：确认页面是否恢复产帧；完全不产帧就别再耗后续长超时。
+      if (!(await waitForPageFrame(contents, FRAME_PROBE_TIMEOUT_MS))) {
+        throw new Error(
+          "Browser screenshot timed out: the tab produced no frame (the window may be hidden, minimized or occluded) - bring it to the front and retry",
+        );
+      }
+      await delay(CAPTURE_RETRY_DELAY_MS);
+    }
+  }
+  if (!isTimeoutError(lastError)) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Browser screenshot failed");
+  }
+  const message =
+    lastError instanceof Error && lastError.message
+      ? lastError.message
+      : "Browser screenshot failed";
+  throw new Error(
+    `${message}; the window may be hidden, minimized or occluded - bring it to the front and retry`,
+  );
 };
 
 export const captureBrowserScreenshot = async (
@@ -92,7 +175,17 @@ export const captureBrowserScreenshot = async (
       scale: request.clip.scale ?? 1,
     };
   }
-  const result = await captureWithTimeout(contents, params);
+  if (request.waitForFrame) {
+    // 后台 tab 刚切进渲染态：先等首帧再截图，命中即拍，避免长超时挂起。
+    await waitForPageFrame(contents, FRAME_PROBE_TIMEOUT_MS);
+  }
+  const result = await captureWithRetry(
+    contents,
+    params,
+    request.fullPage || request.clip
+      ? CROP_TIMEOUT_STEPS_MS
+      : VIEWPORT_TIMEOUT_STEPS_MS,
+  );
   if (typeof result.data !== "string" || result.data.length === 0) {
     throw new Error("Browser screenshot did not return image data");
   }

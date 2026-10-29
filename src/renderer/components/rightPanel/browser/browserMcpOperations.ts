@@ -1598,39 +1598,18 @@ type BrowserCaptureResult = Awaited<
   ReturnType<typeof window.snow.browserCaptureScreenshot>
 >;
 
-const CAPTURE_ATTEMPTS = 3;
-const CAPTURE_RETRY_DELAY_MS = 300;
-const CAPTURE_TIMEOUT_HINT = "timed out";
-
-/** 渲染态刚切换时首帧可能尚未产出，超时后短暂等待再重试。 */
-const captureScreenshotWithRetry = async (
+/** 渲染态刚切换时首帧可能尚未产出，等首帧由主进程探针负责，这里只调用一次。 */
+const captureScreenshot = (
   webContentsId: number,
   request: BrowserCaptureRequest,
-): Promise<BrowserCaptureResult> => {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt += 1) {
-    try {
-      return await window.snow.browserCaptureScreenshot(webContentsId, request);
-    } catch (error) {
-      lastError = error;
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes(CAPTURE_TIMEOUT_HINT)) {
-        throw error;
-      }
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, CAPTURE_RETRY_DELAY_MS),
-      );
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Browser screenshot failed");
-};
+): Promise<BrowserCaptureResult> =>
+  window.snow.browserCaptureScreenshot(webContentsId, request);
 
 const screenshotInRenderMode = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
+  waitForFrame: boolean,
 ): Promise<unknown> => {
   // 最近一次主 Frame 导航失败时，页面停留在 Chromium 错误页，截图
   // 只会返回全黑图像。此时直接返回原导航错误，不把错误页当作正常结果。
@@ -1731,12 +1710,13 @@ const screenshotInRenderMode = async (
     elementInfo = target.element;
   }
 
-  const result = await captureScreenshotWithRetry(webContentsId, {
+  const result = await captureScreenshot(webContentsId, {
     format,
     quality,
     fullPage,
     clip: clip ?? undefined,
     filePath,
+    waitForFrame,
   });
   const metadata = await currentPageMetadata(webview, instanceId);
   if (result.savedTo) {
@@ -1774,15 +1754,15 @@ const screenshotInRenderMode = async (
 
 /**
  * 非激活浏览器 tab 的 webview 不产帧，截图会一直挂起；先临时进入渲染态
- * （见 captureRenderMode）再执行，保证后台 tab 也能静默截图。
+ * （见 captureRenderMode）再执行，后台 tab 由主进程等首帧后截图。
  */
 const screenshot = (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
 ): Promise<unknown> =>
-  withCaptureRenderMode(instanceId, () =>
-    screenshotInRenderMode(webview, instanceId, args),
+  withCaptureRenderMode(instanceId, (background) =>
+    screenshotInRenderMode(webview, instanceId, args, background),
   );
 
 const wait = async (

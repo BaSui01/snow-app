@@ -30,6 +30,8 @@ mod safety;
 mod session;
 pub(crate) mod stream_io;
 
+use stream_io::{BoundedCapture, CapturedOutput};
+
 fn set_inherited_env_default(process: &mut tokio::process::Command, key: &str, value: &str) {
     if value.is_empty() || std::env::var_os(key).is_some() {
         return;
@@ -233,6 +235,8 @@ struct LocalResult<'a> {
     is_interactive: bool,
     elapsed_ms: u64,
     timeout_ms: u64,
+    /// 超出捕获上限被省略的字节数（stdout + stderr 合计）。
+    truncated_bytes: u64,
 }
 
 fn build_local_result(result: LocalResult<'_>) -> Value {
@@ -248,6 +252,9 @@ fn build_local_result(result: LocalResult<'_>) -> Value {
         "timeoutMs": result.timeout_ms,
         "outputComplete": result.output_complete,
     });
+    if result.truncated_bytes > 0 {
+        payload["truncatedBytes"] = json!(result.truncated_bytes);
+    }
     if let Some(reason) = result.reason {
         payload["reason"] = json!(reason);
     }
@@ -740,6 +747,7 @@ impl BashService {
                 },
             });
 
+            let truncated_bytes = outcome.truncated_bytes;
             return Ok(match outcome.status {
                 session::SessionStatus::SpawnFailed { error } => build_local_spawn_failed_result(
                     format!("Failed to spawn process: {error}"),
@@ -762,6 +770,7 @@ impl BashService {
                     is_interactive,
                     elapsed_ms,
                     timeout_ms: effective_timeout_ms,
+                    truncated_bytes,
                 }),
                 session::SessionStatus::TimedOut { watchdog } => build_local_result(LocalResult {
                     status: "timed_out",
@@ -776,6 +785,7 @@ impl BashService {
                     is_interactive,
                     elapsed_ms,
                     timeout_ms: effective_timeout_ms,
+                    truncated_bytes,
                 }),
                 session::SessionStatus::Cancelled { reason } => build_local_result(LocalResult {
                     status: "cancelled",
@@ -790,6 +800,7 @@ impl BashService {
                     is_interactive,
                     elapsed_ms,
                     timeout_ms: effective_timeout_ms,
+                    truncated_bytes,
                 }),
                 session::SessionStatus::Failed { error } => build_local_result(LocalResult {
                     status: "failed",
@@ -804,6 +815,7 @@ impl BashService {
                     is_interactive,
                     elapsed_ms,
                     timeout_ms: effective_timeout_ms,
+                    truncated_bytes,
                 }),
             });
         }
@@ -926,6 +938,17 @@ impl BashService {
         };
         let spawn_ms = spawn_started.elapsed().as_millis() as u64;
 
+        // Windows：绑定 Job Object，宿主崩溃或退出时连带杀掉整棵命令进程树；
+        // detach 需要进程孤儿化，不绑定。
+        #[cfg(target_os = "windows")]
+        let _process_tree = if detach {
+            None
+        } else {
+            child
+                .id()
+                .map(|pid| crate::utils::process_tree::ProcessTreeGuard::new("bash-command", pid))
+        };
+
         // detach 模式：不等待、不注册取消 token、不读取输出。拿到 PID 后
         // 立即返回；child 在此 drop（kill_on_drop=false，进程孤儿化后继续
         // 运行，日志句柄由子进程持有继续写入）。返回值携带 pid / logPath /
@@ -1014,8 +1037,8 @@ impl BashService {
         // Shared accumulation buffers mirror everything the readers consume
         // so a partial stdout/stderr survives even when a reader task must
         // be aborted before EOF (stop / timeout with a surviving grandchild).
-        let stdout_accumulated = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let stderr_accumulated = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stdout_accumulated = Arc::new(std::sync::Mutex::new(BoundedCapture::default()));
+        let stderr_accumulated = Arc::new(std::sync::Mutex::new(BoundedCapture::default()));
         let stdout_task = child.stdout.take().map(|stdout| {
             tokio::spawn(stream_io::read_stream(
                 stdout,
@@ -1134,6 +1157,7 @@ impl BashService {
             await_stream_task(stderr_task, drain_deadline, &stderr_accumulated),
         );
         let output_complete = stdout_complete && stderr_complete;
+        let truncated_bytes = stdout.omitted.saturating_add(stderr.omitted);
         let pipe_drain_ms = pipe_drain_started.elapsed().as_millis() as u64;
 
         // No further cancellation can target this execution once the
@@ -1178,8 +1202,8 @@ impl BashService {
             session_id: session_id.as_deref(),
             tool_execution_id: Some(&tool_execution_id),
             exit_code,
-            captured_stdout_bytes: stdout.len(),
-            captured_stderr_bytes: stderr.len(),
+            captured_stdout_bytes: stdout.text.len(),
+            captured_stderr_bytes: stderr.text.len(),
             timings: BashExecutionTimings {
                 argument_parse_ms,
                 sensitive_check_ms,
@@ -1208,8 +1232,8 @@ impl BashService {
                 status: "completed",
                 reason: None,
                 error: None,
-                stdout,
-                stderr,
+                stdout: stdout.text,
+                stderr: stderr.text,
                 exit_code: Some(exit_code),
                 output_complete,
                 command: &command,
@@ -1217,13 +1241,14 @@ impl BashService {
                 is_interactive,
                 elapsed_ms,
                 timeout_ms: effective_timeout_ms,
+                truncated_bytes,
             })),
             ProcessWaitResult::TimedOut { watchdog } => Ok(build_local_result(LocalResult {
                 status: "timed_out",
                 reason: Some(if watchdog { "watchdog_timeout" } else { "timeout" }),
                 error: Some(format!("Command timed out after {timeout}ms: {command}")),
-                stdout,
-                stderr,
+                stdout: stdout.text,
+                stderr: stderr.text,
                 exit_code: None,
                 output_complete,
                 command: &command,
@@ -1231,13 +1256,14 @@ impl BashService {
                 is_interactive,
                 elapsed_ms,
                 timeout_ms: effective_timeout_ms,
+                truncated_bytes,
             })),
             ProcessWaitResult::Cancelled(reason) => Ok(build_local_result(LocalResult {
                 status: "cancelled",
                 reason: Some(&reason),
                 error: Some(format!("Command was stopped by the user: {command}")),
-                stdout,
-                stderr,
+                stdout: stdout.text,
+                stderr: stderr.text,
                 exit_code: None,
                 output_complete,
                 command: &command,
@@ -1245,13 +1271,14 @@ impl BashService {
                 is_interactive,
                 elapsed_ms,
                 timeout_ms: effective_timeout_ms,
+                truncated_bytes,
             })),
             ProcessWaitResult::Failed(error) => Ok(build_local_result(LocalResult {
                 status: "failed",
                 reason: Some("process_wait_failed"),
                 error: Some(format!("Failed to wait for process: {error}")),
-                stdout,
-                stderr,
+                stdout: stdout.text,
+                stderr: stderr.text,
                 exit_code: None,
                 output_complete,
                 command: &command,
@@ -1259,6 +1286,7 @@ impl BashService {
                 is_interactive,
                 elapsed_ms,
                 timeout_ms: effective_timeout_ms,
+                truncated_bytes,
             })),
         }
     }
@@ -1281,10 +1309,10 @@ enum ProcessWaitResult {
 /// reader drained to EOF (false = the output may be partial).  On abort or
 /// drain timeout the shared accumulation buffer provides whatever was read.
 async fn await_stream_task(
-    task: Option<tokio::task::JoinHandle<String>>,
+    task: Option<tokio::task::JoinHandle<CapturedOutput>>,
     safety_timeout: Option<Duration>,
-    accumulated: &std::sync::Mutex<Vec<u8>>,
-) -> (String, bool) {
+    accumulated: &std::sync::Mutex<BoundedCapture>,
+) -> (CapturedOutput, bool) {
     match task {
         Some(mut handle) => match safety_timeout {
             Some(dur) => {
@@ -1308,6 +1336,12 @@ async fn await_stream_task(
                 Err(_) => (stream_io::finalize_accumulated_output(accumulated), false),
             },
         },
-        None => (String::new(), true),
+        None => (
+            CapturedOutput {
+                text: String::new(),
+                omitted: 0,
+            },
+            true,
+        ),
     }
 }

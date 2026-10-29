@@ -42,7 +42,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use super::stream_io::{emit_complete_utf8_chunks, kill_process_tree, strip_ansi_codes};
+use super::stream_io::{
+    emit_complete_utf8_chunks, emit_stream_chunk, kill_process_tree, BoundedCapture,
+    CapturedOutput, STREAM_EMIT_LIMIT,
+};
 use super::BashStreamCallback;
 
 /// 会话闲置多久后被回收（与 LSP 会话的懒回收约定一致，不阻塞任何调用路径）。
@@ -87,6 +90,8 @@ pub(crate) struct SessionOutcome {
     pub(crate) wait_ms: u64,
     /// 会话被强杀（超时/取消/写入失败）时为 false，表示输出可能不完整。
     pub(crate) output_complete: bool,
+    /// 超出捕获上限被省略的字节数（stdout + stderr）。
+    pub(crate) truncated_bytes: u64,
 }
 
 pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
@@ -111,6 +116,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
                         spawn_ms,
                         wait_ms: 0,
                         output_complete: true,
+                        truncated_bytes: 0,
                     };
                 }
             }
@@ -171,7 +177,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
         }
     }
     if let Some(status) = write_abort {
-        let (stdout, stderr, first_output_ms) = session.take_output();
+        let (stdout, stderr, first_output_ms, truncated_bytes) = session.take_output();
         session.kill().await;
         return SessionOutcome {
             status,
@@ -182,6 +188,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
             spawn_ms,
             wait_ms: dispatch_started.elapsed().as_millis() as u64,
             output_complete: false,
+            truncated_bytes,
         };
     }
 
@@ -221,7 +228,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
     if !output_complete {
         session.kill().await;
     }
-    let (stdout, stderr, first_output_ms) = session.take_output();
+    let (stdout, stderr, first_output_ms, truncated_bytes) = session.take_output();
     if output_complete {
         return_session(cmd.shell, session).await;
     }
@@ -235,6 +242,7 @@ pub(crate) async fn execute(cmd: SessionCommand<'_>) -> SessionOutcome {
         spawn_ms,
         wait_ms,
         output_complete,
+        truncated_bytes,
     }
 }
 
@@ -340,6 +348,11 @@ async fn spawn_session(
         .env("LC_ALL", "en_US.UTF-8")
         .env_remove("NODE_ENV")
         .current_dir(working_directory);
+    #[cfg(not(target_os = "windows"))]
+    {
+        // 独立进程组：kill_process_tree 用 kill(-pid) 才能连带子进程。
+        process.process_group(0);
+    }
     if let Some(path) = login_path {
         process.env("PATH", path);
     }
@@ -361,6 +374,12 @@ async fn spawn_session(
     let io = Arc::new(SessionIo::default());
     let stdout_reader = tokio::spawn(pump_stdout(stdout, Arc::clone(&io)));
     let stderr_reader = tokio::spawn(pump_stderr(stderr, Arc::clone(&io)));
+    #[cfg(target_os = "windows")]
+    let process_tree = child
+        .id()
+        .map(|pid| crate::utils::process_tree::ProcessTreeGuard::new("bash-session", pid));
+    #[cfg(not(target_os = "windows"))]
+    let process_tree = None;
     Ok(LiveSession {
         child,
         stdin,
@@ -368,6 +387,7 @@ async fn spawn_session(
         stdout_reader,
         stderr_reader,
         last_used: Instant::now(),
+        _process_tree: process_tree,
     })
 }
 
@@ -378,6 +398,8 @@ struct LiveSession {
     stdout_reader: tokio::task::JoinHandle<()>,
     stderr_reader: tokio::task::JoinHandle<()>,
     last_used: Instant,
+    /// Windows：Job Object（KILL_ON_JOB_CLOSE），宿主崩溃时连带杀掉常驻 shell 树。
+    _process_tree: Option<crate::utils::process_tree::ProcessTreeGuard>,
 }
 
 impl LiveSession {
@@ -391,21 +413,24 @@ impl LiveSession {
         self.stderr_reader.abort();
     }
 
-    fn take_output(&self) -> (String, String, Option<u64>) {
+    fn take_output(&self) -> (String, String, Option<u64>, u64) {
         let mut state = self.io.lock_state();
-        let (first_output_ms, token_index) = state
+        let (first_output_ms, token) = state
             .command
             .as_ref()
-            .map(|command| (command.first_output_ms, command.token_index))
-            .unwrap_or((None, None));
-        let stdout_end = match token_index {
-            Some(index) => index.min(state.stdout_raw.len()),
-            None => state.stdout_raw.len(),
-        };
-        let stdout = strip_ansi_codes(&String::from_utf8_lossy(&state.stdout_raw[..stdout_end]));
-        let stderr = strip_ansi_codes(&String::from_utf8_lossy(&state.stderr_raw));
+            .map(|command| (command.first_output_ms, command.token.clone()))
+            .unwrap_or((None, Vec::new()));
+        let mut stdout: CapturedOutput = state.stdout.capture.finish();
+        if !token.is_empty() {
+            // 捕获区是「头部 + 省略标记 + 尾部」，哨兵始终落在保留范围内。
+            if let Some(index) = find_subslice(stdout.text.as_bytes(), &token) {
+                stdout.text.truncate(index);
+            }
+        }
+        let stderr = state.stderr.capture.finish();
+        let truncated = stdout.omitted.saturating_add(stderr.omitted);
         state.reset();
-        (stdout, stderr, first_output_ms)
+        (stdout.text, stderr.text, first_output_ms, truncated)
     }
 }
 
@@ -423,20 +448,28 @@ impl SessionIo {
 
 struct ActiveCommand {
     token: Vec<u8>,
-    token_index: Option<usize>,
     exit_code: Option<i32>,
     first_output_ms: Option<u64>,
     dispatched_at: Instant,
     on_chunk: Arc<BashStreamCallback>,
 }
 
+/// 单条流的捕获状态：有界正文 + 增量哨兵窗口 + 流式待发送窗口。
+#[derive(Default)]
+struct StreamState {
+    capture: BoundedCapture,
+    probe: Vec<u8>,
+    visible: Vec<u8>,
+    emitted: usize,
+    emit_stopped: bool,
+    token_seen: bool,
+    post_token: Vec<u8>,
+}
+
 #[derive(Default)]
 struct IoState {
-    stdout_raw: Vec<u8>,
-    stderr_raw: Vec<u8>,
-    stdout_visible: Vec<u8>,
-    stderr_visible: Vec<u8>,
-    stdout_sliced: usize,
+    stdout: StreamState,
+    stderr: StreamState,
     command: Option<ActiveCommand>,
 }
 
@@ -450,7 +483,6 @@ impl IoState {
         self.reset();
         self.command = Some(ActiveCommand {
             token: token.as_bytes().to_vec(),
-            token_index: None,
             exit_code: None,
             first_output_ms: None,
             dispatched_at,
@@ -467,11 +499,8 @@ impl IoState {
     }
 
     fn reset(&mut self) {
-        self.stdout_raw.clear();
-        self.stderr_raw.clear();
-        self.stdout_visible.clear();
-        self.stderr_visible.clear();
-        self.stdout_sliced = 0;
+        self.stdout = StreamState::default();
+        self.stderr = StreamState::default();
         self.command = None;
     }
 
@@ -526,48 +555,85 @@ fn feed_stdout(state: &mut IoState, chunk: &[u8]) {
         return;
     }
     state.record_first_output();
-    state.stdout_raw.extend_from_slice(chunk);
+    state.stdout.capture.push(chunk);
 
-    if state.command.as_ref().is_some_and(|command| command.token_index.is_none()) {
-        let found = {
-            let command = state.command.as_ref().expect("command checked above");
-            find_subslice(&state.stdout_raw, &command.token)
-        };
-        if let Some(command) = state.command.as_mut() {
-            command.token_index = found;
-        }
-    }
-
-    let token_index = state.command.as_ref().and_then(|command| command.token_index);
-    let visible_end = match token_index {
-        Some(index) => index,
-        None => state.stdout_raw.len().saturating_sub(SENTINEL_HOLDBACK_BYTES),
+    let Some(callback) = state.active_callback() else {
+        return;
     };
-    if visible_end > state.stdout_sliced {
+    let Some(token) = state.command.as_ref().map(|command| command.token.clone()) else {
+        return;
+    };
+
+    // 哨兵只在滑动窗口里找：旧实现每个 chunk 重扫整个输出，是 O(n^2)。
+    if !state.stdout.token_seen {
+        state.stdout.probe.extend_from_slice(chunk);
+        if let Some(index) = find_subslice(&state.stdout.probe, &token) {
+            state.stdout.token_seen = true;
+            let rest = index + token.len();
+            state
+                .stdout
+                .post_token
+                .extend_from_slice(&state.stdout.probe[rest..]);
+            state.stdout.probe.clear();
+        } else {
+            let keep = token.len().saturating_sub(1);
+            if state.stdout.probe.len() > keep {
+                let drop = state.stdout.probe.len() - keep;
+                state.stdout.probe.drain(..drop);
+            }
+        }
+    } else if state.stdout.post_token.len() < 32 {
+        let room = 32 - state.stdout.post_token.len();
         state
-            .stdout_visible
-            .extend_from_slice(&state.stdout_raw[state.stdout_sliced..visible_end]);
-        state.stdout_sliced = visible_end;
-    }
-    if let Some(callback) = state.active_callback() {
-        emit_complete_utf8_chunks(&callback, "stdout", &mut state.stdout_visible);
+            .stdout
+            .post_token
+            .extend_from_slice(&chunk[..chunk.len().min(room)]);
     }
 
-    if let Some(index) = token_index {
-        let token_len = state
-            .command
-            .as_ref()
-            .map(|command| command.token.len())
-            .unwrap_or_default();
-        if let Some(exit_code) = state
-            .stdout_raw
-            .get(index + token_len..)
-            .and_then(parse_exit_code)
-        {
+    if state.stdout.token_seen {
+        if let Some(exit_code) = parse_exit_code(&state.stdout.post_token) {
             if let Some(command) = state.command.as_mut() {
                 command.exit_code = Some(exit_code);
             }
         }
+    }
+
+    // 流式转发：命中哨兵后剩余字节都是协议行，丢弃可见窗口避免泄出退出码。
+    if state.stdout.emit_stopped {
+        return;
+    }
+    if state.stdout.token_seen {
+        state.stdout.emit_stopped = true;
+        state.stdout.visible.clear();
+        return;
+    }
+    state.stdout.visible.extend_from_slice(chunk);
+    let emit_len = state
+        .stdout
+        .visible
+        .len()
+        .saturating_sub(SENTINEL_HOLDBACK_BYTES);
+    if emit_len == 0 {
+        return;
+    }
+    let mut piece: Vec<u8> = state.stdout.visible.drain(..emit_len).collect();
+    emit_complete_utf8_chunks(&callback, "stdout", &mut piece);
+    if !piece.is_empty() {
+        // 不完整的 UTF-8 尾部放回队首，等下一个 chunk 补全。
+        state.stdout.visible.splice(0..0, piece);
+    }
+    state.stdout.emitted = state.stdout.emitted.saturating_add(emit_len);
+    if state.stdout.emitted >= STREAM_EMIT_LIMIT {
+        state.stdout.emit_stopped = true;
+        state.stdout.visible.clear();
+        emit_stream_chunk(
+            &callback,
+            "stdout",
+            format!(
+                "\n… [stream output truncated after {} bytes; the final result keeps the captured head and tail] …\n",
+                state.stdout.emitted
+            ),
+        );
     }
 }
 
@@ -577,10 +643,35 @@ fn feed_stderr(state: &mut IoState, chunk: &[u8]) {
         return;
     }
     state.record_first_output();
-    state.stderr_raw.extend_from_slice(chunk);
-    if let Some(callback) = state.active_callback() {
-        state.stderr_visible.extend_from_slice(chunk);
-        emit_complete_utf8_chunks(&callback, "stderr", &mut state.stderr_visible);
+    state.stderr.capture.push(chunk);
+    let Some(callback) = state.active_callback() else {
+        return;
+    };
+    if state.stderr.emit_stopped {
+        return;
+    }
+    state.stderr.visible.extend_from_slice(chunk);
+    let emit_len = state.stderr.visible.len();
+    if emit_len == 0 {
+        return;
+    }
+    let mut piece: Vec<u8> = state.stderr.visible.drain(..emit_len).collect();
+    emit_complete_utf8_chunks(&callback, "stderr", &mut piece);
+    if !piece.is_empty() {
+        state.stderr.visible.splice(0..0, piece);
+    }
+    state.stderr.emitted = state.stderr.emitted.saturating_add(emit_len);
+    if state.stderr.emitted >= STREAM_EMIT_LIMIT {
+        state.stderr.emit_stopped = true;
+        state.stderr.visible.clear();
+        emit_stream_chunk(
+            &callback,
+            "stderr",
+            format!(
+                "\n… [stream output truncated after {} bytes; the final result keeps the captured head and tail] …\n",
+                state.stderr.emitted
+            ),
+        );
     }
 }
 

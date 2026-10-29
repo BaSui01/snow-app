@@ -11,20 +11,76 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 // 这里再导出，供 bash 工具与其它长任务（git clone 等）共用同一套语义。
 pub(crate) use crate::utils::process::{kill_process_tree, poll_child_exit};
 
+/// 单条流保留的头部字节上限。工具结果另有 token 上限，头部足够覆盖；
+/// 超出后只滚动保留尾部，避免几十 GB 的命令输出把主进程内存吃满。
+pub(crate) const STREAM_HEAD_LIMIT: usize = 4 * 1024 * 1024;
+/// 头部写满后滚动保留的尾部字节数（错误信息通常出现在末尾）。
+pub(crate) const STREAM_TAIL_LIMIT: usize = 512 * 1024;
+/// 流式转发给前端的单条流上限；超出后停止转发，最终结果仍保留首尾。
+pub(crate) const STREAM_EMIT_LIMIT: usize = 2 * 1024 * 1024;
+
+/// 有界输出捕获：头部 + 尾部窗口 + 被省略的字节数。
+#[derive(Default)]
+pub(crate) struct BoundedCapture {
+    head: Vec<u8>,
+    tail: Vec<u8>,
+    omitted: u64,
+}
+
+pub(crate) struct CapturedOutput {
+    pub(crate) text: String,
+    pub(crate) omitted: u64,
+}
+
+impl BoundedCapture {
+    pub(crate) fn push(&mut self, chunk: &[u8]) {
+        let space = STREAM_HEAD_LIMIT.saturating_sub(self.head.len());
+        let take = space.min(chunk.len());
+        if take > 0 {
+            self.head.extend_from_slice(&chunk[..take]);
+        }
+        if take < chunk.len() {
+            self.tail.extend_from_slice(&chunk[take..]);
+            if self.tail.len() > STREAM_TAIL_LIMIT {
+                let drop = self.tail.len() - STREAM_TAIL_LIMIT;
+                self.tail.drain(..drop);
+                self.omitted += drop as u64;
+            }
+        }
+    }
+
+    pub(crate) fn finish(&self) -> CapturedOutput {
+        let mut bytes = Vec::with_capacity(self.head.len() + self.tail.len() + 64);
+        bytes.extend_from_slice(&self.head);
+        if self.omitted > 0 {
+            bytes.extend_from_slice(
+                format!("\n… [output truncated: {} bytes omitted] …\n", self.omitted).as_bytes(),
+            );
+        }
+        bytes.extend_from_slice(&self.tail);
+        CapturedOutput {
+            text: strip_ansi_codes(&String::from_utf8_lossy(&bytes)),
+            omitted: self.omitted,
+        }
+    }
+}
+
 pub(crate) async fn read_stream<R>(
     mut reader: R,
     stream: &'static str,
     on_chunk: Arc<BashStreamCallback>,
     first_output_ms: Arc<OnceLock<u64>>,
     execution_started: Instant,
-    accumulated: Arc<std::sync::Mutex<Vec<u8>>>,
-) -> String
+    accumulated: Arc<std::sync::Mutex<BoundedCapture>>,
+) -> CapturedOutput
 where
     R: AsyncRead + Unpin,
 {
-    let mut output = Vec::new();
+    let mut capture = BoundedCapture::default();
     let mut buffer = [0_u8; 4096];
     let mut pending_utf8 = Vec::new();
+    let mut emitted = 0usize;
+    let mut emit_stopped = false;
 
     loop {
         let read = match reader.read(&mut buffer).await {
@@ -33,17 +89,34 @@ where
         };
 
         let _ = first_output_ms.set(execution_started.elapsed().as_millis() as u64);
-        output.extend_from_slice(&buffer[..read]);
+        let chunk = &buffer[..read];
+        capture.push(chunk);
         // Mirror the bytes into the shared buffer so a partial output
         // survives even if this reader task is aborted before EOF.
         if let Ok(mut guard) = accumulated.lock() {
-            guard.extend_from_slice(&buffer[..read]);
+            guard.push(chunk);
         }
-        pending_utf8.extend_from_slice(&buffer[..read]);
+
+        if emit_stopped {
+            continue;
+        }
+        pending_utf8.extend_from_slice(chunk);
         emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
+        emitted = emitted.saturating_add(read);
+        if emitted >= STREAM_EMIT_LIMIT {
+            emit_stopped = true;
+            pending_utf8.clear();
+            emit_stream_chunk(
+                &on_chunk,
+                stream,
+                format!(
+                    "\n… [stream output truncated after {emitted} bytes; the final result keeps the captured head and tail] …\n"
+                ),
+            );
+        }
     }
 
-    if !pending_utf8.is_empty() {
+    if !emit_stopped && !pending_utf8.is_empty() {
         emit_stream_chunk(
             &on_chunk,
             stream,
@@ -51,18 +124,22 @@ where
         );
     }
 
-    strip_ansi_codes(&String::from_utf8_lossy(&output))
+    capture.finish()
 }
 
 /// Finalize whatever bytes a reader captured so far (used when the reader
 /// task had to be aborted before reaching EOF, e.g. a surviving grandchild
 /// keeps the pipe open after the process-tree kill).
-pub(crate) fn finalize_accumulated_output(accumulated: &std::sync::Mutex<Vec<u8>>) -> String {
-    let bytes = match accumulated.lock() {
-        Ok(guard) => guard.clone(),
-        Err(_) => Vec::new(),
+pub(crate) fn finalize_accumulated_output(
+    accumulated: &std::sync::Mutex<BoundedCapture>,
+) -> CapturedOutput {
+    let Ok(guard) = accumulated.lock() else {
+        return CapturedOutput {
+            text: String::new(),
+            omitted: 0,
+        };
     };
-    strip_ansi_codes(&String::from_utf8_lossy(&bytes))
+    guard.finish()
 }
 
 pub(crate) fn emit_complete_utf8_chunks(on_chunk: &BashStreamCallback, stream: &str, pending: &mut Vec<u8>) {

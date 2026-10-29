@@ -28,6 +28,22 @@ import { tGlobal } from "../../../i18n";
 
 /** 等待右侧面板展开的兜底超时（毫秒），避免命令被永远挂起。 */
 const EXPAND_WAIT_TIMEOUT_MS = 3_000;
+/** 单帧等待上限：隐藏窗口会暂停 rAF，轮询不能因此卡死。 */
+const EXPAND_FRAME_WAIT_MS = 60;
+
+const nextFrame = (): Promise<void> =>
+  new Promise((resolve) => {
+    let settled = false;
+    let timer = 0;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve();
+    };
+    timer = window.setTimeout(finish, EXPAND_FRAME_WAIT_MS);
+    window.requestAnimationFrame(finish);
+  });
 
 export type BrowserTabInfo = {
   instanceId: string;
@@ -93,9 +109,7 @@ export const useBrowserMcpCommandBridge = (
       ) {
         return;
       }
-      await new Promise((resolve) =>
-        requestAnimationFrame(() => resolve(undefined)),
-      );
+      await nextFrame();
     }
   };
 

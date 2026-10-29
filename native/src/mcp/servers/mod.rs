@@ -18,6 +18,7 @@ pub mod remote_workspace;
 pub mod skills;
 pub mod skills_config;
 pub mod skills_installer;
+pub mod skills_remote;
 pub mod sub_agents;
 pub mod terminal;
 pub mod todo;

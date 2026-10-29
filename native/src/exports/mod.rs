@@ -25,3 +25,4 @@ mod table;
 pub(crate) mod terminal;
 mod team;
 mod updater;
+mod window_frame;

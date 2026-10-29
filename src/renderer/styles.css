@@ -15018,6 +15018,10 @@ body.is-panel-resizing * {
   align-items: center;
   gap: 6px;
   width: fit-content;
+  /* 固定头部高度：摘要文案、徽章、元信息（行号/缓存标记）与预览按钮等内容
+     出现或消失都不再改变行高，避免工具卡在流式与状态切换时上下抖动。
+     头部内较高的元素（≤22px）在盒内居中显示，既不裁剪也不撑高。 */
+  height: 26px;
   padding: 4px 6px 4px 8px;
   font-size: 12.5px;
   color: var(--text-secondary);
@@ -45356,15 +45360,12 @@ body.ctrl-held [data-path] {
    而终端主题色只覆盖 .xterm-screen：当容器高度不是行高的整数倍时，底部
    残留条会露出视口背景，浅色模式下表现为黑色横条。这里提高特异性并同时
    覆盖终端根元素，使整个可见区域（含残留条）都跟随终端主题色。
+   底色取 --terminal-bg（tokens.css 按明暗主题给出默认值，层叠等布局风格
+   会改写它），与 TerminalPanelContent 里 xterm 主题的 background 同源。
    xterm v6 的 .xterm-scrollable-element 内联背景已由库按主题设置，无需干预。 */
 .terminal-container .xterm,
 .terminal-container .xterm .xterm-viewport {
-  background-color: #fbfcfd;
-}
-
-:root[data-theme="dark"] .terminal-container .xterm,
-:root[data-theme="dark"] .terminal-container .xterm .xterm-viewport {
-  background-color: #0e0e0e;
+  background-color: var(--terminal-bg);
 }
 .terminal-container .xterm-screen {
   padding: 0;

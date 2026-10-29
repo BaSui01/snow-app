@@ -123,14 +123,29 @@ const lightTerminalTheme: ITheme = {
   brightWhite: "#a5a5a5",
 };
 
-const getTerminalTheme = (): ITheme => {
-  if (
-    typeof document !== "undefined" &&
-    document.documentElement.getAttribute("data-theme") === "dark"
-  ) {
-    return darkTerminalTheme;
+/**
+ * 终端画布底色取 CSS 变量 --terminal-bg（tokens.css 按明暗主题给出默认值）。
+ * 布局风格（层叠下终端与右侧面板同色）与主题预设因此能统一改写终端底色，
+ * 避免终端在面板里显出一块异色区域。变量缺失时回退到主题自带底色。
+ */
+const resolveTerminalBackground = (
+  fallback: string | undefined,
+): string | undefined => {
+  if (typeof document === "undefined") {
+    return fallback;
   }
-  return lightTerminalTheme;
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue("--terminal-bg")
+    .trim();
+  return value || fallback;
+};
+
+const getTerminalTheme = (): ITheme => {
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "dark";
+  const base = isDark ? darkTerminalTheme : lightTerminalTheme;
+  return { ...base, background: resolveTerminalBackground(base.background) };
 };
 
 // 默认字体栈：优先命中系统里的常见 Nerd Font。Oh My Posh / starship 等提示符
@@ -536,7 +551,8 @@ export const TerminalPanelContent = ({
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["data-theme"],
+      // data-theme 决定明暗配色；主题预设与布局风格会改写 --terminal-bg（终端底色）
+      attributeFilter: ["data-theme", "data-theme-preset", "data-layout-style"],
     });
 
     const initPty = async () => {

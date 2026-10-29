@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { dirname } from "node:path/posix";
 import {
   parseRoleSettings,
@@ -7,11 +10,13 @@ import { processFileContent } from "../utils/fileReader";
 import {
   deleteSshFile,
   executeSshCommand,
+  isSshPathWithinRoot,
   listSshDirectory,
   parseSshUrl,
   readSshFile,
   readSshFileWithVersion,
   removeEmptySshDirectory,
+  renameSshFile,
   SshOperationError,
   statSshEntry,
   isSshOperationError,
@@ -94,6 +99,7 @@ type RemoteWorkspaceCommandArgs = {
   contentBase64?: unknown;
   paths?: unknown;
   scanId?: unknown;
+  sourceDir?: unknown;
 };
 
 type RemoteWorkspaceSearchMatch = {
@@ -2409,6 +2415,337 @@ const executeCheckpointAbortScan = (
   return { aborted: abortCheckpointScan(scanId) };
 };
 
+// ============================================================================
+// 技能（SSH 工作区）：Rust 侧 skills_installer / skills 服务把 GitHub 仓库解压到
+// 本地临时目录后，通过这几条命令把技能目录原子替换到远程 <工作区>/.snow/skills/<id>、
+// 删除远程技能目录（卸载 / 安装回滚）、扫描远程技能目录树（列表 / 执行），以及
+// 回写 SKILL.md（项目技能启停）。
+// ============================================================================
+
+const SKILL_STAGING_MARKER = ".snow-stage-";
+const SKILL_BACKUP_MARKER = ".snow-previous-";
+/** 技能入口文件名（与 Rust 侧 SKILL_FILE_NAME 一致）。 */
+const SKILL_FILE_NAME = "SKILL.md";
+
+type LocalSkillTreeEntry = {
+  relativePath: string;
+  isDirectory: boolean;
+};
+
+/** 收集本地技能目录的完整文件树（相对路径用 POSIX 分隔符；符号链接等其它类型跳过）。 */
+const collectLocalSkillTree = async (
+  root: string,
+): Promise<LocalSkillTreeEntry[]> => {
+  const entries: LocalSkillTreeEntry[] = [];
+  const pending: Array<{ absolutePath: string; relativePath: string }> = [
+    { absolutePath: root, relativePath: "" },
+  ];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current) {
+      break;
+    }
+    const dirents = await readdir(current.absolutePath, {
+      withFileTypes: true,
+    });
+    for (const dirent of dirents) {
+      const relativePath = current.relativePath
+        ? `${current.relativePath}/${dirent.name}`
+        : dirent.name;
+      if (dirent.isDirectory()) {
+        entries.push({ relativePath, isDirectory: true });
+        pending.push({
+          absolutePath: join(current.absolutePath, dirent.name),
+          relativePath,
+        });
+        continue;
+      }
+      if (dirent.isFile()) {
+        entries.push({ relativePath, isDirectory: false });
+      }
+    }
+  }
+  return entries;
+};
+
+/** 目标目录同级的暂存/备份路径（点号前缀保证不会被技能扫描当成技能目录）。 */
+const buildRemoteSiblingPath = (remotePath: string, marker: string): string => {
+  const parent = dirname(remotePath);
+  const name = remotePath.slice(parent === "/" ? 1 : parent.length + 1);
+  const prefix = parent === "/" ? "" : parent;
+  return `${prefix}/.${name}${marker}${randomUUID()}`;
+};
+
+/** 解析技能目录参数：目标必须与工作区同源，且位于工作区内。 */
+const resolveSkillTargetPath = (
+  args: RemoteWorkspaceCommandArgs,
+): {
+  workspaceRoot: string;
+  targetPath: string;
+  workspaceRemoteRoot: string;
+  targetRemotePath: string;
+} => {
+  const workspaceRoot = validateSshWorkspacePath(
+    args.workspaceRoot,
+    "workspaceRoot",
+  );
+  const targetPath = validateSshWorkspacePath(args.path, "path");
+  const workspaceRemoteRoot = resolveAuthorizedWorkspaceRoot(
+    targetPath,
+    workspaceRoot,
+  );
+  const targetRemotePath = parseSshUrl(targetPath).remotePath;
+  if (!isSshPathWithinRoot(targetRemotePath, workspaceRemoteRoot)) {
+    throw new Error("Skill destination must be inside the remote workspace");
+  }
+  return { workspaceRoot, targetPath, workspaceRemoteRoot, targetRemotePath };
+};
+
+const executeSkillsInstallDir = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  const { workspaceRoot, targetPath, workspaceRemoteRoot, targetRemotePath } =
+    resolveSkillTargetPath(args);
+  const sourceDir = ensureString(args.sourceDir, "sourceDir");
+  const entries = await collectLocalSkillTree(sourceDir);
+
+  return withSshSession(
+    workspaceRoot,
+    async (sessionId) => {
+      const stagingPath = buildRemoteSiblingPath(
+        targetRemotePath,
+        SKILL_STAGING_MARKER,
+      );
+      const backupPath = buildRemoteSiblingPath(
+        targetRemotePath,
+        SKILL_BACKUP_MARKER,
+      );
+
+      // 先把整个技能目录上传到暂存目录：上传中途失败时目标目录保持原样。
+      await executeSshCommand(
+        sessionId,
+        `rm -rf -- ${shellQuote(stagingPath)}`,
+        {
+          signal,
+        },
+      );
+      await executeSshCommand(sessionId, buildRemoteMkdirCommand(stagingPath), {
+        signal,
+      });
+      for (const entry of entries) {
+        const remoteEntryPath = `${stagingPath}/${entry.relativePath}`;
+        if (entry.isDirectory) {
+          await executeSshCommand(
+            sessionId,
+            buildRemoteMkdirCommand(remoteEntryPath),
+            { signal },
+          );
+          continue;
+        }
+        const content = await readFile(join(sourceDir, entry.relativePath));
+        await writeInternalSshFile(sessionId, remoteEntryPath, content, {
+          signal,
+          workspaceRoot: workspaceRemoteRoot,
+        });
+      }
+
+      // 再原子替换：旧目录先改名保留，新目录就位后再删除；替换失败恢复旧目录。
+      const replaced =
+        (await statSshEntry(sessionId, targetRemotePath)) !== null;
+      if (replaced) {
+        await renameSshFile(sessionId, targetRemotePath, backupPath);
+      }
+      try {
+        await renameSshFile(sessionId, stagingPath, targetRemotePath);
+      } catch (error) {
+        if (replaced) {
+          await renameSshFile(sessionId, backupPath, targetRemotePath).catch(
+            () => undefined,
+          );
+        }
+        await executeSshCommand(
+          sessionId,
+          `rm -rf -- ${shellQuote(stagingPath)}`,
+          { signal },
+        ).catch(() => undefined);
+        throw error;
+      }
+      if (replaced) {
+        await executeSshCommand(
+          sessionId,
+          `rm -rf -- ${shellQuote(backupPath)}`,
+          { signal },
+        );
+      }
+
+      return {
+        path: targetPath,
+        replaced,
+        fileCount: entries.filter((entry) => !entry.isDirectory).length,
+      };
+    },
+    { signal },
+  );
+};
+
+const executeSkillsRemoveDir = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  const { workspaceRoot, targetPath, targetRemotePath } =
+    resolveSkillTargetPath(args);
+  return withSshSession(
+    workspaceRoot,
+    async (sessionId) => {
+      await executeSshCommand(
+        sessionId,
+        `rm -rf -- ${shellQuote(targetRemotePath)}`,
+        { signal },
+      );
+      return { path: targetPath, removed: true };
+    },
+    { signal },
+  );
+};
+
+/** 技能目录扫描：单个技能根目录的条目上限，避免异常目录把响应撑爆。 */
+const SKILL_SCAN_MAX_ENTRIES = 4000;
+/** 与 Rust 侧 should_skip_skill_directory 保持一致：不进入点目录与这些目录。 */
+const SKILL_SCAN_SKIP_DIRECTORIES = new Set([
+  "templates",
+  "examples",
+  "node_modules",
+]);
+
+const shouldSkipRemoteSkillDirectory = (name: string): boolean =>
+  name.startsWith(".") || SKILL_SCAN_SKIP_DIRECTORIES.has(name);
+
+type RemoteSkillScanEntry = { path: string; type: "f" | "d" };
+
+/**
+ * 递归扫描一个远程技能根目录：返回全部条目（相对根目录的 POSIX 路径）与每个
+ * SKILL.md 的原文。目录发现、ID 派生与 frontmatter 解析都留在 Rust 侧，
+ * 这里只负责把目录树读回来。
+ */
+const scanRemoteSkillRoot = async (
+  sessionId: string,
+  remoteRoot: string,
+  signal?: AbortSignal,
+): Promise<{
+  entries: RemoteSkillScanEntry[];
+  files: Record<string, string>;
+}> => {
+  const entries: RemoteSkillScanEntry[] = [];
+  const files: Record<string, string> = {};
+  const rootStat = await statSshEntry(sessionId, remoteRoot);
+  if (!rootStat?.isDirectory()) {
+    return { entries, files };
+  }
+
+  const pending: string[] = [""];
+  while (pending.length > 0 && entries.length < SKILL_SCAN_MAX_ENTRIES) {
+    const relativeDirectory = pending.pop() as string;
+    const absoluteDirectory = relativeDirectory
+      ? `${remoteRoot}/${relativeDirectory}`
+      : remoteRoot;
+    const children = await listSshDirectory(sessionId, absoluteDirectory, {
+      signal,
+    });
+    for (const child of children) {
+      if (child.name === "." || child.name === "..") {
+        continue;
+      }
+      const relativePath = relativeDirectory
+        ? `${relativeDirectory}/${child.name}`
+        : child.name;
+      if (child.isDirectory) {
+        if (shouldSkipRemoteSkillDirectory(child.name)) {
+          continue;
+        }
+        entries.push({ path: relativePath, type: "d" });
+        pending.push(relativePath);
+        continue;
+      }
+      // 符号链接等其它类型与本地扫描一致地跳过。
+      if (child.isSymbolicLink) {
+        continue;
+      }
+      entries.push({ path: relativePath, type: "f" });
+      if (child.name === SKILL_FILE_NAME) {
+        const content = await readSshFile(
+          sessionId,
+          `${remoteRoot}/${relativePath}`,
+          { signal },
+        );
+        files[relativePath] = content.toString("utf-8");
+      }
+    }
+  }
+
+  return { entries, files };
+};
+
+const executeSkillsScan = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  const workspaceRoot = validateSshWorkspacePath(
+    args.workspaceRoot,
+    "workspaceRoot",
+  );
+  const paths = ensureSshPathList(args.paths, "paths");
+  const workspaceRemoteRoot = resolveAuthorizedWorkspaceRoot(
+    paths[0],
+    workspaceRoot,
+  );
+
+  return withSshSession(
+    workspaceRoot,
+    async (sessionId) => {
+      const roots: Array<{
+        path: string;
+        entries: RemoteSkillScanEntry[];
+        files: Record<string, string>;
+      }> = [];
+      for (const uri of paths) {
+        const remoteRoot = parseSshUrl(uri).remotePath;
+        if (!isSshPathWithinRoot(remoteRoot, workspaceRemoteRoot)) {
+          throw new Error("Skill root must be inside the remote workspace");
+        }
+        roots.push({
+          path: uri,
+          ...(await scanRemoteSkillRoot(sessionId, remoteRoot, signal)),
+        });
+      }
+      return { roots };
+    },
+    { signal },
+  );
+};
+
+const executeSkillsWriteFile = async (
+  args: RemoteWorkspaceCommandArgs,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> => {
+  const { workspaceRoot, targetPath, workspaceRemoteRoot, targetRemotePath } =
+    resolveSkillTargetPath(args);
+  const content = ensureString(args.content, "content");
+  return withSshSession(
+    workspaceRoot,
+    async (sessionId) => {
+      const save = await writeInternalSshFile(
+        sessionId,
+        targetRemotePath,
+        content,
+        { signal, workspaceRoot: workspaceRemoteRoot },
+      );
+      return { path: targetPath, bytes: save.bytes };
+    },
+    { signal },
+  );
+};
+
 const dispatchRemoteWorkspaceOperation = async (
   operation: string,
   args: RemoteWorkspaceCommandArgs,
@@ -2447,6 +2784,14 @@ const dispatchRemoteWorkspaceOperation = async (
       return executeCheckpointRemoveDir(args, signal);
     case "checkpoint-abort-scan":
       return executeCheckpointAbortScan(args);
+    case "skills-install-dir":
+      return executeSkillsInstallDir(args, signal);
+    case "skills-remove-dir":
+      return executeSkillsRemoveDir(args, signal);
+    case "skills-scan":
+      return executeSkillsScan(args, signal);
+    case "skills-write-file":
+      return executeSkillsWriteFile(args, signal);
     default:
       throw new Error(`Unsupported remote workspace operation: ${operation}`);
   }

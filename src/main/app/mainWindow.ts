@@ -17,6 +17,7 @@ import {
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
 import { bindAppLockWatcher } from "./appLock";
+import { bindWindowBorderColor } from "./windowBorder";
 import { initAutoUpdater } from "../updater/autoUpdater";
 import {
   DEFAULT_WINDOW_HEIGHT,
@@ -234,6 +235,9 @@ export const createWindow = (
     },
   });
   mainWindowRef = mainWindow;
+
+  // Windows: 窗口外边框固定为浅灰色，不受系统个性化颜色影响。
+  bindWindowBorderColor(mainWindow);
 
   mainWindow.setMenu(null);
   mainWindow.setMenuBarVisibility(false);

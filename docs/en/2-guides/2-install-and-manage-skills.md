@@ -65,6 +65,8 @@ A GitHub installation:
 4. Records it in `~/.snow/skills-registry.json` for later identification and uninstallation;
 5. Stages the previous directory before replacing a same-ID target and attempts rollback if the registry update fails.
 
+> When the project is an SSH remote workspace (`ssh://`), a project install uploads the Skill directory to the remote `<project>/.snow/skills/<id>/` over SSH instead of writing to the local machine; a failed upload or registry update leaves no half-written Skill directory.
+
 New content is rescanned on the next Skill-list refresh or invocation; an app restart is not required.
 
 ## 3. Actual `SKILL.md` frontmatter

@@ -3,8 +3,8 @@
    配色全部取自当前主题的调色板变量：
    - 侧栏完全融入应用背景，不构成独立表面；
    - 主内容作为浮层压在侧栏之上（左缘压住侧栏）；
-   - 右侧面板再压在主内容之上（左缘压住主区）；
-   - 三块之间没有任何间隙，只用圆角与投影表达层叠关系。
+   - 右侧面板与主内容同色、同高，两者左右相接拼成一张表面，只用 1px 竖线分隔；
+   - 三块之间没有任何间隙，圆角只出现在整张表面的外侧。
 
    本文件必须最后引入：主题预设里有大量 !important 的表面/间距声明，
    这里用同优先级的 !important + 更高选择器权重统一覆盖布局。 */
@@ -14,20 +14,14 @@
   --backdrop-blur-lg: none;
   /* 浮层向左压住下一层的宽度（左侧只压住侧栏内边距） */
   --layered-overlap-left: 8px;
-  --layered-overlap-right: 18px;
+  /* 主内容与右侧面板之间的 1px 竖线 */
+  --layered-divider: var(--border-subtle);
+  /* 终端画布底色：层叠下右侧面板是一整块不透明表面，终端必须跟着它走，
+     否则终端会在面板里显出一块异色区域 */
+  --terminal-bg: var(--surface-island-strong);
   /* 顶栏比常规矮两档：左侧融入背景，红绿灯行不必撑满完整标题栏 */
   --layered-header-height: calc(var(--header-height) - 10px);
   --layered-header-pad-top: 4px;
-  /* 投影的 spread 取负值，让阴影不向相邻边溢出，接缝处不会出现阴影带 */
-  --layered-sheet-shadow-left: -10px 0 16px -10px rgba(15, 23, 42, 0.16);
-  --layered-sheet-shadow-right: 10px 0 16px -10px rgba(15, 23, 42, 0.1);
-  --layered-sheet-shadow-bottom: 0 12px 22px -14px rgba(15, 23, 42, 0.14);
-}
-
-:root[data-layout-style="layered"][data-theme="dark"] {
-  --layered-sheet-shadow-left: -10px 0 18px -10px rgba(0, 0, 0, 0.6);
-  --layered-sheet-shadow-right: 10px 0 18px -10px rgba(0, 0, 0, 0.4);
-  --layered-sheet-shadow-bottom: 0 12px 24px -14px rgba(0, 0, 0, 0.55);
 }
 
 /* ==========================================================================
@@ -163,9 +157,7 @@
   border: none !important;
   border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
   background: var(--surface-island-strong) !important;
-  /* box-shadow:
-    var(--layered-sheet-shadow-left), var(--layered-sheet-shadow-right),
-    var(--layered-sheet-shadow-bottom) !important; */
+  box-shadow: none !important;
   backdrop-filter: none !important;
   /* 只保留全屏淡入淡出；内边距随面板状态瞬时切换，避免覆盖量与面板不同步 */
   transition: opacity 0.2s ease !important;
@@ -194,23 +186,18 @@
   margin-left: calc(-1 * var(--layered-overlap-left)) !important;
 }
 
-/* 主区右缘伸到右面板下方，让右面板的圆角落在主区表面上而不是背景上 */
+/* 主区右缘与右侧面板左缘直接相接：两块区域共用一张表面，相接的一侧直角收边，
+   圆角只由整张表面的外侧露出；中间的 1px 竖线由顶栏右段与右侧面板画出 */
 :root[data-layout-style="layered"]
   .app-shell:not(.right-panel-collapsed):not(.right-panel-fullscreen)
   .top-bar-main {
-  margin-right: calc(-1 * var(--layered-overlap-right)) !important;
-  /* 被右面板压住的角不再保留圆角，避免在任何情况下露出中部圆角 */
   border-top-right-radius: 0 !important;
-  /* 内容让开被压住的宽度，按钮不会被右段遮住 */
-  padding-right: calc(16px + var(--layered-overlap-right)) !important;
 }
 
-/* 主体内容同样让开覆盖区，滚动条与输入框不会被右面板压住 */
+/* 主体内容同样直角收边：右缘贴着竖线，滚动条与输入框仍在自身内边距内 */
 :root[data-layout-style="layered"]
   .app-shell:not(.right-panel-collapsed):not(.right-panel-fullscreen)
   .main-content {
-  padding-right: calc(10px + var(--layered-overlap-right)) !important;
-  /* 右缘被右面板覆盖：直角收边，圆角只由最上层（右面板）露出 */
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
@@ -238,7 +225,7 @@
 }
 
 /* ==========================================================================
-   4. 右侧：覆盖中部
+   4. 右侧：与中部同色相接
    ========================================================================== */
 
 :root[data-layout-style="layered"] .top-bar-right {
@@ -247,10 +234,20 @@
   grid-row: 1 !important;
   grid-column: 3 !important;
   border: none !important;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
-  background: var(--bg-secondary) !important;
+  /* 左缘与下方右侧面板同一条基准线：左侧直角，圆角只留在整张表面的右上角 */
+  border-radius: 0 var(--radius-xl) 0 0 !important;
+  /* 与主内容同色：顶栏中段与右段同属一张表面 */
+  background: var(--surface-island-strong) !important;
   box-shadow: none !important;
   backdrop-filter: none !important;
+}
+
+/* 顶栏右段属于右侧面板那块区域：用与下方同一条 1px 竖线和中段分隔
+   （右面板收起时右段卡片会卸载，占位伪元素不需要竖线） */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .top-bar-right {
+  border-left: 1px solid var(--layered-divider) !important;
 }
 
 /* 右面板收起时右段卡片会卸载，用伪元素接住这块表面并随第三列轨道一起收拢，
@@ -261,8 +258,8 @@
   z-index: 2;
   grid-row: 1;
   grid-column: 3;
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  background: var(--bg-secondary);
+  border-radius: 0 var(--radius-xl) 0 0;
+  background: var(--surface-island-strong);
   content: "";
   pointer-events: none;
 }
@@ -273,21 +270,38 @@
   display: block;
 }
 
+/* 与主内容同色同高：两块区域拼成一张不透明表面；独立面板窗口里也只有这一块
+   表面（面板底 + tab 栏 + 终端必须同色，否则终端会显出一圈异色边） */
+:root[data-layout-style="layered"] .right-panel {
+  background: var(--surface-island-strong) !important;
+}
+
 :root[data-layout-style="layered"] .right-panel:not(.right-panel-detached) {
   position: relative !important;
   z-index: 22;
   border: none !important;
-  border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
-  /* 纯色表面：覆盖主区时不透出下层内容 */
-  background: var(--bg-secondary) !important;
-  /* 左边缘不再投影，只保留底部一层很浅的落影 */
-  box-shadow: var(--layered-sheet-shadow-bottom) !important;
+  /* 左缘与主内容相接：左侧直角，圆角只留在整张表面的右下角 */
+  border-radius: 0 0 var(--radius-xl) 0 !important;
+  box-shadow: none !important;
   backdrop-filter: none !important;
+}
+
+/* 与主内容之间画一条贯穿的 1px 竖线（全屏态右面板独占整块区域，不需要竖线） */
+:root[data-layout-style="layered"]
+  .app-shell:not(.right-panel-fullscreen)
+  .right-panel:not(.right-panel-detached) {
+  border-left: 1px solid var(--layered-divider) !important;
 }
 
 /* 右侧面板顶部 tab 栏与内容同色，去掉上下色差 */
 :root[data-layout-style="layered"] .right-panel-tabs {
-  background: var(--bg-secondary) !important;
+  background: var(--surface-island-strong) !important;
+}
+
+/* 终端区域与面板同色：xterm 画布取 --terminal-bg，容器自身不留主题预设的
+   --bg-primary 底色，整块终端区域与面板无缝 */
+:root[data-layout-style="layered"] .terminal-container {
+  background: transparent !important;
 }
 
 /* ==========================================================================
@@ -303,18 +317,13 @@
   margin-right: 0 !important;
 }
 
+/* 只有左侧保留重叠：主区左缘压住侧栏，拖拽条同步前移；
+   右侧面板与主内容只是左右相接，拖拽条保持零宽零外边距，命中区正好落在竖线上 */
 :root[data-layout-style="layered"]
   .app-shell:not(.right-panel-fullscreen)
   .app-layout
   > .sidebar-resizer {
   margin-left: calc(-1 * var(--layered-overlap-left)) !important;
-}
-
-:root[data-layout-style="layered"]
-  .app-shell:not(.right-panel-fullscreen)
-  .app-layout
-  > .right-panel-resizer {
-  margin-left: calc(-1 * var(--layered-overlap-right)) !important;
 }
 
 /* 层叠风格的布局拖拽条不显示悬停/拖拽高亮，只保留 col-resize 指针 */

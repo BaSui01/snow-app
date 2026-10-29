@@ -8,6 +8,7 @@ use std::time::Duration;
 use napi::{Error, Status};
 
 use super::super::skills::{parse_skill_metadata_for_install, SKILL_FILE_NAME};
+use super::super::skills_remote::{install_remote_skill_dir, remove_remote_skill_dir};
 
 struct ShaInfo {
     sha: String,
@@ -557,118 +558,103 @@ fn discover_skill_dirs(base_dir: &Path) -> Vec<PathBuf> {
     skill_dirs
 }
 
-/// Install a single skill from an already-extracted source directory.
-fn install_single_skill_from_dir(
-    skill_source_dir: &Path,
-    parsed: &ParsedGitHubUrl,
-    sha_info: &ShaInfo,
-    location: &str,
-    project_root: Option<&Path>,
-    raw_url: &str,
-    sub_dir_override: Option<&str>,
-) -> napi::Result<SkillInstallResult> {
-    install_single_skill_from_dir_with_registry(
-        skill_source_dir,
-        parsed,
-        sha_info,
-        location,
-        project_root,
-        raw_url,
-        sub_dir_override,
-        &get_registry_path(),
-    )
+/// 已下载并解压完成的技能源码；临时目录随结构体一起释放。
+struct PreparedSources {
+    tmp_dir: PathBuf,
+    parsed: ParsedGitHubUrl,
+    sha_info: ShaInfo,
+    raw_url: String,
+    location: String,
+    target: SkillInstallTarget,
+    skills: Vec<PreparedSkillSource>,
 }
 
-fn install_single_skill_from_dir_with_registry(
-    skill_source_dir: &Path,
-    parsed: &ParsedGitHubUrl,
-    sha_info: &ShaInfo,
-    location: &str,
-    project_root: Option<&Path>,
-    raw_url: &str,
-    sub_dir_override: Option<&str>,
-    registry_path: &Path,
-) -> napi::Result<SkillInstallResult> {
-    let metadata = read_skill_metadata(skill_source_dir);
-    let skill_id = derive_skill_id(&metadata, &parsed.repo);
-
-    let dest_dir = get_skill_directory(&skill_id, location, project_root);
-    let mut directory_commit = DirectoryCommit::prepare(skill_source_dir, dest_dir.clone())?;
-    directory_commit.commit()?;
-
-    let installed_at = chrono::Utc::now().to_rfc3339();
-    let record = InstalledSkillRecord {
-        id: skill_id.clone(),
-        name: metadata
-            .as_ref()
-            .map(|(n, _)| n.clone())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| skill_id.clone()),
-        description: metadata
-            .as_ref()
-            .map(|(_, d)| d.clone())
-            .unwrap_or_default(),
-        location: location.to_string(),
-        source_url: raw_url.to_string(),
-        github: ParsedGitHubUrl {
-            owner: parsed.owner.clone(),
-            repo: parsed.repo.clone(),
-            r#ref: parsed.r#ref.clone(),
-            sub_dir: sub_dir_override
-                .map(|s| s.to_string())
-                .or_else(|| parsed.sub_dir.clone()),
-        },
-        installed_at: installed_at.clone(),
-        commit_sha: commit_sha_opt(&sha_info.sha),
-    };
-    if let Err(error) = upsert_record_at(record, registry_path) {
-        if let Err(rollback_error) = directory_commit.rollback() {
-            directory_commit.cleanup();
-            return Err(Error::new(
-                Status::GenericFailure,
-                format!("Failed to update Skill registry: {error}. {rollback_error}"),
-            ));
-        }
-        directory_commit.cleanup();
-        return Err(error);
+impl Drop for PreparedSources {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.tmp_dir);
     }
-    directory_commit.cleanup();
+}
 
-    Ok(SkillInstallResult {
-        success: true,
-        skill_id,
-        path: dest_dir.to_string_lossy().into_owned(),
-        installed_at,
-        commit_sha: commit_sha_opt(&sha_info.sha),
+/// 仓库中发现的单个技能源码目录（位于临时目录内）。
+struct PreparedSkillSource {
+    source_dir: PathBuf,
+    sub_dir_override: Option<String>,
+}
+
+/// 准备阶段的结果：可以开始安装，或直接返回失败结果（URL 非法、子目录不存在、
+/// 仓库内没有 SKILL.md）。
+enum PrepareOutcome {
+    Ready(Box<PreparedSources>),
+    Rejected(SkillBatchInstallResult),
+}
+
+/// 安装（或重装）GitHub 上的技能：先在本地下载解压，再按解析出的目标位置落到
+/// 本地技能目录，或经 Electron 的 SSH 通道上传到远程工作区。
+pub(crate) async fn install_skills_from_github(
+    raw_url: String,
+    location: String,
+    target: SkillInstallTarget,
+) -> napi::Result<SkillBatchInstallResult> {
+    let outcome =
+        tokio::task::spawn_blocking(move || prepare_skill_sources(raw_url, location, target))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Install skill task failed: {error}"),
+                )
+            })??;
+
+    let sources = match outcome {
+        PrepareOutcome::Ready(sources) => sources,
+        PrepareOutcome::Rejected(result) => return Ok(result),
+    };
+
+    let mut results = Vec::with_capacity(sources.skills.len());
+    for skill in &sources.skills {
+        match install_prepared_skill(&sources, skill).await {
+            Ok(result) => results.push(result),
+            Err(error) => results.push(SkillInstallResult {
+                success: false,
+                skill_id: String::new(),
+                path: String::new(),
+                installed_at: chrono::Utc::now().to_rfc3339(),
+                commit_sha: None,
+                error: Some(format!("Failed to install skill: {error}")),
+            }),
+        }
+    }
+
+    let installed_count = results.iter().filter(|result| result.success).count() as i64;
+    Ok(SkillBatchInstallResult {
+        success: installed_count > 0,
+        results,
+        installed_count,
+        total_count: sources.skills.len() as i64,
+        commit_sha: commit_sha_opt(&sources.sha_info.sha),
         error: None,
     })
 }
 
-/// Core install routine (blocking). Resolves the commit, downloads the
-/// tarball, discovers skill directories, and installs each one.
-pub(crate) fn install_skill_from_github_blocking(
+/// 下载仓库归档、解压并发现全部技能目录。下载失败与「仓库里没有技能」都通过
+/// `PrepareOutcome::Rejected` 返回；临时目录由本函数负责清理。
+fn prepare_skill_sources(
     raw_url: String,
     location: String,
-    project_root: Option<PathBuf>,
-) -> napi::Result<SkillBatchInstallResult> {
+    target: SkillInstallTarget,
+) -> napi::Result<PrepareOutcome> {
     let parsed = match parse_github_url(&raw_url) {
-        Some(p) => p,
+        Some(parsed) => parsed,
         None => {
-            return Ok(SkillBatchInstallResult {
-                success: false,
-                results: Vec::new(),
-                installed_count: 0,
-                total_count: 0,
-                commit_sha: None,
-                error: Some(format!("Invalid GitHub URL: {raw_url}")),
-            });
+            return Ok(PrepareOutcome::Rejected(rejected_batch_result(
+                format!("Invalid GitHub URL: {raw_url}"),
+                None,
+            )))
         }
     };
 
-    // 1. Resolve commit SHA. When the GitHub API is unavailable or
-    // rate-limited (e.g. no gh login / GITHUB_TOKEN), degrade gracefully:
-    // download the requested ref (or `HEAD` = default branch) from codeload
-    // and leave commit_sha empty in the registry.
+    // 无法解析 commit SHA（GitHub API 不可用 / 被限流）时降级：按 ref 名下载归档，
+    // 注册记录里的 commit_sha 留空。
     let sha_info = match resolve_commit_sha(&parsed) {
         Ok(info) => info,
         Err(_) => ShaInfo {
@@ -677,113 +663,228 @@ pub(crate) fn install_skill_from_github_blocking(
         },
     };
 
-    // 2. Create temp directory
     let tmp_dir = std::env::temp_dir().join(format!(
         "snow-skill-{}",
         chrono::Utc::now().timestamp_millis()
     ));
-    fs::create_dir_all(&tmp_dir).map_err(|e| {
+    fs::create_dir_all(&tmp_dir).map_err(|error| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to create temp directory: {e}"),
+            format!("Failed to create temp directory: {error}"),
         )
     })?;
 
-    let result = (|| {
-        // 3. Download + extract
-        download_and_extract(&parsed, &sha_info.r#ref, &tmp_dir)?;
-
-        // 4. Determine the base search directory (apply subDir if present)
-        let base_dir = match &parsed.sub_dir {
-            Some(sub) => tmp_dir.join(sub),
-            None => tmp_dir.clone(),
-        };
-        if !base_dir.exists() {
-            return Ok(SkillBatchInstallResult {
-                success: false,
-                results: Vec::new(),
-                installed_count: 0,
-                total_count: 0,
-                commit_sha: commit_sha_opt(&sha_info.sha),
-                error: Some(format!(
-                    "Directory \"{}\" not found in repository {}/{}. Make sure the path is correct.",
-                    parsed.sub_dir.as_deref().unwrap_or(""),
-                    parsed.owner,
-                    parsed.repo
-                )),
-            });
+    let outcome =
+        collect_prepared_sources(tmp_dir.clone(), parsed, sha_info, raw_url, location, target);
+    match outcome {
+        // 成功时临时目录的所有权移交给 PreparedSources，安装结束后由 Drop 清理。
+        Ok(PrepareOutcome::Ready(sources)) => Ok(PrepareOutcome::Ready(sources)),
+        Ok(rejected) => {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            Ok(rejected)
         }
-
-        // 5. Discover all skill directories
-        let skill_dirs = discover_skill_dirs(&base_dir);
-        if skill_dirs.is_empty() {
-            return Ok(SkillBatchInstallResult {
-                success: false,
-                results: Vec::new(),
-                installed_count: 0,
-                total_count: 0,
-                commit_sha: commit_sha_opt(&sha_info.sha),
-                error: Some(format!(
-                    "SKILL.md not found in repository {}/{}{}. Make sure the repository contains a SKILL.md file (either at the root or inside a sub-directory).",
-                    parsed.owner,
-                    parsed.repo,
-                    parsed.sub_dir.as_deref().map(|s| format!("/{s}")).unwrap_or_default()
-                )),
-            });
+        Err(error) => {
+            let _ = fs::remove_dir_all(&tmp_dir);
+            Err(error)
         }
+    }
+}
 
-        // 6. Install each discovered skill
-        let mut results: Vec<SkillInstallResult> = Vec::new();
-        for skill_source_dir in &skill_dirs {
-            let sub_dir_override: Option<String> = if *skill_source_dir != base_dir {
-                let skill_dir_name = skill_source_dir
+fn collect_prepared_sources(
+    tmp_dir: PathBuf,
+    parsed: ParsedGitHubUrl,
+    sha_info: ShaInfo,
+    raw_url: String,
+    location: String,
+    target: SkillInstallTarget,
+) -> napi::Result<PrepareOutcome> {
+    download_and_extract(&parsed, &sha_info.r#ref, &tmp_dir)?;
+
+    let base_dir = match &parsed.sub_dir {
+        Some(sub_dir) => tmp_dir.join(sub_dir),
+        None => tmp_dir.clone(),
+    };
+    if !base_dir.exists() {
+        return Ok(PrepareOutcome::Rejected(rejected_batch_result(
+            format!(
+                "Directory \"{}\" not found in repository {}/{}. Make sure the path is correct.",
+                parsed.sub_dir.as_deref().unwrap_or(""),
+                parsed.owner,
+                parsed.repo
+            ),
+            commit_sha_opt(&sha_info.sha),
+        )));
+    }
+
+    let skill_dirs = discover_skill_dirs(&base_dir);
+    if skill_dirs.is_empty() {
+        return Ok(PrepareOutcome::Rejected(rejected_batch_result(
+            format!(
+                "SKILL.md not found in repository {}/{}{}. Make sure the repository contains a SKILL.md file (either at the root or inside a sub-directory).",
+                parsed.owner,
+                parsed.repo,
+                parsed
+                    .sub_dir
+                    .as_deref()
+                    .map(|sub_dir| format!("/{sub_dir}"))
+                    .unwrap_or_default()
+            ),
+            commit_sha_opt(&sha_info.sha),
+        )));
+    }
+
+    let skills = skill_dirs
+        .into_iter()
+        .map(|source_dir| {
+            let sub_dir_override = if source_dir == base_dir {
+                parsed.sub_dir.clone()
+            } else {
+                let skill_dir_name = source_dir
                     .strip_prefix(&base_dir)
-                    .unwrap_or(skill_source_dir)
+                    .unwrap_or(&source_dir)
                     .to_string_lossy()
                     .to_string();
                 Some(match &parsed.sub_dir {
-                    Some(sub) => format!("{sub}/{skill_dir_name}"),
+                    Some(sub_dir) => format!("{sub_dir}/{skill_dir_name}"),
                     None => skill_dir_name,
                 })
-            } else {
-                parsed.sub_dir.clone()
             };
-            match install_single_skill_from_dir(
-                skill_source_dir,
-                &parsed,
-                &sha_info,
-                &location,
-                project_root.as_deref(),
-                &raw_url,
-                sub_dir_override.as_deref(),
-            ) {
-                Ok(r) => results.push(r),
-                Err(e) => {
-                    results.push(SkillInstallResult {
-                        success: false,
-                        skill_id: String::new(),
-                        path: String::new(),
-                        installed_at: chrono::Utc::now().to_rfc3339(),
-                        commit_sha: None,
-                        error: Some(format!("Failed to install skill: {e}")),
-                    });
-                }
+            PreparedSkillSource {
+                source_dir,
+                sub_dir_override,
             }
-        }
-
-        let installed_count = results.iter().filter(|r| r.success).count() as i64;
-        Ok(SkillBatchInstallResult {
-            success: installed_count > 0,
-            results,
-            installed_count,
-            total_count: skill_dirs.len() as i64,
-            commit_sha: commit_sha_opt(&sha_info.sha),
-            error: None,
         })
-    })();
+        .collect();
 
-    // Clean up temp directory
-    let _ = fs::remove_dir_all(&tmp_dir);
+    Ok(PrepareOutcome::Ready(Box::new(PreparedSources {
+        tmp_dir,
+        parsed,
+        sha_info,
+        raw_url,
+        location,
+        target,
+        skills,
+    })))
+}
 
-    result
+/// 安装单个已准备好的技能目录：本地走「暂存 + 原子替换」，远程走 SSH 上传。
+async fn install_prepared_skill(
+    sources: &PreparedSources,
+    skill: &PreparedSkillSource,
+) -> napi::Result<SkillInstallResult> {
+    let metadata = read_skill_metadata(&skill.source_dir);
+    let skill_id = derive_skill_id(&metadata, &sources.parsed.repo);
+    let installed_at = chrono::Utc::now().to_rfc3339();
+    let commit_sha = commit_sha_opt(&sources.sha_info.sha);
+    let record = InstalledSkillRecord {
+        id: skill_id.clone(),
+        name: metadata
+            .as_ref()
+            .map(|(name, _)| name.clone())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| skill_id.clone()),
+        description: metadata
+            .as_ref()
+            .map(|(_, description)| description.clone())
+            .unwrap_or_default(),
+        location: sources.location.clone(),
+        source_url: sources.raw_url.clone(),
+        github: ParsedGitHubUrl {
+            owner: sources.parsed.owner.clone(),
+            repo: sources.parsed.repo.clone(),
+            r#ref: sources.parsed.r#ref.clone(),
+            sub_dir: skill
+                .sub_dir_override
+                .clone()
+                .or_else(|| sources.parsed.sub_dir.clone()),
+        },
+        installed_at: installed_at.clone(),
+        commit_sha: commit_sha.clone(),
+    };
+
+    let installed_path = match skill_destination(&sources.target, &skill_id) {
+        SkillDestination::Local(destination) => {
+            commit_local_skill_dir(skill.source_dir.clone(), destination, record).await?
+        }
+        SkillDestination::Remote(destination) => {
+            let workspace = sources.target.remote_workspace().ok_or_else(|| {
+                Error::new(
+                    Status::GenericFailure,
+                    "Remote Skill destination requires an SSH workspace".to_string(),
+                )
+            })?;
+            install_remote_skill_dir(workspace, &destination, &skill.source_dir).await?;
+            if let Err(error) = write_skill_record(record).await {
+                // 注册表写失败时撤回刚上传的技能目录，避免留下未登记的技能。
+                let _ = remove_remote_skill_dir(workspace, &destination).await;
+                return Err(error);
+            }
+            destination
+        }
+    };
+
+    Ok(SkillInstallResult {
+        success: true,
+        skill_id,
+        path: installed_path,
+        installed_at,
+        commit_sha,
+        error: None,
+    })
+}
+
+/// 本地安装：暂存 + 原子替换；注册表写失败时回滚到安装前的目录。
+async fn commit_local_skill_dir(
+    source_dir: PathBuf,
+    destination: PathBuf,
+    record: InstalledSkillRecord,
+) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        let mut commit = DirectoryCommit::prepare(&source_dir, destination.clone())?;
+        commit.commit()?;
+        if let Err(error) = upsert_record_at(record, &get_registry_path()) {
+            let rollback = commit.rollback();
+            commit.cleanup();
+            return match rollback {
+                Ok(()) => Err(error),
+                Err(rollback_error) => Err(Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to update Skill registry: {error}. {rollback_error}"),
+                )),
+            };
+        }
+        commit.cleanup();
+        Ok(destination.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Install skill task failed: {error}"),
+        )
+    })?
+}
+
+/// 写入技能注册记录（本地文件读写放到阻塞池）。
+async fn write_skill_record(record: InstalledSkillRecord) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || upsert_record_at(record, &get_registry_path()))
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to update Skill registry: {error}"),
+            )
+        })?
+}
+
+/// 准备阶段直接失败时的批量结果。
+fn rejected_batch_result(error: String, commit_sha: Option<String>) -> SkillBatchInstallResult {
+    SkillBatchInstallResult {
+        success: false,
+        results: Vec::new(),
+        installed_count: 0,
+        total_count: 0,
+        commit_sha,
+        error: Some(error),
+    }
 }

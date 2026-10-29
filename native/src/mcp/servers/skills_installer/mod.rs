@@ -5,6 +5,9 @@ use napi::{Error, Status};
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 
+use crate::mcp::servers::remote_workspace::is_ssh_path;
+use crate::mcp::servers::skills_remote::remove_remote_skill_dir;
+
 mod github;
 
 // ---------------------------------------------------------------------------
@@ -304,35 +307,100 @@ fn remove_record(skill_id: &str, location: &str) -> napi::Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Skill directory helpers
+// Install target / destination
 // ---------------------------------------------------------------------------
 
-fn get_skill_directory(skill_id: &str, location: &str, project_root: Option<&Path>) -> PathBuf {
-    let segments: Vec<String> = skill_id
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    match location {
-        "project" => {
-            let root = project_root
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-            let mut path = root.join(".snow").join("skills");
-            for seg in &segments {
-                path.push(seg);
-            }
-            path
-        }
-        _ => {
-            let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            let mut path = home.join(".snow").join("skills");
-            for seg in &segments {
-                path.push(seg);
-            }
-            path
+/// 技能安装目标：全局目录、本地项目目录，或 SSH 远程项目目录。
+pub(crate) enum SkillInstallTarget {
+    Global,
+    LocalProject(PathBuf),
+    RemoteProject(String),
+}
+
+impl SkillInstallTarget {
+    /// SSH 远程工作区 URI（非远程目标返回 None）。
+    pub(crate) fn remote_workspace(&self) -> Option<&str> {
+        match self {
+            SkillInstallTarget::RemoteProject(workspace) => Some(workspace),
+            _ => None,
         }
     }
+}
+
+/// 技能目录的最终落点：本地文件系统路径，或 SSH 工作区内的 `ssh://` URI。
+pub(crate) enum SkillDestination {
+    Local(PathBuf),
+    Remote(String),
+}
+
+/// 解析安装目标。`project` 位置必须能取到项目工作区：本地工作区走本地安装，
+/// `ssh://` 工作区交给 Electron 的 SSH 通道安装；取不到工作区时直接失败，
+/// 绝不退化成相对路径把技能装到应用目录里。
+fn resolve_install_target(
+    location: &str,
+    project_id: Option<&str>,
+) -> napi::Result<SkillInstallTarget> {
+    if location != "project" {
+        return Ok(SkillInstallTarget::Global);
+    }
+
+    let workspace = match project_id {
+        Some(project_id) => resolve_project_workspace(project_id)?,
+        None => None,
+    };
+    let Some(workspace) = workspace
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+    else {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Project Skills require a project with a workspace directory".to_string(),
+        ));
+    };
+
+    if is_ssh_path(&workspace) {
+        Ok(SkillInstallTarget::RemoteProject(workspace))
+    } else {
+        Ok(SkillInstallTarget::LocalProject(PathBuf::from(workspace)))
+    }
+}
+
+/// 技能目录落点：本地返回文件系统路径，远程返回工作区内的 `ssh://` URI。
+pub(crate) fn skill_destination(target: &SkillInstallTarget, skill_id: &str) -> SkillDestination {
+    let segments: Vec<&str> = skill_id
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+
+    match target {
+        SkillInstallTarget::Global => {
+            let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            SkillDestination::Local(join_skill_segments(
+                home.join(".snow").join("skills"),
+                &segments,
+            ))
+        }
+        SkillInstallTarget::LocalProject(root) => SkillDestination::Local(join_skill_segments(
+            root.join(".snow").join("skills"),
+            &segments,
+        )),
+        SkillInstallTarget::RemoteProject(workspace) => {
+            let mut uri = format!("{}/.snow/skills", workspace.trim_end_matches('/'));
+            for segment in segments {
+                uri.push('/');
+                uri.push_str(segment);
+            }
+            SkillDestination::Remote(uri)
+        }
+    }
+}
+
+/// 把技能 id 的分段依次拼到本地技能根目录之后。
+fn join_skill_segments(mut root: PathBuf, segments: &[&str]) -> PathBuf {
+    for segment in segments {
+        root.push(segment);
+    }
+    root
 }
 
 // ---------------------------------------------------------------------------
@@ -346,21 +414,8 @@ pub async fn install_skill_from_github(
     location: String,
     project_id: Option<String>,
 ) -> napi::Result<SkillBatchInstallResult> {
-    let project_root = match project_id.as_deref() {
-        Some(pid) => resolve_project_root(pid)?,
-        None => None,
-    };
-    let location = location;
-    tokio::task::spawn_blocking(move || {
-        github::install_skill_from_github_blocking(url, location, project_root)
-    })
-    .await
-    .map_err(|e| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Install skill task failed: {e}"),
-        )
-    })?
+    let target = resolve_install_target(&location, project_id.as_deref())?;
+    github::install_skills_from_github(url, location, target).await
 }
 
 /// Uninstall a skill that was installed from GitHub.
@@ -369,41 +424,69 @@ pub async fn uninstall_github_skill(
     skill_id: String,
     project_id: Option<String>,
 ) -> napi::Result<SkillUninstallResult> {
-    let skill_id_inner = skill_id.clone();
-    let project_root = match project_id.as_deref() {
-        Some(pid) => resolve_project_root(pid)?,
-        None => None,
-    };
-    tokio::task::spawn_blocking(move || {
-        let records = load_installed_skills();
-        let record = records.into_iter().find(|r| r.id == skill_id_inner);
-        let Some(record) = record else {
-            return Ok(SkillUninstallResult {
-                success: false,
-                skill_id: skill_id_inner.clone(),
-                message: format!("Skill \"{skill_id_inner}\" is not installed from GitHub"),
-                error: None,
-            });
-        };
-
-        let skill_dir = get_skill_directory(&record.id, &record.location, project_root.as_deref());
-        github::remove_dir_if_exists(&skill_dir)?;
-        remove_record(&record.id, &record.location)?;
-
-        Ok(SkillUninstallResult {
-            success: true,
-            skill_id: record.id.clone(),
-            message: format!("Skill \"{}\" uninstalled", record.id),
-            error: None,
+    let record = {
+        let skill_id = skill_id.clone();
+        tokio::task::spawn_blocking(move || {
+            load_installed_skills()
+                .into_iter()
+                .find(|record| record.id == skill_id)
         })
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Uninstall skill task failed: {e}"),
+            )
+        })?
+    };
+    let Some(record) = record else {
+        return Ok(SkillUninstallResult {
+            success: false,
+            skill_id: skill_id.clone(),
+            message: format!("Skill \"{skill_id}\" is not installed from GitHub"),
+            error: None,
+        });
+    };
+
+    let target = resolve_install_target(&record.location, project_id.as_deref())?;
+    match skill_destination(&target, &record.id) {
+        SkillDestination::Local(skill_dir) => {
+            tokio::task::spawn_blocking(move || github::remove_dir_if_exists(&skill_dir))
+                .await
+                .map_err(|e| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Uninstall skill task failed: {e}"),
+                    )
+                })??;
+        }
+        SkillDestination::Remote(skill_uri) => {
+            let workspace = target.remote_workspace().ok_or_else(|| {
+                Error::new(
+                    Status::GenericFailure,
+                    "Remote Skill directory requires an SSH workspace".to_string(),
+                )
+            })?;
+            remove_remote_skill_dir(workspace, &skill_uri).await?;
+        }
+    }
+
+    let removed = record.clone();
+    tokio::task::spawn_blocking(move || remove_record(&removed.id, &removed.location))
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Uninstall skill task failed: {e}"),
+            )
+        })??;
+
+    Ok(SkillUninstallResult {
+        success: true,
+        skill_id: record.id.clone(),
+        message: format!("Skill \"{}\" uninstalled", record.id),
+        error: None,
     })
-    .await
-    .map_err(|e| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Uninstall skill task failed: {e}"),
-        )
-    })?
 }
 
 /// List all skills installed from GitHub.
@@ -433,14 +516,13 @@ pub async fn list_github_skills() -> napi::Result<Vec<GithubSkillRecord>> {
     })?
 }
 
-/// Resolve a project's workspace directory path from its id.
-fn resolve_project_root(project_id: &str) -> napi::Result<Option<PathBuf>> {
+/// Resolve a project's workspace path (local absolute path or `ssh://` URI)
+/// from its id.
+fn resolve_project_workspace(project_id: &str) -> napi::Result<Option<String>> {
     let storage_info = crate::storage::initialize_app_storage()?;
     let database_path = PathBuf::from(storage_info.database_path);
-    let project_path =
-        crate::storage::services::workspace_directories::get_workspace_directory_path(
-            &database_path,
-            project_id,
-        )?;
-    Ok(project_path.map(PathBuf::from))
+    crate::storage::services::workspace_directories::get_workspace_directory_path(
+        &database_path,
+        project_id,
+    )
 }

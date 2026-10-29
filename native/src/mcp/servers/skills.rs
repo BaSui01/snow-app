@@ -7,10 +7,43 @@ use napi_derive::napi;
 use serde_json::{json, Value};
 
 use super::super::tools::McpTool;
+use super::remote_workspace::is_ssh_path;
+use super::skills_remote::{
+    scan_remote_skill_roots, write_remote_skill_file, RemoteSkillEntry, RemoteSkillRoot,
+};
 
 const SERVER_ID: &str = "skills";
 const TOOL_NAME: &str = "skill-execute";
 pub const SKILL_FILE_NAME: &str = "SKILL.md";
+
+/// 技能目录位置：本地文件系统目录，或 SSH 工作区内的 `ssh://` URI。
+#[derive(Clone)]
+enum SkillDirectory {
+    Local(PathBuf),
+    Remote(String),
+}
+
+impl SkillDirectory {
+    /// 展示路径（远程为 `ssh://` URI）。
+    fn display(&self) -> String {
+        match self {
+            SkillDirectory::Local(path) => path.to_string_lossy().into_owned(),
+            SkillDirectory::Remote(uri) => uri.clone(),
+        }
+    }
+
+    /// SKILL.md 的路径。
+    fn skill_file(&self) -> String {
+        match self {
+            SkillDirectory::Local(path) => {
+                path.join(SKILL_FILE_NAME).to_string_lossy().into_owned()
+            }
+            SkillDirectory::Remote(uri) => {
+                format!("{}/{}", uri.trim_end_matches('/'), SKILL_FILE_NAME)
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 struct Skill {
@@ -19,8 +52,13 @@ struct Skill {
     description: String,
     location: String,
     source: String,
-    path: PathBuf,
+    directory: SkillDirectory,
+    /// SKILL.md 正文（已剥离 frontmatter）。
     content: String,
+    /// 远程技能的 SKILL.md 原文（启停时改 frontmatter 用）；本地技能为 None（现读现写）。
+    raw_content: Option<String>,
+    /// 远程技能预渲染好的目录树；本地技能为 None（渲染时现读）。
+    tree: Option<String>,
     allowed_tools: Option<Vec<String>>,
     enabled: bool,
 }
@@ -80,24 +118,22 @@ impl SkillsService {
         project_id: Option<&str>,
     ) -> napi::Result<Vec<SkillDefinition>> {
         let project_id = normalize_optional_value(project_id);
-        run_blocking("list available skills", move || {
-            let project_root = resolve_project_root(project_id.as_deref())?;
-            let skills = load_available_skills(project_root.as_deref());
-            Ok(skills
-                .into_values()
-                .map(|skill| SkillDefinition {
-                    id: skill.id,
-                    name: skill.name,
-                    description: skill.description,
-                    location: skill.location,
-                    source: skill.source,
-                    path: skill.path.to_string_lossy().into_owned(),
-                    allowed_tools: skill.allowed_tools,
-                    enabled: skill.enabled,
-                })
-                .collect())
-        })
-        .await
+        let loaded = load_skills(project_id.as_deref()).await?;
+        loaded.require_remote_scan()?;
+        Ok(loaded
+            .skills
+            .into_values()
+            .map(|skill| SkillDefinition {
+                id: skill.id,
+                name: skill.name,
+                description: skill.description,
+                location: skill.location,
+                source: skill.source,
+                path: skill.directory.display(),
+                allowed_tools: skill.allowed_tools,
+                enabled: skill.enabled,
+            })
+            .collect())
     }
 
     pub async fn set_enabled(
@@ -115,22 +151,48 @@ impl SkillsService {
             ));
         }
 
-        run_blocking("update skill enabled state", move || {
-            let project_root = resolve_project_root(project_id.as_deref())?;
-            let skills = load_available_skills(project_root.as_deref());
-            let skill = skills.get(&skill_id).ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    format!("Skill \"{skill_id}\" not found"),
-                )
-            })?;
-            if skill.enabled == enabled {
-                return Ok(());
-            }
+        let loaded = load_skills(project_id.as_deref()).await?;
+        loaded.require_remote_scan()?;
+        let skill = loaded.skills.get(&skill_id).ok_or_else(|| {
+            Error::new(Status::InvalidArg, format!("Skill \"{skill_id}\" not found"))
+        })?;
+        if skill.enabled == enabled {
+            return Ok(());
+        }
 
-            update_skill_file_enabled(&skill.path, enabled)
-        })
-        .await
+        match &skill.directory {
+            SkillDirectory::Local(directory) => {
+                let directory = directory.clone();
+                run_blocking("update skill enabled state", move || {
+                    update_skill_file_enabled(&directory, enabled)
+                })
+                .await
+            }
+            SkillDirectory::Remote(_) => {
+                // 远程技能：用扫描时读到的 SKILL.md 原文改 frontmatter，再写回远程。
+                let workspace = loaded.workspace.clone().ok_or_else(|| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Remote Skill \"{skill_id}\" requires an SSH workspace"),
+                    )
+                })?;
+                let raw_content = skill.raw_content.clone().ok_or_else(|| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Remote Skill \"{skill_id}\" is missing its SKILL.md content"),
+                    )
+                })?;
+                let updated = build_skill_content_with_enabled(&raw_content, enabled).map_err(
+                    |error| {
+                        Error::new(
+                            Status::InvalidArg,
+                            format!("Cannot update {}: {error}", skill.directory.skill_file()),
+                        )
+                    },
+                )?;
+                write_remote_skill_file(&workspace, &skill.directory.skill_file(), &updated).await
+            }
+        }
     }
 
     pub async fn list_project(
@@ -138,41 +200,46 @@ impl SkillsService {
         project_id: &str,
     ) -> napi::Result<Vec<ProjectSkillDefinition>> {
         let project_id = normalize_required_value(project_id, "project id")?;
-        run_blocking("list project skills", move || {
-            let project_root = resolve_project_root(Some(&project_id))?;
-            let Some(project_root) = project_root else {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("Project \"{project_id}\" does not have a workspace directory"),
-                ));
-            };
-            let storage_info = crate::storage::initialize_app_storage()?;
-            let database_path = PathBuf::from(storage_info.database_path);
-            let settings =
+        let loaded = load_skills(Some(&project_id)).await?;
+        loaded.require_remote_scan()?;
+        if loaded.workspace.is_none() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("Project \"{project_id}\" does not have a workspace directory"),
+            ));
+        }
+
+        let settings = {
+            let project_id = project_id.clone();
+            run_blocking("load project skill settings", move || {
+                let storage_info = crate::storage::initialize_app_storage()?;
+                let database_path = PathBuf::from(storage_info.database_path);
                 crate::storage::services::system_settings::get_skills_project_scope_settings(
                     &database_path,
                     &project_id,
-                )?;
-            let skills = load_available_skills(Some(&project_root));
-            Ok(skills
-                .into_values()
-                .map(|skill| {
-                    let enabled = settings.effective_enabled(&skill.id, skill.enabled);
-                    ProjectSkillDefinition {
-                        id: skill.id,
-                        name: skill.name,
-                        description: skill.description,
-                        location: skill.location,
-                        source: skill.source,
-                        path: skill.path.to_string_lossy().into_owned(),
-                        allowed_tools: skill.allowed_tools,
-                        default_enabled: skill.enabled,
-                        enabled,
-                    }
-                })
-                .collect())
-        })
-        .await
+                )
+            })
+            .await?
+        };
+
+        Ok(loaded
+            .skills
+            .into_values()
+            .map(|skill| {
+                let enabled = settings.effective_enabled(&skill.id, skill.enabled);
+                ProjectSkillDefinition {
+                    id: skill.id,
+                    name: skill.name,
+                    description: skill.description,
+                    location: skill.location,
+                    source: skill.source,
+                    path: skill.directory.display(),
+                    allowed_tools: skill.allowed_tools,
+                    default_enabled: skill.enabled,
+                    enabled,
+                }
+            })
+            .collect())
     }
 
     pub async fn set_project_enabled(
@@ -183,22 +250,22 @@ impl SkillsService {
     ) -> napi::Result<()> {
         let project_id = normalize_required_value(project_id, "project id")?;
         let skill_id = normalize_required_skill_id(skill_id)?;
-        run_blocking("update project skill enabled state", move || {
-            let project_root = resolve_project_root(Some(&project_id))?;
-            let Some(project_root) = project_root else {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("Project \"{project_id}\" does not have a workspace directory"),
-                ));
-            };
-            let skills = load_available_skills(Some(&project_root));
-            if !skills.contains_key(&skill_id) {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("Skill \"{skill_id}\" not found for project \"{project_id}\""),
-                ));
-            }
+        let loaded = load_skills(Some(&project_id)).await?;
+        loaded.require_remote_scan()?;
+        if loaded.workspace.is_none() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("Project \"{project_id}\" does not have a workspace directory"),
+            ));
+        }
+        if !loaded.skills.contains_key(&skill_id) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("Skill \"{skill_id}\" not found for project \"{project_id}\""),
+            ));
+        }
 
+        run_blocking("update project skill enabled state", move || {
             let storage_info = crate::storage::initialize_app_storage()?;
             let database_path = PathBuf::from(storage_info.database_path);
             crate::storage::services::system_settings::set_skills_project_skill_enabled(
@@ -213,44 +280,45 @@ impl SkillsService {
 
     pub async fn tool(&self, project_id: Option<&str>) -> napi::Result<Option<McpTool>> {
         let project_id = normalize_optional_value(project_id);
-        run_blocking("load skill execution tool", move || {
-            let project_root = resolve_project_root(project_id.as_deref())?;
-            let mut skills = load_available_skills(project_root.as_deref());
-            if let Some(project_id) = project_id.as_deref() {
+        // 工具链不能因远程扫描失败而整体失败：SSH 不可用时降级为全局技能。
+        let mut loaded = load_skills(project_id.as_deref()).await?;
+        if let Some(project_id) = project_id.as_deref() {
+            let project_id = project_id.to_string();
+            let settings = run_blocking("load project skill settings", move || {
                 let storage_info = crate::storage::initialize_app_storage()?;
                 let database_path = PathBuf::from(storage_info.database_path);
-                let settings = crate::storage::services::system_settings::get_skills_project_scope_settings(
+                crate::storage::services::system_settings::get_skills_project_scope_settings(
                     &database_path,
-                    project_id,
-                )?;
-                skills.retain(|skill_id, skill| {
-                    settings.effective_enabled(skill_id, skill.enabled)
-                });
-            } else {
-                skills.retain(|_, skill| skill.enabled);
-            }
-            if skills.is_empty() {
-                return Ok(None);
-            }
+                    &project_id,
+                )
+            })
+            .await?;
+            loaded
+                .skills
+                .retain(|skill_id, skill| settings.effective_enabled(skill_id, skill.enabled));
+        } else {
+            loaded.skills.retain(|_, skill| skill.enabled);
+        }
+        if loaded.skills.is_empty() {
+            return Ok(None);
+        }
 
-            Ok(Some(McpTool {
-                server_id: SERVER_ID.to_string(),
-                name: TOOL_NAME.to_string(),
-                description: generate_skill_tool_description(&skills),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "skill": {
-                            "type": "string",
-                            "description": "The skill id with no arguments, for example pdf, data-analysis, or helloagents/analyze."
-                        }
-                    },
-                    "required": ["skill"],
-                    "additionalProperties": false
-                }),
-            }))
-        })
-        .await
+        Ok(Some(McpTool {
+            server_id: SERVER_ID.to_string(),
+            name: TOOL_NAME.to_string(),
+            description: generate_skill_tool_description(&loaded.skills),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "skill": {
+                        "type": "string",
+                        "description": "The skill id with no arguments, for example pdf, data-analysis, or helloagents/analyze."
+                    }
+                },
+                "required": ["skill"],
+                "additionalProperties": false
+            }),
+        }))
     }
 
     pub async fn execute(&self, args: &Value, project_id: Option<&str>) -> napi::Result<Value> {
@@ -267,39 +335,40 @@ impl SkillsService {
             })?;
         let project_id = normalize_optional_value(project_id);
 
-        run_blocking("execute skill", move || {
-            let project_root = resolve_project_root(project_id.as_deref())?;
-            let mut skills = load_available_skills(project_root.as_deref());
-            if let Some(project_id) = project_id.as_deref() {
+        // 与 tool() 一致：远程扫描失败时降级为全局技能，不让技能调用整体失败。
+        let mut loaded = load_skills(project_id.as_deref()).await?;
+        if let Some(project_id) = project_id.as_deref() {
+            let project_id = project_id.to_string();
+            let settings = run_blocking("load project skill settings", move || {
                 let storage_info = crate::storage::initialize_app_storage()?;
                 let database_path = PathBuf::from(storage_info.database_path);
-                let settings =
-                    crate::storage::services::system_settings::get_skills_project_scope_settings(
-                        &database_path,
-                        project_id,
-                    )?;
-                skills
-                    .retain(|skill_id, skill| settings.effective_enabled(skill_id, skill.enabled));
-            } else {
-                skills.retain(|_, skill| skill.enabled);
-            }
-            let skill = skills.get(&requested_skill_id).ok_or_else(|| {
-                let available = if skills.is_empty() {
-                    "none".to_string()
-                } else {
-                    skills.keys().cloned().collect::<Vec<_>>().join(", ")
-                };
-                Error::new(
-                    Status::InvalidArg,
-                    format!(
-                        "Skill \"{requested_skill_id}\" not found. Available skills: {available}"
-                    ),
+                crate::storage::services::system_settings::get_skills_project_scope_settings(
+                    &database_path,
+                    &project_id,
                 )
-            })?;
+            })
+            .await?;
+            loaded
+                .skills
+                .retain(|skill_id, skill| settings.effective_enabled(skill_id, skill.enabled));
+        } else {
+            loaded.skills.retain(|_, skill| skill.enabled);
+        }
+        let skill = loaded.skills.get(&requested_skill_id).ok_or_else(|| {
+            let available = if loaded.skills.is_empty() {
+                "none".to_string()
+            } else {
+                loaded.skills.keys().cloned().collect::<Vec<_>>().join(", ")
+            };
+            Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Skill \"{requested_skill_id}\" not found. Available skills: {available}"
+                ),
+            )
+        })?;
 
-            Ok(Value::String(render_skill(skill)))
-        })
-        .await
+        Ok(Value::String(render_skill(skill)))
     }
 }
 
@@ -347,24 +416,83 @@ fn normalize_required_skill_id(skill_id: &str) -> napi::Result<String> {
     Ok(normalized)
 }
 
-fn resolve_project_root(project_id: Option<&str>) -> napi::Result<Option<PathBuf>> {
-    let Some(project_id) = project_id else {
+/// 技能加载结果：技能集合 + 项目工作区 + 远程扫描失败原因。
+struct LoadedSkills {
+    skills: BTreeMap<String, Skill>,
+    /// 项目工作区（本地绝对路径或 `ssh://` URI）；无项目上下文时为 None。
+    workspace: Option<String>,
+    /// SSH 远程技能扫描失败的原因（本地项目恒为 None）。
+    remote_error: Option<String>,
+}
+
+impl LoadedSkills {
+    /// UI / 配置路径：远程扫描失败必须上抛，否则远程项目会静默显示成"没有项目技能"。
+    fn require_remote_scan(&self) -> napi::Result<()> {
+        match &self.remote_error {
+            Some(error) => Err(Error::new(Status::GenericFailure, error.clone())),
+            None => Ok(()),
+        }
+    }
+}
+
+/// 加载技能集合：全局技能始终来自本机；项目技能按工作区类型走本地扫描或 SSH 远程扫描。
+///
+/// 远程扫描失败时不直接报错，而是把原因带回 `LoadedSkills::remote_error`：
+/// UI / 配置路径据此上抛，工具链（`tool` / `execute`）则降级为全局技能。
+async fn load_skills(project_id: Option<&str>) -> napi::Result<LoadedSkills> {
+    let workspace = resolve_project_workspace(project_id).await?;
+
+    if let Some(workspace_path) = workspace.as_deref().filter(|path| is_ssh_path(path)) {
+        return match scan_remote_skill_roots(workspace_path).await {
+            Ok(roots) => Ok(LoadedSkills {
+                skills: load_remote_project_skills(&roots),
+                workspace,
+                remote_error: None,
+            }),
+            Err(error) => {
+                let skills =
+                    run_blocking("load global skills", || Ok(load_global_skills())).await?;
+                Ok(LoadedSkills {
+                    skills,
+                    workspace,
+                    remote_error: Some(format!("Failed to scan remote project Skills: {error}")),
+                })
+            }
+        };
+    }
+
+    let project_root = workspace.clone().map(PathBuf::from);
+    let skills = run_blocking("load skills", move || {
+        Ok(load_local_skills(project_root.as_deref()))
+    })
+    .await?;
+    Ok(LoadedSkills {
+        skills,
+        workspace,
+        remote_error: None,
+    })
+}
+
+/// 项目工作区路径：本地绝对路径或 `ssh://` 远程工作区 URI。
+async fn resolve_project_workspace(project_id: Option<&str>) -> napi::Result<Option<String>> {
+    let Some(project_id) = project_id.map(str::to_string) else {
         return Ok(None);
     };
 
-    let storage_info = crate::storage::initialize_app_storage()?;
-    let database_path = PathBuf::from(storage_info.database_path);
-    let project_path =
+    run_blocking("resolve project workspace", move || {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = PathBuf::from(storage_info.database_path);
         crate::storage::services::workspace_directories::get_workspace_directory_path(
             &database_path,
-            project_id,
-        )?;
-    Ok(project_path.map(PathBuf::from))
+            &project_id,
+        )
+    })
+    .await
 }
 
-fn load_available_skills(project_root: Option<&Path>) -> BTreeMap<String, Skill> {
+/// 本机全局技能（`~/.agents/skills` 与 `~/.snow/skills`）。
+fn load_global_skills() -> BTreeMap<String, Skill> {
     let mut skills = BTreeMap::new();
-
     if let Some(home) = dirs_next::home_dir() {
         load_skills_from_directory(
             &mut skills,
@@ -379,6 +507,12 @@ fn load_available_skills(project_root: Option<&Path>) -> BTreeMap<String, Skill>
             "snow",
         );
     }
+    skills
+}
+
+/// 本机技能：全局目录 + 可选的本地项目目录。
+fn load_local_skills(project_root: Option<&Path>) -> BTreeMap<String, Skill> {
+    let mut skills = load_global_skills();
 
     if let Some(project_root) = project_root {
         load_skills_from_directory(
@@ -396,6 +530,84 @@ fn load_available_skills(project_root: Option<&Path>) -> BTreeMap<String, Skill>
     }
 
     skills
+}
+
+/// 远程项目技能：全局技能来自本机，项目技能来自 SSH 工作区扫描结果。
+fn load_remote_project_skills(roots: &[RemoteSkillRoot]) -> BTreeMap<String, Skill> {
+    let mut skills = load_global_skills();
+    for root in roots {
+        load_skills_from_remote_root(&mut skills, root);
+    }
+    skills
+}
+
+/// 从远程扫描结果中发现技能：规则与本地扫描一致（SKILL.md 所在目录即一个技能，
+/// 技能 ID 是它相对技能根目录的路径，同 ID 后扫描的覆盖先扫描的）。
+fn load_skills_from_remote_root(skills: &mut BTreeMap<String, Skill>, root: &RemoteSkillRoot) {
+    let root_uri = root.uri.trim_end_matches('/');
+
+    for entry in &root.entries {
+        if entry.is_directory {
+            continue;
+        }
+        if entry.path.rsplit('/').next() != Some(SKILL_FILE_NAME) {
+            continue;
+        }
+
+        let directory_relative =
+            entry.path[..entry.path.len() - SKILL_FILE_NAME.len()].trim_end_matches('/');
+        if directory_relative
+            .split('/')
+            .any(should_skip_skill_directory)
+        {
+            continue;
+        }
+        let skill_id = normalize_skill_id(directory_relative);
+        if skill_id.is_empty() || skill_id == "." {
+            continue;
+        }
+
+        let Some(raw_content) = root.skill_files.get(&entry.path) else {
+            continue;
+        };
+        let Ok((metadata, content)) = parse_skill_document(raw_content) else {
+            continue;
+        };
+
+        let fallback_name = skill_id
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .next_back()
+            .unwrap_or(&skill_id)
+            .to_string();
+        let directory_uri = if directory_relative.is_empty() {
+            root_uri.to_string()
+        } else {
+            format!("{root_uri}/{directory_relative}")
+        };
+        let tree = build_remote_skill_tree(&root.entries, directory_relative);
+
+        skills.insert(
+            skill_id.clone(),
+            Skill {
+                id: skill_id,
+                name: if metadata.name.is_empty() {
+                    fallback_name
+                } else {
+                    metadata.name
+                },
+                description: metadata.description,
+                location: "project".to_string(),
+                source: root.source.clone(),
+                directory: SkillDirectory::Remote(directory_uri),
+                content,
+                raw_content: Some(raw_content.clone()),
+                tree: Some(tree),
+                allowed_tools: metadata.allowed_tools,
+                enabled: metadata.enabled,
+            },
+        );
+    }
 }
 
 fn load_skills_from_directory(
@@ -463,8 +675,10 @@ fn load_skills_from_directory(
                     description: metadata.description,
                     location: location.to_string(),
                     source: source.to_string(),
-                    path: skill_dir,
+                    directory: SkillDirectory::Local(skill_dir),
                     content,
+                    raw_content: None,
+                    tree: None,
                     allowed_tools: metadata.allowed_tools,
                     enabled: metadata.enabled,
                 },
@@ -490,18 +704,35 @@ fn update_skill_file_enabled(skill_path: &Path, enabled: bool) -> napi::Result<(
             format!("Failed to read {}: {error}", file_path.to_string_lossy()),
         )
     })?;
+    let updated_content = build_skill_content_with_enabled(&file_content, enabled).map_err(
+        |error| {
+            Error::new(
+                Status::InvalidArg,
+                format!("Cannot update {}: {error}", file_path.to_string_lossy()),
+            )
+        },
+    )?;
+
+    fs::write(&file_path, updated_content).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to write {}: {error}", file_path.to_string_lossy()),
+        )
+    })
+}
+
+/// 按 `enable` 字段重写 SKILL.md 内容（frontmatter 缺失时补一段）；本地与远程技能共用。
+fn build_skill_content_with_enabled(
+    file_content: &str,
+    enabled: bool,
+) -> std::result::Result<String, String> {
     let line_ending = if file_content.contains("\r\n") {
         "\r\n"
     } else {
         "\n"
     };
 
-    let updated_content = match frontmatter_bounds(&file_content).map_err(|error| {
-        Error::new(
-            Status::InvalidArg,
-            format!("Cannot update {}: {error}", file_path.to_string_lossy()),
-        )
-    })? {
+    Ok(match frontmatter_bounds(file_content)? {
         Some((frontmatter_start, frontmatter_end, _)) => {
             let frontmatter = &file_content[frontmatter_start..frontmatter_end];
             let updated_frontmatter = update_frontmatter_enabled(frontmatter, enabled, line_ending);
@@ -515,13 +746,6 @@ fn update_skill_file_enabled(skill_path: &Path, enabled: bool) -> napi::Result<(
         None => {
             format!("---{line_ending}enable: {enabled}{line_ending}---{line_ending}{file_content}")
         }
-    };
-
-    fs::write(&file_path, updated_content).map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to write {}: {error}", file_path.to_string_lossy()),
-        )
     })
 }
 
@@ -708,7 +932,13 @@ fn generate_skill_tool_description(skills: &BTreeMap<String, Skill>) -> String {
 }
 
 fn render_skill(skill: &Skill) -> String {
-    let directory_tree = generate_skill_tree(&skill.path);
+    let directory_tree = match &skill.tree {
+        Some(tree) => tree.clone(),
+        None => match &skill.directory {
+            SkillDirectory::Local(path) => build_local_skill_tree(path),
+            SkillDirectory::Remote(_) => "(Unable to generate directory tree)".to_string(),
+        },
+    };
     let tool_restriction = skill
         .allowed_tools
         .as_ref()
@@ -726,18 +956,26 @@ fn render_skill(skill: &Skill) -> String {
         .unwrap_or_default();
 
     format!(
-        "<command-message>The \"{}\" skill is loading</command-message>\n\n{}{}\n\n<skill-info>\nSkill Name: {}\nAbsolute Path: {}\n\nDirectory Structure:\n```\n{}/\n{}\n```\n\nNote: You can use the filesystem read tool to read any file in this skill directory using the absolute path above.\n</skill-info>",
+        "<command-message>The \"{}\" skill is loading</command-message>\n\n{}{}\n\n<skill-info>\nSkill Name: {}\nAbsolute Path: {}\n\nDirectory Structure:\n```\n{}/\\n{}\n```\n\nNote: You can use the filesystem read tool to read any file in this skill directory using the absolute path above.\n</skill-info>",
         skill.name,
         skill.content,
         tool_restriction,
         skill.name,
-        skill.path.to_string_lossy(),
+        skill.directory.display(),
         skill.name,
         directory_tree
     )
 }
 
-fn generate_skill_tree(skill_path: &Path) -> String {
+/// 目录树条目：本地与远程技能共用同一套格式化规则。
+struct SkillTreeEntry {
+    name: String,
+    is_directory: bool,
+    children: Vec<(String, bool)>,
+}
+
+/// 读取本地技能目录的两级目录树（顶层条目 + 各顶层目录的直接子项）。
+fn build_local_skill_tree(skill_path: &Path) -> String {
     let Ok(entries) = fs::read_dir(skill_path) else {
         return "(Unable to generate directory tree)".to_string();
     };
@@ -750,40 +988,115 @@ fn generate_skill_tree(skill_path: &Path) -> String {
             .then_with(|| left.file_name().cmp(&right.file_name()))
     });
 
+    let tree_entries = entries
+        .iter()
+        .map(|entry| {
+            let is_directory = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+            let children = if is_directory {
+                let mut children = fs::read_dir(entry.path())
+                    .map(|sub_entries| sub_entries.flatten().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                children.sort_by_key(|child| child.file_name());
+                children
+                    .iter()
+                    .map(|child| {
+                        (
+                            child.file_name().to_string_lossy().into_owned(),
+                            child.file_type().map(|kind| kind.is_dir()).unwrap_or(false),
+                        )
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            SkillTreeEntry {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                is_directory,
+                children,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    format_skill_tree(&tree_entries)
+}
+
+/// 从远程扫描结果里取某个技能目录的两级目录树（与本地输出格式一致）。
+fn build_remote_skill_tree(entries: &[RemoteSkillEntry], skill_prefix: &str) -> String {
+    let prefix = if skill_prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{skill_prefix}/")
+    };
+
+    let mut tree_entries: Vec<SkillTreeEntry> = Vec::new();
+    for entry in entries {
+        let Some(relative) = entry.path.strip_prefix(prefix.as_str()) else {
+            continue;
+        };
+        if relative.is_empty() || relative.contains('/') {
+            continue;
+        }
+        tree_entries.push(SkillTreeEntry {
+            name: relative.to_string(),
+            is_directory: entry.is_directory,
+            children: Vec::new(),
+        });
+    }
+    for entry in entries {
+        let Some(relative) = entry.path.strip_prefix(prefix.as_str()) else {
+            continue;
+        };
+        let Some((parent, child)) = relative.split_once('/') else {
+            continue;
+        };
+        // 只列直接子项：更深层级与本地扫描的展示口径一致。
+        if child.contains('/') {
+            continue;
+        }
+        if let Some(tree_entry) = tree_entries
+            .iter_mut()
+            .find(|tree_entry| tree_entry.is_directory && tree_entry.name == parent)
+        {
+            tree_entry.children.push((child.to_string(), entry.is_directory));
+        }
+    }
+
+    tree_entries.sort_by(|left, right| {
+        right
+            .is_directory
+            .cmp(&left.is_directory)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    for tree_entry in tree_entries.iter_mut() {
+        tree_entry.children.sort_by(|left, right| left.0.cmp(&right.0));
+    }
+
+    format_skill_tree(&tree_entries)
+}
+
+/// 渲染目录树文本（本地与远程技能输出格式一致）。
+fn format_skill_tree(entries: &[SkillTreeEntry]) -> String {
     let mut lines = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         let is_last = index + 1 == entries.len();
         let prefix = if is_last { "└─" } else { "├─" };
         let connector = if is_last { "   " } else { "│  " };
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let is_directory = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
 
-        if is_directory {
-            lines.push(format!("{prefix} {name}/"));
-            if let Ok(sub_entries) = fs::read_dir(entry.path()) {
-                let mut sub_entries = sub_entries.flatten().collect::<Vec<_>>();
-                sub_entries.sort_by_key(|sub_entry| sub_entry.file_name());
-                for (sub_index, sub_entry) in sub_entries.iter().enumerate() {
-                    let sub_is_last = sub_index + 1 == sub_entries.len();
-                    let sub_prefix = if sub_is_last { "└─" } else { "├─" };
-                    let sub_is_directory = sub_entry
-                        .file_type()
-                        .map(|kind| kind.is_dir())
-                        .unwrap_or(false);
-                    let file_type = if sub_is_directory { "[DIR]" } else { "[FILE]" };
-                    lines.push(format!(
-                        "{connector}  {sub_prefix} {file_type} {}",
-                        sub_entry.file_name().to_string_lossy()
-                    ));
-                }
+        if entry.is_directory {
+            lines.push(format!("{prefix} {}/", entry.name));
+            for (sub_index, (name, is_directory)) in entry.children.iter().enumerate() {
+                let sub_is_last = sub_index + 1 == entry.children.len();
+                let sub_prefix = if sub_is_last { "└─" } else { "├─" };
+                let file_type = if *is_directory { "[DIR]" } else { "[FILE]" };
+                lines.push(format!("{connector}  {sub_prefix} {file_type} {name}"));
             }
         } else {
-            let file_type = if name == SKILL_FILE_NAME {
+            let file_type = if entry.name == SKILL_FILE_NAME {
                 "[MAIN]"
             } else {
                 "[FILE]"
             };
-            lines.push(format!("{prefix} {file_type} {name}"));
+            lines.push(format!("{prefix} {file_type} {}", entry.name));
         }
     }
 

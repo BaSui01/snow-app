@@ -3079,6 +3079,15 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
+  /**
+   * 设置窗口外边框颜色（Windows 11 DWM 描边）。
+   * `handle` 为窗口原生句柄，`color` 为 COLORREF（0x00BBGGRR），
+   * 传 null 表示不绘制边框。
+   */
+  setWindowBorderColor: (
+    handle: number,
+    color: number | null,
+  ) => Promise<boolean>;
   detectTerminals: () => Promise<DetectedTerminal[]>;
   /** 解析登录 PATH（注册表 + 继承的合并值），PTY 创建时刷新用 */
   resolveLoginPathForTerminal: () => Promise<string | null>;

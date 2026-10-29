@@ -2393,6 +2393,8 @@ export type NativeBridge = ImageGenerationNativeApi & {
   saveThemeStreamCursorScript: (sourcePath: string) => Promise<string>;
   readThemeStreamCursorScript: (scriptPath: string) => Promise<string>;
   deleteThemeStreamCursorSvg: (svgPath: string) => Promise<void>;
+  saveThemeChatAvatar: (sourcePath: string) => Promise<string>;
+  deleteThemeChatAvatar: (avatarPath: string) => Promise<void>;
   getCodebaseProjectScopeSettings: (
     projectId: string,
   ) => Promise<CodebaseProjectScopeSettings>;

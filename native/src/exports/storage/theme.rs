@@ -252,6 +252,33 @@ impl From<ThemeTypographyNapi> for ThemeTypography {
 }
 
 #[napi(object)]
+pub struct ThemeChatStyleNapi {
+    pub im_mode: bool,
+    pub ai_avatar_path: String,
+    pub user_avatar_path: String,
+}
+
+impl From<ThemeChatStyle> for ThemeChatStyleNapi {
+    fn from(c: ThemeChatStyle) -> Self {
+        ThemeChatStyleNapi {
+            im_mode: c.im_mode,
+            ai_avatar_path: c.ai_avatar_path,
+            user_avatar_path: c.user_avatar_path,
+        }
+    }
+}
+
+impl From<ThemeChatStyleNapi> for ThemeChatStyle {
+    fn from(c: ThemeChatStyleNapi) -> Self {
+        ThemeChatStyle {
+            im_mode: c.im_mode,
+            ai_avatar_path: c.ai_avatar_path,
+            user_avatar_path: c.user_avatar_path,
+        }
+    }
+}
+
+#[napi(object)]
 pub struct ThemeSettingsNapi {
     pub mode: String,
     pub preset_id: String,
@@ -261,6 +288,8 @@ pub struct ThemeSettingsNapi {
     pub font_family: String,
     pub stream_cursor: ThemeStreamCursorNapi,
     pub typography: ThemeTypographyNapi,
+    // 可选：旧调用方未携带时保持默认值
+    pub chat_style: Option<ThemeChatStyleNapi>,
 }
 
 impl From<ThemeSettings> for ThemeSettingsNapi {
@@ -274,6 +303,7 @@ impl From<ThemeSettings> for ThemeSettingsNapi {
             font_family: s.font_family,
             stream_cursor: s.stream_cursor.into(),
             typography: s.typography.into(),
+            chat_style: Some(s.chat_style.into()),
         }
     }
 }
@@ -289,6 +319,7 @@ impl From<ThemeSettingsNapi> for ThemeSettings {
             font_family: s.font_family,
             stream_cursor: s.stream_cursor.into(),
             typography: s.typography.into(),
+            chat_style: s.chat_style.map(Into::into).unwrap_or_default(),
         }
     }
 }
@@ -354,6 +385,20 @@ pub async fn read_theme_stream_cursor_script(script_path: String) -> napi::Resul
 #[napi]
 pub async fn delete_theme_stream_cursor_svg(svg_path: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::delete_theme_stream_cursor_svg(svg_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn save_theme_chat_avatar(source_path: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::save_theme_chat_avatar(source_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_theme_chat_avatar(avatar_path: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_theme_chat_avatar(avatar_path))
         .await
         .map_err(map_spawn_error)?
 }

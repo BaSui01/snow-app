@@ -392,6 +392,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.deleteThemeStreamCursorSvg(svgPath);
     },
   );
+  ipcMain.handle("theme:save-chat-avatar", (_event, sourcePath: unknown) => {
+    if (typeof sourcePath !== "string" || !sourcePath.trim()) {
+      throw new Error("Chat avatar source path is required");
+    }
+    return native.saveThemeChatAvatar(sourcePath);
+  });
+  ipcMain.handle("theme:delete-chat-avatar", (_event, avatarPath: unknown) => {
+    if (typeof avatarPath !== "string") {
+      throw new Error("Chat avatar path must be a string");
+    }
+    return native.deleteThemeChatAvatar(avatarPath);
+  });
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

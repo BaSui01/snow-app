@@ -205,6 +205,13 @@ export type ThemeTypography = {
   codeFontSize: number;
 };
 
+/** 聊天窗口风格：IM 模式 + 头像（空路径为默认头像）。 */
+export type ThemeChatStyle = {
+  imMode: boolean;
+  aiAvatarPath: string;
+  userAvatarPath: string;
+};
+
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
@@ -214,6 +221,7 @@ export type ThemeSettings = {
   fontFamily: string;
   streamCursor: ThemeStreamCursor;
   typography: ThemeTypography;
+  chatStyle: ThemeChatStyle;
 };
 
 export type DetectedTerminal = {

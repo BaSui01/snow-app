@@ -9,6 +9,7 @@ import { getPresetById } from "./themeSettings/themePresets";
 import {
   BACKGROUND_IMAGE_LIMIT,
   applyBackgroundToDocument,
+  applyChatStyleToDocument,
   applyFontFamilyToDocument,
   applyLayoutStyleToDocument,
   applyPaletteToDocument,
@@ -50,6 +51,10 @@ import {
   ThemeStreamCursorSection,
   type StreamCursorAssetKind,
 } from "./themeSettings/ThemeStreamCursorSection";
+import {
+  ThemeChatStyleSection,
+  type ChatAvatarRole,
+} from "./themeSettings/ThemeChatStyleSection";
 
 type EditorTab = "light" | "dark";
 
@@ -239,6 +244,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     applyFontFamilyToDocument(form.fontFamily);
     applyStreamCursorToDocument(form.streamCursor);
     applyTypographyToDocument(form.typography);
+    applyChatStyleToDocument(form.chatStyle);
 
     // 同步窗口背景色到主进程，使 Electron 窗口背景跟随预览。
     const bgPrimary = palette.bgPrimary;
@@ -428,6 +434,70 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
   const handleTypographyChange = (typography: ThemeTypography): void => {
     setForm((previous: ThemeSettings) => ({ ...previous, typography }));
+  };
+
+  const handleChatStyleToggle = (imMode: boolean): void => {
+    setForm((previous: ThemeSettings) => ({
+      ...previous,
+      chatStyle: { ...previous.chatStyle, imMode },
+    }));
+  };
+
+  const avatarPathKey = (
+    role: ChatAvatarRole,
+  ): "aiAvatarPath" | "userAvatarPath" =>
+    role === "ai" ? "aiAvatarPath" : "userAvatarPath";
+
+  const handleSelectChatAvatar = async (
+    role: ChatAvatarRole,
+  ): Promise<void> => {
+    setIsBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const sourcePath = await window.snow.selectThemeStreamCursorImage(
+        t("settings.themeChatStyleSelectAvatarTitle", {
+          defaultValue: "Select avatar image",
+        }),
+      );
+      if (!sourcePath) {
+        return;
+      }
+      const key = avatarPathKey(role);
+      const savedPath = await window.snow.saveThemeChatAvatar(sourcePath);
+      const previousPath = formRef.current.chatStyle[key];
+      setForm((previous: ThemeSettings) => ({
+        ...previous,
+        chatStyle: { ...previous.chatStyle, [key]: savedPath },
+      }));
+      // 新头像落盘后再清理旧文件，失败不影响替换
+      if (previousPath) {
+        void window.snow.deleteThemeChatAvatar(previousPath).catch(() => {});
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.themeChatStyleSaveAvatarError", {
+              defaultValue: "Failed to save avatar",
+            }),
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleResetChatAvatar = async (role: ChatAvatarRole): Promise<void> => {
+    const key = avatarPathKey(role);
+    const previousPath = formRef.current.chatStyle[key];
+    if (!previousPath) {
+      return;
+    }
+    setForm((previous: ThemeSettings) => ({
+      ...previous,
+      chatStyle: { ...previous.chatStyle, [key]: "" },
+    }));
+    await window.snow.deleteThemeChatAvatar(previousPath).catch(() => {});
   };
 
   const handleSelectCursorAsset = async (
@@ -932,6 +1002,14 @@ export function ThemeSettingsPanel(): React.JSX.Element {
             onChange={handleStreamCursorChange}
             onSelectAsset={handleSelectCursorAsset}
             onRemoveSvg={handleRemoveSvg}
+          />
+
+          <ThemeChatStyleSection
+            chatStyle={form.chatStyle}
+            disabled={busy}
+            onToggle={handleChatStyleToggle}
+            onSelectAvatar={handleSelectChatAvatar}
+            onResetAvatar={handleResetChatAvatar}
           />
 
           <div className="api-settings-form-section">

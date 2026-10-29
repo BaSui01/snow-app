@@ -3,6 +3,7 @@ import type {
   ThemeBackground,
   ThemeBackgroundSource,
   ThemeCarouselOrder,
+  ThemeChatStyle,
   ThemeLayoutStyle,
   ThemePalette,
   ThemeSettings,
@@ -18,6 +19,7 @@ import {
 import { STREAM_CURSOR_LUCIDE_ICONS } from "./streamCursorIcons";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
 import { setActiveBackground } from "./backgroundLayerStore";
+import { DEFAULT_CHAT_STYLE, setActiveChatStyle } from "./chatStyleStore";
 
 export const THEME_SETTING_NAME = "Theme settings";
 export const THEME_SETTING_CODE = "theme_settings";
@@ -293,6 +295,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
     chatLineHeight: CHAT_LINE_HEIGHT_DEFAULT,
     codeFontSize: CODE_FONT_SIZE_DEFAULT,
   },
+  chatStyle: { ...DEFAULT_CHAT_STYLE },
 };
 
 export function emptyPalette(): ThemePalette {
@@ -555,6 +558,26 @@ export function normalizeThemeTypography(value: unknown): ThemeTypography {
   };
 }
 
+export function normalizeThemeChatStyle(value: unknown): ThemeChatStyle {
+  const source = isRecord(value) ? value : {};
+  return {
+    imMode: source.imMode === true,
+    aiAvatarPath: toText(source.aiAvatarPath).trim(),
+    userAvatarPath: toText(source.userAvatarPath).trim(),
+  };
+}
+
+/** 聊天风格：根属性供样式切换，快照供消息列表渲染头像。 */
+export function applyChatStyleToDocument(chatStyle: ThemeChatStyle): void {
+  const root = document.documentElement;
+  if (chatStyle.imMode) {
+    root.setAttribute("data-chat-style", "im");
+  } else {
+    root.removeAttribute("data-chat-style");
+  }
+  setActiveChatStyle(chatStyle);
+}
+
 export function normalizeThemeSettings(value: unknown): ThemeSettings {
   const source = isRecord(value) ? value : {};
   const rawMode = toText(source.mode) || "system";
@@ -581,6 +604,7 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
     fontFamily: toText(source.fontFamily),
     streamCursor: normalizeThemeStreamCursor(source.streamCursor),
     typography: normalizeThemeTypography(source.typography),
+    chatStyle: normalizeThemeChatStyle(source.chatStyle),
   };
 }
 
@@ -821,6 +845,7 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
   applyFontFamilyToDocument(settings.fontFamily);
   applyStreamCursorToDocument(settings.streamCursor);
   applyTypographyToDocument(settings.typography);
+  applyChatStyleToDocument(settings.chatStyle);
 
   // 同步背景图层快照与 CSS 变量，React 挂载后图片层立即生效。
   applyBackgroundToDocument(settings.background);

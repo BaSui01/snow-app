@@ -3852,6 +3852,18 @@ export const zhCN = {
   "settings.themeCodeFontSize": "代码字号",
   "settings.themeTypographyShortcutHint":
     "快捷键：{{zoomIn}} 放大 / {{zoomOut}} 缩小 / {{zoomReset}} 重置",
+  "settings.themeChatStyleTitle": "IM 聊天窗口风格",
+  "settings.themeChatStyleInfo":
+    "像即时通讯软件一样在消息旁显示头像，头像可替换为自己的图片。",
+  "settings.themeChatStyleAiAvatar": "AI 头像",
+  "settings.themeChatStyleUserAvatar": "我的头像",
+  "settings.themeChatStyleAvatarCustom": "自定义图片",
+  "settings.themeChatStyleAiAvatarDefault": "默认：内置宠物形象",
+  "settings.themeChatStyleUserAvatarDefault": "默认图标",
+  "settings.themeChatStyleChangeAvatar": "更换",
+  "settings.themeChatStyleResetAvatar": "恢复默认",
+  "settings.themeChatStyleSelectAvatarTitle": "选择头像图片",
+  "settings.themeChatStyleSaveAvatarError": "保存头像失败",
   "settings.themeStreamCursorTitle": "流式指示器",
   "settings.themeStreamCursorInfo": "自定义 AI 生成回复时显示的指示器。",
   "settings.themeStreamCursorTypeDot": "脉冲圆点",

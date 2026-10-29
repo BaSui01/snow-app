@@ -261,6 +261,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("theme:read-stream-cursor-script", scriptPath),
   deleteThemeStreamCursorSvg: (svgPath: string): Promise<void> =>
     ipcRenderer.invoke("theme:delete-stream-cursor-svg", svgPath),
+  saveThemeChatAvatar: (sourcePath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:save-chat-avatar", sourcePath),
+  deleteThemeChatAvatar: (avatarPath: string): Promise<void> =>
+    ipcRenderer.invoke("theme:delete-chat-avatar", avatarPath),
   /** 主题设置被 AI 侧改动（config 的 streamCursor 作用域）后由主进程广播。 */
   onThemeSettingsChanged: (callback: () => void): (() => void) => {
     const handler = (): void => {

@@ -3854,6 +3854,18 @@ export const zhTW = {
   "settings.themeCodeFontSize": "程式碼字號",
   "settings.themeTypographyShortcutHint":
     "快捷鍵：{{zoomIn}} 放大 / {{zoomOut}} 縮小 / {{zoomReset}} 重設",
+  "settings.themeChatStyleTitle": "IM 聊天視窗風格",
+  "settings.themeChatStyleInfo":
+    "像即時通訊軟體一樣在訊息旁顯示頭像，頭像可替換為自己的圖片。",
+  "settings.themeChatStyleAiAvatar": "AI 頭像",
+  "settings.themeChatStyleUserAvatar": "我的頭像",
+  "settings.themeChatStyleAvatarCustom": "自訂圖片",
+  "settings.themeChatStyleAiAvatarDefault": "預設：內建寵物形象",
+  "settings.themeChatStyleUserAvatarDefault": "預設圖示",
+  "settings.themeChatStyleChangeAvatar": "更換",
+  "settings.themeChatStyleResetAvatar": "恢復預設",
+  "settings.themeChatStyleSelectAvatarTitle": "選擇頭像圖片",
+  "settings.themeChatStyleSaveAvatarError": "儲存頭像失敗",
   "settings.themeStreamCursorTitle": "串流指示器",
   "settings.themeStreamCursorInfo": "自訂 AI 產生回覆時顯示的指示器。",
   "settings.themeStreamCursorTypeDot": "脈動圓點",

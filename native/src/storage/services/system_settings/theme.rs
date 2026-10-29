@@ -350,7 +350,23 @@ impl ThemeTypography {
     }
 }
 
-/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图 + 字体 + 流式光标 + 排版。
+/// 聊天窗口风格：IM 模式开关 + AI / 用户头像（空路径表示使用默认头像）。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemeChatStyle {
+    pub im_mode: bool,
+    pub ai_avatar_path: String,
+    pub user_avatar_path: String,
+}
+
+impl ThemeChatStyle {
+    fn normalize(&mut self) {
+        self.ai_avatar_path = self.ai_avatar_path.trim().to_string();
+        self.user_avatar_path = self.user_avatar_path.trim().to_string();
+    }
+}
+
+/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图 + 字体 + 流式光标 + 排版 + 聊天风格。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeSettings {
@@ -362,6 +378,7 @@ pub struct ThemeSettings {
     pub font_family: String,
     pub stream_cursor: ThemeStreamCursor,
     pub typography: ThemeTypography,
+    pub chat_style: ThemeChatStyle,
 }
 
 impl ThemeSettings {
@@ -390,6 +407,7 @@ impl ThemeSettings {
         self.font_family = self.font_family.trim().to_string();
         self.stream_cursor.normalize();
         self.typography.normalize();
+        self.chat_style.normalize();
     }
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   applyBackgroundToDocument,
+  applyChatStyleToDocument,
   applyFontFamilyToDocument,
   applyLayoutStyleToDocument,
   applyPaletteToDocument,
@@ -49,6 +50,7 @@ export const useTheme = (): {
       applyFontFamilyToDocument(settings.fontFamily);
       applyStreamCursorToDocument(settings.streamCursor);
       applyTypographyToDocument(settings.typography);
+      applyChatStyleToDocument(settings.chatStyle);
 
       // 将主题快照写入 localStorage，供下次启动时在 React 渲染前同步应用，
       // 消除从 Rust 后端异步加载主题期间的白屏闪烁。

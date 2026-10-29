@@ -317,3 +317,80 @@ pub fn delete_theme_stream_cursor_svg(svg_path: String) -> Result<()> {
 
     Ok(())
 }
+
+const CHAT_AVATARS_DIR: &str = "chat-avatars";
+
+/// 将用户选择的头像图片复制到 ~/.snowapp/chat-avatars/，返回目标绝对路径。
+pub fn save_theme_chat_avatar(source_path: String) -> Result<String> {
+    let trimmed_source = source_path.trim();
+    if trimmed_source.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Chat avatar source path is required".to_string(),
+        ));
+    }
+    let source = std::path::Path::new(trimmed_source);
+    if !source.is_file() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("Chat avatar source file does not exist: {trimmed_source}"),
+        ));
+    }
+
+    let avatars_dir = ensure_storage_dir()?.join(CHAT_AVATARS_DIR);
+    fs::create_dir_all(&avatars_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create chat-avatars directory at '{}': {error}",
+            avatars_dir.display()
+        ))
+    })?;
+
+    let extension = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .filter(|ext| !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| "png".to_string());
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let random_suffix = uuid::Uuid::new_v4().simple().to_string();
+    let dest_path = avatars_dir.join(format!("avatar-{timestamp}-{random_suffix}.{extension}"));
+
+    fs::copy(source, &dest_path).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to copy chat avatar to '{}': {error}",
+            dest_path.display()
+        ))
+    })?;
+
+    Ok(dest_path.to_string_lossy().into_owned())
+}
+
+/// 删除头像文件；空路径或文件不存在时静默返回，只允许删除 chat-avatars 目录内文件。
+pub fn delete_theme_chat_avatar(avatar_path: String) -> Result<()> {
+    let trimmed = avatar_path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let path = std::path::Path::new(trimmed);
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let avatars_dir = paths::app_storage_dir()?.join(CHAT_AVATARS_DIR);
+    let canonical_dir = avatars_dir.canonicalize().map_err(|error| {
+        Error::from_reason(format!("Failed to resolve chat-avatars directory: {error}"))
+    })?;
+    let canonical_target = path.canonicalize().map_err(|error| {
+        Error::from_reason(format!("Failed to resolve chat avatar path: {error}"))
+    })?;
+    if !canonical_target.starts_with(&canonical_dir) {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Refused to delete a file outside the chat-avatars directory".to_string(),
+        ));
+    }
+
+    fs::remove_file(&canonical_target)
+        .map_err(|error| Error::from_reason(format!("Failed to delete chat avatar: {error}")))?;
+    Ok(())
+}

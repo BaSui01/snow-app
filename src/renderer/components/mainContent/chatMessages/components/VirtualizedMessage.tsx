@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef } from "react";
 import type { ViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT } from "../hooks/useViewportVirtualization";
 import { MessageContent, type MessageContentProps } from "./MessageContent";
+import { ChatImAvatar } from "./ChatImAvatar";
 
 /**
  * Viewport-virtualized wrapper for a single chat message.
@@ -38,6 +39,8 @@ type VirtualizedMessageProps = MessageContentProps & {
    *  后的新元素继承旧元素的渲染状态）。为 true 时本实例即使首次渲染也
    *  不播放入场动画（见 is-replay）。 */
   previouslyRendered?: boolean;
+  /** IM 风格头像路径（undefined 表示未开启 IM 风格，空串为默认头像） */
+  imAvatarPath?: string;
 };
 
 export const VirtualizedMessage = memo(
@@ -47,6 +50,7 @@ export const VirtualizedMessage = memo(
     itemClassName,
     virtualization,
     previouslyRendered = false,
+    imAvatarPath,
     ...contentProps
   }: VirtualizedMessageProps): React.JSX.Element => {
     const { visibleIds, heights, register } = virtualization;
@@ -86,6 +90,16 @@ export const VirtualizedMessage = memo(
       // without re-registering. We intentionally do NOT apply an inline height
       // here: when visible the element must size to its content so the
       // ResizeObserver can measure the true height for future placeholder use.
+      const content = (
+        <div className={itemClassName} data-message-index={itemIndex}>
+          <MessageContent {...contentProps} />
+        </div>
+      );
+      const imRole =
+        imAvatarPath !== undefined &&
+        (messageRole === "user" || messageRole === "assistant")
+          ? messageRole
+          : null;
       return (
         <div
           className={`virtualized-message is-visible${
@@ -96,9 +110,14 @@ export const VirtualizedMessage = memo(
           data-snow-anchor="chat.message"
           data-snow-message-role={messageRole}
         >
-          <div className={itemClassName} data-message-index={itemIndex}>
-            <MessageContent {...contentProps} />
-          </div>
+          {imRole ? (
+            <div className={`chat-im-row is-${imRole}`}>
+              <ChatImAvatar role={imRole} path={imAvatarPath ?? ""} />
+              {content}
+            </div>
+          ) : (
+            content
+          )}
         </div>
       );
     }

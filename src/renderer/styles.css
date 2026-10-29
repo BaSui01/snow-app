@@ -12161,6 +12161,91 @@ body.is-panel-resizing * {
   gap: 8px;
 }
 
+/* ===== IM 聊天风格：头像 + 消息体并排，用户消息头像在右 ===== */
+.chat-im-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.chat-im-row.is-user {
+  flex-direction: row-reverse;
+}
+
+.chat-im-row > .chat-message-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-im-avatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+}
+
+.chat-im-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.chat-im-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-im-avatar.is-pet img {
+  object-fit: contain;
+}
+
+.chat-im-row.is-user .chat-im-avatar.is-icon {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+/* 设置面板：头像预览行 */
+.theme-chat-avatar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-chat-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-im-avatar.theme-chat-avatar-preview {
+  width: 40px;
+  height: 40px;
+}
+
+.theme-chat-avatar-meta {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-chat-avatar-label {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.theme-chat-avatar-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 /* Virtualized message wrapper. When visible, it just renders children
    without interference. When virtualized out, it becomes a fixed-height
    placeholder that reserves space so the scrollbar does not jump.

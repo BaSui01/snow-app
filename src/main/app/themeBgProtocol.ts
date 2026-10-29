@@ -11,6 +11,7 @@ import { THEME_BG_SCHEME, themeBgUrl } from "../../renderer/utils/themeBgUrl";
 const ALLOWED_DIRS = [
   join(homedir(), ".snowapp", "backgrounds"),
   join(homedir(), ".snowapp", "stream-cursors"),
+  join(homedir(), ".snowapp", "chat-avatars"),
   // Codex 宠物精灵图：Snow App 安装目录 + Codex App / Petdex 生态目录。
   join(homedir(), ".snowapp", "pets"),
   join(homedir(), ".codex", "pets"),

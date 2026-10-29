@@ -4088,6 +4088,18 @@ export const en = {
   "settings.themeCodeFontSize": "Code font size",
   "settings.themeTypographyShortcutHint":
     "Shortcuts: {{zoomIn}} zoom in, {{zoomOut}} zoom out, {{zoomReset}} reset",
+  "settings.themeChatStyleTitle": "IM chat style",
+  "settings.themeChatStyleInfo":
+    "Show avatars next to messages like an instant messenger. Avatars can be replaced with your own images.",
+  "settings.themeChatStyleAiAvatar": "AI avatar",
+  "settings.themeChatStyleUserAvatar": "My avatar",
+  "settings.themeChatStyleAvatarCustom": "Custom image",
+  "settings.themeChatStyleAiAvatarDefault": "Default: built-in pet",
+  "settings.themeChatStyleUserAvatarDefault": "Default icon",
+  "settings.themeChatStyleChangeAvatar": "Change",
+  "settings.themeChatStyleResetAvatar": "Use default",
+  "settings.themeChatStyleSelectAvatarTitle": "Select avatar image",
+  "settings.themeChatStyleSaveAvatarError": "Failed to save avatar",
   "settings.themeStreamCursorTitle": "Streaming indicator",
   "settings.themeStreamCursorInfo":
     "Customize the indicator shown while the AI is generating a response.",

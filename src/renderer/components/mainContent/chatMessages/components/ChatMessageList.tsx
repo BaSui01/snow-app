@@ -23,6 +23,7 @@ import {
   type ChatFileArtifact,
 } from "./chatFileArtifacts";
 import { ChatFileArtifactRevealProvider } from "./ChatFileArtifactRevealContext";
+import { useChatStyle } from "../../../sidebar/themeSettings/chatStyleStore";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
@@ -218,6 +219,9 @@ export const ChatMessageList = ({
   }, [messages]);
   const lastAssistantMessageId = lastAssistantMessage?.id;
   const isLastAssistantRetrying = Boolean(lastAssistantMessage?.isRetrying);
+
+  // IM 风格：每条用户 / AI 消息（含每轮 loop）都显示头像
+  const chatStyle = useChatStyle();
 
   // The fork divider should appear after the fork point (the messages
   // copied from the source conversation), not after all messages.
@@ -511,6 +515,13 @@ export const ChatMessageList = ({
       message.status ? `is-${message.status}` : ""
     }`.trim();
 
+    const imAvatarPath =
+      chatStyle.imMode && !message.isContextCompaction
+        ? message.role === "user"
+          ? chatStyle.userAvatarPath
+          : chatStyle.aiAvatarPath
+        : undefined;
+
     return (
       <VirtualizedMessage
         id={message.id}
@@ -519,6 +530,7 @@ export const ChatMessageList = ({
         itemClassName={className}
         virtualization={virtualization}
         previouslyRendered={Boolean(message.idRemappedFrom)}
+        imAvatarPath={imAvatarPath}
         message={message}
         fileArtifacts={artifactsByOwner.get(message.id)}
         artifactWorkspace={artifactWorkspace}

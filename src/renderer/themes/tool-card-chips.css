@@ -150,7 +150,7 @@
 :root[data-tool-card-style="chips"]
   .tool-call-lsp.lsp-result-partial
   .tool-call-tool-name-icon {
-  color: var(--accent-yellow, #d97706);
+  color: var(--accent-amber-text, #d97706);
 }
 
 :root[data-tool-card-style="chips"]

@@ -41,6 +41,19 @@
   --accent-blue-text: #15803d;
   --accent-primary-bg: rgba(22, 163, 74, 0.09);
   --accent-primary-text: #15803d;
+  /* Legacy semantic names that newer components still read. Without these they
+     fall back to hardcoded blue/red/orange instead of the Horizon palette. */
+  --color-primary: var(--compact-accent);
+  --color-success: var(--accent-green);
+  --color-error: var(--compact-danger-text);
+  --danger: var(--compact-danger-text);
+  --success: var(--accent-green);
+  --warning: var(--accent-amber-text);
+  --text-link: var(--compact-accent-text);
+  --accent-secondary: #8b5cf6;
+  --accent-orange: var(--accent-amber-text);
+  --accent-orange-bg: var(--accent-amber-bg);
+  --accent-orange-text: var(--accent-amber-text);
 
   /* Flat controls and cards; only detached menus/tooltips need a soft shadow. */
   --island-shadow: none;
@@ -88,6 +101,30 @@
   --scrollbar-thumb: rgba(120, 116, 108, 0.28);
   --scrollbar-thumb-hover: rgba(120, 116, 108, 0.48);
   --scrollbar-thumb-active: rgba(120, 116, 108, 0.68);
+  --accent-amber-bg: rgba(217, 119, 6, 0.12);
+  --accent-amber-text: #b45309;
+  --compact-running: #0369a1;
+  --focus-ring: rgba(22, 163, 74, 0.32);
+  /* Shared syntax roles: emerald stays the anchor, other hues only separate
+     token classes so code does not collapse into one green. */
+  --syntax-text: var(--text-primary);
+  --syntax-comment: #8a8578;
+  --syntax-keyword: #7c3aed;
+  --syntax-string: #15803d;
+  --syntax-number: #b45309;
+  --syntax-function: #0e7490;
+  --syntax-type: #0f766e;
+  --syntax-tag: #b91c1c;
+  --syntax-attribute: #0e7490;
+  --syntax-variable: var(--text-secondary);
+  --syntax-meta: #92400e;
+  --syntax-regexp: #a21caf;
+  --syntax-selector: #b45309;
+  --syntax-symbol: var(--syntax-number);
+  --syntax-addition: #15803d;
+  --syntax-addition-bg: rgba(22, 163, 74, 0.1);
+  --syntax-deletion: #b91c1c;
+  --syntax-deletion-bg: rgba(185, 28, 28, 0.08);
 }
 
 /* Dark Mode: Deep Obsidian Charcoal & Radiant Mint Green */
@@ -121,6 +158,7 @@
   --text-tertiary: #86909c;
   --text-muted: #646f7f;
   --accent-primary-text: #4ade80;
+  --accent-secondary: #a78bfa;
   --accent-green: #22c55e;
   --accent-green-hover: #4ade80;
   --accent-green-bg: rgba(34, 197, 94, 0.16);
@@ -138,6 +176,28 @@
   --scrollbar-thumb: rgba(100, 116, 139, 0.35);
   --scrollbar-thumb-hover: rgba(148, 163, 184, 0.55);
   --scrollbar-thumb-active: rgba(203, 213, 225, 0.75);
+  --accent-amber-bg: rgba(245, 158, 11, 0.18);
+  --accent-amber-text: #fbbf24;
+  --compact-running: #38bdf8;
+  --focus-ring: rgba(74, 222, 128, 0.36);
+  --syntax-text: var(--text-primary);
+  --syntax-comment: #7d8592;
+  --syntax-keyword: #a78bfa;
+  --syntax-string: #4ade80;
+  --syntax-number: #fbbf24;
+  --syntax-function: #67e8f9;
+  --syntax-type: #5eead4;
+  --syntax-tag: #fca5a5;
+  --syntax-attribute: #67e8f9;
+  --syntax-variable: var(--text-secondary);
+  --syntax-meta: #fcd34d;
+  --syntax-regexp: #e879f9;
+  --syntax-selector: #fbbf24;
+  --syntax-symbol: var(--syntax-number);
+  --syntax-addition: #4ade80;
+  --syntax-addition-bg: rgba(34, 197, 94, 0.16);
+  --syntax-deletion: #fca5a5;
+  --syntax-deletion-bg: rgba(239, 68, 68, 0.16);
 }
 
 /* Typography & Base Resets */
@@ -1912,9 +1972,6 @@
     .memory-sidebar,
     .scheduled-tasks-sidebar,
     .scheduled-tasks-sidebar-footer,
-    .memo-gantt-header,
-    .memo-gantt-corner,
-    .memo-gantt-section-title
   ) {
   border-color: var(--border-light);
   background: var(--surface-island-muted);
@@ -1969,13 +2026,11 @@
 :root[data-theme-preset="compact"]
   :is(
     .memo-filter-tab.active,
-    .memo-view-tab.active,
     .scheduled-tasks-filter-tab.active,
     .scheduled-tasks-segmented-btn.active,
     .memo-list-item.selected,
     .memory-list-item.selected,
     .scheduled-task-item.selected,
-    .memo-gantt-row.selected
   ) {
   border-color: transparent !important;
   background: var(--compact-selected-bg) !important;
@@ -1989,7 +2044,6 @@
 :root[data-theme-preset="compact"][data-theme="light"]
   :is(
     .memo-filter-tab.active,
-    .memo-view-tab.active,
     .scheduled-tasks-filter-tab.active,
     .scheduled-tasks-segmented-btn.active
   ) {
@@ -2003,7 +2057,6 @@
 :root[data-theme-preset="compact"][data-theme="dark"]
   :is(
     .memo-filter-tab.active,
-    .memo-view-tab.active,
     .scheduled-tasks-filter-tab.active,
     .scheduled-tasks-segmented-btn.active
   ) {
@@ -2015,10 +2068,8 @@
 :root[data-theme-preset="compact"]
   :is(
     .memo-filter-tab,
-    .memo-view-tab,
     .memo-list-item,
     .memory-list-item,
-    .memo-gantt-row,
     .scheduled-task-item,
     .scheduled-tasks-filter-tab,
     .scheduled-tasks-segmented-btn,
@@ -2031,10 +2082,8 @@
 :root[data-theme-preset="compact"]
   :is(
     .memo-filter-tab,
-    .memo-view-tab,
     .memo-list-item,
     .memory-list-item,
-    .memo-gantt-row,
     .scheduled-task-item,
     .scheduled-tasks-filter-tab,
     .scheduled-tasks-segmented-btn,
@@ -2385,7 +2434,6 @@
       .memo-list-item,
       .memory-list-item,
       .scheduled-task-item,
-      .memo-gantt-row,
       .chat-float-island,
       .theme-preset-card-compact
     ) {
@@ -2483,4 +2531,213 @@
   border-color: var(--compact-focus-color) !important;
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14) !important;
+}
+
+/* ==========================================================================
+   22. Project Menu, Repo Wiki, Sub-agent Retry & Run States
+   ========================================================================== */
+
+/* 项目右键菜单（含「仓库 Wiki」入口）：与主题浮层规范一致 */
+:root[data-theme-preset="compact"] .workspace-directory-menu {
+  border-color: var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-strong);
+  box-shadow: var(--shadow-md);
+}
+
+:root[data-theme-preset="compact"] .workspace-directory-menu-item {
+  border-radius: var(--radius-sm);
+  transition: var(--compact-control-transition);
+}
+
+:root[data-theme-preset="compact"]
+  .workspace-directory-menu-item:is(:hover, :focus-visible):not(.danger) {
+  background: var(--compact-accent-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="compact"] .workspace-directory-menu-item.danger {
+  color: var(--compact-danger-text);
+}
+
+:root[data-theme-preset="compact"]
+  .workspace-directory-menu-item.danger:is(:hover, :focus-visible) {
+  background: color-mix(in srgb, var(--compact-danger-text) 14%, transparent);
+  color: var(--compact-danger-text);
+}
+
+/* 仓库 Wiki 工具栏按钮：与主题次级 / 危险按钮规范一致 */
+:root[data-theme-preset="compact"]
+  :is(.repo-wiki-btn, .repo-wiki-icon-btn:not(.ghost)) {
+  border-color: var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--surface-island-strong);
+  color: var(--text-secondary);
+  transition: var(--compact-control-transition);
+}
+
+:root[data-theme-preset="compact"]
+  :is(.repo-wiki-btn, .repo-wiki-icon-btn:not(.ghost)):hover:not(:disabled) {
+  border-color: var(--border-color);
+  background: var(--compact-accent-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="compact"] .repo-wiki-icon-btn.ghost {
+  color: var(--text-tertiary);
+  transition: var(--compact-control-transition);
+}
+
+:root[data-theme-preset="compact"]
+  .repo-wiki-icon-btn.ghost:hover:not(:disabled) {
+  background: var(--compact-accent-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="compact"]
+  :is(.repo-wiki-btn, .repo-wiki-icon-btn).danger {
+  border-color: color-mix(in srgb, var(--compact-danger-text) 24%, transparent);
+  background: color-mix(in srgb, var(--compact-danger-text) 10%, transparent);
+  color: var(--compact-danger-text);
+}
+
+:root[data-theme-preset="compact"]
+  :is(.repo-wiki-btn, .repo-wiki-icon-btn).danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--compact-danger-text) 18%, transparent);
+  color: var(--compact-danger-text);
+}
+
+/* 「进行中」统一为一套状态色。
+   accent-blue 并入绿后，running 与 completed 只能靠动画区分，这里统一成天蓝：
+   running/paused = --compact-running，completed = 绿，failed = 红，stopped = 琥珀。 */
+:root[data-theme-preset="compact"] .tool-call-run-tone--running {
+  --tool-run-fg: var(--compact-running);
+  --tool-run-bg: color-mix(in srgb, var(--compact-running) 12%, transparent);
+}
+
+:root[data-theme-preset="compact"]
+  :is(
+    .sub-agent-list-item .sub-agent-list-icon svg.sub-agent-status-running,
+    .workflow-node-list-item
+      .workflow-node-list-icon
+      svg.workflow-node-status-running,
+    .tct--running .tct-root-icon,
+    .tct-node--running .tct-node-head > svg,
+    .tct-attempt-status--running,
+    .scheduled-task-history-item.running .scheduled-task-history-status,
+    .task-manager-session-state.is-running,
+    .tool-call-memory-pending-running,
+    .tool-call-skill-pending-running
+  ) {
+  color: var(--compact-running);
+}
+
+/* 徽章 / 状态胶囊：前景 + 12% 淡底 */
+:root[data-theme-preset="compact"]
+  :is(
+    .repo-wiki-status.status-running,
+    .repo-wiki-status.status-paused,
+    .tool-call-sub-agent-activity-status-running,
+    .tct-status--running,
+    .tool-call-status-running,
+    .tool-call-bash-pending-running,
+    .tool-call-grep-pending-running,
+    .tool-call-websearch-pending-running,
+    .tool-call-imagegen-describe-pending-running,
+    .tool-call-browser-pending-running,
+    .scheduled-task-item-status-badge.running,
+    .ai-drawing-streaming-count
+  ) {
+  color: var(--compact-running);
+  background: color-mix(in srgb, var(--compact-running) 12%, transparent);
+}
+
+/* 终端占位区：原底色取 accent-blue-text，并入绿后与完成态同色，仅换色源 */
+:root[data-theme-preset="compact"] .tool-call-terminal-pending-running {
+  background: color-mix(in srgb, var(--compact-running) 6%, var(--bg-tertiary));
+}
+
+/* 圆点 / 指示条 */
+:root[data-theme-preset="compact"]
+  :is(
+    .tcn-dot--running,
+    .scheduled-task-history-item.running .scheduled-task-history-dot,
+    .chat-float-dot.is-streaming
+  ) {
+  background: var(--compact-running);
+}
+
+/* 工作流节点与定时任务运行中：描边跟随状态色 */
+:root[data-theme-preset="compact"]
+  :is(.workflow-node.is-running, .scheduled-task-item.is-running) {
+  border-color: var(--compact-running);
+}
+
+:root[data-theme-preset="compact"] .scheduled-task-item.is-running {
+  background: color-mix(in srgb, var(--compact-running) 9%, transparent);
+}
+
+/* chips 风格的工具名图标 */
+:root[data-theme-preset="compact"][data-tool-card-style="chips"]
+  .tcn--running
+  .tool-call-tool-name-icon {
+  color: var(--compact-running);
+}
+
+/* 会话流式图标：此前与 completed 同为绿色，仅靠脉冲动画区分 */
+:root[data-theme-preset="compact"] .chat-item-icon.streaming {
+  color: var(--compact-running) !important;
+  border-color: var(--compact-running) !important;
+}
+
+/* 子代理失败挂起：收尾栏错误态与重试主按钮 */
+:root[data-theme-preset="compact"] .sub-agent-finished-bar {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+  backdrop-filter: none;
+}
+
+:root[data-theme-preset="compact"] .sub-agent-finished-bar.is-error {
+  border-color: color-mix(in srgb, var(--compact-danger-text) 26%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--compact-danger-text) 7%,
+    var(--surface-island-muted)
+  );
+}
+
+:root[data-theme-preset="compact"] .sub-agent-finished-bar-back {
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  transition: var(--compact-control-transition);
+}
+
+:root[data-theme-preset="compact"]
+  .sub-agent-finished-bar-back:hover:not(:disabled) {
+  background: var(--compact-accent-bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme-preset="compact"]
+  :is(
+    .sub-agent-finished-bar-back.is-primary,
+    .tool-call-sub-agent-retry-actions .tool-call-sub-agent-jump.is-primary
+  ) {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--compact-button-bg);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+:root[data-theme-preset="compact"]
+  :is(
+    .sub-agent-finished-bar-back.is-primary,
+    .tool-call-sub-agent-retry-actions .tool-call-sub-agent-jump.is-primary
+  ):hover:not(:disabled) {
+  background: var(--compact-button-hover);
+  color: #ffffff;
+  opacity: 1;
+  box-shadow: none;
 }

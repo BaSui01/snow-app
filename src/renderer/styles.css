@@ -9284,7 +9284,7 @@ body.is-panel-resizing * {
 
 /* ===== Main Content ===== */
 /* position: relative anchors every absolutely-positioned child (settings
-   badges, combobox menus, gantt markers, etc.) to this column. The default
+   badges, combobox menus, etc.) to this column. The default
    theme implicitly provided this containing block via backdrop-filter, but
    theme presets (e.g. cream) may set backdrop-filter: none for a flat look,
    which would make those children jump to the app window edge instead.
@@ -26762,308 +26762,6 @@ button.user-message-source:hover {
   margin: 6px 0;
 }
 
-/* ===== Memo view tabs (list / gantt) ===== */
-.memo-view-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 8px 10px 0;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-}
-
-.memo-view-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border: none;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 0.12s,
-    color 0.12s;
-}
-
-.memo-view-tab:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-}
-
-.memo-view-tab.active {
-  color: var(--text-primary);
-  background: var(--bg-primary);
-  font-weight: 600;
-}
-
-/* ===== Memo schedule panel ===== */
-.memo-schedule-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.memo-icon-btn.scheduled {
-  color: var(--accent-blue);
-}
-
-.memo-schedule-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-
-.memo-schedule-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 41;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 200px;
-  padding: 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  box-shadow: var(--shadow-md);
-}
-
-.memo-schedule-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-.memo-schedule-field input[type="date"] {
-  width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 12px;
-  outline: none;
-}
-
-.memo-schedule-field input[type="date"]:focus {
-  border-color: var(--accent-color);
-}
-
-.memo-schedule-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-  font-size: 12px;
-  cursor: pointer;
-  transition:
-    background 0.12s,
-    color 0.12s;
-}
-
-.memo-schedule-clear:hover {
-  background: var(--accent-red-bg);
-  color: var(--accent-red);
-}
-
-/* ===== Memo gantt view ===== */
-.memo-gantt-view {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  background: var(--bg-primary);
-}
-
-.memo-gantt-scroll {
-  flex: 1;
-  min-width: 0;
-  overflow: auto;
-  position: relative;
-}
-
-.memo-gantt-header {
-  display: flex;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.memo-gantt-corner {
-  flex-shrink: 0;
-  position: sticky;
-  left: 0;
-  z-index: 6;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-subtle);
-}
-
-.memo-gantt-header-track {
-  position: relative;
-  height: 28px;
-  flex-shrink: 0;
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--border-subtle) 0 1px,
-    transparent 1px var(--gantt-day-width, 34px)
-  );
-}
-
-.memo-gantt-week-label {
-  position: absolute;
-  top: 6px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  padding-left: 3px;
-}
-
-.memo-gantt-today-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--accent-blue);
-  opacity: 0.55;
-  pointer-events: none;
-}
-
-.memo-gantt-row {
-  display: flex;
-  height: 36px;
-  align-items: center;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.12s;
-}
-
-.memo-gantt-row:hover {
-  background: var(--bg-hover);
-}
-
-.memo-gantt-row.selected {
-  background: var(--bg-active);
-}
-
-.memo-gantt-row-label {
-  flex-shrink: 0;
-  position: sticky;
-  left: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 1px;
-  min-width: 0;
-  padding: 0 10px;
-  height: 100%;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border-subtle);
-}
-
-.memo-gantt-row:hover .memo-gantt-row-label,
-.memo-gantt-row.selected .memo-gantt-row-label {
-  background: var(--bg-active);
-}
-
-.memo-gantt-row-title {
-  font-size: 12px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.memo-gantt-row-dates {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.memo-gantt-row-dates.overdue {
-  color: var(--accent-red);
-}
-
-.memo-gantt-row-track {
-  position: relative;
-  height: 100%;
-  flex: none;
-  min-width: 0;
-  background-image: repeating-linear-gradient(
-    to right,
-    var(--border-subtle) 0 1px,
-    transparent 1px var(--gantt-day-width, 34px)
-  );
-}
-
-.memo-gantt-row-track.grow {
-  flex: 1;
-}
-
-.memo-gantt-bar {
-  position: absolute;
-  top: 8px;
-  height: 20px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-blue);
-  opacity: 0.85;
-  transition:
-    opacity 0.12s,
-    filter 0.12s;
-}
-
-.memo-gantt-row:hover .memo-gantt-bar {
-  opacity: 1;
-  filter: brightness(1.06);
-}
-
-.memo-gantt-bar.done {
-  background: var(--accent-green);
-  opacity: 0.6;
-}
-
-.memo-gantt-bar.overdue {
-  background: var(--accent-red);
-}
-
-.memo-gantt-section-title {
-  position: sticky;
-  left: 0;
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-  z-index: 2;
-}
-
-.memo-gantt-row.unscheduled .memo-gantt-row-dates {
-  color: var(--text-muted);
-}
-
-.memo-gantt-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
-  font-size: 13px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
 /* ===== Scheduled Tasks ===== */
 .sidebar-scheduled-tasks-btn {
   width: 100%;
@@ -34364,14 +34062,94 @@ button.user-message-source:hover {
   gap: 7px;
 }
 
-.sub-agent-tool-options {
+.sub-agent-tool-selector {
   display: flex;
-  max-height: 270px;
-  overflow-y: auto;
+  min-width: 0;
   flex-direction: column;
+  gap: 7px;
+}
+
+.sub-agent-tool-selector-groups {
+  max-height: 320px;
+  overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
+}
+
+.sub-agent-tool-selector-group + .sub-agent-tool-selector-group {
+  border-top: 1px solid var(--border-color);
+}
+
+.sub-agent-tool-selector-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--surface-island-muted);
+}
+
+.sub-agent-tool-selector-expand {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sub-agent-tool-selector-expand strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-tool-selector-expand > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.sub-agent-tool-selector-expand[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+
+.sub-agent-tool-selector-expand:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sub-agent-tool-selector-count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-agent-tool-selector-tools {
+  border-top: 1px solid var(--border-light);
+}
+
+.sub-agent-tool-selector .sub-agent-tool-option {
+  position: relative;
+}
+
+.sub-agent-tool-selector .sub-agent-tool-option input[type="checkbox"] {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .sub-agent-tool-option {
@@ -42154,6 +41932,31 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-family: Menlo, Consolas, monospace;
   font-size: var(--diff-font-size--);
   line-height: 1.6;
+}
+
+/* The incremental viewer borrows @git-diff-view's variable names but does not
+   load its stylesheet, so the line backgrounds and number colors were never
+   defined. Define them from the shared syntax tokens instead. */
+.incremental-diff-wrapper .diff-style-root {
+  --diff-add-content--: var(--syntax-addition-bg);
+  --diff-del-content--: var(--syntax-deletion-bg);
+  --diff-add-lineNumber--: color-mix(
+    in srgb,
+    var(--syntax-addition-bg) 70%,
+    transparent
+  );
+  --diff-del-lineNumber--: color-mix(
+    in srgb,
+    var(--syntax-deletion-bg) 70%,
+    transparent
+  );
+  --diff-plain-content--: transparent;
+  --diff-plain-lineNumber--: color-mix(
+    in srgb,
+    var(--text-tertiary) 10%,
+    transparent
+  );
+  --diff-plain-lineNumber-color--: var(--text-tertiary);
 }
 
 .incremental-diff-line {

@@ -170,7 +170,7 @@ Up to four servers are discovered concurrently. One server's failure is logged a
 
 ## 7. Enablement conditions and tool disables
 
-An effective tool must satisfy all of these conditions:
+For the main conversation and the built-in `agent_general` using `["*"]`, an effective tool must satisfy all of these conditions:
 
 - The server configuration is not `enabled: false`;
 - For a global external server, the current project has not disabled that server;
@@ -178,7 +178,9 @@ An effective tool must satisfy all of these conditions:
 - The current project has not disabled that exact full public tool name;
 - A project-owned server is itself enabled. Project-owned servers do not use the global-server project toggle, but their individual tools can still be disabled.
 
-A server appearing in Settings therefore does not guarantee that its tools enter the current Agent context. After changing global or project toggles, fetch tools again and use the actual full name in a sub-agent's `toolsJson` or a Skill's `allowed-tools`. The Global tab of Sub-agent Settings lists only tools from system and global MCP servers and does not change with the current project. When a project disables a server, global sub-agents skip those tools while running in that project; re-enabling the server in that project restores them.
+A server appearing in Settings therefore does not guarantee that its tools enter the current Agent context. After changing global or project toggles, fetch tools again and use the actual full name in a sub-agent's `toolsJson` or a Skill's `allowed-tools`. The Global tab of Sub-agent Settings lists only tools from system and global MCP servers, independent of projects. The Project tab also lists tools from MCP servers owned by the current project, including project-disabled servers or tools.
+
+A sub-agent's explicit tool list bypasses project-level server or tool disables only for that sub-agent, including `enabled: false` in a project-owned MCP configuration. This exception applies only to tool discovery and execution for the currently authorized sub-agent; it does not change project configuration, restore access to the main conversation, or expose unselected tools. Project-owned servers resolve only within the current project. Global external-server disables (`enabled: false`), the global tool blacklist, built-in tools' global switches, Lite mode, tool readiness and capability requirements, codebase-index requirements, and normal execution authorization still apply. The built-in `agent_general` using `["*"]` has no such exception; custom sub-agents cannot use `"*"`.
 
 Tool discovery results are cached in-process per server (TTL 60 seconds): a cache hit returns the list immediately. Saving, editing, or deleting one server only invalidates that server's cache entry, so other servers are never reconnected. Server and tool toggles are read-time blacklists and never invalidate the cache.
 
@@ -189,7 +191,7 @@ The MCP Settings panel supports **tool-level toggles**: each server row shows a 
 - Each tool can be enabled/disabled independently; **global-scope** toggles apply to every project, **project-scope** toggles apply only to the current project, and both share the same storage as the **Project MCP** popup in the chat composer;
 - **Enable all / Disable all** batch buttons and search filtering by name/description are provided; clicking a tool row shows its details (full description and parameter schema);
 - Disable semantics are a **blacklist**: everything is enabled by default and only disabled tools enter the blacklist;
-- Server-level and tool-level toggles are an **AND** relationship: when a server is disabled, all of its tools are unavailable even if their tool-level toggles are still enabled.
+- For the main conversation and the built-in `agent_general` using `["*"]`, server-level and tool-level toggles are an **AND** relationship: when a server is disabled, all of its tools are unavailable even if their tool-level toggles are still enabled. A sub-agent's explicit list has only the project-level disable exception described above.
 
 Tool-level toggles (global and project) are managed by the MCP Settings panel and stored in the app database; they are **not written to settings.json** and are not configured through the `config` service (`config-list`/`config-get`/`config-set`) — UI only.
 

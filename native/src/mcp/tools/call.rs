@@ -710,8 +710,13 @@ pub async fn call_mcp_tool(
                 )
             })??;
         filesystem_result.tool_feedback(is_sub_agent_call)?
-    } else if let Some(result) =
-        super::super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
+    } else if let Some(result) = super::super::external::call_tool(
+        project_id.as_deref(),
+        &tool_full_name,
+        &args,
+        project_override,
+    )
+    .await?
     {
         result
     } else {

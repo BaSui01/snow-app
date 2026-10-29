@@ -963,7 +963,7 @@
 :root[data-theme-preset="win95"] .tcg-list::before {
   width: 1px;
   background: none;
-  border-left: 1px dotted var(--win95-dark);
+  border-left: 1px dotted var(--text-muted);
 }
 
 :root[data-theme-preset="win95"] .send-key-group {
@@ -1168,9 +1168,6 @@
     .memory-sidebar,
     .scheduled-tasks-sidebar,
     .scheduled-tasks-sidebar-footer,
-    .memo-gantt-header,
-    .memo-gantt-corner,
-    .memo-gantt-section-title
   ) {
   border-color: var(--w95-shadow);
   background: var(--w95-face);
@@ -1221,10 +1218,8 @@
 :root[data-theme-preset="win95"]
   :is(
     .memo-filter-tab,
-    .memo-view-tab,
     .memo-list-item,
     .memory-list-item,
-    .memo-gantt-row,
     .scheduled-task-item,
     .scheduled-tasks-filter-tab,
     .scheduled-tasks-segmented-btn,
@@ -1236,10 +1231,8 @@
 :root[data-theme-preset="win95"]
   :is(
     .memo-filter-tab,
-    .memo-view-tab,
     .memo-list-item,
     .memory-list-item,
-    .memo-gantt-row,
     .scheduled-task-item,
     .scheduled-tasks-filter-tab,
     .scheduled-tasks-segmented-btn,
@@ -1252,13 +1245,11 @@
 :root[data-theme-preset="win95"]
   :is(
     .memo-filter-tab.active,
-    .memo-view-tab.active,
     .scheduled-tasks-filter-tab.active,
     .scheduled-tasks-segmented-btn.active,
     .memo-list-item.selected,
     .memory-list-item.selected,
     .scheduled-task-item.selected,
-    .memo-gantt-row.selected
   ) {
   border-color: var(--w95-select-bg);
   background: var(--w95-select-bg);

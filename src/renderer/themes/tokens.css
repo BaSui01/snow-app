@@ -37,6 +37,32 @@
   --accent-color: var(--text-primary);
   --accent-amber-bg: #fef3c7;
   --accent-amber-text: #92400e;
+  /* Legacy semantic aliases. Every preset defines these; the default theme must
+     too, otherwise older components fall back to hardcoded colors. Values are
+     var() references so the dark block below re-resolves them automatically. */
+  --color-primary: var(--accent-color);
+  --color-success: var(--accent-green-text);
+  --color-error: var(--accent-red-text);
+  --danger: var(--accent-red);
+  --success: var(--accent-green-text);
+  --warning: var(--accent-amber-text);
+  --text-link: var(--accent-blue-text);
+  /* Second accent stays violet: it distinguishes sub-agent items from
+     workflow items, which use --accent. */
+  --accent-secondary: #8b5cf6;
+  --accent-orange: var(--accent-amber-text);
+  --accent-orange-bg: var(--accent-amber-bg);
+  --accent-orange-text: var(--accent-amber-text);
+  --accent: var(--accent-blue);
+  --accent-primary: var(--accent-color);
+  --accent-primary-bg: var(--accent-blue-bg);
+  --accent-primary-text: var(--accent-blue-text);
+  --surface-hover: var(--bg-hover);
+  --border-focus: var(--accent-color);
+  --font-brand-body: var(--font-sans);
+  --font-brand-display: var(--font-sans);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
   /* Shared syntax roles resolve against the active theme's semantic colors. */
   --syntax-text: var(--text-primary);
   --syntax-keyword: color-mix(
@@ -115,6 +141,8 @@
   --surface-island-muted: rgba(20, 20, 20, 0.68);
   --island-shadow:
     0 16px 40px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
   --tooltip-bg: var(--surface-island-strong);
   --tooltip-border: var(--border-subtle);
   --tooltip-shadow:
@@ -138,6 +166,7 @@
   --accent-color: var(--text-primary);
   --accent-amber-bg: rgba(245, 158, 11, 0.18);
   --accent-amber-text: #fcd34d;
+  --accent-secondary: #a78bfa;
   --focus-ring: rgba(212, 212, 212, 0.14);
   --scrollbar-thumb: rgba(113, 113, 122, 0.68);
   --scrollbar-thumb-hover: rgba(161, 161, 170, 0.82);

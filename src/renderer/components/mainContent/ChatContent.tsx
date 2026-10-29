@@ -103,6 +103,7 @@ const ChatContentBody = ({
     compactConversation,
     compactionPreview,
     compactionError,
+    dismissCompactionError,
     isCompacting,
     compactingConversationId,
     yoloMode,
@@ -660,6 +661,7 @@ const ChatContentBody = ({
                   isCompacting={isCompactingActive}
                   compactionPreview={compactionPreview}
                   compactionError={activeCompactionError}
+                  onDismissError={dismissCompactionError}
                 />
               </>
             ) : (

@@ -86,6 +86,7 @@ type PlusToggleRowProps = {
   onChange?: () => void;
 };
 
+// 整行使用 label 承载原生激活，内部开关用 span，避免 JS 冒泡导致双重切换
 const PlusToggleRow = ({
   icon: Icon,
   label,
@@ -96,16 +97,16 @@ const PlusToggleRow = ({
   lockedTitle,
   onChange,
 }: PlusToggleRowProps): React.JSX.Element => (
-  <div
+  <label
     className={`plus-menu-item plus-menu-yolo-item${locked ? " is-locked" : ""}`}
     title={locked ? lockedTitle : undefined}
   >
     <Icon size={14} className="plus-menu-item-icon" />
-    <div className="plus-menu-item-content">
+    <span className="plus-menu-item-content">
       <span className="plus-menu-item-label">{label}</span>
       <span className="plus-menu-item-description">{description}</span>
-    </div>
-    <label className="toggle-switch plus-menu-yolo-switch">
+    </span>
+    <span className="toggle-switch plus-menu-yolo-switch">
       <input
         aria-label={label}
         checked={checked}
@@ -114,8 +115,8 @@ const PlusToggleRow = ({
         type="checkbox"
       />
       <span className="toggle-slider" />
-    </label>
-  </div>
+    </span>
+  </label>
 );
 
 // 模式二级面板尺寸（固定定位挂到 body，避免被下拉容器裁切）

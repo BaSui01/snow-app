@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
-import { Minimize2, TriangleAlert } from "lucide-react";
+import { Minimize2, TriangleAlert, X } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { MarkdownBlock } from "./markdownRenderer";
 
@@ -7,12 +7,14 @@ type CompactionStreamProps = {
   isCompacting: boolean;
   compactionPreview: string;
   compactionError: string | null;
+  onDismissError?: () => void;
 };
 
 export const CompactionStream = ({
   isCompacting,
   compactionPreview,
   compactionError,
+  onDismissError,
 }: CompactionStreamProps): React.JSX.Element | null => {
   const { t } = useI18n();
   const compactionStreamRef = useRef<HTMLDivElement>(null);
@@ -74,6 +76,17 @@ export const CompactionStream = ({
               {compactionError}
             </span>
           </span>
+          {onDismissError ? (
+            <button
+              type="button"
+              className="context-compaction-notice-close"
+              onClick={onDismissError}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <X size={12} strokeWidth={2} aria-hidden="true" />
+            </button>
+          ) : null}
           <span className="context-compaction-notice-rule" aria-hidden="true" />
         </div>
       ) : null}

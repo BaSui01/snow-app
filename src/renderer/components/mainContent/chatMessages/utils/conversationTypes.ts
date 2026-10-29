@@ -1070,6 +1070,8 @@ export type UseChatConversationResult = {
   compactConversation: (model?: string) => Promise<void>;
   compactionPreview: string;
   compactionError: string | null;
+  /** 手动关闭压缩失败提示。 */
+  dismissCompactionError: () => void;
   isCompacting: boolean;
   compactingConversationId: string | null;
   handleSelectConversation: (

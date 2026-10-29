@@ -327,6 +327,9 @@ export const useChatConversation = (
   );
   const [compactionPreview, setCompactionPreview] = useState("");
   const [compactionError, setCompactionError] = useState<string | null>(null);
+  const dismissCompactionError = useCallback(() => {
+    setCompactionError(null);
+  }, []);
   const [isCompacting, setIsCompacting] = useState(false);
   const [compactingConversationId, setCompactingConversationId] = useState<
     string | null
@@ -1487,6 +1490,7 @@ export const useChatConversation = (
       compactConversation: compactionApi.compactConversation,
       compactionPreview,
       compactionError,
+      dismissCompactionError,
       isCompacting,
       compactingConversationId,
       handleSelectConversation: handleSelectConversationGuarded,
@@ -1605,6 +1609,7 @@ export const useChatConversation = (
       pendingMessageModesForActive,
       compactionPreview,
       compactionError,
+      dismissCompactionError,
       isCompacting,
       compactingConversationId,
       draftToRestore,

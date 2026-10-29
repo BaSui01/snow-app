@@ -50,16 +50,16 @@
 }
 
 .context-menu-item.danger {
-  color: var(--danger-color, #e5534b);
+  color: var(--accent-red-text, #e5534b);
 }
 
 .context-menu-item.danger:hover {
-  background: color-mix(in srgb, var(--danger-color, #e5534b) 14%, transparent);
-  color: var(--danger-color, #e5534b);
+  background: color-mix(in srgb, var(--accent-red-text, #e5534b) 14%, transparent);
+  color: var(--accent-red-text, #e5534b);
 }
 
 .context-menu-item.danger svg {
-  color: var(--danger-color, #e5534b);
+  color: var(--accent-red-text, #e5534b);
 }
 
 .context-menu-item svg {

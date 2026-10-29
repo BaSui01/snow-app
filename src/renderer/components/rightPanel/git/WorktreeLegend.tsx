@@ -106,13 +106,13 @@ export function WorktreeLegend({
                 backgroundColor: color,
                 outline: worktree.isValid
                   ? undefined
-                  : "1px dashed var(--text-danger)",
+                  : "1px dashed var(--accent-red-text)",
               }}
             />
             {worktree.branchName ??
               `${t("git.graphDetachedHead")} ${worktree.headOid.slice(0, 7)}`}
             {!worktree.isValid && (
-              <span style={{ color: "var(--text-danger)" }}>
+              <span style={{ color: "var(--accent-red-text)" }}>
                 ({t("git.graphWorktreeInvalid")})
               </span>
             )}

@@ -80,6 +80,7 @@ import {
   createStreamChunkHandler,
   createStreamIdHandler,
   remapPersistedUserMessageIds,
+  bindPersistedAssistantRecordId,
   resetIterationStreamMetrics,
   resetRunStreamMetrics,
   markRunStarted,
@@ -1099,6 +1100,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             userMessage.id = remappedUser;
           }
         }
+        bindPersistedAssistantRecordId(
+          ctx,
+          effectiveKey,
+          currentAssistantMessageId,
+          response.persistedAssistantMessageId,
+        );
 
         if (response.conversationId) {
           if (isPendingSessionKey(effectiveKey)) {

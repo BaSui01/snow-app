@@ -231,6 +231,9 @@ export type ChatConversationMessage = {
    *  标记：迁移产生的新元素不重播入场动画、且首帧即按真实内容渲染
    *  （ChatMessageList / VirtualizedMessage）；从不持久化。 */
   idRemappedFrom?: string;
+  /** 对应的数据库消息 id（助手消息前端 id 与库 id 不同，落库后回填）；
+   *  消息窗口裁剪据此确定向前翻页的游标。运行时字段，不持久化。 */
+  recordId?: string;
   /** Hook execution records for this message (e.g. onUserMessage hooks
    *  executed before the message was sent to the AI).  Stored on the user
    *  message so the UI can render what hooks ran and their outcomes. */
@@ -324,6 +327,9 @@ export type ConversationSessionState = {
   isPaused: boolean;
   isLoadingOlderMessages: boolean;
   hasMoreMessages: boolean;
+  /** 消息窗口被裁剪后的向前翻页游标（库 id，取 id < 游标的记录）；
+   *  缺省时退回 messageRecords[0].id。 */
+  olderCursorId?: string;
   isInitialHistoryLoaded: boolean;
   /** 会话缓存 TTL 的计时基准（Date.now() 毫秒时间戳）：查看会话或消息更新时刷新。 */
   lastAccessedAt: number;

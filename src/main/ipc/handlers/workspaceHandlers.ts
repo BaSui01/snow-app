@@ -23,6 +23,14 @@ const AGENT_SEARCH_PROGRESS_CHANNEL =
 const CLONE_PROGRESS_CHANNEL =
   "workspace-directories:clone-repository:progress";
 
+// macOS 把 .app 等包当文件，选目录时要允许把它们当文件夹进入
+const withPackageAsDirectory = (
+  properties: Electron.OpenDialogOptions["properties"],
+): Electron.OpenDialogOptions["properties"] =>
+  process.platform === "darwin"
+    ? [...(properties ?? []), "treatPackageAsDirectory"]
+    : properties;
+
 export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   ipcMain.handle("workspace-directories:list", () =>
     native.listWorkspaceDirectories(),
@@ -347,7 +355,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
           : "Select workspace directory";
       const options: Electron.OpenDialogOptions = {
         title,
-        properties: ["openDirectory"],
+        properties: withPackageAsDirectory(["openDirectory"]),
       };
       const result = browserWindow
         ? await dialog.showOpenDialog(browserWindow, options)
@@ -703,7 +711,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   const showPickDialog = async (
     event: Electron.IpcMainInvokeEvent,
     dialogTitle: unknown,
-    properties: Array<"openFile" | "openDirectory" | "multiSelections">,
+    properties: Electron.OpenDialogOptions["properties"],
     fallbackTitle: string,
   ): Promise<{ path: string; isDirectory: boolean }[] | null> => {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
@@ -754,7 +762,7 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       showPickDialog(
         event,
         dialogTitle,
-        ["openDirectory", "multiSelections"],
+        withPackageAsDirectory(["openDirectory", "multiSelections"]),
         "Select folders",
       ),
   );

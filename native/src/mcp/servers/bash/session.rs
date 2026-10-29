@@ -565,10 +565,18 @@ fn feed_stdout(state: &mut IoState, chunk: &[u8]) {
     };
 
     // 哨兵只在滑动窗口里找：旧实现每个 chunk 重扫整个输出，是 O(n^2)。
+    let mut token_offset_in_chunk: Option<usize> = None;
     if !state.stdout.token_seen {
+        let probe_len_before = state.stdout.probe.len();
         state.stdout.probe.extend_from_slice(chunk);
         if let Some(index) = find_subslice(&state.stdout.probe, &token) {
             state.stdout.token_seen = true;
+            // None 表示 token 起始于上一个 chunk（跨窗口），本次 chunk 全是协议内容。
+            token_offset_in_chunk = if index >= probe_len_before {
+                Some(index - probe_len_before)
+            } else {
+                None
+            };
             let rest = index + token.len();
             state
                 .stdout
@@ -598,13 +606,21 @@ fn feed_stdout(state: &mut IoState, chunk: &[u8]) {
         }
     }
 
-    // 流式转发：命中哨兵后剩余字节都是协议行，丢弃可见窗口避免泄出退出码。
+    // 流式转发：命中哨兵后剩余字节都是协议行，只发出 token 之前的可见内容。
     if state.stdout.emit_stopped {
         return;
     }
     if state.stdout.token_seen {
         state.stdout.emit_stopped = true;
-        state.stdout.visible.clear();
+        match token_offset_in_chunk {
+            Some(offset) => {
+                state.stdout.visible.extend_from_slice(&chunk[..offset]);
+                let mut piece: Vec<u8> = state.stdout.visible.drain(..).collect();
+                emit_complete_utf8_chunks(&callback, "stdout", &mut piece);
+            }
+            // token 跨 chunk 起始：可见窗口里只剩 token 前缀，直接丢弃。
+            None => state.stdout.visible.clear(),
+        }
         return;
     }
     state.stdout.visible.extend_from_slice(chunk);

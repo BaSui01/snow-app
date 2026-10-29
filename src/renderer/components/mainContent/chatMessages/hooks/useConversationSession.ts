@@ -17,6 +17,11 @@ import {
   getPendingSessionKey,
   isPendingSessionKey,
 } from "../utils/conversationTypes";
+import {
+  canTrimMessageWindow,
+  isAssistantMessageAppended,
+  trimSessionMessageWindow,
+} from "../utils/messageWindow";
 
 type ConversationNotificationOptions = Omit<AppNotificationOptions, "target"> &
   ConversationNotificationContext;
@@ -155,13 +160,21 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         if (!session) return prev;
         const messages = updater(session.messages);
         if (messages === session.messages) return prev;
+        const updated: ConversationSessionState = {
+          ...session,
+          messages,
+          lastAccessedAt: Date.now(),
+        };
+        // 新 AI 消息追加时裁剪消息窗口；视图阅读历史（未钉底）时跳过。
+        const trimmed =
+          !isPendingSessionKey(key) &&
+          isAssistantMessageAppended(session.messages, messages) &&
+          canTrimMessageWindow(key)
+            ? trimSessionMessageWindow(updated)
+            : null;
         return {
           ...prev,
-          [key]: {
-            ...session,
-            messages,
-            lastAccessedAt: Date.now(),
-          },
+          [key]: trimmed ?? updated,
         };
       });
     },

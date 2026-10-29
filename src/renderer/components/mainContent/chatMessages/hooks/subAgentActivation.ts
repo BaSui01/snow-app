@@ -134,6 +134,7 @@ import type { SubAgentRunPersistence } from "./subAgentRunRegistry";
 import {
   accumulateConversationRunStats,
   accumulateRunTokenUsage,
+  bindPersistedAssistantRecordId,
   createStreamChunkHandler,
   createStreamIdHandler,
   resetIterationStreamMetrics,
@@ -621,6 +622,12 @@ const createSubAgentRunLoop = (deps: SubAgentRunLoopDeps): SubAgentRunLoop => {
         );
       }
     }
+    bindPersistedAssistantRecordId(
+      ctx,
+      subConvId,
+      subAssistantMessageId,
+      subResponse.persistedAssistantMessageId,
+    );
 
     if (isSubCancelled()) {
       const forceSendAbort =

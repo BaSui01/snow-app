@@ -600,6 +600,7 @@ pub async fn store_manual_tool_exchange(
                 cache_read_input_tokens: 0,
             },
             persisted_user_message_ids: exchange.persisted_user_message_ids,
+            persisted_assistant_message_id: exchange.persisted_assistant_message_id,
         })
     })
     .await

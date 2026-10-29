@@ -104,6 +104,29 @@ export const remapPersistedUserMessageIds = (
   return idRemap;
 };
 
+/** 回填本轮助手消息的库 id，作为消息窗口裁剪的翻页游标。 */
+export const bindPersistedAssistantRecordId = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  assistantMessageId: string,
+  recordId: string | undefined,
+): void => {
+  if (!recordId) {
+    return;
+  }
+  ctx.updateSessionMessages(sessionKey, (messages) => {
+    const index = messages.findIndex(
+      (message) => message.id === assistantMessageId,
+    );
+    if (index < 0 || messages[index].recordId === recordId) {
+      return messages;
+    }
+    const next = messages.slice();
+    next[index] = { ...messages[index], recordId };
+    return next;
+  });
+};
+
 // ---------------------------------------------------------------------------
 // Factory: awaitHookDecision
 // ---------------------------------------------------------------------------

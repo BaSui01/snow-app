@@ -11,6 +11,7 @@ import {
   createStreamGrowthSmoother,
   type StreamGrowthSmoother,
 } from "../components/streamGrowthSmoother";
+import { registerMessageWindowViewGate } from "../utils/messageWindow";
 
 type PendingScrollRestore = {
   conversationId: string;
@@ -196,6 +197,27 @@ export const useChatScrollFollow = ({
   messagesRef.current = messages;
   autoScrollEnabledRef.current = autoScrollEnabled;
   isStreamingRef.current = isStreaming;
+  const isChatAreaRenderedRef = useRef(isChatAreaRendered);
+  isChatAreaRenderedRef.current = isChatAreaRendered;
+
+  // 消息窗口裁剪门控：仅在自动滚动钉底时允许卸载当前会话的头部历史，
+  // 用户上翻阅读、翻页恢复或首屏定位期间一律暂停。
+  useEffect(
+    () =>
+      registerMessageWindowViewGate({
+        sessionKey: () =>
+          isChatAreaRenderedRef.current
+            ? activeConversationIdRef.current
+            : undefined,
+        isFollowingBottom: () =>
+          autoScrollEnabledRef.current &&
+          shouldStickToBottomRef.current &&
+          !isLoadingOlderWithScrollRef.current &&
+          pendingScrollRestoreRef.current === null &&
+          !isInitialBottomPositioningRef.current,
+      }),
+    [],
+  );
 
   // 跟随路径统一入口：即时把滚动位置贴到容器底部。写入发生在内容生长的
   // 同一帧内（ResizeObserver 回调在 paint 前触发），视口不会滞后于内容。
@@ -265,6 +287,38 @@ export const useChatScrollFollow = ({
       }
     };
   }, [streamViewport, canSmoothGrowth]);
+
+  // 消息窗口头部被卸载：平滑视口仍持有旧的显式高度，内容整体上移后才
+  // 逐帧收缩，表现为跳一下。绘制前释放显式高度并同帧钉底。
+  const previousWindowRef = useRef({
+    conversationId: activeConversationId,
+    messages,
+  });
+  useLayoutEffect(() => {
+    const previous = previousWindowRef.current;
+    previousWindowRef.current = {
+      conversationId: activeConversationId,
+      messages,
+    };
+    if (
+      previous.conversationId !== activeConversationId ||
+      previous.messages.length === 0 ||
+      messages.length === 0 ||
+      previous.messages[0].id === messages[0].id
+    ) {
+      return;
+    }
+    const headId = messages[0].id;
+    // 新首条落在旧列表中部才是头部裁剪（翻页前插、id 迁移都不满足）。
+    if (previous.messages.findIndex((message) => message.id === headId) <= 0) {
+      return;
+    }
+    if (!shouldStickToBottomRef.current) {
+      return;
+    }
+    growthSmootherRef.current?.release();
+    pinToBottom();
+  }, [activeConversationId, messages, pinToBottom]);
 
   // 结束一轮翻页滚动恢复：释放在途标记并唤醒等待该轮收敛的调用方（用户消息
   // 定位需要按页推进），避免等待一个永不抵达的信号。

@@ -190,6 +190,10 @@ export interface ReadonlyCallGuardOptions {
   workspacePath?: string;
 }
 
+/** 只读结果缓存上限（条数 / 字符量）。 */
+const READONLY_CACHE_MAX_ENTRIES = 48;
+const READONLY_CACHE_MAX_CHARS = 2_000_000;
+
 export class ReadonlyCallGuard {
   private workspacePath?: string;
   private completedCalls = new Map<string, CallSnapshot>();
@@ -365,8 +369,29 @@ export class ReadonlyCallGuard {
       const key = this.getReadonlyCallKey(toolCall);
       if (key && result && !isFailedToolResult(result)) {
         const snapshot = await this.captureSnapshot(toolCall, key, result);
-        this.completedCalls.set(key, snapshot);
+        this.rememberCall(key, snapshot);
       }
+    }
+  }
+
+  /** 写入缓存并按条数/字符量淘汰最旧项，避免长 run 中整轮只读结果常驻内存。 */
+  private rememberCall(key: string, snapshot: CallSnapshot): void {
+    this.completedCalls.delete(key);
+    this.completedCalls.set(key, snapshot);
+    let totalChars = 0;
+    for (const entry of this.completedCalls.values()) {
+      totalChars += entry.result.length;
+    }
+    for (const [oldestKey, oldest] of this.completedCalls) {
+      if (
+        oldestKey === key ||
+        (this.completedCalls.size <= READONLY_CACHE_MAX_ENTRIES &&
+          totalChars <= READONLY_CACHE_MAX_CHARS)
+      ) {
+        break;
+      }
+      this.completedCalls.delete(oldestKey);
+      totalChars -= oldest.result.length;
     }
   }
 

@@ -48,6 +48,7 @@ import {
 import { injectSessionIdIntoToolArgs } from "../utils/toolSessionMetadata";
 import {
   accumulateRunTokenUsage,
+  bindPersistedAssistantRecordId,
   createStreamChunkHandler,
   createStreamIdHandler,
   remapPersistedUserMessageIds,
@@ -2043,6 +2044,12 @@ export function createWorkflowRunner(
             response.persistedUserMessageIds,
           );
         }
+        bindPersistedAssistantRecordId(
+          ctx,
+          conversationId,
+          assistantMessageId,
+          response.persistedAssistantMessageId,
+        );
         // 节点会话消息已持久化：bump conversationVersion 让 UserMessageRail
         // 重新拉取用户消息列表。节点运行期间没有其它 bump 来源，否则运行中
         // 打开节点会话时 rail 只显示打开时刻的陈旧快照。

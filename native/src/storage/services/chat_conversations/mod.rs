@@ -105,6 +105,13 @@ pub struct StoreChatExchangeInput<'a> {
     pub total_duration_ms: i64,
 }
 
+/// 一次交换落库产生的消息 id（助手 id 为空表示未写助手行）。
+#[derive(Debug, Default)]
+pub struct StoredChatExchange {
+    pub user_message_ids: Vec<String>,
+    pub assistant_message_id: String,
+}
+
 fn context_usage_snapshot(
     status: &str,
     context_compaction: bool,
@@ -338,7 +345,7 @@ pub fn load_context_messages(
 pub fn store_chat_exchange(
     database_path: &Path,
     input: &StoreChatExchangeInput<'_>,
-) -> Result<Vec<String>> {
+) -> Result<StoredChatExchange> {
     database::open_connection(database_path)
         .and_then(|mut connection| {
             // 先读墓碑再写入：IMMEDIATE 在事务开始即取得写锁，保证与删除 /
@@ -348,9 +355,10 @@ pub fn store_chat_exchange(
             // 会话已被删除 / 归档（含级联的子代理、WorkFlow 节点会话）：
             // 收尾中的回合迟到落库时整体丢弃，不得重建会话行与消息。
             if is_conversation_tombstoned(&transaction, input.conversation_id)? {
-                return Ok(Vec::new());
+                return Ok(StoredChatExchange::default());
             }
             let mut persisted_user_message_ids = Vec::new();
+            let mut persisted_assistant_message_id = String::new();
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
             let successful_context_compaction = input.context_compaction
@@ -510,7 +518,7 @@ pub fn store_chat_exchange(
                         }
                     }
 
-                insert_message(
+                persisted_assistant_message_id = insert_message(
                     &transaction,
                     input.conversation_id,
                     "assistant",
@@ -580,7 +588,10 @@ pub fn store_chat_exchange(
             )?;
 
             transaction.commit()?;
-            Ok(persisted_user_message_ids)
+            Ok(StoredChatExchange {
+                user_message_ids: persisted_user_message_ids,
+                assistant_message_id: persisted_assistant_message_id,
+            })
         })
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
@@ -727,7 +738,8 @@ pub fn store_failed_chat_exchange(
             context_compaction: false,
             total_duration_ms: 0,
         },
-    )?;
+    )?
+    .user_message_ids;
 
     Ok((conversation_id, persisted_user_message_ids))
 }

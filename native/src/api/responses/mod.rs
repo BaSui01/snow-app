@@ -189,6 +189,8 @@ pub struct ResponsesApiResult {
     pub tool_calls_json: String,
     pub token_usage: TokenUsage,
     pub persisted_user_message_ids: Vec<String>,
+    /// 本次落库的助手消息 id（未落库为空），渲染层据此作为消息窗口的分页游标。
+    pub persisted_assistant_message_id: String,
 }
 
 #[napi(object)]
@@ -593,7 +595,7 @@ async fn create_response_async(
         FinalStreamWarningDisposition::None => {}
     }
 
-    let persisted_user_message_ids = if !skip_context {
+    let persisted_exchange = if !skip_context {
         store_chat_exchange(
             &database_path,
             &StoreChatExchangeInput {
@@ -622,7 +624,7 @@ async fn create_response_async(
             },
         )?
     } else {
-        Vec::new()
+        crate::storage::services::chat_conversations::StoredChatExchange::default()
     };
 
     if streamed_response.status == "failed" {
@@ -664,7 +666,8 @@ async fn create_response_async(
             cache_creation_input_tokens: streamed_response.token_usage.cache_creation_input_tokens,
             cache_read_input_tokens: streamed_response.token_usage.cache_read_input_tokens,
         },
-        persisted_user_message_ids,
+        persisted_user_message_ids: persisted_exchange.user_message_ids,
+        persisted_assistant_message_id: persisted_exchange.assistant_message_id,
     })
 }
 

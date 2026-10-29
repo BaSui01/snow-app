@@ -603,7 +603,9 @@ export const useConversationManagement = (
       }
 
       const session = ctx.sessionsRef.current[conversationId];
-      const beforeMessageId = session?.messageRecords[0]?.id;
+      // 窗口裁剪过则沿裁剪游标翻页，否则取已加载的最早记录。
+      const beforeMessageId =
+        session?.olderCursorId ?? session?.messageRecords[0]?.id;
       if (
         !session ||
         !beforeMessageId ||
@@ -670,6 +672,18 @@ export const useConversationManagement = (
           if (!latestSession) {
             return prev;
           }
+          // 加载期间窗口被裁剪或重置：本页与当前窗口不再相邻，丢弃。
+          const latestCursor =
+            latestSession.olderCursorId ?? latestSession.messageRecords[0]?.id;
+          if (latestCursor !== beforeMessageId) {
+            return {
+              ...prev,
+              [conversationId]: {
+                ...latestSession,
+                isLoadingOlderMessages: false,
+              },
+            };
+          }
           const persistedIds = new Set(
             latestSession.messageRecords.map((record) => record.id),
           );
@@ -691,6 +705,8 @@ export const useConversationManagement = (
               messageRecords: combinedRecords,
               isLoadingOlderMessages: false,
               hasMoreMessages: page.hasMore,
+              olderCursorId:
+                combinedRecords[0]?.id ?? latestSession.olderCursorId,
               lastAccessedAt: Date.now(),
             },
           };

@@ -1726,6 +1726,8 @@ export type ResponsesApiResult = {
   toolCallsJson: string;
   tokenUsage: TokenUsage;
   persistedUserMessageIds: string[];
+  /** 本次落库的助手消息 id（未落库为空串）。 */
+  persistedAssistantMessageId?: string;
   interruptionReason?: StreamInterruptionReason | null;
   recoveryOutcome?: StreamRecoveryOutcome | null;
   /** 失败终态时上游给出的（已脱敏）原因 */

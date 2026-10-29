@@ -1407,8 +1407,17 @@ export const useChatConversation = (
   }, [sessions]);
   // 依赖只取签名：签名不变即"侧边栏可见字段没变"，复用上一份快照即可（侧边栏
   // 读到的这些字段在快照里始终是最新的），这正是"不逐帧重渲染"的关键。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const sessionsForList = useMemo(() => sessions, [sessionsListSignature]);
+  // 快照会跨越整个 run 存活：非 pending 会话剥掉消息体，避免旧消息被它钉住无法回收。
+  const sessionsForList = useMemo(() => {
+    const projected: ChatConversationSessions = {};
+    for (const [key, session] of Object.entries(sessions)) {
+      projected[key] = isPendingSessionKey(key)
+        ? session
+        : { ...session, messages: EMPTY_MESSAGES, messageRecords: [] };
+    }
+    return projected;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsListSignature]);
 
   // 主 context 值：只在"真正影响它的状态"变化时更换引用。会话内存态表
   // （sessions）不在其中——它在每个流式帧都会更换引用，若放进这里，所有

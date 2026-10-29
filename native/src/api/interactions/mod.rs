@@ -254,7 +254,7 @@ async fn create_interactions_response_async(
         FinalStreamWarningDisposition::None => {}
     }
 
-    let persisted_user_message_ids = if !skip_context {
+    let persisted_exchange = if !skip_context {
         store_chat_exchange(
             &database_path,
             &StoreChatExchangeInput {
@@ -283,7 +283,7 @@ async fn create_interactions_response_async(
             },
         )?
     } else {
-        Vec::new()
+        crate::storage::services::chat_conversations::StoredChatExchange::default()
     };
 
     Ok(ResponsesApiResult {
@@ -303,6 +303,7 @@ async fn create_interactions_response_async(
             cache_creation_input_tokens: streamed_response.token_usage.cache_creation_input_tokens,
             cache_read_input_tokens: streamed_response.token_usage.cache_read_input_tokens,
         },
-        persisted_user_message_ids,
+        persisted_user_message_ids: persisted_exchange.user_message_ids,
+        persisted_assistant_message_id: persisted_exchange.assistant_message_id,
     })
 }

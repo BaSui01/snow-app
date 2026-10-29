@@ -381,6 +381,7 @@ pub async fn create_response_stream(
                         cache_read_input_tokens: 0,
                     },
                     persisted_user_message_ids: Vec::new(),
+                    persisted_assistant_message_id: String::new(),
                 });
             }
             if failure_context_compaction {
@@ -483,6 +484,7 @@ pub async fn create_response_stream(
                     cache_read_input_tokens: 0,
                 },
                 persisted_user_message_ids,
+                persisted_assistant_message_id: String::new(),
             })
         }
     }

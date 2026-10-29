@@ -30,6 +30,7 @@ pub struct ManualToolExchange {
     pub response_id: String,
     pub tool_calls_json: String,
     pub persisted_user_message_ids: Vec<String>,
+    pub persisted_assistant_message_id: String,
 }
 
 pub fn store_manual_tool_exchange(
@@ -135,7 +136,7 @@ pub fn store_manual_tool_exchange(
                 "",
             )?;
             // 无模型调用：不写 token 快照，保留会话已有的上下文用量
-            insert_message(
+            let assistant_message_id = insert_message(
                 &transaction,
                 &conversation_id,
                 "assistant",
@@ -183,13 +184,13 @@ pub fn store_manual_tool_exchange(
                 ],
             )?;
             transaction.commit()?;
-            Ok(Some(user_message_id))
+            Ok(Some((user_message_id, assistant_message_id)))
         })
         .map_err(|error| {
             database::database_error(database_path, "store manual tool exchange", error)
         })?;
 
-    let Some(user_message_id) = persisted else {
+    let Some((user_message_id, assistant_message_id)) = persisted else {
         return Err(Error::from_reason("Conversation has been deleted or archived"));
     };
 
@@ -198,5 +199,6 @@ pub fn store_manual_tool_exchange(
         response_id,
         tool_calls_json,
         persisted_user_message_ids: vec![user_message_id],
+        persisted_assistant_message_id: assistant_message_id,
     })
 }

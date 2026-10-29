@@ -1,5 +1,35 @@
 # Release Notes
 
+## v0.5.9
+
+## New Features
+
+- **SSH Remote Skills**: scan, install, uninstall and start/stop project-level skills in an SSH remote workspace; installation is uploaded to the remote `.snow/skills` atomically over the SSH channel, a failed remote scan reports an error instead of silently coming back empty, and the tool chain falls back to global skills.
+- **IM Chat Style and Custom Avatars**: theme settings gain an IM style switch with AI and user avatar slots; pick your own images (kept in `~/.snowapp/chat-avatars`) or fall back to the built-in pet head and default icon.
+- **Message Windowing**: long conversations (running ones included) keep only a tail window in the renderer and unload older messages back to the database, where paging fetches them by cursor; trimming is paused while you scroll back, while a page restore is in flight or during first-screen positioning.
+- **Archived Conversation Search**: the archived list filters by title, summary and last-message preview.
+- **Storage Overview**: the Storage & resources tab shows a usage overview with a per-category legend, a used total and a refresh action; each storage item becomes a collapsible card and "Optimization & cache" is grouped into one.
+- **Bundled Fonts**: ZCOOL XiaoWei and Jost Light (SIL OFL 1.1) ship with the app and are selectable as built-in font presets.
+- **Grouped Tool Selector for Sub-Agents**: MCP tools are grouped by server with expandable groups, bulk selection of search matches and per-server selection counts.
+- **Right Panel Width per Content Type**: every content type (browser, terminal, file viewer, explorer, ...) remembers its own dragged width and gets a tailored default and drag range.
+
+## Improvements
+
+- **Bounded Bash Output**: bash tools and resident sessions capture head and tail windows only and report `truncatedBytes`; streaming forwarding stops with a prompt past the limit, sentinel detection uses a sliding window instead of rescanning the whole output, Windows binds the command process tree to a Job Object (other platforms use an independent process group), and background tab screenshots use layered timeout retries gated by a main-process rAF probe.
+- **SSH Connection Held by the Active Workspace**: the command-session connection pool and implicit connections are gone, unconnected calls return a unified `SSH_WORKSPACE_NOT_CONNECTED`, the project list and tree show localized connection-state icons, "new session" on a disconnected SSH project triggers an explicit reconnect, and background channels (checkpoints, repo wiki) hold the connection through workspace leases.
+- **Unified Window and Terminal Appearance**: the Windows 11 window border no longer follows the system accent color, and the terminal canvas takes its background from `--terminal-bg` so theme presets and layout styles restyle it together with the panel.
+- Read-only tool results are cached with an entry and character cap (48 entries / 2M characters), so a long run no longer keeps every result in memory.
+
+## Breaking Changes
+
+- The FRP tunnel is removed: public mobile remote control now uses the in-process SSH2 reverse tunnel only. Config storage moves to schema v3 (v2 migrates automatically) and legacy FRP bundles are rejected, so deployment needs a single `snow` A record plus the SSH2 tunnel port.
+- The Midnight Blue, Forest Green, Rose Pink and Solarized presets are removed; their legacy ids alias to snow.
+
+## Bug Fixes
+
+- Background ahead/behind polling no longer stacks `git fetch` processes when the remote is unreachable: the renderer single-flights and backs off (60s -> 600s, reset on success), the main process shares the in-flight fetch per repository, and the native fetch is killed after 45s.
+- Compaction errors can be dismissed, and the input toolbar toggle no longer fires twice.
+
 ## v0.5.8
 
 ## New Features

@@ -89,6 +89,7 @@ import type {
   PluginTabData,
   RightPanelContentProps,
   RightPanelTab,
+  RightPanelTabType,
   TerminalTabData,
   TerminalOpenOptions,
 } from "./rightPanel/types";
@@ -290,6 +291,8 @@ type RightPanelProps = RightPanelContentProps & {
   onActiveTabTitleChange?: (title: string) => void;
   /** 独立面板窗口模式：用户主动关闭最后一个 tab 时请求父级二次确认（确认后关窗）。 */
   onRequestCloseDetachedWindow?: () => void;
+  /** 活动 tab 类型变化回调（主窗口据此应用该类型的宽度档案）。 */
+  onActiveTabTypeChange?: (type: RightPanelTabType) => void;
 };
 
 export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
@@ -303,6 +306,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       detachedWindow,
       onActiveTabTitleChange,
       onRequestCloseDetachedWindow,
+      onActiveTabTypeChange,
     },
     ref,
   ): React.JSX.Element => {
@@ -320,6 +324,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const [activeTabId, setActiveTabId] = useState<string>(() =>
       detachedWindow ? detachedWindow.initialTab.id : GIT_TAB_ID,
     );
+    const activeTabType = tabs.find((tab) => tab.id === activeTabId)?.type;
+    // 上报活动 tab 类型：主窗口按类型切换右面板宽度。
+    useEffect(() => {
+      if (activeTabType) {
+        onActiveTabTypeChange?.(activeTabType);
+      }
+    }, [activeTabType, onActiveTabTypeChange]);
     // 「+」菜单「新建会话」入口（由 DetachedConversationSync 注册，仅独立窗口生效）。
     const createConversationTabRef = useRef<(() => void) | null>(null);
     // 终端 tab 当前绑定的 PTY id（会话建立时上报）。仅用于 tab 迁移时交接会话，

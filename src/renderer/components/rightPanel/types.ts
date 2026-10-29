@@ -107,21 +107,23 @@ export type ConversationTabData = {
   conversationId: string;
 };
 
+export type RightPanelTabType =
+  | "git"
+  | "diff"
+  | "terminal"
+  | "browser"
+  | "file"
+  | "file-diff-preview"
+  | "codebase"
+  | "explorer"
+  | "drawing"
+  | "plugin"
+  | "tasks"
+  | "conversation";
+
 export type RightPanelTab = {
   id: string;
-  type:
-    | "git"
-    | "diff"
-    | "terminal"
-    | "browser"
-    | "file"
-    | "file-diff-preview"
-    | "codebase"
-    | "explorer"
-    | "drawing"
-    | "plugin"
-    | "tasks"
-    | "conversation";
+  type: RightPanelTabType;
   title: string;
   data?:
     | DiffTabData

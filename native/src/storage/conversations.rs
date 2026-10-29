@@ -392,6 +392,7 @@ pub fn archive_conversations(conversation_ids: Vec<String>) -> Result<()> {
 
 pub fn list_archived_conversations_paginated(
     directory_id: String,
+    keyword: String,
     limit: i32,
     offset: i32,
 ) -> Result<ChatConversationPage> {
@@ -399,6 +400,7 @@ pub fn list_archived_conversations_paginated(
     services::archive::list_archived_conversations_paginated(
         &archive_path,
         &directory_id,
+        &keyword,
         limit,
         offset,
     )

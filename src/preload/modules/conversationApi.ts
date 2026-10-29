@@ -209,16 +209,19 @@ export const conversationApi = {
     ),
   archiveConversations: (conversationIds: string[]): Promise<void> =>
     ipcRenderer.invoke("chat-conversations:archive", conversationIds),
+  /** keyword 非空时按标题/摘要/预览模糊过滤。 */
   listArchivedConversationsPaginated: (
     directoryId: string,
     limit: number,
     offset: number,
+    keyword?: string,
   ): Promise<ChatConversationPage> =>
     ipcRenderer.invoke(
       "chat-conversations:list-archived-paginated",
       directoryId,
       limit,
       offset,
+      keyword,
     ),
   restoreArchivedConversations: (conversationIds: string[]): Promise<void> =>
     ipcRenderer.invoke("chat-conversations:restore-archived", conversationIds),

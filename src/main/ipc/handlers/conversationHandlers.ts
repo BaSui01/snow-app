@@ -674,7 +674,13 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle(
     "chat-conversations:list-archived-paginated",
-    (_event, directoryId: unknown, limit: unknown, offset: unknown) => {
+    (
+      _event,
+      directoryId: unknown,
+      limit: unknown,
+      offset: unknown,
+      keyword: unknown,
+    ) => {
       if (typeof directoryId !== "string" || !directoryId.trim()) {
         throw new Error(
           "Directory ID is required to list archived conversations",
@@ -685,9 +691,11 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         typeof limit === "number" && limit > 0 ? Math.floor(limit) : 20;
       const safeOffset =
         typeof offset === "number" && offset > 0 ? Math.floor(offset) : 0;
+      const safeKeyword = typeof keyword === "string" ? keyword.trim() : "";
 
       return native.listArchivedConversationsPaginated(
         directoryId.trim(),
+        safeKeyword,
         safeLimit,
         safeOffset,
       );

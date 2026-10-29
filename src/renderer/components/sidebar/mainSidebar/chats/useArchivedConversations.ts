@@ -46,14 +46,22 @@ export function useArchivedConversations({
     () => new Set(),
   );
   const archivedLoadMoreRef = useRef<HTMLDivElement | null>(null);
+  // 搜索输入（即时）与生效关键词（防抖后）
+  const [archivedSearchInput, setArchivedSearchInput] = useState("");
+  const [archivedKeyword, setArchivedKeyword] = useState("");
+  // 请求序号：快速输入时丢弃过期响应，避免旧结果覆盖新结果
+  const archivedRequestIdRef = useRef(0);
 
   const loadArchivedFirstPage = useCallback(async (): Promise<void> => {
     if (!directoryId) {
+      archivedRequestIdRef.current += 1;
       setArchivedConversations([]);
       setArchivedTotal(0);
       return;
     }
 
+    const requestId = archivedRequestIdRef.current + 1;
+    archivedRequestIdRef.current = requestId;
     setIsArchivedLoading(true);
     setArchivedError(null);
 
@@ -62,10 +70,17 @@ export function useArchivedConversations({
         directoryId,
         ARCHIVE_PAGE_SIZE,
         0,
+        archivedKeyword,
       );
+      if (archivedRequestIdRef.current !== requestId) {
+        return;
+      }
       setArchivedConversations(result.items);
       setArchivedTotal(result.total);
     } catch (err) {
+      if (archivedRequestIdRef.current !== requestId) {
+        return;
+      }
       setArchivedError(
         err instanceof Error
           ? err.message
@@ -74,11 +89,27 @@ export function useArchivedConversations({
             }),
       );
     } finally {
-      setIsArchivedLoading(false);
+      if (archivedRequestIdRef.current === requestId) {
+        setIsArchivedLoading(false);
+      }
     }
-  }, [directoryId, t]);
+  }, [archivedKeyword, directoryId, t]);
 
-  // 进入归档模式或切换项目时加载归档列表第一页
+  // 搜索防抖：输入停顿后再查询归档库
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setArchivedKeyword(archivedSearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [archivedSearchInput]);
+
+  // 切换项目时重置归档搜索
+  useEffect(() => {
+    setArchivedSearchInput("");
+    setArchivedKeyword("");
+  }, [directoryId]);
+
+  // 进入归档模式或切换项目/关键词时加载归档列表第一页
   useEffect(() => {
     if (!isArchiveMode) {
       return;
@@ -98,6 +129,7 @@ export function useArchivedConversations({
       return;
     }
 
+    const requestId = archivedRequestIdRef.current;
     setIsArchivedLoadingMore(true);
 
     try {
@@ -105,7 +137,11 @@ export function useArchivedConversations({
         directoryId,
         ARCHIVE_PAGE_SIZE,
         archivedConversations.length,
+        archivedKeyword,
       );
+      if (archivedRequestIdRef.current !== requestId) {
+        return;
+      }
       setArchivedConversations((prev) => [...prev, ...result.items]);
       setArchivedTotal(result.total);
     } catch {
@@ -115,6 +151,7 @@ export function useArchivedConversations({
     }
   }, [
     archivedConversations.length,
+    archivedKeyword,
     directoryId,
     hasMoreArchived,
     isArchivedLoading,
@@ -182,8 +219,10 @@ export function useArchivedConversations({
       handleExitArchivedMultiSelect();
       refreshConversations();
     } else {
-      // 进入归档视图：退出普通多选模式，避免状态交叉
+      // 进入归档视图：退出普通多选模式，避免状态交叉；清空上次搜索
       onExitChatMultiSelect();
+      setArchivedSearchInput("");
+      setArchivedKeyword("");
       setIsArchiveMode(true);
       void loadArchivedFirstPage();
     }
@@ -305,6 +344,9 @@ export function useArchivedConversations({
     isArchiveMode,
     archivedConversations,
     archivedTotal,
+    archivedSearchInput,
+    setArchivedSearchInput,
+    archivedKeyword,
     isArchivedLoading,
     isArchivedLoadingMore,
     archivedError,

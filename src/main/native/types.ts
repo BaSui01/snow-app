@@ -2838,9 +2838,10 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<void>;
   /** 归档会话：从运行库搬移到独立的归档冷数据库（含子代理级联），置顶会话不参与归档。 */
   archiveConversations: (conversationIds: string[]) => Promise<void>;
-  /** 分页列出归档会话（按归档时间倒序）。 */
+  /** 分页列出归档会话（按归档时间倒序）；keyword 非空时按标题/摘要/预览模糊过滤。 */
   listArchivedConversationsPaginated: (
     directoryId: string,
+    keyword: string | undefined,
     limit: number,
     offset: number,
   ) => Promise<ChatConversationPage>;

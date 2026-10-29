@@ -1,4 +1,4 @@
-import { ListChecks, Loader2 } from "lucide-react";
+import { ListChecks, Loader2, Search, X } from "lucide-react";
 import type { RefObject } from "react";
 
 import type { ChatConversationRecord } from "../../../../../preload";
@@ -19,6 +19,8 @@ type ArchivedChatListProps = {
   archivedConversations: ChatConversationRecord[];
   hasMoreArchived: boolean;
   loadMoreRef: RefObject<HTMLDivElement | null>;
+  archivedSearchInput: string;
+  onChangeArchivedSearch: (value: string) => void;
   isArchivedMultiSelect: boolean;
   archivedSelectedIds: Set<string>;
   restoringIds: Set<string>;
@@ -43,6 +45,8 @@ export function ArchivedChatList({
   archivedConversations,
   hasMoreArchived,
   loadMoreRef,
+  archivedSearchInput,
+  onChangeArchivedSearch,
   isArchivedMultiSelect,
   archivedSelectedIds,
   restoringIds,
@@ -64,6 +68,10 @@ export function ArchivedChatList({
     archivedSelectedIds.size === archivedConversations.length &&
     archivedConversations.length > 0;
   const isBusy = isDeleting || isRestoring;
+  const hasKeyword = archivedSearchInput.trim().length > 0;
+  // 无结果时仍保留搜索框，便于清空关键词
+  const showSearchRow =
+    !isArchivedMultiSelect && (archivedConversations.length > 0 || hasKeyword);
 
   const archivedActions: ChatMultiSelectAction[] = [
     {
@@ -105,7 +113,53 @@ export function ArchivedChatList({
           actions={archivedActions}
         />
       ) : null}
-      {isSwitchingDirectory || isArchivedLoading ? (
+      {showSearchRow ? (
+        <div className="archived-search-row">
+          <Search
+            aria-hidden="true"
+            className="archived-search-icon"
+            size={13}
+            strokeWidth={2}
+          />
+          <input
+            aria-label={t("sidebar.archivedChatsSearchPlaceholder", {
+              defaultValue: "Search archived chats",
+            })}
+            className="archived-search-input"
+            onChange={(event) => onChangeArchivedSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && archivedSearchInput !== "") {
+                event.preventDefault();
+                event.stopPropagation();
+                onChangeArchivedSearch("");
+              }
+            }}
+            placeholder={t("sidebar.archivedChatsSearchPlaceholder", {
+              defaultValue: "Search archived chats",
+            })}
+            type="text"
+            value={archivedSearchInput}
+          />
+          {archivedSearchInput !== "" ? (
+            <button
+              aria-label={t("sidebar.archivedChatsSearchClear", {
+                defaultValue: "Clear search",
+              })}
+              className="archived-search-clear"
+              onClick={() => onChangeArchivedSearch("")}
+              title={t("sidebar.archivedChatsSearchClear", {
+                defaultValue: "Clear search",
+              })}
+              type="button"
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {/* 搜索时保留旧列表，避免每次输入整块闪烁 */}
+      {isSwitchingDirectory ||
+      (isArchivedLoading && archivedConversations.length === 0) ? (
         <span className="empty-text loading">
           <Loader2 className="spin" size={13} />
           {t("sidebar.loadingWorkspaceContent", {
@@ -122,9 +176,13 @@ export function ArchivedChatList({
         <span className="empty-text error">{archivedError}</span>
       ) : archivedConversations.length === 0 ? (
         <span className="empty-text">
-          {t("sidebar.archivedChatsEmpty", {
-            defaultValue: "No archived chats",
-          })}
+          {hasKeyword
+            ? t("sidebar.archivedChatsSearchEmpty", {
+                defaultValue: "No matching archived chats",
+              })
+            : t("sidebar.archivedChatsEmpty", {
+                defaultValue: "No archived chats",
+              })}
         </span>
       ) : (
         <>
@@ -132,8 +190,7 @@ export function ArchivedChatList({
             <div className="archived-chat-toolbar">
               <span className="archived-chat-toolbar-hint">
                 {t("sidebar.archivedChatsHint", {
-                  defaultValue:
-                    "Restore archived chats to continue using them",
+                  defaultValue: "Restore archived chats to continue using them",
                 })}
               </span>
               <button

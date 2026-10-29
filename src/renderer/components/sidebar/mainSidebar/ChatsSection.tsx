@@ -396,6 +396,7 @@ export function ChatsSection({
           <ArchivedChatList
             archivedConversations={archived.archivedConversations}
             archivedError={archived.archivedError}
+            archivedSearchInput={archived.archivedSearchInput}
             archivedSelectedIds={archived.archivedSelectedIds}
             deletingArchivedIds={archived.deletingArchivedIds}
             directoryId={directoryId}
@@ -407,6 +408,7 @@ export function ChatsSection({
             loadMoreRef={archived.archivedLoadMoreRef}
             onBatchDelete={archived.handleBatchDeleteArchived}
             onBatchRestore={() => void archived.handleBatchRestore()}
+            onChangeArchivedSearch={archived.setArchivedSearchInput}
             onDelete={archived.handleDeleteArchived}
             onDeselectAll={archived.handleArchivedDeselectAll}
             onEnterMultiSelect={archived.enterArchivedMultiSelect}

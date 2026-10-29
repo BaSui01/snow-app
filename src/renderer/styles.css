@@ -2055,6 +2055,66 @@ body.is-panel-resizing * {
   color: var(--text-primary);
 }
 
+/* 归档会话搜索框（融合型输入框，!important 抵抗主题通用 input 规则） */
+.archived-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 6px 5px;
+  padding: 0 8px;
+  height: 26px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.archived-search-row:focus-within {
+  border-color: var(--accent-color);
+}
+
+.archived-search-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.archived-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  appearance: none;
+}
+
+.archived-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.archived-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.archived-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* ============================================================
  * 会话多选模式（批量删除）
  * ============================================================ */

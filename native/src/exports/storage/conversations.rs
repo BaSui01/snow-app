@@ -165,15 +165,21 @@ pub async fn archive_conversations(conversation_ids: Vec<String>) -> napi::Resul
         .map_err(map_spawn_error)?
 }
 
-/// 分页列出归档会话（按归档时间倒序）。
+/// 分页列出归档会话（按归档时间倒序）；keyword 非空时按标题/摘要/预览模糊过滤。
 #[napi]
 pub async fn list_archived_conversations_paginated(
     directory_id: String,
+    keyword: Option<String>,
     limit: i32,
     offset: i32,
 ) -> napi::Result<ChatConversationPage> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::list_archived_conversations_paginated(directory_id, limit, offset)
+        crate::storage::list_archived_conversations_paginated(
+            directory_id,
+            keyword.unwrap_or_default(),
+            limit,
+            offset,
+        )
     })
     .await
     .map_err(map_spawn_error)?

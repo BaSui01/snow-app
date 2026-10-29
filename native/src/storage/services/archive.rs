@@ -1139,15 +1139,18 @@ pub fn archive_conversations(
 }
 
 /// 分页列出归档会话（仅顶层会话，子代理随父会话归档不单独展示），
-/// 按归档时间倒序。
+/// 按归档时间倒序；keyword 非空时按标题/摘要/最后消息预览模糊过滤。
 pub fn list_archived_conversations_paginated(
     archive_path: &Path,
     directory_id: &str,
+    keyword: &str,
     limit: i32,
     offset: i32,
 ) -> Result<ChatConversationPage> {
     // 确保归档库 schema 就绪（旧归档库可能缺少 workflow_node_sessions 表）
     ensure_archive_database(archive_path)?;
+    let keyword = keyword.trim();
+    let like_pattern = archive_search_pattern(keyword);
     open_archive_connection(archive_path)
         .and_then(|connection| {
             let total: i32 = connection.query_row(
@@ -1155,6 +1158,10 @@ pub fn list_archived_conversations_paginated(
                    FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'active'
+                    AND (?2 = ''
+                         OR conversation.title LIKE ?3 ESCAPE '\\'
+                         OR conversation.summary LIKE ?3 ESCAPE '\\'
+                         OR conversation.last_message_preview LIKE ?3 ESCAPE '\\')
                     AND NOT EXISTS (
                       SELECT 1
                         FROM sub_agent_sessions AS sub_agent
@@ -1165,7 +1172,7 @@ pub fn list_archived_conversations_paginated(
                         FROM workflow_node_sessions AS workflow_node
                        WHERE workflow_node.conversation_id = conversation.conversation_id
                     )",
-                params![directory_id],
+                params![directory_id, keyword, like_pattern],
                 |row| row.get(0),
             )?;
 
@@ -1207,6 +1214,10 @@ pub fn list_archived_conversations_paginated(
                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'active'
+                    AND (?2 = ''
+                         OR conversation.title LIKE ?3 ESCAPE '\\'
+                         OR conversation.summary LIKE ?3 ESCAPE '\\'
+                         OR conversation.last_message_preview LIKE ?3 ESCAPE '\\')
                     AND NOT EXISTS (
                       SELECT 1
                         FROM sub_agent_sessions AS sub_agent
@@ -1218,11 +1229,11 @@ pub fn list_archived_conversations_paginated(
                        WHERE workflow_node.conversation_id = conversation.conversation_id
                     )
                   ORDER BY archived_at DESC, id DESC
-                  LIMIT ?2 OFFSET ?3",
+                  LIMIT ?4 OFFSET ?5",
             )?;
 
             let rows = statement.query_map(
-                params![directory_id, safe_limit, safe_offset],
+                params![directory_id, keyword, like_pattern, safe_limit, safe_offset],
                 map_archived_conversation_row,
             )?;
             let items: Vec<ChatConversationRecord> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1232,6 +1243,20 @@ pub fn list_archived_conversations_paginated(
         .map_err(|error| {
             database::database_error(archive_path, "list archived conversations paginated", error)
         })
+}
+
+/// 归档搜索 LIKE 模式：转义通配符后包成 %keyword%
+fn archive_search_pattern(keyword: &str) -> String {
+    let mut pattern = String::with_capacity(keyword.len() + 2);
+    pattern.push('%');
+    for ch in keyword.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(ch);
+    }
+    pattern.push('%');
+    pattern
 }
 
 fn map_archived_conversation_row(

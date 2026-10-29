@@ -12,6 +12,7 @@ import { GlobalEditContextMenu } from "./components/common/GlobalEditContextMenu
 import { writeRendererLog } from "./utils/rendererLog";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
+import "./themes/bundled-fonts.css";
 import "./themes/context-menu.css";
 import "./themes/tokens.css";
 import "./themes/hljs.css";

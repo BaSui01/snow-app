@@ -27,7 +27,9 @@ import { ChatImAvatar } from "./ChatImAvatar";
  * callback fires exactly once per mount.
  */
 type VirtualizedMessageProps = MessageContentProps & {
-  /** Stable message id, used as the virtualization key. */
+  /** Stable render key, used as the virtualization key. 消息 id 迁移
+   *  （临时 id → 数据库 id）时保持不变；DOM 的 data-message-id 取真实
+   *  消息 id。 */
   id: string;
   /** 消息在列表中的序号（透传给内容包装节点）。 */
   itemIndex: number;
@@ -35,10 +37,6 @@ type VirtualizedMessageProps = MessageContentProps & {
   itemClassName: string;
   /** Virtualization API from useViewportVirtualization. */
   virtualization: ViewportVirtualization;
-  /** 该消息此前是否已渲染过真实内容（父级判定的既知事实，例如 id 迁移
-   *  后的新元素继承旧元素的渲染状态）。为 true 时本实例即使首次渲染也
-   *  不播放入场动画（见 is-replay）。 */
-  previouslyRendered?: boolean;
   /** IM 风格头像路径（undefined 表示未开启 IM 风格，空串为默认头像） */
   imAvatarPath?: string;
 };
@@ -49,7 +47,6 @@ export const VirtualizedMessage = memo(
     itemIndex,
     itemClassName,
     virtualization,
-    previouslyRendered = false,
     imAvatarPath,
     ...contentProps
   }: VirtualizedMessageProps): React.JSX.Element => {
@@ -60,15 +57,14 @@ export const VirtualizedMessage = memo(
     // virtualization (e.g. older browsers without IntersectionObserver).
     const isVisible = visibleIds === null || visibleIds.has(id);
     const cachedHeight = heights.get(id);
+    const messageId = contentProps.message.id;
     const messageRole = contentProps.message.role;
 
     // 该消息此前是否已渲染过真实内容：用于区分「首次出现」与「虚拟化回显」。
     // 回显（占位符 → 真实内容的重新挂载）不重播入场动画（见 wrapper 上的
     // .is-replay 类与 styles.css 的覆盖规则），避免滚回视口 / 可见集恢复时
     // 整片消息区看起来在"重刷闪烁"；首次出现仍保留柔和浮现动画。
-    // previouslyRendered 作为初始值：id 迁移（remap）重建的新实例据此
-    // 继承"已渲染过"状态，同样不重播动画。
-    const hasRenderedContentRef = useRef(previouslyRendered);
+    const hasRenderedContentRef = useRef(false);
     const isReplay = isVisible && hasRenderedContentRef.current;
 
     useEffect(() => {
@@ -106,7 +102,7 @@ export const VirtualizedMessage = memo(
             isReplay ? " is-replay" : ""
           }`}
           ref={setRef}
-          data-message-id={id}
+          data-message-id={messageId}
           data-snow-anchor="chat.message"
           data-snow-message-role={messageRole}
         >
@@ -132,7 +128,7 @@ export const VirtualizedMessage = memo(
       <div
         className="virtualized-message is-placeholder"
         ref={setRef}
-        data-message-id={id}
+        data-message-id={messageId}
         style={{ height: `${placeholderHeight}px` }}
         aria-hidden="true"
       />

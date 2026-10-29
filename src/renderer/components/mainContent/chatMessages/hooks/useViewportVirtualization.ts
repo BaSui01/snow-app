@@ -101,9 +101,7 @@ export const VIRTUAL_PLACEHOLDER_DEFAULT_HEIGHT = DEFAULT_PLACEHOLDER_HEIGHT;
  *   on mount, before the observer's first report takes over: freshly
  *   prepended pages (loadOlder paging — an 80px placeholder phase would make
  *   the scroll-restore correction under-shift and then visibly shove the
- *   viewport as the real content expands) and messages re-created under a new
- *   id (用户消息临时 id → 数据库 id 的迁移 — the swap would otherwise flash
- *   a placeholder frame and jump the content height).
+ *   viewport as the real content expands).
  * @returns Virtualization API: `visibleIds`, `heights`, `register`.
  */
 export const useViewportVirtualization = (
@@ -152,11 +150,10 @@ export const useViewportVirtualization = (
   const nearIdsRef = useRef<Set<string>>(new Set());
   const farIdsRef = useRef<Set<string>>(new Set());
   // Ids that render real content unconditionally until the observer reports
-  // their first intersection state (top-prepended pages and id-migrated
-  // messages). Keeps a newly prepended page from spending frames as 80px
-  // placeholders — the paging scroll-restore correction measures geometry
-  // while those frames exist and under-shifts, then the real content expansion
-  // visibly shoves the viewport.
+  // their first intersection state (top-prepended pages). Keeps a newly
+  // prepended page from spending frames as 80px placeholders — the paging
+  // scroll-restore correction measures geometry while those frames exist and
+  // under-shifts, then the real content expansion visibly shoves the viewport.
   const forceVisibleIdsRef = useRef<Set<string>>(new Set());
   // Current pinned ids, kept in a ref so the observer callback (which closes
   // over the ref, not the value) always reads the latest set without being
@@ -235,13 +232,12 @@ export const useViewportVirtualization = (
     }
   }, [pinnedIds, flushVisibleIds]);
 
-  // Fold eager ids (top-prepended pages, id-migrated messages) into the
-  // force-visible set and flush before paint: they must mount with their real
-  // content (layout effect → synchronous re-render, still pre-paint), not as
-  // 80px placeholders — the paging scroll-restore correction measures geometry
-  // across these commits and a placeholder frame makes it under-shift, after
-  // which the real content expansion visibly shoves the viewport; an
-  // id-migrated message would similarly jump. The observer's first report for
+  // Fold eager ids (top-prepended pages) into the force-visible set and flush
+  // before paint: they must mount with their real content (layout effect →
+  // synchronous re-render, still pre-paint), not as 80px placeholders — the
+  // paging scroll-restore correction measures geometry across these commits
+  // and a placeholder frame makes it under-shift, after which the real content
+  // expansion visibly shoves the viewport. The observer's first report for
   // each id removes it from the set, handing visibility back to the normal
   // intersection logic.
   useLayoutEffect(() => {

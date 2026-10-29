@@ -1,5 +1,6 @@
 import {
   Archive,
+  Brain,
   Check,
   CheckSquare,
   ListChecks,
@@ -1091,6 +1092,12 @@ export function ProjectMemoryPanel({
     if (selection.mode === "none") {
       return (
         <div className="memory-content-empty">
+          <Brain
+            aria-hidden="true"
+            className="feature-empty-icon"
+            size={28}
+            strokeWidth={1.5}
+          />
           <span>
             {t("memory.selectHint", {
               defaultValue:

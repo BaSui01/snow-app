@@ -290,6 +290,28 @@ export const ChatMessageList = ({
     </div>
   );
 
+  // 渲染 key：消息的 React key 与虚拟化身份。id 迁移（首轮响应落库后用户
+  // 消息的临时 id 被替换为数据库 id，见 remapPersistedUserMessageIds）不得
+  // 改变它——否则整条消息卸载重挂，Markdown 重新异步渲染、图片重新解码，
+  // 表现为该消息在响应结束时闪一下。这里把迁移后的 id 映射回首次出现时的
+  // id，并跨渲染累积（后续消息对象即使不再携带 idRemappedFrom 也保持不变）。
+  // DOM 上的 data-message-id 仍为真实消息 id（UserMessageRail 按库 id 定位）。
+  const renderKeysRef = useRef(new Map<string, string>());
+  const renderKeys = useMemo(() => {
+    const keys = renderKeysRef.current;
+    for (const message of messages) {
+      const from = message.idRemappedFrom;
+      if (from && !keys.has(message.id)) {
+        keys.set(message.id, keys.get(from) ?? from);
+      }
+    }
+    return keys;
+  }, [messages]);
+  const renderKeyOf = useCallback(
+    (id: string): string => renderKeys.get(id) ?? id,
+    [renderKeys],
+  );
+
   // Pinned message ids: the streaming (last assistant) message must always be
   // rendered so the live output is never unmounted, and any message carrying a
   // pending tool authorization must stay mounted so the approval dialog is not
@@ -297,7 +319,7 @@ export const ChatMessageList = ({
   const pinnedIds = useMemo(() => {
     const pinned = new Set<string>();
     if (lastAssistantMessageId) {
-      pinned.add(lastAssistantMessageId);
+      pinned.add(renderKeyOf(lastAssistantMessageId));
     }
     for (const msg of messages) {
       const hasPendingAuth =
@@ -306,11 +328,11 @@ export const ChatMessageList = ({
           (tc) => tc.authorizationConversationId === activeConversationId,
         );
       if (hasPendingAuth) {
-        pinned.add(msg.id);
+        pinned.add(renderKeyOf(msg.id));
       }
     }
     return pinned;
-  }, [activeConversationId, lastAssistantMessageId, messages]);
+  }, [activeConversationId, lastAssistantMessageId, messages, renderKeyOf]);
 
   // 挂载时的初始可见窗口(仅当列表大到窗口无法覆盖全部时才起作用):
   // 切换会话后 chat-area 整体重建,新 ChatMessageList 挂载时若以
@@ -339,7 +361,7 @@ export const ChatMessageList = ({
       ) {
         if (messages[i].role === "tool") continue;
         headCount++;
-        ids.add(messages[i].id);
+        ids.add(renderKeyOf(messages[i].id));
       }
       let tailCount = 0;
       for (
@@ -349,7 +371,7 @@ export const ChatMessageList = ({
       ) {
         if (messages[i].role === "tool") continue;
         tailCount++;
-        ids.add(messages[i].id);
+        ids.add(renderKeyOf(messages[i].id));
       }
       for (const id of pinnedIds) {
         ids.add(id);
@@ -359,50 +381,42 @@ export const ChatMessageList = ({
   }
   const initialVisibleIds = initialVisibleIdsRef.current;
 
-  // eager 可见集：传给虚拟化 hook，让这些消息在 IntersectionObserver 首批
-  // 报告前就以真实内容挂载（见 useViewportVirtualization 的 forceVisible
-  // 机制）。两类来源：
-  // 1) 翻页（loadOlder）往顶部插入的新消息前缀——若新页先以 80px 占位符
-  //    存在，ChatContent 的翻页滚动恢复按占位符几何校正必然偏小，新内容
-  //    涌入后再把视口内容往下挤，观感就是「被挤下去」；
-  // 2) id 迁移的消息（首轮响应落库后用户消息的临时 id 被替换为数据库 id，
-  //    见 remapPersistedUserMessageIds）：旧元素卸载、新元素挂载，若不在
-  //    eager 集合中会先以占位符渲染一帧再切换，表现为内容跳变。
-  // 判定基准是「与上一轮消息 id 集合的差集」：顶部连续新增段 + 带
-  // idRemappedFrom 标记的新 id。id 被替换（而非真正新增）的消息不会把全部
-  // 历史消息误判成"顶部新增"（旧实现以首条 id 变化为信号，remap 命中首条
-  // 时会一路遍历到表尾、收集整表 id，导致全量强制可见）。
+  // eager 可见集：传给虚拟化 hook，让翻页（loadOlder）往顶部插入的新消息
+  // 前缀在 IntersectionObserver 首批报告前就以真实内容挂载（见
+  // useViewportVirtualization 的 forceVisible 机制）——若新页先以 80px
+  // 占位符存在，ChatContent 的翻页滚动恢复按占位符几何校正必然偏小，新内容
+  // 涌入后再把视口内容往下挤，观感就是「被挤下去」。
+  // 判定基准是「与上一轮渲染 key 集合的差集」中的顶部连续新增段；id 迁移的
+  // 消息渲染 key 不变，不会被误判为新增。
   const [eagerVisibleIds, setEagerVisibleIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
-  const prevMessageIdsRef = useRef<ReadonlySet<string> | null>(null);
+  const prevRenderKeysRef = useRef<ReadonlySet<string> | null>(null);
   useLayoutEffect(() => {
     if (messages.length === 0) {
       return;
     }
-    const prevMessageIds = prevMessageIdsRef.current;
-    prevMessageIdsRef.current = new Set(messages.map((message) => message.id));
+    const prevRenderKeys = prevRenderKeysRef.current;
+    prevRenderKeysRef.current = new Set(
+      messages.map((message) => renderKeyOf(message.id)),
+    );
     // 首次挂载不产出 eager 集合：初始窗口由 initialVisibleIds 控制，
     // 全量 eager 会废掉大会话首帧的虚拟化优化。
-    if (prevMessageIds === null) {
+    if (prevRenderKeys === null) {
       return;
     }
     const eager = new Set<string>();
     for (const message of messages) {
-      if (message.idRemappedFrom && !prevMessageIds.has(message.id)) {
-        eager.add(message.id);
-      }
-    }
-    for (const message of messages) {
-      if (prevMessageIds.has(message.id)) {
+      const key = renderKeyOf(message.id);
+      if (prevRenderKeys.has(key)) {
         break;
       }
-      eager.add(message.id);
+      eager.add(key);
     }
     if (eager.size > 0) {
       setEagerVisibleIds(eager);
     }
-  }, [messages]);
+  }, [messages, renderKeyOf]);
 
   const virtualization = useViewportVirtualization(
     scrollContainerRef,
@@ -480,10 +494,12 @@ export const ChatMessageList = ({
     message: ChatConversationMessage,
     index: number,
   ): React.JSX.Element => {
+    const renderKey = renderKeyOf(message.id);
+
     // Tool messages return null; render an empty keyed placeholder so React
     // keeps stable keys across renders.
     if (message.role === "tool") {
-      return <div className="chat-message-hidden" key={message.id} />;
+      return <div className="chat-message-hidden" key={renderKey} />;
     }
 
     // 新一轮回复刚挂上、尚未收到任何内容的 assistant 占位：真实渲染只是一个
@@ -508,7 +524,7 @@ export const ChatMessageList = ({
         )
       );
     if (isEmptyPendingAssistant) {
-      return <div className="chat-message-hidden" key={message.id} />;
+      return <div className="chat-message-hidden" key={renderKey} />;
     }
 
     const className = `chat-message-group ${
@@ -524,12 +540,11 @@ export const ChatMessageList = ({
 
     return (
       <VirtualizedMessage
-        id={message.id}
-        key={message.id}
+        id={renderKey}
+        key={renderKey}
         itemIndex={index}
         itemClassName={className}
         virtualization={virtualization}
-        previouslyRendered={Boolean(message.idRemappedFrom)}
         imAvatarPath={imAvatarPath}
         message={message}
         fileArtifacts={artifactsByOwner.get(message.id)}

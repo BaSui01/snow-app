@@ -140,7 +140,7 @@ export function AddDirectoryMenuDialog({
                 <span>
                   {t("sidebar.createCollectionDescription", {
                     defaultValue:
-                      "Create a collection to organize projects (drag projects into it)",
+                      "Create a collection to organize projects — members are linked by default (accessible to AI) and can be unlinked from the right-click menu",
                   })}
                 </span>
               </span>

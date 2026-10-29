@@ -164,7 +164,8 @@ export const zhCN = {
   "sidebar.addLocalDirectoryActionDescription": "选择或拖入已有的本地文件夹",
   "sidebar.addSshDirectoryActionDescription": "连接并添加远程服务器目录",
   "sidebar.createCollection": "新建合集",
-  "sidebar.createCollectionDescription": "创建合集收纳项目（可将项目拖入合集）",
+  "sidebar.createCollectionDescription":
+    "创建合集收纳项目，成员默认关联（可被 AI 访问），可在右键菜单断开关联",
   "sidebar.createCollectionTitle": "新建合集",
   "sidebar.createCollectionDialogDescription":
     "合集用于将项目收纳成组。把项目拖到合集上即可加入——加入后项目只在合集中显示，不再出现在外层列表。项目本身不会被改动。",
@@ -3758,10 +3759,6 @@ export const zhCN = {
   "settings.themePresetCream": "奶油",
   "settings.themePresetWin95": "Win95",
   "settings.themePresetMacos": "Mac Platinum",
-  "settings.themePresetMidnightBlue": "午夜蓝",
-  "settings.themePresetForestGreen": "森林绿",
-  "settings.themePresetRosePink": "玫瑰粉",
-  "settings.themePresetSolarized": "Solarized",
   "settings.themePresetNord": "Nord",
   "settings.themePresetDracula": "Dracula",
   "settings.themePresetTokyoNight": "Tokyo Night",
@@ -3861,6 +3858,8 @@ export const zhCN = {
     "设置应用字体。可选择常用字体或输入自定义 CSS font-family 值。",
   "settings.themeFontPlaceholder": "例如：Inter, sans-serif",
   "settings.themeFontSystemDefault": "系统默认",
+  "settings.themeFontBundledZcoolXiaoWei": "站酷小薇（内置）",
+  "settings.themeFontBundledJostLight": "Jost Light（内置）",
   "settings.themeTypographyTitle": "排版",
   "settings.themeTypographyInfo":
     "调整界面字号（整页缩放，13px 为 100%）、正文字重与聊天区 / 代码排版。",

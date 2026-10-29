@@ -9477,6 +9477,12 @@ body.is-panel-resizing * {
   min-height: 0;
 }
 
+/* 独立页面空状态图标（备忘录 / 项目记忆的右栏共用）：弱化的中性色装饰 */
+.feature-empty-icon {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
 /* Header */
 .main-header {
   display: flex;
@@ -9642,9 +9648,9 @@ body.is-panel-resizing * {
    <1024px（小窗/平板）       720px —— 窄屏保持紧凑单列阅读
    ≥1024px（1280 笔记本）     860px
    ≥1280px（1440 屏）        1000px
-   ≥1440px（1600/1920 屏）   1120px
-   ≥1920px（2K/带鱼屏）      1240px
-   ≥2560px（4K/超宽）        1400px —— 并行生图画廊 4 列每格 ~330px */
+   ≥1440px（1600 屏及以上）  1120px —— 与输入框 .input-content 的 max-width
+   保持一致并封顶：全屏/超宽屏下消息列不再继续加宽，AI 消息左边界与用户
+   消息右边界始终对齐输入框左右边界（否则两侧消息相隔过远）。 */
 @media (min-width: 1024px) {
   .chat-area,
   .user-message-locate-overlay {
@@ -9663,20 +9669,6 @@ body.is-panel-resizing * {
   .chat-area,
   .user-message-locate-overlay {
     --chat-content-max: 1120px;
-  }
-}
-
-@media (min-width: 1920px) {
-  .chat-area,
-  .user-message-locate-overlay {
-    --chat-content-max: 1240px;
-  }
-}
-
-@media (min-width: 2560px) {
-  .chat-area,
-  .user-message-locate-overlay {
-    --chat-content-max: 1400px;
   }
 }
 
@@ -9861,34 +9853,39 @@ body.is-panel-resizing * {
   opacity: 0.88;
 }
 
-/* ===== User Message Rail (hover axis) =====
-   A thin vertical strip pinned to the right edge of the chat area. On hover
-   it expands a floating popover listing all user messages for quick
-   navigation. The popover is portaled to document.body so it is never
-   clipped by the chat-area mask or overflow. */
+/* ===== User Message Rail (edge count pill) =====
+   A glass capsule hugging the chat column's right edge: bubble icon + user
+   message count. On hover it slides slightly outward and expands a floating
+   popover listing all user messages for quick navigation. The popover is
+   portaled to document.body so it is never clipped by the chat-area mask or
+   overflow.
+   The count is a flex sibling of the icon, so any number of digits simply
+   widens the capsule instead of squeezing the icon — no fixed geometry needed.
+   .main-content keeps its own padding, so a small gap to the island edge is
+   inherent; the capsule is a floating control over the chat column and does
+   not try to be flush with that edge. */
 .user-message-rail {
   position: absolute;
   z-index: 4;
   top: 50%;
   right: 0;
   transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 4px;
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+  height: 28px;
+  padding: 0 10px 0 9px;
+  border-radius: 999px;
   background: var(--surface-island);
   border: 1px solid var(--border-subtle);
-  border-right: none;
   color: var(--text-tertiary);
   cursor: pointer;
   box-shadow: var(--island-shadow);
   /* 小面积元素保留毛玻璃（--backdrop-blur-lg 已置 none 以消除大面开销） */
   backdrop-filter: blur(18px) saturate(1.16);
   transition:
-    opacity 0.15s ease,
     background 0.15s ease,
+    border-color 0.15s ease,
     color 0.15s ease;
   -webkit-app-region: no-drag;
   user-select: none;
@@ -9896,23 +9893,20 @@ body.is-panel-resizing * {
 
 .user-message-rail:hover {
   background: var(--surface-island-strong);
+  border-color: var(--border-color);
   color: var(--text-primary);
 }
 
 .user-message-rail-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+.user-message-rail:hover .user-message-rail-count {
+  color: var(--text-primary);
 }
 
 /* Floating popover (portaled to body). Position is set inline via JS so it
@@ -12319,9 +12313,10 @@ body.is-panel-resizing * {
   object-fit: contain;
 }
 
+/* 用户默认头像跟随主题色（--accent-color），不写死品牌蓝 */
 .chat-im-row.is-user .chat-im-avatar.is-icon {
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: var(--accent-color);
 }
 
 /* 设置面板：头像预览行 */
@@ -25188,6 +25183,8 @@ button.user-message-source:hover {
   position: relative;
   z-index: 1;
   width: 100%;
+  /* 与消息列宽度上限（--chat-content-max 的 1120px 档）保持一致：
+     两者同宽时 AI 消息左边界 / 用户消息右边界才与输入框对齐。 */
   max-width: 1120px;
   margin: 0 auto;
 }
@@ -26685,6 +26682,11 @@ button.user-message-source:hover {
   flex-direction: row;
 }
 
+/* 未选中备忘时撑满右栏，让空状态提示居中显示 */
+.memo-editor-empty {
+  flex: 1;
+}
+
 .memo-loading-more {
   display: flex;
   align-items: center;
@@ -27774,7 +27776,6 @@ button.user-message-source:hover {
   gap: 10px;
   padding: 13px 18px;
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-primary);
   flex-shrink: 0;
 }
 
@@ -27815,7 +27816,6 @@ button.user-message-source:hover {
   flex-direction: column;
   gap: 11px;
   width: 100%;
-  max-width: 680px;
   padding: 14px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
@@ -28077,7 +28077,6 @@ button.user-message-source:hover {
   gap: 12px;
   padding: 11px 18px;
   border-top: 1px solid var(--border-light);
-  background: var(--bg-primary);
   box-shadow: var(--shadow-sm, none);
   flex-shrink: 0;
 }
@@ -28118,7 +28117,7 @@ button.user-message-source:hover {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 5px 7px;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--text-primary);
@@ -59196,8 +59195,10 @@ pre.file-viewer-code {
 .memory-content-empty {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 24px;
   color: var(--text-muted);
   font-size: 12.5px;

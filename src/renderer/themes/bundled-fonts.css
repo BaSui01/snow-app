@@ -1,0 +1,22 @@
+/*
+ * 内置字体：随应用打包，离线可用（仅在选择对应字体预设时生效）。
+ * 字体文件与授权说明见 ../assets/fonts/README.md。
+ */
+
+/* 站酷小薇体：纤细清秀的宋楷风格中文（含西文），SIL OFL 1.1。 */
+@font-face {
+  font-family: "ZCOOL XiaoWei";
+  src: url("../assets/fonts/ZCOOLXiaoWei-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Jost Light：纤细的几何无衬线西文，SIL OFL 1.1。 */
+@font-face {
+  font-family: "Jost Light";
+  src: url("../assets/fonts/jost-latin-300-normal.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}

@@ -5,7 +5,7 @@ import { isWindows } from "./constants";
 /**
  * Windows 11 会给每个顶层窗口绘制一圈 1px 边框，颜色默认取自系统个性化里的
  * 强调色，无边框窗口（frame: false）同样会被画上。这里通过
- * DwmSetWindowAttribute(DWMWA_BORDER_COLOR) 把它固定为一圈浅灰色细线，
+ * DwmSetWindowAttribute(DWMWA_BORDER_COLOR) 把它固定为应用统一的边框色，
  * 使窗口外观不受系统颜色设置影响。
  *
  * 窗口激活状态 / 最大化状态变化后 DWM 会重新计算边框颜色，因此这些时机需要

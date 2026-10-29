@@ -164,7 +164,8 @@ export const zhTW = {
   "sidebar.addLocalDirectoryActionDescription": "選擇或拖入現有的本機資料夾",
   "sidebar.addSshDirectoryActionDescription": "連線並新增遠端伺服器目錄",
   "sidebar.createCollection": "新增合集",
-  "sidebar.createCollectionDescription": "建立合集收納專案（可將專案拖入合集）",
+  "sidebar.createCollectionDescription":
+    "建立合集收納專案，成員預設關聯（可被 AI 存取），可在右鍵選單斷開關聯",
   "sidebar.createCollectionTitle": "新增合集",
   "sidebar.createCollectionDialogDescription":
     "合集用於將專案收納成群組。把專案拖到合集上即可加入——加入後專案只在合集中顯示，不再出現在外層列表。專案本身不會被更動。",
@@ -3760,10 +3761,6 @@ export const zhTW = {
   "settings.themePresetCream": "奶油",
   "settings.themePresetWin95": "Win95",
   "settings.themePresetMacos": "Mac Platinum",
-  "settings.themePresetMidnightBlue": "午夜藍",
-  "settings.themePresetForestGreen": "森林綠",
-  "settings.themePresetRosePink": "玫瑰粉",
-  "settings.themePresetSolarized": "Solarized",
   "settings.themePresetNord": "Nord",
   "settings.themePresetDracula": "Dracula",
   "settings.themePresetTokyoNight": "Tokyo Night",
@@ -3863,6 +3860,8 @@ export const zhTW = {
     "設定應用字體。可選擇常用字體或輸入自訂 CSS font-family 值。",
   "settings.themeFontPlaceholder": "例如：Inter, sans-serif",
   "settings.themeFontSystemDefault": "系統預設",
+  "settings.themeFontBundledZcoolXiaoWei": "站酷小薇（內置）",
+  "settings.themeFontBundledJostLight": "Jost Light（內置）",
   "settings.themeTypographyTitle": "排版",
   "settings.themeTypographyInfo":
     "調整介面字號（整頁縮放，13px 為 100%）、正文字重與聊天區 / 程式碼排版。",

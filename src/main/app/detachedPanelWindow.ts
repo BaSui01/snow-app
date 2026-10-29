@@ -27,6 +27,7 @@ import {
 } from "./detachedPanelWindowState";
 import { buildRendererPageUrl } from "./rendererPageUrl";
 import { safeSend } from "../utils/safeSend";
+import { bindWindowBorderColor } from "./windowBorder";
 
 /**
  * 独立面板窗口（右侧面板 tab「在新窗口中打开」）。
@@ -183,6 +184,10 @@ export const openDetachedPanelWindow = (
     },
   });
   const contents = win.webContents;
+
+  // Windows: 窗口外边框固定为统一边框色，不受系统个性化颜色影响（与主窗口一致）。
+  bindWindowBorderColor(win);
+
   const initialConversationId = readConversationId(payload.tab);
   panelEntries.set(token, {
     payload,

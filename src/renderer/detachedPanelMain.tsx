@@ -9,6 +9,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
+import "./themes/bundled-fonts.css";
 import "./themes/context-menu.css";
 import "./themes/tokens.css";
 import "./themes/hljs.css";

@@ -9,9 +9,10 @@ import {
   Loader2,
   Plus,
   Search,
+  Sparkles,
+  StickyNote,
   Trash2,
   X,
-  Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -1177,6 +1178,12 @@ export function MemoPanel({
     if (!selectedMemo) {
       return (
         <div className="memo-editor-empty">
+          <StickyNote
+            aria-hidden="true"
+            className="feature-empty-icon"
+            size={28}
+            strokeWidth={1.5}
+          />
           <span>{t("memo.emptyHint")}</span>
         </div>
       );

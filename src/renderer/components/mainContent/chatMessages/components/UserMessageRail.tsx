@@ -897,7 +897,7 @@ export const UserMessageRail = memo(
             defaultValue: "User messages",
           })}
         >
-          <MessageSquare size={15} strokeWidth={2} aria-hidden="true" />
+          <MessageSquare size={14} strokeWidth={2} aria-hidden="true" />
           {userMessages.length > 0 ? (
             <span className="user-message-rail-count">
               {userMessages.length}

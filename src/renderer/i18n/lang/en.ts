@@ -179,7 +179,7 @@ export const en = {
     "Connect and add a remote server directory",
   "sidebar.createCollection": "Create collection",
   "sidebar.createCollectionDescription":
-    "Create a collection to organize projects (drag projects into it)",
+    "Create a collection to organize projects — members are linked by default (accessible to AI) and can be unlinked from the right-click menu",
   "sidebar.createCollectionTitle": "Create a new collection",
   "sidebar.createCollectionDialogDescription":
     "A collection organizes projects into a group. Drag a project onto the collection to add it — it then appears only inside the collection, not in the list above it. The project itself is untouched.",
@@ -3991,10 +3991,6 @@ export const en = {
   "settings.themePresetCream": "Cream",
   "settings.themePresetWin95": "Win95",
   "settings.themePresetMacos": "Mac Platinum",
-  "settings.themePresetMidnightBlue": "Midnight Blue",
-  "settings.themePresetForestGreen": "Forest Green",
-  "settings.themePresetRosePink": "Rose Pink",
-  "settings.themePresetSolarized": "Solarized",
   "settings.themePresetNord": "Nord",
   "settings.themePresetDracula": "Dracula",
   "settings.themePresetTokyoNight": "Tokyo Night",
@@ -4097,6 +4093,8 @@ export const en = {
     "Set the application font. Choose a common font or enter a custom CSS font-family value.",
   "settings.themeFontPlaceholder": "e.g. Inter, sans-serif",
   "settings.themeFontSystemDefault": "System default",
+  "settings.themeFontBundledZcoolXiaoWei": "ZCOOL XiaoWei (built-in)",
+  "settings.themeFontBundledJostLight": "Jost Light (built-in)",
   "settings.themeTypographyTitle": "Typography",
   "settings.themeTypographyInfo":
     "Adjust the UI font size (whole-app zoom, 13px = 100%), body font weight, and chat / code typography.",

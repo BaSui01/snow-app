@@ -3393,16 +3393,19 @@ export const zhTW = {
   "settings.subAgentSystemPromptPlaceholder": "定義此子代理的角色和執行規則。",
   "settings.subAgentTools": "MCP 工具",
   "settings.subAgentToolsHint":
-    "專案內已關閉的工具也會列出：子代理明確勾選的工具不受專案啟停影響，主會話看不到時子代理仍可使用；全域工具黑名單與精簡模式仍然生效。",
+    "包括專案內已關閉服務的工具及逐項關閉的工具。明確勾選僅向該子代理開放，不改變專案開關；全域停用、工具黑名單、精簡模式及執行授權仍然生效。",
   "settings.subAgentToolsGlobalHint":
-    "僅列出系統服務與全域 MCP 服務的工具，與專案無關。子代理明確勾選的工具不受專案啟停影響；全域工具黑名單與精簡模式仍然生效。",
+    "僅列出系統服務與全域 MCP 服務的工具，與專案無關。明確勾選僅對該子代理豁免專案級服務或工具停用，不改變專案開關；全域停用、工具黑名單、精簡模式及執行授權仍然生效。",
   "settings.subAgentToolProjectDisabledBadge": "僅子代理可用",
   "settings.subAgentToolProjectDisabledTitle":
-    "目前專案已為主會話關閉此工具；勾選後子代理仍可使用。",
+    "專案已為主會話關閉此服務或工具；明確勾選後僅向該子代理開放，不改變專案開關；仍受全域停用與執行授權限制。",
   "settings.subAgentToolsLoading": "正在載入 MCP 工具...",
   "settings.subAgentToolsEmpty": "沒有可用的已啟用 MCP 工具。",
   "settings.subAgentToolSearchPlaceholder": "依名稱、伺服器或描述搜尋工具",
   "settings.subAgentToolSearchEmpty": "沒有符合的工具。",
+  "settings.subAgentToolSelectMatches": "選取符合項目",
+  "settings.subAgentToolDeselectMatches": "取消選取符合項目",
+  "settings.subAgentToolSelectedCount": "已選 {{selected}}/{{total}}",
   "settings.subAgentToolsLoadError": "載入專案 MCP 工具失敗",
   "settings.subAgentToolsUnavailable": "部分已儲存的 MCP 工具目前不可用",
   "settings.sensitiveCommands": "敏感命令",

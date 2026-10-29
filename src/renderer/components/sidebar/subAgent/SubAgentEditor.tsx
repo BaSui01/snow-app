@@ -1,9 +1,8 @@
-import { AlertCircle, Loader2, Save, Wrench, X } from "lucide-react";
-import { useState } from "react";
+import { AlertCircle, Loader2, Save, X } from "lucide-react";
 import type { ApiConfigRecord, Model } from "../../../../preload";
 import { CustomSelect } from "../../common/CustomSelect";
 import { useI18n } from "../../../i18n";
-import { McpSearchInput, matchesMcpQuery } from "../mcpSettings/McpSearchInput";
+import { SubAgentToolSelector } from "./SubAgentToolSelector";
 import { usesAllTools } from "./subAgentUtils";
 import type { SubAgentDraft, SubAgentToolOption } from "./types";
 
@@ -42,11 +41,7 @@ export function SubAgentEditor({
   onSave,
 }: SubAgentEditorProps): React.JSX.Element {
   const { t } = useI18n();
-  const [toolQuery, setToolQuery] = useState("");
   const allToolsEnabled = usesAllTools(draft.toolNames);
-  const filteredToolOptions = toolOptions.filter((tool) =>
-    matchesMcpQuery(toolQuery, tool.name, tool.serverName, tool.description),
-  );
   const unavailableToolNames = allToolsEnabled
     ? []
     : draft.toolNames.filter(
@@ -103,18 +98,6 @@ export function SubAgentEditor({
       label: modelId,
     })),
   ];
-
-  const toggleTool = (toolName: string): void => {
-    const selected = new Set(
-      allToolsEnabled ? toolOptions.map((tool) => tool.name) : draft.toolNames,
-    );
-    if (selected.has(toolName)) {
-      selected.delete(toolName);
-    } else {
-      selected.add(toolName);
-    }
-    onDraftChange({ toolNames: Array.from(selected) });
-  };
 
   return (
     <form
@@ -263,69 +246,12 @@ export function SubAgentEditor({
               </span>
             </div>
           ) : (
-            <>
-              <McpSearchInput
-                value={toolQuery}
-                onChange={setToolQuery}
-                placeholder={t("settings.subAgentToolSearchPlaceholder", {
-                  defaultValue: "Search tools by name, server or description",
-                })}
-              />
-              {filteredToolOptions.length === 0 ? (
-                <div className="sub-agent-tool-state">
-                  <span>
-                    {t("settings.subAgentToolSearchEmpty", {
-                      defaultValue: "No tools match the search.",
-                    })}
-                  </span>
-                </div>
-              ) : (
-                <div className="sub-agent-tool-options">
-                  {filteredToolOptions.map((tool) => (
-                    <label
-                      className="sub-agent-tool-option toggle-switch"
-                      key={tool.name}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={
-                          allToolsEnabled || draft.toolNames.includes(tool.name)
-                        }
-                        disabled={isBusy}
-                        onChange={() => toggleTool(tool.name)}
-                      />
-                      <span className="toggle-slider" />
-                      <Wrench size={14} />
-                      <span className="sub-agent-tool-option-content">
-                        <span className="sub-agent-tool-option-title">
-                          <strong>{tool.name}</strong>
-                          {tool.projectDisabled ? (
-                            <span
-                              className="sub-agent-tool-badge"
-                              title={t(
-                                "settings.subAgentToolProjectDisabledTitle",
-                                {
-                                  defaultValue:
-                                    "Disabled for the main conversation in this project; still available to this sub-agent when selected.",
-                                },
-                              )}
-                            >
-                              {t("settings.subAgentToolProjectDisabledBadge", {
-                                defaultValue: "Sub-agent only",
-                              })}
-                            </span>
-                          ) : null}
-                        </span>
-                        <small>
-                          {tool.serverName}
-                          {tool.description ? ` · ${tool.description}` : ""}
-                        </small>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </>
+            <SubAgentToolSelector
+              toolOptions={toolOptions}
+              toolNames={draft.toolNames}
+              isBusy={isBusy}
+              onChange={(toolNames) => onDraftChange({ toolNames })}
+            />
           )}
           {!isToolCatalogLoading && unavailableToolNames.length > 0 ? (
             <div className="sub-agent-tool-state is-error">
@@ -342,11 +268,11 @@ export function SubAgentEditor({
             {isGlobalScope
               ? t("settings.subAgentToolsGlobalHint", {
                   defaultValue:
-                    "Lists only system and global MCP server tools, independent of projects. Tools explicitly selected here stay available to the sub-agent even in projects that disable them; the global tool blacklist and Lite mode still apply.",
+                    "Lists only system and global MCP server tools, independent of projects. Explicit selection bypasses project-level server or tool disables only for this sub-agent without changing project toggles; global disables, the tool blacklist, Lite mode, and execution authorization still apply.",
                 })
               : t("settings.subAgentToolsHint", {
                   defaultValue:
-                    "Tools disabled for this project are listed too: explicitly selected tools stay available to the sub-agent even when the main conversation cannot see them. The global tool blacklist and Lite mode still apply.",
+                    "Includes tools disabled at the project level, whether by server or tool. Explicit selection grants access only to this sub-agent without changing project toggles; global disables, the tool blacklist, Lite mode, and execution authorization still apply.",
                 })}
           </small>
         </div>

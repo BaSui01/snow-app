@@ -148,8 +148,14 @@ pub fn project_scope_server_id(config_server_id: &str) -> String {
     format!("external:{config_server_id}")
 }
 
+/// 项目自有服务器的 enabled 是项目级开关；子代理显式白名单可豁免，
+/// 全局服务器自身禁用不可豁免。发现与执行共用此判定，不修改持久化配置。
+fn server_is_enabled(config: &McpServerConfigRecord, project_override: bool) -> bool {
+    config.enabled || (project_override && config.source == "project")
+}
+
 /// `allowed_names` 为请求白名单时只发现白名单涉及的服务器；`project_override`
-/// （子代理显式白名单）跳过项目级服务器/工具开关。
+/// （子代理显式白名单）跳过项目级服务器/工具开关（含项目自有服务器的 enabled）。
 pub async fn discover_tools(
     project_id: Option<&str>,
     scope: Option<&McpProjectScopeSettings>,
@@ -175,9 +181,10 @@ pub async fn discover_tools(
                     .get(&config.server_id)
                     .cloned()
                     .unwrap_or_else(|| sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external"));
-                let enabled = config.enabled
+                let enabled = server_is_enabled(&config, project_override)
                     && (config.source == "project"
-                        || !disabled_server_ids.contains(&project_scope_server_id(&config.server_id)));
+                        || !disabled_server_ids
+                            .contains(&project_scope_server_id(&config.server_id)));
                 let prefix = format!("{server_name}-");
                 let requested = allowed_names
                     .is_none_or(|names| names.iter().any(|name| name.starts_with(&prefix)));
@@ -315,10 +322,12 @@ pub async fn resolve_project_scope_server(
 }
 
 /// 调用外部工具：连接、工具列表与调用共用 timeoutMs 截止时间，超时返回错误。
+/// `project_override` 由调用方的精确工具白名单授权，仅豁免项目级启停。
 pub async fn call_tool(
     project_id: Option<&str>,
     tool_full_name: &str,
     arguments: &Value,
+    project_override: bool,
 ) -> Result<Option<Value>> {
     let Some((server_name, public_tool_name)) = parse_external_tool_name(tool_full_name) else {
         return Ok(None);
@@ -331,7 +340,7 @@ pub async fn call_tool(
     }) else {
         return Ok(None);
     };
-    if !config.enabled {
+    if !server_is_enabled(&config, project_override) {
         return Err(Error::from_reason(format!(
             "External MCP server for tool {tool_full_name} is disabled or no longer configured"
         )));

@@ -34049,14 +34049,94 @@ button.user-message-source:hover {
   gap: 7px;
 }
 
-.sub-agent-tool-options {
+.sub-agent-tool-selector {
   display: flex;
-  max-height: 270px;
-  overflow-y: auto;
+  min-width: 0;
   flex-direction: column;
+  gap: 7px;
+}
+
+.sub-agent-tool-selector-groups {
+  max-height: 320px;
+  overflow-y: auto;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
+}
+
+.sub-agent-tool-selector-group + .sub-agent-tool-selector-group {
+  border-top: 1px solid var(--border-color);
+}
+
+.sub-agent-tool-selector-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--surface-island-muted);
+}
+
+.sub-agent-tool-selector-expand {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sub-agent-tool-selector-expand strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-tool-selector-expand > svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.sub-agent-tool-selector-expand[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+
+.sub-agent-tool-selector-expand:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sub-agent-tool-selector-count {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-agent-tool-selector-tools {
+  border-top: 1px solid var(--border-light);
+}
+
+.sub-agent-tool-selector .sub-agent-tool-option {
+  position: relative;
+}
+
+.sub-agent-tool-selector .sub-agent-tool-option input[type="checkbox"] {
+  position: absolute;
+  display: block;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .sub-agent-tool-option {

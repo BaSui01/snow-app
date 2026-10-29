@@ -3601,17 +3601,20 @@ export const en = {
     "Define this sub-agent's role and execution rules.",
   "settings.subAgentTools": "MCP tools",
   "settings.subAgentToolsHint":
-    "Tools disabled for this project are listed too: explicitly selected tools stay available to the sub-agent even when the main conversation cannot see them. The global tool blacklist and Lite mode still apply.",
+    "Includes tools disabled at the project level, whether by server or tool. Explicit selection grants access only to this sub-agent without changing project toggles; global disables, the tool blacklist, Lite mode, and execution authorization still apply.",
   "settings.subAgentToolsGlobalHint":
-    "Lists only system and global MCP server tools, independent of projects. Tools explicitly selected here stay available to the sub-agent even in projects that disable them; the global tool blacklist and Lite mode still apply.",
+    "Lists only system and global MCP server tools, independent of projects. Explicit selection bypasses project-level server or tool disables only for this sub-agent without changing project toggles; global disables, the tool blacklist, Lite mode, and execution authorization still apply.",
   "settings.subAgentToolProjectDisabledBadge": "Sub-agent only",
   "settings.subAgentToolProjectDisabledTitle":
-    "Disabled for the main conversation in this project; still available to this sub-agent when selected.",
+    "This project has disabled the server or tool for the main conversation. Explicit selection grants access only to this sub-agent without changing project toggles; global disables and execution authorization still apply.",
   "settings.subAgentToolsLoading": "Loading MCP tools...",
   "settings.subAgentToolsEmpty": "No enabled MCP tools are available.",
   "settings.subAgentToolSearchPlaceholder":
     "Search tools by name, server or description",
   "settings.subAgentToolSearchEmpty": "No tools match the search.",
+  "settings.subAgentToolSelectMatches": "Select matches",
+  "settings.subAgentToolDeselectMatches": "Deselect matches",
+  "settings.subAgentToolSelectedCount": "{{selected}}/{{total}} selected",
   "settings.subAgentToolsLoadError": "Failed to load project MCP tools",
   "settings.subAgentToolsUnavailable": "Some saved MCP tools are unavailable.",
   "settings.sensitiveCommands": "Sensitive commands",

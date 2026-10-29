@@ -3392,16 +3392,19 @@ export const zhCN = {
   "settings.subAgentSystemPromptPlaceholder": "定义此子代理的角色和执行规则。",
   "settings.subAgentTools": "MCP 工具",
   "settings.subAgentToolsHint":
-    "项目内已关闭的工具也会列出：子代理显式勾选的工具不受项目启停影响，主会话看不到时子代理仍可使用；全局工具黑名单与精简模式仍然生效。",
+    "包括项目内已关闭服务的工具及逐项关闭的工具。显式勾选仅向该子代理开放，不改变项目开关；全局禁用、工具黑名单、精简模式及执行授权仍然生效。",
   "settings.subAgentToolsGlobalHint":
-    "仅列出系统服务与全局 MCP 服务的工具，与项目无关。子代理显式勾选的工具不受项目启停影响；全局工具黑名单与精简模式仍然生效。",
+    "仅列出系统服务与全局 MCP 服务的工具，与项目无关。显式勾选仅对该子代理豁免项目级服务或工具禁用，不改变项目开关；全局禁用、工具黑名单、精简模式及执行授权仍然生效。",
   "settings.subAgentToolProjectDisabledBadge": "仅子代理可用",
   "settings.subAgentToolProjectDisabledTitle":
-    "当前项目已为主会话关闭该工具；勾选后子代理仍可使用。",
+    "项目已为主会话关闭此服务或工具；显式勾选后仅向该子代理开放，不改变项目开关；仍受全局禁用与执行授权限制。",
   "settings.subAgentToolsLoading": "正在加载 MCP 工具...",
   "settings.subAgentToolsEmpty": "没有可用的已启用 MCP 工具。",
   "settings.subAgentToolSearchPlaceholder": "按名称、服务器或描述搜索工具",
   "settings.subAgentToolSearchEmpty": "没有匹配的工具。",
+  "settings.subAgentToolSelectMatches": "选择匹配项",
+  "settings.subAgentToolDeselectMatches": "取消选择匹配项",
+  "settings.subAgentToolSelectedCount": "已选 {{selected}}/{{total}}",
   "settings.subAgentToolsLoadError": "加载项目 MCP 工具失败",
   "settings.subAgentToolsUnavailable": "部分已保存的 MCP 工具当前不可用",
   "settings.sensitiveCommands": "敏感命令",

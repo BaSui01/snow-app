@@ -1,189 +1,90 @@
-# Snow App
+<p align="center">
+  <img src="./assets/readme/en/hero.png" width="100%" alt="Snow App: a desktop AI development workspace with AI chat, terminal, SSH, Git and a built-in browser in one window">
+</p>
 
-> [!WARNING] > **macOS Users:** If the app shows "damaged" or "cannot be opened" after installation, run the following command in Terminal:
+<p align="center">
+  <a href="https://github.com/xb0or/snow-app/releases"><img src="https://img.shields.io/github/v/release/xb0or/snow-app?label=release&color=3b82f6" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-73afd1" alt="Supported platforms">
+  <img src="https://img.shields.io/badge/license-MIT-111827" alt="MIT license">
+</p>
+
+Snow App is a desktop workspace for developers: AI chat, an integrated terminal, SSH remote management, a Git panel and a built-in browser all live in one window, and the AI can drive them directly.
+
+[中文文档](./README_zh.md)
+
+## What it looks like
+
+<p align="center">
+  <img src="./assets/readme/screenshots/desktop-annotated.en.png" width="100%" alt="Snow App three-column layout: sidebar for sessions and projects, chat and agent in the middle, browser, terminal and Git in the right panel">
+</p>
+
+## From five windows back to one workspace
+
+<p align="center">
+  <img src="./assets/readme/en/before-after.svg" width="100%" alt="Before: a terminal app, an SSH client, a Git GUI, a browser and a web AI chat. After: one Snow App window">
+</p>
+
+## What is inside
+
+<p align="center">
+  <img src="./assets/readme/en/features-workspace.svg" width="100%" alt="Snow App workspace panels: AI chat, integrated terminal, SSH workspaces, Git panel, built-in browser, file explorer, codebase search, task manager">
+</p>
+
+These panels share one conversation context: the AI can read terminal output, browser pages and Git state directly, so nothing has to be copied between tools.
+
+## Agent and team
+
+<p align="center">
+  <img src="./assets/readme/en/features-agent.svg" width="100%" alt="Snow App agent and team: skills, MCP servers, sub-agents, hooks, goal mode, scheduled tasks and workflows, project memory, team collaboration">
+</p>
+
+Skills, MCP servers, sub-agents and hooks are all pluggable; scheduled tasks support multi-node workflows, and project memory persists per project and is injected automatically.
+
+## Extend and create
+
+<p align="center">
+  <img src="./assets/readme/en/features-extend.svg" width="100%" alt="Snow App extension and content: plugin market, user scripts, custom commands, request proxy, repo wiki, drawing studio, image library, LSP diagnostics">
+</p>
+
+Plugins, user scripts and the request proxy layer can rewrite the interface and the requests themselves; repo wiki, the drawing studio and the image library keep content work inside the same session.
+
+## Security and experience
+
+<p align="center">
+  <img src="./assets/readme/en/features-security.svg" width="100%" alt="Snow App security and experience: app lock, tool approval, privacy masking, checkpoints and rollback, usage and logs, themes, mobile remote, desktop pets">
+</p>
+
+Tool approval and privacy masking decide what the AI may do and see. App lock is off by default, covers the interface without encrypting disk data, and stores only a salted PIN hash.
+
+## Continue on mobile
+
+<p align="center">
+  <img src="./assets/readme/screenshots/mobile-pair.png" width="640" alt="Snow App mobile remote control: conversation and streaming on the left, actions, modes and approvals on the right">
+</p>
+
+Pair a phone from **Settings → Mobile Remote Control** and keep working from a mobile browser: switch workspaces and models, approve tools, answer questions, and send images or files. LAN pairing needs no cloud service; the optional public mode uses a self-hosted, authenticated TLS tunnel with one-time pairing, session revocation and sensitive-output redaction. See the [setup guide](docs/en/2-guides/23-mobile-public-remote-control.md).
+
+## Requirements and first run
+
+- **Node.js** >= 18
+- **Rust** stable toolchain (builds the native module)
+- **macOS**: Xcode Command Line Tools ｜ **Windows**: Visual Studio Build Tools (C++ workload) ｜ **Linux**: `build-essential`, `pkg-config`
+
+```bash
+npm install
+npm run dev        # start in development mode with HMR
+npm run build:app  # build a distributable package into release/
+```
+
+> **macOS users:** if the app reports "damaged" or "cannot be opened" after installation, run:
 >
 > ```bash
 > sudo xattr -rd com.apple.quarantine /Applications/Snow\ App.app
 > ```
->
-> You will be prompted to enter your login password to remove the quarantine attribute.
 
-> High-performance cross-platform desktop application powered by Electron, React, TypeScript, and Rust.
+## More
 
-[中文文档](./README_zh.md)
-
-## Friendly links
-
-- [Linux DO](https://linux.do)
-
-## QQ Group
-
-- 910298558
-
-## Overview
-
-Snow App is a developer-focused desktop application that integrates AI-powered chat, terminal emulation, SSH remote management, Git tooling, and a built-in browser panel into a single unified workspace. It leverages a Rust native module for performance-critical operations such as SQLite storage, AI streaming, file watching, and HTTP requests.
-
-<img width="1525" height="1058" alt="image" src="https://github.com/user-attachments/assets/343e09f8-e085-4a2b-99ca-011e244460f0" />
-
-## Features
-
-- **AI Chat** - Streaming AI assistant with markdown rendering, syntax highlighting, and configurable system prompts
-- **Integrated Terminal** - Full PTY-based terminal emulation powered by node-pty and xterm.js
-- **SSH Management** - Connect to and manage remote servers via SSH with credential persistence
-- **Git Panel** - Visual Git diff viewer and repository management
-- **Browser Panel** - Built-in browser with proxy support, network inspection, login-state management, and AI-driven automation
-- **MCP Support** - Model Context Protocol integration for extensible AI tooling
-- **AI Image Generation** - Built-in text-to-image / image editing (OpenAI / Gemini multi-channel); generated images are persisted into an image library
-- **Skills System** - Install / enable / manage AI skills (SKILL.md) that dynamically extend the agent
-- **Hooks** - Lifecycle hooks that run custom commands or prompts before/after events like requests and compression
-- **Sub-Agents** - Independent AI execution loops for parallel, complex multi-step tasks
-- **Codebase Semantic Search** - Embedding-index-based code search plus LSP-based multi-language code symbol location
-- **Goal Mode** - autonomous long-running task execution mode
-- **Interactive Terminal Sessions** - The AI can drive persistent PTY sessions for long-running and interactive commands
-- **Codebase Explorer** - Project file tree with workspace directory management
-- **i18n** - Multi-language support with a locale system
-- **Settings Management** - Granular configuration for API keys, custom headers, proxy, sensitive commands, and more
-- **Mobile Remote Control** - Continue conversations, switch workspaces and models, approve tools, answer questions, and send images/files from a phone over LAN or a self-hosted public tunnel
-- **Cross-Platform** - Runs on macOS, Windows, and Linux
-
-## Mobile Remote Control
-
-Pair a phone from **Settings → Mobile Remote Control** and control the current Snow session from a mobile browser. LAN pairing works without a cloud service; optional public access uses a self-hosted, authenticated TLS tunnel and supports one-time pairing, session revocation, permission prompts, and sensitive-output redaction. See the [setup guide](docs/en/2-guides/23-mobile-public-remote-control.md).
-
-The initial version of Mobile Remote Control was contributed by [zerio1](https://github.com/zerio1) through [PR #130](https://github.com/MayDay-wpf/snow-app/pull/130), then integrated and refined by Snow App.
-
-| Conversation and streaming                                              | Actions, modes, and approvals                                 |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
-| ![Snow mobile remote conversation](docs/images/mobile-conversation.png) | ![Snow mobile remote actions](docs/images/mobile-actions.png) |
-
-## Tech Stack
-
-| Layer     | Technology                                                    |
-| --------- | ------------------------------------------------------------- |
-| Shell     | Electron 37                                                   |
-| Frontend  | React 19, TypeScript 5.9                                      |
-| Bundler   | electron-vite 4 (Vite 7)                                      |
-| Native    | Rust 2021 Edition (napi-rs 3)                                 |
-| Packaging | electron-builder 26                                           |
-| Terminal  | node-pty, xterm.js 6                                          |
-| SSH       | ssh2                                                          |
-| Storage   | rusqlite (SQLite, bundled)                                    |
-| AI/HTTP   | reqwest (multi-provider protocol adapters and streaming HTTP) |
-| Markdown  | markdown-it, streaming-markdown, highlight.js                 |
-| Icons     | lucide-react                                                  |
-
-## Project Structure
-
-```
-snow-app/
-├── src/
-│   ├── main/            # Electron main process
-│   │   ├── app/         # Application bootstrap & window management
-│   │   ├── ipc/         # IPC handler registration
-│   │   ├── native/      # Rust native bridge (storageReady gate)
-│   │   ├── notification/ # System notifications
-│   │   ├── pty/         # PTY & terminal management
-│   │   ├── settings/    # Configuration stores
-│   │   ├── snowCli/     # CLI path & profile management
-│   │   ├── ssh/         # SSH connection management
-│   │   ├── types/       # Shared types
-│   │   ├── updater/     # App updates
-│   │   └── utils/       # Shared utilities
-│   ├── preload/         # Electron preload script (window.snow.* allowlist)
-│   ├── renderer/        # React frontend
-│   │   ├── components/  # UI components (sidebar, main content, right panel)
-│   │   ├── hooks/       # Custom React hooks
-│   │   ├── i18n/        # Internationalization
-│   │   └── utils/       # Frontend utilities
-│   └── shared/          # Code shared between main & renderer
-├── native/              # Rust native module
-│   └── src/
-│       ├── api/         # AI API integration
-│       ├── exports/     # napi-rs export bindings
-│       ├── hooks/       # Lifecycle hook execution
-│       ├── mcp/         # MCP protocol implementation (built-in servers + external client)
-│       ├── prompt/      # System prompt handling (incl. mode prompts)
-│       └── storage/     # SQLite persistence
-├── scripts/             # Build & utility scripts
-├── resources/           # App icons & static assets
-└── electron.vite.config.ts
-```
-
-## Prerequisites
-
-- **Node.js** >= 18
-- **Rust** (stable toolchain) - required for building the native module
-- **Cargo** - comes with Rust
-
-### Platform-Specific
-
-- **macOS**: Xcode Command Line Tools
-- **Windows**: Visual Studio Build Tools (C++ workload)
-- **Linux**: `build-essential`, `pkg-config`, and system SQLite (or use bundled)
-
-## Getting Started
-
-### Installation
-
-```bash
-npm install
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-This starts the Electron app in development mode with hot module replacement.
-
-### Build
-
-```bash
-npm run build
-```
-
-This compiles the Rust native module and bundles the Electron application via electron-vite.
-
-### Package
-
-```bash
-npm run build:app
-```
-
-This builds the app and produces a distributable package via electron-builder. Output is written to `release/`.
-
-### Type Checking
-
-```bash
-npm run check
-```
-
-Runs both TypeScript type checking (`tsc --noEmit`) and Rust checking (`cargo check`).
-
-## Available Scripts
-
-| Script               | Description                            |
-| -------------------- | -------------------------------------- |
-| `npm run dev`        | Start development server with HMR      |
-| `npm run build`      | Build Rust native module + Vite bundle |
-| `npm run build:app`  | Build + create distributable package   |
-| `npm run build:rust` | Build only the Rust native module      |
-| `npm run check`      | TypeScript + Rust type checking        |
-| `npm run check:ts`   | TypeScript type checking only          |
-| `npm run preview`    | Preview the production build           |
-
-## Native Module
-
-The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via napi-rs. It provides:
-
-- **AI API streaming** - Async streaming via reqwest and provider adapters for OpenAI Chat/Responses, Anthropic, and Gemini protocols
-- **SQLite storage** - Embedded database via rusqlite for settings and chat history
-- **File watching** - File system monitoring via the `notify` crate
-- **HTTP client** - Full-featured HTTP client via reqwest with compression support
-- **MCP protocol** - Model Context Protocol implementation
-
-## License
-
-[MIT](./LICENSE) - Copyright (c) 2026 MayMay
+- Full documentation: [docs/](./docs/README.md)
+- QQ group: 910298558
+- Friendly link: [Linux DO](https://linux.do)
+- License: [MIT](./LICENSE) · Copyright (c) 2026 MayMay

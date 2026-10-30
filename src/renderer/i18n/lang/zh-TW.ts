@@ -4263,6 +4263,11 @@ export const zhTW = {
     "決策模型判定拒絕，確認執行即表示你正在覆蓋該判定。",
   "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
   "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.severityBadge": "{{level}}風險",
+  "sensitiveCommand.severityScore": "風險分值 {{value}} / {{max}}",
+  "sensitiveCommand.severity.low": "低",
+  "sensitiveCommand.severity.medium": "中",
+  "sensitiveCommand.severity.high": "高",
   "sensitiveCommand.decisionRejectedReason":
     "決策模型判定拒絕執行（{{model}}）：{{reason}}",
   "sensitiveCommand.decision.reason.readOnly":

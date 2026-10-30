@@ -1129,6 +1129,10 @@ export type SensitiveCommandDecisionRecord = {
   reason: string;
   /** 模型对判定的置信度（0-1）。 */
   confidence: number;
+  /** 风险等级 key（low / medium / high）；provider 未给出时为空，不参与放行判定。 */
+  severity?: string | null;
+  /** 风险 score 原值（档位概率加权平均），仅展示与日志。 */
+  severityScore?: number | null;
   /** 决策模型托管：判定直接生效，不再弹拦截提示。 */
   delegate: boolean;
   /** 托管下判定拒绝时转人工确认（已与 delegate 合并：托管关闭时恒为 false）。 */

@@ -23,6 +23,7 @@ import type {
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { AnsiOutput } from "./shared/AnsiOutput";
 import { localizeToolError } from "./shared/toolErrorDisplay";
+import { SensitiveCommandSeverityBadge } from "./shared/SensitiveCommandSeverityBadge";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
@@ -547,6 +548,15 @@ export const BashToolCall = ({
         defaultValue: decision.reason,
       })
     : "";
+  // 风险等级只在 provider 给出且为已知档位时展示。
+  const decisionSeverityLabel =
+    decision?.severity && ["low", "medium", "high"].includes(decision.severity)
+      ? t("sensitiveCommand.severityBadge", {
+          values: {
+            level: t(`sensitiveCommand.severity.${decision.severity}`),
+          },
+        })
+      : "";
   // 三种判定结论：模型放行 / 模型拒绝 / 模型拒绝但用户复核后已确认执行。
   const isDenyOverridden = Boolean(
     decision && !decision.allow && toolCall.sensitiveCommandDenyOverridden,
@@ -590,6 +600,11 @@ export const BashToolCall = ({
                   <span className="tool-call-bash-decision-tip-reason">
                     {decisionReason}
                   </span>
+                  {decisionSeverityLabel ? (
+                    <span className="tool-call-bash-decision-tip-reason">
+                      {decisionSeverityLabel}
+                    </span>
+                  ) : null}
                   {decision.modelName ? (
                     <span className="tool-call-bash-decision-tip-model">
                       {t("sensitiveCommand.decisionModel", {
@@ -753,6 +768,10 @@ export const BashToolCall = ({
                   <ShieldAlert size={13} strokeWidth={2} aria-hidden="true" />
                 )}
                 <strong>{decisionVerdictLabel}</strong>
+                <SensitiveCommandSeverityBadge
+                  severity={decision.severity}
+                  severityScore={decision.severityScore}
+                />
               </span>
               <span className="tool-call-bash-decision-tag">
                 {toolCall.sensitiveCommandDelegated

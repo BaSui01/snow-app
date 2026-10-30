@@ -4599,6 +4599,11 @@ export const en = {
     "The decision model denied this command. Confirming execution overrides that verdict.",
   "sensitiveCommand.decisionConfidence": "Confidence {{value}}%",
   "sensitiveCommand.decisionModel": "Judged by {{name}}",
+  "sensitiveCommand.severityBadge": "{{level}} risk",
+  "sensitiveCommand.severityScore": "Risk score {{value}} / {{max}}",
+  "sensitiveCommand.severity.low": "Low",
+  "sensitiveCommand.severity.medium": "Medium",
+  "sensitiveCommand.severity.high": "High",
   "sensitiveCommand.decisionRejectedReason":
     "Rejected by the decision model ({{model}}): {{reason}}",
   "sensitiveCommand.decision.reason.readOnly":

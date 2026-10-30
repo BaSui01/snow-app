@@ -4320,6 +4320,11 @@ export const zhCN = {
     "决策模型判定拒绝，确认执行即表示你正在覆盖该判定。",
   "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
   "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.severityBadge": "{{level}}风险",
+  "sensitiveCommand.severityScore": "风险分值 {{value}} / {{max}}",
+  "sensitiveCommand.severity.low": "低",
+  "sensitiveCommand.severity.medium": "中",
+  "sensitiveCommand.severity.high": "高",
   "sensitiveCommand.decisionRejectedReason":
     "决策模型判定拒绝执行（{{model}}）：{{reason}}",
   "sensitiveCommand.decision.reason.readOnly":

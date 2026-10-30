@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { keyToDisplay } from "../../../../utils/shortcutUtils";
 import type { ToolCallInfo } from "../utils/conversationTypes";
+import { SensitiveCommandSeverityBadge } from "./shared/SensitiveCommandSeverityBadge";
 
 type SensitiveCommandMatch = {
   commandId: string;
@@ -14,6 +15,9 @@ type SensitiveCommandDecision = {
   allow: boolean;
   reason: string;
   confidence: number;
+  /** 风险等级 key；为空时不显示徽标。 */
+  severity?: string;
+  severityScore?: number;
   modelName: string;
   /** 决策模型不可用 / 请求失败的原因（此时判定无效，已回退人工确认）。 */
   error?: string;
@@ -219,6 +223,10 @@ const SensitiveCommandItem = ({
                   })}
                 </small>
               ) : null}
+              <SensitiveCommandSeverityBadge
+                severity={decision.severity}
+                severityScore={decision.severityScore}
+              />
             </span>
             <span className="sensitive-command-decision-reason">
               {t(`sensitiveCommand.decision.reason.${decision.reason}`, {

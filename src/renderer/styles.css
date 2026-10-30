@@ -40327,6 +40327,35 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-weight: 400;
 }
 
+/* 决策模型风险等级徽标（拦截提示与 Bash 卡片共用） */
+.sensitive-command-severity {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.sensitive-command-severity.is-low {
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.sensitive-command-severity.is-medium {
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+}
+
+.sensitive-command-severity.is-high {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+}
+
 .sensitive-command-decision-reason {
   color: var(--text-secondary);
   font-size: 12px;

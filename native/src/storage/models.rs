@@ -665,6 +665,10 @@ pub struct SensitiveCommandDecisionRecord {
     pub reason: String,
     /// 模型对判定的置信度（0-1）。
     pub confidence: f64,
+    /// 风险等级 key（low / medium / high），由前端本地化；不参与放行判定。
+    pub severity: Option<String>,
+    /// 风险 score 原值（档位概率加权平均），仅展示与日志。
+    pub severity_score: Option<f64>,
     /// 决策模型托管：判定直接生效（放行 / 拒绝），不再弹拦截提示。
     pub delegate: bool,
     /// 托管下判定拒绝时转人工确认（已与 `delegate` 合并：托管关闭时恒为 false）。

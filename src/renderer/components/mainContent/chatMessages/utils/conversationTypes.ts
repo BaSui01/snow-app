@@ -156,6 +156,10 @@ export type ToolCallInfo = {
     reason: string;
     /** 模型对判定的置信度（0-1）。 */
     confidence: number;
+    /** 风险等级 key（low / medium / high）；为空时不显示等级徽标。 */
+    severity?: string;
+    /** 风险 score 原值，仅展示。 */
+    severityScore?: number;
     /** 参与判定的决策模型名称。 */
     modelName: string;
     /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
@@ -576,6 +580,10 @@ export type SensitiveCommandDecisionInfo = {
   reason: string;
   /** 模型对判定的置信度（0-1）。 */
   confidence: number;
+  /** 风险等级 key（low / medium / high）；为空时不显示等级徽标。 */
+  severity?: string;
+  /** 风险 score 原值，仅展示。 */
+  severityScore?: number;
   /** 参与判定的决策模型名称。 */
   modelName: string;
   /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */

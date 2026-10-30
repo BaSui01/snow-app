@@ -21,6 +21,17 @@ import { writeRendererLog } from "../../../../utils/rendererLog";
 /** 敏感命令复核日志里命令文本的最大长度（超出截断）。 */
 const SENSITIVE_COMMAND_LOG_MAX_CHARS = 200;
 
+/** 判定里的风险等级（provider 未给出时为空，不写字段，UI 不显示徽标）。 */
+const pickSeverity = (decision: {
+  severity?: string | null;
+  severityScore?: number | null;
+}): { severity?: string; severityScore?: number } => ({
+  ...(decision.severity ? { severity: decision.severity } : {}),
+  ...(typeof decision.severityScore === "number"
+    ? { severityScore: decision.severityScore }
+    : {}),
+});
+
 /** 权限面板增删项目级免审批工具后派发，授权流程据此重新加载合并列表。 */
 export const TOOL_APPROVALS_CHANGED_EVENT = "tool-approvals:changed";
 
@@ -608,6 +619,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             model: decisionInfo.modelName,
             reason: decisionInfo.reason,
             confidence: decisionInfo.confidence,
+            severity: decisionInfo.severity ?? null,
+            severityScore: decisionInfo.severityScore ?? null,
             userChoice: decision.status,
             command:
               command.length > SENSITIVE_COMMAND_LOG_MAX_CHARS
@@ -696,6 +709,8 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           allow: false,
           reason: "unclear",
           confidence: 0,
+          severity: null,
+          severityScore: null,
           delegate: false,
           askOnDeny: false,
           modelName: "",
@@ -801,6 +816,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                 allow: decision.allow,
                 reason: decision.reason,
                 confidence: decision.confidence,
+                ...pickSeverity(decision),
                 modelName: decision.modelName,
               };
               ctx.updateSessionMessages(conversationId, (currentMessages) =>
@@ -872,6 +888,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                       allow: decision.allow,
                       reason: decision.reason,
                       confidence: decision.confidence,
+                      ...pickSeverity(decision),
                       modelName: decision.modelName,
                       ...(decision.error ? { error: decision.error } : {}),
                     },

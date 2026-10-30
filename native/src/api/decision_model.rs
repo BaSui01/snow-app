@@ -1,7 +1,8 @@
 //! 决策模型客户端（TypeSafe System One / OpenAI Decisions）。
 //!
 //! 决策模型不生成文本，只对给定 state 逐条回答问题：代码库审查用它判定每条结果
-//! 是否相关，敏感命令辅助用它判定命令能否直接执行并给出理由分类。
+//! 是否相关，敏感命令辅助用它判定命令能否直接执行、给出理由分类与风险等级
+//! （score 问题：OpenAI 用 `levels`，TypeSafe Jev 用有序 `criteria`）。
 //!
 //! 代码库审查有两种问题类型：未配置阈值时用 choice（relevant / irrelevant），
 //! 配置了相关性阈值时改用 predicate。OpenAI Decisions 叫 predicate，TypeSafe
@@ -61,10 +62,29 @@ const DENY_OPTION: &str = "deny";
 const PREDICATE_QUESTION_TYPE: &str = "predicate";
 const NOUL_QUESTION_TYPE: &str = "noul";
 const CHOICE_QUESTION_TYPE: &str = "choice";
+const SCORE_QUESTION_TYPE: &str = "score";
 
 /// 敏感命令请求的问题 id；答案按同名的 name 返回。
 const VERDICT_QUESTION_ID: &str = "verdict";
 const REASON_QUESTION_ID: &str = "reason";
+const SEVERITY_QUESTION_ID: &str = "severity";
+
+/// 风险等级（低 -> 高，顺序即档位序号）；label 是前端 i18n key
+/// （`sensitiveCommand.severity.<label>`）。仅用于展示与日志，不参与放行判定。
+const SEVERITY_LEVELS: &[(&str, &str)] = &[
+    (
+        "low",
+        "Harmless or trivially undone: it only reads, touches generated or regenerable artifacts, or makes small edits inside the working directory",
+    ),
+    (
+        "medium",
+        "Bounded damage that takes effort to recover: project files, local data or environment state could be lost or changed, but it stays recoverable (version control, reinstall, rebuild)",
+    ),
+    (
+        "high",
+        "Severe or irreversible: unrecoverable data loss, paths outside the working directory, system-wide changes, or data published or sent off this machine",
+    ),
+];
 
 /// 答案缺失或选项未知时回退的理由分类。
 const REASON_UNKNOWN: &str = "unclear";
@@ -523,6 +543,12 @@ pub struct CommandDecision {
     pub reason: String,
     /// 模型对判定的置信度（0-1）。
     pub confidence: f64,
+    /// 风险等级（`SEVERITY_LEVELS` 的 label），取各档概率的 argmax。
+    pub severity: Option<String>,
+    /// score 原值（档位概率加权平均，可落在两档之间），仅展示与日志。
+    pub severity_score: Option<f64>,
+    /// 等级解析失败的原因（只进日志）；此时等级留空，verdict 照常生效。
+    pub severity_error: Option<String>,
 }
 
 /// 一条命令的判定上下文：命令文本、模型写的说明与实际执行目录。
@@ -541,7 +567,9 @@ pub struct CommandContext<'a> {
 ///
 /// verdict 是模型在真实执行上下文下给出的 `allow` / `deny`；规则命中只是提示。
 /// 第二个问题从固定理由分类中选一个，调用方据此用用户语言解释判定。
-/// 两个答案来自同一次请求；verdict 缺失按错误处理，调用方保持人工确认。
+/// 第三个 score 问题给出风险等级，只用于展示与日志，不影响 verdict。
+/// 三个答案来自同一次请求；verdict 缺失按错误处理，调用方保持人工确认；
+/// 等级缺失或越界只把等级留空（不猜），verdict 照常生效。
 pub async fn evaluate_command(
     config: &DecisionModelConfig,
     context: &CommandContext<'_>,
@@ -578,6 +606,12 @@ pub async fn evaluate_command(
         reason_criteria.insert((*key).to_string(), json!(description));
     }
 
+    // 内部统一为 { label, description } 档位，provider 适配层再转换。
+    let severity_levels: Vec<Value> = SEVERITY_LEVELS
+        .iter()
+        .map(|(label, description)| json!({ "label": label, "description": description }))
+        .collect();
+
     let questions = json!({
         (VERDICT_QUESTION_ID): {
             "type": "choice",
@@ -592,11 +626,16 @@ pub async fn evaluate_command(
             "instructions": "Which of these best describes the command's effect?",
             "criteria": reason_criteria,
         },
+        (SEVERITY_QUESTION_ID): {
+            "type": SCORE_QUESTION_TYPE,
+            "instructions": "If this exact command runs in this working directory, how severe is the worst realistic outcome?",
+            "levels": severity_levels,
+        },
     });
     let state = Value::Object(state);
     let provider = config.provider;
 
-    evaluate_state(
+    let decision = evaluate_state(
         config,
         "evaluate_command",
         &state,
@@ -623,6 +662,13 @@ pub async fn evaluate_command(
                 .unwrap_or(REASON_UNKNOWN)
                 .to_string();
 
+            // 等级缺失或越界不猜：留空并记录原因，不拖累 verdict。
+            let (severity, severity_score, severity_error) =
+                match resolve_severity(answers.and_then(|map| map.get(SEVERITY_QUESTION_ID)), provider) {
+                    Ok((severity, score)) => (Some(severity), Some(score), None),
+                    Err(error) => (None, None, Some(error)),
+                };
+
             Ok(CommandDecision {
                 // 只有明确的 allow 才放行，其它情况都保留确认提示。
                 allow: verdict == ALLOW_OPTION,
@@ -632,11 +678,163 @@ pub async fn evaluate_command(
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0)
                     .clamp(0.0, 1.0),
+                severity,
+                severity_score,
+                severity_error,
             })
         },
     )
     .await
-    .into_result()
+    .into_result()?;
+
+    log_command_decision(config, &decision).await;
+    Ok(decision)
+}
+
+/// 从 score 答案解析风险等级：取概率最大的档位（并列取更高档），score 仅作展示。
+///
+/// 档位概率缺失、概率非法、label 不在预设集合或序号越界都返回错误。
+fn resolve_severity(
+    answer: Option<&Value>,
+    provider: DecisionProvider,
+) -> std::result::Result<(String, f64), String> {
+    let provider_name = provider.as_str();
+    let answer = answer.ok_or_else(|| {
+        format!("The {provider_name} decision model did not answer the severity question")
+    })?;
+
+    let levels = answer
+        .get("levels")
+        .and_then(Value::as_array)
+        .filter(|levels| !levels.is_empty())
+        .ok_or_else(|| {
+            format!("The {provider_name} decision model returned no severity level probabilities")
+        })?;
+
+    let mut best: Option<(usize, f64)> = None;
+    let mut probabilities = vec![0.0_f64; SEVERITY_LEVELS.len()];
+
+    for level in levels {
+        let probability = level
+            .get("probability")
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .ok_or_else(|| {
+                format!("The {provider_name} decision model returned an invalid severity probability")
+            })?;
+
+        // OpenAI 带 label，按 label 校验；TypeSafe 只有档位序号。
+        let rank = match level.get("label").and_then(Value::as_str) {
+            Some(label) => SEVERITY_LEVELS
+                .iter()
+                .position(|(key, _)| *key == label)
+                .ok_or_else(|| {
+                    format!(
+                        "The {provider_name} decision model returned an unknown severity level '{label}'"
+                    )
+                })?,
+            None => level
+                .get("index")
+                .and_then(Value::as_u64)
+                .and_then(|index| usize::try_from(index).ok())
+                .filter(|index| *index < SEVERITY_LEVELS.len())
+                .ok_or_else(|| {
+                    format!(
+                        "The {provider_name} decision model returned a severity level outside the preset scale"
+                    )
+                })?,
+        };
+
+        probabilities[rank] = probability;
+        let replace = match best {
+            None => true,
+            Some((best_rank, best_probability)) => {
+                probability > best_probability
+                    || (probability == best_probability && rank > best_rank)
+            }
+        };
+        if replace {
+            best = Some((rank, probability));
+        }
+    }
+
+    let (rank, _) = best.ok_or_else(|| {
+        format!("The {provider_name} decision model returned no severity level probabilities")
+    })?;
+
+    let top = (SEVERITY_LEVELS.len() - 1) as f64;
+    // 优先用模型返回的 score；缺失时按档位概率加权补算，同样只作展示。
+    let score = answer
+        .get("score")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .unwrap_or_else(|| {
+            let total: f64 = probabilities.iter().sum();
+            if total > 0.0 {
+                probabilities
+                    .iter()
+                    .enumerate()
+                    .map(|(index, probability)| index as f64 * probability)
+                    .sum::<f64>()
+                    / total
+            } else {
+                rank as f64
+            }
+        })
+        .clamp(0.0, top);
+
+    Ok((SEVERITY_LEVELS[rank].0.to_string(), score))
+}
+
+/// 记录一次敏感命令判定（best effort）；不写命令原文，避免把敏感参数落进日志。
+/// 等级解析失败时升为 WARN 并附原因，便于排查不支持 score 的端点。
+async fn log_command_decision(config: &DecisionModelConfig, decision: &CommandDecision) {
+    if crate::api::ephemeral::is_active() {
+        return;
+    }
+
+    let input = crate::storage::services::app_logs::AppLogInput {
+        level: if decision.severity_error.is_some() {
+            "WARN"
+        } else {
+            "INFO"
+        }
+        .to_string(),
+        module: "decision_model".to_string(),
+        func: "evaluate_command".to_string(),
+        line: None,
+        message: if decision.severity_error.is_some() {
+            "Sensitive command decision without a usable severity level"
+        } else {
+            "Sensitive command decision"
+        }
+        .to_string(),
+        input: None,
+        output: None,
+        duration: None,
+        context: Some(
+            json!({
+                "provider": config.provider.as_str(),
+                "model": config.model,
+                "allow": decision.allow,
+                "reason": decision.reason,
+                "confidence": decision.confidence,
+                "severity": decision.severity,
+                "severityScore": decision.severity_score,
+            })
+            .to_string(),
+        ),
+        error: decision.severity_error.clone(),
+        source: "main".to_string(),
+    };
+
+    tokio::task::spawn_blocking(move || {
+        if let Ok(database_path) = crate::storage::ensure_database_file() {
+            let _ = crate::storage::services::app_logs::insert_app_log(&database_path, &input);
+        }
+    })
+    .await
+    .ok();
 }
 
 /// 发送一次判定请求，并把两种 provider 的响应折叠后交给 `interpret`。
@@ -783,6 +981,7 @@ fn build_request_body(
 }
 
 /// TypeSafe（Jev）没有 predicate 这个名字，yes/no 概率问题叫 noul，字段一致。
+/// score 的档位在 Jev 是有序的 `criteria` 描述数组（序号即档位，无 label）。
 fn typesafe_questions(questions: &Value) -> Value {
     let Some(map) = questions.as_object() else {
         return Value::Object(Map::new());
@@ -790,8 +989,24 @@ fn typesafe_questions(questions: &Value) -> Value {
 
     let mut converted = Map::new();
     for (name, question) in map {
+        let question_type = question.get("type").and_then(Value::as_str);
+        if question_type == Some(SCORE_QUESTION_TYPE) {
+            converted.insert(
+                name.clone(),
+                json!({
+                    "type": SCORE_QUESTION_TYPE,
+                    "instructions": question.get("instructions").cloned().unwrap_or(Value::Null),
+                    "criteria": score_levels(question)
+                        .iter()
+                        .map(|level| level.get("description").cloned().unwrap_or(Value::Null))
+                        .collect::<Vec<Value>>(),
+                }),
+            );
+            continue;
+        }
+
         let mut question = question.clone();
-        if question.get("type").and_then(Value::as_str) == Some(PREDICATE_QUESTION_TYPE) {
+        if question_type == Some(PREDICATE_QUESTION_TYPE) {
             if let Some(object) = question.as_object_mut() {
                 object.insert("type".to_string(), json!(NOUL_QUESTION_TYPE));
             }
@@ -799,6 +1014,15 @@ fn typesafe_questions(questions: &Value) -> Value {
         converted.insert(name.clone(), question);
     }
     Value::Object(converted)
+}
+
+/// 内部 score 问题的档位列表（`{ label, description }`，低 -> 高）。
+fn score_levels(question: &Value) -> Vec<Value> {
+    question
+        .get("levels")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// 把内部的问题对象转换为 OpenAI Decisions 的 questions 数组。
@@ -820,6 +1044,15 @@ fn openai_questions(questions: &Value) -> Value {
                         "type": PREDICATE_QUESTION_TYPE,
                         "name": name,
                         "instructions": instructions,
+                    });
+                }
+
+                if question.get("type").and_then(Value::as_str) == Some(SCORE_QUESTION_TYPE) {
+                    return json!({
+                        "type": SCORE_QUESTION_TYPE,
+                        "name": name,
+                        "instructions": instructions,
+                        "levels": score_levels(question),
                     });
                 }
 
@@ -909,17 +1142,79 @@ fn normalize_answers(
 }
 
 /// 单条答案归一化：choice / confidence 原样保留，概率字段统一叫 probability。
+/// score 答案额外带 `score` 与 `levels: [{ index, label, probability }]`。
 fn normalize_answer(answer: &Value, provider: DecisionProvider) -> Value {
     let probability = match provider {
         DecisionProvider::Typesafe => answer.get("noul").or_else(|| answer.get("probability")),
         DecisionProvider::Openai => answer.get("probability"),
     };
 
+    // 个别兼容端点不回 type，带数值 score 的答案也按 score 处理。
+    let is_score = match answer.get("type").and_then(Value::as_str) {
+        Some(kind) => kind == SCORE_QUESTION_TYPE,
+        None => answer.get("score").and_then(Value::as_f64).is_some(),
+    };
+    let (score, levels) = if is_score {
+        (
+            answer.get("score").cloned().unwrap_or(Value::Null),
+            normalize_score_levels(answer),
+        )
+    } else {
+        (Value::Null, Value::Null)
+    };
+
     json!({
         "choice": answer.get("choice").cloned().unwrap_or(Value::Null),
         "confidence": answer.get("confidence").cloned().unwrap_or(Value::Null),
         "probability": probability.cloned().unwrap_or(Value::Null),
+        "score": score,
+        "levels": levels,
     })
+}
+
+/// score 的档位概率：TypeSafe 是 `{"0": p}` 对象（无 label），OpenAI 是
+/// `[{ value, label, probability }]` 数组。序号无法解析时 index 为 null，交给调用方报错。
+fn normalize_score_levels(answer: &Value) -> Value {
+    let level_index = |value: Option<&Value>| -> Value {
+        value
+            .and_then(|value| {
+                value.as_u64().or_else(|| {
+                    value
+                        .as_f64()
+                        .filter(|number| *number >= 0.0 && number.fract() == 0.0)
+                        .map(|number| number as u64)
+                })
+            })
+            .map(Value::from)
+            .unwrap_or(Value::Null)
+    };
+
+    match answer.get("probabilities") {
+        Some(Value::Object(map)) => Value::Array(
+            map.iter()
+                .map(|(key, probability)| {
+                    json!({
+                        "index": key.trim().parse::<u64>().map(Value::from).unwrap_or(Value::Null),
+                        "label": Value::Null,
+                        "probability": probability,
+                    })
+                })
+                .collect(),
+        ),
+        Some(Value::Array(items)) => Value::Array(
+            items
+                .iter()
+                .map(|item| {
+                    json!({
+                        "index": level_index(item.get("value")),
+                        "label": item.get("label").cloned().unwrap_or(Value::Null),
+                        "probability": item.get("probability").cloned().unwrap_or(Value::Null),
+                    })
+                })
+                .collect(),
+        ),
+        _ => Value::Null,
+    }
 }
 
 /// 构建 state 与进入问题列表的 `(结果下标, 问题 id)`。

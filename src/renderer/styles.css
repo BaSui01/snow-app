@@ -49798,6 +49798,18 @@ pre.file-viewer-code {
   user-select: none;
 }
 
+.tool-call-codebase-probability {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
 .tool-call-codebase .tool-call-codebase-line-content {
   flex: 1;
   min-width: 0;

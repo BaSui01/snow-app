@@ -830,6 +830,8 @@ type CodebaseChunk = {
   endLine: number;
   content: string;
   score: number;
+  /** 决策模型概率判定的相关性概率（未判定时缺省）。 */
+  probability?: number;
 };
 
 type CodebasePipeline = {
@@ -838,6 +840,8 @@ type CodebasePipeline = {
   refinedQuery?: string;
   /** 代理审查实际使用的提供方（decision / llm / llm_fallback）。 */
   reviewProvider?: string;
+  /** 本次审查实际使用的相关性阈值（缺省 = 二分类 choice 判定）。 */
+  relevanceThreshold?: number;
   /** 配置的决策 / 重排模型没有生效的原因。 */
   fallbackReason?: string;
 };
@@ -882,6 +886,7 @@ const parseCodebaseChunks = (values: unknown[]): CodebaseChunk[] =>
         startLine: readNumber(item, "startLine") ?? 0,
         endLine: readNumber(item, "endLine") ?? 0,
         score: readNumber(item, "score") ?? 0,
+        probability: readNumber(item, "probability"),
         content,
       };
     })
@@ -895,6 +900,7 @@ const parseCodebasePipeline = (value: unknown): CodebasePipeline | null => {
     attempts: readNumber(value, "attempts") ?? 1,
     refinedQuery: optional(readString(value, "refinedQuery")),
     reviewProvider: optional(readString(value, "agentReviewProvider")),
+    relevanceThreshold: readNumber(value, "relevanceThreshold"),
     fallbackReason: optional(readString(value, "fallbackReason")),
   };
 };
@@ -1018,6 +1024,16 @@ const renderCodebase = (tool: SnowRemoteToolCall): HTMLElement | null => {
         }),
       );
     }
+    if (pipeline.relevanceThreshold !== undefined) {
+      flags.push(
+        badge(
+          tr("codebase.pipeline.threshold", {
+            threshold: pipeline.relevanceThreshold.toFixed(2),
+          }),
+          { variant: "info" },
+        ),
+      );
+    }
     if (pipeline.type === "reranking_fallback") {
       flags.push(
         badge(tr("codebase.pipeline.rerankingFallback"), { variant: "warn" }),
@@ -1072,6 +1088,15 @@ const renderCodebase = (tool: SnowRemoteToolCall): HTMLElement | null => {
             textSpan("tc-search-loc", range || fileName(chunk.relativePath)),
             badge(formatScore(chunk.score), { variant: "info" }),
           );
+          if (chunk.probability !== undefined) {
+            head.append(
+              badge(
+                tr("codebase.probability", {
+                  probability: chunk.probability.toFixed(2),
+                }),
+              ),
+            );
+          }
           const block = el("div", "tc-search-chunk");
           block.append(head, tcPre(chunk.content, { maxLines: 20 }));
           return block;

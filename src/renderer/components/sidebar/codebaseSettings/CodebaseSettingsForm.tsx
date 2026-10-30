@@ -313,6 +313,22 @@ export function CodebaseSettingsForm({
                 disabled={isBusy}
               />
             </label>
+            {/* 只有选择决策模型审查时才需要相关性阈值；留空 = 二分类判定。 */}
+            {form.agentReviewModelId !== ""
+              ? renderTextInput(
+                  "agentReviewRelevanceThreshold",
+                  t("settings.codebaseRelevanceThreshold", {
+                    defaultValue: "Relevance threshold (0-1)",
+                  }),
+                  "0.50",
+                  "number",
+                  0,
+                  t("settings.codebaseRelevanceThresholdHint", {
+                    defaultValue:
+                      "Keep results whose relevance probability reaches this value. Leave empty for binary verdicts.",
+                  }),
+                )
+              : null}
           </div>
           <span className="settings-item-description">
             {t("settings.codebaseReviewModelHint", {

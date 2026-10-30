@@ -238,6 +238,8 @@ impl CodebaseService {
 
         let enable_reranking = scope.enable_reranking.unwrap_or(false);
         let enable_agent_review = scope.enable_agent_review.unwrap_or(false);
+        // 全局概率阈值：None = 决策模型沿用 choice 二分类判定。
+        let relevance_threshold = settings.agent_review_relevance_threshold;
 
         // Review backend for this search: the decision model selected in the
         // codebase settings when it is still usable, the basic LLM model
@@ -298,6 +300,7 @@ impl CodebaseService {
                 query.to_string(),
                 initial_results,
                 decision_config,
+                relevance_threshold,
                 move |refined_query: String| {
                     let db_path = db_path.clone();
                     let pid = pid.clone();
@@ -319,9 +322,12 @@ impl CodebaseService {
             .await
             .map_err(|e| Error::from_reason(format!("Agent review failed: {}", e.reason)))?;
 
-            // Truncate to top_n after review.
+            // Truncate to top_n after review; probabilities stay aligned.
             let mut results = review_result.results;
             results.truncate(top_n);
+            let mut probabilities = review_result.probabilities;
+            probabilities.resize(results.len(), None);
+            let applied_threshold = review_result.relevance_threshold;
 
             // The provider that actually reviewed: an unusable selection or a
             // failed decision model request means the LLM took over.
@@ -336,6 +342,8 @@ impl CodebaseService {
 
             PipelineOutcome {
                 results,
+                probabilities,
+                relevance_threshold: applied_threshold,
                 pipeline_type: PipelineType::AgentReview,
                 attempts: review_result.attempts,
                 refined_query: if review_result.effective_query != query {
@@ -387,6 +395,8 @@ impl CodebaseService {
                 };
             PipelineOutcome {
                 results,
+                probabilities: Vec::new(),
+                relevance_threshold: None,
                 pipeline_type: if fallback_reason.is_some() {
                     PipelineType::RerankingFallback
                 } else {
@@ -402,6 +412,8 @@ impl CodebaseService {
             // No post-processing — return top_n by cosine similarity.
             PipelineOutcome {
                 results: initial_results.into_iter().take(top_n).collect(),
+                probabilities: Vec::new(),
+                relevance_threshold: None,
                 pipeline_type: PipelineType::Cosine,
                 attempts: 1,
                 refined_query: None,
@@ -417,7 +429,8 @@ impl CodebaseService {
         // Build the response JSON.
         let results_json: Vec<Value> = final_results
             .iter()
-            .map(|r| {
+            .enumerate()
+            .map(|(index, r)| {
                 json!({
                     "filePath": r.file_path,
                     "relativePath": r.relative_path,
@@ -426,6 +439,8 @@ impl CodebaseService {
                     "endLine": r.end_line,
                     "content": r.content,
                     "score": r.score,
+                    // 概率判定保留的条目回传概率，便于解释「为什么留下/被过滤」。
+                    "probability": pipeline.probabilities.get(index).copied().flatten(),
                 })
             })
             .collect();
@@ -446,6 +461,7 @@ impl CodebaseService {
                 "fallbackReason": pipeline.fallback_reason,
                 "attempts": pipeline.attempts,
                 "refinedQuery": pipeline.refined_query,
+                "relevanceThreshold": pipeline.relevance_threshold,
                 "initialCount": pipeline.initial_count,
                 "finalCount": final_count,
             }
@@ -502,6 +518,8 @@ struct CodebaseSettings {
     /// baseUrl / apiKey / model 存在 system_settings 的 `decision_models` 里，
     /// 由 crate::api::decision_model 按这里的 id 解析。
     agent_review_model_id: String,
+    /// agent 审查的相关性阈值（0.0-1.0）；None = 沿用 choice 二分类判定。
+    agent_review_relevance_threshold: Option<f64>,
 }
 
 fn load_codebase_settings(database_path: &std::path::Path) -> Result<CodebaseSettings> {
@@ -556,6 +574,10 @@ impl PipelineType {
 /// results and metadata about what happened.
 struct PipelineOutcome {
     results: Vec<crate::storage::services::codebase_index::SearchResult>,
+    /// Relevance probability aligned with `results` (agent review only).
+    probabilities: Vec<Option<f64>>,
+    /// Probability threshold actually applied by the decision model review.
+    relevance_threshold: Option<f64>,
     pipeline_type: PipelineType,
     /// Number of review/search attempts made (1 = single pass, up to 3
     /// for agent review with query refinement).

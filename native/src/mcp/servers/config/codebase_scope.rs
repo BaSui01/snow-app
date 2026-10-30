@@ -3,7 +3,8 @@
 //! 全局（不带 projectId，或显式 `projectId: ""`）：
 //!   key = `settings`，真源是 system_settings 的 `codebase_settings`，包含
 //!   embedding 模型/密钥/维度、批量与分块参数、reranking 配置，以及 agent
-//!   review 选用的决策模型 id（`agentReviewModelId`，空 = 使用基础 LLM 模型；
+//!   review 选用的决策模型 id（`agentReviewModelId`，空 = 使用基础 LLM 模型）
+//!   与相关性阈值（`agentReviewRelevanceThreshold`，0.0-1.0，null = 二分类判定；
 //!   决策模型自身的 baseUrl / apiKey / model 存在 system_settings 的
 //!   `decision_models`，由「API 配置 → 决策模型」页面维护）。本域按
 //!   **白名单字段 merge** 写入，未列出的字段原样保留；`embeddingApiKey` /
@@ -58,6 +59,7 @@ const WRITABLE_FIELDS: &[&str] = &[
     "rerankingContextLength",
     "rerankingTopN",
     "agentReviewModelId",
+    "agentReviewRelevanceThreshold",
     "configJson",
     "source",
 ];

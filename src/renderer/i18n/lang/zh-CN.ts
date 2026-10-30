@@ -1663,6 +1663,8 @@ export const zhCN = {
   "toolCall.codebase.pipeline.reranking": "已重排序",
   "toolCall.codebase.pipeline.agentReview": "已审查",
   "toolCall.codebase.pipeline.attempts": "尝试 {{count}} 次",
+  "toolCall.codebase.pipeline.threshold": "阈值 {{threshold}}",
+  "toolCall.codebase.probabilityHint": "决策模型给出的相关性概率",
   "toolCall.codebase.pipeline.refinedQuery": "优化查询:",
   "toolCall.codebase.progress.embedding": "正在嵌入查询",
   "toolCall.codebase.progress.searching": "正在搜索向量",
@@ -2714,6 +2716,9 @@ export const zhCN = {
   "settings.codebaseReviewModelUnavailable": "不可用",
   "settings.codebaseReviewModelHint":
     "决策模型在「API 配置 → 决策模型」中管理，这里只能选择已启用的模型。",
+  "settings.codebaseRelevanceThreshold": "相关性阈值（0-1）",
+  "settings.codebaseRelevanceThresholdHint":
+    "保留相关性概率不低于该值的结果；留空则沿用二分类判定。",
   "settings.codebaseBatchChunkingSettings": "批处理和分块",
   "settings.codebaseBatchMaxLines": "批处理最大行数",
   "settings.codebaseBatchConcurrency": "批处理并发数",
@@ -2751,6 +2756,8 @@ export const zhCN = {
   "settings.codebaseValidationRerankingContextLengthPositive":
     "重排上下文长度必须大于 0。",
   "settings.codebaseValidationRerankingTopNPositive": "重排 Top N 必须大于 0。",
+  "settings.codebaseValidationRelevanceThreshold":
+    "相关性阈值必须是 0 到 1 之间的数字。",
   "settings.apiTabLlmModels": "LLM 模型",
   "settings.apiTabImageModels": "生图模型",
   "settings.apiTabDecisionModels": "决策模型",

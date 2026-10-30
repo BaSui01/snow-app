@@ -1773,6 +1773,9 @@ export const en = {
   "toolCall.codebase.pipeline.reranking": "Reranked",
   "toolCall.codebase.pipeline.agentReview": "Agent reviewed",
   "toolCall.codebase.pipeline.attempts": "{{count}} attempts",
+  "toolCall.codebase.pipeline.threshold": "Threshold {{threshold}}",
+  "toolCall.codebase.probabilityHint":
+    "Relevance probability returned by the decision model",
   "toolCall.codebase.pipeline.refinedQuery": "Refined query:",
   "toolCall.codebase.progress.embedding": "Embedding query",
   "toolCall.codebase.progress.searching": "Searching vectors",
@@ -2865,6 +2868,9 @@ export const en = {
   "settings.codebaseReviewModelUnavailable": "Unavailable",
   "settings.codebaseReviewModelHint":
     "Decision models are managed in API configuration → Decision models; only enabled ones can be selected here.",
+  "settings.codebaseRelevanceThreshold": "Relevance threshold (0-1)",
+  "settings.codebaseRelevanceThresholdHint":
+    "Keep results whose relevance probability reaches this value; leave empty for binary verdicts.",
   "settings.codebaseBatchChunkingSettings": "Batch and chunking",
   "settings.codebaseBatchMaxLines": "Batch max lines",
   "settings.codebaseBatchConcurrency": "Batch concurrency",
@@ -2906,6 +2912,8 @@ export const en = {
     "Reranking context length must be greater than 0.",
   "settings.codebaseValidationRerankingTopNPositive":
     "Reranking Top N must be greater than 0.",
+  "settings.codebaseValidationRelevanceThreshold":
+    "Relevance threshold must be a number between 0 and 1.",
   "settings.apiTabLlmModels": "LLM models",
   "settings.apiTabImageModels": "Image models",
   "settings.apiTabDecisionModels": "Decision models",

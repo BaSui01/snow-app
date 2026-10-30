@@ -29,6 +29,7 @@ const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   rerankingContextLength: 4096,
   rerankingTopN: 5,
   agentReviewModelId: "",
+  agentReviewRelevanceThreshold: null,
   configJson: "{}",
   source: "manual",
 };
@@ -52,6 +53,18 @@ const toEmbeddingDimensions = (value: unknown, fallback: number): number => {
       : Number.parseInt(String(value ?? ""), 10);
 
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+/** 相关性阈值：接受数字或数字字符串，越界/空值按「未设置」处理。 */
+const toRelevanceThreshold = (value: unknown): number | null => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : null;
 };
 
 export const normalizeCodebaseSettings = (
@@ -130,6 +143,9 @@ export const normalizeCodebaseSettings = (
       DEFAULT_CODEBASE_SETTINGS.rerankingTopN,
     ),
     agentReviewModelId: toText(source.agentReviewModelId).trim(),
+    agentReviewRelevanceThreshold: toRelevanceThreshold(
+      source.agentReviewRelevanceThreshold,
+    ),
     configJson: toText(source.configJson, DEFAULT_CODEBASE_SETTINGS.configJson),
     source: sourceLabel || DEFAULT_CODEBASE_SETTINGS.source,
   };
@@ -146,6 +162,21 @@ const readStoredAgentReviewModelId = (raw: string | null): string => {
     return isRecord(parsed) ? toText(parsed.agentReviewModelId).trim() : "";
   } catch {
     return "";
+  }
+};
+
+const readStoredRelevanceThreshold = (raw: string | null): number | null => {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRecord(parsed)
+      ? toRelevanceThreshold(parsed.agentReviewRelevanceThreshold)
+      : null;
+  } catch {
+    return null;
   }
 };
 
@@ -179,6 +210,7 @@ export const readSnowCliCodebaseSettings = async (
   const chunking = isRecord(projectCodebase.chunking)
     ? projectCodebase.chunking
     : {};
+  const storedRaw = await native.getSystemSettingValue(CODEBASE_SETTING_CODE);
   const config = normalizeCodebaseSettings({
     profileName: "default",
     embeddingType: embedding.type,
@@ -198,10 +230,9 @@ export const readSnowCliCodebaseSettings = async (
     rerankingApiKey: reranking.apiKey,
     rerankingContextLength: reranking.contextLength,
     rerankingTopN: reranking.topN,
-    // Snow CLI 没有决策模型的概念：保留当前选中的决策模型，避免同步后审查模型被重置为 LLM。
-    agentReviewModelId: readStoredAgentReviewModelId(
-      await native.getSystemSettingValue(CODEBASE_SETTING_CODE),
-    ),
+    // Snow CLI 没有决策模型与阈值的概念：保留当前配置，避免同步后审查策略被重置。
+    agentReviewModelId: readStoredAgentReviewModelId(storedRaw),
+    agentReviewRelevanceThreshold: readStoredRelevanceThreshold(storedRaw),
     configJson: JSON.stringify({
       global: globalSettings ?? {},
       project: projectSettings ?? {},

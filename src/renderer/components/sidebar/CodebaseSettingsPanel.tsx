@@ -337,6 +337,20 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
         }
       }
 
+      // 阈值只在选择决策模型后生效；留空表示沿用二分类判定。
+      if (
+        currentForm.agentReviewModelId.trim() &&
+        currentForm.agentReviewRelevanceThreshold.trim()
+      ) {
+        const threshold = Number(currentForm.agentReviewRelevanceThreshold);
+        if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+          return t("settings.codebaseValidationRelevanceThreshold", {
+            defaultValue:
+              "Relevance threshold must be a number between 0 and 1.",
+          });
+        }
+      }
+
       return null;
     },
     [t],

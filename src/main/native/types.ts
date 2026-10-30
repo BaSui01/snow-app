@@ -199,6 +199,8 @@ export type CodebaseSettingsInput = {
   rerankingTopN: number;
   /** 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）；导入 Snow CLI 配置时原样保留。 */
   agentReviewModelId: string;
+  /** 决策模型审查的相关性阈值（0-1）；null = 二分类 choice 判定；导入 Snow CLI 配置时原样保留。 */
+  agentReviewRelevanceThreshold: number | null;
   configJson: string;
   source: string;
 };

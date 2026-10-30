@@ -394,12 +394,45 @@ pub fn get_system_setting_value(
     Ok(value)
 }
 
+/// codebase_settings 全局写入边界：agent 审查阈值只能是 0.0-1.0 的数字或 null。
+fn validate_codebase_settings_value(setting_value: &str) -> Result<()> {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(setting_value) else {
+        return Ok(());
+    };
+    let Some(threshold) = parsed
+        .as_object()
+        .and_then(|object| object.get("agentReviewRelevanceThreshold"))
+    else {
+        return Ok(());
+    };
+    if threshold.is_null() {
+        return Ok(());
+    }
+    let valid = threshold
+        .as_f64()
+        .map(|value| value.is_finite() && (0.0..=1.0).contains(&value))
+        .unwrap_or(false);
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::new(
+            Status::InvalidArg,
+            "agentReviewRelevanceThreshold must be a number between 0.0 and 1.0, or null"
+                .to_string(),
+        ))
+    }
+}
+
 pub fn set_system_setting(
     database_path: &Path,
     setting_name: &str,
     setting_code: &str,
     setting_value: &str,
 ) -> Result<()> {
+    if setting_code == DEFAULT_CODEBASE_SETTING_CODE {
+        validate_codebase_settings_value(setting_value)?;
+    }
+
     database::open_connection(database_path)
         .and_then(|connection| {
             set_system_setting_with_connection(

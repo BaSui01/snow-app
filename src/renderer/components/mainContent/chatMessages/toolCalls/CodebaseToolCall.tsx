@@ -35,6 +35,8 @@ type CodebaseResult = {
   endLine: number;
   content: string;
   score: number;
+  /** 决策模型概率判定给出的相关性概率；null = 未走概率判定。 */
+  probability: number | null;
 };
 
 type PipelineInfo = {
@@ -42,6 +44,8 @@ type PipelineInfo = {
   agentReview: boolean;
   /** 代理审查实际使用的提供方：decision / llm / llm_fallback（决策模型不可用）。 */
   agentReviewProvider: "decision" | "llm" | "llm_fallback" | null;
+  /** 本次审查实际使用的相关性阈值；null = 二分类 choice 判定。 */
+  relevanceThreshold: number | null;
   reranking: boolean;
   /** 配置的决策 / 重排模型没有生效的原因。 */
   fallbackReason: string | null;
@@ -147,6 +151,10 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
           endLine: typeof r.endLine === "number" ? (r.endLine as number) : 0,
           content: r.content as string,
           score: typeof r.score === "number" ? (r.score as number) : 0,
+          probability:
+            typeof r.probability === "number"
+              ? (r.probability as number)
+              : null,
         }));
 
       const pipelineRaw = isRecord(parsed.pipeline) ? parsed.pipeline : null;
@@ -159,6 +167,10 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
             )
               ? (pipelineRaw.agentReviewProvider as PipelineInfo["agentReviewProvider"])
               : null,
+            relevanceThreshold:
+              typeof pipelineRaw.relevanceThreshold === "number"
+                ? (pipelineRaw.relevanceThreshold as number)
+                : null,
             reranking: pipelineRaw.reranking === true,
             fallbackReason:
               typeof pipelineRaw.fallbackReason === "string" &&
@@ -187,6 +199,7 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
             type: "cosine",
             agentReview: false,
             agentReviewProvider: null,
+            relevanceThreshold: null,
             reranking: false,
             fallbackReason: null,
             attempts: 1,
@@ -371,11 +384,18 @@ export const CodebaseToolCall = ({
           : p.agentReviewProvider === "llm"
             ? t("toolCall.codebase.pipeline.providerLlm")
             : "";
+      const threshold =
+        p.relevanceThreshold !== null
+          ? t("toolCall.codebase.pipeline.threshold", {
+              values: { threshold: p.relevanceThreshold.toFixed(2) },
+            })
+          : "";
       return {
         icon: BrainCircuit,
         label: t("toolCall.codebase.pipeline.agentReview"),
         className: "tool-call-codebase-pipeline-agent",
-        detail: [provider, attempts].filter(Boolean).join(" · ") || null,
+        detail:
+          [provider, attempts, threshold].filter(Boolean).join(" · ") || null,
         fallback:
           p.agentReviewProvider === "llm_fallback"
             ? t("toolCall.codebase.pipeline.reviewFallback")
@@ -645,6 +665,14 @@ export const CodebaseToolCall = ({
                           <span className="tool-call-codebase-score">
                             {formatScore(result.score)}
                           </span>
+                          {result.probability !== null ? (
+                            <span
+                              className="tool-call-codebase-probability"
+                              title={t("toolCall.codebase.probabilityHint")}
+                            >
+                              {result.probability.toFixed(2)}
+                            </span>
+                          ) : null}
                           <code className="tool-call-codebase-line-content">
                             {result.content}
                           </code>

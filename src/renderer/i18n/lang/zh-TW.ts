@@ -1664,6 +1664,8 @@ export const zhTW = {
   "toolCall.codebase.pipeline.reranking": "已重排序",
   "toolCall.codebase.pipeline.agentReview": "已審查",
   "toolCall.codebase.pipeline.attempts": "嘗試 {{count}} 次",
+  "toolCall.codebase.pipeline.threshold": "閾值 {{threshold}}",
+  "toolCall.codebase.probabilityHint": "決策模型給出的相關性機率",
   "toolCall.codebase.pipeline.refinedQuery": "優化查詢:",
   "toolCall.codebase.progress.embedding": "正在嵌入查詢",
   "toolCall.codebase.progress.searching": "正在搜尋向量",
@@ -2713,6 +2715,9 @@ export const zhTW = {
   "settings.codebaseReviewModelUnavailable": "不可用",
   "settings.codebaseReviewModelHint":
     "決策模型在「API 配置 → 決策模型」中管理，這裡只能選擇已啟用的模型。",
+  "settings.codebaseRelevanceThreshold": "相關性閾值（0-1）",
+  "settings.codebaseRelevanceThresholdHint":
+    "保留相關性機率不低於該值的結果；留空則沿用二分類判定。",
   "settings.codebaseBatchChunkingSettings": "批次處理和分塊",
   "settings.codebaseBatchMaxLines": "批次處理最大行數",
   "settings.codebaseBatchConcurrency": "批次處理並發數",
@@ -2751,6 +2756,8 @@ export const zhTW = {
   "settings.codebaseValidationRerankingContextLengthPositive":
     "重排上下文長度必須大於 0。",
   "settings.codebaseValidationRerankingTopNPositive": "重排 Top N 必須大於 0。",
+  "settings.codebaseValidationRelevanceThreshold":
+    "相關性閾值必須是 0 到 1 之間的數字。",
   "settings.apiTabLlmModels": "LLM 模型",
   "settings.apiTabImageModels": "生圖模型",
   "settings.apiTabDecisionModels": "決策模型",

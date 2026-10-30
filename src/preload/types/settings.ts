@@ -251,6 +251,8 @@ export type CodebaseSettingsInput = {
   rerankingTopN: number;
   /** 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）。决策模型配置在 API 配置页维护。 */
   agentReviewModelId: string;
+  /** 决策模型审查的相关性阈值（0-1）；null = 二分类 choice 判定。 */
+  agentReviewRelevanceThreshold: number | null;
   configJson: string;
   source: string;
 };

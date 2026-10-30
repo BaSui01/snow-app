@@ -43,6 +43,18 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+/** 相关性阈值：接受数字或数字字符串，越界/空值按「未设置」处理。 */
+const toRelevanceThreshold = (value: unknown): number | null => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : null;
+};
+
 /**
  * 旧版 codebase 设置把 TypeSafe 的 baseUrl / apiKey / model 内联保存；现在这些配置统一放在
  * 决策模型里（见 constants/decisionModels.ts），这里读出旧值供一次性迁移使用。
@@ -166,6 +178,9 @@ export const normalizeCodebaseSettings = (
       DEFAULT_CODEBASE_SETTINGS.rerankingTopN,
     ),
     agentReviewModelId: toText(source.agentReviewModelId).trim(),
+    agentReviewRelevanceThreshold: toRelevanceThreshold(
+      source.agentReviewRelevanceThreshold,
+    ),
     configJson: toText(source.configJson, DEFAULT_CODEBASE_SETTINGS.configJson),
     source: sourceLabel || DEFAULT_CODEBASE_SETTINGS.source,
   };
@@ -196,6 +211,10 @@ export const toCodebaseForm = (
   rerankingContextLength: String(settings.rerankingContextLength),
   rerankingTopN: String(settings.rerankingTopN),
   agentReviewModelId: settings.agentReviewModelId,
+  agentReviewRelevanceThreshold:
+    settings.agentReviewRelevanceThreshold === null
+      ? ""
+      : String(settings.agentReviewRelevanceThreshold),
 });
 
 export const toSnowCliCodebaseConfigJson = (

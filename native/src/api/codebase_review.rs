@@ -6,10 +6,12 @@
 //!   vector search results and removes irrelevant chunks. If more than 50% of
 //!   the results are deemed irrelevant, the model is asked to generate a
 //!   refined search query and the search is retried (up to 3 attempts total).
-//! * **Decision model** (TypeSafe System One or OpenAI Decisions) — it answers
-//!   one yes/no question per result, which is cheaper and faster than a
-//!   generative review. Its verdict *is* the review: the LLM is never asked to
-//!   judge the same results again. A decision model cannot write a refined
+//! * **Decision model** (TypeSafe System One / Jev or OpenAI Decisions) — it
+//!   answers one yes/no question per result, which is cheaper and faster than a
+//!   generative review. When the project sets a relevance threshold it asks the
+//!   probability question instead (predicate, or noul on TypeSafe) and filters
+//!   by the returned probability. Its verdict *is* the review: the LLM is never
+//!   asked to judge the same results again. A decision model cannot write a refined
 //!   query, so when its verdict sends the loop into a re-search the LLM is used
 //!   for that single job — writing the refined query — and the decision model
 //!   then judges the re-searched results. Only a decision model failure
@@ -53,6 +55,12 @@ const IRRELEVANT_FRACTION_THRESHOLD: f64 = 0.5;
 struct ReviewOutcome {
     /// Indices (0-based) of results deemed relevant.
     relevant_indices: Vec<usize>,
+    /// Relevance probability per reviewed result (aligned by index). Only the
+    /// predicate/noul path produces values; `None` means "not judged by a
+    /// probability" (choice mode, LLM review, or a missing answer).
+    probabilities: Vec<Option<f64>>,
+    /// The probability threshold this pass filtered with, `None` in choice mode.
+    relevance_threshold: Option<f64>,
     /// A refined query if the model suggested one, empty otherwise.
     refined_query: String,
     /// Why the configured decision model was skipped for this pass (the LLM
@@ -64,6 +72,12 @@ struct ReviewOutcome {
 pub struct AgentReviewResult {
     /// The final set of search results after review (irrelevant ones removed).
     pub results: Vec<SearchResult>,
+    /// Relevance probability aligned with `results`. Empty entries mean the
+    /// result was never scored by a probability question.
+    pub probabilities: Vec<Option<f64>>,
+    /// The probability threshold actually applied to the final results
+    /// (`None` when the review used binary choice verdicts).
+    pub relevance_threshold: Option<f64>,
     /// The query that produced the final results (may differ from the
     /// original if a refined query was used).
     pub effective_query: String,
@@ -124,6 +138,9 @@ impl ReviewPhase {
 /// for a per-result relevance verdict and only uses the LLM to write a refined
 /// query when a re-search is needed, `None` always uses the LLM for the whole
 /// review.
+/// `relevance_threshold` switches the decision model from binary choice verdicts
+/// to probability questions: `Some(t)` keeps results with
+/// `probability >= t`, `None` keeps the existing choice behavior.
 /// `re_search_fn` is a closure that takes a query string and returns a
 /// new set of search results — this is called when the model suggests a
 /// refined query.
@@ -139,6 +156,7 @@ pub async fn run_agent_review<F, Fut, P>(
     initial_query: String,
     initial_results: Vec<SearchResult>,
     decision_config: Option<DecisionModelConfig>,
+    relevance_threshold: Option<f64>,
     re_search_fn: F,
     on_progress: P,
 ) -> Result<AgentReviewResult>
@@ -166,6 +184,8 @@ where
             });
             return Ok(AgentReviewResult {
                 results: current_results,
+                probabilities: Vec::new(),
+                relevance_threshold: None,
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
@@ -185,6 +205,8 @@ where
             });
             return Ok(AgentReviewResult {
                 results: current_results,
+                probabilities: vec![None; total],
+                relevance_threshold: None,
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
@@ -199,10 +221,15 @@ where
             total_count: current_results.len(),
             relevant_count: None,
             refined_query: None,
-});
+        });
 
-        let mut outcome =
-            review_results(&current_query, &current_results, decision_config.as_ref()).await?;
+        let mut outcome = review_results(
+            &current_query,
+            &current_results,
+            decision_config.as_ref(),
+            relevance_threshold,
+        )
+        .await?;
         if fallback_reason.is_none() {
             fallback_reason = outcome.fallback_reason.take();
         }
@@ -211,12 +238,19 @@ where
         let relevant_count = outcome.relevant_indices.len();
         let irrelevant_count = total.saturating_sub(relevant_count);
         let irrelevant_fraction = irrelevant_count as f64 / total as f64;
+        let applied_threshold = outcome.relevance_threshold;
 
-        // Filter to relevant results.
-        let filtered: Vec<SearchResult> = outcome
+        // Keep each result paired with its probability so the caller can report
+        // why a result was kept (only the predicate path fills probabilities).
+        let filtered: Vec<(SearchResult, Option<f64>)> = outcome
             .relevant_indices
             .iter()
-            .filter_map(|&i| current_results.get(i).cloned())
+            .filter_map(|&i| {
+                current_results
+                    .get(i)
+                    .cloned()
+                    .map(|result| (result, outcome.probabilities.get(i).copied().flatten()))
+            })
             .collect();
 
         // If irrelevant fraction is within threshold, return filtered results.
@@ -229,8 +263,11 @@ where
                 relevant_count: Some(relevant_count),
                 refined_query: None,
             });
+            let (results, probabilities) = filtered.into_iter().unzip();
             return Ok(AgentReviewResult {
-                results: filtered,
+                results,
+                probabilities,
+                relevance_threshold: applied_threshold,
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
@@ -249,8 +286,11 @@ where
                 relevant_count: Some(relevant_count),
                 refined_query: None,
             });
+            let (results, probabilities) = filtered.into_iter().unzip();
             return Ok(AgentReviewResult {
-                results: filtered,
+                results,
+                probabilities,
+                relevance_threshold: applied_threshold,
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
@@ -278,18 +318,22 @@ where
 /// The decision model runs first when configured. Its verdict is the review, so
 /// the LLM is only consulted for the one thing a decision model cannot do:
 /// writing a refined query when the verdict sends the loop into a re-search.
+/// `relevance_threshold` only affects the decision model path; the LLM review
+/// never returns probabilities.
 /// Any decision model failure falls back to the full LLM review, so the search
 /// never degrades because of the review backend.
 async fn review_results(
     query: &str,
     results: &[SearchResult],
     decision_config: Option<&DecisionModelConfig>,
+    relevance_threshold: Option<f64>,
 ) -> Result<ReviewOutcome> {
     let Some(config) = decision_config else {
         return review_via_llm(query, results).await;
     };
 
-    let outcome = match review_via_decision_model(config, query, results).await {
+    let outcome = match review_via_decision_model(config, query, results, relevance_threshold).await
+    {
         Ok(outcome) => outcome,
         Err(error) => {
             log_review_fallback(
@@ -319,6 +363,8 @@ async fn review_results(
     match write_refined_query(query, results).await {
         Ok(refined_query) => Ok(ReviewOutcome {
             relevant_indices: outcome.relevant_indices,
+            probabilities: outcome.probabilities,
+            relevance_threshold: outcome.relevance_threshold,
             refined_query,
             fallback_reason: None,
         }),
@@ -339,12 +385,20 @@ async fn review_via_decision_model(
     config: &DecisionModelConfig,
     query: &str,
     results: &[SearchResult],
+    relevance_threshold: Option<f64>,
 ) -> Result<ReviewOutcome> {
-    let relevant_indices =
-        crate::api::decision_model::evaluate_relevance(config, query, results).await?;
+    let evaluation = crate::api::decision_model::evaluate_relevance(
+        config,
+        query,
+        results,
+        relevance_threshold,
+    )
+    .await?;
 
     Ok(ReviewOutcome {
-        relevant_indices,
+        relevant_indices: evaluation.relevant_indices,
+        probabilities: evaluation.probabilities,
+        relevance_threshold: evaluation.relevance_threshold,
         // A decision model cannot write a refined query, so the review loop
         // always starts with an empty one. The caller asks the LLM for a refined
         // query when the verdict requires a re-search.
@@ -650,6 +704,9 @@ fn parse_review_response(text: &str, total_results: usize) -> Result<ReviewOutco
 
     Ok(ReviewOutcome {
         relevant_indices,
+        // The LLM review is a plain keep/drop verdict: no probabilities.
+        probabilities: vec![None; total_results],
+        relevance_threshold: None,
         refined_query,
         fallback_reason: None,
     })

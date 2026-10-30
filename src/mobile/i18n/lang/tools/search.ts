@@ -75,6 +75,9 @@ export const searchEn: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.reranking": "Reranked",
   "remote.toolCall.search.codebase.pipeline.agentReview": "Agent reviewed",
   "remote.toolCall.search.codebase.pipeline.attempts": "{{count}} attempts",
+  "remote.toolCall.search.codebase.pipeline.threshold":
+    "Threshold {{threshold}}",
+  "remote.toolCall.search.codebase.probability": "p {{probability}}",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "Refined query",
   "remote.toolCall.search.codebase.pipeline.rerankingFallback":
     "Reranking failed, kept vector order",
@@ -210,6 +213,8 @@ export const searchZhCN: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.reranking": "已重排序",
   "remote.toolCall.search.codebase.pipeline.agentReview": "已审查",
   "remote.toolCall.search.codebase.pipeline.attempts": "尝试 {{count}} 次",
+  "remote.toolCall.search.codebase.pipeline.threshold": "阈值 {{threshold}}",
+  "remote.toolCall.search.codebase.probability": "概率 {{probability}}",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "优化查询",
   "remote.toolCall.search.codebase.pipeline.rerankingFallback":
     "重排失败，已回退向量排序",
@@ -344,6 +349,8 @@ export const searchZhTW: Record<string, string> = {
   "remote.toolCall.search.codebase.pipeline.reranking": "已重排序",
   "remote.toolCall.search.codebase.pipeline.agentReview": "已審查",
   "remote.toolCall.search.codebase.pipeline.attempts": "嘗試 {{count}} 次",
+  "remote.toolCall.search.codebase.pipeline.threshold": "閾值 {{threshold}}",
+  "remote.toolCall.search.codebase.probability": "機率 {{probability}}",
   "remote.toolCall.search.codebase.pipeline.refinedQuery": "優化查詢",
   "remote.toolCall.search.codebase.pipeline.rerankingFallback":
     "重排失敗，已回退向量排序",

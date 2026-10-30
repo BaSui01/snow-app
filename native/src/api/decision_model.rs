@@ -1,11 +1,15 @@
 //! 决策模型客户端（TypeSafe System One / OpenAI Decisions）。
 //!
-//! 决策模型不生成文本，只对给定 state 逐条回答 choice 问题：代码库审查用它判定
-//! 每条结果是否相关，敏感命令辅助用它判定命令能否直接执行并给出理由分类。
+//! 决策模型不生成文本，只对给定 state 逐条回答问题：代码库审查用它判定每条结果
+//! 是否相关，敏感命令辅助用它判定命令能否直接执行并给出理由分类。
+//!
+//! 代码库审查有两种问题类型：未配置阈值时用 choice（relevant / irrelevant），
+//! 配置了相关性阈值时改用 predicate。OpenAI Decisions 叫 predicate，TypeSafe
+//! Jev 的同一能力叫 noul（yes/no 概率），请求体与响应字段在 provider 适配层互转。
 //!
 //! 两种 provider 共用同一条链路：构建 state 与问题 -> 按 provider 生成请求体 ->
-//! 把两种响应折叠成 `answers: { <name>: { choice, confidence } }` -> 同一段解释代码。
-//! 任何传输或协议失败都返回错误，由调用方决定回退，本模块不做静默降级。
+//! 把两种响应折叠成 `answers: { <name>: { choice, confidence, probability } }`
+//! -> 同一段解释代码。任何传输或协议失败都返回错误，由调用方决定回退。
 //!
 //! 全部异步执行，不阻塞 Node.js 主线程。
 
@@ -52,6 +56,11 @@ const REQUEST_TIMEOUT_SECS: u64 = 30;
 const RELEVANT_OPTION: &str = "relevant";
 const ALLOW_OPTION: &str = "allow";
 const DENY_OPTION: &str = "deny";
+
+/// 概率问题类型：OpenAI 叫 predicate，TypeSafe 叫 noul，内部统一用 predicate。
+const PREDICATE_QUESTION_TYPE: &str = "predicate";
+const NOUL_QUESTION_TYPE: &str = "noul";
+const CHOICE_QUESTION_TYPE: &str = "choice";
 
 /// 敏感命令请求的问题 id；答案按同名的 name 返回。
 const VERDICT_QUESTION_ID: &str = "verdict";
@@ -324,42 +333,54 @@ fn resolve_base_url(
     }
 }
 
+/// 相关性审查结果。
+pub struct RelevanceEvaluation {
+    /// 保留的结果下标（升序）。
+    pub relevant_indices: Vec<usize>,
+    /// 与输入结果一一对齐的概率；未询问、choice 模式或答案缺概率时为 None。
+    pub probabilities: Vec<Option<f64>>,
+    /// 本次实际生效的阈值；None 表示走的是 choice 二分类判定。
+    pub relevance_threshold: Option<f64>,
+}
+
 /// 询问决策模型：哪些搜索结果与 query 相关。
 ///
-/// 每条结果变成一个 `relevant` / `irrelevant` 的 choice 问题，由模型自己的答案决定，
-/// 不引入用户可调阈值。超出 state 预算或问题上限的结果、以及答案缺失的结果都按
-/// 相关保留，审查始终保守。
+/// `relevance_threshold` 为 None 时每条结果变成一个 `relevant` / `irrelevant`
+/// 的 choice 问题，判定完全由模型给出；为 Some(t) 时改用概率问题，按
+/// `probability >= t` 保留。超出 state 预算或问题上限的结果、以及缺概率的
+/// 结果都按相关保留，审查始终保守。
 pub async fn evaluate_relevance(
     config: &DecisionModelConfig,
     query: &str,
     results: &[SearchResult],
-) -> Result<Vec<usize>> {
+    relevance_threshold: Option<f64>,
+) -> Result<RelevanceEvaluation> {
+    let mut probabilities = vec![None; results.len()];
+
     if results.is_empty() {
-        return Ok(Vec::new());
+        return Ok(RelevanceEvaluation {
+            relevant_indices: Vec::new(),
+            probabilities,
+            relevance_threshold: None,
+        });
     }
+
+    // 越界阈值视为未配置：写入边界已校验，这里只防御存量/手改数据。
+    let threshold = relevance_threshold
+        .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
 
     let (state, asked) = build_state(query, results);
 
     // 没有任何结果进入预算：全部按相关返回，避免只拿空列表去问模型。
     if asked.is_empty() {
-        return Ok((0..results.len()).collect());
+        return Ok(RelevanceEvaluation {
+            relevant_indices: (0..results.len()).collect(),
+            probabilities,
+            relevance_threshold: threshold,
+        });
     }
 
-    let mut questions = Map::new();
-    for (_, id) in &asked {
-        questions.insert(
-            id.clone(),
-            json!({
-                "type": "choice",
-                "instructions": format!("Is result [{id}] relevant to the developer's code search query?"),
-                "criteria": {
-                    "relevant": "The excerpt matches what the query is looking for",
-                    "irrelevant": "An unrelated file, or generic boilerplate that only looks similar"
-                }
-            }),
-        );
-    }
-    let questions = Value::Object(questions);
+    let questions = relevance_questions(&asked, threshold.is_some());
 
     let parsed = evaluate_state(
         config,
@@ -375,18 +396,56 @@ pub async fn evaluate_relevance(
 
     let mut asked_indices: Vec<usize> = Vec::with_capacity(asked.len());
     let mut relevant: Vec<usize> = Vec::with_capacity(results.len());
+    let mut missing_probability = 0usize;
 
     for (index, id) in &asked {
-        let verdict = answers
-            .and_then(|map| map.get(id))
-            .and_then(|answer| answer.get("choice"))
-            .and_then(Value::as_str);
-
-        // 模型判定决定去留；答案缺失时保留该结果，审查不丢弃未判定的内容。
-        if verdict.is_none() || verdict == Some(RELEVANT_OPTION) {
-            relevant.push(*index);
-        }
         asked_indices.push(*index);
+        let answer = answers.and_then(|map| map.get(id));
+
+        match (threshold, answer) {
+            (Some(limit), Some(answer)) => {
+                match answer.get("probability").and_then(Value::as_f64) {
+                    // 判定规则固定：probability >= threshold 保留，否则过滤。
+                    Some(probability) if (0.0..=1.0).contains(&probability) => {
+                        probabilities[*index] = Some(probability);
+                        if probability >= limit {
+                            relevant.push(*index);
+                        }
+                    }
+                    // 缺概率或类型不符：该结果按保留处理，稍后记诊断日志。
+                    _ => {
+                        missing_probability += 1;
+                        relevant.push(*index);
+                    }
+                }
+            }
+            (Some(_), None) => {
+                missing_probability += 1;
+                relevant.push(*index);
+            }
+            // choice 模式：模型判定决定去留；答案缺失时保留，不丢弃未判定的内容。
+            (None, answer) => {
+                let verdict = answer
+                    .and_then(|answer| answer.get("choice"))
+                    .and_then(Value::as_str);
+                if verdict.is_none() || verdict == Some(RELEVANT_OPTION) {
+                    relevant.push(*index);
+                }
+            }
+        }
+    }
+
+    if threshold.is_some() {
+        // 整批都缺概率说明响应对不上，按错误交回调用方回退 LLM 审查。
+        if missing_probability == asked.len() {
+            return Err(Error::from_reason(format!(
+                "The {} decision model returned no usable relevance probability for any result",
+                config.provider.as_str()
+            )));
+        }
+        if missing_probability > 0 {
+            log_missing_probabilities(query, missing_probability, asked.len()).await;
+        }
     }
 
     // 未进入问题列表（问题上限 / state 预算）的结果同样保留。
@@ -397,7 +456,63 @@ pub async fn evaluate_relevance(
     }
 
     relevant.sort_unstable();
-    Ok(relevant)
+    Ok(RelevanceEvaluation {
+        relevant_indices: relevant,
+        probabilities,
+        relevance_threshold: threshold,
+    })
+}
+
+/// 组装相关性审查的问题：choice 二分类，或 predicate/noul 概率判定。
+fn relevance_questions(asked: &[(usize, String)], predicate_mode: bool) -> Value {
+    let mut questions = Map::new();
+    for (_, id) in asked {
+        let instructions =
+            format!("Is result [{id}] relevant to the developer's code search query?");
+        questions.insert(
+            id.clone(),
+            if predicate_mode {
+                json!({
+                    "type": PREDICATE_QUESTION_TYPE,
+                    "instructions": instructions,
+                    "criteria": {
+                        "true": "The excerpt matches what the query is looking for",
+                        "false": "An unrelated file, or generic boilerplate that only looks similar"
+                    }
+                })
+            } else {
+                json!({
+                    "type": CHOICE_QUESTION_TYPE,
+                    "instructions": instructions,
+                    "criteria": {
+                        "relevant": "The excerpt matches what the query is looking for",
+                        "irrelevant": "An unrelated file, or generic boilerplate that only looks similar"
+                    }
+                })
+            },
+        );
+    }
+    Value::Object(questions)
+}
+
+/// 记录「部分答案缺概率」的诊断（best effort，不阻塞审查）。
+async fn log_missing_probabilities(query: &str, missing: usize, asked: usize) {
+    let Ok(Ok(database_path)) =
+        tokio::task::spawn_blocking(crate::storage::ensure_database_file).await
+    else {
+        return;
+    };
+
+    crate::storage::services::app_logs::log_api_warning(
+        &database_path,
+        "evaluate_relevance",
+        "Decision model relevance answers are missing a usable probability; those results were kept",
+        &format!(
+            "query: {}; missing: {missing}/{asked}",
+            crate::api::common::truncate_chars(query, 200)
+        ),
+    )
+    .await;
 }
 
 /// 决策模型对一条命中敏感规则命令的判定。
@@ -639,8 +754,9 @@ pub async fn test_connection(config: &DecisionModelConfig) -> ModelCallReport<()
 
 /// 按 provider 生成请求体。
 ///
-/// 问题在内部统一保存为「id -> { type, instructions, criteria }」，openai 侧把
-/// criteria 1:1 映射成 `choices`，state 放进 `input` 的 input_json 内容块。
+/// 问题在内部统一保存为「id -> { type, instructions, criteria }」：TypeSafe 侧
+/// 原样发送（predicate 改名为 noul），openai 侧把 criteria 映射成 `choices`
+/// （predicate 只带 type/name/instructions），state 放进 `input` 的 input_json 内容块。
 fn build_request_body(
     config: &DecisionModelConfig,
     state: &Value,
@@ -650,7 +766,7 @@ fn build_request_body(
         DecisionProvider::Typesafe => json!({
             "state": state,
             "model": config.model,
-            "questions": questions,
+            "questions": typesafe_questions(questions),
         }),
         DecisionProvider::Openai => json!({
             "model": config.model,
@@ -661,13 +777,32 @@ fn build_request_body(
                     "data": state,
                 }],
             }],
-            "questions": choice_questions(questions),
+            "questions": openai_questions(questions),
         }),
     }
 }
 
+/// TypeSafe（Jev）没有 predicate 这个名字，yes/no 概率问题叫 noul，字段一致。
+fn typesafe_questions(questions: &Value) -> Value {
+    let Some(map) = questions.as_object() else {
+        return Value::Object(Map::new());
+    };
+
+    let mut converted = Map::new();
+    for (name, question) in map {
+        let mut question = question.clone();
+        if question.get("type").and_then(Value::as_str) == Some(PREDICATE_QUESTION_TYPE) {
+            if let Some(object) = question.as_object_mut() {
+                object.insert("type".to_string(), json!(NOUL_QUESTION_TYPE));
+            }
+        }
+        converted.insert(name.clone(), question);
+    }
+    Value::Object(converted)
+}
+
 /// 把内部的问题对象转换为 OpenAI Decisions 的 questions 数组。
-fn choice_questions(questions: &Value) -> Value {
+fn openai_questions(questions: &Value) -> Value {
     let Some(map) = questions.as_object() else {
         return Value::Array(Vec::new());
     };
@@ -679,6 +814,15 @@ fn choice_questions(questions: &Value) -> Value {
                     .get("instructions")
                     .cloned()
                     .unwrap_or(Value::Null);
+
+                if question.get("type").and_then(Value::as_str) == Some(PREDICATE_QUESTION_TYPE) {
+                    return json!({
+                        "type": PREDICATE_QUESTION_TYPE,
+                        "name": name,
+                        "instructions": instructions,
+                    });
+                }
+
                 let choices = question
                     .get("criteria")
                     .and_then(Value::as_object)
@@ -693,7 +837,7 @@ fn choice_questions(questions: &Value) -> Value {
                     .unwrap_or_default();
 
                 json!({
-                    "type": "choice",
+                    "type": CHOICE_QUESTION_TYPE,
                     "name": name,
                     "instructions": instructions,
                     "choices": choices,
@@ -703,10 +847,11 @@ fn choice_questions(questions: &Value) -> Value {
     )
 }
 
-/// 把两种响应折叠成 `name -> { choice, confidence }`。
+/// 把两种响应折叠成 `name -> { choice, confidence, probability }`。
 ///
-/// typesafe 的 answers 是对象；openai 的 answers 是数组，按 name 折叠。
-/// refusal 答案按错误返回，绝不当作 allow。
+/// typesafe 的 answers 是对象（noul 概率在 `noul` 字段）；openai 的 answers 是
+/// 数组，按 name 折叠（predicate 概率在 `probability` 字段）。refusal 答案按
+/// 错误返回，绝不当作 allow。
 fn normalize_answers(
     provider: DecisionProvider,
     parsed: &Value,
@@ -719,12 +864,19 @@ fn normalize_answers(
     })?;
 
     match provider {
-        DecisionProvider::Typesafe => answers.as_object().cloned().ok_or_else(|| {
-            format!(
-                "The {} decision model response is missing the 'answers' object",
-                provider.as_str()
-            )
-        }),
+        DecisionProvider::Typesafe => {
+            let map = answers.as_object().ok_or_else(|| {
+                format!(
+                    "The {} decision model response is missing the 'answers' object",
+                    provider.as_str()
+                )
+            })?;
+
+            Ok(map
+                .iter()
+                .map(|(name, answer)| (name.clone(), normalize_answer(answer, provider)))
+                .collect())
+        }
         DecisionProvider::Openai => {
             let items = answers.as_array().ok_or_else(|| {
                 format!(
@@ -749,17 +901,25 @@ fn normalize_answers(
                 if item.get("type").and_then(Value::as_str) == Some("refusal") {
                     return Err(format!("Decision refused for {name}"));
                 }
-                normalized.insert(
-                    name.to_string(),
-                    json!({
-                        "choice": item.get("choice").cloned().unwrap_or(Value::Null),
-                        "confidence": item.get("confidence").cloned().unwrap_or(Value::Null),
-                    }),
-                );
+                normalized.insert(name.to_string(), normalize_answer(item, provider));
             }
             Ok(normalized)
         }
     }
+}
+
+/// 单条答案归一化：choice / confidence 原样保留，概率字段统一叫 probability。
+fn normalize_answer(answer: &Value, provider: DecisionProvider) -> Value {
+    let probability = match provider {
+        DecisionProvider::Typesafe => answer.get("noul").or_else(|| answer.get("probability")),
+        DecisionProvider::Openai => answer.get("probability"),
+    };
+
+    json!({
+        "choice": answer.get("choice").cloned().unwrap_or(Value::Null),
+        "confidence": answer.get("confidence").cloned().unwrap_or(Value::Null),
+        "probability": probability.cloned().unwrap_or(Value::Null),
+    })
 }
 
 /// 构建 state 与进入问题列表的 `(结果下标, 问题 id)`。

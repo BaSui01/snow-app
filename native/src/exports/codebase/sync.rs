@@ -322,9 +322,6 @@ pub async fn sync_codebase_changes(
     }
 
     // Phase 3: Determine which files need embedding (new or changed)
-    let mut files_to_embed: Vec<FileChunks> = Vec::new();
-    let mut skipped_files = 0i32;
-
     let chunking_config = ChunkingConfig::from_settings(
         settings.chunking_max_lines_per_chunk,
         settings.chunking_min_lines_per_chunk,
@@ -333,33 +330,43 @@ pub async fn sync_codebase_changes(
         settings.model_context_length,
     );
 
-    for file in &scanned_files {
-        let content = match std::fs::read_to_string(&file.path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+    // 读文件 + 分块（tiktoken 计数）放到阻塞线程池
+    let (files_to_embed, skipped_files) = {
+        tokio::task::spawn_blocking(move || {
+            let mut files_to_embed: Vec<FileChunks> = Vec::new();
+            let mut skipped_files = 0i32;
+            for file in scanned_files {
+                let content = match std::fs::read_to_string(&file.path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
 
-        let file_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
+                let file_hash = blake3::hash(content.as_bytes()).to_hex().to_string();
 
-        // Skip files whose content hasn't changed
-        if let Some(existing_hash) = indexed_file_hashes.get(&file.path) {
-            if *existing_hash == file_hash {
-                skipped_files += 1;
-                continue;
+                // Skip files whose content hasn't changed
+                if let Some(existing_hash) = indexed_file_hashes.get(&file.path) {
+                    if *existing_hash == file_hash {
+                        skipped_files += 1;
+                        continue;
+                    }
+                }
+
+                let chunks = chunk_content(&content, &chunking_config);
+                if chunks.is_empty() {
+                    continue;
+                }
+
+                files_to_embed.push(FileChunks {
+                    file,
+                    chunks,
+                    content,
+                });
             }
-        }
-
-        let chunks = chunk_content(&content, &chunking_config);
-        if chunks.is_empty() {
-            continue;
-        }
-
-        files_to_embed.push(FileChunks {
-            file: file.clone(),
-            chunks,
-            content,
-        });
-    }
+            (files_to_embed, skipped_files)
+        })
+        .await
+        .map_err(|e| Error::from_reason(format!("Chunking failed: {e}")))?
+    };
 
     let files_to_embed_count = files_to_embed.len() as i32;
 
@@ -464,12 +471,20 @@ pub async fn sync_codebase_changes(
             }
             let chunk_end = (chunk_start + batch_max_lines).min(chunks.len());
             let batch = &chunks[chunk_start..chunk_end];
-            let inputs: Vec<String> = batch.iter().map(|c| c.content.clone()).collect();
+            let config: &EmbeddingConfig = &embedding_config;
 
-            let embeddings = match api_embedding::embed_batch(&embedding_config, &inputs).await {
-                Ok(emb) => emb,
+            // 输入超长时自动拆分，仍超长的块跳过并记录日志
+            let output = match embed_chunks_adaptive(batch, move |inputs| async move {
+                api_embedding::embed_batch(config, &inputs).await
+            })
+            .await
+            {
+                Ok(output) => output,
                 Err(embed_err) => {
-                    let err_msg = embed_err.reason.clone();
+                    let err_msg = format!(
+                        "{} (file: {})",
+                        embed_err.reason, file_chunks.file.relative_path
+                    );
                     send_progress(
                         "error",
                         files_to_embed_count,
@@ -489,8 +504,16 @@ pub async fn sync_codebase_changes(
                 }
             };
 
-            for (i, embedding) in embeddings.iter().enumerate() {
-                let chunk = &batch[i];
+            if !output.skipped.is_empty() {
+                log_skipped_chunks(
+                    &database_path,
+                    &project_id,
+                    &file_chunks.file.relative_path,
+                    &output.skipped,
+                );
+            }
+
+            for (chunk, embedding) in &output.embedded {
                 file_vectors.push(VectorInsert {
                     id: crate::storage::database::create_snowflake_id(),
                     file_path: file_chunks.file.path.clone(),

@@ -224,6 +224,10 @@ export function CodebaseSettingsForm({
               "8192",
               "number",
               1,
+              t("settings.codebaseModelContextLengthHint", {
+                defaultValue:
+                  "Max input tokens per chunk for the embedding model. Chunks are split to 80% of this value; over-long lines are hard-cut, and chunks the API still rejects are split again or skipped.",
+              }),
             )}
           </div>
           {renderHealth("embedding", embeddingHealth, embeddingWarning)}

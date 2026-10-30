@@ -246,25 +246,81 @@ pub fn truncate_to_tokens(text: &str, max_tokens: usize) -> String {
     truncate_to_token_prefix(text, max_tokens).0
 }
 
-/// Split text into token-bounded pieces using the same tokenizer as the counter.
-pub fn split_to_token_chunks(text: &str, max_tokens: usize) -> Vec<String> {
+/// 跨分词器的保守成本：o200k 把 1~3 位数字合成一个 token，Qwen/Llama 等逐位切分，按位数计。
+fn conservative_token_cost(bytes: &[u8]) -> usize {
+    if bytes.len() > 1 && bytes.iter().all(u8::is_ascii_digit) {
+        bytes.len()
+    } else {
+        1
+    }
+}
+
+/// 按保守 token 预算把文本切成连续的字节区间 `[start, end)`：
+/// 区间都落在字符边界上，过半时优先在换行处断开。未超预算时返回整段。
+pub fn split_by_token_budget(text: &str, budget: usize) -> Vec<(usize, usize)> {
     if text.is_empty() {
         return Vec::new();
     }
-    if max_tokens == 0 {
-        return vec![text.to_string()];
+    let budget = budget.max(1);
+    let len = text.len();
+    // 每个 token 至少 1 字节且成本不超过其字节数，字节数在预算内必然不超限
+    if len <= budget {
+        return vec![(0, len)];
     }
 
-    let bpe = o200k_base_singleton();
-    let bpe_guard = bpe.lock();
-    let tokens = bpe_guard.encode_ordinary(text);
-    if tokens.len() <= max_tokens {
-        return vec![text.to_string()];
+    // ends[i] 为第 i 个 token 的结束偏移，cum[i] 为前 i+1 个 token 的累计成本
+    let (ends, cum) = {
+        let bpe = o200k_base_singleton();
+        let bpe_guard = bpe.lock();
+        let tokens = bpe_guard.encode_ordinary(text);
+        let mut ends = Vec::with_capacity(tokens.len());
+        let mut cum = Vec::with_capacity(tokens.len());
+        let mut offset = 0usize;
+        let mut total = 0usize;
+        for bytes in bpe_guard._decode_native_and_split(tokens) {
+            offset += bytes.len();
+            total += conservative_token_cost(&bytes);
+            ends.push(offset);
+            cum.push(total);
+        }
+        (ends, cum)
+    };
+    if cum.last().copied().unwrap_or(0) <= budget {
+        return vec![(0, len)];
     }
 
-    tokens
-        .chunks(max_tokens)
-        .filter_map(|part| bpe_guard.decode(part.to_vec()).ok())
-        .filter(|part| !part.is_empty())
-        .collect()
+    let bytes = text.as_bytes();
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    while start < len {
+        // 起点所在 token 整体计入本段（起点可能落在 token 中间），保证不低估
+        let first = ends.partition_point(|&end| end <= start);
+        let before = if first == 0 { 0 } else { cum[first - 1] };
+        let fit = cum.partition_point(|&c| c <= before + budget);
+        if fit >= ends.len() {
+            ranges.push((start, len));
+            break;
+        }
+        let hard_end = (if fit > first { ends[fit - 1] } else { ends[first] }).min(len);
+
+        let mut cut = hard_end;
+        if let Some(newline) = bytes[start..hard_end].iter().rposition(|&b| b == b'\n') {
+            let snapped = start + newline + 1;
+            if (snapped - start) * 2 > hard_end - start {
+                cut = snapped;
+            }
+        }
+        while cut > start && !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        if cut <= start {
+            cut = hard_end;
+            while cut < len && !text.is_char_boundary(cut) {
+                cut += 1;
+            }
+        }
+        ranges.push((start, cut));
+        start = cut;
+    }
+    ranges
 }

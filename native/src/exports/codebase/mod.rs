@@ -12,7 +12,9 @@ pub(crate) use tokio_util::sync::CancellationToken;
 
 pub(crate) use crate::api::embedding::{self as api_embedding, EmbeddingConfig};
 pub(crate) use crate::api::retry::{is_retriable_error, RetryOptions};
-pub(crate) use crate::storage::services::code_chunker::{chunk_content, ChunkingConfig};
+pub(crate) use crate::storage::services::code_chunker::{
+    chunk_content, split_chunk_in_half, ChunkingConfig, CodeChunk,
+};
 pub(crate) use crate::storage::services::codebase_embed_sessions::{self, EmbedSessionRecord};
 pub(crate) use crate::storage::services::codebase_index::{
     self, delete_vectors_for_file, ensure_vector_table, get_index_stats, get_indexed_file_hashes,
@@ -38,7 +40,9 @@ pub use {
     sync::{cancel_codebase_sync, sync_codebase_changes, CodebaseSyncProgress, CodebaseSyncResult},
     watch::{start_codebase_watch, stop_codebase_watch},
 };
-pub(crate) use embedding::{load_codebase_settings, FileChunks};
+pub(crate) use embedding::{
+    embed_chunks_adaptive, load_codebase_settings, log_skipped_chunks, FileChunks,
+};
 
 // ============================================================================
 // NAPI 类型定义

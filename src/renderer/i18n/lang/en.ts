@@ -2873,6 +2873,8 @@ export const en = {
   "settings.codebaseChunkingMinCharsPerChunk": "Min chars per chunk",
   "settings.codebaseChunkingOverlapLines": "Overlap lines",
   "settings.codebaseModelContextLength": "Model context length (tokens)",
+  "settings.codebaseModelContextLengthHint":
+    "Max input tokens per chunk for the embedding model. Chunks are split to 80% of this value; over-long lines are hard-cut, and chunks the API still rejects are split again or skipped.",
   "settings.saveCodebaseSettings": "Save settings",
   "settings.codebaseValidationModelNameRequired":
     "Embedding model name is required when codebase is enabled.",

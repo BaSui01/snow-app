@@ -1,3 +1,5 @@
+use crate::api::token_counter::split_by_token_budget;
+
 /// Code chunker: splits source file content into overlapping line-based
 /// chunks suitable for embedding.
 ///
@@ -8,6 +10,7 @@
 /// - `min_chars_per_chunk`: minimum number of characters per chunk (chunks
 ///   with fewer characters are skipped or merged)
 /// - `overlap_lines`: number of overlapping lines between consecutive chunks
+/// - `model_context_length`: token budget per chunk (long lines are hard-cut)
 
 #[derive(Debug, Clone)]
 pub struct ChunkingConfig {
@@ -167,21 +170,80 @@ pub fn chunk_content(content: &str, config: &ChunkingConfig) -> Vec<CodeChunk> {
         chunk.chunk_index = i;
     }
 
-    let token_limit = ((config.model_context_length as f64) * 0.8).floor() as usize;
-    let token_limit = token_limit.max(1);
-    let mut token_bounded_chunks = Vec::new();
+    // 按 token 预算二次切分（超长行会被硬切），保证单块不超过模型上下文
+    let token_budget = ((config.model_context_length as f64) * CONTEXT_BUDGET_RATIO).floor() as usize;
+    let token_budget = token_budget.max(1);
+    let mut bounded_chunks = Vec::with_capacity(chunks.len());
 
     for chunk in chunks {
-        let pieces = crate::api::token_counter::split_to_token_chunks(&chunk.content, token_limit);
-        for content in pieces {
-            token_bounded_chunks.push(CodeChunk {
-                chunk_index: token_bounded_chunks.len(),
-                start_line: chunk.start_line,
-                end_line: chunk.end_line,
-                content,
-            });
+        let ranges = split_by_token_budget(&chunk.content, token_budget);
+        if ranges.len() <= 1 {
+            bounded_chunks.push(chunk);
+            continue;
+        }
+        let mut line_offset = 0usize;
+        for (start, end) in ranges {
+            if !chunk.content[start..end].trim().is_empty() {
+                bounded_chunks.push(sub_chunk(&chunk, start, end, line_offset));
+            }
+            line_offset += count_newlines(&chunk.content.as_bytes()[start..end]);
         }
     }
 
-    token_bounded_chunks
+    for (i, chunk) in bounded_chunks.iter_mut().enumerate() {
+        chunk.chunk_index = i;
+    }
+    bounded_chunks
+}
+
+/// 输入 token 预算占模型上下文长度的比例（给不同分词器留余量）。
+const CONTEXT_BUDGET_RATIO: f64 = 0.8;
+
+/// 小于该字节数的块不再对半拆分。
+const MIN_SPLIT_BYTES: usize = 64;
+
+fn count_newlines(bytes: &[u8]) -> usize {
+    bytes.iter().filter(|&&b| b == b'\n').count()
+}
+
+/// 截取 chunk 内 `[start, end)` 字节区间；`line_offset` 为区间之前的换行数。
+fn sub_chunk(chunk: &CodeChunk, start: usize, end: usize, line_offset: usize) -> CodeChunk {
+    let content = &chunk.content[start..end];
+    let body = content.strip_suffix('\n').unwrap_or(content);
+    let start_line = (chunk.start_line + line_offset).min(chunk.end_line);
+    let end_line = (start_line + count_newlines(body.as_bytes())).min(chunk.end_line);
+    CodeChunk {
+        chunk_index: chunk.chunk_index,
+        start_line,
+        end_line,
+        content: content.to_string(),
+    }
+}
+
+/// 嵌入接口仍报超长时的兜底：在中点附近（优先换行处）对半拆开，过短返回 None。
+pub fn split_chunk_in_half(chunk: &CodeChunk) -> Option<(CodeChunk, CodeChunk)> {
+    let text = &chunk.content;
+    let len = text.len();
+    if len < MIN_SPLIT_BYTES {
+        return None;
+    }
+    let bytes = text.as_bytes();
+    let mid = len / 2;
+    let before = bytes[..mid].iter().rposition(|&b| b == b'\n').map(|p| p + 1);
+    let after = bytes[mid..].iter().position(|&b| b == b'\n').map(|p| mid + p + 1);
+    let mut cut = [before, after]
+        .into_iter()
+        .flatten()
+        .filter(|&p| p > 0 && p < len && p.abs_diff(mid) <= len / 4)
+        .min_by_key(|&p| p.abs_diff(mid))
+        .unwrap_or(mid);
+    while cut < len && !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    if cut == 0 || cut >= len {
+        return None;
+    }
+    let first = sub_chunk(chunk, 0, cut, 0);
+    let second = sub_chunk(chunk, cut, len, count_newlines(&bytes[..cut]));
+    Some((first, second))
 }

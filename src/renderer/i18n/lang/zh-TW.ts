@@ -2721,6 +2721,8 @@ export const zhTW = {
   "settings.codebaseChunkingMinCharsPerChunk": "每塊最小字元數",
   "settings.codebaseChunkingOverlapLines": "重疊行數",
   "settings.codebaseModelContextLength": "模型上下文長度（tokens）",
+  "settings.codebaseModelContextLengthHint":
+    "嵌入模型單塊輸入的 token 上限。分塊按該值的 80% 切分，超長行會被硬切；介面仍報超長的塊會繼續拆分或略過。",
   "settings.saveCodebaseSettings": "儲存設定",
   "settings.codebaseValidationModelNameRequired":
     "啟用程式碼庫時必須填寫嵌入模型名稱。",

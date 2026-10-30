@@ -333,6 +333,16 @@ pub async fn start_codebase_embedding(
                         let _ = codebase_embed_sessions::delete_session(&db_path, &sid);
                     }
                     "error" => {
+                        // 先落进度，使 current_file 指向实际失败的文件
+                        let _ = codebase_embed_sessions::update_session_progress(
+                            &db_path,
+                            &sid,
+                            total_files,
+                            processed_files,
+                            total_chunks,
+                            processed_chunks,
+                            &current_file_owned,
+                        );
                         // Keep the failed run (only the latest per project) so
                         // the panel can show it again later.
                         let _ = codebase_embed_sessions::update_session_status(
@@ -468,34 +478,42 @@ pub async fn start_codebase_embedding(
         settings.embedding_dimensions,
     );
 
-    // Build all chunks
-    let mut all_file_chunks: Vec<FileChunks> = Vec::new();
-    let mut total_chunks = 0i32;
-
-    for file in &scanned_files {
-        if is_cancelled(&session_id) {
-            send_progress("cancelled", total_files, 0, total_chunks, 0, "", "");
-            unregister_session(&session_id);
-            return Ok(());
-        }
-
-        let content = match std::fs::read_to_string(&file.path) {
-            Ok(c) => c,
-            Err(_) => continue, // Skip files that can't be read as UTF-8
-        };
-
-        let chunks = chunk_content(&content, &chunking_config);
-        if chunks.is_empty() {
-            continue;
-        }
-
-        total_chunks += chunks.len() as i32;
-        all_file_chunks.push(FileChunks {
-            file: file.clone(),
-            chunks,
-            content,
-        });
-    }
+    // Build all chunks（读文件 + tiktoken 计数是 CPU 密集操作，放到阻塞线程池）
+    let chunked = {
+        let sid = session_id.clone();
+        let config = chunking_config.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut all_file_chunks: Vec<FileChunks> = Vec::new();
+            let mut total_chunks = 0i32;
+            for file in scanned_files {
+                if is_cancelled(&sid) {
+                    return None;
+                }
+                let content = match std::fs::read_to_string(&file.path) {
+                    Ok(c) => c,
+                    Err(_) => continue, // Skip files that can't be read as UTF-8
+                };
+                let chunks = chunk_content(&content, &config);
+                if chunks.is_empty() {
+                    continue;
+                }
+                total_chunks += chunks.len() as i32;
+                all_file_chunks.push(FileChunks {
+                    file,
+                    chunks,
+                    content,
+                });
+            }
+            Some((all_file_chunks, total_chunks))
+        })
+        .await
+        .map_err(|e| Error::from_reason(format!("Chunking failed: {e}")))?
+    };
+    let Some((all_file_chunks, total_chunks)) = chunked else {
+        send_progress("cancelled", total_files, 0, 0, 0, "", "");
+        unregister_session(&session_id);
+        return Ok(());
+    };
 
     // Phase 3: Embed chunks with concurrency control
     //
@@ -564,8 +582,8 @@ pub async fn start_codebase_embedding(
 
     // Shared error flag: when any concurrent task fails, it sets this so
     // sibling tasks stop starting new API calls and exit early. The first
-    // error message is stored so the main loop can report it.
-    let shared_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    // error message is stored (with the failing file) so the main loop can report it.
+    let shared_error: Arc<Mutex<Option<(String, String)>>> = Arc::new(Mutex::new(None));
 
     // Shared cancellation flag for error-triggered shutdown. Distinct from
     // the user-initiated cancel_token — this is set internally when a task
@@ -634,13 +652,21 @@ pub async fn start_codebase_embedding(
     let is_cancelled_flag = is_cancelled(&session_id);
     let final_error = shared_error.lock().ok().and_then(|guard| guard.clone());
 
-    if let Some(err_msg) = final_error {
+    if let Some((err_msg, failed_file)) = final_error {
         let (pf, pc) = {
             let pf = processed_files.lock().map(|g| *g).unwrap_or(0);
             let pc = processed_chunks.lock().map(|g| *g).unwrap_or(0);
             (pf, pc)
         };
-        send_progress("error", total_files, pf, total_chunks, pc, "", &err_msg);
+        send_progress(
+            "error",
+            total_files,
+            pf,
+            total_chunks,
+            pc,
+            &failed_file,
+            &err_msg,
+        );
         unregister_session(&session_id);
         // Return Ok — the error is communicated via progress phase.
         let _ = results;
@@ -708,7 +734,7 @@ async fn embed_single_file(
     session_id: &str,
     processed_files: &Mutex<i32>,
     processed_chunks: &Mutex<i32>,
-    shared_error: &Mutex<Option<String>>,
+    shared_error: &Mutex<Option<(String, String)>>,
     abort_flag: &Mutex<bool>,
     send_progress: &impl Fn(&str, i32, i32, i32, i32, &str, &str),
     total_files: i32,
@@ -801,11 +827,13 @@ async fn embed_single_file(
         let chunk_end = (chunk_start + batch_max_lines).min(chunks.len());
         let batch = &chunks[chunk_start..chunk_end];
 
-        let inputs: Vec<String> = batch.iter().map(|c| c.content.clone()).collect();
-
-        // Embed this batch with retry.
-        let embeddings = match embed_with_retry(embedding_config, &inputs, session_id).await {
-            Ok(emb) => emb,
+        // Embed this batch with retry；输入超长时自动拆分，仍超长的块跳过。
+        let output = match embed_chunks_adaptive(batch, move |inputs| async move {
+            embed_with_retry(embedding_config, &inputs, session_id).await
+        })
+        .await
+        {
+            Ok(output) => output,
             Err(embed_err) => {
                 // On embed failure: store whatever vectors we have collected
                 // so far for this file, then set the shared error so sibling
@@ -819,24 +847,39 @@ async fn embed_single_file(
                     })
                     .await;
                 }
-                let err_msg = embed_err.reason.clone();
-                // Set the shared error (only the first error is kept) and
-                // flip the abort flag so concurrent siblings stop promptly.
-                if let Ok(mut guard) = shared_error.lock() {
-                    if guard.is_none() {
-                        *guard = Some(err_msg.clone());
-                    }
-                }
-                if let Ok(mut guard) = abort_flag.lock() {
-                    *guard = true;
-                }
+                let max_chars = batch
+                    .iter()
+                    .map(|c| c.content.chars().count())
+                    .max()
+                    .unwrap_or(0);
+                let err_msg = format!(
+                    "{} (file: {}, batch: {} chunks, largest: {} chars)",
+                    embed_err.reason,
+                    file_chunks.file.relative_path,
+                    batch.len(),
+                    max_chars
+                );
+                set_shared_error(
+                    shared_error,
+                    abort_flag,
+                    err_msg,
+                    &file_chunks.file.relative_path,
+                );
                 return FileEmbedResult::Error;
             }
         };
 
+        if !output.skipped.is_empty() {
+            log_skipped_chunks(
+                database_path,
+                project_id,
+                &file_chunks.file.relative_path,
+                &output.skipped,
+            );
+        }
+
         // Build vector inserts.
-        for (i, embedding) in embeddings.iter().enumerate() {
-            let chunk = &batch[i];
+        for (chunk, embedding) in &output.embedded {
             file_vectors.push(VectorInsert {
                 id: crate::storage::database::create_snowflake_id(),
                 file_path: file_chunks.file.path.clone(),
@@ -883,27 +926,21 @@ async fn embed_single_file(
             Ok(Ok(())) => {}
             Ok(Err(_store_err)) => {
                 // Storage failure — treat as an error for this file.
-                let err_msg = "Failed to store vectors".to_string();
-                if let Ok(mut guard) = shared_error.lock() {
-                    if guard.is_none() {
-                        *guard = Some(err_msg.clone());
-                    }
-                }
-                if let Ok(mut guard) = abort_flag.lock() {
-                    *guard = true;
-                }
+                set_shared_error(
+                    shared_error,
+                    abort_flag,
+                    "Failed to store vectors".to_string(),
+                    &file_chunks.file.relative_path,
+                );
                 return FileEmbedResult::Error;
             }
             Err(join_err) => {
-                let err_msg = format!("Storage task panicked: {join_err}");
-                if let Ok(mut guard) = shared_error.lock() {
-                    if guard.is_none() {
-                        *guard = Some(err_msg.clone());
-                    }
-                }
-                if let Ok(mut guard) = abort_flag.lock() {
-                    *guard = true;
-                }
+                set_shared_error(
+                    shared_error,
+                    abort_flag,
+                    format!("Storage task panicked: {join_err}"),
+                    &file_chunks.file.relative_path,
+                );
                 return FileEmbedResult::Error;
             }
         }
@@ -949,6 +986,175 @@ async fn embed_with_retry(
             }
         }
     }
+}
+
+/// 记录首个错误（含失败文件）并置位 abort，让并发的兄弟任务尽快停止。
+fn set_shared_error(
+    shared_error: &Mutex<Option<(String, String)>>,
+    abort_flag: &Mutex<bool>,
+    message: String,
+    relative_path: &str,
+) {
+    if let Ok(mut guard) = shared_error.lock() {
+        if guard.is_none() {
+            *guard = Some((message, relative_path.to_string()));
+        }
+    }
+    if let Ok(mut guard) = abort_flag.lock() {
+        *guard = true;
+    }
+}
+
+/// 对半拆分的最大层数（约 1/256 原始大小）。
+const MAX_SPLIT_DEPTH: u32 = 8;
+
+/// 因输入仍超长而被跳过的块。
+pub(crate) struct SkippedChunk {
+    pub(crate) start_line: usize,
+    pub(crate) end_line: usize,
+    pub(crate) chars: usize,
+    pub(crate) error: String,
+}
+
+/// 自适应嵌入结果：成功的块（可能是拆分后的子块）与被跳过的块。
+pub(crate) struct AdaptiveEmbedOutput {
+    pub(crate) embedded: Vec<(CodeChunk, Vec<f64>)>,
+    pub(crate) skipped: Vec<SkippedChunk>,
+}
+
+/// 判断嵌入接口错误是否为「输入超出模型长度」。
+fn is_input_too_long_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    if ["status 401", "status 403", "status 404", "status 429"]
+        .iter()
+        .any(|status| lower.contains(status))
+    {
+        return false;
+    }
+    [
+        "status 413",
+        "too long",
+        "too large",
+        "too many tokens",
+        "maximum context",
+        "context length",
+        "context_length",
+        "context window",
+        "max_model_len",
+        "model length",
+        "maximum length",
+        "max length",
+        "token limit",
+        "tokens limit",
+        "longer than",
+        "input length",
+        "exceeds the max",
+        "exceeds max",
+        "exceeds the limit",
+        "exceeded the max",
+    ]
+    .iter()
+    .any(|keyword| lower.contains(keyword))
+}
+
+/// 嵌入一批块：接口报输入超长时先拆成单条，再逐级对半拆分重试，
+/// 到达下限仍失败则跳过该块；其他错误原样返回。
+pub(crate) async fn embed_chunks_adaptive<F, Fut>(
+    batch: &[CodeChunk],
+    embed: F,
+) -> Result<AdaptiveEmbedOutput>
+where
+    F: Fn(Vec<String>) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<Vec<f64>>>>,
+{
+    let mut output = AdaptiveEmbedOutput {
+        embedded: Vec::new(),
+        skipped: Vec::new(),
+    };
+    let mut pending: std::collections::VecDeque<(Vec<CodeChunk>, u32)> =
+        std::collections::VecDeque::new();
+    pending.push_back((batch.to_vec(), 0));
+
+    while let Some((group, depth)) = pending.pop_front() {
+        let inputs: Vec<String> = group.iter().map(|c| c.content.clone()).collect();
+        match embed(inputs).await {
+            Ok(vectors) => output.embedded.extend(group.into_iter().zip(vectors)),
+            Err(error) if is_input_too_long_error(&error.reason) => {
+                if group.len() > 1 {
+                    for chunk in group.into_iter().rev() {
+                        pending.push_front((vec![chunk], depth));
+                    }
+                    continue;
+                }
+                let Some(chunk) = group.into_iter().next() else {
+                    continue;
+                };
+                let halves = if depth < MAX_SPLIT_DEPTH {
+                    split_chunk_in_half(&chunk)
+                } else {
+                    None
+                };
+                match halves {
+                    Some((first, second)) => {
+                        pending.push_front((vec![second], depth + 1));
+                        pending.push_front((vec![first], depth + 1));
+                    }
+                    None => output.skipped.push(SkippedChunk {
+                        start_line: chunk.start_line,
+                        end_line: chunk.end_line,
+                        chars: chunk.content.chars().count(),
+                        error: error.reason.clone(),
+                    }),
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(output)
+}
+
+/// 被跳过的超长块写一条 WARN 系统日志（fire-and-forget）。
+pub(crate) fn log_skipped_chunks(
+    database_path: &Path,
+    project_id: &str,
+    relative_path: &str,
+    skipped: &[SkippedChunk],
+) {
+    let db_path = database_path.to_path_buf();
+    let context = serde_json::json!({
+        "projectId": project_id,
+        "file": relative_path,
+        "skippedChunks": skipped.len(),
+        "chunks": skipped
+            .iter()
+            .take(20)
+            .map(|s| serde_json::json!({
+                "startLine": s.start_line,
+                "endLine": s.end_line,
+                "chars": s.chars,
+            }))
+            .collect::<Vec<_>>(),
+    })
+    .to_string();
+    let error = skipped.first().map(|s| s.error.clone());
+    tokio::task::spawn_blocking(move || {
+        let _ = crate::storage::services::app_logs::insert_app_log(
+            &db_path,
+            &crate::storage::services::app_logs::AppLogInput {
+                level: "WARN".to_string(),
+                module: "embedding".to_string(),
+                func: "codebase_index".to_string(),
+                line: None,
+                message: "Skipped chunks that exceed the embedding model input limit".to_string(),
+                input: None,
+                output: None,
+                duration: None,
+                context: Some(context),
+                error,
+                source: "main".to_string(),
+            },
+        );
+    });
 }
 
 /// Pause an ongoing embedding session.

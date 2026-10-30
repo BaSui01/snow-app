@@ -2722,6 +2722,8 @@ export const zhCN = {
   "settings.codebaseChunkingMinCharsPerChunk": "每块最小字符数",
   "settings.codebaseChunkingOverlapLines": "重叠行数",
   "settings.codebaseModelContextLength": "模型上下文长度（tokens）",
+  "settings.codebaseModelContextLengthHint":
+    "嵌入模型单块输入的 token 上限。分块按该值的 80% 切分，超长行会被硬切；接口仍报超长的块会继续拆分或跳过。",
   "settings.saveCodebaseSettings": "保存设置",
   "settings.codebaseValidationModelNameRequired":
     "启用代码库时必须填写嵌入模型名称。",

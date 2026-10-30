@@ -1142,6 +1142,7 @@ export type DecisionModelTestInput = {
   id: string;
   baseUrl: string;
   baseUrlMode: string;
+  provider: string;
   apiKey: string;
   model: string;
 };

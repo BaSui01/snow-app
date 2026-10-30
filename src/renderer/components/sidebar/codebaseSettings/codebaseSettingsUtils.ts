@@ -44,11 +44,11 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
 };
 
 /**
- * 旧版 codebase 设置把 Jev 的 baseUrl / apiKey / model 内联保存；现在这些配置统一放在
+ * 旧版 codebase 设置把 TypeSafe 的 baseUrl / apiKey / model 内联保存；现在这些配置统一放在
  * 决策模型里（见 constants/decisionModels.ts），这里读出旧值供一次性迁移使用。
  * 返回 null 表示没有可迁移的旧配置（未填写密钥或已迁移完成）。
  */
-export const readLegacyJevConfig = (
+export const readLegacyDecisionModel = (
   value: string | null,
 ): { baseUrl: string; apiKey: string; model: string } | null => {
   if (!value) {

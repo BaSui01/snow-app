@@ -15,6 +15,7 @@ pub struct DecisionModelTestInput {
     pub id: String,
     pub base_url: String,
     pub base_url_mode: String,
+    pub provider: String,
     pub api_key: String,
     pub model: String,
 }
@@ -46,6 +47,7 @@ pub async fn test_decision_model_connection(
         &input.id,
         &input.base_url,
         &input.base_url_mode,
+        &input.provider,
         &input.api_key,
         &input.model,
     )

@@ -2,7 +2,7 @@
  * 敏感命令的决策模型辅助配置。
  *
  * 真源是 system_settings 的 `sensitive_command_assist`，JSON 形如
- * `{ enabled, modelId, delegate, askOnDeny }`。Rust 侧（native/src/api/jev.rs +
+ * `{ enabled, modelId, delegate, askOnDeny }`。Rust 侧（native/src/api/decision_model.rs +
  * native/src/exports/api.rs）按同一份 JSON 解析，字段名必须保持 camelCase 一致。
  *
  * - enabled：总开关，默认关闭。关闭时不请求决策模型，敏感命令照常弹确认。

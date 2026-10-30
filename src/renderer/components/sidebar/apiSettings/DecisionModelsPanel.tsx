@@ -16,14 +16,18 @@ import {
   DECISION_MODEL_BASE_URL_MODE_AUTO,
   DECISION_MODEL_BASE_URL_MODE_CUSTOM,
   DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE,
-  DEFAULT_DECISION_MODEL_BASE_URL,
-  DEFAULT_DECISION_MODEL_MODEL,
-  DEFAULT_DECISION_MODEL_NAME,
+  DECISION_MODEL_PROVIDER_OPENAI,
+  DECISION_MODEL_PROVIDER_TYPESAFE,
   createDecisionModel,
+  decisionModelDefaultBaseUrl,
+  decisionModelDefaultModel,
+  decisionModelDefaultName,
+  normalizeDecisionModelProvider,
   readDecisionModelsJson,
   resolveDecisionModelEndpoint,
   toDecisionModelsJson,
   type DecisionModelConfig,
+  type DecisionModelProvider,
 } from "../../../constants/decisionModels";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
@@ -40,7 +44,7 @@ import type { ModelConnectionTestResult } from "../../../../preload";
  *
  * 支持配置多个决策模型并单独启停：只有已启用的模型会出现在代码库代理审查等
  * 使用方的选择列表里。整份配置以 JSON 写入 system_settings 的 `decision_models`，
- * Rust 侧按同一份数据解析（native/src/api/jev.rs）。每个模型可「测试连接」，
+ * Rust 侧按同一份数据解析（native/src/api/decision_model.rs）。每个模型可「测试连接」，
  * 最近一次检测结果由 Rust 持久化，重启后仍显示在列表里。
  */
 export function DecisionModelsPanel(): React.JSX.Element {
@@ -144,6 +148,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
           id: model.id,
           baseUrl: model.baseUrl,
           baseUrlMode: model.baseUrlMode,
+          provider: model.provider,
           apiKey: model.apiKey,
           model: model.model,
         });
@@ -190,6 +195,51 @@ export function DecisionModelsPanel(): React.JSX.Element {
     setDraft((previous) =>
       previous ? { ...previous, [field]: value } : previous,
     );
+  };
+
+  /** 切换 provider：只替换仍是默认值的端点与模型名，手填的值保持不变。 */
+  const changeProvider = (provider: DecisionModelProvider): void => {
+    const defaultBaseUrls = [
+      decisionModelDefaultBaseUrl(DECISION_MODEL_PROVIDER_TYPESAFE),
+      decisionModelDefaultBaseUrl(DECISION_MODEL_PROVIDER_OPENAI),
+    ].map((value) => value.replace(/\/+$/, "").toLowerCase());
+    const defaultModels = [
+      decisionModelDefaultModel(DECISION_MODEL_PROVIDER_TYPESAFE),
+      decisionModelDefaultModel(DECISION_MODEL_PROVIDER_OPENAI),
+    ].map((value) => value.toLowerCase());
+    const defaultNames = [
+      decisionModelDefaultName(DECISION_MODEL_PROVIDER_TYPESAFE),
+      decisionModelDefaultName(DECISION_MODEL_PROVIDER_OPENAI),
+    ].map((value) => value.toLowerCase());
+
+    setDraft((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const currentBaseUrl = previous.baseUrl
+        .trim()
+        .replace(/\/+$/, "")
+        .toLowerCase();
+      const currentModel = previous.model.trim().toLowerCase();
+      const currentName = previous.name.trim().toLowerCase();
+      const keepBaseUrl =
+        currentBaseUrl !== "" && !defaultBaseUrls.includes(currentBaseUrl);
+      const keepModel =
+        currentModel !== "" && !defaultModels.includes(currentModel);
+      const keepName =
+        currentName !== "" && !defaultNames.includes(currentName);
+
+      return {
+        ...previous,
+        name: keepName ? previous.name : decisionModelDefaultName(provider),
+        provider,
+        baseUrl: keepBaseUrl
+          ? previous.baseUrl
+          : decisionModelDefaultBaseUrl(provider),
+        model: keepModel ? previous.model : decisionModelDefaultModel(provider),
+      };
+    });
   };
 
   const saveDraft = async (): Promise<void> => {
@@ -516,7 +566,35 @@ export function DecisionModelsPanel(): React.JSX.Element {
                 value={draft.name}
                 onChange={(event) => updateDraft("name", event.target.value)}
                 disabled={isSaving}
-                placeholder={DEFAULT_DECISION_MODEL_NAME}
+                placeholder={decisionModelDefaultName(draft.provider)}
+              />
+            </label>
+            <label className="api-settings-field">
+              <span>
+                {t("settings.decisionModelProvider", {
+                  defaultValue: "Provider",
+                })}
+              </span>
+              <CustomSelect
+                value={draft.provider}
+                options={[
+                  {
+                    value: DECISION_MODEL_PROVIDER_TYPESAFE,
+                    label: t("settings.decisionModelProviderTypesafe", {
+                      defaultValue: "TypeSafe System One",
+                    }),
+                  },
+                  {
+                    value: DECISION_MODEL_PROVIDER_OPENAI,
+                    label: t("settings.decisionModelProviderOpenai", {
+                      defaultValue: "OpenAI Decisions",
+                    }),
+                  },
+                ]}
+                onChange={(value) =>
+                  changeProvider(normalizeDecisionModelProvider(value))
+                }
+                disabled={isSaving}
               />
             </label>
             <label className="api-settings-field">
@@ -529,7 +607,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
                 value={draft.model}
                 onChange={(event) => updateDraft("model", event.target.value)}
                 disabled={isSaving}
-                placeholder={DEFAULT_DECISION_MODEL_MODEL}
+                placeholder={decisionModelDefaultModel(draft.provider)}
               />
             </label>
             <label className="api-settings-field">
@@ -571,7 +649,7 @@ export function DecisionModelsPanel(): React.JSX.Element {
                 placeholder={
                   draft.baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM
                     ? DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE
-                    : DEFAULT_DECISION_MODEL_BASE_URL
+                    : decisionModelDefaultBaseUrl(draft.provider)
                 }
               />
               <small className="api-settings-hint-text">

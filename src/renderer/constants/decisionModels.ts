@@ -1,22 +1,38 @@
 /**
- * 决策模型（Decision model）：TypeSafe System One 一类的「判定型」模型，
- * 不生成文本，只对给定状态逐条给出选择。
+ * 决策模型（Decision model）：TypeSafe System One / OpenAI Decisions 一类的
+ * 「判定型」模型，不生成文本，只对给定状态逐条给出选择。
  *
  * 真源是 system_settings 的 `decision_models`，JSON 形如：
- * `{ "models": [{ id, name, baseUrl, baseUrlMode, model, apiKey, enabled }] }`。
+ * `{ "models": [{ id, name, provider, baseUrl, baseUrlMode, model, apiKey, enabled }] }`。
  * 该配置独立于代码库设置：代码库只保存选中的决策模型 id，其它功能可复用同一份配置。
- * Rust 侧（native/src/api/jev.rs）按同一份 JSON 解析，字段名必须保持 camelCase 一致。
+ * Rust 侧（native/src/api/decision_model.rs）按同一份 JSON 解析，字段名保持 camelCase 一致。
  */
 
 export const DECISION_MODELS_SETTING_NAME = "Decision models";
 export const DECISION_MODELS_SETTING_CODE = "decision_models";
 
+export type DecisionModelProvider = "typesafe" | "openai";
+
+export const DECISION_MODEL_PROVIDER_TYPESAFE: DecisionModelProvider =
+  "typesafe";
+export const DECISION_MODEL_PROVIDER_OPENAI: DecisionModelProvider = "openai";
+export const DEFAULT_DECISION_MODEL_PROVIDER: DecisionModelProvider =
+  DECISION_MODEL_PROVIDER_TYPESAFE;
+
 /** 官方 TypeSafe System One 端点（Base URL 留空时 Rust 也回落到该地址）。 */
 export const DEFAULT_DECISION_MODEL_BASE_URL = "https://api.typesafe.ai/v1";
 /** 官方默认模型名。 */
 export const DEFAULT_DECISION_MODEL_MODEL = "jev-latest";
-/** 新建决策模型时的默认名称。 */
+/** 新建 TypeSafe 决策模型时的默认名称。 */
 export const DEFAULT_DECISION_MODEL_NAME = "Jev (TypeSafe)";
+
+/** 官方 OpenAI Decisions 端点（Base URL 留空时 Rust 也回落到该地址）。 */
+export const DEFAULT_OPENAI_DECISION_MODEL_BASE_URL =
+  "https://api.openai.com/v1";
+/** OpenAI Decisions 默认模型名（仍可自由填写，不设白名单）。 */
+export const DEFAULT_OPENAI_DECISION_MODEL_MODEL = "gpt-6-luna";
+/** 新建 OpenAI Decisions 决策模型时的默认名称。 */
+export const DEFAULT_OPENAI_DECISION_MODEL_NAME = "OpenAI Decisions";
 
 export type DecisionModelBaseUrlMode = "auto" | "custom";
 
@@ -31,6 +47,7 @@ export const DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE =
 export type DecisionModelConfig = {
   id: string;
   name: string;
+  provider: DecisionModelProvider;
   baseUrl: string;
   baseUrlMode: DecisionModelBaseUrlMode;
   model: string;
@@ -48,15 +65,48 @@ const toText = (value: unknown): string =>
 export const createDecisionModelId = (): string =>
   `dm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-/** 新建决策模型的默认值（预填官方 TypeSafe 端点）。 */
+export const normalizeDecisionModelProvider = (
+  value: unknown,
+): DecisionModelProvider =>
+  toText(value) === DECISION_MODEL_PROVIDER_OPENAI
+    ? DECISION_MODEL_PROVIDER_OPENAI
+    : DECISION_MODEL_PROVIDER_TYPESAFE;
+
+/** provider 对应的默认 Base URL（新建与切换 provider 时使用）。 */
+export const decisionModelDefaultBaseUrl = (
+  provider: DecisionModelProvider,
+): string =>
+  provider === DECISION_MODEL_PROVIDER_OPENAI
+    ? DEFAULT_OPENAI_DECISION_MODEL_BASE_URL
+    : DEFAULT_DECISION_MODEL_BASE_URL;
+
+/** provider 对应的默认模型名。 */
+export const decisionModelDefaultModel = (
+  provider: DecisionModelProvider,
+): string =>
+  provider === DECISION_MODEL_PROVIDER_OPENAI
+    ? DEFAULT_OPENAI_DECISION_MODEL_MODEL
+    : DEFAULT_DECISION_MODEL_MODEL;
+
+/** provider 对应的新建默认名称。 */
+export const decisionModelDefaultName = (
+  provider: DecisionModelProvider,
+): string =>
+  provider === DECISION_MODEL_PROVIDER_OPENAI
+    ? DEFAULT_OPENAI_DECISION_MODEL_NAME
+    : DEFAULT_DECISION_MODEL_NAME;
+
+/** 新建决策模型的默认值（按 provider 预填端点与模型名）。 */
 export const createDecisionModel = (
-  name = DEFAULT_DECISION_MODEL_NAME,
+  provider: DecisionModelProvider = DEFAULT_DECISION_MODEL_PROVIDER,
+  name = decisionModelDefaultName(provider),
 ): DecisionModelConfig => ({
   id: createDecisionModelId(),
   name,
-  baseUrl: DEFAULT_DECISION_MODEL_BASE_URL,
+  provider,
+  baseUrl: decisionModelDefaultBaseUrl(provider),
   baseUrlMode: DECISION_MODEL_BASE_URL_MODE_AUTO,
-  model: DEFAULT_DECISION_MODEL_MODEL,
+  model: decisionModelDefaultModel(provider),
   apiKey: "",
   enabled: true,
 });
@@ -81,17 +131,19 @@ const normalizeDecisionModel = (value: unknown): DecisionModelConfig | null => {
     return null;
   }
 
+  const provider = normalizeDecisionModelProvider(value.provider);
   const baseUrlMode = normalizeDecisionModelBaseUrlMode(value.baseUrlMode);
   const baseUrl = toText(value.baseUrl);
 
   return {
     id: toText(value.id) || createDecisionModelId(),
     name: name || model,
+    provider,
     baseUrl:
       baseUrl ||
       (baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM
         ? ""
-        : DEFAULT_DECISION_MODEL_BASE_URL),
+        : decisionModelDefaultBaseUrl(provider)),
     baseUrlMode,
     model,
     apiKey: typeof value.apiKey === "string" ? value.apiKey : "",
@@ -137,6 +189,7 @@ export const toDecisionModelsJson = (models: DecisionModelConfig[]): string =>
     models: models.map((model) => ({
       ...model,
       name: model.name.trim(),
+      provider: normalizeDecisionModelProvider(model.provider),
       baseUrl: model.baseUrl.trim(),
       baseUrlMode: normalizeDecisionModelBaseUrlMode(model.baseUrlMode),
       model: model.model.trim(),
@@ -144,10 +197,27 @@ export const toDecisionModelsJson = (models: DecisionModelConfig[]): string =>
     })),
   });
 
+/** 实际请求端点；规则与 Rust 侧 resolve_endpoint 逐条一致。 */
 export const resolveDecisionModelEndpoint = (
-  model: Pick<DecisionModelConfig, "baseUrl" | "baseUrlMode">,
+  model: Pick<DecisionModelConfig, "provider" | "baseUrl" | "baseUrlMode">,
 ): string => {
   const baseUrl = model.baseUrl.trim().replace(/\/+$/, "");
+
+  if (
+    normalizeDecisionModelProvider(model.provider) ===
+    DECISION_MODEL_PROVIDER_OPENAI
+  ) {
+    if (!baseUrl) {
+      return `${DEFAULT_OPENAI_DECISION_MODEL_BASE_URL}/decisions`;
+    }
+    if (baseUrl.endsWith("/decisions")) {
+      return baseUrl;
+    }
+    if (baseUrl.endsWith("/v1")) {
+      return `${baseUrl}/decisions`;
+    }
+    return `${baseUrl}/v1/decisions`;
+  }
 
   if (model.baseUrlMode === DECISION_MODEL_BASE_URL_MODE_CUSTOM) {
     return baseUrl;

@@ -1,25 +1,13 @@
-//! Decision model (TypeSafe System One / Jev) client, used by the codebase
-//! agent-review loop and the sensitive-command gate.
+//! 决策模型客户端（TypeSafe System One / OpenAI Decisions）。
 //!
-//! A decision model is not a text generator: it evaluates a `state`
-//! against a map of typed questions and answers each one. Here it is used for
-//! two jobs — asking a `choice` question per search result ("relevant" vs
-//! "irrelevant"), and asking whether a command that matched a sensitive rule
-//! may run without user confirmation plus one reason category. The verdict is
-//! the model's own: there is no user-tuned probability threshold, so a single
-//! request replaces the JSON-producing LLM review for the common case.
+//! 决策模型不生成文本，只对给定 state 逐条回答 choice 问题：代码库审查用它判定
+//! 每条结果是否相关，敏感命令辅助用它判定命令能否直接执行并给出理由分类。
 //!
-//! Design constraints (https://docs.typesafe.ai/api):
-//! - The state plus every question must fit the model's context (32k tokens for
-//!   the state), so the state is built under a hard character budget. Results
-//!   that do not fit are kept as relevant instead of being silently dropped.
-//! - Jev cannot produce a refined search query. When its verdict triggers a
-//!   re-search, the caller asks the LLM for that query only; a Jev failure
-//!   falls back to the LLM review path.
-//! - Any transport or protocol failure returns an error so the caller can fall
-//!   back: this module never degrades the search on its own.
+//! 两种 provider 共用同一条链路：构建 state 与问题 -> 按 provider 生成请求体 ->
+//! 把两种响应折叠成 `answers: { <name>: { choice, confidence } }` -> 同一段解释代码。
+//! 任何传输或协议失败都返回错误，由调用方决定回退，本模块不做静默降级。
 //!
-//! Everything here is async and never blocks the Node.js main thread.
+//! 全部异步执行，不阻塞 Node.js 主线程。
 
 use std::path::Path;
 use std::time::Duration;
@@ -36,55 +24,43 @@ use crate::storage::services::codebase_index::SearchResult;
 use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::SensitiveCommandMatchResult;
 
-/// Official TypeSafe endpoint host, used when the user leaves the base URL
-/// empty in the decision model configuration.
-const DEFAULT_BASE_URL: &str = "https://api.typesafe.ai/v1";
+/// TypeSafe System One 官方端点（Base URL 留空时的回落值）。
+const DEFAULT_TYPESAFE_BASE_URL: &str = "https://api.typesafe.ai/v1";
+
+/// OpenAI Decisions 官方端点（Base URL 留空时的回落值）。
+const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 
 const CUSTOM_BASE_URL_MODE: &str = "custom";
 const AUTO_BASE_URL_MODE: &str = "auto";
 
-/// system_settings 里决策模型配置的 setting_code（与前端
-/// `src/renderer/constants/decisionModels.ts` 保持一致）。
+/// system_settings 里决策模型配置的 setting_code（与前端 decisionModels.ts 一致）。
 pub const DECISION_MODELS_SETTING_CODE: &str = "decision_models";
 
-/// Maximum number of results turned into questions in a single request.
+/// 单次请求最多转换的结果数。
 const MAX_QUESTIONS: usize = 40;
 
-/// Maximum characters of each result excerpt sent as part of the state.
+/// 每条结果摘录的最大字符数。
 const MAX_EXCERPT_CHARS: usize = 800;
 
-/// Maximum characters of the whole state (query + all excerpts). Jev's budget is
-/// 32k tokens for the state plus the longest question; a character budget with a
-/// wide safety margin keeps code excerpts (roughly 4 characters per token)
-/// comfortably inside it.
+/// state 总字符预算（query + 全部摘录）。按 32k token 的 state 预算估算，留足余量。
 const MAX_STATE_CHARS: usize = 40_000;
 
-/// Request timeout. Jev answers in tens of milliseconds; a short ceiling keeps
-/// a stalled endpoint from holding up the search.
+/// 请求超时：决策模型通常几十毫秒返回，短上限避免卡住搜索。
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 
-/// Option the model picks for a result it judges relevant. The other option is
-/// `irrelevant`; the two are the only values of the question's criteria.
+/// 模型判定相关的选项值。
 const RELEVANT_OPTION: &str = "relevant";
-
-/// Sensitive-command verdict: the command may run without user confirmation.
 const ALLOW_OPTION: &str = "allow";
-
-/// Sensitive-command verdict: the user has to confirm the command first.
 const DENY_OPTION: &str = "deny";
 
-/// Question ids of the sensitive-command request; the answers come back under
-/// the same keys.
+/// 敏感命令请求的问题 id；答案按同名的 name 返回。
 const VERDICT_QUESTION_ID: &str = "verdict";
 const REASON_QUESTION_ID: &str = "reason";
 
-/// Fallback reason category used when the model's answer is missing or names
-/// an option we do not know.
+/// 答案缺失或选项未知时回退的理由分类。
 const REASON_UNKNOWN: &str = "unclear";
 
-/// Reason categories of a sensitive-command verdict. The keys are stable — the
-/// frontend localizes them (`sensitiveCommand.decision.reason.<key>`), so the
-/// model never writes user-facing text.
+/// 理由分类的稳定 key，前端负责本地化（`sensitiveCommand.decision.reason.<key>`）。
 const REASON_CATEGORIES: &[(&str, &str)] = &[
     (
         "readOnly",
@@ -116,17 +92,49 @@ const REASON_CATEGORIES: &[(&str, &str)] = &[
     ),
 ];
 
-/// Configuration for the decision-model evaluation endpoint.
+/// 决策模型协议类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecisionProvider {
+    Typesafe,
+    Openai,
+}
+
+impl DecisionProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DecisionProvider::Typesafe => "typesafe",
+            DecisionProvider::Openai => "openai",
+        }
+    }
+
+    /// 未知值按 typesafe 处理：存量配置没有 provider 字段。
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(value: &str) -> Self {
+        match value.trim() {
+            "openai" => DecisionProvider::Openai,
+            _ => DecisionProvider::Typesafe,
+        }
+    }
+
+    fn default_base_url(self) -> &'static str {
+        match self {
+            DecisionProvider::Typesafe => DEFAULT_TYPESAFE_BASE_URL,
+            DecisionProvider::Openai => DEFAULT_OPENAI_BASE_URL,
+        }
+    }
+}
+
+/// 一次请求所需的配置；provider 决定端点、请求体与响应解析。
 #[derive(Debug, Clone)]
-pub struct JevConfig {
+pub struct DecisionModelConfig {
     pub base_url: String,
     pub base_url_mode: String,
     pub api_key: String,
     pub model: String,
+    pub provider: DecisionProvider,
 }
 
-/// 一个决策模型配置项（system_settings 的 `decision_models`，字段名与前端
-/// camelCase 一致）。
+/// 一个决策模型配置项（system_settings 的 `decision_models`，camelCase 与前端一致）。
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct DecisionModel {
@@ -137,6 +145,13 @@ pub struct DecisionModel {
     pub api_key: String,
     pub model: String,
     pub enabled: bool,
+    /// "typesafe" | "openai"；存量条目没有该字段，缺省为 typesafe。
+    #[serde(default = "default_provider")]
+    pub provider: String,
+}
+
+fn default_provider() -> String {
+    DecisionProvider::Typesafe.as_str().to_string()
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -164,17 +179,17 @@ pub fn load_decision_models(database_path: &Path) -> Vec<DecisionModel> {
         .unwrap_or_default()
 }
 
-impl JevConfig {
-    /// Build a request config from raw decision model fields.
+impl DecisionModelConfig {
+    /// 由原始配置字段构造请求配置。
     ///
-    /// Returns the reason when the request information is incomplete (empty API
-    /// key / model name, or an empty request URL in custom mode) so callers can
-    /// show why the decision model is unusable instead of silently skipping it.
+    /// 配置不完整（API Key / 模型名为空，自定义模式下请求地址为空）时返回原因，
+    /// 供调用方展示「决策模型不可用」而不再静默跳过。
     pub fn new(
         base_url: &str,
         base_url_mode: &str,
         api_key: &str,
         model: &str,
+        provider: DecisionProvider,
     ) -> std::result::Result<Self, String> {
         let api_key = api_key.trim();
         let model = model.trim();
@@ -187,7 +202,7 @@ impl JevConfig {
         }
 
         let base_url_mode = normalize_base_url_mode(base_url_mode);
-        let base_url = resolve_base_url(base_url, &base_url_mode);
+        let base_url = resolve_base_url(base_url, &base_url_mode, provider);
 
         if base_url.is_empty() {
             return Err("The decision model request URL is empty".to_string());
@@ -198,12 +213,13 @@ impl JevConfig {
             base_url_mode,
             api_key: api_key.to_string(),
             model: model.to_string(),
+            provider,
         })
     }
 
-    /// Full `/systemone` endpoint this config sends requests to.
+    /// 当前 provider 的完整请求端点。
     pub fn endpoint(&self) -> String {
-        resolve_systemone_endpoint(&self.base_url, &self.base_url_mode)
+        resolve_provider_endpoint(&self.base_url, &self.base_url_mode, self.provider)
     }
 }
 
@@ -214,7 +230,10 @@ pub enum DecisionModelResolution {
     /// 选择了决策模型，但它已被删除、停用或请求信息不完整。
     Unavailable { name: String, reason: String },
     /// 可以发起请求。
-    Ready { name: String, config: JevConfig },
+    Ready {
+        name: String,
+        config: DecisionModelConfig,
+    },
 }
 
 /// 按 id 解析选中的决策模型，并说明不可用的原因（供使用方展示回退原因）。
@@ -244,22 +263,38 @@ pub fn resolve_decision_model(models: &[DecisionModel], model_id: &str) -> Decis
         };
     }
 
-    match JevConfig::new(
+    match DecisionModelConfig::new(
         &selected.base_url,
         &selected.base_url_mode,
         &selected.api_key,
         &selected.model,
+        DecisionProvider::from_str(&selected.provider),
     ) {
         Ok(config) => DecisionModelResolution::Ready { name, config },
         Err(reason) => DecisionModelResolution::Unavailable { name, reason },
     }
 }
 
-/// Endpoint resolved from raw base URL fields (used by the connection test
-/// even when the rest of the config is incomplete).
-pub fn resolve_endpoint(base_url: &str, base_url_mode: &str) -> String {
+/// 按配置字段解析请求端点（连接自检在配置不完整时也要能展示端点）。
+pub fn resolve_endpoint(
+    base_url: &str,
+    base_url_mode: &str,
+    provider: DecisionProvider,
+) -> String {
     let base_url_mode = normalize_base_url_mode(base_url_mode);
-    resolve_systemone_endpoint(&resolve_base_url(base_url, &base_url_mode), &base_url_mode)
+    let base_url = resolve_base_url(base_url, &base_url_mode, provider);
+    resolve_provider_endpoint(&base_url, &base_url_mode, provider)
+}
+
+fn resolve_provider_endpoint(
+    base_url: &str,
+    base_url_mode: &str,
+    provider: DecisionProvider,
+) -> String {
+    match provider {
+        DecisionProvider::Typesafe => resolve_systemone_endpoint(base_url, base_url_mode),
+        DecisionProvider::Openai => resolve_decisions_endpoint(base_url),
+    }
 }
 
 fn normalize_base_url_mode(base_url_mode: &str) -> String {
@@ -270,8 +305,12 @@ fn normalize_base_url_mode(base_url_mode: &str) -> String {
     }
 }
 
-/// Normalized Base URL, falling back to the official TypeSafe endpoint.
-fn resolve_base_url(base_url: &str, base_url_mode: &str) -> String {
+/// 规范化后的 Base URL；自动模式下留空回落到该 provider 的官方地址。
+fn resolve_base_url(
+    base_url: &str,
+    base_url_mode: &str,
+    provider: DecisionProvider,
+) -> String {
     let normalized = normalize_base_url(base_url);
 
     if base_url_mode == CUSTOM_BASE_URL_MODE {
@@ -279,23 +318,19 @@ fn resolve_base_url(base_url: &str, base_url_mode: &str) -> String {
     }
 
     if normalized.is_empty() {
-        DEFAULT_BASE_URL.to_string()
+        provider.default_base_url().to_string()
     } else {
         normalized
     }
 }
 
-/// Ask Jev which of the given results are relevant to the query.
+/// 询问决策模型：哪些搜索结果与 query 相关。
 ///
-/// Returns the indices (into `results`) that Jev judged relevant. The verdict is
-/// the model's own: every result becomes one `choice` question between
-/// `relevant` and `irrelevant`, and the option Jev picks decides — no
-/// user-tuned similarity threshold takes part in the decision. Results that
-/// could not be asked about (state budget exhausted, question cap reached) and
-/// results whose answer is missing are returned as relevant, so the review is
-/// always conservative.
+/// 每条结果变成一个 `relevant` / `irrelevant` 的 choice 问题，由模型自己的答案决定，
+/// 不引入用户可调阈值。超出 state 预算或问题上限的结果、以及答案缺失的结果都按
+/// 相关保留，审查始终保守。
 pub async fn evaluate_relevance(
-    config: &JevConfig,
+    config: &DecisionModelConfig,
     query: &str,
     results: &[SearchResult],
 ) -> Result<Vec<usize>> {
@@ -305,8 +340,7 @@ pub async fn evaluate_relevance(
 
     let (state, asked) = build_state(query, results);
 
-    // Nothing fit the state budget — report everything as relevant instead of
-    // sending a request that only judges the query against an empty list.
+    // 没有任何结果进入预算：全部按相关返回，避免只拿空列表去问模型。
     if asked.is_empty() {
         return Ok((0..results.len()).collect());
     }
@@ -325,15 +359,13 @@ pub async fn evaluate_relevance(
             }),
         );
     }
+    let questions = Value::Object(questions);
 
     let parsed = evaluate_state(
         config,
         "evaluate_relevance",
-        &json!({
-            "state": state,
-            "model": config.model,
-            "questions": questions,
-        }),
+        &state,
+        &questions,
         |parsed| Ok(parsed),
     )
     .await
@@ -350,17 +382,14 @@ pub async fn evaluate_relevance(
             .and_then(|answer| answer.get("choice"))
             .and_then(Value::as_str);
 
-        // The model's verdict decides: "relevant" keeps the result, any other
-        // option means irrelevant. A missing answer keeps the result as well —
-        // the review never drops a result it could not judge.
+        // 模型判定决定去留；答案缺失时保留该结果，审查不丢弃未判定的内容。
         if verdict.is_none() || verdict == Some(RELEVANT_OPTION) {
             relevant.push(*index);
         }
         asked_indices.push(*index);
     }
 
-    // Results that were never asked about (question cap / state budget) are
-    // kept: an incomplete review must never delete results it did not judge.
+    // 未进入问题列表（问题上限 / state 预算）的结果同样保留。
     for index in 0..results.len() {
         if !asked_indices.contains(&index) {
             relevant.push(index);
@@ -371,20 +400,17 @@ pub async fn evaluate_relevance(
     Ok(relevant)
 }
 
-/// Jev's verdict on a command that matched a sensitive rule.
+/// 决策模型对一条命中敏感规则命令的判定。
 pub struct CommandDecision {
-    /// Whether the command may run without asking the user.
+    /// 是否可以直接执行，无需用户确认。
     pub allow: bool,
-    /// Reason category key (one of `REASON_CATEGORIES`); the frontend localizes
-    /// it, so the model never writes user-facing text.
+    /// 理由分类 key（`REASON_CATEGORIES` 之一），前端本地化。
     pub reason: String,
-    /// The model's confidence in the verdict (0-1).
+    /// 模型对判定的置信度（0-1）。
     pub confidence: f64,
 }
 
-/// 一条命令的判定上下文：命令本身的文本，加上模型写的一行说明与它实际
-/// 执行的目录。上下文越完整，风险判断越准（同样是 `rm`，删构建产物和删
-/// 源码目录的风险完全不同）。
+/// 一条命令的判定上下文：命令文本、模型写的说明与实际执行目录。
 pub struct CommandContext<'a> {
     /// 完整命令文本。
     pub command: &'a str,
@@ -392,24 +418,17 @@ pub struct CommandContext<'a> {
     pub description: &'a str,
     /// 命令的实际执行目录。
     pub working_directory: &'a str,
-    /// 命中的敏感规则（模式 + 说明），仅作为「这条命令被规则命中」的证据，
-    /// 本身不构成风险。
+    /// 命中的敏感规则（模式 + 说明），只作为「被规则命中」的证据。
     pub matched_rules: &'a [SensitiveCommandMatchResult],
 }
 
-/// Ask Jev whether a command that matched a sensitive rule may run without
-/// user confirmation, and why.
+/// 询问决策模型：命中敏感规则的命令能否直接执行，以及理由分类。
 ///
-/// The verdict is the model's own `choice` between `allow` and `deny`, judged
-/// on the command's real effect in its working directory — a matched rule is
-/// only a hint, never a verdict (rules also fire on file names, arguments and
-/// commit messages). A second question picks one of the fixed reason categories
-/// (`REASON_CATEGORIES`) so the caller can explain the verdict in the user's own
-/// language. Both answers arrive in one request. A missing verdict is an error:
-/// the caller then keeps the plain confirmation prompt instead of acting on a
-/// guess.
+/// verdict 是模型在真实执行上下文下给出的 `allow` / `deny`；规则命中只是提示。
+/// 第二个问题从固定理由分类中选一个，调用方据此用用户语言解释判定。
+/// 两个答案来自同一次请求；verdict 缺失按错误处理，调用方保持人工确认。
 pub async fn evaluate_command(
-    config: &JevConfig,
+    config: &DecisionModelConfig,
     context: &CommandContext<'_>,
 ) -> Result<CommandDecision> {
     let mut state = Map::new();
@@ -459,25 +478,28 @@ pub async fn evaluate_command(
             "criteria": reason_criteria,
         },
     });
+    let state = Value::Object(state);
+    let provider = config.provider;
 
     evaluate_state(
         config,
         "evaluate_command",
-        &json!({
-            "state": state,
-            "model": config.model,
-            "questions": questions,
-        }),
-        |parsed| {
+        &state,
+        &questions,
+        move |parsed| {
             let answers = parsed.get("answers").and_then(Value::as_object);
             let verdict_answer = answers.and_then(|map| map.get(VERDICT_QUESTION_ID));
             let verdict = verdict_answer
                 .and_then(|answer| answer.get("choice"))
                 .and_then(Value::as_str)
-                .ok_or_else(|| "Jev did not answer the sensitive command verdict".to_string())?;
+                .ok_or_else(|| {
+                    format!(
+                        "The {} decision model did not answer the sensitive command verdict",
+                        provider.as_str()
+                    )
+                })?;
 
-            // An unknown or missing reason category degrades to `unclear`: the
-            // verdict still stands, only its explanation is less specific.
+            // 未知或缺失的理由分类降级为 unclear：判定仍有效，只是解释不够具体。
             let reason = answers
                 .and_then(|map| map.get(REASON_QUESTION_ID))
                 .and_then(|answer| answer.get("choice"))
@@ -487,7 +509,7 @@ pub async fn evaluate_command(
                 .to_string();
 
             Ok(CommandDecision {
-                // Anything but an explicit `allow` keeps the confirmation prompt.
+                // 只有明确的 allow 才放行，其它情况都保留确认提示。
                 allow: verdict == ALLOW_OPTION,
                 reason,
                 confidence: verdict_answer
@@ -502,16 +524,15 @@ pub async fn evaluate_command(
     .into_result()
 }
 
-/// Send one evaluation request to Jev and interpret the parsed response body.
+/// 发送一次判定请求，并把两种 provider 的响应折叠后交给 `interpret`。
 ///
-/// Every failure (transport, HTTP status, malformed body, or an answer that
-/// `interpret` rejects) is reported in the returned report and written to the
-/// system log (module `decision_model`), so the caller can decide what to fall
-/// back to and the user can find out why.
+/// 传输失败、HTTP 状态、响应格式错误与 `interpret` 拒绝的答案都写入返回的报告
+/// （同时进系统日志，module = `decision_model`），调用方据此决定回退。
 async fn evaluate_state<T, I>(
-    config: &JevConfig,
+    config: &DecisionModelConfig,
     func: &str,
-    body: &Value,
+    state: &Value,
+    questions: &Value,
     interpret: I,
 ) -> ModelCallReport<T>
 where
@@ -519,6 +540,8 @@ where
 {
     let endpoint = config.endpoint();
     let endpoint_ref = endpoint.as_str();
+    let body = build_request_body(config, state, questions);
+    let provider = config.provider;
 
     observe_call(
         ModelKind::Decision,
@@ -530,56 +553,216 @@ where
                 ModelKind::Decision,
                 endpoint_ref,
                 build_headers(&config.api_key),
-                body,
+                &body,
                 Duration::from_secs(REQUEST_TIMEOUT_SECS),
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                ModelRequestError::new(
+                    error.http_status,
+                    format!("{} (provider: {})", error.message, provider.as_str()),
+                )
+            })?;
 
             let parsed: Value = serde_json::from_str(&text).map_err(|error| {
                 ModelRequestError::new(
                     Some(status),
-                    format!("Failed to parse Jev response: {error}"),
+                    format!(
+                        "Failed to parse the {} decision model response: {error}",
+                        provider.as_str()
+                    ),
                 )
             })?;
 
-            let value =
-                interpret(parsed).map_err(|message| ModelRequestError::new(Some(status), message))?;
+            let answers = normalize_answers(provider, &parsed)
+                .map_err(|message| ModelRequestError::new(Some(status), message))?;
+            let normalized = json!({ "answers": answers });
+
+            let value = interpret(normalized)
+                .map_err(|message| ModelRequestError::new(Some(status), message))?;
             Ok((value, status))
         },
     )
     .await
 }
 
-/// Connection self-test: one minimal `/systemone` request whose response must
-/// carry the `answers` object.
-pub async fn test_connection(config: &JevConfig) -> ModelCallReport<()> {
-    let body = json!({
-        "state": { "purpose": "Snow App connection test" },
-        "model": config.model,
-        "questions": {
-            "probe": {
-                "type": "choice",
-                "instructions": "Is this request a connection test?",
-                "criteria": {
-                    "yes": "The state says it is a connection test",
-                    "no": "The state describes something else"
-                }
+/// 连接自检：发一条最小请求，响应必须带答案。
+///
+/// typesafe 要求 `answers` 是对象；openai 要求 `answers` 是非空数组。
+pub async fn test_connection(config: &DecisionModelConfig) -> ModelCallReport<()> {
+    let state = json!({ "purpose": "Snow App connection test" });
+    let questions = json!({
+        "probe": {
+            "type": "choice",
+            "instructions": "Is this request a connection test?",
+            "criteria": {
+                "yes": "The state says it is a connection test",
+                "no": "The state describes something else"
             }
         },
     });
+    let provider = config.provider;
 
-    evaluate_state(config, CONNECTION_TEST_FUNC, &body, |parsed| {
-        if parsed.get("answers").and_then(Value::as_object).is_some() {
-            Ok(())
-        } else {
-            Err("Jev response is missing the 'answers' object".to_string())
-        }
-    })
+    evaluate_state(
+        config,
+        CONNECTION_TEST_FUNC,
+        &state,
+        &questions,
+        move |parsed| {
+            let answers = parsed.get("answers").and_then(Value::as_object);
+            match provider {
+                DecisionProvider::Typesafe => {
+                    if answers.is_some() {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "The {} decision model response is missing the 'answers' object",
+                            provider.as_str()
+                        ))
+                    }
+                }
+                DecisionProvider::Openai => {
+                    if answers.map(|map| !map.is_empty()).unwrap_or(false) {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "The {} decision model returned no answers",
+                            provider.as_str()
+                        ))
+                    }
+                }
+            }
+        },
+    )
     .await
 }
 
-/// Build the evaluation state and the list of `(result index, question id)`
-/// pairs that fit inside the state budget.
+/// 按 provider 生成请求体。
+///
+/// 问题在内部统一保存为「id -> { type, instructions, criteria }」，openai 侧把
+/// criteria 1:1 映射成 `choices`，state 放进 `input` 的 input_json 内容块。
+fn build_request_body(
+    config: &DecisionModelConfig,
+    state: &Value,
+    questions: &Value,
+) -> Value {
+    match config.provider {
+        DecisionProvider::Typesafe => json!({
+            "state": state,
+            "model": config.model,
+            "questions": questions,
+        }),
+        DecisionProvider::Openai => json!({
+            "model": config.model,
+            "input": [{
+                "role": "user",
+                "content": [{
+                    "type": "input_json",
+                    "data": state,
+                }],
+            }],
+            "questions": choice_questions(questions),
+        }),
+    }
+}
+
+/// 把内部的问题对象转换为 OpenAI Decisions 的 questions 数组。
+fn choice_questions(questions: &Value) -> Value {
+    let Some(map) = questions.as_object() else {
+        return Value::Array(Vec::new());
+    };
+
+    Value::Array(
+        map.iter()
+            .map(|(name, question)| {
+                let instructions = question
+                    .get("instructions")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let choices = question
+                    .get("criteria")
+                    .and_then(Value::as_object)
+                    .map(|criteria| {
+                        criteria
+                            .iter()
+                            .map(|(value, description)| {
+                                json!({ "value": value, "description": description })
+                            })
+                            .collect::<Vec<Value>>()
+                    })
+                    .unwrap_or_default();
+
+                json!({
+                    "type": "choice",
+                    "name": name,
+                    "instructions": instructions,
+                    "choices": choices,
+                })
+            })
+            .collect(),
+    )
+}
+
+/// 把两种响应折叠成 `name -> { choice, confidence }`。
+///
+/// typesafe 的 answers 是对象；openai 的 answers 是数组，按 name 折叠。
+/// refusal 答案按错误返回，绝不当作 allow。
+fn normalize_answers(
+    provider: DecisionProvider,
+    parsed: &Value,
+) -> std::result::Result<Map<String, Value>, String> {
+    let answers = parsed.get("answers").ok_or_else(|| {
+        format!(
+            "The {} decision model response is missing the 'answers' field",
+            provider.as_str()
+        )
+    })?;
+
+    match provider {
+        DecisionProvider::Typesafe => answers.as_object().cloned().ok_or_else(|| {
+            format!(
+                "The {} decision model response is missing the 'answers' object",
+                provider.as_str()
+            )
+        }),
+        DecisionProvider::Openai => {
+            let items = answers.as_array().ok_or_else(|| {
+                format!(
+                    "The {} decision model response is missing the 'answers' array",
+                    provider.as_str()
+                )
+            })?;
+
+            let mut normalized = Map::new();
+            for item in items {
+                let name = item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim();
+                if name.is_empty() {
+                    return Err(format!(
+                        "The {} decision model returned an answer without a name",
+                        provider.as_str()
+                    ));
+                }
+                if item.get("type").and_then(Value::as_str) == Some("refusal") {
+                    return Err(format!("Decision refused for {name}"));
+                }
+                normalized.insert(
+                    name.to_string(),
+                    json!({
+                        "choice": item.get("choice").cloned().unwrap_or(Value::Null),
+                        "confidence": item.get("confidence").cloned().unwrap_or(Value::Null),
+                    }),
+                );
+            }
+            Ok(normalized)
+        }
+    }
+}
+
+/// 构建 state 与进入问题列表的 `(结果下标, 问题 id)`。
 fn build_state(query: &str, results: &[SearchResult]) -> (Value, Vec<(usize, String)>) {
     let mut items: Vec<Value> = Vec::new();
     let mut asked: Vec<(usize, String)> = Vec::new();
@@ -591,8 +774,7 @@ fn build_state(query: &str, results: &[SearchResult]) -> (Value, Vec<(usize, Str
         }
 
         let excerpt: String = result.content.chars().take(MAX_EXCERPT_CHARS).collect();
-        // Path, line range, id and the surrounding JSON keys also consume the
-        // budget; approximate them with a small constant.
+        // 路径、行号、id 与 JSON 键也占预算，用一个常量近似。
         let cost = excerpt.chars().count() + result.relative_path.chars().count() + 96;
         if used_chars + cost > MAX_STATE_CHARS {
             break;
@@ -620,7 +802,7 @@ fn resolve_systemone_endpoint(base_url: &str, base_url_mode: &str) -> String {
     }
 
     if normalized.is_empty() {
-        return format!("{DEFAULT_BASE_URL}/systemone");
+        return format!("{DEFAULT_TYPESAFE_BASE_URL}/systemone");
     }
 
     if normalized.ends_with("/systemone") {
@@ -632,6 +814,25 @@ fn resolve_systemone_endpoint(base_url: &str, base_url_mode: &str) -> String {
     }
 
     format!("{normalized}/v1/systemone")
+}
+
+/// OpenAI Decisions 端点：尊重用户已填的完整地址，只补齐缺失的 /decisions。
+fn resolve_decisions_endpoint(base_url: &str) -> String {
+    let normalized = normalize_base_url(base_url);
+
+    if normalized.is_empty() {
+        return format!("{DEFAULT_OPENAI_BASE_URL}/decisions");
+    }
+
+    if normalized.ends_with("/decisions") {
+        return normalized;
+    }
+
+    if normalized.ends_with("/v1") {
+        return format!("{normalized}/decisions");
+    }
+
+    format!("{normalized}/v1/decisions")
 }
 
 fn build_headers(api_key: &str) -> HeaderMap {

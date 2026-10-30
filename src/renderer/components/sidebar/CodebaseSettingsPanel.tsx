@@ -27,7 +27,7 @@ import {
 import {
   normalizeCodebaseSettings,
   readCodebaseSettingsJson,
-  readLegacyJevConfig,
+  readLegacyDecisionModel,
   toCodebaseForm,
   toCodebaseSettings,
 } from "./codebaseSettings/codebaseSettingsUtils";
@@ -86,9 +86,9 @@ export function CodebaseSettingsPanel(): React.JSX.Element {
       let normalized = normalizeCodebaseSettings(
         readCodebaseSettingsJson(rawSettings),
       );
-      // 旧版把 Jev 的 baseUrl / apiKey / model 内联在 codebase 设置里：一次性迁移到
+      // 旧版把 TypeSafe 的 baseUrl / apiKey / model 内联在 codebase 设置里：一次性迁移到
       // 决策模型并选中它，随后写回设置（旧字段随之消失，不会重复迁移）。
-      const legacy = readLegacyJevConfig(rawSettings);
+      const legacy = readLegacyDecisionModel(rawSettings);
 
       if (legacy && !normalized.agentReviewModelId) {
         const migrated = mergeLegacyDecisionModel(storedModels, legacy);

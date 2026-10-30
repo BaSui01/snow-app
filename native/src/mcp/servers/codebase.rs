@@ -148,7 +148,7 @@ impl CodebaseService {
                         &db_path, &pid,
                     )?;
                 let settings = load_codebase_settings(&db_path)?;
-                let decision_models = crate::api::jev::load_decision_models(&db_path);
+                let decision_models = crate::api::decision_model::load_decision_models(&db_path);
                 Ok::<_, Error>((scope, settings, decision_models))
             })
             .await
@@ -244,17 +244,19 @@ impl CodebaseService {
         // otherwise. A selected but unusable decision model (deleted, disabled,
         // incomplete) is a fallback the result reports, not a silent switch.
         // The decision models themselves are configured in the API settings page.
-        let (jev_config, unavailable_reason) = match crate::api::jev::resolve_decision_model(
+        let (decision_config, unavailable_reason) = match crate::api::decision_model::resolve_decision_model(
             &decision_models,
             &settings.agent_review_model_id,
         ) {
-            crate::api::jev::DecisionModelResolution::Ready { config, .. } => (Some(config), None),
-            crate::api::jev::DecisionModelResolution::Unavailable { name, reason } => {
+            crate::api::decision_model::DecisionModelResolution::Ready { config, .. } => {
+                (Some(config), None)
+            }
+            crate::api::decision_model::DecisionModelResolution::Unavailable { name, reason } => {
                 (None, Some(format!("{name}: {reason}")))
             }
-            crate::api::jev::DecisionModelResolution::NotSelected => (None, None),
+            crate::api::decision_model::DecisionModelResolution::NotSelected => (None, None),
         };
-        let uses_decision_model = jev_config.is_some();
+        let uses_decision_model = decision_config.is_some();
 
         // Determine the processing pipeline.
         //
@@ -295,7 +297,7 @@ impl CodebaseService {
             let review_result = crate::api::codebase_review::run_agent_review(
                 query.to_string(),
                 initial_results,
-                jev_config,
+                decision_config,
                 move |refined_query: String| {
                     let db_path = db_path.clone();
                     let pid = pid.clone();
@@ -498,7 +500,7 @@ struct CodebaseSettings {
     reranking_top_n: i32,
     /// 代理审查选用的决策模型 id（空 = 使用基础 LLM 模型）。决策模型的
     /// baseUrl / apiKey / model 存在 system_settings 的 `decision_models` 里，
-    /// 由 crate::api::jev 按这里的 id 解析。
+    /// 由 crate::api::decision_model 按这里的 id 解析。
     agent_review_model_id: String,
 }
 
@@ -533,7 +535,7 @@ enum PipelineType {
     /// Reranking was requested but failed (or returned nothing usable); the
     /// results keep their cosine similarity order.
     RerankingFallback,
-    /// Agent review applied — the configured review backend (Jev or the basic
+    /// Agent review applied — the configured review backend (decision model or the basic
     /// model) judged relevance, and the LLM potentially refined the query and
     /// re-searched.
     AgentReview,

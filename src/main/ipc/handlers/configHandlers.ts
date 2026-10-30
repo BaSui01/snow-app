@@ -709,6 +709,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       id: readTestText(raw, "id"),
       baseUrl: readTestText(raw, "baseUrl"),
       baseUrlMode: readTestText(raw, "baseUrlMode"),
+      provider: readTestText(raw, "provider"),
       apiKey: readTestText(raw, "apiKey"),
       model: readTestText(raw, "model"),
     });

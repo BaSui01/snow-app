@@ -441,7 +441,7 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 }
 
 /// Evaluate a command that matched a sensitive rule with the configured decision
-/// model (TypeSafe System One / Jev).
+/// model (TypeSafe System One or OpenAI Decisions).
 ///
 /// The verdict is a risk judgement of the command's real effect in
 /// `workingDirectory` (with the model's own `description` as context) — a rule
@@ -478,7 +478,7 @@ pub async fn evaluate_sensitive_command_decision(
                 crate::storage::services::system_settings::get_sensitive_command_assist(&db_path)?;
             let matched_rules =
                 crate::storage::check_sensitive_command_match(vec![(candidate, None)], project_id)?;
-            let decision_models = crate::api::jev::load_decision_models(&db_path);
+            let decision_models = crate::api::decision_model::load_decision_models(&db_path);
             Ok::<_, Error>((assist, matched_rules, decision_models))
         })
         .await
@@ -508,12 +508,14 @@ pub async fn evaluate_sensitive_command_decision(
     };
 
     let (model_name, config) =
-        match crate::api::jev::resolve_decision_model(&decision_models, &assist.model_id) {
-            crate::api::jev::DecisionModelResolution::Ready { name, config } => (name, config),
-            crate::api::jev::DecisionModelResolution::Unavailable { name, reason } => {
+        match crate::api::decision_model::resolve_decision_model(&decision_models, &assist.model_id) {
+            crate::api::decision_model::DecisionModelResolution::Ready { name, config } => {
+                (name, config)
+            }
+            crate::api::decision_model::DecisionModelResolution::Unavailable { name, reason } => {
                 return Ok(Some(unavailable(name, reason)));
             }
-            crate::api::jev::DecisionModelResolution::NotSelected => {
+            crate::api::decision_model::DecisionModelResolution::NotSelected => {
                 return Ok(Some(unavailable(
                     String::new(),
                     "No decision model is selected for the sensitive command assist".to_string(),
@@ -521,9 +523,9 @@ pub async fn evaluate_sensitive_command_decision(
             }
         };
 
-    let verdict = crate::api::jev::evaluate_command(
+    let verdict = crate::api::decision_model::evaluate_command(
         &config,
-        &crate::api::jev::CommandContext {
+        &crate::api::decision_model::CommandContext {
             command: &command,
             description: &description,
             working_directory: &working_directory,

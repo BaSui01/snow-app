@@ -6,14 +6,15 @@
 //!   vector search results and removes irrelevant chunks. If more than 50% of
 //!   the results are deemed irrelevant, the model is asked to generate a
 //!   refined search query and the search is retried (up to 3 attempts total).
-//! * **Jev** (TypeSafe System One) — a decision model answers one yes/no
-//!   question per result and returns a calibrated probability, which is
-//!   cheaper and faster than a generative review. Its verdict *is* the review:
-//!   the LLM is never asked to judge the same results again. Jev cannot write
-//!   a refined query, so when its verdict sends the loop into a re-search the
-//!   LLM is used for that single job — writing the refined query — and Jev
-//!   then judges the re-searched results. Only a Jev failure (transport,
-//!   protocol, missing configuration) falls back to the full LLM review path.
+//! * **Decision model** (TypeSafe System One or OpenAI Decisions) — it answers
+//!   one yes/no question per result, which is cheaper and faster than a
+//!   generative review. Its verdict *is* the review: the LLM is never asked to
+//!   judge the same results again. A decision model cannot write a refined
+//!   query, so when its verdict sends the loop into a re-search the LLM is used
+//!   for that single job — writing the refined query — and the decision model
+//!   then judges the re-searched results. Only a decision model failure
+//!   (transport, protocol, missing configuration) falls back to the full LLM
+//!   review path.
 //!
 //! On the 3rd attempt, all results are returned regardless of how many
 //! were deemed irrelevant — this guarantees the caller always gets
@@ -33,7 +34,7 @@ use serde_json::Value;
 use crate::api::common::truncate_chars;
 use crate::api::config::{get_active_api_request_context, resolve_basic_model};
 use crate::api::conversation::context::apply_configured_system_prompts;
-use crate::api::jev::JevConfig;
+use crate::api::decision_model::DecisionModelConfig;
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::services::codebase_index::SearchResult;
 use tokio_util::sync::CancellationToken;
@@ -119,9 +120,10 @@ impl ReviewPhase {
 /// Run the agent review loop on a set of search results.
 ///
 /// `initial_results` are the results from the first vector search.
-/// `jev_config` selects the review backend: `Some` asks Jev for a per-result
-/// relevance verdict and only uses the LLM to write a refined query when a
-/// re-search is needed, `None` always uses the LLM for the whole review.
+/// `decision_config` selects the review backend: `Some` asks the decision model
+/// for a per-result relevance verdict and only uses the LLM to write a refined
+/// query when a re-search is needed, `None` always uses the LLM for the whole
+/// review.
 /// `re_search_fn` is a closure that takes a query string and returns a
 /// new set of search results — this is called when the model suggests a
 /// refined query.
@@ -136,7 +138,7 @@ impl ReviewPhase {
 pub async fn run_agent_review<F, Fut, P>(
     initial_query: String,
     initial_results: Vec<SearchResult>,
-    jev_config: Option<JevConfig>,
+    decision_config: Option<DecisionModelConfig>,
     re_search_fn: F,
     on_progress: P,
 ) -> Result<AgentReviewResult>
@@ -200,7 +202,7 @@ where
 });
 
         let mut outcome =
-            review_results(&current_query, &current_results, jev_config.as_ref()).await?;
+            review_results(&current_query, &current_results, decision_config.as_ref()).await?;
         if fallback_reason.is_none() {
             fallback_reason = outcome.fallback_reason.take();
         }
@@ -273,26 +275,26 @@ where
 
 /// Review the current results with the configured backend.
 ///
-/// Jev runs first when configured. Its verdict is the review, so the LLM is
-/// only consulted for the one thing Jev cannot do: writing a refined query when
-/// the verdict sends the loop into a re-search. Any Jev failure falls back to
-/// the full LLM review, so the search never degrades because of the review
-/// backend.
+/// The decision model runs first when configured. Its verdict is the review, so
+/// the LLM is only consulted for the one thing a decision model cannot do:
+/// writing a refined query when the verdict sends the loop into a re-search.
+/// Any decision model failure falls back to the full LLM review, so the search
+/// never degrades because of the review backend.
 async fn review_results(
     query: &str,
     results: &[SearchResult],
-    jev_config: Option<&JevConfig>,
+    decision_config: Option<&DecisionModelConfig>,
 ) -> Result<ReviewOutcome> {
-    let Some(config) = jev_config else {
+    let Some(config) = decision_config else {
         return review_via_llm(query, results).await;
     };
 
-    let outcome = match review_via_jev(config, query, results).await {
+    let outcome = match review_via_decision_model(config, query, results).await {
         Ok(outcome) => outcome,
         Err(error) => {
             log_review_fallback(
                 query,
-                "Jev agent review failed, falling back to the LLM review",
+                "Decision model review failed, falling back to the LLM review",
                 &error.reason,
             )
             .await;
@@ -312,8 +314,8 @@ async fn review_results(
     }
 
     // The verdict stands — only the query has to be rewritten, and that is the
-    // one job Jev cannot do. When even that fails the verdict is still a
-    // complete review, so the loop keeps it instead of failing outright.
+    // one job a decision model cannot do. When even that fails the verdict is
+    // still a complete review, so the loop keeps it instead of failing outright.
     match write_refined_query(query, results).await {
         Ok(refined_query) => Ok(ReviewOutcome {
             relevant_indices: outcome.relevant_indices,
@@ -323,7 +325,7 @@ async fn review_results(
         Err(error) => {
             log_review_fallback(
                 query,
-                "Refined query generation failed, keeping the Jev verdict",
+                "Refined query generation failed, keeping the decision model verdict",
                 &error.reason,
             )
             .await;
@@ -332,19 +334,20 @@ async fn review_results(
     }
 }
 
-/// Ask Jev for the relevance verdict of every result.
-async fn review_via_jev(
-    config: &JevConfig,
+/// Ask the decision model for the relevance verdict of every result.
+async fn review_via_decision_model(
+    config: &DecisionModelConfig,
     query: &str,
     results: &[SearchResult],
 ) -> Result<ReviewOutcome> {
-    let relevant_indices = crate::api::jev::evaluate_relevance(config, query, results).await?;
+    let relevant_indices =
+        crate::api::decision_model::evaluate_relevance(config, query, results).await?;
 
     Ok(ReviewOutcome {
         relevant_indices,
-        // Jev is a decision model: it cannot write a refined query, so the
-        // review loop always starts with an empty one. The caller asks the LLM
-        // for a refined query when the verdict requires a re-search.
+        // A decision model cannot write a refined query, so the review loop
+        // always starts with an empty one. The caller asks the LLM for a refined
+        // query when the verdict requires a re-search.
         refined_query: String::new(),
         fallback_reason: None,
     })
@@ -538,9 +541,9 @@ async fn review_via_llm(query: &str, results: &[SearchResult]) -> Result<ReviewO
 
 /// Ask the basic model for a better search query.
 ///
-/// Jev cannot rewrite the query, so when its verdict sends the review loop into
-/// a re-search this is the only job the LLM gets: writing the refined query. It
-/// never reviews the results a second time.
+/// A decision model cannot rewrite the query, so when its verdict sends the
+/// review loop into a re-search this is the only job the LLM gets: writing the
+/// refined query. It never reviews the results a second time.
 async fn write_refined_query(query: &str, results: &[SearchResult]) -> Result<String> {
     let (database_path, api_config, custom_headers, model) = resolve_review_llm_context()?;
     let user_content = build_review_user_content(query, results);

@@ -59,7 +59,7 @@ impl ModelKind {
     /// 请求日志（request logging）的 provider 标签。
     fn request_tag(self) -> &'static str {
         match self {
-            ModelKind::Decision => "jev",
+            ModelKind::Decision => "decision_model",
             ModelKind::Embedding => "embedding",
             ModelKind::Reranking => "reranking",
         }
@@ -68,7 +68,7 @@ impl ModelKind {
     /// 错误信息里的接口名称。
     fn api_label(self) -> &'static str {
         match self {
-            ModelKind::Decision => "Jev API",
+            ModelKind::Decision => "Decision model API",
             ModelKind::Embedding => "Embedding API",
             ModelKind::Reranking => "Reranking API",
         }
@@ -280,21 +280,29 @@ pub struct ModelHealthSnapshot {
     pub reranking: Option<ModelConnectionTestResult>,
 }
 
-/// 测试决策模型连接：发送一条最小的 `/v1/systemone` 请求。
+/// 测试决策模型连接：按 provider 发送一条最小请求。
 ///
 /// 配置不完整（缺少 API Key / 模型名 / 自定义地址）时不发请求，直接记为失败。
 pub async fn test_decision_model(
     target_id: &str,
     base_url: &str,
     base_url_mode: &str,
+    provider: &str,
     api_key: &str,
     model: &str,
 ) -> Result<ModelConnectionTestResult> {
-    let endpoint = crate::api::jev::resolve_endpoint(base_url, base_url_mode);
+    let provider = crate::api::decision_model::DecisionProvider::from_str(provider);
+    let endpoint = crate::api::decision_model::resolve_endpoint(base_url, base_url_mode, provider);
     let model = model.trim();
 
-    let report = match crate::api::jev::JevConfig::new(base_url, base_url_mode, api_key, model) {
-        Ok(config) => crate::api::jev::test_connection(&config).await,
+    let report = match crate::api::decision_model::DecisionModelConfig::new(
+        base_url,
+        base_url_mode,
+        api_key,
+        model,
+        provider,
+    ) {
+        Ok(config) => crate::api::decision_model::test_connection(&config).await,
         Err(reason) => reject_config(ModelKind::Decision, &endpoint, model, reason).await,
     };
 
@@ -358,7 +366,7 @@ pub async fn load_snapshot() -> Result<ModelHealthSnapshot> {
     tokio::task::spawn_blocking(|| {
         let database_path = crate::storage::ensure_database_file()?;
         let mut snapshot = read_snapshot(&database_path)?;
-        let models = crate::api::jev::load_decision_models(&database_path);
+        let models = crate::api::decision_model::load_decision_models(&database_path);
         snapshot
             .decision
             .retain(|item| models.iter().any(|model| model.id == item.target_id));

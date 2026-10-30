@@ -1665,6 +1665,7 @@ export const zhTW = {
   "toolCall.codebase.pipeline.agentReview": "已審查",
   "toolCall.codebase.pipeline.attempts": "嘗試 {{count}} 次",
   "toolCall.codebase.pipeline.threshold": "閾值 {{threshold}}",
+  "toolCall.codebase.pipeline.unjudged": "{{count}} 筆未判定已保留",
   "toolCall.codebase.probabilityHint": "決策模型給出的相關性機率",
   "toolCall.codebase.pipeline.refinedQuery": "優化查詢:",
   "toolCall.codebase.progress.embedding": "正在嵌入查詢",

@@ -36,7 +36,7 @@ use serde_json::Value;
 use crate::api::common::truncate_chars;
 use crate::api::config::{get_active_api_request_context, resolve_basic_model};
 use crate::api::conversation::context::apply_configured_system_prompts;
-use crate::api::decision_model::{DecisionModelConfig, DecisionUsageScope};
+use crate::api::decision_model::{DecisionModelConfig, DecisionUsageScope, RelevanceBudget};
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::services::codebase_index::SearchResult;
 use tokio_util::sync::CancellationToken;
@@ -66,6 +66,8 @@ struct ReviewOutcome {
     /// Why the configured decision model was skipped for this pass (the LLM
     /// reviewed instead), `None` when the configured backend did the review.
     fallback_reason: Option<String>,
+    /// 决策模型本轮的预算与判定数；LLM 审查为 None。
+    decision_budget: Option<RelevanceBudget>,
 }
 
 /// Final outcome of the agent review process.
@@ -86,6 +88,8 @@ pub struct AgentReviewResult {
     /// Set when a decision model request failed and the LLM reviewed instead
     /// (the reason of the first failure).
     pub fallback_reason: Option<String>,
+    /// 返回结果所在轮次的决策模型预算与判定数；该轮由 LLM 审查时为 None。
+    pub decision_budget: Option<RelevanceBudget>,
 }
 
 /// A progress event emitted during the agent review loop.
@@ -190,6 +194,7 @@ where
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
+                decision_budget: None,
             });
         }
 
@@ -204,6 +209,13 @@ where
                 relevant_count: Some(total),
                 refined_query: None,
             });
+            // 末轮不提问：全部结果未判定、直接保留。
+            let decision_budget = decision_config.as_ref().map(|config| RelevanceBudget {
+                provider: config.provider,
+                limits: config.provider.limits(),
+                total,
+                asked: 0,
+            });
             return Ok(AgentReviewResult {
                 results: current_results,
                 probabilities: vec![None; total],
@@ -211,6 +223,7 @@ where
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
+                decision_budget,
             });
         }
 
@@ -241,6 +254,7 @@ where
         let irrelevant_count = total.saturating_sub(relevant_count);
         let irrelevant_fraction = irrelevant_count as f64 / total as f64;
         let applied_threshold = outcome.relevance_threshold;
+        let decision_budget = outcome.decision_budget;
 
         // Keep each result paired with its probability so the caller can report
         // why a result was kept (only the predicate path fills probabilities).
@@ -273,6 +287,7 @@ where
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
+                decision_budget,
             });
         }
 
@@ -296,6 +311,7 @@ where
                 effective_query: current_query,
                 attempts,
                 fallback_reason,
+                decision_budget,
             });
         }
 
@@ -377,6 +393,7 @@ async fn review_results(
             relevance_threshold: outcome.relevance_threshold,
             refined_query,
             fallback_reason: None,
+            decision_budget: outcome.decision_budget,
         }),
         Err(error) => {
             log_review_fallback(
@@ -416,6 +433,7 @@ async fn review_via_decision_model(
         // query when the verdict requires a re-search.
         refined_query: String::new(),
         fallback_reason: None,
+        decision_budget: Some(evaluation.budget),
     })
 }
 
@@ -721,6 +739,7 @@ fn parse_review_response(text: &str, total_results: usize) -> Result<ReviewOutco
         relevance_threshold: None,
         refined_query,
         fallback_reason: None,
+        decision_budget: None,
     })
 }
 

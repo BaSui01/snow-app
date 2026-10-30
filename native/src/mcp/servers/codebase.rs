@@ -366,6 +366,7 @@ impl CodebaseService {
                 initial_count,
                 agent_review_provider: Some(provider),
                 fallback_reason,
+                decision_budget: review_result.decision_budget,
             }
         } else if enable_reranking {
             // Reranking-only path.
@@ -419,6 +420,7 @@ impl CodebaseService {
                 initial_count,
                 agent_review_provider: None,
                 fallback_reason,
+                decision_budget: None,
             }
         } else {
             // No post-processing — return top_n by cosine similarity.
@@ -432,6 +434,7 @@ impl CodebaseService {
                 initial_count,
                 agent_review_provider: None,
                 fallback_reason: None,
+                decision_budget: None,
             }
         };
 
@@ -458,6 +461,8 @@ impl CodebaseService {
             .collect();
 
         let total = results_json.len();
+        // 预算与判定数可对账：judged + unjudged = 送审结果数，超预算的未判定结果均已保留。
+        let budget = pipeline.decision_budget;
 
         Ok(json!({
             "query": query,
@@ -474,6 +479,11 @@ impl CodebaseService {
                 "attempts": pipeline.attempts,
                 "refinedQuery": pipeline.refined_query,
                 "relevanceThreshold": pipeline.relevance_threshold,
+                "decisionProvider": budget.map(|b| b.provider.as_str()),
+                "maxQuestions": budget.map(|b| b.limits.max_questions),
+                "maxStateChars": budget.map(|b| b.limits.max_state_chars),
+                "judgedCount": budget.map(|b| b.asked),
+                "unjudgedCount": budget.map(|b| b.total.saturating_sub(b.asked)),
                 "initialCount": pipeline.initial_count,
                 "finalCount": final_count,
             }
@@ -605,4 +615,6 @@ struct PipelineOutcome {
     /// Why the configured backend (decision model / reranking model) was not
     /// used for this search.
     fallback_reason: Option<String>,
+    /// 决策模型审查的预算与判定数（返回结果所在轮次）；未经决策模型审查为 None。
+    decision_budget: Option<crate::api::decision_model::RelevanceBudget>,
 }

@@ -1664,6 +1664,7 @@ export const zhCN = {
   "toolCall.codebase.pipeline.agentReview": "已审查",
   "toolCall.codebase.pipeline.attempts": "尝试 {{count}} 次",
   "toolCall.codebase.pipeline.threshold": "阈值 {{threshold}}",
+  "toolCall.codebase.pipeline.unjudged": "{{count}} 条未判定已保留",
   "toolCall.codebase.probabilityHint": "决策模型给出的相关性概率",
   "toolCall.codebase.pipeline.refinedQuery": "优化查询:",
   "toolCall.codebase.progress.embedding": "正在嵌入查询",

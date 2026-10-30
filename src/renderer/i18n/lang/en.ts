@@ -1774,6 +1774,7 @@ export const en = {
   "toolCall.codebase.pipeline.agentReview": "Agent reviewed",
   "toolCall.codebase.pipeline.attempts": "{{count}} attempts",
   "toolCall.codebase.pipeline.threshold": "Threshold {{threshold}}",
+  "toolCall.codebase.pipeline.unjudged": "{{count}} unjudged, kept",
   "toolCall.codebase.probabilityHint":
     "Relevance probability returned by the decision model",
   "toolCall.codebase.pipeline.refinedQuery": "Refined query:",

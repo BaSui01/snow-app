@@ -46,6 +46,8 @@ type PipelineInfo = {
   agentReviewProvider: "decision" | "llm" | "llm_fallback" | null;
   /** 本次审查实际使用的相关性阈值；null = 二分类 choice 判定。 */
   relevanceThreshold: number | null;
+  /** 决策模型预算外未判定（已保留）的结果数；null = 未经决策模型审查。 */
+  unjudgedCount: number | null;
   reranking: boolean;
   /** 配置的决策 / 重排模型没有生效的原因。 */
   fallbackReason: string | null;
@@ -171,6 +173,10 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
               typeof pipelineRaw.relevanceThreshold === "number"
                 ? (pipelineRaw.relevanceThreshold as number)
                 : null,
+            unjudgedCount:
+              typeof pipelineRaw.unjudgedCount === "number"
+                ? (pipelineRaw.unjudgedCount as number)
+                : null,
             reranking: pipelineRaw.reranking === true,
             fallbackReason:
               typeof pipelineRaw.fallbackReason === "string" &&
@@ -200,6 +206,7 @@ const parseResult = (result: string | undefined): ParsedCodebaseResult => {
             agentReview: false,
             agentReviewProvider: null,
             relevanceThreshold: null,
+            unjudgedCount: null,
             reranking: false,
             fallbackReason: null,
             attempts: 1,
@@ -390,12 +397,22 @@ export const CodebaseToolCall = ({
               values: { threshold: p.relevanceThreshold.toFixed(2) },
             })
           : "";
+      const unjudged =
+        p.agentReviewProvider === "decision" &&
+        p.unjudgedCount !== null &&
+        p.unjudgedCount > 0
+          ? t("toolCall.codebase.pipeline.unjudged", {
+              values: { count: p.unjudgedCount },
+            })
+          : "";
       return {
         icon: BrainCircuit,
         label: t("toolCall.codebase.pipeline.agentReview"),
         className: "tool-call-codebase-pipeline-agent",
         detail:
-          [provider, attempts, threshold].filter(Boolean).join(" · ") || null,
+          [provider, attempts, threshold, unjudged]
+            .filter(Boolean)
+            .join(" · ") || null,
         fallback:
           p.agentReviewProvider === "llm_fallback"
             ? t("toolCall.codebase.pipeline.reviewFallback")

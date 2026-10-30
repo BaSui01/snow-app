@@ -19,6 +19,9 @@
 //! 敏感命令判定可选附带会话片段：OpenAI 用原生多轮 `input`（消息 + 工具调用/输出），
 //! TypeSafe Jev 没有多轮协议，按官方 state 用法放进 state 的 `recentConversation`。
 //!
+//! 题数与 state 字符预算按 provider 区分（`DecisionProvider::limits`），超预算的结果
+//! 不提问、按保留处理。
+//!
 //! 全部异步执行，不阻塞 Node.js 主线程。请求完成后把响应的 usage 写入
 //! usage_records（request_method = decisions）；Jev 不返回 usage，不写 0 值记录。
 
@@ -50,14 +53,24 @@ const AUTO_BASE_URL_MODE: &str = "auto";
 /// system_settings 里决策模型配置的 setting_code（与前端 decisionModels.ts 一致）。
 pub const DECISION_MODELS_SETTING_CODE: &str = "decision_models";
 
-/// 单次请求最多转换的结果数。
-const MAX_QUESTIONS: usize = 40;
-
 /// 每条结果摘录的最大字符数。
 const MAX_EXCERPT_CHARS: usize = 800;
 
-/// state 总字符预算（query + 全部摘录）。按 32k token 的 state 预算估算，留足余量。
-const MAX_STATE_CHARS: usize = 40_000;
+/// TypeSafe Jev 预算。依据官方 Models 文档（2026-10-30 查阅，jev-1.13/1.14）：题数无单独上限，
+/// state + 全部问题 <= 64k token，state + 最长单题 <= 32k token。按保守的 2 字符/token
+/// 估算，48k 字符 state 约 24k token，可容纳 codebase-search 上限 50 条结果的完整摘录。
+const TYPESAFE_LIMITS: DecisionLimits = DecisionLimits {
+    max_questions: 50,
+    max_state_chars: 48_000,
+};
+
+/// OpenAI Decisions 预算。依据官方 API 参考（2026-10-30 查阅，gpt-6-luna）：每请求 1-400 题，
+/// 模型上下文 1.05M token，输入超 272k token 按 2 倍计价。题数取 50 对齐结果上限；
+/// 200k 字符 state 按 2 字符/token 约 100k token，远低于计价拐点。
+const OPENAI_LIMITS: DecisionLimits = DecisionLimits {
+    max_questions: 50,
+    max_state_chars: 200_000,
+};
 
 /// 请求超时：决策模型通常几十毫秒返回，短上限避免卡住搜索。
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -169,6 +182,21 @@ impl DecisionProvider {
             DecisionProvider::Openai => DEFAULT_OPENAI_BASE_URL,
         }
     }
+
+    /// 单次请求的题数与 state 字符预算；超预算的结果不提问、按保留处理。
+    pub fn limits(self) -> DecisionLimits {
+        match self {
+            DecisionProvider::Typesafe => TYPESAFE_LIMITS,
+            DecisionProvider::Openai => OPENAI_LIMITS,
+        }
+    }
+}
+
+/// 按 provider 区分的请求预算（字符估算，不做实时 token 计数）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecisionLimits {
+    pub max_questions: usize,
+    pub max_state_chars: usize,
 }
 
 /// 一次请求所需的配置；provider 决定端点、请求体与响应解析。
@@ -433,14 +461,27 @@ pub struct RelevanceEvaluation {
     pub probabilities: Vec<Option<f64>>,
     /// 本次实际生效的阈值；None 表示走的是 choice 二分类判定。
     pub relevance_threshold: Option<f64>,
+    /// 本次请求使用的预算与判定数，供 pipeline 解释「为什么有些结果没被判定」。
+    pub budget: RelevanceBudget,
+}
+
+/// 一次相关性审查的预算使用情况。
+#[derive(Debug, Clone, Copy)]
+pub struct RelevanceBudget {
+    pub provider: DecisionProvider,
+    pub limits: DecisionLimits,
+    /// 参与审查的结果数。
+    pub total: usize,
+    /// 进入问题列表（实际请求判定）的结果数；其余超预算、按保留处理。
+    pub asked: usize,
 }
 
 /// 询问决策模型：哪些搜索结果与 query 相关。
 ///
 /// `relevance_threshold` 为 None 时每条结果变成一个 `relevant` / `irrelevant`
 /// 的 choice 问题，判定完全由模型给出；为 Some(t) 时改用概率问题，按
-/// `probability >= t` 保留。超出 state 预算或问题上限的结果、以及缺概率的
-/// 结果都按相关保留，审查始终保守。
+/// `probability >= t` 保留。超出 provider 预算（`DecisionProvider::limits`）的结果、
+/// 以及缺概率的结果都按相关保留，审查始终保守。
 pub async fn evaluate_relevance(
     config: &DecisionModelConfig,
     usage_scope: &DecisionUsageScope,
@@ -449,12 +490,20 @@ pub async fn evaluate_relevance(
     relevance_threshold: Option<f64>,
 ) -> Result<RelevanceEvaluation> {
     let mut probabilities = vec![None; results.len()];
+    let limits = config.provider.limits();
+    let budget = |asked: usize| RelevanceBudget {
+        provider: config.provider,
+        limits,
+        total: results.len(),
+        asked,
+    };
 
     if results.is_empty() {
         return Ok(RelevanceEvaluation {
             relevant_indices: Vec::new(),
             probabilities,
             relevance_threshold: None,
+            budget: budget(0),
         });
     }
 
@@ -462,7 +511,7 @@ pub async fn evaluate_relevance(
     let threshold = relevance_threshold
         .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
 
-    let (state, asked) = build_state(query, results);
+    let (state, asked) = build_state(query, results, limits);
 
     // 没有任何结果进入预算：全部按相关返回，避免只拿空列表去问模型。
     if asked.is_empty() {
@@ -470,6 +519,7 @@ pub async fn evaluate_relevance(
             relevant_indices: (0..results.len()).collect(),
             probabilities,
             relevance_threshold: threshold,
+            budget: budget(0),
         });
     }
 
@@ -554,6 +604,7 @@ pub async fn evaluate_relevance(
         relevant_indices: relevant,
         probabilities,
         relevance_threshold: threshold,
+        budget: budget(asked.len()),
     })
 }
 
@@ -995,7 +1046,11 @@ pub async fn evaluate_command(
     let (conversation, context_usage) = match context.conversation {
         None => (None, None),
         Some(messages) => {
-            let budget = MAX_STATE_CHARS.saturating_sub(state.to_string().chars().count());
+            let budget = config
+                .provider
+                .limits()
+                .max_state_chars
+                .saturating_sub(state.to_string().chars().count());
             let (kept, truncated) = fit_conversation(messages, budget);
             if truncated {
                 log_context_truncated(config, messages.len(), kept.len(), budget).await;
@@ -2164,21 +2219,25 @@ fn normalize_score_levels(answer: &Value) -> Value {
     }
 }
 
-/// 构建 state 与进入问题列表的 `(结果下标, 问题 id)`。
-fn build_state(query: &str, results: &[SearchResult]) -> (Value, Vec<(usize, String)>) {
+/// 构建 state 与进入问题列表的 `(结果下标, 问题 id)`；题数与字符按 provider 预算截止。
+fn build_state(
+    query: &str,
+    results: &[SearchResult],
+    limits: DecisionLimits,
+) -> (Value, Vec<(usize, String)>) {
     let mut items: Vec<Value> = Vec::new();
     let mut asked: Vec<(usize, String)> = Vec::new();
     let mut used_chars = query.chars().count();
 
     for (index, result) in results.iter().enumerate() {
-        if asked.len() >= MAX_QUESTIONS {
+        if asked.len() >= limits.max_questions {
             break;
         }
 
         let excerpt: String = result.content.chars().take(MAX_EXCERPT_CHARS).collect();
         // 路径、行号、id 与 JSON 键也占预算，用一个常量近似。
         let cost = excerpt.chars().count() + result.relative_path.chars().count() + 96;
-        if used_chars + cost > MAX_STATE_CHARS {
+        if used_chars + cost > limits.max_state_chars {
             break;
         }
         used_chars += cost;

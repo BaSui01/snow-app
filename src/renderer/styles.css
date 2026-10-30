@@ -7718,6 +7718,29 @@ body.is-panel-resizing * {
   justify-content: flex-end;
 }
 
+.api-settings-table-toolbar.decision-model-toolbar {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decision-model-tool-default {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.decision-model-tool-default > span {
+  white-space: nowrap;
+}
+
+.decision-model-tool-default .custom-select {
+  width: 200px;
+  min-width: 0;
+}
+
 .api-settings-selection-bar {
   display: flex;
   align-items: center;
@@ -19731,6 +19754,116 @@ body.is-panel-resizing * {
 }
 
 .html-render-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+/* Decision Tool Call (decision-evaluate) */
+.decision-tool-meta {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.decision-tool-body {
+  gap: 8px;
+}
+
+.decision-tool-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.decision-tool-answer {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.decision-tool-answer-name {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* 有问题正文时 name 退为小标签 */
+.decision-tool-answer-name.is-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.decision-tool-answer-question {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.decision-tool-answer-type {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+
+.decision-tool-answer-value {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.decision-tool-answer-value.is-muted {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.decision-tool-answer-extra {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.decision-tool-images {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.decision-tool-images-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.decision-tool-image {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.decision-tool-pending {
   display: flex;
   align-items: center;
   gap: 6px;

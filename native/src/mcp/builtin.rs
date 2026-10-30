@@ -11,6 +11,7 @@ use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
 use super::servers::computer_use::ComputerUseService;
 use super::servers::config::ConfigService;
+use super::servers::decision::DecisionService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::html_render::HtmlRenderService;
@@ -51,6 +52,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(MemoryService::new()),
         Arc::new(ComputerUseService::new()),
         Arc::new(HtmlRenderService::new()),
+        Arc::new(DecisionService::new()),
         // Logs are exposed as config-logs-read; no separate MCP server.
         // NOTE: new services must be appended to the END of this list to keep
         // the tool order stable (prompt cache); never insert in the middle.
@@ -69,6 +71,9 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         // html：HTML 渲染器（会话内实时预览），纯 Rust 规范化 + 内容寻址落盘，
         // 经默认分发路径 spawn_blocking 执行；默认关闭（同上白名单机制），
         // 无工作区副作用，render 列入 READONLY_TOOL_NAMES。
+        //
+        // decision：决策模型判定（decision-evaluate），经 call.rs 异步分支执行；
+        // 默认关闭；会把本地图片发往外部 API，不列入只读免审批。
     ]
 }
 

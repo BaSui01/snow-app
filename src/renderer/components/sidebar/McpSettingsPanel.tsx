@@ -78,6 +78,7 @@ const PROJECT_OPT_IN_SERVER_IDS = new Set([
   "builtin:computer-use",
   "builtin:browser",
   "builtin:html",
+  "builtin:decision",
 ]);
 
 /** 全局内置服务器工具：全局视图下工具开关即全局黑名单，不应只读。 */

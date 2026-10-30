@@ -13,6 +13,7 @@ use super::super::servers::bash::{BashService, BashStreamCallback, BashStreamChu
 use super::super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::super::servers::codebase::CodebaseService;
 use super::super::servers::config::ConfigService;
+use super::super::servers::decision::DecisionService;
 use super::super::servers::filesystem::FilesystemService;
 use super::super::servers::grep::GrepService;
 use super::super::servers::imagegen::ImageGenService;
@@ -610,6 +611,16 @@ pub async fn call_mcp_tool(
     } else if tool_full_name == "imagegen-image-describe" {
         ImageGenService::new()
             .execute_describe(&args, conversation_id.as_deref())
+            .await
+            .tool_feedback(is_sub_agent_call)?
+    } else if tool_full_name == "decision-evaluate" {
+        // 图片路径只允许落在当前工作区：WorkTree 模式限定为绑定的 worktree。
+        let workspace_roots = match worktree_binding.as_ref() {
+            Some(binding) => vec![binding.path.clone()],
+            None => resolve_local_workspace_roots(project_id.as_deref()).await?,
+        };
+        DecisionService::new()
+            .execute_evaluate(&args, &workspace_roots)
             .await
             .tool_feedback(is_sub_agent_call)?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {

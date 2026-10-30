@@ -14,6 +14,7 @@ import {
   ListTree,
   MessageCircleQuestion,
   Plug,
+  Scale,
   ScanSearch,
   Search,
   Send,
@@ -44,6 +45,7 @@ export type ToolCategory =
   | "database"
   | "telemetry"
   | "html"
+  | "decision"
   | "generic";
 
 const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
@@ -67,6 +69,7 @@ const CATEGORY_ICONS: Record<ToolCategory, LucideIcon> = {
   database: Database,
   telemetry: Activity,
   html: CodeXml,
+  decision: Scale,
   generic: Plug,
 };
 
@@ -90,6 +93,9 @@ const getToolIcon = (category: ToolCategory): LucideIcon =>
  */
 export const getToolCategory = (toolName: string): ToolCategory => {
   const lower = toolName.toLowerCase();
+  if (lower.startsWith("decision-")) {
+    return "decision";
+  }
   if (lower.includes("workflow")) {
     return "workflow";
   }

@@ -11,6 +11,10 @@
 export const DECISION_MODELS_SETTING_NAME = "Decision models";
 export const DECISION_MODELS_SETTING_CODE = "decision_models";
 
+/** decision-evaluate 工具的默认决策模型（值为模型 id，空串表示未设置）。 */
+export const DECISION_TOOL_MODEL_SETTING_NAME = "Decision tool model";
+export const DECISION_TOOL_MODEL_SETTING_CODE = "decision_tool_model";
+
 export type DecisionModelProvider = "typesafe" | "openai";
 
 export const DECISION_MODEL_PROVIDER_TYPESAFE: DecisionModelProvider =

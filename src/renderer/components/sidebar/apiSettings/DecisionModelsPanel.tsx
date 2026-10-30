@@ -18,10 +18,14 @@ import {
   DECISION_MODEL_CUSTOM_BASE_URL_EXAMPLE,
   DECISION_MODEL_PROVIDER_OPENAI,
   DECISION_MODEL_PROVIDER_TYPESAFE,
+  DECISION_TOOL_MODEL_SETTING_CODE,
+  DECISION_TOOL_MODEL_SETTING_NAME,
   createDecisionModel,
   decisionModelDefaultBaseUrl,
   decisionModelDefaultModel,
   decisionModelDefaultName,
+  enabledDecisionModels,
+  findDecisionModel,
   normalizeDecisionModelProvider,
   readDecisionModelsJson,
   resolveDecisionModelEndpoint,
@@ -68,17 +72,21 @@ export function DecisionModelsPanel(): React.JSX.Element {
   >({});
   /** 正在检测的模型 id（null = 无）。 */
   const [testingId, setTestingId] = useState<string | null>(null);
+  /** decision-evaluate 工具的默认模型 id（空串 = 未设置）。 */
+  const [toolModelId, setToolModelId] = useState("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     try {
-      const [raw, snapshot] = await Promise.all([
+      const [raw, snapshot, toolModel] = await Promise.all([
         window.snow.getSystemSettingValue(DECISION_MODELS_SETTING_CODE),
         window.snow.getModelHealthSnapshot(),
+        window.snow.getSystemSettingValue(DECISION_TOOL_MODEL_SETTING_CODE),
       ]);
       setModels(readDecisionModelsJson(raw));
+      setToolModelId((toolModel ?? "").trim());
       setHealth(
         Object.fromEntries(
           snapshot.decision.map((result) => [result.targetId, result]),
@@ -119,6 +127,40 @@ export function DecisionModelsPanel(): React.JSX.Element {
         );
         setModels(next);
         setStatus(successMessage);
+        return true;
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : t("settings.decisionModelSaveError", {
+                defaultValue: "Failed to save decision models",
+              }),
+        );
+        return false;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [t],
+  );
+
+  /** 保存 decision-evaluate 工具的默认模型，返回是否成功。 */
+  const saveToolModel = useCallback(
+    async (nextId: string, successMessage?: string): Promise<boolean> => {
+      setIsSaving(true);
+      setError("");
+      setStatus("");
+
+      try {
+        await window.snow.setSystemSetting(
+          DECISION_TOOL_MODEL_SETTING_NAME,
+          DECISION_TOOL_MODEL_SETTING_CODE,
+          nextId,
+        );
+        setToolModelId(nextId);
+        if (successMessage) {
+          setStatus(successMessage);
+        }
         return true;
       } catch (e) {
         setError(
@@ -330,7 +372,40 @@ export function DecisionModelsPanel(): React.JSX.Element {
         defaultValue: `Deleted ${target.name}.`,
       }),
     );
+
+    // 删除的正是工具默认模型时一并清空，避免工具指向不存在的模型。
+    if (target.id === toolModelId) {
+      await saveToolModel("");
+    }
   };
+
+  /** 工具默认模型选项：未设置 + 已启用模型；当前值失效时保留一项提示。 */
+  const toolModelOptions = [
+    {
+      value: "",
+      label: t("settings.decisionToolModelNone", {
+        defaultValue: "Not set",
+      }),
+    },
+    ...enabledDecisionModels(models).map((model) => ({
+      value: model.id,
+      label: model.name,
+    })),
+  ];
+  if (
+    toolModelId &&
+    !toolModelOptions.some((option) => option.value === toolModelId)
+  ) {
+    toolModelOptions.push({
+      value: toolModelId,
+      label: t("settings.decisionToolModelUnavailable", {
+        values: {
+          name: findDecisionModel(models, toolModelId)?.name ?? toolModelId,
+        },
+        defaultValue: "{{name}} (unavailable)",
+      }),
+    });
+  }
 
   return (
     <>
@@ -349,7 +424,47 @@ export function DecisionModelsPanel(): React.JSX.Element {
       </div>
 
       <div className="api-settings-table-panel">
-        <div className="api-settings-table-toolbar">
+        <div className="api-settings-table-toolbar decision-model-toolbar">
+          <div className="decision-model-tool-default">
+            <span
+              title={t("settings.decisionToolModelHint", {
+                defaultValue:
+                  "Used by the decision-evaluate tool when the call does not name a model.",
+              })}
+            >
+              {t("settings.decisionToolModel", {
+                defaultValue: "Default model for the decision tool",
+              })}
+            </span>
+            <CustomSelect
+              value={toolModelId}
+              options={toolModelOptions}
+              ariaLabel={t("settings.decisionToolModel", {
+                defaultValue: "Default model for the decision tool",
+              })}
+              onChange={(value) => {
+                if (value === toolModelId) {
+                  return;
+                }
+                const selected = findDecisionModel(models, value);
+                void saveToolModel(
+                  value,
+                  selected
+                    ? t("settings.decisionToolModelSaved", {
+                        values: { name: selected.name },
+                        defaultValue:
+                          "The decision tool now uses {{name}} by default.",
+                      })
+                    : t("settings.decisionToolModelCleared", {
+                        defaultValue:
+                          "The decision tool default model was cleared.",
+                      }),
+                );
+              }}
+              disabled={isSaving}
+              dropdownMinWidth={200}
+            />
+          </div>
           <button
             type="button"
             className="api-settings-action-btn primary"

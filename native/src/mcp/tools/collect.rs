@@ -471,7 +471,7 @@ pub async fn collect_restricted_mcp_tools_for_workspace(
 /// enabled per project. This keeps their tools out of the model context
 /// (saving tokens) until the user opts in.
 const DEFAULT_DISABLED_SERVER_IDS: &[&str] =
-    &["terminal", "lsp", "computer-use", "browser", "html"];
+    &["terminal", "lsp", "computer-use", "browser", "html", "decision"];
 
 /// 按「完整工具名 + server_id」判定工具级开关（`tool_is_enabled` 的按名版本）：
 /// 系统提示词注入复用同一逻辑，保证「注入的工具 = 实际可见的工具」
@@ -640,6 +640,7 @@ pub(crate) fn builtin_server_name(server_id: &str) -> &str {
         "memory" => "Project Memory",
         "workflow" => "WorkFlow",
         "html" => "HTML Renderer",
+        "decision" => "Decision Model",
         _ => server_id,
     }
 }

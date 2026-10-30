@@ -26,6 +26,7 @@ import {
   TerminalToolCall,
   ComputerUseToolCall,
   HtmlRenderToolCall,
+  DecisionToolCall,
   SkillToolCall,
   ConfigToolCall,
   AppLogsToolCall,
@@ -201,6 +202,10 @@ const renderToolCall = ({
 
   if (toolCall.name === "html-render") {
     return <HtmlRenderToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "decision-evaluate") {
+    return <DecisionToolCall toolCall={toolCall} />;
   }
 
   if (toolCall.name === "skills-skill-execute") {

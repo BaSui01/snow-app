@@ -165,6 +165,7 @@ pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "terminal",
     "memory",
     "html",
+    "decision",
 ];
 
 /// 精简模式（Lite Mode）禁用的内置服务器 ID。启用精简模式后，这些服务器的
@@ -1122,6 +1123,20 @@ async fn inject_linked_project_roots(
     }
     args["linkedRoots"] = serde_json::json!(sibling_roots);
     Ok(())
+}
+
+/// 本地工作区根目录：项目根 + 关联项目组的兄弟根；SSH 或无项目时为空。
+async fn resolve_local_workspace_roots(project_id: Option<&str>) -> napi::Result<Vec<String>> {
+    let Some(project_root) = resolve_local_project_root(project_id).await? else {
+        return Ok(Vec::new());
+    };
+    let mut probe = serde_json::json!({});
+    inject_linked_project_roots(&mut probe, project_id, &project_root).await?;
+    let mut roots = vec![project_root];
+    if let Some(siblings) = probe.get("linkedRoots").and_then(Value::as_array) {
+        roots.extend(siblings.iter().filter_map(Value::as_str).map(str::to_string));
+    }
+    Ok(roots)
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

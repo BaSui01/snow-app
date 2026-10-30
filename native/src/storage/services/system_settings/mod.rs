@@ -120,9 +120,11 @@ const PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX: &str = "project_tool_approval_s
 /// semantic analysis — the latter requires user opt-in because it spawns
 /// external language-server processes) and keeps high-risk surfaces off
 /// by default (computer-use controls the user's mouse and keyboard). The
-/// HTML renderer is opt-in as well: its tool is only useful on demand.
+/// HTML renderer is opt-in as well: its tool is only useful on demand. The
+/// decision tool sends local evidence (incl. images) to an external API, so it
+/// is opt-in too.
 const DEFAULT_DISABLED_BUILTIN_SERVERS: &[&str] =
-    &["terminal", "lsp", "computer-use", "browser", "html"];
+    &["terminal", "lsp", "computer-use", "browser", "html", "decision"];
 
 /// 默认关闭的单个内置工具（所属服务器默认开启），需按项目显式启用。
 pub const DEFAULT_DISABLED_BUILTIN_TOOLS: &[&str] = &["config-logs-read"];

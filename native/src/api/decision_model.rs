@@ -12,8 +12,13 @@
 //! 把两种响应折叠成 `answers: { <name>: { choice, confidence, probability } }`
 //! -> 同一段解释代码。任何传输或协议失败都返回错误，由调用方决定回退。
 //!
+//! `evaluate_custom` 是 `decision-evaluate` 工具的通用入口，支持图片证据：
+//! OpenAI 走 `input_image`（共享证据进 input，题级图片进 instructions 数组），
+//! TypeSafe Jev 走顶层 `assets` + 引用串，并带 `TypeSafe-Danger-Zone-Images` 头。
+//!
 //! 全部异步执行，不阻塞 Node.js 主线程。
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -52,6 +57,15 @@ const MAX_STATE_CHARS: usize = 40_000;
 
 /// 请求超时：决策模型通常几十毫秒返回，短上限避免卡住搜索。
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+
+/// 带图片的请求体积大，上传与处理更慢，单独放宽超时。
+const IMAGE_REQUEST_TIMEOUT_SECS: u64 = 90;
+
+/// TypeSafe 图片能力开关头：请求含图片时必须携带。
+const TYPESAFE_IMAGES_HEADER: &str = "TypeSafe-Danger-Zone-Images";
+
+/// `decision-evaluate` 工具默认使用的决策模型 id（system_settings，值为模型 id 字符串）。
+pub const DECISION_TOOL_MODEL_SETTING_CODE: &str = "decision_tool_model";
 
 /// 模型判定相关的选项值。
 const RELEVANT_OPTION: &str = "relevant";
@@ -208,6 +222,14 @@ pub fn load_decision_models(database_path: &Path) -> Vec<DecisionModel> {
         .unwrap_or_default()
 }
 
+/// 读取 `decision-evaluate` 工具的默认决策模型 id（未设置返回空串）。
+pub fn load_decision_tool_model_id(database_path: &Path) -> String {
+    match get_system_setting_value(database_path, DECISION_TOOL_MODEL_SETTING_CODE) {
+        Ok(Some(value)) => value.trim().to_string(),
+        _ => String::new(),
+    }
+}
+
 impl DecisionModelConfig {
     /// 由原始配置字段构造请求配置。
     ///
@@ -301,6 +323,34 @@ pub fn resolve_decision_model(models: &[DecisionModel], model_id: &str) -> Decis
     ) {
         Ok(config) => DecisionModelResolution::Ready { name, config },
         Err(reason) => DecisionModelResolution::Unavailable { name, reason },
+    }
+}
+
+/// 按 id 或名称（不区分大小写）解析决策模型；工具参数允许填写两者之一。
+pub fn resolve_decision_model_reference(
+    models: &[DecisionModel],
+    reference: &str,
+) -> DecisionModelResolution {
+    let reference = reference.trim();
+    if reference.is_empty() {
+        return DecisionModelResolution::NotSelected;
+    }
+
+    let matched = models
+        .iter()
+        .find(|item| item.id == reference)
+        .or_else(|| {
+            models
+                .iter()
+                .find(|item| item.name.trim().eq_ignore_ascii_case(reference))
+        });
+
+    match matched {
+        Some(model) => resolve_decision_model(models, &model.id),
+        None => DecisionModelResolution::Unavailable {
+            name: reference.to_string(),
+            reason: "No decision model matches this id or name".to_string(),
+        },
     }
 }
 
@@ -851,10 +901,48 @@ async fn evaluate_state<T, I>(
 where
     I: FnOnce(Value) -> std::result::Result<T, String>,
 {
+    let body = build_request_body(config, state, questions);
+    send_request(
+        config,
+        func,
+        body,
+        RequestOptions {
+            with_images: false,
+            allow_refusal: false,
+        },
+        interpret,
+    )
+    .await
+}
+
+/// 单次请求的传输选项。
+#[derive(Clone, Copy)]
+struct RequestOptions {
+    /// 请求体含图片：TypeSafe 需带图片能力头，超时放宽。
+    with_images: bool,
+    /// refusal 答案折叠为 `{ refusal: true }` 而不是让整次请求失败。
+    allow_refusal: bool,
+}
+
+/// 发送已构建好的请求体，响应折叠后交给 `interpret`。
+async fn send_request<T, I>(
+    config: &DecisionModelConfig,
+    func: &str,
+    body: Value,
+    options: RequestOptions,
+    interpret: I,
+) -> ModelCallReport<T>
+where
+    I: FnOnce(Value) -> std::result::Result<T, String>,
+{
     let endpoint = config.endpoint();
     let endpoint_ref = endpoint.as_str();
-    let body = build_request_body(config, state, questions);
     let provider = config.provider;
+    let timeout = Duration::from_secs(if options.with_images {
+        IMAGE_REQUEST_TIMEOUT_SECS
+    } else {
+        REQUEST_TIMEOUT_SECS
+    });
 
     observe_call(
         ModelKind::Decision,
@@ -865,9 +953,9 @@ where
             let (status, text) = post_json(
                 ModelKind::Decision,
                 endpoint_ref,
-                build_headers(&config.api_key),
+                build_headers(&config.api_key, provider, options.with_images),
                 &body,
-                Duration::from_secs(REQUEST_TIMEOUT_SECS),
+                timeout,
             )
             .await
             .map_err(|error| {
@@ -887,7 +975,7 @@ where
                 )
             })?;
 
-            let answers = normalize_answers(provider, &parsed)
+            let answers = normalize_answers(provider, &parsed, options.allow_refusal)
                 .map_err(|message| ModelRequestError::new(Some(status), message))?;
             let normalized = json!({ "answers": answers });
 
@@ -948,6 +1036,365 @@ pub async fn test_connection(config: &DecisionModelConfig) -> ModelCallReport<()
         },
     )
     .await
+}
+
+/// 图片证据的编码格式：PNG / JPEG 是两个 provider 的公共子集。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvidenceImageFormat {
+    Png,
+    Jpeg,
+}
+
+impl EvidenceImageFormat {
+    pub fn mime(self) -> &'static str {
+        match self {
+            EvidenceImageFormat::Png => "image/png",
+            EvidenceImageFormat::Jpeg => "image/jpeg",
+        }
+    }
+
+    /// TypeSafe assets 的 `format` 字段取值。
+    fn typesafe_name(self) -> &'static str {
+        match self {
+            EvidenceImageFormat::Png => "png",
+            EvidenceImageFormat::Jpeg => "jpg",
+        }
+    }
+}
+
+/// 已读取并编码好的一张图片证据。
+#[derive(Debug, Clone)]
+pub struct EvidenceImage {
+    /// 去重键（内容哈希）：同一张图在一次请求中只上传一次。
+    pub key: String,
+    /// 展示标签（文件名），写进证据说明供问题引用。
+    pub label: String,
+    pub format: EvidenceImageFormat,
+    pub data_base64: String,
+}
+
+impl EvidenceImage {
+    fn data_url(&self) -> String {
+        format!("data:{};base64,{}", self.format.mime(), self.data_base64)
+    }
+}
+
+/// 共享证据：所有问题都基于它判定。
+#[derive(Debug, Clone, Default)]
+pub struct EvidenceInput {
+    pub text: Option<String>,
+    pub json: Option<Value>,
+    pub images: Vec<EvidenceImage>,
+}
+
+impl EvidenceInput {
+    pub fn is_empty(&self) -> bool {
+        self.text.is_none() && self.json.is_none() && self.images.is_empty()
+    }
+}
+
+/// 自定义问题类型；choice / score 的选项按「值 / 描述」成对保存。
+#[derive(Debug, Clone)]
+pub enum CustomQuestionKind {
+    Predicate {
+        when_true: Option<String>,
+        when_false: Option<String>,
+    },
+    Choice {
+        options: Vec<(String, Option<String>)>,
+    },
+    /// 档位低 -> 高。
+    Score {
+        levels: Vec<(String, Option<String>)>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct CustomQuestion {
+    pub name: String,
+    pub instructions: String,
+    pub kind: CustomQuestionKind,
+    /// 题级图片：只随该题发送（如每题一张候选图，与共享参考图对比）。
+    pub images: Vec<EvidenceImage>,
+}
+
+/// 通用判定（`decision-evaluate` 工具入口），返回按问题 name 折叠的答案；
+/// 单题 refusal 折叠为 `{ refusal: true }`，不影响其它题。
+pub async fn evaluate_custom(
+    config: &DecisionModelConfig,
+    evidence: &EvidenceInput,
+    questions: &[CustomQuestion],
+) -> Result<Map<String, Value>> {
+    let with_images = !evidence.images.is_empty()
+        || questions.iter().any(|question| !question.images.is_empty());
+    let body = match config.provider {
+        DecisionProvider::Typesafe => typesafe_custom_body(config, evidence, questions),
+        DecisionProvider::Openai => openai_custom_body(config, evidence, questions),
+    };
+    let provider = config.provider;
+
+    send_request(
+        config,
+        "evaluate_custom",
+        body,
+        RequestOptions {
+            with_images,
+            allow_refusal: true,
+        },
+        move |parsed| {
+            parsed
+                .get("answers")
+                .and_then(Value::as_object)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "The {} decision model returned no answers",
+                        provider.as_str()
+                    )
+                })
+        },
+    )
+    .await
+    .into_result()
+}
+
+/// TypeSafe 资产登记：同一张图只登记一次，引用串每次请求随机生成（官方建议 UUID）。
+#[derive(Default)]
+struct TypesafeAssets {
+    assets: Map<String, Value>,
+    references: HashMap<String, String>,
+}
+
+impl TypesafeAssets {
+    fn reference(&mut self, image: &EvidenceImage) -> String {
+        if let Some(existing) = self.references.get(&image.key) {
+            return existing.clone();
+        }
+        let reference = format!("image-{}", uuid::Uuid::new_v4().simple());
+        self.assets.insert(
+            reference.clone(),
+            json!({
+                "type": "image",
+                "format": image.format.typesafe_name(),
+                "data_base64": image.data_base64,
+            }),
+        );
+        self.references
+            .insert(image.key.clone(), reference.clone());
+        reference
+    }
+}
+
+/// score 档位在 Jev 只有有序描述（无 label），把 label 并入描述保留语义。
+fn score_level_text(label: &str, description: Option<&str>) -> String {
+    match description.map(str::trim).filter(|text| !text.is_empty()) {
+        Some(description) => format!("{label}: {description}"),
+        None => label.to_string(),
+    }
+}
+
+/// TypeSafe 请求体：共享图片写进 state.images，题级图片引用串追加到 instructions。
+fn typesafe_custom_body(
+    config: &DecisionModelConfig,
+    evidence: &EvidenceInput,
+    questions: &[CustomQuestion],
+) -> Value {
+    let mut assets = TypesafeAssets::default();
+
+    let mut state = Map::new();
+    if let Some(text) = &evidence.text {
+        state.insert("text".to_string(), json!(text));
+    }
+    if let Some(data) = &evidence.json {
+        state.insert("data".to_string(), data.clone());
+    }
+    if !evidence.images.is_empty() {
+        let images: Vec<Value> = evidence
+            .images
+            .iter()
+            .map(|image| json!({ "label": image.label, "image": assets.reference(image) }))
+            .collect();
+        state.insert("images".to_string(), Value::Array(images));
+    }
+
+    let mut converted = Map::new();
+    for question in questions {
+        let mut instructions = question.instructions.clone();
+        if !question.images.is_empty() {
+            instructions.push_str("\n\nImages for this question:");
+            for image in &question.images {
+                let reference = assets.reference(image);
+                instructions.push_str(&format!("\n- {}: {reference}", image.label));
+            }
+        }
+
+        let value = match &question.kind {
+            CustomQuestionKind::Predicate {
+                when_true,
+                when_false,
+            } => {
+                let mut object = json!({
+                    "type": NOUL_QUESTION_TYPE,
+                    "instructions": instructions,
+                });
+                if when_true.is_some() || when_false.is_some() {
+                    object["criteria"] = json!({ "true": when_true, "false": when_false });
+                }
+                object
+            }
+            CustomQuestionKind::Choice { options } => json!({
+                "type": CHOICE_QUESTION_TYPE,
+                "instructions": instructions,
+                "criteria": options
+                    .iter()
+                    .map(|(value, description)| {
+                        (
+                            value.clone(),
+                            description.clone().map(Value::String).unwrap_or(Value::Null),
+                        )
+                    })
+                    .collect::<Map<String, Value>>(),
+            }),
+            CustomQuestionKind::Score { levels } => json!({
+                "type": SCORE_QUESTION_TYPE,
+                "instructions": instructions,
+                "criteria": levels
+                    .iter()
+                    .map(|(label, description)| {
+                        Value::String(score_level_text(label, description.as_deref()))
+                    })
+                    .collect::<Vec<Value>>(),
+            }),
+        };
+        converted.insert(question.name.clone(), value);
+    }
+
+    let state = if state.is_empty() {
+        Value::String(String::new())
+    } else {
+        Value::Object(state)
+    };
+    let mut body = json!({
+        "model": config.model,
+        "state": state,
+        "questions": converted,
+    });
+    if !assets.assets.is_empty() {
+        body["assets"] = Value::Object(assets.assets);
+    }
+    body
+}
+
+/// OpenAI 请求体：共享证据进 input 的 user 消息，题级图片让 instructions 变成
+/// `input_text` + `input_image` 数组（官方题级图片写法）。
+fn openai_custom_body(
+    config: &DecisionModelConfig,
+    evidence: &EvidenceInput,
+    questions: &[CustomQuestion],
+) -> Value {
+    let mut content: Vec<Value> = Vec::new();
+    if let Some(text) = &evidence.text {
+        content.push(json!({ "type": "input_text", "text": text }));
+    }
+    if let Some(data) = &evidence.json {
+        // input_json 只接受对象或对象数组，其它形态包一层。
+        let data = match data {
+            Value::Object(_) => data.clone(),
+            Value::Array(items) if !items.is_empty() && items.iter().all(Value::is_object) => {
+                data.clone()
+            }
+            other => json!({ "value": other }),
+        };
+        content.push(json!({ "type": "input_json", "data": data }));
+    }
+    for (index, image) in evidence.images.iter().enumerate() {
+        content.push(json!({
+            "type": "input_text",
+            "text": format!("Image {} ({})", index + 1, image.label),
+        }));
+        content.push(json!({ "type": "input_image", "image_url": image.data_url() }));
+    }
+    let input = if content.is_empty() {
+        Value::String(String::new())
+    } else {
+        json!([{ "role": "user", "content": content }])
+    };
+
+    let questions: Vec<Value> = questions
+        .iter()
+        .map(|question| {
+            let mut text = question.instructions.clone();
+            // OpenAI predicate 没有 criteria 字段，判定标准并入说明。
+            if let CustomQuestionKind::Predicate {
+                when_true,
+                when_false,
+            } = &question.kind
+            {
+                if let Some(when_true) = when_true {
+                    text.push_str(&format!("\nTrue when: {when_true}"));
+                }
+                if let Some(when_false) = when_false {
+                    text.push_str(&format!("\nFalse when: {when_false}"));
+                }
+            }
+
+            let instructions = if question.images.is_empty() {
+                Value::String(text)
+            } else {
+                let mut parts = vec![json!({ "type": "input_text", "text": text })];
+                for image in &question.images {
+                    parts.push(json!({
+                        "type": "input_text",
+                        "text": format!("Image ({})", image.label),
+                    }));
+                    parts.push(json!({ "type": "input_image", "image_url": image.data_url() }));
+                }
+                Value::Array(parts)
+            };
+
+            match &question.kind {
+                CustomQuestionKind::Predicate { .. } => json!({
+                    "type": PREDICATE_QUESTION_TYPE,
+                    "name": question.name,
+                    "instructions": instructions,
+                }),
+                CustomQuestionKind::Choice { options } => json!({
+                    "type": CHOICE_QUESTION_TYPE,
+                    "name": question.name,
+                    "instructions": instructions,
+                    "choices": options
+                        .iter()
+                        .map(|(value, description)| labeled_entry("value", value, description))
+                        .collect::<Vec<Value>>(),
+                }),
+                CustomQuestionKind::Score { levels } => json!({
+                    "type": SCORE_QUESTION_TYPE,
+                    "name": question.name,
+                    "instructions": instructions,
+                    "levels": levels
+                        .iter()
+                        .map(|(label, description)| labeled_entry("label", label, description))
+                        .collect::<Vec<Value>>(),
+                }),
+            }
+        })
+        .collect();
+
+    json!({
+        "model": config.model,
+        "input": input,
+        "questions": questions,
+    })
+}
+
+/// `{ <key>: value, description? }`：描述为空时省略字段。
+fn labeled_entry(key: &str, value: &str, description: &Option<String>) -> Value {
+    let mut entry = Map::new();
+    entry.insert(key.to_string(), json!(value));
+    if let Some(description) = description {
+        entry.insert("description".to_string(), json!(description));
+    }
+    Value::Object(entry)
 }
 
 /// 按 provider 生成请求体。
@@ -1083,11 +1530,12 @@ fn openai_questions(questions: &Value) -> Value {
 /// 把两种响应折叠成 `name -> { choice, confidence, probability }`。
 ///
 /// typesafe 的 answers 是对象（noul 概率在 `noul` 字段）；openai 的 answers 是
-/// 数组，按 name 折叠（predicate 概率在 `probability` 字段）。refusal 答案按
-/// 错误返回，绝不当作 allow。
+/// 数组，按 name 折叠（predicate 概率在 `probability` 字段）。refusal 答案默认按
+/// 错误返回，绝不当作 allow；`allow_refusal` 时折叠为 `{ refusal: true }`。
 fn normalize_answers(
     provider: DecisionProvider,
     parsed: &Value,
+    allow_refusal: bool,
 ) -> std::result::Result<Map<String, Value>, String> {
     let answers = parsed.get("answers").ok_or_else(|| {
         format!(
@@ -1132,6 +1580,10 @@ fn normalize_answers(
                     ));
                 }
                 if item.get("type").and_then(Value::as_str) == Some("refusal") {
+                    if allow_refusal {
+                        normalized.insert(name.to_string(), json!({ "refusal": true }));
+                        continue;
+                    }
                     return Err(format!("Decision refused for {name}"));
                 }
                 normalized.insert(name.to_string(), normalize_answer(item, provider));
@@ -1142,7 +1594,8 @@ fn normalize_answers(
 }
 
 /// 单条答案归一化：choice / confidence 原样保留，概率字段统一叫 probability。
-/// score 答案额外带 `score` 与 `levels: [{ index, label, probability }]`。
+/// score 答案额外带 `score` 与 `levels: [{ index, label, probability }]`；
+/// choice 答案额外带 `probabilities: { <value>: p }`。
 fn normalize_answer(answer: &Value, provider: DecisionProvider) -> Value {
     let probability = match provider {
         DecisionProvider::Typesafe => answer.get("noul").or_else(|| answer.get("probability")),
@@ -1163,13 +1616,44 @@ fn normalize_answer(answer: &Value, provider: DecisionProvider) -> Value {
         (Value::Null, Value::Null)
     };
 
+    let is_choice = match answer.get("type").and_then(Value::as_str) {
+        Some(kind) => kind == CHOICE_QUESTION_TYPE,
+        None => answer.get("choice").is_some(),
+    };
+    let probabilities = if is_choice {
+        normalize_choice_probabilities(answer)
+    } else {
+        Value::Null
+    };
+
     json!({
         "choice": answer.get("choice").cloned().unwrap_or(Value::Null),
         "confidence": answer.get("confidence").cloned().unwrap_or(Value::Null),
         "probability": probability.cloned().unwrap_or(Value::Null),
         "score": score,
         "levels": levels,
+        "probabilities": probabilities,
     })
+}
+
+/// choice 各选项概率：TypeSafe 是 `{value: p}` 对象，OpenAI 是 `[{ value, probability }]`。
+fn normalize_choice_probabilities(answer: &Value) -> Value {
+    match answer.get("probabilities") {
+        Some(Value::Object(map)) => Value::Object(map.clone()),
+        Some(Value::Array(items)) => Value::Object(
+            items
+                .iter()
+                .filter_map(|item| {
+                    let key = match item.get("value")? {
+                        Value::String(text) => text.clone(),
+                        other => other.to_string(),
+                    };
+                    Some((key, item.get("probability").cloned().unwrap_or(Value::Null)))
+                })
+                .collect(),
+        ),
+        _ => Value::Null,
+    }
 }
 
 /// score 的档位概率：TypeSafe 是 `{"0": p}` 对象（无 label），OpenAI 是
@@ -1290,13 +1774,18 @@ fn resolve_decisions_endpoint(base_url: &str) -> String {
     format!("{normalized}/v1/decisions")
 }
 
-fn build_headers(api_key: &str) -> HeaderMap {
+fn build_headers(api_key: &str, provider: DecisionProvider, with_images: bool) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/json"));
     headers.insert("Accept", HeaderValue::from_static("application/json"));
 
     if let Ok(value) = HeaderValue::from_str(&format!("Bearer {api_key}")) {
         headers.insert("Authorization", value);
+    }
+
+    // Jev 的图片能力默认关闭，请求含图片时必须显式开启。
+    if with_images && provider == DecisionProvider::Typesafe {
+        headers.insert(TYPESAFE_IMAGES_HEADER, HeaderValue::from_static("true"));
     }
 
     headers

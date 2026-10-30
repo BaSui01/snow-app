@@ -2041,6 +2041,20 @@ export const en = {
   "toolNames.computer-use-type-text": "Type text",
   "toolNames.computer-use-perform-actions": "Perform actions",
   "toolNames.html-render": "Render HTML",
+  "toolNames.decision-evaluate": "Decision",
+  "toolCall.decision.name": "Decision",
+  "toolCall.decision.questions": "{{count}} questions",
+  "toolCall.decision.images": "Image evidence",
+  "toolCall.decision.result": "Result",
+  "toolCall.decision.refused": "Refused",
+  "toolCall.decision.noAnswer": "No answer",
+  "toolCall.decision.confidence": "confidence {{value}}",
+  "toolCall.decision.score": "score {{value}}",
+  "toolCall.decision.running": "Evaluating...",
+  "toolCall.decision.waiting": "Waiting to evaluate",
+  "toolCall.decision.type.predicate": "predicate",
+  "toolCall.decision.type.choice": "choice",
+  "toolCall.decision.type.score": "score",
   "toolNames.workflow-workflow-generate": "Generate workflow",
   "toolNames.workflow-workflow-resume": "Resume workflow",
   "toolCall.duplicateReadonlyProtection.duplicateCall":
@@ -2981,6 +2995,15 @@ export const en = {
   "settings.decisionModelDeleteTitle": "Delete decision model",
   "settings.decisionModelDeleteConfirm":
     "Delete {{name}}? Anything using it (for example codebase agent review) falls back to the LLM model.",
+  "settings.decisionToolModel": "Default model for the decision tool",
+  "settings.decisionToolModelHint":
+    "Used by the decision-evaluate tool when the call does not name a model.",
+  "settings.decisionToolModelNone": "Not set",
+  "settings.decisionToolModelUnavailable": "{{name}} (unavailable)",
+  "settings.decisionToolModelSaved":
+    "The decision tool now uses {{name}} by default.",
+  "settings.decisionToolModelCleared":
+    "The decision tool default model was cleared.",
   "settings.systemPromptSettings": "System prompt",
   "settings.systemPromptSettingsInfo": "Customize the assistant system prompt.",
   "settings.systemPromptTitle": "System prompt",
@@ -4910,6 +4933,8 @@ export const en = {
   "mcpBuiltinServer.desc.computerUse":
     "Screenshot and control the desktop (mouse, keyboard)",
   "mcpBuiltinServer.desc.html": "Render HTML live inside the conversation",
+  "mcpBuiltinServer.desc.decision":
+    "Typed judgments on text, JSON and image evidence with a decision model",
   "projectCodebase.title": "Project Codebase",
   "projectCodebase.description": "Codebase indexing for {{project}}",
   "projectCodebase.noProject":

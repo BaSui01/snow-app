@@ -10,25 +10,26 @@ Built-in tool full names follow the pattern `{server-id}-{tool-name}`, e.g. `fil
 
 Listed in registration order:
 
-| Server ID          | Description                                                                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filesystem`       | Local file read/write (read / replace_edit / create)                                                                                                      |
-| `bash`             | Terminal command execution                                                                                                                                |
-| `todo`             | Session task list management                                                                                                                              |
-| `grep`             | File content search and file name lookup (ripgrep)                                                                                                        |
-| `websearch`        | Web search and page fetching                                                                                                                              |
-| `browser`          | Built-in browser automation (embedded Electron browser)                                                                                                   |
-| `user-interaction` | Ask the user questions (blocking interaction)                                                                                                             |
-| `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                            |
-| `codebase`         | Codebase semantic search (embedding index; **only exposed when the project has codebase indexing enabled and an index has been built**)                   |
-| `lsp`              | External language-server semantic tools (**exposed only when an enabled AND installed server exists — enabled alone is not enough**)                      |
-| `app-control`      | App control (mode / settings pages / scheduled tasks / projects)                                                                                          |
-| `config`           | Config tools for file and DB settings, including `config-logs-read` for current-session App log/request-response analysis (secret-redacted)               |
-| `terminal`         | Terminal automation (persistent PTY session tabs, unlike bash's one-shot commands)                                                                        |
-| `imagegen`         | AI image generation & editing (OpenAI / Gemini multiple channels; **hidden on demand when no channel is configured**)                                     |
-| `skills`           | Skill loading and execution (**dynamically registered**: hidden from the tool list when no enabled skill exists)                                          |
-| `memory`           | Project-level persistent memory (cross-session AI knowledge bank: save / search / list / update / delete, isolated to the current conversation's project) |
-| `config-logs-read` | Read current-conversation API request/response log bodies with secret fields redacted; bounded to 100 entries/page                                        | `level`, `module`, time range, `limit`, `offset` |
+| Server ID          | Description                                                                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filesystem`       | Local file read/write (read / replace_edit / create)                                                                                                                                                        |
+| `bash`             | Terminal command execution                                                                                                                                                                                  |
+| `todo`             | Session task list management                                                                                                                                                                                |
+| `grep`             | File content search and file name lookup (ripgrep)                                                                                                                                                          |
+| `websearch`        | Web search and page fetching                                                                                                                                                                                |
+| `browser`          | Built-in browser automation (embedded Electron browser)                                                                                                                                                     |
+| `user-interaction` | Ask the user questions (blocking interaction)                                                                                                                                                               |
+| `sub-agents`       | Activate sub-agents to run tasks independently                                                                                                                                                              |
+| `codebase`         | Codebase semantic search (embedding index; **only exposed when the project has codebase indexing enabled and an index has been built**)                                                                     |
+| `lsp`              | External language-server semantic tools (**exposed only when an enabled AND installed server exists — enabled alone is not enough**)                                                                        |
+| `app-control`      | App control (mode / settings pages / scheduled tasks / projects)                                                                                                                                            |
+| `config`           | Config tools for file and DB settings, including `config-logs-read` for current-session App log/request-response analysis (secret-redacted)                                                                 |
+| `terminal`         | Terminal automation (persistent PTY session tabs, unlike bash's one-shot commands)                                                                                                                          |
+| `imagegen`         | AI image generation & editing (OpenAI / Gemini multiple channels; **hidden on demand when no channel is configured**)                                                                                       |
+| `skills`           | Skill loading and execution (**dynamically registered**: hidden from the tool list when no enabled skill exists)                                                                                            |
+| `memory`           | Project-level persistent memory (cross-session AI knowledge bank: save / search / list / update / delete, isolated to the current conversation's project)                                                   |
+| `config-logs-read` | Read current-conversation API request/response log bodies with secret fields redacted; bounded to 100 entries/page                                                                                          | `level`, `module`, time range, `limit`, `offset` |
+| `decision`         | Decision-model judgments (TypeSafe Jev / OpenAI Decisions): answer predicate / choice / score questions about text, JSON and local image evidence (**off by default; enable per project in the MCP panel**) |
 
 ## 3. Tool Details
 
@@ -472,6 +473,49 @@ that stay alive across multiple calls), complementary to `bash-terminal-execute`
 > conversation (including its sub-agents and WorkFlow nodes) saved or merged,
 > with full content on expand and a jump that locates an entry in the memory
 > bank.
+
+### decision
+
+| Full tool name      | Purpose                                                                                                                                                                                                                | Key parameters                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `decision-evaluate` | Ask the decision model typed questions about evidence and get structured answers: predicate returns a probability, choice the option plus per-option probabilities, score the value, level and per-level probabilities | `questions` (required), `evidence` (required), `model` (optional) |
+
+Parameters:
+
+| Parameter                            | Description                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `questions[].name`                   | Question id (letters, digits, `_`, `-`, at most 64 characters, unique); answers are keyed by it                          |
+| `questions[].type`                   | `predicate` / `choice` / `score`                                                                                         |
+| `questions[].choices`                | choice only: 2-50 `{value, description?}` entries                                                                        |
+| `questions[].levels`                 | score only: 2-10 `{label, description?}` entries, lowest first                                                           |
+| `questions[].whenTrue` / `whenFalse` | predicate only, optional: what counts as true / false                                                                    |
+| `questions[].images`                 | Question-level image paths, sent only with that question (for example one candidate per question)                        |
+| `evidence.text`                      | Plain-text evidence                                                                                                      |
+| `evidence.json`                      | Structured evidence (a real JSON value)                                                                                  |
+| `evidence.images`                    | Image paths shared by all questions (for example a screenshot or a reference image)                                      |
+| `model`                              | Decision model id or name; omitted means the **default model for the decision tool** in Settings > API > Decision models |
+
+> **Image evidence**: PNG / JPEG only (detected from the file header), at most
+> 16 MiB per file and 16 distinct images per call, 24 MiB in total after
+> processing; images whose long edge exceeds 1568 px are downscaled before
+> sending. Paths may be absolute, relative to the project root, or `upload/...`,
+> and must stay inside the project workspace (linked projects included; the bound
+> worktree in WorkTree mode), the app data directory, the image library or the
+> system temp directory. An unreadable, unsupported, oversized or out-of-scope
+> image fails the whole call with its path and **nothing is sent**; images are
+> read and sent only when this tool is called explicitly.
+>
+> **Both providers support images**: OpenAI Decisions uses `input_image`
+> (shared evidence in `input`; question-level images turn `instructions` into an
+> `input_text` + `input_image` array). TypeSafe Jev (1.13 and later) uses the
+> top-level `assets` map with reference strings, and the
+> `TypeSafe-Danger-Zone-Images: true` header is sent automatically. Jev also
+> requires both sides of an image to be at least 280 px; smaller images are
+> rejected locally. A refused question returns `refused: true` while the other
+> questions still get answers.
+>
+> The tool sends local evidence to an external decision model API, so it is not
+> on the read-only auto-approval list.
 
 ## 4. Special Notes
 

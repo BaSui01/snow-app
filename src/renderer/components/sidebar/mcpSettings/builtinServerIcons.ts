@@ -12,6 +12,7 @@ import {
   MessageCircleQuestion,
   Monitor,
   MousePointerClick,
+  Scale,
   Search,
   SlidersHorizontal,
   SquareTerminal,
@@ -43,6 +44,7 @@ const BUILTIN_SERVER_ICONS: Record<string, LucideIcon> = {
   "builtin:memory": Brain,
   "builtin:computer-use": Monitor,
   "builtin:html": CodeXml,
+  "builtin:decision": Scale,
 };
 
 /** 返回内置服务的专属图标；非内置服务返回 undefined。 */

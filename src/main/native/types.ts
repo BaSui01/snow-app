@@ -1139,6 +1139,14 @@ export type SensitiveCommandDecisionRecord = {
   askOnDeny: boolean;
   /** 参与判定的决策模型名称。 */
   modelName: string;
+  /** 本次判定是否开启了会话上下文开关。 */
+  contextEnabled?: boolean;
+  /** 实际发送给决策模型的会话消息条数。 */
+  contextMessages?: number;
+  /** 会话上下文超出预算被截断（判定依据不完整）。 */
+  contextTruncated?: boolean;
+  /** 开关打开但没有可用上下文，按无上下文判定。 */
+  contextEmpty?: boolean;
   /** 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）的原因；此时回退人工确认。 */
   error?: string | null;
 };
@@ -2767,12 +2775,14 @@ export type NativeBridge = ImageGenerationNativeApi & {
     }>
   >;
   /** 用决策模型判定一条命中敏感规则的命令是否可直接放行（辅助 / 托管）。
-   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）。 */
+   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）；
+   *  conversationContext 是渲染层裁剪后的会话片段 JSON（仅开关打开时使用）。 */
   evaluateSensitiveCommandDecision: (
     command: string,
     projectId?: string,
     workingDirectory?: string,
     description?: string,
+    conversationContext?: string,
   ) => Promise<SensitiveCommandDecisionRecord | null>;
   /** 决策 / 嵌入 / 重排模型连接自检：结果持久化并返回，失败写入系统日志。 */
   testDecisionModelConnection: (

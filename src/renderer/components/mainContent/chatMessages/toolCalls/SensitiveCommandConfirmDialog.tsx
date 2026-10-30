@@ -4,6 +4,7 @@ import { useI18n } from "../../../../i18n";
 import { keyToDisplay } from "../../../../utils/shortcutUtils";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { SensitiveCommandSeverityBadge } from "./shared/SensitiveCommandSeverityBadge";
+import { SensitiveCommandContextNote } from "./shared/SensitiveCommandContextNote";
 
 type SensitiveCommandMatch = {
   commandId: string;
@@ -19,6 +20,10 @@ type SensitiveCommandDecision = {
   severity?: string;
   severityScore?: number;
   modelName: string;
+  /** 会话上下文使用情况（开关关闭时为空）。 */
+  contextMessages?: number;
+  contextTruncated?: boolean;
+  contextEmpty?: boolean;
   /** 决策模型不可用 / 请求失败的原因（此时判定无效，已回退人工确认）。 */
   error?: string;
 };
@@ -240,6 +245,10 @@ const SensitiveCommandItem = ({
                 })}
               </span>
             ) : null}
+            <SensitiveCommandContextNote
+              decision={decision}
+              className="sensitive-command-decision-model"
+            />
             {isDenyReview ? (
               <span className="sensitive-command-decision-override">
                 <AlertTriangle size={12} strokeWidth={2} aria-hidden="true" />

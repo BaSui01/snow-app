@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { BrainCircuit, ShieldCheck } from "lucide-react";
 import {
   enabledDecisionModels,
@@ -5,6 +6,12 @@ import {
   type DecisionModelConfig,
 } from "../../../constants/decisionModels";
 import type { SensitiveCommandAssistSettings } from "../../../constants/sensitiveCommandAssist";
+import {
+  DEFAULT_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+  MAX_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+  MIN_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+  normalizeContextMessageCount,
+} from "../../../constants/sensitiveCommandAssist";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { Tooltip } from "../../common/Tooltip";
@@ -108,6 +115,58 @@ export function SensitiveCommandDecisionAssist({
     </span>
   );
 
+  // 会话上下文只依赖辅助开关与模型选择，与托管无关（建议模式下同样参考上下文）。
+  const isContextDisabled =
+    isBusy || !settings.enabled || settings.modelId === "";
+  const contextHint = !isContextDisabled
+    ? ""
+    : !settings.enabled
+      ? t("settings.sensitiveCommandAssistAskOnDenyNeedAssist", {
+          defaultValue: "Enable decision model assist first.",
+        })
+      : settings.modelId === ""
+        ? t("settings.sensitiveCommandAssistAskOnDenyNeedModel", {
+            defaultValue: "Select a decision model first.",
+          })
+        : "";
+
+  const contextToggle = (
+    <span className="toggle-switch">
+      <input
+        type="checkbox"
+        checked={settings.enabled && settings.useConversationContext}
+        disabled={isContextDisabled}
+        aria-label={t("settings.sensitiveCommandAssistContext", {
+          defaultValue: "Include recent conversation",
+        })}
+        onChange={(event) =>
+          onChange({
+            ...settings,
+            useConversationContext: event.target.checked,
+          })
+        }
+      />
+      <span className="toggle-slider" aria-hidden="true" />
+    </span>
+  );
+
+  // 条数输入先进草稿，失焦或回车时规整并保存，避免每次按键都写设置。
+  const [countDraft, setCountDraft] = useState(
+    String(settings.contextMessageCount),
+  );
+  useEffect(() => {
+    setCountDraft(String(settings.contextMessageCount));
+  }, [settings.contextMessageCount]);
+
+  const commitCountDraft = (): void => {
+    const next = normalizeContextMessageCount(countDraft);
+    setCountDraft(String(next));
+    if (next !== settings.contextMessageCount) {
+      onChange({ ...settings, contextMessageCount: next });
+    }
+  };
+  const isCountDisabled = isContextDisabled || !settings.useConversationContext;
+
   return (
     <section
       className={`sensitive-command-assist${isActive ? " is-active" : ""}`}
@@ -164,6 +223,9 @@ export function SensitiveCommandDecisionAssist({
                   // 辅助关闭后托管不再有意义，一并关闭以免留下悬空状态。
                   delegate: event.target.checked ? settings.delegate : false,
                   askOnDeny: event.target.checked ? settings.askOnDeny : false,
+                  useConversationContext: event.target.checked
+                    ? settings.useConversationContext
+                    : false,
                 })
               }
             />
@@ -255,6 +317,70 @@ export function SensitiveCommandDecisionAssist({
           ) : (
             <Tooltip content={askOnDenyHint}>{askOnDenyToggle}</Tooltip>
           )}
+        </label>
+
+        <label className="sensitive-command-assist-row">
+          <span className="sensitive-command-assist-row-copy">
+            <strong>
+              {t("settings.sensitiveCommandAssistContext", {
+                defaultValue: "Include recent conversation",
+              })}
+            </strong>
+            <small>
+              {t("settings.sensitiveCommandAssistContextInfo", {
+                values: { count: settings.contextMessageCount },
+                defaultValue:
+                  "Off by default. When on, the last {{count}} conversation messages (user and assistant text, plus names, argument summaries and output summaries of finished tool calls) are sent to the selected decision model with each judgement, so it can tell commands you asked for from ones the AI started on its own. Tool outputs pass the privacy filter first.",
+              })}
+            </small>
+          </span>
+          {contextHint === "" ? (
+            contextToggle
+          ) : (
+            <Tooltip content={contextHint}>{contextToggle}</Tooltip>
+          )}
+        </label>
+
+        <label className="sensitive-command-assist-row">
+          <span className="sensitive-command-assist-row-copy">
+            <strong>
+              {t("settings.sensitiveCommandAssistContextCount", {
+                defaultValue: "Conversation messages to send",
+              })}
+            </strong>
+            <small>
+              {t("settings.sensitiveCommandAssistContextCountInfo", {
+                values: {
+                  default: DEFAULT_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+                  min: MIN_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+                  max: MAX_SENSITIVE_COMMAND_CONTEXT_MESSAGES,
+                },
+                defaultValue:
+                  "Default {{default}}, range {{min}}-{{max}}. More messages give a fuller picture but send more content; whatever exceeds the state budget is truncated from the oldest end.",
+              })}
+            </small>
+          </span>
+          <span className="sensitive-command-assist-number">
+            <input
+              type="number"
+              min={MIN_SENSITIVE_COMMAND_CONTEXT_MESSAGES}
+              max={MAX_SENSITIVE_COMMAND_CONTEXT_MESSAGES}
+              step={1}
+              value={countDraft}
+              disabled={isCountDisabled}
+              aria-label={t("settings.sensitiveCommandAssistContextCount", {
+                defaultValue: "Conversation messages to send",
+              })}
+              onChange={(event) => setCountDraft(event.target.value)}
+              onBlur={commitCountDraft}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitCountDraft();
+                }
+              }}
+            />
+          </span>
         </label>
       </div>
 

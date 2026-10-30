@@ -6628,6 +6628,33 @@ body.is-panel-resizing * {
   max-width: 220px;
 }
 
+.sensitive-command-assist-number {
+  flex: 0 0 auto;
+}
+
+.sensitive-command-assist-number input {
+  width: 72px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  outline: none;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.sensitive-command-assist-number input:focus {
+  border-color: var(--accent-color, #4a9eff);
+}
+
+.sensitive-command-assist-number input:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
 .sensitive-command-assist-warning {
   display: inline-flex;
   align-items: center;

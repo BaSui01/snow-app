@@ -24,6 +24,7 @@ import { ToolCallNode } from "./shared/ToolCallNode";
 import { AnsiOutput } from "./shared/AnsiOutput";
 import { localizeToolError } from "./shared/toolErrorDisplay";
 import { SensitiveCommandSeverityBadge } from "./shared/SensitiveCommandSeverityBadge";
+import { SensitiveCommandContextNote } from "./shared/SensitiveCommandContextNote";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
@@ -798,6 +799,7 @@ export const BashToolCall = ({
                   })}
                 </span>
               ) : null}
+              <SensitiveCommandContextNote decision={decision} />
             </div>
             {decisionReason ? (
               <div className="tool-call-bash-decision-reason">

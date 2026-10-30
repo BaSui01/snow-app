@@ -451,12 +451,18 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 /// record with `error` set is returned: the caller falls back to the plain
 /// confirmation prompt and tells the user why. Request failures are also in the
 /// system log (module `decision_model`).
+///
+/// `conversation_context` is an optional JSON array of recent messages already
+/// trimmed by the renderer; it is used only when the assist's
+/// `useConversationContext` switch is on. A malformed array returns an error
+/// record (manual confirmation), never a silent context-free verdict.
 #[napi]
 pub async fn evaluate_sensitive_command_decision(
     command: String,
     project_id: Option<String>,
     working_directory: Option<String>,
     description: Option<String>,
+    conversation_context: Option<String>,
 ) -> napi::Result<Option<SensitiveCommandDecisionRecord>> {
     let command = command.trim().to_string();
     if command.is_empty() {
@@ -496,6 +502,7 @@ pub async fn evaluate_sensitive_command_decision(
 
     // 拒绝转人工只在托管下有意义：合并后下发，渲染层无需二次读取设置。
     let ask_on_deny = assist.delegate && assist.ask_on_deny;
+    let context_enabled = assist.use_conversation_context;
 
     let unavailable = |model_name: String, error: String| SensitiveCommandDecisionRecord {
         allow: false,
@@ -506,6 +513,10 @@ pub async fn evaluate_sensitive_command_decision(
         delegate: assist.delegate,
         ask_on_deny,
         model_name,
+        context_enabled,
+        context_messages: 0,
+        context_truncated: false,
+        context_empty: false,
         error: Some(error),
     };
 
@@ -525,6 +536,34 @@ pub async fn evaluate_sensitive_command_decision(
             }
         };
 
+    // 开关关闭时完全忽略调用方传入的上下文，请求体与无上下文版本一致。
+    let conversation = if context_enabled {
+        let raw = conversation_context.unwrap_or_default();
+        let parsed = if raw.trim().is_empty() {
+            Ok(Vec::new())
+        } else {
+            crate::api::decision_model::parse_conversation_context(&raw)
+        };
+        match parsed {
+            Ok(mut messages) => {
+                // 只保留配置条数内的最新消息（渲染层按上限传入）。
+                let keep = crate::api::decision_model::resolve_context_message_count(
+                    assist.context_message_count,
+                );
+                if messages.len() > keep {
+                    messages.drain(..messages.len() - keep);
+                }
+                match mask_conversation_tool_outputs(messages).await {
+                    Ok(messages) => Some(messages),
+                    Err(error) => return Ok(Some(unavailable(model_name, error))),
+                }
+            }
+            Err(error) => return Ok(Some(unavailable(model_name, error))),
+        }
+    } else {
+        None
+    };
+
     let verdict = crate::api::decision_model::evaluate_command(
         &config,
         &crate::api::decision_model::CommandContext {
@@ -532,24 +571,63 @@ pub async fn evaluate_sensitive_command_decision(
             description: &description,
             working_directory: &working_directory,
             matched_rules: &matched_rules,
+            conversation: conversation.as_deref(),
         },
     )
     .await;
 
     Ok(Some(match verdict {
-        Ok(verdict) => SensitiveCommandDecisionRecord {
-            allow: verdict.allow,
-            reason: verdict.reason,
-            confidence: verdict.confidence,
-            severity: verdict.severity,
-            severity_score: verdict.severity_score,
-            delegate: assist.delegate,
-            ask_on_deny,
-            model_name,
-            error: None,
-        },
+        Ok(verdict) => {
+            let usage = verdict.context.unwrap_or_default();
+            SensitiveCommandDecisionRecord {
+                allow: verdict.allow,
+                reason: verdict.reason,
+                confidence: verdict.confidence,
+                severity: verdict.severity,
+                severity_score: verdict.severity_score,
+                delegate: assist.delegate,
+                ask_on_deny,
+                model_name,
+                context_enabled,
+                context_messages: u32::try_from(usage.messages).unwrap_or(u32::MAX),
+                context_truncated: usage.truncated,
+                context_empty: usage.empty,
+                error: None,
+            }
+        }
         Err(error) => unavailable(model_name, error.reason.clone()),
     }))
+}
+
+/// 工具输出沿用现有隐私过滤链路（按工具名套用隐私设置）后再发给决策模型。
+async fn mask_conversation_tool_outputs(
+    mut messages: Vec<crate::api::decision_model::ConversationMessage>,
+) -> std::result::Result<Vec<crate::api::decision_model::ConversationMessage>, String> {
+    let masked = futures::future::join_all(messages.iter().flat_map(|message| {
+        message.tool_calls.iter().map(|call| async move {
+            match call.output.as_deref() {
+                Some(output) => crate::mcp::privacy_mask::mask_tool_result_if_needed(
+                    &call.name, output,
+                )
+                .await
+                .map(Some),
+                None => Ok(None),
+            }
+        })
+    }))
+    .await;
+
+    let mut masked = masked.into_iter();
+    for message in &mut messages {
+        for call in &mut message.tool_calls {
+            if let Some(result) = masked.next() {
+                call.output = result.map_err(|error| {
+                    format!("Failed to apply privacy filtering to the conversation context: {error}")
+                })?;
+            }
+        }
+    }
+    Ok(messages)
 }
 
 #[napi]

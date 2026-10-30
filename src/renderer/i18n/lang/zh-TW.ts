@@ -3355,6 +3355,12 @@ export const zhTW = {
   "settings.sensitiveCommandAssistAskOnDeny": "拒絕時仍讓我確認",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "託管判定拒絕後仍彈出確認，由你決定是否執行。開啟會降低自動攔截強度。",
+  "settings.sensitiveCommandAssistContext": "參考最近對話",
+  "settings.sensitiveCommandAssistContextInfo":
+    "預設關閉。開啟後每次判定都會把最近 {{count}} 則對話訊息（使用者與助手的文字，以及已結束工具呼叫的名稱、參數摘要和輸出摘要）傳送給所選決策模型，用於區分你明確要求的操作與 AI 自行發起的操作。工具輸出會先經過隱私過濾。",
+  "settings.sensitiveCommandAssistContextCount": "傳送的對話則數",
+  "settings.sensitiveCommandAssistContextCountInfo":
+    "預設 {{default}}，範圍 {{min}}-{{max}}。則數越多判定依據越完整，但傳送的內容也越多；超出 state 預算的部分會從最早的訊息開始截斷。",
   "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
     "請先啟用決策模型輔助。",
   "settings.sensitiveCommandAssistAskOnDenyNeedModel": "請先選擇決策模型。",
@@ -4284,6 +4290,12 @@ export const zhTW = {
     "決策模型判定拒絕，確認執行即表示你正在覆蓋該判定。",
   "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
   "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.decisionContextUsed": "參考了最近 {{count}} 則對話",
+  "sensitiveCommand.decisionContextTruncated":
+    "參考了最近 {{count}} 則對話（更早的內容超出預算已截斷）",
+  "sensitiveCommand.decisionContextEmpty": "無可用對話上下文，按無上下文判定",
+  "sensitiveCommand.decisionContextDropped":
+    "對話上下文超出預算已全部截斷，按無上下文判定",
   "sensitiveCommand.severityBadge": "{{level}}風險",
   "sensitiveCommand.severityScore": "風險分值 {{value}} / {{max}}",
   "sensitiveCommand.severity.low": "低",

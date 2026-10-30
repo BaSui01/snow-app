@@ -17,6 +17,7 @@ import {
 } from "../utils/conversationTypes";
 import { APP_CONTROL_MODE_CHANGED_EVENT } from "../../../../hooks/useAppControl";
 import { writeRendererLog } from "../../../../utils/rendererLog";
+import { buildSensitiveCommandContext } from "../utils/sensitiveCommandContext";
 
 /** 敏感命令复核日志里命令文本的最大长度（超出截断）。 */
 const SENSITIVE_COMMAND_LOG_MAX_CHARS = 200;
@@ -31,6 +32,25 @@ const pickSeverity = (decision: {
     ? { severityScore: decision.severityScore }
     : {}),
 });
+
+/** 会话上下文使用情况（开关关闭时不写字段，UI 不显示）。 */
+const pickContextUsage = (decision: {
+  contextEnabled?: boolean;
+  contextMessages?: number;
+  contextTruncated?: boolean;
+  contextEmpty?: boolean;
+}): {
+  contextMessages?: number;
+  contextTruncated?: boolean;
+  contextEmpty?: boolean;
+} =>
+  decision.contextEnabled
+    ? {
+        contextMessages: decision.contextMessages ?? 0,
+        contextTruncated: decision.contextTruncated === true,
+        contextEmpty: decision.contextEmpty === true,
+      }
+    : {};
 
 /** 权限面板增删项目级免审批工具后派发，授权流程据此重新加载合并列表。 */
 export const TOOL_APPROVALS_CHANGED_EVENT = "tool-approvals:changed";
@@ -697,6 +717,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       projectId: string | undefined,
       workingDirectory: string,
       description: string,
+      conversationContext: string,
     ) =>
       window.snow
         .evaluateSensitiveCommandDecision(
@@ -704,6 +725,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           projectId,
           workingDirectory || undefined,
           description || undefined,
+          conversationContext,
         )
         .catch((error: unknown) => ({
           allow: false,
@@ -714,6 +736,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           delegate: false,
           askOnDeny: false,
           modelName: "",
+          contextEnabled: false,
           error: error instanceof Error ? error.message : String(error),
         })),
     [],
@@ -790,11 +813,16 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
           if (matches.length > 0) {
             // 风险判定需要上下文：命令自身的说明 + 实际执行目录（工具没给时
             // 回落到项目目录）。只看命令文本容易把所有规则命中都判成风险。
+            // 会话片段只在设置开启时由 Rust 使用，关闭时被忽略。
             const decision = await requestSensitiveCommandDecision(
               command,
               projectId,
               workingDirectory || directoryIdToPath(projectId) || "",
               description,
+              buildSensitiveCommandContext(
+                ctx.sessionsRef.current[conversationId]?.messages ?? [],
+                toolCall,
+              ),
             );
 
             // 托管模式：判定直接生效，不再弹拦截提示 —— 允许则放行（等价于
@@ -817,6 +845,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                 reason: decision.reason,
                 confidence: decision.confidence,
                 ...pickSeverity(decision),
+                ...pickContextUsage(decision),
                 modelName: decision.modelName,
               };
               ctx.updateSessionMessages(conversationId, (currentMessages) =>
@@ -889,6 +918,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
                       reason: decision.reason,
                       confidence: decision.confidence,
                       ...pickSeverity(decision),
+                      ...pickContextUsage(decision),
                       modelName: decision.modelName,
                       ...(decision.error ? { error: decision.error } : {}),
                     },
@@ -990,6 +1020,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.alwaysApprovedToolsRef,
       ctx.pendingToolAuthorizationRef,
       ctx.sessionsRefData,
+      ctx.sessionsRef,
       ctx.setPendingToolAuthorizations,
       ctx.notifySensitiveCommandIntercepted,
     ],

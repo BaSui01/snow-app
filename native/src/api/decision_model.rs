@@ -16,6 +16,9 @@
 //! OpenAI 走 `input_image`（共享证据进 input，题级图片进 instructions 数组），
 //! TypeSafe Jev 走顶层 `assets` + 引用串，并带 `TypeSafe-Danger-Zone-Images` 头。
 //!
+//! 敏感命令判定可选附带会话片段：OpenAI 用原生多轮 `input`（消息 + 工具调用/输出），
+//! TypeSafe Jev 没有多轮协议，按官方 state 用法放进 state 的 `recentConversation`。
+//!
 //! 全部异步执行，不阻塞 Node.js 主线程。
 
 use std::collections::HashMap;
@@ -599,6 +602,8 @@ pub struct CommandDecision {
     pub severity_score: Option<f64>,
     /// 等级解析失败的原因（只进日志）；此时等级留空，verdict 照常生效。
     pub severity_error: Option<String>,
+    /// 会话上下文的使用情况；开关关闭时为 None。
+    pub context: Option<ContextUsage>,
 }
 
 /// 一条命令的判定上下文：命令文本、模型写的说明与实际执行目录。
@@ -611,6 +616,285 @@ pub struct CommandContext<'a> {
     pub working_directory: &'a str,
     /// 命中的敏感规则（模式 + 说明），只作为「被规则命中」的证据。
     pub matched_rules: &'a [SensitiveCommandMatchResult],
+    /// 会话上下文（时间正序）；None = 开关关闭，Some(空) = 开关打开但无内容。
+    pub conversation: Option<&'a [ConversationMessage]>,
+}
+
+/// 会话片段的结构上限：超出视为调用方传参异常；也是可配置条数的上限。
+pub const MAX_CONTEXT_MESSAGES: usize = 50;
+const MAX_CONTEXT_TOOL_CALLS: usize = 20;
+
+/// 未配置时附带的最近消息条数（与前端默认值一致）。
+pub const DEFAULT_CONTEXT_MESSAGES: usize = 8;
+
+/// 配置的条数：缺省回落默认值，越界钳到 1..=MAX_CONTEXT_MESSAGES。
+pub fn resolve_context_message_count(configured: Option<u32>) -> usize {
+    configured
+        .map(|count| (count as usize).clamp(1, MAX_CONTEXT_MESSAGES))
+        .unwrap_or(DEFAULT_CONTEXT_MESSAGES)
+}
+
+/// OpenAI function name 只允许字母数字、`_`、`-`，最长 64。
+const MAX_OPENAI_FUNCTION_NAME_CHARS: usize = 64;
+
+/// 工具调用没有输出时的占位（OpenAI 要求调用与输出按 call_id 配对）。
+const MISSING_TOOL_OUTPUT: &str = "[no output recorded]";
+
+/// TypeSafe state 里会话片段的说明。
+const TYPESAFE_CONTEXT_NOTE: &str = "Recent conversation before this command, oldest first. User messages show what the user actually asked for; the command under review was proposed by the assistant, not typed by the user.";
+
+/// OpenAI 末尾 developer 消息的前缀：待判定命令放这里，避免被当成用户请求。
+const OPENAI_PENDING_COMMAND_PREFIX: &str = "The conversation above is context only. The assistant now proposes the command below; the user did not type it. Judge this pending command (JSON):";
+
+/// 渲染层裁剪后的一条会话消息（JSON 数组元素，camelCase）。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConversationMessage {
+    /// "user" | "assistant"。
+    pub role: String,
+    #[serde(default)]
+    pub text: String,
+    /// 仅 assistant 可带：该轮已结束的工具调用（名称 + 参数摘要 + 输出摘要）。
+    #[serde(default)]
+    pub tool_calls: Vec<ConversationToolCall>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConversationToolCall {
+    pub call_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub arguments: String,
+    #[serde(default)]
+    pub output: Option<String>,
+}
+
+/// 会话上下文实际使用情况（随判定记录返回并写日志）。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ContextUsage {
+    /// 实际发送的消息条数。
+    pub messages: usize,
+    /// 超出 state 预算丢弃了较早的消息：判定依据不完整。
+    pub truncated: bool,
+    /// 开关打开但没有可发送的上下文：按无上下文判定。
+    pub empty: bool,
+}
+
+/// 解析并校验渲染层传入的会话片段。结构非法直接报错（调用方回退人工确认），
+/// 不静默降级成无上下文判定；空数组合法。
+pub fn parse_conversation_context(
+    raw: &str,
+) -> std::result::Result<Vec<ConversationMessage>, String> {
+    let messages: Vec<ConversationMessage> = serde_json::from_str(raw)
+        .map_err(|error| format!("Invalid conversation context: {error}"))?;
+    if messages.len() > MAX_CONTEXT_MESSAGES {
+        return Err(format!(
+            "Invalid conversation context: {} messages exceed the limit of {MAX_CONTEXT_MESSAGES}",
+            messages.len()
+        ));
+    }
+
+    let mut call_ids = std::collections::HashSet::new();
+    for (index, message) in messages.iter().enumerate() {
+        match message.role.as_str() {
+            "user" if !message.tool_calls.is_empty() => {
+                return Err(format!(
+                    "Invalid conversation context: user message #{index} cannot carry tool calls"
+                ));
+            }
+            "user" | "assistant" => {}
+            other => {
+                return Err(format!(
+                    "Invalid conversation context: message #{index} has unsupported role '{other}'"
+                ));
+            }
+        }
+        if message.text.trim().is_empty() && message.tool_calls.is_empty() {
+            return Err(format!(
+                "Invalid conversation context: message #{index} has neither text nor tool calls"
+            ));
+        }
+        if message.tool_calls.len() > MAX_CONTEXT_TOOL_CALLS {
+            return Err(format!(
+                "Invalid conversation context: message #{index} has more than {MAX_CONTEXT_TOOL_CALLS} tool calls"
+            ));
+        }
+        for call in &message.tool_calls {
+            if call.name.trim().is_empty() || call.call_id.trim().is_empty() {
+                return Err(format!(
+                    "Invalid conversation context: a tool call in message #{index} has no name or call id"
+                ));
+            }
+            if !call_ids.insert(call.call_id.trim().to_string()) {
+                return Err(format!(
+                    "Invalid conversation context: duplicate tool call id '{}'",
+                    call.call_id.trim()
+                ));
+            }
+        }
+    }
+    Ok(messages)
+}
+
+fn conversation_message_chars(message: &ConversationMessage) -> usize {
+    message.text.chars().count()
+        + message
+            .tool_calls
+            .iter()
+            .map(|call| {
+                call.name.chars().count()
+                    + call.arguments.chars().count()
+                    + call.output.as_deref().map_or(0, |output| output.chars().count())
+            })
+            .sum::<usize>()
+}
+
+/// 从最新一条往前保留，直到超出预算；返回保留片段（时间正序）与是否丢弃了消息。
+fn fit_conversation(
+    messages: &[ConversationMessage],
+    budget: usize,
+) -> (&[ConversationMessage], bool) {
+    let mut used = 0usize;
+    let mut start = messages.len();
+    for (index, message) in messages.iter().enumerate().rev() {
+        let cost = conversation_message_chars(message);
+        if used + cost > budget {
+            break;
+        }
+        used += cost;
+        start = index;
+    }
+    (&messages[start..], start > 0)
+}
+
+/// 参数摘要：合法 JSON 原样保留结构，否则按字符串处理。
+fn tool_arguments_value(arguments: &str) -> Value {
+    let trimmed = arguments.trim();
+    if trimmed.is_empty() {
+        return json!({});
+    }
+    serde_json::from_str::<Value>(trimmed).unwrap_or_else(|_| json!(trimmed))
+}
+
+/// TypeSafe：会话作为 state 的结构化字段（官方 state 支持对象 / 消息数组）。
+fn typesafe_conversation(messages: &[ConversationMessage]) -> Value {
+    let messages: Vec<Value> = messages
+        .iter()
+        .map(|message| {
+            let mut entry = Map::new();
+            entry.insert("role".to_string(), json!(message.role));
+            if !message.text.trim().is_empty() {
+                entry.insert("text".to_string(), json!(message.text));
+            }
+            if !message.tool_calls.is_empty() {
+                entry.insert(
+                    "toolCalls".to_string(),
+                    Value::Array(
+                        message
+                            .tool_calls
+                            .iter()
+                            .map(|call| {
+                                json!({
+                                    "name": call.name,
+                                    "arguments": tool_arguments_value(&call.arguments),
+                                    "output": call.output.as_deref().unwrap_or(MISSING_TOOL_OUTPUT),
+                                })
+                            })
+                            .collect(),
+                    ),
+                );
+            }
+            Value::Object(entry)
+        })
+        .collect();
+    json!({ "note": TYPESAFE_CONTEXT_NOTE, "messages": messages })
+}
+
+fn openai_function_name(name: &str) -> String {
+    let sanitized: String = name
+        .trim()
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(MAX_OPENAI_FUNCTION_NAME_CHARS)
+        .collect();
+    if sanitized.is_empty() {
+        "tool".to_string()
+    } else {
+        sanitized
+    }
+}
+
+/// OpenAI：原生多轮 input（消息 + function_call / function_call_output 按 call_id 配对）。
+fn openai_conversation_items(messages: &[ConversationMessage]) -> Vec<Value> {
+    let mut items = Vec::new();
+    for message in messages {
+        if !message.text.trim().is_empty() {
+            items.push(json!({ "role": message.role, "content": message.text }));
+        }
+        for call in &message.tool_calls {
+            // arguments 必须是 JSON 字符串：非 JSON 摘要包一层。
+            let arguments = match tool_arguments_value(&call.arguments) {
+                Value::String(text) => json!({ "summary": text }).to_string(),
+                other => other.to_string(),
+            };
+            let call_id = call.call_id.trim();
+            items.push(json!({
+                "type": "function_call",
+                "call_id": call_id,
+                "name": openai_function_name(&call.name),
+                "arguments": arguments,
+            }));
+            items.push(json!({
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": call.output.as_deref().unwrap_or(MISSING_TOOL_OUTPUT),
+            }));
+        }
+    }
+    items
+}
+
+/// 带会话上下文的请求体（只在开关打开且有内容时使用；关闭时走原请求体）。
+fn build_context_request_body(
+    config: &DecisionModelConfig,
+    state: &Value,
+    questions: &Value,
+    messages: &[ConversationMessage],
+) -> Value {
+    match config.provider {
+        DecisionProvider::Typesafe => {
+            let mut state = state.clone();
+            if let Some(object) = state.as_object_mut() {
+                object.insert(
+                    "recentConversation".to_string(),
+                    typesafe_conversation(messages),
+                );
+            }
+            build_request_body(config, &state, questions)
+        }
+        DecisionProvider::Openai => {
+            let mut input = openai_conversation_items(messages);
+            input.push(json!({
+                "role": "developer",
+                "content": format!(
+                    "{OPENAI_PENDING_COMMAND_PREFIX}\n{}",
+                    serde_json::to_string_pretty(state).unwrap_or_else(|_| state.to_string())
+                ),
+            }));
+            json!({
+                "model": config.model,
+                "input": input,
+                "questions": openai_questions(questions),
+            })
+        }
+    }
 }
 
 /// 询问决策模型：命中敏感规则的命令能否直接执行，以及理由分类。
@@ -685,11 +969,36 @@ pub async fn evaluate_command(
     let state = Value::Object(state);
     let provider = config.provider;
 
-    let decision = evaluate_state(
+    // 会话上下文沿用 state 总预算：命令本身先占用，剩余按「最新优先」保留。
+    let (conversation, context_usage) = match context.conversation {
+        None => (None, None),
+        Some(messages) => {
+            let budget = MAX_STATE_CHARS.saturating_sub(state.to_string().chars().count());
+            let (kept, truncated) = fit_conversation(messages, budget);
+            if truncated {
+                log_context_truncated(config, messages.len(), kept.len(), budget).await;
+            }
+            let usage = ContextUsage {
+                messages: kept.len(),
+                truncated,
+                empty: kept.is_empty(),
+            };
+            ((!kept.is_empty()).then_some(kept), Some(usage))
+        }
+    };
+    let body = match conversation {
+        Some(messages) => build_context_request_body(config, &state, &questions, messages),
+        None => build_request_body(config, &state, &questions),
+    };
+
+    let decision = send_request(
         config,
         "evaluate_command",
-        &state,
-        &questions,
+        body,
+        RequestOptions {
+            with_images: false,
+            allow_refusal: false,
+        },
         move |parsed| {
             let answers = parsed.get("answers").and_then(Value::as_object);
             let verdict_answer = answers.and_then(|map| map.get(VERDICT_QUESTION_ID));
@@ -731,6 +1040,7 @@ pub async fn evaluate_command(
                 severity,
                 severity_score,
                 severity_error,
+                context: context_usage,
             })
         },
     )
@@ -739,6 +1049,50 @@ pub async fn evaluate_command(
 
     log_command_decision(config, &decision).await;
     Ok(decision)
+}
+
+/// 会话上下文超出 state 预算被截断：判定依据不完整，写 WARN 日志（不含消息原文）。
+async fn log_context_truncated(
+    config: &DecisionModelConfig,
+    provided: usize,
+    kept: usize,
+    budget: usize,
+) {
+    if crate::api::ephemeral::is_active() {
+        return;
+    }
+
+    let input = crate::storage::services::app_logs::AppLogInput {
+        level: "WARN".to_string(),
+        module: "decision_model".to_string(),
+        func: "evaluate_command".to_string(),
+        line: None,
+        message: "Sensitive command conversation context truncated to fit the state budget"
+            .to_string(),
+        input: None,
+        output: None,
+        duration: None,
+        context: Some(
+            json!({
+                "provider": config.provider.as_str(),
+                "model": config.model,
+                "providedMessages": provided,
+                "keptMessages": kept,
+                "budgetChars": budget,
+            })
+            .to_string(),
+        ),
+        error: None,
+        source: "main".to_string(),
+    };
+
+    tokio::task::spawn_blocking(move || {
+        if let Ok(database_path) = crate::storage::ensure_database_file() {
+            let _ = crate::storage::services::app_logs::insert_app_log(&database_path, &input);
+        }
+    })
+    .await
+    .ok();
 }
 
 /// 从 score 答案解析风险等级：取概率最大的档位（并列取更高档），score 仅作展示。
@@ -871,6 +1225,9 @@ async fn log_command_decision(config: &DecisionModelConfig, decision: &CommandDe
                 "confidence": decision.confidence,
                 "severity": decision.severity,
                 "severityScore": decision.severity_score,
+                "contextMessages": decision.context.map(|usage| usage.messages),
+                "contextTruncated": decision.context.map(|usage| usage.truncated),
+                "contextEmpty": decision.context.map(|usage| usage.empty),
             })
             .to_string(),
         ),

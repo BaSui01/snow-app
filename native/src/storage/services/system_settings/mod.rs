@@ -340,6 +340,10 @@ pub struct SensitiveCommandAssistSettings {
     /// 托管下判定拒绝时仍弹出人工确认，由用户决定是否执行；默认关闭，
     /// 仅在 `delegate` 打开时生效。
     pub ask_on_deny: bool,
+    /// 判定时附带渲染层裁剪的最近会话片段，默认关闭（隐私面变更）。
+    pub use_conversation_context: bool,
+    /// 附带的最近消息条数；缺省/越界由调用方回落与钳制。
+    pub context_message_count: Option<u32>,
 }
 
 pub fn seed_default_settings(database_path: &Path) -> Result<()> {

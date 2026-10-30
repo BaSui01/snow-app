@@ -3355,6 +3355,12 @@ export const zhCN = {
   "settings.sensitiveCommandAssistAskOnDeny": "拒绝时仍让我确认",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "托管判定拒绝后仍弹出确认，由你决定是否执行。开启会降低自动拦截强度。",
+  "settings.sensitiveCommandAssistContext": "参考最近会话",
+  "settings.sensitiveCommandAssistContextInfo":
+    "默认关闭。开启后每次判定都会把最近 {{count}} 条会话消息（用户与助手的文本，以及已结束工具调用的名称、参数摘要和输出摘要）发送给所选决策模型，用于区分你明确要求的操作与 AI 自行发起的操作。工具输出会先经过隐私过滤。",
+  "settings.sensitiveCommandAssistContextCount": "发送的会话条数",
+  "settings.sensitiveCommandAssistContextCountInfo":
+    "默认 {{default}}，范围 {{min}}-{{max}}。条数越多判定依据越完整，但发送的内容也越多；超出 state 预算的部分会从最早的消息开始截断。",
   "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
     "请先启用决策模型辅助。",
   "settings.sensitiveCommandAssistAskOnDenyNeedModel": "请先选择决策模型。",
@@ -4341,6 +4347,12 @@ export const zhCN = {
     "决策模型判定拒绝，确认执行即表示你正在覆盖该判定。",
   "sensitiveCommand.decisionConfidence": "置信度 {{value}}%",
   "sensitiveCommand.decisionModel": "判定模型：{{name}}",
+  "sensitiveCommand.decisionContextUsed": "参考了最近 {{count}} 条会话",
+  "sensitiveCommand.decisionContextTruncated":
+    "参考了最近 {{count}} 条会话（更早的内容超出预算已截断）",
+  "sensitiveCommand.decisionContextEmpty": "无可用会话上下文，按无上下文判定",
+  "sensitiveCommand.decisionContextDropped":
+    "会话上下文超出预算已全部截断，按无上下文判定",
   "sensitiveCommand.severityBadge": "{{level}}风险",
   "sensitiveCommand.severityScore": "风险分值 {{value}} / {{max}}",
   "sensitiveCommand.severity.low": "低",

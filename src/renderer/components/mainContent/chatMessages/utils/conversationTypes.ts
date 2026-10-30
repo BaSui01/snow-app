@@ -162,6 +162,12 @@ export type ToolCallInfo = {
     severityScore?: number;
     /** 参与判定的决策模型名称。 */
     modelName: string;
+    /** 会话上下文开关打开时：实际发送的会话消息条数。 */
+    contextMessages?: number;
+    /** 会话上下文超出预算被截断（判定依据不完整）。 */
+    contextTruncated?: boolean;
+    /** 开关打开但没有可用上下文，按无上下文判定。 */
+    contextEmpty?: boolean;
     /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
     error?: string;
   };
@@ -586,6 +592,12 @@ export type SensitiveCommandDecisionInfo = {
   severityScore?: number;
   /** 参与判定的决策模型名称。 */
   modelName: string;
+  /** 会话上下文开关打开时：实际发送的会话消息条数。 */
+  contextMessages?: number;
+  /** 会话上下文超出预算被截断（判定依据不完整）。 */
+  contextTruncated?: boolean;
+  /** 开关打开但没有可用上下文，按无上下文判定。 */
+  contextEmpty?: boolean;
   /** 决策模型不可用 / 请求失败的原因：判定无效，已回退人工确认。 */
   error?: string;
 };

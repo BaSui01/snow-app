@@ -584,6 +584,14 @@ export type SensitiveCommandDecisionRecord = {
   askOnDeny: boolean;
   /** 参与判定的决策模型名称。 */
   modelName: string;
+  /** 本次判定是否开启了会话上下文开关。 */
+  contextEnabled?: boolean;
+  /** 实际发送给决策模型的会话消息条数。 */
+  contextMessages?: number;
+  /** 会话上下文超出预算被截断（判定依据不完整）。 */
+  contextTruncated?: boolean;
+  /** 开关打开但没有可用上下文，按无上下文判定。 */
+  contextEmpty?: boolean;
   /** 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）的原因；此时回退人工确认。 */
   error?: string | null;
 };

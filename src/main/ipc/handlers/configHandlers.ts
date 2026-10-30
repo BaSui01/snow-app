@@ -688,6 +688,7 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       projectId: unknown,
       workingDirectory: unknown,
       description: unknown,
+      conversationContext: unknown,
     ) => {
       if (typeof command !== "string" || !command.trim()) {
         return Promise.resolve(null);
@@ -697,6 +698,13 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         normalizeOptionalText(projectId),
         normalizeOptionalText(workingDirectory),
         normalizeOptionalText(description),
+        // 结构由 Rust 校验，非法时返回带 error 的记录（回退人工确认）；
+        // 非字符串也序列化交给 Rust 判定，不静默丢弃。
+        conversationContext === undefined || conversationContext === null
+          ? undefined
+          : typeof conversationContext === "string"
+            ? conversationContext
+            : JSON.stringify(conversationContext),
       );
     },
   );

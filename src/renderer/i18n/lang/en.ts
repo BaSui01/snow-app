@@ -3552,6 +3552,13 @@ export const en = {
   "settings.sensitiveCommandAssistAskOnDeny": "Still ask me when denied",
   "settings.sensitiveCommandAssistAskOnDenyInfo":
     "After a delegated deny verdict, still show the confirmation prompt and let you decide whether to run it. Turning this on weakens automatic blocking.",
+  "settings.sensitiveCommandAssistContext": "Include recent conversation",
+  "settings.sensitiveCommandAssistContextInfo":
+    "Off by default. When on, the last {{count}} conversation messages (user and assistant text, plus names, argument summaries and output summaries of finished tool calls) are sent to the selected decision model with each judgement, so it can tell commands you asked for from ones the AI started on its own. Tool outputs pass the privacy filter first.",
+  "settings.sensitiveCommandAssistContextCount":
+    "Conversation messages to send",
+  "settings.sensitiveCommandAssistContextCountInfo":
+    "Default {{default}}, range {{min}}-{{max}}. More messages give a fuller picture but send more content; whatever exceeds the state budget is truncated from the oldest end.",
   "settings.sensitiveCommandAssistAskOnDenyNeedAssist":
     "Enable decision model assist first.",
   "settings.sensitiveCommandAssistAskOnDenyNeedModel":
@@ -4622,6 +4629,14 @@ export const en = {
     "The decision model denied this command. Confirming execution overrides that verdict.",
   "sensitiveCommand.decisionConfidence": "Confidence {{value}}%",
   "sensitiveCommand.decisionModel": "Judged by {{name}}",
+  "sensitiveCommand.decisionContextUsed":
+    "Considered the last {{count}} conversation messages",
+  "sensitiveCommand.decisionContextTruncated":
+    "Considered the last {{count}} conversation messages (older context exceeded the budget and was truncated)",
+  "sensitiveCommand.decisionContextEmpty":
+    "No conversation context was available; judged without it",
+  "sensitiveCommand.decisionContextDropped":
+    "Conversation context exceeded the budget and was dropped; judged without it",
   "sensitiveCommand.severityBadge": "{{level}} risk",
   "sensitiveCommand.severityScore": "Risk score {{value}} / {{max}}",
   "sensitiveCommand.severity.low": "Low",

@@ -675,6 +675,14 @@ pub struct SensitiveCommandDecisionRecord {
     pub ask_on_deny: bool,
     /// 参与判定的决策模型名称（用于展示）。
     pub model_name: String,
+    /// 本次判定是否开启了会话上下文开关。
+    pub context_enabled: bool,
+    /// 实际发送给决策模型的会话消息条数。
+    pub context_messages: u32,
+    /// 会话上下文超出预算、较早的消息被丢弃（判定依据不完整）。
+    pub context_truncated: bool,
+    /// 开关打开但没有可用上下文，按无上下文判定。
+    pub context_empty: bool,
     /// 决策模型不可用（未选择 / 已停用 / 配置不完整 / 请求失败）时的原因：
     /// 此时判定无效，调用方回退人工确认并展示该原因。
     pub error: Option<String>,

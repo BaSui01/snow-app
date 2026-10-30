@@ -255,12 +255,14 @@ export const configApi = {
     ),
   /** 决策模型辅助：判定命中敏感规则的命令是否可直接放行（null = 未启用；
    *  带 error 的记录 = 决策模型不可用，回退人工确认）。
-   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）。 */
+   *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）；
+   *  conversationContext 是裁剪后的会话片段 JSON（仅开关打开时使用）。 */
   evaluateSensitiveCommandDecision: (
     command: string,
     projectId?: string,
     workingDirectory?: string,
     description?: string,
+    conversationContext?: string,
   ): Promise<SensitiveCommandDecisionRecord | null> =>
     ipcRenderer.invoke(
       "sensitive-command-configs:evaluate-decision",
@@ -268,6 +270,7 @@ export const configApi = {
       projectId,
       workingDirectory,
       description,
+      conversationContext,
     ),
   /** 决策 / 嵌入 / 重排模型连接自检（传入当前表单值），结果会持久化。 */
   testDecisionModelConnection: (

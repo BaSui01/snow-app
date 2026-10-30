@@ -3879,7 +3879,7 @@ export const zhCN = {
   "settings.themeChatStyleAiAvatarDefault": "默认：内置宠物形象",
   "settings.themeChatStyleUserAvatarDefault": "默认图标",
   "settings.themeChatStyleChangeAvatar": "更换",
-  "settings.themeChatStyleResetAvatar": "恢复默认",
+  "settings.themeChatStyleResetAvatar": "重置",
   "settings.themeChatStyleSelectAvatarTitle": "选择头像图片",
   "settings.themeChatStyleSaveAvatarError": "保存头像失败",
   "settings.themeStreamCursorTitle": "流式指示器",

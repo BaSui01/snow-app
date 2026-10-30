@@ -986,3 +986,64 @@
     opacity: 1;
   }
 }
+
+/* ===== 主题设置：分区卡片化 ===== */
+
+/* 页面留白 + 阅读宽度上限，避免宽窗口下控件被拉得过长 */
+.theme-settings-page {
+  padding: 16px;
+}
+
+/* 去掉原来的整面板外框，交给每张分区卡片承担边界 */
+.theme-settings-page .theme-settings-form {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+}
+
+.theme-settings-page .api-settings-form-body {
+  gap: 14px;
+}
+
+/* 每个分区一张卡片：垂直隔断，便于扫读 */
+.theme-settings-page .api-settings-form-section {
+  gap: 10px;
+  margin-top: 0;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+/* 标题改为常规大小写实心标题，左侧竖条标识分类 */
+.theme-settings-page .api-settings-form-section-title {
+  position: relative;
+  padding: 0 0 0 10px;
+  border-bottom: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.theme-settings-page .api-settings-form-section-title::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 12px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent-color) 70%, transparent);
+  transform: translateY(-50%);
+}
+
+/* 底部重置按钮与卡片列表拉开距离 */
+.theme-settings-page .api-settings-form-actions {
+  padding: 2px 2px 0;
+}

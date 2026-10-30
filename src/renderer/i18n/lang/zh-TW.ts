@@ -3881,7 +3881,7 @@ export const zhTW = {
   "settings.themeChatStyleAiAvatarDefault": "預設：內建寵物形象",
   "settings.themeChatStyleUserAvatarDefault": "預設圖示",
   "settings.themeChatStyleChangeAvatar": "更換",
-  "settings.themeChatStyleResetAvatar": "恢復預設",
+  "settings.themeChatStyleResetAvatar": "重設",
   "settings.themeChatStyleSelectAvatarTitle": "選擇頭像圖片",
   "settings.themeChatStyleSaveAvatarError": "儲存頭像失敗",
   "settings.themeStreamCursorTitle": "串流指示器",

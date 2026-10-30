@@ -12319,30 +12319,48 @@ body.is-panel-resizing * {
   color: var(--accent-color);
 }
 
-/* 设置面板：头像预览行 */
+/* 设置面板：AI / 我的头像并排卡片，各自独立更换与重置 */
 .theme-chat-avatar-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.theme-chat-avatar-row {
-  display: flex;
-  align-items: center;
+  display: grid;
+  max-width: 640px;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
   gap: 12px;
 }
 
+.theme-chat-avatar-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 12px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+}
+
 .chat-im-avatar.theme-chat-avatar-preview {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+  height: 64px;
+}
+
+.chat-im-avatar.theme-chat-avatar-preview.is-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* 预览中的默认用户头像同样跟随主题色 */
+.chat-im-avatar.theme-chat-avatar-preview.is-user.is-icon {
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: var(--accent-color);
 }
 
 .theme-chat-avatar-meta {
   display: flex;
-  flex: 1;
   min-width: 0;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
+  text-align: center;
 }
 
 .theme-chat-avatar-label {
@@ -12353,6 +12371,24 @@ body.is-panel-resizing * {
 .theme-chat-avatar-hint {
   color: var(--text-tertiary);
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.theme-chat-avatar-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.theme-chat-avatar-actions .api-settings-form-btn {
+  min-width: 88px;
+  gap: 6px;
+  padding: 7px 12px;
+}
+
+.theme-chat-avatar-actions .api-settings-form-btn:disabled {
+  opacity: 0.45;
 }
 
 /* Virtualized message wrapper. When visible, it just renders children

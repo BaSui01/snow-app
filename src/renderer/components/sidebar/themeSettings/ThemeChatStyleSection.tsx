@@ -22,11 +22,11 @@ export function ThemeChatStyleSection({
 }: ThemeChatStyleSectionProps): React.JSX.Element {
   const { t } = useI18n();
 
-  const renderAvatarRow = (role: ChatAvatarRole): React.JSX.Element => {
+  const renderAvatarCard = (role: ChatAvatarRole): React.JSX.Element => {
     const path =
       role === "ai" ? chatStyle.aiAvatarPath : chatStyle.userAvatarPath;
     return (
-      <div className="theme-chat-avatar-row">
+      <div className="theme-chat-avatar-card">
         <ChatImAvatar
           role={role === "ai" ? "assistant" : "user"}
           path={path}
@@ -56,7 +56,7 @@ export function ThemeChatStyleSection({
                   })}
           </span>
         </div>
-        <div className="theme-background-actions">
+        <div className="theme-chat-avatar-actions">
           <button
             type="button"
             className="api-settings-form-btn secondary"
@@ -70,21 +70,19 @@ export function ThemeChatStyleSection({
               })}
             </span>
           </button>
-          {path ? (
-            <button
-              type="button"
-              className="api-settings-form-btn secondary"
-              onClick={() => void onResetAvatar(role)}
-              disabled={disabled}
-            >
-              <RotateCcw size={15} strokeWidth={1.8} />
-              <span>
-                {t("settings.themeChatStyleResetAvatar", {
-                  defaultValue: "Use default",
-                })}
-              </span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="api-settings-form-btn secondary"
+            onClick={() => void onResetAvatar(role)}
+            disabled={disabled || !path}
+          >
+            <RotateCcw size={15} strokeWidth={1.8} />
+            <span>
+              {t("settings.themeChatStyleResetAvatar", {
+                defaultValue: "Reset",
+              })}
+            </span>
+          </button>
         </div>
       </div>
     );
@@ -122,8 +120,8 @@ export function ThemeChatStyleSection({
       </span>
       {chatStyle.imMode ? (
         <div className="theme-chat-avatar-list">
-          {renderAvatarRow("ai")}
-          {renderAvatarRow("user")}
+          {renderAvatarCard("ai")}
+          {renderAvatarCard("user")}
         </div>
       ) : null}
     </div>

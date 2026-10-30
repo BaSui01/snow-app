@@ -831,7 +831,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     editorTab === "light" ? form.custom.light : form.custom.dark;
 
   return (
-    <div className="api-settings-page" role="region">
+    <div className="api-settings-page theme-settings-page" role="region">
       <AutoDismissNotice
         message={error || status}
         tone={error ? "error" : "success"}
@@ -841,7 +841,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
         }}
       />
 
-      <div className="api-settings-manual-form">
+      <div className="api-settings-manual-form theme-settings-form">
         <div className="api-settings-form-body">
           <div className="api-settings-form-section">
             <div className="api-settings-form-section-header">

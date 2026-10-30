@@ -4114,7 +4114,7 @@ export const en = {
   "settings.themeChatStyleAiAvatarDefault": "Default: built-in pet",
   "settings.themeChatStyleUserAvatarDefault": "Default icon",
   "settings.themeChatStyleChangeAvatar": "Change",
-  "settings.themeChatStyleResetAvatar": "Use default",
+  "settings.themeChatStyleResetAvatar": "Reset",
   "settings.themeChatStyleSelectAvatarTitle": "Select avatar image",
   "settings.themeChatStyleSaveAvatarError": "Failed to save avatar",
   "settings.themeStreamCursorTitle": "Streaming indicator",

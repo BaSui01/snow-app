@@ -34,6 +34,16 @@ An accounting record may contain:
 
 Records are stored in the SQLite `usage_records` table. The native list API supports optional conversation and directory filters, but the current Settings detail table does not use them.
 
+### Decision Model Calls
+
+Decision model requests (TypeSafe Jev / OpenAI Decisions) are recorded once they finish, so the Usage page also covers the token consumption of codebase review, the `decision-evaluate` tool, and sensitive command decisions:
+
+- `request_method` is always `decisions`; model statistics group by model plus request method, so these rows never merge with chat requests of the same model;
+- `model` is the model name configured on the decision model entry, `api_profile_name` is the entry name, and `api_config_id` stays empty;
+- For OpenAI Decisions, `usage.input_tokens` is stored as input tokens and `input_tokens_details.cached_tokens` / `cache_write_tokens` as cache read / cache write; both are already contained in the input count and are never added again; the API does not bill output, so output tokens are always 0;
+- TypeSafe Jev responses carry no usage, so no record is written (zero-value records are skipped); a failed request writes one record with `status = 'error'` and zero tokens;
+- Codebase review and `decision-evaluate` calls carry the current conversation and project; sensitive command decisions have no conversation, so `conversation_id` stays empty; connection tests are not recorded.
+
 ### Accounting Rules
 
 The page applies these rules:

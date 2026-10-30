@@ -619,8 +619,21 @@ pub async fn call_mcp_tool(
             Some(binding) => vec![binding.path.clone()],
             None => resolve_local_workspace_roots(project_id.as_deref()).await?,
         };
+        let usage_scope = crate::api::decision_model::DecisionUsageScope {
+            model_name: String::new(),
+            conversation_id: conversation_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string(),
+            directory_id: project_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string(),
+        };
         DecisionService::new()
-            .execute_evaluate(&args, &workspace_roots)
+            .execute_evaluate(&args, &workspace_roots, usage_scope)
             .await
             .tool_feedback(is_sub_agent_call)?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {
@@ -693,7 +706,12 @@ pub async fn call_mcp_tool(
             .validation_feedback(is_sub_agent_call)?
     } else if tool_full_name == "codebase-search" {
         CodebaseService::new()
-            .execute_search(&args, project_id.as_deref(), &on_chunk)
+            .execute_search(
+                &args,
+                project_id.as_deref(),
+                conversation_id.as_deref(),
+                &on_chunk,
+            )
             .await
             .tool_feedback(is_sub_agent_call)?
     } else if let Some(lsp_tool) = tool_full_name.strip_prefix("lsp-") {

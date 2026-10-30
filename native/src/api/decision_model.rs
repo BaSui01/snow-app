@@ -19,7 +19,8 @@
 //! 敏感命令判定可选附带会话片段：OpenAI 用原生多轮 `input`（消息 + 工具调用/输出），
 //! TypeSafe Jev 没有多轮协议，按官方 state 用法放进 state 的 `recentConversation`。
 //!
-//! 全部异步执行，不阻塞 Node.js 主线程。
+//! 全部异步执行，不阻塞 Node.js 主线程。请求完成后把响应的 usage 写入
+//! usage_records（request_method = decisions）；Jev 不返回 usage，不写 0 值记录。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -178,6 +179,24 @@ pub struct DecisionModelConfig {
     pub api_key: String,
     pub model: String,
     pub provider: DecisionProvider,
+}
+
+/// 一次决策模型调用的用量归属：条目名（档案名）+ 会话/项目。
+#[derive(Debug, Clone, Default)]
+pub struct DecisionUsageScope {
+    /// 决策模型条目名，写入 usage_records.api_profile_name。
+    pub model_name: String,
+    /// 空串表示该调用不属于任何会话（如敏感命令判定）。
+    pub conversation_id: String,
+    pub directory_id: String,
+}
+
+/// 响应里的 token 用量；缓存字段都包含在 input_tokens 内，不重复累加。
+#[derive(Debug, Clone, Copy, Default)]
+struct DecisionTokenUsage {
+    input_tokens: i64,
+    cache_creation_input_tokens: i64,
+    cache_read_input_tokens: i64,
 }
 
 /// 一个决策模型配置项（system_settings 的 `decision_models`，camelCase 与前端一致）。
@@ -424,6 +443,7 @@ pub struct RelevanceEvaluation {
 /// 结果都按相关保留，审查始终保守。
 pub async fn evaluate_relevance(
     config: &DecisionModelConfig,
+    usage_scope: &DecisionUsageScope,
     query: &str,
     results: &[SearchResult],
     relevance_threshold: Option<f64>,
@@ -457,6 +477,7 @@ pub async fn evaluate_relevance(
 
     let parsed = evaluate_state(
         config,
+        Some(usage_scope),
         "evaluate_relevance",
         &state,
         &questions,
@@ -906,6 +927,7 @@ fn build_context_request_body(
 /// 等级缺失或越界只把等级留空（不猜），verdict 照常生效。
 pub async fn evaluate_command(
     config: &DecisionModelConfig,
+    usage_scope: &DecisionUsageScope,
     context: &CommandContext<'_>,
 ) -> Result<CommandDecision> {
     let mut state = Map::new();
@@ -993,6 +1015,7 @@ pub async fn evaluate_command(
 
     let decision = send_request(
         config,
+        Some(usage_scope),
         "evaluate_command",
         body,
         RequestOptions {
@@ -1250,6 +1273,7 @@ async fn log_command_decision(config: &DecisionModelConfig, decision: &CommandDe
 /// （同时进系统日志，module = `decision_model`），调用方据此决定回退。
 async fn evaluate_state<T, I>(
     config: &DecisionModelConfig,
+    usage_scope: Option<&DecisionUsageScope>,
     func: &str,
     state: &Value,
     questions: &Value,
@@ -1261,6 +1285,7 @@ where
     let body = build_request_body(config, state, questions);
     send_request(
         config,
+        usage_scope,
         func,
         body,
         RequestOptions {
@@ -1281,9 +1306,40 @@ struct RequestOptions {
     allow_refusal: bool,
 }
 
+/// 一次请求的响应值 + 从响应解析出的 token 用量。
+struct DecisionResponse<T> {
+    value: T,
+    usage: Option<DecisionTokenUsage>,
+}
+
+/// 解析 Decisions API 的 `usage`；Jev 不返回 usage，返回 None。
+///
+/// `cached_tokens` / `cache_write_tokens` 都包含在 `input_tokens` 内，
+/// 只作为缓存维度记录，不重复累加。
+fn parse_token_usage(parsed: &Value) -> Option<DecisionTokenUsage> {
+    let usage = parsed.get("usage")?;
+    // input_tokens 缺失视为没有 usage 数据，不写 0 值记录。
+    let input_tokens = usage.get("input_tokens").and_then(Value::as_i64)?;
+    let details = usage.get("input_tokens_details");
+    let detail = |key: &str| {
+        details
+            .and_then(|details| details.get(key))
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0)
+    };
+
+    Some(DecisionTokenUsage {
+        input_tokens: input_tokens.max(0),
+        cache_creation_input_tokens: detail("cache_write_tokens"),
+        cache_read_input_tokens: detail("cached_tokens"),
+    })
+}
+
 /// 发送已构建好的请求体，响应折叠后交给 `interpret`。
 async fn send_request<T, I>(
     config: &DecisionModelConfig,
+    usage_scope: Option<&DecisionUsageScope>,
     func: &str,
     body: Value,
     options: RequestOptions,
@@ -1301,7 +1357,7 @@ where
         REQUEST_TIMEOUT_SECS
     });
 
-    observe_call(
+    let report = observe_call(
         ModelKind::Decision,
         func,
         endpoint_ref,
@@ -1331,6 +1387,7 @@ where
                     ),
                 )
             })?;
+            let usage = parse_token_usage(&parsed);
 
             let answers = normalize_answers(provider, &parsed, options.allow_refusal)
                 .map_err(|message| ModelRequestError::new(Some(status), message))?;
@@ -1338,10 +1395,56 @@ where
 
             let value = interpret(normalized)
                 .map_err(|message| ModelRequestError::new(Some(status), message))?;
-            Ok((value, status))
+            Ok((DecisionResponse { value, usage }, status))
         },
     )
-    .await
+    .await;
+
+    let ModelCallReport {
+        result,
+        http_status,
+        latency_ms,
+    } = report;
+
+    if let Some(scope) = usage_scope {
+        // Ok(None)：成功但响应没有 usage（Jev），不写 0 值记录，避免污染统计。
+        match result.as_ref().ok().map(|response| response.usage) {
+            Some(Some(usage)) => {
+                record_decision_usage(scope, config, usage, "completed").await;
+            }
+            Some(None) => {}
+            // 失败也记一条，token 记 0。
+            None => {
+                record_decision_usage(scope, config, DecisionTokenUsage::default(), "error").await;
+            }
+        }
+    }
+
+    ModelCallReport {
+        result: result.map(|response| response.value),
+        http_status,
+        latency_ms,
+    }
+}
+
+/// 写一条决策模型用量记录（best effort，失败只打日志）。
+async fn record_decision_usage(
+    scope: &DecisionUsageScope,
+    config: &DecisionModelConfig,
+    usage: DecisionTokenUsage,
+    status: &'static str,
+) {
+    crate::api::usage::record_decision_usage(crate::api::usage::DecisionUsageInput {
+        model: &config.model,
+        model_name: &scope.model_name,
+        conversation_id: &scope.conversation_id,
+        directory_id: &scope.directory_id,
+        input_tokens: usage.input_tokens,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+        cache_read_input_tokens: usage.cache_read_input_tokens,
+        status,
+    })
+    .await;
 }
 
 /// 连接自检：发一条最小请求，响应必须带答案。
@@ -1363,6 +1466,7 @@ pub async fn test_connection(config: &DecisionModelConfig) -> ModelCallReport<()
 
     evaluate_state(
         config,
+        None,
         CONNECTION_TEST_FUNC,
         &state,
         &questions,
@@ -1479,6 +1583,7 @@ pub struct CustomQuestion {
 /// 单题 refusal 折叠为 `{ refusal: true }`，不影响其它题。
 pub async fn evaluate_custom(
     config: &DecisionModelConfig,
+    usage_scope: &DecisionUsageScope,
     evidence: &EvidenceInput,
     questions: &[CustomQuestion],
 ) -> Result<Map<String, Value>> {
@@ -1492,6 +1597,7 @@ pub async fn evaluate_custom(
 
     send_request(
         config,
+        Some(usage_scope),
         "evaluate_custom",
         body,
         RequestOptions {

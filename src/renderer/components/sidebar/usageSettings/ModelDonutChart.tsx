@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { ModelUsageBreakdown } from "../../../../preload";
+import { isChatRequestMethod, translateRequestMethod } from "./requestMethod";
 
 const TOP_N = 6;
 const VIEW = 132;
@@ -53,8 +54,14 @@ export function ModelDonutChart({
     const rest = sorted.slice(TOP_N);
     const restTokens = rest.reduce((sum, r) => sum + r.totalTokens, 0);
     const restRequests = rest.reduce((sum, r) => sum + r.totalRequests, 0);
+    // 非对话请求（如决策模型）标注来源，避免与同名模型的聊天统计混在一起。
+    const modelLabel = (item: ModelUsageBreakdown): string => {
+      const model = item.model || "-";
+      if (isChatRequestMethod(item.requestMethod)) return model;
+      return `${model} · ${translateRequestMethod(item.requestMethod, t)}`;
+    };
     const items = top.map((m) => ({
-      label: m.model || "-",
+      label: modelLabel(m),
       value: m.totalTokens,
       requests: m.totalRequests,
     }));

@@ -114,6 +114,7 @@ fn daily_json(row: &DailyUsageBreakdown) -> Value {
 fn model_json(row: &ModelUsageBreakdown) -> Value {
     json!({
         "model": row.model,
+        "requestMethod": row.request_method,
         "totalRequests": row.total_requests,
         "errorRequests": row.error_requests,
         "totalInputTokens": row.total_input_tokens,

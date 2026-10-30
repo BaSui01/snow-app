@@ -1,4 +1,4 @@
-//! 非主对话流的模型请求（文件搜索 agent / 仓库 Wiki）同样写入用量记录，
+//! 非主对话流的模型请求（文件搜索 agent / 仓库 Wiki / 决策模型）同样写入用量记录，
 //! 保证用量统计的真实性：每次请求一条，失败请求 token 为 0、状态 error。
 
 use std::path::{Path, PathBuf};
@@ -54,6 +54,54 @@ impl UsageContext {
             Ok(Ok(())) => {}
         }
     }
+}
+
+/// 一次决策模型调用的用量归属与 token。
+pub(crate) struct DecisionUsageInput<'a> {
+    pub(crate) model: &'a str,
+    /// 决策模型条目名，写入 api_profile_name（不是 API profile）。
+    pub(crate) model_name: &'a str,
+    /// 空串表示该调用不属于任何会话（如敏感命令判定）。
+    pub(crate) conversation_id: &'a str,
+    pub(crate) directory_id: &'a str,
+    pub(crate) input_tokens: i64,
+    pub(crate) cache_creation_input_tokens: i64,
+    pub(crate) cache_read_input_tokens: i64,
+    pub(crate) status: &'static str,
+}
+
+/// 记录一次决策模型调用：请求方法固定 decisions，输出 token 固定 0
+/// （Decisions API 不计输出费），api_config_id 留空。
+pub(crate) async fn record_decision_usage(input: DecisionUsageInput<'_>) {
+    if crate::api::ephemeral::is_active() {
+        return;
+    }
+
+    let Ok(Ok(database_path)) =
+        tokio::task::spawn_blocking(crate::storage::ensure_database_file).await
+    else {
+        return;
+    };
+
+    UsageContext {
+        database_path,
+        model: input.model.to_string(),
+        api_profile_name: input.model_name.to_string(),
+        api_config_id: String::new(),
+        request_method: "decisions".to_string(),
+        conversation_id: input.conversation_id.to_string(),
+        directory_id: input.directory_id.to_string(),
+    }
+    .record(
+        ChatTokenUsage {
+            input_tokens: input.input_tokens,
+            output_tokens: 0,
+            cache_creation_input_tokens: input.cache_creation_input_tokens,
+            cache_read_input_tokens: input.cache_read_input_tokens,
+        },
+        input.status,
+    )
+    .await;
 }
 
 /// 按项目路径查项目 id（项目已移除时为空串）。

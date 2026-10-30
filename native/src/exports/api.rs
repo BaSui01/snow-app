@@ -471,6 +471,12 @@ pub async fn evaluate_sensitive_command_decision(
 
     let working_directory = working_directory.unwrap_or_default().trim().to_string();
     let description = description.unwrap_or_default().trim().to_string();
+    // 敏感命令判定不属于任何会话；项目归属照常用量记录。
+    let usage_directory_id = project_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
 
     let database_path = PathBuf::from(initialize_app_storage()?.database_path);
 
@@ -566,6 +572,11 @@ pub async fn evaluate_sensitive_command_decision(
 
     let verdict = crate::api::decision_model::evaluate_command(
         &config,
+        &crate::api::decision_model::DecisionUsageScope {
+            model_name: model_name.clone(),
+            conversation_id: String::new(),
+            directory_id: usage_directory_id,
+        },
         &crate::api::decision_model::CommandContext {
             command: &command,
             description: &description,

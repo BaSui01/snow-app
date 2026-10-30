@@ -52746,7 +52746,7 @@ pre.file-viewer-code {
   margin-bottom: 18px;
 }
 
-/* 模型统计表列宽：模型 / 请求数 / 输入 / 输出 / 缓存写 / 缓存读 / 总计 */
+/* 模型统计表列宽：模型 / 类型 / 请求数 / 输入 / 输出 / 缓存写 / 缓存读 / 总计 */
 .usage-model-breakdown-section .usage-table thead th:first-child,
 .usage-model-breakdown-section .usage-table tbody td:first-child {
   width: 150px;
@@ -52754,17 +52754,22 @@ pre.file-viewer-code {
 
 .usage-model-breakdown-section .usage-table thead th:nth-child(2),
 .usage-model-breakdown-section .usage-table tbody td:nth-child(2) {
-  width: 84px;
+  width: 96px;
 }
 
 .usage-model-breakdown-section .usage-table thead th:nth-child(3),
+.usage-model-breakdown-section .usage-table tbody td:nth-child(3) {
+  width: 84px;
+}
+
 .usage-model-breakdown-section .usage-table thead th:nth-child(4),
 .usage-model-breakdown-section .usage-table thead th:nth-child(5),
 .usage-model-breakdown-section .usage-table thead th:nth-child(6),
-.usage-model-breakdown-section .usage-table tbody td:nth-child(3),
+.usage-model-breakdown-section .usage-table thead th:nth-child(7),
 .usage-model-breakdown-section .usage-table tbody td:nth-child(4),
 .usage-model-breakdown-section .usage-table tbody td:nth-child(5),
-.usage-model-breakdown-section .usage-table tbody td:nth-child(6) {
+.usage-model-breakdown-section .usage-table tbody td:nth-child(6),
+.usage-model-breakdown-section .usage-table tbody td:nth-child(7) {
   width: 78px;
 }
 
@@ -52842,16 +52847,16 @@ pre.file-viewer-code {
   text-align: right;
 }
 
-.usage-table thead th:nth-child(4),
 .usage-table thead th:nth-child(5),
 .usage-table thead th:nth-child(6),
 .usage-table thead th:nth-child(7),
 .usage-table thead th:nth-child(8),
-.usage-table tbody td:nth-child(4),
+.usage-table thead th:nth-child(9),
 .usage-table tbody td:nth-child(5),
 .usage-table tbody td:nth-child(6),
 .usage-table tbody td:nth-child(7),
-.usage-table tbody td:nth-child(8) {
+.usage-table tbody td:nth-child(8),
+.usage-table tbody td:nth-child(9) {
   width: 72px;
 }
 
@@ -52888,6 +52893,13 @@ pre.file-viewer-code {
 
 .usage-cell-model,
 .usage-cell-profile {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-cell-method {
+  color: var(--text-muted);
+  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
 }

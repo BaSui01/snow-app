@@ -25,7 +25,8 @@ use super::remote_workspace::is_ssh_path;
 use crate::api::decision_model::{
     evaluate_custom, load_decision_models, load_decision_tool_model_id,
     resolve_decision_model_reference, CustomQuestion, CustomQuestionKind, DecisionModelConfig,
-    DecisionModelResolution, DecisionProvider, EvidenceImage, EvidenceImageFormat, EvidenceInput,
+    DecisionModelResolution, DecisionProvider, DecisionUsageScope, EvidenceImage,
+    EvidenceImageFormat, EvidenceInput,
 };
 
 const SERVER_ID: &str = "decision";
@@ -203,6 +204,7 @@ impl DecisionService {
         &self,
         args: &Value,
         workspace_roots: &[String],
+        usage_scope: DecisionUsageScope,
     ) -> napi::Result<Value> {
         let questions = parse_questions(args)?;
         let evidence = parse_evidence(args)?;
@@ -224,6 +226,10 @@ impl DecisionService {
             .unwrap_or_default()
             .to_string();
         let (model_name, config) = resolve_model(model_reference).await?;
+        let usage_scope = DecisionUsageScope {
+            model_name: model_name.clone(),
+            ..usage_scope
+        };
 
         // 先读完并校验全部图片，任何一张失败都不发请求。
         let mut all_paths: Vec<String> = Vec::new();
@@ -284,7 +290,7 @@ impl DecisionService {
             });
         }
 
-        let answers = evaluate_custom(&config, &evidence_input, &custom_questions).await?;
+        let answers = evaluate_custom(&config, &usage_scope, &evidence_input, &custom_questions).await?;
 
         let formatted: Vec<Value> = questions
             .iter()

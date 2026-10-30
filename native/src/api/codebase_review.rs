@@ -36,7 +36,7 @@ use serde_json::Value;
 use crate::api::common::truncate_chars;
 use crate::api::config::{get_active_api_request_context, resolve_basic_model};
 use crate::api::conversation::context::apply_configured_system_prompts;
-use crate::api::decision_model::DecisionModelConfig;
+use crate::api::decision_model::{DecisionModelConfig, DecisionUsageScope};
 use crate::api::responses::{ResponsesApiMessage, ResponsesApiRequest};
 use crate::storage::services::codebase_index::SearchResult;
 use tokio_util::sync::CancellationToken;
@@ -156,6 +156,7 @@ pub async fn run_agent_review<F, Fut, P>(
     initial_query: String,
     initial_results: Vec<SearchResult>,
     decision_config: Option<DecisionModelConfig>,
+    usage_scope: DecisionUsageScope,
     relevance_threshold: Option<f64>,
     re_search_fn: F,
     on_progress: P,
@@ -227,6 +228,7 @@ where
             &current_query,
             &current_results,
             decision_config.as_ref(),
+            &usage_scope,
             relevance_threshold,
         )
         .await?;
@@ -326,13 +328,21 @@ async fn review_results(
     query: &str,
     results: &[SearchResult],
     decision_config: Option<&DecisionModelConfig>,
+    usage_scope: &DecisionUsageScope,
     relevance_threshold: Option<f64>,
 ) -> Result<ReviewOutcome> {
     let Some(config) = decision_config else {
         return review_via_llm(query, results).await;
     };
 
-    let outcome = match review_via_decision_model(config, query, results, relevance_threshold).await
+    let outcome = match review_via_decision_model(
+        config,
+        usage_scope,
+        query,
+        results,
+        relevance_threshold,
+    )
+    .await
     {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -383,12 +393,14 @@ async fn review_results(
 /// Ask the decision model for the relevance verdict of every result.
 async fn review_via_decision_model(
     config: &DecisionModelConfig,
+    usage_scope: &DecisionUsageScope,
     query: &str,
     results: &[SearchResult],
     relevance_threshold: Option<f64>,
 ) -> Result<ReviewOutcome> {
     let evaluation = crate::api::decision_model::evaluate_relevance(
         config,
+        usage_scope,
         query,
         results,
         relevance_threshold,

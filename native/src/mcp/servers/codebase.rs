@@ -101,6 +101,7 @@ impl CodebaseService {
         &self,
         args: &Value,
         project_id: Option<&str>,
+        conversation_id: Option<&str>,
         on_chunk: &BashStreamCallback,
     ) -> napi::Result<Value> {
         let project_id = project_id
@@ -246,19 +247,19 @@ impl CodebaseService {
         // otherwise. A selected but unusable decision model (deleted, disabled,
         // incomplete) is a fallback the result reports, not a silent switch.
         // The decision models themselves are configured in the API settings page.
-        let (decision_config, unavailable_reason) = match crate::api::decision_model::resolve_decision_model(
+        let (decision_model, unavailable_reason) = match crate::api::decision_model::resolve_decision_model(
             &decision_models,
             &settings.agent_review_model_id,
         ) {
-            crate::api::decision_model::DecisionModelResolution::Ready { config, .. } => {
-                (Some(config), None)
+            crate::api::decision_model::DecisionModelResolution::Ready { name, config } => {
+                (Some((name, config)), None)
             }
             crate::api::decision_model::DecisionModelResolution::Unavailable { name, reason } => {
                 (None, Some(format!("{name}: {reason}")))
             }
             crate::api::decision_model::DecisionModelResolution::NotSelected => (None, None),
         };
-        let uses_decision_model = decision_config.is_some();
+        let uses_decision_model = decision_model.is_some();
 
         // Determine the processing pipeline.
         //
@@ -299,7 +300,18 @@ impl CodebaseService {
             let review_result = crate::api::codebase_review::run_agent_review(
                 query.to_string(),
                 initial_results,
-                decision_config,
+                decision_model.as_ref().map(|(_, config)| config.clone()),
+                crate::api::decision_model::DecisionUsageScope {
+                    model_name: decision_model
+                        .as_ref()
+                        .map(|(name, _)| name.clone())
+                        .unwrap_or_default(),
+                    conversation_id: conversation_id
+                        .map(str::trim)
+                        .unwrap_or_default()
+                        .to_string(),
+                    directory_id: project_id.clone(),
+                },
                 relevance_threshold,
                 move |refined_query: String| {
                     let db_path = db_path.clone();

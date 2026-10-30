@@ -263,6 +263,7 @@ export type DailyUsageBreakdown = {
 
 export type ModelUsageBreakdown = {
   model: string;
+  requestMethod: string;
   totalRequests: number;
   errorRequests: number;
   totalInputTokens: number;

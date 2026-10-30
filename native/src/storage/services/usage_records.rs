@@ -100,6 +100,9 @@ pub struct UsageSummary {
 pub struct ModelUsageBreakdown {
     /// Model identifier, as recorded in the usage record.
     pub model: String,
+    /// Request method (chat / responses / decisions / ...). Grouping by it keeps
+    /// decision model calls out of the chat statistics of the same model.
+    pub request_method: String,
     pub total_requests: i64,
     pub error_requests: i64,
     pub total_input_tokens: i64,
@@ -326,10 +329,10 @@ pub fn get_usage_daily_breakdown(
         })
 }
 
-/// Aggregate usage grouped by model for per-model consumption stats.
-/// Returns one row per model with non-zero request count, ordered by total
-/// tokens descending. `since`, `until` and `profile_name` accept empty
-/// strings to skip that filter.
+/// Aggregate usage grouped by model and request method for per-model
+/// consumption stats. Returns one row per (model, request method) pair with a
+/// non-zero request count, ordered by total tokens descending. `since`, `until`
+/// and `profile_name` accept empty strings to skip that filter.
 pub fn get_usage_model_breakdown(
     database_path: &Path,
     since: &str,
@@ -342,6 +345,7 @@ pub fn get_usage_model_breakdown(
         .and_then(|connection| {
             let sql = format!(
                 "SELECT model,
+                        request_method,
                         COUNT(*) AS req_count,
                         COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) AS err_count,
                         COALESCE(SUM(input_tokens), 0),
@@ -349,7 +353,7 @@ pub fn get_usage_model_breakdown(
                         COALESCE(SUM(cache_creation_input_tokens), 0),
                         COALESCE(SUM(cache_read_input_tokens), 0)
                    FROM usage_records{where_sql}
-                  GROUP BY model
+                  GROUP BY model, request_method
                   ORDER BY (COALESCE(SUM(input_tokens), 0) + COALESCE(SUM(output_tokens), 0)) DESC,
                            COUNT(*) DESC"
             );
@@ -486,16 +490,17 @@ fn map_daily_row(row: &Row<'_>) -> rusqlite::Result<DailyUsageBreakdown> {
 }
 
 fn map_model_row(row: &Row<'_>) -> rusqlite::Result<ModelUsageBreakdown> {
-    let input: i64 = row.get(3)?;
-    let output: i64 = row.get(4)?;
+    let input: i64 = row.get(4)?;
+    let output: i64 = row.get(5)?;
     Ok(ModelUsageBreakdown {
         model: row.get(0)?,
-        total_requests: row.get(1)?,
-        error_requests: row.get(2)?,
+        request_method: row.get(1)?,
+        total_requests: row.get(2)?,
+        error_requests: row.get(3)?,
         total_input_tokens: input,
         total_output_tokens: output,
-        total_cache_creation_input_tokens: row.get(5)?,
-        total_cache_read_input_tokens: row.get(6)?,
+        total_cache_creation_input_tokens: row.get(6)?,
+        total_cache_read_input_tokens: row.get(7)?,
         total_tokens: input + output,
     })
 }

@@ -12,6 +12,7 @@ import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { CustomSelect } from "../../common/CustomSelect";
 import { DailyTrendChart } from "./DailyTrendChart";
 import { ModelDonutChart } from "./ModelDonutChart";
+import { translateRequestMethod } from "./requestMethod";
 import { UsageDateFilter } from "./UsageDateFilter";
 import { getActiveLocale, useI18n } from "../../../i18n";
 import {
@@ -769,6 +770,14 @@ export function UsageSettingsPanel(): React.JSX.Element {
       </div>
       <div className="usage-floating-tooltip-row">
         <span className="usage-floating-tooltip-label">
+          {t("settings.usageColType", { defaultValue: "Type" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {translateRequestMethod(record.requestMethod, t)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
           {t("settings.usageColInput", { defaultValue: "Input" })}
         </span>
         <span className="usage-floating-tooltip-value">
@@ -1010,6 +1019,9 @@ export function UsageSettingsPanel(): React.JSX.Element {
                   <th>
                     {t("settings.usageColModel", { defaultValue: "Model" })}
                   </th>
+                  <th>
+                    {t("settings.usageColType", { defaultValue: "Type" })}
+                  </th>
                   <th className="usage-th-number">
                     {t("settings.usageColRequests", {
                       defaultValue: "Requests",
@@ -1038,8 +1050,11 @@ export function UsageSettingsPanel(): React.JSX.Element {
               </thead>
               <tbody>
                 {modelBreakdown.map((item) => (
-                  <tr key={item.model}>
+                  <tr key={`${item.model}-${item.requestMethod}`}>
                     <td className="usage-cell-model">{item.model || "-"}</td>
+                    <td className="usage-cell-method">
+                      {translateRequestMethod(item.requestMethod, t)}
+                    </td>
                     <td className="usage-cell-number">
                       {item.totalRequests.toLocaleString()}
                     </td>
@@ -1283,6 +1298,9 @@ export function UsageSettingsPanel(): React.JSX.Element {
                     {t("settings.usageColModel", { defaultValue: "Model" })}
                   </th>
                   <th>
+                    {t("settings.usageColType", { defaultValue: "Type" })}
+                  </th>
+                  <th>
                     {t("settings.usageColProfile", { defaultValue: "Profile" })}
                   </th>
                   <th className="usage-th-number">
@@ -1312,7 +1330,7 @@ export function UsageSettingsPanel(): React.JSX.Element {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={9} className="usage-table-loading">
+                    <td colSpan={10} className="usage-table-loading">
                       {t("settings.usageLoading", {
                         defaultValue: "Loading...",
                       })}
@@ -1320,7 +1338,7 @@ export function UsageSettingsPanel(): React.JSX.Element {
                   </tr>
                 ) : records.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="usage-table-empty">
+                    <td colSpan={10} className="usage-table-empty">
                       {t("settings.usageNoRecords", {
                         defaultValue: "No usage records found.",
                       })}
@@ -1345,6 +1363,9 @@ export function UsageSettingsPanel(): React.JSX.Element {
                       </td>
                       <td className="usage-cell-model">
                         {record.model || "-"}
+                      </td>
+                      <td className="usage-cell-method">
+                        {translateRequestMethod(record.requestMethod, t)}
                       </td>
                       <td className="usage-cell-profile">
                         {record.apiProfileName || "-"}

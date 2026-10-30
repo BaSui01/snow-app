@@ -49,6 +49,49 @@ fn derive_display_status(index_status: &str, workdir_status: &str) -> String {
     "?".to_string()
 }
 
+/// `git status --porcelain=v1 -z` 的单个文件条目。
+pub(crate) struct PorcelainEntry<'a> {
+    pub index: char,
+    pub workdir: char,
+    pub path: &'a str,
+    pub old_path: Option<&'a str>,
+}
+
+/// 按 -z 语义解析（路径不加引号、不转义）；R/C 条目的原路径作为紧随其后的独立一段。
+/// 返回 `-b` 分支头（去掉 "## "）与文件条目。
+pub(crate) fn parse_porcelain_z(output: &str) -> (Option<&str>, Vec<PorcelainEntry<'_>>) {
+    let mut header = None;
+    let mut entries = Vec::new();
+    let mut parts = output.split('\0');
+    while let Some(part) = parts.next() {
+        if let Some(branch) = part.strip_prefix("## ") {
+            header = Some(branch);
+            continue;
+        }
+        let mut chars = part.chars();
+        let (Some(index), Some(workdir), Some(' ')) = (chars.next(), chars.next(), chars.next())
+        else {
+            continue;
+        };
+        let path = chars.as_str();
+        let old_path = if matches!(index, 'R' | 'C') || matches!(workdir, 'R' | 'C') {
+            parts.next()
+        } else {
+            None
+        };
+        if path.is_empty() {
+            continue;
+        }
+        entries.push(PorcelainEntry {
+            index,
+            workdir,
+            path,
+            old_path,
+        });
+    }
+    (header, entries)
+}
+
 // ===== Public API =====
 
 pub fn get_git_status(repo_path: &str, status_limit: i32) -> Result<GitStatusResult> {
@@ -81,9 +124,10 @@ pub fn get_git_status(repo_path: &str, status_limit: i32) -> Result<GitStatusRes
     // - any other error (git executable missing from PATH, permission
     //   denied, ...): propagate it so the UI shows a clear message
     //   instead of a misleading "Not a git repository".
+    // -z：路径原样输出，与暂存/放弃操作回传给 git 的路径一致（含引号、反斜杠的文件名也不会错位）。
     let status_out = match run_git(
         repo_path,
-        &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"],
+        &["status", "--porcelain=v1", "-z", "-b", "--find-renames", "-uall"],
     ) {
         Ok(out) => out,
         Err(e) => {
@@ -104,7 +148,7 @@ pub fn get_git_status(repo_path: &str, status_limit: i32) -> Result<GitStatusRes
             return Err(e);
         }
     };
-    let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();
+    let (header, entries) = parse_porcelain_z(&status_out);
 
     let mut current_branch = String::new();
     let mut upstream: Option<String> = None;
@@ -121,87 +165,63 @@ pub fn get_git_status(repo_path: &str, status_limit: i32) -> Result<GitStatusRes
     };
     let mut status_limit_hit = false;
 
-    for line in &lines {
-        if line.starts_with("## ") {
-            let branch_part = &line[3..];
-
-            // Parse upstream
-            if let Some(idx) = branch_part.find("...") {
-                let after = &branch_part[idx + 3..];
-                let upstream_name = after.split_whitespace().next().unwrap_or("");
-                if !upstream_name.is_empty() {
-                    upstream = Some(upstream_name.to_string());
-                }
+    if let Some(branch_part) = header {
+        // Parse upstream
+        if let Some(idx) = branch_part.find("...") {
+            let after = &branch_part[idx + 3..];
+            let upstream_name = after.split_whitespace().next().unwrap_or("");
+            if !upstream_name.is_empty() {
+                upstream = Some(upstream_name.to_string());
             }
-
-            // Parse ahead/behind
-            let lower = branch_part.to_lowercase();
-            if let Some(ahead_pos) = lower.find("ahead ") {
-                let rest = &branch_part[ahead_pos + 6..];
-                if let Some(end) = rest.find(|c: char| !c.is_ascii_digit()) {
-                    ahead = rest[..end].parse().unwrap_or(0);
-                } else {
-                    ahead = rest.parse().unwrap_or(0);
-                }
-            }
-            if let Some(behind_pos) = lower.find("behind ") {
-                let rest = &branch_part[behind_pos + 7..];
-                if let Some(end) = rest.find(|c: char| !c.is_ascii_digit()) {
-                    behind = rest[..end].parse().unwrap_or(0);
-                } else {
-                    behind = rest.parse().unwrap_or(0);
-                }
-            }
-
-            // Parse branch name
-            let branch_name_raw: &str = if let Some(idx) = branch_part.find("...") {
-                &branch_part[..idx]
-            } else {
-                let end = branch_part.find(' ').unwrap_or(branch_part.len());
-                &branch_part[..end]
-            };
-
-            if branch_name_raw.starts_with("HEAD") {
-                current_branch = "HEAD".to_string();
-            } else {
-                current_branch = branch_name_raw.to_string();
-            }
-            continue;
         }
 
-        // File status lines: XY <path>
-        if line.len() < 3 {
-            continue;
+        // Parse ahead/behind
+        let lower = branch_part.to_lowercase();
+        if let Some(ahead_pos) = lower.find("ahead ") {
+            let rest = &branch_part[ahead_pos + 6..];
+            if let Some(end) = rest.find(|c: char| !c.is_ascii_digit()) {
+                ahead = rest[..end].parse().unwrap_or(0);
+            } else {
+                ahead = rest.parse().unwrap_or(0);
+            }
+        }
+        if let Some(behind_pos) = lower.find("behind ") {
+            let rest = &branch_part[behind_pos + 7..];
+            if let Some(end) = rest.find(|c: char| !c.is_ascii_digit()) {
+                behind = rest[..end].parse().unwrap_or(0);
+            } else {
+                behind = rest.parse().unwrap_or(0);
+            }
         }
 
+        // Parse branch name
+        let branch_name_raw: &str = if let Some(idx) = branch_part.find("...") {
+            &branch_part[..idx]
+        } else {
+            let end = branch_part.find(' ').unwrap_or(branch_part.len());
+            &branch_part[..end]
+        };
+
+        if branch_name_raw.starts_with("HEAD") {
+            current_branch = "HEAD".to_string();
+        } else {
+            current_branch = branch_name_raw.to_string();
+        }
+    }
+
+    for entry in entries {
         if files.len() >= limit {
             status_limit_hit = true;
-            continue;
+            break;
         }
 
-        let chars: Vec<char> = line.chars().collect();
-        let index_status = parse_status_char(chars[0]);
-        let workdir_status = parse_status_char(chars[1]);
-        let rest = &line[3..];
-
-        let mut file_path = rest.to_string();
-        let mut old_path: Option<String> = None;
-
-        if let Some(arrow_idx) = rest.find(" -> ") {
-            old_path = Some(rest[..arrow_idx].to_string());
-            file_path = rest[arrow_idx + 4..].to_string();
-        }
-
-        // Strip surrounding quotes
-        if file_path.starts_with('"') && file_path.ends_with('"') && file_path.len() >= 2 {
-            file_path = file_path[1..file_path.len() - 1].to_string();
-        }
-
+        let index_status = parse_status_char(entry.index);
+        let workdir_status = parse_status_char(entry.workdir);
         files.push(GitFileStatus {
-            path: file_path,
-            old_path,
-            index_status: chars[0].to_string(),
-            workdir_status: chars[1].to_string(),
+            path: entry.path.to_string(),
+            old_path: entry.old_path.map(str::to_string),
+            index_status: entry.index.to_string(),
+            workdir_status: entry.workdir.to_string(),
             status: derive_display_status(&index_status, &workdir_status),
         });
     }

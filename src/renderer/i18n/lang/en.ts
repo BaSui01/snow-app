@@ -6098,6 +6098,9 @@ export const en = {
     "Local branch {{branch}} tracks {{upstream}}, not {{target}}. Checkout was cancelled to protect your local branch.",
   "git.checkoutBranchFailed": "Failed to switch branch",
   "git.commitFailed": "Commit failed",
+  "git.stageFailed": "Stage failed",
+  "git.unstageFailed": "Unstage failed",
+  "git.discardFailed": "Discard changes failed",
   "git.confirmCommitAndPush":
     "Commit, then push the new commit to the selected remote?",
   "git.createBranchExists": "Branch already exists",

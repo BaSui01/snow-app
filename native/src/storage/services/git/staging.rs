@@ -1,162 +1,138 @@
+use std::collections::HashSet;
+use std::path::Path;
+
 use napi::bindgen_prelude::*;
 
+use super::status::parse_porcelain_z;
 use super::{run_git, GitStageResult};
+
+fn ok(message: &str) -> Result<GitStageResult> {
+    Ok(GitStageResult {
+        success: true,
+        message: message.to_string(),
+    })
+}
+
+// 只带回 git 原文（Display 会多出 "GenericFailure, " 前缀）。
+fn failed(e: Error) -> Result<GitStageResult> {
+    Ok(GitStageResult {
+        success: false,
+        message: e.reason.clone(),
+    })
+}
 
 pub fn stage_files(repo_path: &str, file_paths: &[String]) -> Result<GitStageResult> {
     if file_paths.is_empty() {
-        return Ok(GitStageResult {
-            success: true,
-            message: "No files to stage".to_string(),
-        });
+        return ok("No files to stage");
     }
 
-    let args: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-    let mut full_args = vec!["add", "--"];
-    full_args.extend(args);
+    let mut args = vec!["add", "--"];
+    args.extend(file_paths.iter().map(|s| s.as_str()));
 
-    match run_git(repo_path, &full_args) {
-        Ok(_) => Ok(GitStageResult {
-            success: true,
-            message: "Files staged successfully".to_string(),
-        }),
-        Err(e) => Ok(GitStageResult {
-            success: false,
-            message: format!("{e}"),
-        }),
+    match run_git(repo_path, &args) {
+        Ok(_) => ok("Files staged successfully"),
+        Err(e) => failed(e),
     }
 }
 
 pub fn unstage_files(repo_path: &str, file_paths: &[String]) -> Result<GitStageResult> {
     if file_paths.is_empty() {
-        return Ok(GitStageResult {
-            success: true,
-            message: "No files to unstage".to_string(),
-        });
+        return ok("No files to unstage");
     }
 
-    let args: Vec<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-    let mut full_args = vec!["reset", "HEAD", "--"];
-    full_args.extend(args);
+    let mut args = vec!["reset", "HEAD", "--"];
+    args.extend(file_paths.iter().map(|s| s.as_str()));
 
-    match run_git(repo_path, &full_args) {
-        Ok(_) => Ok(GitStageResult {
-            success: true,
-            message: "Files unstaged successfully".to_string(),
-        }),
-        Err(e) => Ok(GitStageResult {
-            success: false,
-            message: format!("{e}"),
-        }),
+    match run_git(repo_path, &args) {
+        Ok(_) => ok("Files unstaged successfully"),
+        Err(e) => failed(e),
     }
 }
 
 pub fn stage_all(repo_path: &str) -> Result<GitStageResult> {
     match run_git(repo_path, &["add", "--all"]) {
-        Ok(_) => Ok(GitStageResult {
-            success: true,
-            message: "All changes staged".to_string(),
-        }),
-        Err(e) => Ok(GitStageResult {
-            success: false,
-            message: format!("{e}"),
-        }),
+        Ok(_) => ok("All changes staged"),
+        Err(e) => failed(e),
     }
 }
 
 pub fn unstage_all(repo_path: &str) -> Result<GitStageResult> {
     match run_git(repo_path, &["reset", "HEAD"]) {
-        Ok(_) => Ok(GitStageResult {
-            success: true,
-            message: "All changes unstaged".to_string(),
-        }),
-        Err(e) => Ok(GitStageResult {
-            success: false,
-            message: format!("{e}"),
-        }),
+        Ok(_) => ok("All changes unstaged"),
+        Err(e) => failed(e),
     }
 }
 
 pub fn discard_changes(repo_path: &str, file_paths: &[String]) -> Result<GitStageResult> {
     if file_paths.is_empty() {
-        return Ok(GitStageResult {
-            success: true,
-            message: "No files to discard".to_string(),
-        });
+        return ok("No files to discard");
     }
 
-    // Partition into untracked files ("?" workdir status) and tracked files.
-    // Untracked files: `git clean -f -- <path>` removes them.
-    // Tracked files: `git checkout -- <path>` restores them to HEAD state.
+    // 未跟踪文件走 `git clean -f`，其余走 `git checkout --` 恢复到 HEAD。
+    let status_output = match run_git(repo_path, &["status", "--porcelain=v1", "-z", "-uall"]) {
+        Ok(s) => s,
+        Err(e) => return failed(e),
+    };
+
+    let path_set: HashSet<&str> = file_paths.iter().map(|s| s.as_str()).collect();
     let mut untracked: Vec<&str> = Vec::new();
     let mut tracked: Vec<&str> = Vec::new();
 
-    // Query the current status to classify each file path.
-    let status_output = match run_git(repo_path, &["status", "--porcelain", "-z", "-uall"]) {
-        Ok(s) => s,
-        Err(e) => {
-            return Ok(GitStageResult {
-                success: false,
-                message: format!("{e}"),
-            })
-        }
-    };
-
-    let path_set: std::collections::HashSet<&str> = file_paths.iter().map(|s| s.as_str()).collect();
-
-    for entry in status_output.split('\0') {
-        if entry.is_empty() {
+    let (_, entries) = parse_porcelain_z(&status_output);
+    for entry in &entries {
+        if !path_set.contains(entry.path) {
             continue;
         }
-        // porcelain format: "XY <path>" (first 3 chars: X=index, Y=workdir, space, then path)
-        let xy = &entry[..2];
-        let path = entry[3..].trim_start_matches('"');
-        if path_set.contains(path) {
-            if xy.starts_with('?') {
-                untracked.push(path);
-            } else {
-                tracked.push(path);
-            }
+        if entry.index == '?' {
+            untracked.push(entry.path);
+        } else {
+            tracked.push(entry.path);
         }
     }
 
-    // If a requested path wasn't found in status output, treat it as tracked
-    // (checkout -- will handle it or produce an error).
+    // 状态里找不到的路径按已跟踪处理，由 checkout 自行报错。
     for p in &path_set {
         if !untracked.contains(p) && !tracked.contains(p) {
-            tracked.push(p);
+            tracked.push(*p);
         }
     }
 
     if !tracked.is_empty() {
         let mut args = vec!["checkout", "--"];
         args.extend(tracked.iter().copied());
-        match run_git(repo_path, &args) {
-            Ok(_) => {}
-            Err(e) => {
-                return Ok(GitStageResult {
-                    success: false,
-                    message: format!("{e}"),
-                })
-            }
+        if let Err(e) = run_git(repo_path, &args) {
+            return failed(e);
         }
     }
 
     if !untracked.is_empty() {
         let mut args = vec!["clean", "-f", "--"];
         args.extend(untracked.iter().copied());
-        match run_git(repo_path, &args) {
-            Ok(_) => {}
-            Err(e) => {
-                return Ok(GitStageResult {
-                    success: false,
-                    message: format!("{e}"),
-                })
+        let output = match run_git(repo_path, &args) {
+            Ok(out) => out,
+            Err(e) => return failed(e),
+        };
+
+        // clean 对目录 / 嵌套仓库会静默跳过，按磁盘实际残留判定。
+        let root = Path::new(repo_path);
+        let remaining: Vec<&str> = untracked
+            .iter()
+            .copied()
+            .filter(|p| root.join(p).symlink_metadata().is_ok())
+            .collect();
+        if !remaining.is_empty() {
+            let mut message = format!("git clean did not remove: {}", remaining.join(", "));
+            let output = output.trim();
+            if !output.is_empty() {
+                message.push('\n');
+                message.push_str(output);
             }
+            return Ok(GitStageResult {
+                success: false,
+                message,
+            });
         }
     }
 
-    Ok(GitStageResult {
-        success: true,
-        message: "Changes discarded successfully".to_string(),
-    })
+    ok("Changes discarded successfully")
 }

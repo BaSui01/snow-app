@@ -173,6 +173,38 @@ const deriveDisplayStatus = (
   return "?";
 };
 
+type PorcelainEntry = {
+  index: string;
+  workdir: string;
+  path: string;
+  oldPath: string | null;
+};
+
+// 解析 `git status --porcelain=v1 -z`（与 Rust parse_porcelain_z 一致）：R/C 条目的原路径是紧随其后的一段。
+const parsePorcelainZ = (
+  output: string,
+): { header: string | null; entries: PorcelainEntry[] } => {
+  let header: string | null = null;
+  const entries: PorcelainEntry[] = [];
+  const parts = output.split("\0");
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part.startsWith("## ")) {
+      header = part.slice(3);
+      continue;
+    }
+    if (part.length < 4 || part[2] !== " ") {
+      continue;
+    }
+    const index = part[0];
+    const workdir = part[1];
+    const isRenameOrCopy = /[RC]/.test(index) || /[RC]/.test(workdir);
+    const oldPath = isRenameOrCopy ? (parts[++i] ?? null) : null;
+    entries.push({ index, workdir, path: part.slice(3), oldPath });
+  }
+  return { header, entries };
+};
+
 // ===== Public API (signatures mirror native git exports) =====
 
 export const remoteGetGitStatus = async (
@@ -196,6 +228,7 @@ export const remoteGetGitStatus = async (
     statusOut = await runRemoteGit(workspacePath, [
       "status",
       "--porcelain=v1",
+      "-z",
       "-b",
       "--find-renames",
       "-uall",
@@ -206,7 +239,7 @@ export const remoteGetGitStatus = async (
     return emptyResult();
   }
 
-  const lines = statusOut.split("\n").filter((l) => l.length > 0);
+  const { header, entries } = parsePorcelainZ(statusOut);
 
   let currentBranch = "";
   let upstream: string | null = null;
@@ -214,81 +247,56 @@ export const remoteGetGitStatus = async (
   let behind = 0;
   const files: GitFileStatus[] = [];
 
-  for (const line of lines) {
-    if (line.startsWith("## ")) {
-      const branchPart = line.slice(3);
+  if (header !== null) {
+    const branchPart = header;
 
-      // Parse upstream: "## main...origin/main [ahead 1, behind 2]"
-      const ellipsisIdx = branchPart.indexOf("...");
-      if (ellipsisIdx >= 0) {
-        const after = branchPart.slice(ellipsisIdx + 3);
-        const upstreamName = after.split(/\s+/)[0] ?? "";
-        if (upstreamName) {
-          upstream = upstreamName;
-        }
+    // Parse upstream: "## main...origin/main [ahead 1, behind 2]"
+    const ellipsisIdx = branchPart.indexOf("...");
+    if (ellipsisIdx >= 0) {
+      const after = branchPart.slice(ellipsisIdx + 3);
+      const upstreamName = after.split(/\s+/)[0] ?? "";
+      if (upstreamName) {
+        upstream = upstreamName;
       }
+    }
 
-      // Parse ahead/behind counts
-      const lower = branchPart.toLowerCase();
-      const aheadIdx = lower.indexOf("ahead ");
-      if (aheadIdx >= 0) {
-        const rest = branchPart.slice(aheadIdx + 6);
-        const match = rest.match(/^\d+/);
-        if (match) {
-          ahead = Number(match[0]);
-        }
+    // Parse ahead/behind counts
+    const lower = branchPart.toLowerCase();
+    const aheadIdx = lower.indexOf("ahead ");
+    if (aheadIdx >= 0) {
+      const rest = branchPart.slice(aheadIdx + 6);
+      const match = rest.match(/^\d+/);
+      if (match) {
+        ahead = Number(match[0]);
       }
-      const behindIdx = lower.indexOf("behind ");
-      if (behindIdx >= 0) {
-        const rest = branchPart.slice(behindIdx + 7);
-        const match = rest.match(/^\d+/);
-        if (match) {
-          behind = Number(match[0]);
-        }
+    }
+    const behindIdx = lower.indexOf("behind ");
+    if (behindIdx >= 0) {
+      const rest = branchPart.slice(behindIdx + 7);
+      const match = rest.match(/^\d+/);
+      if (match) {
+        behind = Number(match[0]);
       }
-
-      // Parse branch name
-      const branchNameRaw =
-        ellipsisIdx >= 0
-          ? branchPart.slice(0, ellipsisIdx)
-          : (branchPart.split(" ")[0] ?? "");
-      currentBranch = branchNameRaw.startsWith("HEAD") ? "HEAD" : branchNameRaw;
-      continue;
     }
 
-    // File status lines: "XY <path>"
-    if (line.length < 3) {
-      continue;
-    }
+    // Parse branch name
+    const branchNameRaw =
+      ellipsisIdx >= 0
+        ? branchPart.slice(0, ellipsisIdx)
+        : (branchPart.split(" ")[0] ?? "");
+    currentBranch = branchNameRaw.startsWith("HEAD") ? "HEAD" : branchNameRaw;
+  }
 
-    const indexStatus = parseStatusChar(line[0]);
-    const workdirStatus = parseStatusChar(line[1]);
-    let rest = line.slice(3);
-
-    let filePath = rest;
-    let oldPath: string | null = null;
-
-    const arrowIdx = rest.indexOf(" -> ");
-    if (arrowIdx >= 0) {
-      oldPath = rest.slice(0, arrowIdx);
-      filePath = rest.slice(arrowIdx + 4);
-    }
-
-    // Strip surrounding quotes
-    if (
-      filePath.startsWith('"') &&
-      filePath.endsWith('"') &&
-      filePath.length >= 2
-    ) {
-      filePath = filePath.slice(1, -1);
-    }
-
+  for (const entry of entries) {
     files.push({
-      path: filePath,
-      oldPath,
-      indexStatus: line[0],
-      workdirStatus: line[1],
-      status: deriveDisplayStatus(indexStatus, workdirStatus),
+      path: entry.path,
+      oldPath: entry.oldPath,
+      indexStatus: entry.index,
+      workdirStatus: entry.workdir,
+      status: deriveDisplayStatus(
+        parseStatusChar(entry.index),
+        parseStatusChar(entry.workdir),
+      ),
     });
   }
 
@@ -1023,19 +1031,14 @@ export const remoteDiscardChanges = async (
   const untracked: string[] = [];
   const tracked: string[] = [];
 
-  for (const entry of statusOutput.split("\0")) {
-    if (!entry) {
+  for (const entry of parsePorcelainZ(statusOutput).entries) {
+    if (!pathSet.has(entry.path)) {
       continue;
     }
-    // porcelain -z format: "XY<space><path>" (NUL-terminated, no quotes)
-    const xy = entry.slice(0, 2);
-    const path = entry.slice(3).trimStart().replace(/^"+/, "");
-    if (pathSet.has(path)) {
-      if (xy.startsWith("?")) {
-        untracked.push(path);
-      } else {
-        tracked.push(path);
-      }
+    if (entry.index === "?") {
+      untracked.push(entry.path);
+    } else {
+      tracked.push(entry.path);
     }
   }
 

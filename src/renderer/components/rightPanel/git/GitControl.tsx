@@ -22,6 +22,7 @@ import type {
   GitFileStatus,
   GitRemoteInfo,
   GitRepoInfo,
+  GitStageResult,
   GitStatusResult,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
@@ -552,69 +553,6 @@ export const GitControl = ({
     [repoPath, onOpenFile],
   );
 
-  const handleStageToggle = useCallback(
-    (files: GitFileStatus[], section: "staged" | "unstaged") => {
-      if (!repoPath || files.length === 0) {
-        return;
-      }
-
-      const isStaged = section === "staged";
-      const paths = files.map((f) => f.path);
-
-      setActionInProgress(isStaged ? "unstage" : "stage");
-      if (isStaged) {
-        window.snow
-          .gitUnstage(repoPath, paths)
-          .then((result) => {
-            if (result.success) {
-              setSelectedPaths(new Set());
-              refresh();
-            }
-          })
-          .finally(() => setActionInProgress(null));
-      } else {
-        window.snow
-          .gitStage(repoPath, paths)
-          .then((result) => {
-            if (result.success) {
-              setSelectedPaths(new Set());
-              refresh();
-            }
-          })
-          .finally(() => setActionInProgress(null));
-      }
-    },
-    [repoPath, refresh],
-  );
-
-  const handleStageAll = useCallback(() => {
-    if (!repoPath) {
-      return;
-    }
-    setActionInProgress("stageAll");
-    window.snow
-      .gitStageAll(repoPath)
-      .then(() => {
-        setSelectedPaths(new Set());
-        refresh();
-      })
-      .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
-
-  const handleUnstageAll = useCallback(() => {
-    if (!repoPath) {
-      return;
-    }
-    setActionInProgress("unstageAll");
-    window.snow
-      .gitUnstageAll(repoPath)
-      .then(() => {
-        setSelectedPaths(new Set());
-        refresh();
-      })
-      .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
-
   // Git 操作失败弹窗：后端会带回 git 的完整输出，空消息时兜底提示，
   // 保证用户始终能看到失败原因。
   const reportGitError = useCallback(
@@ -626,6 +564,73 @@ export const GitControl = ({
     },
     [t],
   );
+
+  // 文件级操作（暂存/取消暂存/放弃）统一处理：失败展示 git 原文，无论成败都刷新（可能部分生效）。
+  const runFileAction = useCallback(
+    (
+      action: "stage" | "unstage" | "stageAll" | "unstageAll" | "discard",
+      failedTitle: string,
+      task: () => Promise<GitStageResult>,
+    ) => {
+      setActionInProgress(action);
+      task()
+        .then((result) => {
+          if (result.success) {
+            setSelectedPaths(new Set());
+          } else {
+            reportGitError(failedTitle, result.message);
+          }
+        })
+        .catch((err: unknown) => {
+          reportGitError(
+            failedTitle,
+            err instanceof Error ? err.message : String(err),
+          );
+        })
+        .finally(() => {
+          setActionInProgress(null);
+          refresh();
+        });
+    },
+    [refresh, reportGitError],
+  );
+
+  const handleStageToggle = useCallback(
+    (files: GitFileStatus[], section: "staged" | "unstaged") => {
+      if (!repoPath || files.length === 0) {
+        return;
+      }
+      const paths = files.map((f) => f.path);
+      if (section === "staged") {
+        runFileAction("unstage", t("git.unstageFailed"), () =>
+          window.snow.gitUnstage(repoPath, paths),
+        );
+      } else {
+        runFileAction("stage", t("git.stageFailed"), () =>
+          window.snow.gitStage(repoPath, paths),
+        );
+      }
+    },
+    [repoPath, runFileAction, t],
+  );
+
+  const handleStageAll = useCallback(() => {
+    if (!repoPath) {
+      return;
+    }
+    runFileAction("stageAll", t("git.stageFailed"), () =>
+      window.snow.gitStageAll(repoPath),
+    );
+  }, [repoPath, runFileAction, t]);
+
+  const handleUnstageAll = useCallback(() => {
+    if (!repoPath) {
+      return;
+    }
+    runFileAction("unstageAll", t("git.unstageFailed"), () =>
+      window.snow.gitUnstageAll(repoPath),
+    );
+  }, [repoPath, runFileAction, t]);
 
   const runCommit = useCallback(
     (
@@ -936,15 +941,10 @@ export const GitControl = ({
     }
     const paths = discardTarget.map((f) => f.path);
     setDiscardTarget([]);
-    setActionInProgress("discard");
-    window.snow
-      .gitDiscardChanges(repoPath, paths)
-      .then(() => {
-        setSelectedPaths(new Set());
-        refresh();
-      })
-      .finally(() => setActionInProgress(null));
-  }, [repoPath, discardTarget, refresh]);
+    runFileAction("discard", t("git.discardFailed"), () =>
+      window.snow.gitDiscardChanges(repoPath, paths),
+    );
+  }, [repoPath, discardTarget, runFileAction, t]);
 
   const handleDiscardCancel = useCallback(() => {
     setDiscardTarget([]);

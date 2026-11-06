@@ -1140,6 +1140,10 @@ export type SensitiveOperationCheckRecord = {
     description: string;
     /** 主体文本中的命中区间（UTF-16 偏移），用于高亮关键字。 */
     ranges: Array<{ start: number; end: number }>;
+    /** 命中来自间接执行的脚本时，该脚本的路径。 */
+    sourcePath?: string;
+    /** 命中来自间接执行的脚本时，命中位置附近的片段（带行号）。 */
+    sourceExcerpt?: string;
   }>;
 };
 
@@ -1539,6 +1543,57 @@ export type CleanupCategoryStats = {
   bytes: number;
   /** 与请求的 daysList 顺序一致：早于各天数档位可清理的数据量 */
   ageBuckets: CleanupAgeBucket[];
+};
+
+/** 数据备份：预估结果（只读取与哈希，不写入目标目录） */
+export type BackupPlan = {
+  /** 本次备份覆盖的源数据总字节数 */
+  totalBytes: number;
+  /** 预计需要新写入的块字节数 */
+  pendingBytes: number;
+  /** 预计需要新写入的块数量 */
+  pendingChunks: number;
+  /** 命中已有块、无需上传的数量 */
+  reusedChunks: number;
+  fileCount: number;
+};
+
+/** 数据备份：一次备份的执行结果 */
+export type BackupCreateResult = {
+  id: string;
+  createdAtMs: number;
+  totalBytes: number;
+  uploadedBytes: number;
+  uploadedChunks: number;
+  reusedChunks: number;
+  fileCount: number;
+};
+
+/** 数据备份：单份备份的摘要 */
+export type BackupSummary = {
+  id: string;
+  createdAtMs: number;
+  totalBytes: number;
+  fileCount: number;
+  appVersion: string;
+};
+
+/** 数据备份 / 恢复任务进度（渲染进程按固定间隔轮询绘制进度条） */
+export type BackupTaskProgress = {
+  /** 是否有任务正在执行 */
+  active: boolean;
+  /** 任务类型：create（备份）| restore（恢复）；空闲时为空字符串 */
+  kind: string;
+  /** 当前阶段：snapshot | collect | write | apply | finalize | idle */
+  phase: string;
+  /** 已处理字节数 */
+  processedBytes: number;
+  /** 待处理总字节数（0 表示尚未统计） */
+  totalBytes: number;
+  /** 已处理文件数 */
+  processedFiles: number;
+  /** 待处理文件总数（0 表示尚未统计） */
+  totalFiles: number;
 };
 
 /** 数据清理：一次扫描的完整结果 */
@@ -2991,13 +3046,16 @@ export type NativeBridge = ImageGenerationNativeApi & {
   ) => Promise<SensitiveOperationCheckRecord | null>;
   /** 用决策模型判定一条命中敏感规则的命令是否可直接放行（辅助 / 托管）。
    *  workingDirectory / description 是风险判定的上下文（执行目录、模型意图说明）；
-   *  conversationContext 是渲染层裁剪后的会话片段 JSON（仅开关打开时使用）。 */
+   *  conversationContext 是渲染层裁剪后的会话片段 JSON（仅开关打开时使用）；
+   *  matchedRulesJson 是预检查已确认的命中项 JSON（覆盖间接脚本内容与内置诊断，
+   *  缺省时由后端按命令文本重算）。 */
   evaluateSensitiveCommandDecision: (
     command: string,
     projectId?: string,
     workingDirectory?: string,
     description?: string,
     conversationContext?: string,
+    matchedRulesJson?: string,
   ) => Promise<SensitiveCommandDecisionRecord | null>;
   /** 决策 / 嵌入 / 重排模型连接自检：结果持久化并返回，失败写入系统日志。 */
   testDecisionModelConnection: (
@@ -3934,6 +3992,23 @@ export type NativeBridge = ImageGenerationNativeApi & {
   repairDatabase: (kind: DatabaseKind) => Promise<DatabaseRepairResult>;
   /** 优化数据库磁盘占用（runtime=运行库 / archive=归档库）：VACUUM 回收空闲页并截断 WAL */
   optimizeDatabase: (kind: DatabaseKind) => Promise<DatabaseOptimizeResult>;
+  /** 备份：预估一次本地目录备份的上传量（不写入任何文件） */
+  backupLocalPlan: (targetDir: string) => Promise<BackupPlan>;
+  /** 备份：创建一次本地目录备份；keep 为保留份数（1..50，默认 5） */
+  backupLocalCreate: (
+    targetDir: string,
+    keep?: number,
+  ) => Promise<BackupCreateResult>;
+  /** 备份：列出目标目录中已有的备份，按创建时间倒序 */
+  backupLocalList: (targetDir: string) => Promise<BackupSummary[]>;
+  /** 备份：从指定备份恢复 .snowapp（恢复完成后需重启应用） */
+  backupLocalRestore: (targetDir: string, backupId: string) => Promise<void>;
+  /** 备份：删除一份备份并回收不再被引用的数据块 */
+  backupLocalDelete: (targetDir: string, backupId: string) => Promise<void>;
+  /** 备份：返回备份根目录的绝对路径 */
+  backupLocalRoot: (targetDir: string) => Promise<string>;
+  /** 备份 / 恢复任务的当前进度（读取内存状态，供进度条轮询） */
+  backupTaskProgress: () => Promise<BackupTaskProgress>;
   /** 扫描本地数据分类的占用（daysList 为需要一并统计的天数档位，如 [7,15,30,90]） */
   scanCleanup: (daysList: number[]) => Promise<CleanupScanResult>;
   /** 删除选中的清理分类数据（maxAgeDays=0 表示删除分类目录下的全部内容） */

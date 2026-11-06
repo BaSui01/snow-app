@@ -1472,9 +1472,9 @@ export const en = {
     'Conversation "{{title}}" has finished',
   "notification.aiComplete.bodyDefault":
     "The current conversation has finished. Return to review it.",
-  "notification.sensitiveCommand.title": "Sensitive command needs confirmation",
+  "notification.sensitiveCommand.title": "Sensitive action needs confirmation",
   "notification.sensitiveCommand.body":
-    "Tool {{toolName}} triggered a sensitive command interception. Return to confirm.",
+    "Tool {{toolName}} needs your confirmation before it runs. Return to review.",
   "notification.userInteraction.title": "Your input is needed",
   "notification.workflow.defaultReason":
     "Workflow generated. Return to the conversation to confirm execution.",
@@ -3875,6 +3875,70 @@ export const en = {
   "settings.remoteControl": "Mobile remote control",
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.storageTab": "Storage & resources",
+  "settings.backupTitle": "Data backup",
+  "settings.backupInfo":
+    "Back up app data to a local folder. Blocks are content-addressed, so later backups only write what changed.",
+  "settings.backupTargetDir": "Backup folder",
+  "settings.backupTargetDirEmpty": "No backup folder selected yet.",
+  "settings.backupSelectDir": "Choose folder",
+  "settings.backupKeep": "Backups to keep",
+  "settings.backupKeepInfo":
+    "Older backups beyond this count are removed automatically.",
+  "settings.backupSchedule": "Automatic backup",
+  "settings.backupScheduleOffInfo":
+    "Automatic backups are off; use Back up now for manual backups.",
+  "settings.backupScheduleNeedDir":
+    "Choose a backup folder to enable automatic backups.",
+  "settings.backupScheduleModeOff": "Off",
+  "settings.backupScheduleEveryHours": "Every {{hours}} hours",
+  "settings.backupScheduleModeDaily": "Daily at a fixed time",
+  "settings.backupScheduleTime": "Backup time",
+  "settings.backupScheduleTimeInfo":
+    "Runs the automatic backup at this time every day.",
+  "settings.backupScheduleHour": "Hour",
+  "settings.backupScheduleMinute": "Minute",
+  "settings.backupScheduleNext": "Next automatic backup: {{time}}",
+  "settings.backupScheduleRunning": "Automatic backup in progress...",
+  "settings.backupScheduleLastError": "Last automatic backup failed: {{error}}",
+  "settings.backupWakeWhenClosed": "Run even when the app is closed",
+  "settings.backupWakeWhenClosedHint":
+    "The system scheduler launches Snow App in the background shortly before the backup time. A missed backup runs once on the next launch.",
+  "settings.backupRun": "Create backup",
+  "settings.backupStartHint":
+    "The first backup writes the full dataset; later ones only upload changes.",
+  "settings.backupPlan": "Estimate",
+  "settings.backupPlanResult":
+    "About {{size}} to write ({{chunks}} new chunks, {{reused}} reused).",
+  "settings.backupCreate": "Back up now",
+  "settings.backupCreating": "Backing up...",
+  "settings.backupCreated":
+    "Backup finished: {{size}} written, {{files}} files.",
+  "settings.backupListTitle": "Existing backups",
+  "settings.backupListCount": "{{count}} total",
+  "settings.backupEmpty": "No backups yet.",
+  "settings.backupFileCount": "{{count}} files",
+  "settings.backupRestore": "Restore",
+  "settings.backupDelete": "Delete",
+  "settings.backupRestoreTitle": "Restore this backup?",
+  "settings.backupRestoreMessage":
+    "Resource files are written right away; databases are replaced the next time Snow App starts. Current databases are kept as .pre-restore backups.",
+  "settings.backupDeleteTitle": "Delete this backup?",
+  "settings.backupDeleteMessage":
+    "Only this backup is removed; chunks no longer referenced by other backups are reclaimed.",
+  "settings.backupRestored": "Restore is ready. Restart Snow App to apply it.",
+  "settings.backupFailed": "Operation failed: {{error}}",
+  "settings.backupProgressCreateTitle": "Backing up data",
+  "settings.backupProgressRestoreTitle": "Preparing restore",
+  "settings.backupPhasePreparing": "Preparing...",
+  "settings.backupPhaseSnapshot": "Creating database snapshot...",
+  "settings.backupPhaseCollect": "Scanning files...",
+  "settings.backupPhaseWrite": "Writing backup data...",
+  "settings.backupPhaseApply": "Writing restored files...",
+  "settings.backupPhaseFinalize": "Finalizing...",
+  "settings.backupProgressCount": "{{files}}/{{total}} files · {{size}}",
+  "settings.backupProgressCreateNote": "Do not close the app while this runs.",
+  "settings.backupProgressRestoreNote":
+    "Resource files are written now; databases are swapped the next time the app starts.",
   "settings.resourceOptimize": "Optimize usage",
   "settings.resourceOptimizeInfo":
     "Rebuild database files to reclaim disk space and compact process memory.",
@@ -4721,13 +4785,24 @@ export const en = {
   "sensitiveCommand.title": "Sensitive command confirmation required",
   "sensitiveCommand.message":
     "This command matches a sensitive command rule. Confirmation is required even in YOLO mode.",
+  "sensitiveCommand.title.config": "Executable config needs confirmation",
+  "sensitiveCommand.message.config":
+    "This call writes config that runs automatically later (a command, script or service launch command) and matches a sensitive command rule. Confirmation is required even in YOLO mode.",
+  "sensitiveCommand.title.protected":
+    "Sensitive rule change needs confirmation",
+  "sensitiveCommand.message.protected":
+    "This call changes the sensitive command rules themselves, independent of any rule match. Every change must be confirmed by you, even in YOLO mode or with decision model delegation.",
+  "sensitiveCommand.title.mixed": "Sensitive actions need confirmation",
+  "sensitiveCommand.message.mixed":
+    "The following calls run only after you confirm them, even in YOLO mode. Review each one.",
+  "sensitiveCommand.triggerReason": "Why it was blocked",
   "sensitiveCommand.command": "Command",
   "sensitiveCommand.description": "What it does",
   "sensitiveCommand.matchedRules": "Matched rules",
   "sensitiveCommand.subject.config": "Executable config to be written",
   "sensitiveCommand.subject.protected": "Sensitive rule change",
   "sensitiveCommand.subject.protectedNotice":
-    "This call changes the sensitive command rules. Every change must be confirmed by you, even in YOLO mode or with decision model delegation.",
+    "A relaxed rule stops blocking similar operations later - review the rule content first.",
   "sensitiveCommand.builtinRule.check-failed":
     "Sensitive check failed (blocked for safety)",
   "sensitiveCommand.builtinRule.script-unreadable":
@@ -5363,6 +5438,8 @@ export const en = {
   "browser.suggestionRemove": "Remove from history",
   "browser.screenshot": "Screenshot",
   "browser.screenshotTitle": "Capture page to clipboard",
+  "browser.screenshotCopied": "Screenshot copied to clipboard",
+  "browser.screenshotFailed": "Screenshot failed, please try again",
   "browser.downloadsTitle": "Downloads",
   "browser.downloadsHint": "View, open or reveal downloaded files",
   "browser.downloadsEmpty": "No downloads yet",
@@ -5749,7 +5826,7 @@ export const en = {
     "5–3600 seconds. Default 60 seconds (1 minute).",
   "taskManager.samplingInvalid":
     "The interval must be an integer from 5 to 3600 seconds.",
-  "taskManager.samplingDirectory": "Log directory",
+  "taskManager.samplingFile": "Log file",
   "taskManager.samplingHint":
     "Each cycle appends one JSON line with totals, every process (role, page title, CPU, memory, threads) and LSP sessions with their budget. Files rotate at 5 MB and at most 10 files are kept. Written locally; entries include process paths and page URLs.",
   "taskManager.samplingLoadError": "Could not read sampling log settings.",

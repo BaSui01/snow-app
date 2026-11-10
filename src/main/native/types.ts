@@ -2200,6 +2200,16 @@ export type GitWorktreeInfo = {
   isValid: boolean;
 };
 
+export type ConversationWorktreeInfo = {
+  conversationId: string;
+  worktreeId: string;
+  directoryId: string;
+  repositoryPath: string;
+  worktreePath: string;
+  branchName: string | null;
+  isValid: boolean;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -3439,6 +3449,9 @@ export type NativeBridge = ImageGenerationNativeApi & {
   getConversationWorktree: (
     conversationId: string,
   ) => Promise<GitWorktreeInfo | null>;
+  getConversationWorktrees: (
+    conversationIds: string[],
+  ) => Promise<ConversationWorktreeInfo[]>;
   setConversationWorktree: (
     conversationId: string,
     worktreeId: string | null,

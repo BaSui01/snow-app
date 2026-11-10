@@ -21,6 +21,7 @@ import { useChatSelection } from "../chats/useChatSelection";
 import { useConversationActions } from "../chats/useConversationActions";
 import { useConversationCycleShortcut } from "../chats/useConversationCycleShortcut";
 import { useConversationTree } from "../chats/useConversationTree";
+import { useConversationWorktreeBindings } from "../chats/useConversationWorktreeBindings";
 import { usePausedConversationIds } from "../chats/usePausedConversationIds";
 import { usePinnedConversations } from "../chats/usePinnedConversations";
 
@@ -128,6 +129,19 @@ export function TreeProjectChats({
     conversationListVersion,
     upsertedConversation,
   });
+
+  const worktreeConversationIds = useMemo(
+    () => [
+      ...pinned.pinnedConversations.map(
+        (conversation) => conversation.conversationId,
+      ),
+      ...list.conversations.map((conversation) => conversation.conversationId),
+    ],
+    [pinned.pinnedConversations, list.conversations],
+  );
+  const worktreeBindings = useConversationWorktreeBindings(
+    worktreeConversationIds,
+  );
 
   // Option/Alt+方向键切换会话：树里只让当前激活项目注册，避免多个项目节点重复响应。
   const cycleOrderIds = useMemo(
@@ -260,6 +274,7 @@ export function TreeProjectChats({
         attentionRequiredConversationIds={attentionRequiredConversationIds}
         completedConversationIds={completedConversationIds}
         conversation={conversation}
+        worktree={worktreeBindings.get(conversationId)}
         expandedWorkflowNodeConversationIds={
           tree.expandedWorkflowNodeConversationIds
         }

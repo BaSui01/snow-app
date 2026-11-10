@@ -61,6 +61,14 @@ const trackPointerMove = (): void => {
   );
 };
 
+/** 抹平 Windows 长路径前缀与分隔符差异，用于判断绑定的是否为主工作树。 */
+const normalizeWorktreePath = (value: string): string =>
+  value
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+
 type ChatItemProps = {
   conversation: ChatConversationRecord;
   /** 会话绑定的 Git 工作树（仅非主工作树展示分支标识）。 */
